@@ -1,0 +1,61 @@
+-- The controls of SanitiserWideDistinct (`ownership-v2.md` §2.3.2, §2.9.3;
+-- #1963): as wide, each list literal holds every list once. A slice a
+-- pattern binds and the fronts (or backs) it skips are apart, so the
+-- index of step classes keeps them apart and each edit is in place.
+import List
+import Node exposing (Program)
+import String
+
+
+afterRest : List (List Int) → List (List Int)
+afterRest l =
+    case l of
+        [ a1, a2, a3, a4, a5, a6, …rest ] →
+            [ …rest, a1, a2, a3, a4, a5, a6 ]
+
+        _ →
+            l
+
+
+beforeRest : List (List Int) → List (List Int)
+beforeRest l =
+    case l of
+        [ a1, a2, a3, a4, a5, a6, a7, a8, a9, …rest ] →
+            [ a9, a8, a7, a6, a5, a4, a3, a2, a1, …rest ]
+
+        _ →
+            l
+
+
+fromBack : List (List Int) → List (List Int)
+fromBack l =
+    case l of
+        [ …init, b1, b2, b3, b4, b5, b6, b7, b8, b9 ] →
+            [ b1, b2, b3, b4, b5, b6, b7, b8, b9, …init ]
+
+        _ →
+            l
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls ints) ";"
+
+
+ten : ⊤ → List (List Int)
+ten ⊤ = [ [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ], [ 6 ], [ 7 ], [ 8 ], [ 9 ], [ 10 ] ]
+
+
+edited : List (List Int) → String
+edited xs = show (List.update xs 0 λv → List.push v 0)
+
+
+main : Program
+main =
+    Node.print
+        "${edited (afterRest (ten ⊤))} ${edited (beforeRest (ten ⊤))} ${edited (fromBack (ten ⊤))}"

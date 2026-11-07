@@ -1,0 +1,29 @@
+-- ownership (v2): a non-recursive function's branch join stays exact
+-- (ownership-v2.md §2.3, *On the cycle*, #1360). `pick`'s result is a
+-- `choice` whose first arm holds, at `#Node.0`, another choice that builds a
+-- `Tree`: a finite value with no cycle, so widen keeps both joins, and the
+-- summary names `#Node.0#Node.0` exactly. Only a recursive group's rounds,
+-- where a value nests its own previous round, open them. The summary is
+-- pinned by `build_test.zig`; v1's is its own.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub pick : Tree, Tree → Tree
+pick t u =
+    case t of
+        Node l xs _ →
+            Node
+                (case l of
+                    Node a ys _ →
+                        Node a ys u
+
+                    Leaf →
+                        u
+                )
+                xs
+                Leaf
+
+        Leaf →
+            Leaf

@@ -1,0 +1,50 @@
+-- ownership (project): `ViewBranchJoin` with every callee in another
+-- module (ownership-v2.md Appendix B, V×J): a view joined with its base,
+-- in the frame or by `Lists.restOrSelf`, then the base written by
+-- `Lists.pushList` while the join lives, refused; copies in both arms
+-- accept; a read in the arm beside the write keeps nothing live.
+import Lists
+
+
+pub joinedHere : Bool, List Int → List Int × List Int
+joinedHere c xs =
+    case xs of
+        [ _, …rest ] →
+            v = if c then rest else xs
+            ( Lists.pushList xs, v )
+
+        [] →
+            ( xs, [] )
+
+
+pub joinedByCall : Bool, List Int → List Int × List Int
+joinedByCall c xs =
+    v = Lists.restOrSelf c xs
+    ( Lists.pushList xs, v )
+
+
+pub copiesHere : Bool, List Int → List Int × List Int
+copiesHere c xs =
+    case xs of
+        [ _, …rest ] →
+            v = if c then List.copy rest else List.copy xs
+            ( Lists.pushList xs, v )
+
+        [] →
+            ( xs, [] )
+
+
+pub copiesByCall : Bool, List Int → List Int × List Int
+copiesByCall c xs =
+    v = Lists.copies c xs
+    ( Lists.pushList xs, v )
+
+
+pub siblingArm : Bool, List Int → Int
+siblingArm c xs =
+    case xs of
+        [ _, …rest ] →
+            if c then List.length (Lists.pushList xs) else List.length rest
+
+        [] →
+            0

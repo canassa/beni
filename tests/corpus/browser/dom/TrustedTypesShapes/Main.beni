@@ -1,0 +1,79 @@
+-- Templates under Trusted Types, on a page (#2208; backend.md §15.3,
+-- *Templates under Trusted Types*). The project's beni.json says
+-- `"trustedTypes": true`, so every template is built by DOM calls. The
+-- click puts the page under `require-trusted-types-for 'script';
+-- trusted-types 'none'` (a `<meta>` Chrome applies when it is inserted;
+-- happy-dom ignores it) and then shows markup whose templates are made
+-- under that policy: text and attribute values with references, a
+-- textarea, a custom element (imported, flag 1), an SVG element alone
+-- (wrapped in `<svg>`, flag 2), several nodes (flag 4), several among
+-- which an SVG element stands (flags 2 and 4), a drawing with a
+-- `<foreignObject>` and an `xlink:href`, and a table. The second click
+-- patches every hole. An ordinary build stops this page in Chrome at the
+-- first click with a TypeError, `innerHTML` refused; here both DOMs show
+-- the tree the HTML parser makes of the same markup.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Show
+    | Bump
+
+
+type alias Model =
+    shown : Bool
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Show →
+            Probe.csp "require-trusted-types-for 'script'; trusted-types 'none'"
+            { model | shown = True }
+        Bump →
+            { model | n = model.n + 1 }
+
+
+shape : String → Html msg
+shape fill = <rect width="2" height="2" fill={fill} />
+
+
+several : String → Html msg
+several a = <>{a}<b>between</b>{a}</>
+
+
+drawing : String → Html msg
+drawing label =
+    <>
+        <circle r="1" />
+        <text>{label}</text>
+    </>
+
+
+view : Model → Html Msg
+view model =
+    count = String.fromInt model.n
+    if model.shown then
+        <main>
+            <button id="bump" onClick={Bump}>{count}</button>
+            <p class="a &amp; b" title="say &quot;hi&quot;">x &lt; y &amp; {count}</p>
+            <textarea>a &lt; b</textarea>
+            <my-widget id="w">inside {count}</my-widget>
+            <svg viewBox="0 0 10 10">{shape count}</svg>
+            <div>{several count}</div>
+            <svg>{drawing count}</svg>
+            <svg viewBox="0 0 10 10">
+                <use xlink:href="#a" />
+                <foreignObject><div class="in">{count}</div></foreignObject>
+            </svg>
+            <table><tbody><tr><td>{count}</td></tr></tbody></table>
+        </main>
+    else
+        <main><button id="show" onClick={Show}>show</button></main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { shown = False, n = 0 }, update = update, view = view }

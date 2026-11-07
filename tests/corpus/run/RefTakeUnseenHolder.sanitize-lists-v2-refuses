@@ -1,0 +1,14 @@
+# v2 refuses each edit of a take whose other holder the frame has no name for (§2.13.7, #1977): a label's answer that .1 holds, re-entered or allocated;
+38:9 list_may_be_shared List.push
+52:9 list_may_be_shared List.push
+# a capture stored at a slot the first contents never named;
+68:17 list_may_be_shared List.push
+90:17 list_may_be_shared List.push
+# one object at two slots: a take of contents past one object is a loan;
+103:17 list_still_used List.push
+115:17 list_still_used List.push
+# a loan stored through a label: the function escapes, and the cell it reaches with it;
+128:9 list_still_used List.push
+# a top-level pair, answered through a cell and through a function.
+140:9 list_still_used List.push
+154:17 top_level_list_changed List.push

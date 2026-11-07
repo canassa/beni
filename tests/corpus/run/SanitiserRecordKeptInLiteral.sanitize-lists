@@ -1,0 +1,1 @@
+a record kept inside a fresh value and written after the call (#1000): v1 refuses it, and the sanitised run shows the stale box when it does not

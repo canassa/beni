@@ -154,13 +154,13 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .test_hooks = build.test_hooks,
         .sanitize_records = build.sanitize_records,
         .sanitize_lists = build.sanitize_lists,
-        .schema_library = build.schema_library,
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,
         .points_to_largest = build.points_to_largest,
         .check_call_graph = build.check_call_graph,
         .rep_keys = build.rep_keys,
         .source_maps = build.source_maps,
+        .trusted_types = if (app) |m| m.trustedTypes else false,
     };
     // `prerender.md` §5.2: a program prerenders when its `main` says so,
     // with the lowering's `prerender` placement, in every build of it —
@@ -168,6 +168,11 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // `--no-prerender` builds it as if it did not (the corpus compares the
     // two pages).
     const lowering = if (loaded.platform.lowering) |name| Emit.findLowering(name) else null;
+    // `frontend.md` §10.1, `boundary.md` §9.4.7: a page under Trusted Types
+    // whose lowering would still write a sink would stop on its first render.
+    if (emit_options.trusted_types) if (lowering) |lw| if (!lw.trusted_types) {
+        return fail(stderr, "beni: {s}'s \"trustedTypes\" is true, and the markup lowering '{s}' does not support Trusted Types", .{ Manifest.pathIn(arena, app_root), lw.name });
+    };
     const spine: ?Emit.Prerenders = if (build.library or lowering == null) null else Emit.prerenders(&session, lowering.?);
     // `prerender.md` §8.10: a data site built with `--no-prerender` still
     // runs its data program, and writes each page with its value and no

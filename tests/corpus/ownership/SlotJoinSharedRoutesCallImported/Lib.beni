@@ -1,0 +1,24 @@
+-- The callees of `SlotJoinSharedRoutesCall`, in a module of their own.
+pub type alias W =
+    items : List Int
+
+
+pub type alias T =
+    a : W
+    b : W
+
+
+pub pushIt : List Int → List Int
+pushIt xs = List.push xs 2
+
+
+pub readA : T → Int
+readA t = List.length t.a.items
+
+
+pub readB : T → Int
+readB t = List.length t.b.items
+
+
+pub pick : Bool, T, T → T
+pick c x y = if c then x else y

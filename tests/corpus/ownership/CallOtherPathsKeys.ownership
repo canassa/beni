@@ -1,0 +1,22 @@
+module CallOtherPathsKeys
+  10:22 List.push r.x: accepted param
+  10:54 List.push r.z: accepted param
+  16:5 call CallOtherPathsKeys.two <record>.x: rejected disjoint: another operand of the same operation reaches it (CallOtherPathsKeys.two writes π1.x)
+  16:5 call CallOtherPathsKeys.two <record>.z: rejected disjoint: another operand of the same operation reaches it (CallOtherPathsKeys.two writes π1.z)
+  22:5 call CallOtherPathsKeys.two <record>.x: rejected disjoint: another operand of the same operation reaches it (CallOtherPathsKeys.two writes π1.x)
+  22:5 call CallOtherPathsKeys.two <record>.z: accepted fresh (CallOtherPathsKeys.two writes π1.z)
+  26:11 call CallOtherPathsKeys.two <record>.x: accepted fresh (CallOtherPathsKeys.two writes π1.x)
+  26:11 call CallOtherPathsKeys.two <record>.z: accepted fresh (CallOtherPathsKeys.two writes π1.z)
+  30:25 List.push r.a.x: accepted param
+  36:5 call CallOtherPathsKeys.nested <record>.a.x: rejected disjoint: another operand of the same operation reaches it (CallOtherPathsKeys.nested writes π1.a.x)
+  42:5 call CallOtherPathsKeys.nested <record>.a.x: rejected disjoint: another operand of the same operation reaches it (CallOtherPathsKeys.nested writes π1.a.x)
+  summary two: π1.x RW[storage], π1.y R, π1.z RW[storage]
+  summary shared: unused
+  summary sharedRead: unused
+  summary apart: unused
+  summary nested: π1.a.x RW[storage], π1.a.y R, π1.b R
+  summary nestedShared: unused
+  summary nestedInner: unused
+  demands 11: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 11: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 5

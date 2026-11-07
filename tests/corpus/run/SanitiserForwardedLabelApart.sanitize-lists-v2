@@ -1,0 +1,3 @@
+A callback passed on inside a lambda that a callee runs many times, on two apart lists (ownership-v2.md §2.11.3):
+built again under --ownership=v2 and the list stale-read sanitiser. v2 accepts the edit; the sanitised run prints
+the same.

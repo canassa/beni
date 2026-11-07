@@ -1,0 +1,1 @@
+v2 refuses a capture written by a known code read as unknown, whichever evaluation judges it (§2.11.3, #2166): built again under --ownership=v2 and the sanitiser.

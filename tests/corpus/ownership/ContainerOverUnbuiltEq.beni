@@ -1,0 +1,16 @@
+-- ownership (v2): `Key.eq` has no class (its walk is not built), so
+-- `List.eq` handed it has none either: `viaListEq` is left unchecked, not
+-- accepted as a read-only comparison (ownership-v2.md §2.13.13).
+type Key
+    = Key (List Int)
+
+
+pub eq : Key, Key → Bool
+eq a b =
+    case a of
+        Key l →
+            List.length (List.map (List.push l 1) λx → x + 1) > 0
+
+
+pub viaListEq : List Int → Bool × List Int
+viaListEq xs = ( [ Key xs ] == [], xs )

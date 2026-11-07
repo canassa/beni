@@ -1,0 +1,49 @@
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Task
+
+
+worker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state request → Ok (state ++ request)
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start
+                            (λ⊤ →
+                                Task.scope λscope →
+                                    result = Worker.open scope worker "config" Worker.options
+                                    case result of
+                                        Ok handle →
+                                            _ = Worker.close handle
+                                            Hosted.emit outlet (Finished "ready")
+                                        Err _ →
+                                            Hosted.emit outlet (Finished "failed")
+                            )
+                            λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

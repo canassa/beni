@@ -1,0 +1,29 @@
+-- A compiler crash (`ownership-v2.md` §2.11.2, *the identity control*, #2076): a
+-- The writing twin of `SanitiserCalledCodeIdentity` (#2076): one arm of the called
+-- code pushes onto what `List.map` hands it, which `q` still holds.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls λl → String.join (List.map l String.fromInt) ",") ";"
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+idf : a → a
+idf x = x
+
+
+pick : Bool → (List Int → List Int)
+pick c = if c then push1 else idf
+
+
+main : Program
+main =
+    q = [ [ 1 ] ]
+    ys = List.map q (pick True)
+    Node.print (show ys ++ "|" ++ show q)

@@ -1,0 +1,189 @@
+-- ownership: a list pattern reads the list it tests, at every depth
+-- (ownership-v2.md §2.13.3, *A list pattern reads its list*, #1530). A
+-- reader whose arms only test shapes — `skip2c` tests two lists below a
+-- constructor, `d3` three and an empty fourth, `deepLen` recurses on its
+-- first kid and tests the list below it, `evenR`/`oddR` are a mutual pair
+-- — is `R` at every list it matches, so a push in place of a list that
+-- `w` still holds, before the reader reads `w`, is refused, as v1 refuses
+-- it: the push would change the reader's answer. The same holds for a
+-- nested list (`nested`), a list in a tuple (`inTuple`) and in a `Just`
+-- (`inMaybe`), and for an argument rebuilt around the list (`rebuilt`).
+-- A push of a list that no later reader reaches (`unread`) is accepted,
+-- as v1 accepts it.
+type Rose
+    = Rose (List Rose)
+    | Leaf
+
+
+skip2c : Rose → Int
+skip2c r =
+    case r of
+        Rose [ Rose [ _, …_ ], …_ ] →
+            7
+
+        _ →
+            0
+
+
+d3 : Rose → Int
+d3 r =
+    case r of
+        Rose [ Rose [ Rose [ Rose [] ] ] ] →
+            1
+
+        _ →
+            0
+
+
+deepLen : Rose → Int
+deepLen r =
+    case r of
+        Rose [ s, …_ ] →
+            deepLen s
+
+        Rose [] →
+            100
+
+        Leaf →
+            0
+
+
+evenR : Rose → Int
+evenR r =
+    case r of
+        Rose [ s ] →
+            oddR s
+
+        Rose [] →
+            2
+
+        _ →
+            0
+
+
+oddR : Rose → Int
+oddR r =
+    case r of
+        Rose [ s, …_ ] →
+            evenR s
+
+        _ →
+            1
+
+
+nested : List (List Int) → Int
+nested xs =
+    case xs of
+        [ [ _, …_ ], …_ ] →
+            1
+
+        _ →
+            0
+
+
+inTuple : Int × List (List Int) → Int
+inTuple p =
+    case p of
+        ( _, [ [] ] ) →
+            1
+
+        _ →
+            0
+
+
+inMaybe : Maybe (List (List Int)) → Int
+inMaybe m =
+    case m of
+        Just [ [ _, _ ] ] →
+            1
+
+        _ →
+            0
+
+
+firstKids : Rose → List Rose
+firstKids v =
+    case v of
+        Rose [ Rose ks, …_ ] →
+            ks
+
+        _ →
+            []
+
+
+pub skipped : ⊤ → List Rose × Int
+skipped _ =
+    k = [ Rose [] ]
+    v = Rose k
+    w = v
+    kids = firstKids v
+    ( List.push kids Leaf, skip2c w )
+
+
+pub deep : ⊤ → List Rose × Int
+deep _ =
+    k = [ Rose [ Rose [ Rose [ Rose [ Leaf ] ] ] ] ]
+    v = Rose k
+    w = v
+    kids = firstKids v
+    ( List.push kids Leaf, deepLen w )
+
+
+pub three : ⊤ → List Rose × Int
+three _ =
+    k = [ Rose [ Rose [ Rose [] ] ] ]
+    v = Rose k
+    w = v
+    kids =
+        case v of
+            Rose [ Rose [ Rose ks ] ] →
+                ks
+
+            _ →
+                []
+    ( List.push kids Leaf, d3 w )
+
+
+pub mutual : ⊤ → List Rose × Int
+mutual _ =
+    k = [ Rose [ Rose [] ] ]
+    v = Rose k
+    w = v
+    kids = firstKids v
+    ( List.push kids Leaf, evenR w )
+
+
+pub nestedList : ⊤ → List Int × Int
+nestedList _ =
+    inner = []
+    xs = [ inner ]
+    ( List.push inner 1, nested xs )
+
+
+pub tupled : ⊤ → List Int × Int
+tupled _ =
+    inner = []
+    p = ( 0, [ inner ] )
+    ( List.push inner 1, inTuple p )
+
+
+pub maybe : ⊤ → List Int × Int
+maybe _ =
+    inner = [ 1 ]
+    m = Just [ inner ]
+    ( List.push inner 2, inMaybe m )
+
+
+pub rebuilt : ⊤ → List Rose × Int
+rebuilt _ =
+    k = [ Rose [] ]
+    kids = firstKids (Rose k)
+    ( List.push kids Leaf, skip2c (Rose k) )
+
+
+pub unread : ⊤ → List Rose × Int
+unread _ =
+    k = [ Rose [], Rose [] ]
+    v = Rose k
+    kids = firstKids v
+    ( List.push kids Leaf, 0 )

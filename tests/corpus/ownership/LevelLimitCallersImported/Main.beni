@@ -1,0 +1,39 @@
+-- ownership (project): `LevelLimitCallers` with `inline` and `two` in
+-- another module: the caller's check keeps them safe across a block.
+-- `inline xs xs` is refused `disjoint`, two lists accept; `inline xs [ 1 ]`
+-- with `xs` read again is refused `later-use`, read once accepts; `two`
+-- over one list at both levels is refused, over distinct lists accepted.
+import Levels exposing (Leaf, Node, Tree)
+
+
+pub inlineSame : List Int → List Int × Int
+inlineSame xs = Levels.inline xs xs
+
+
+pub inlineDistinct : List Int, List Int → List Int × Int
+inlineDistinct xs ys = Levels.inline xs ys
+
+
+pub inlineReadAgain : List Int → Int
+inlineReadAgain xs =
+    ( l, n ) = Levels.inline xs [ 1 ]
+    List.length l + n + List.length xs
+
+
+pub inlineOnce : List Int → Int
+inlineOnce xs =
+    ( l, n ) = Levels.inline xs [ 1 ]
+    List.length l + n
+
+
+pub twoShared : ⊤ → Int
+twoShared ⊤ =
+    xs = [ 1 ]
+    ( l, _ ) = Levels.two (Node (Node Leaf xs (Node Leaf xs Leaf)) [] Leaf)
+    List.length l
+
+
+pub twoDistinct : ⊤ → Int
+twoDistinct ⊤ =
+    ( l, _ ) = Levels.two (Node (Node Leaf [ 1 ] (Node Leaf [ 2 ] Leaf)) [] Leaf)
+    List.length l

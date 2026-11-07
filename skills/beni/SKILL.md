@@ -99,18 +99,24 @@ Open the file that your task needs. Each is short.
   `where`, `eq` and `compare`, return-type dispatch, `Dict` and `Set` keys.
 - `references/effects.md` — the two inferred bits, `Result` and no exceptions, `Task`, `Ref`, `Deferred`,
   `Semaphore`, `Queue`, `Latch`, `Task.forever`, `Debug` in a release build, `Log`.
+- `references/dates.md` — `Date`: ISO 8601 and named zones.
 - `references/schemas.md` — the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers,
   `tagged`, `Json` with a derived `codec`.
+- `references/markdown.md` — `Markdown.parse` and `Html.Markdown`: the CommonMark tree, rendering, raw HTML as text, limits.
 - `references/markup.md` — elements, attributes, holes, events, components, `For`, `Show`, `class` and `style`
   lists, `Html.map`, what is refused.
 - `references/platforms.md` — `node`, `browser`, `browser-tea`, `browser-inline`, `html` and `cloudflare`: what `main` is on
   each, commands, subscriptions and the modules each adds.
+- `references/entry-runtimes.md`, `references/native-host.md`.
+- `references/workers.md`, `references/worker-messages.md`.
 - `references/prerender.md` — `Browser.prerender`: a page per route on `browser-inline`, routes and files,
   `"build"."origin"`, `{{view}}` and `{{title}}`, what must be pure.
 - `references/routing.md` — `Tea.document`, `Tea.application`, `Browser.Navigation` and their limits on
   `browser-inline`.
 - `references/websocket.md` — the `WebSocket` module: the shared operations, a server on `node` with
   `listenWith`, `accept` and `refuse`, and a page on `browser-tea` with `listen` and `send`.
+- `references/child-process.md` — `ChildProcess.run` on `node`: no shell; output, exit status, `cwd`,
+  `env`, errors, cancellation.
 - `references/project.md` — `beni.json`, `beni new`, the output tree, `beni serve`.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
   `misplaced_ownership_word`, and `@ownership_summary_size`.

@@ -1,0 +1,54 @@
+-- ownership: SharedHolderRoutes' twins through calls of declarations of
+-- the module (ownership-v2.md §2.8 *Dead*, §8 S3b, #1223). `t` holds `xs`
+-- at `t.a.items` and at `t.b.items` through the one `w`; `pushIt` writes
+-- `xs` while `t` is read after, by `readA` or `readB`: each route is one a
+-- later use can take, in either field order, so each call is refused.
+-- With no route to `xs` (`apart`), the call is accepted.
+type alias W =
+    items : List Int
+
+
+type alias T =
+    a : W
+    b : W
+
+
+type alias V =
+    b : W
+    a : W
+
+
+pushIt : List Int → List Int
+pushIt xs = List.push xs 2
+
+
+readA : T → Int
+readA t = List.length t.a.items
+
+
+readB : V → Int
+readB v = List.length v.b.items
+
+
+pub viaA : ⊤ → List Int × Int
+viaA ⊤ =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = { a = w, b = w }
+    ( pushIt xs, readA t )
+
+
+pub viaB : ⊤ → List Int × Int
+viaB ⊤ =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { b = w, a = w }
+    ( pushIt xs, readB v )
+
+
+pub apart : ⊤ → List Int × Int
+apart ⊤ =
+    xs = [ 1 ]
+    w = { items = [ 3 ] }
+    t = { a = w, b = w }
+    ( pushIt xs, readA t )

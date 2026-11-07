@@ -17,7 +17,7 @@ module RecordUpdateEscapes
   summary openEsc: π1 REW{n}, π1.items RAW; res π1.items
   summary plain: π1 RE, π1.items RAW; res π1.items
   summary viaCallee: π1 REW{n}, π1.items RAW; res π1.items
-  summary inList: π1 R, π1[*] REW{n}, π1[*].items RAW; res fresh1 π1[*].items{excl π1}; xreq excl π1
+  summary inList: π1 R, π1[*] REW{n}, π1[*].items RAW; res fresh1 π1[*].items{excl π1}r{excl π1}; xreq excl π1
   summary escHead: π1 R, π1[*] REW{n}
   summary caller: π1 RAEW; res π1
   summary callerOfHead: π1 RAEW; res π1

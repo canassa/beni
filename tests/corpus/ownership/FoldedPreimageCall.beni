@@ -1,0 +1,153 @@
+-- ownership: #1159's probes through real calls (ownership-v2.md §8, slice
+-- 4's plan, 4a), written as mutual pattern recursion (#1394): each writer
+-- writes the kids list of every value at every depth, and walks a list of
+-- them with `[ x, …rest ]`; `incT`/`incTs` over `T`, `incA`/`incCs`/
+-- `incC`/`incAs` over the mutual `A` and `C`, and `incR2` over `R2`, a list
+-- of `T`. Every actual is a literal, so only the callee recurses.
+-- Probes 0 and 1: a field that holds `k` in one arm of an `if`
+-- (`choiceShared`) or of a `case` (`caseShared`) and `k` beside it: the
+-- full preimage sees the repeat across depths, refused. Probe 2: the
+-- mutual `A [ C [ A k ], C [ A [ C [ A k ] ] ] ]`: refused, and accepted
+-- with distinct lists (`mutualDistinct`). Probe 3: a prefix through
+-- `[*]`, `R2 [ T k, T [ T k ] ]`: the writer writes both paths, so the
+-- caller's Disjoint across them refuses it, and `prefixDistinct` is
+-- accepted. Probe 4: a symbolic leaf, the caller's own parameter `q` as a
+-- kids list beside a local one: accepted, and `symbolicShared`, with `q`
+-- twice, refused. Probe 5: the opened choice control, `k` in one arm
+-- alone: accepted. Under v2 `prefixDistinct`, `symbolic` and `opened` are
+-- refused until #1253 tells apart the levels below the first return, and
+-- the group over `A` and `C` walks past the default allowance (#1372), so
+-- probe 2 is unchecked (known entries).
+type T
+    = T (List T)
+
+
+type R2
+    = R2 (List T)
+
+
+type A
+    = A (List C)
+
+
+type C
+    = C (List A)
+
+
+incT : T → T
+incT t =
+    case t of
+        T kids →
+            T (incTs (List.push kids (T [])))
+
+
+incTs : List T → List T
+incTs ts =
+    case ts of
+        [ t, …rest ] →
+            [ incT t, …incTs rest ]
+
+        [] →
+            []
+
+
+incA : A → A
+incA a =
+    case a of
+        A cs →
+            A (incCs (List.push cs (C [])))
+
+
+incCs : List C → List C
+incCs cs =
+    case cs of
+        [ c, …rest ] →
+            [ incC c, …incCs rest ]
+
+        [] →
+            []
+
+
+incC : C → C
+incC c =
+    case c of
+        C xs →
+            C (incAs xs)
+
+
+incAs : List A → List A
+incAs xs =
+    case xs of
+        [ a, …rest ] →
+            [ incA a, …incAs rest ]
+
+        [] →
+            []
+
+
+incR2 : R2 → R2
+incR2 r =
+    case r of
+        R2 ts →
+            R2 (incTs ts)
+
+
+pub choiceShared : Bool → T
+choiceShared c =
+    k = [ T [] ]
+    incT (T [ T [ T (if c then [ T k ] else []), T k ] ])
+
+
+pub caseShared : Maybe Int → T
+caseShared m =
+    k = [ T [] ]
+    field =
+        case m of
+            Just _ →
+                [ T k ]
+
+            Nothing →
+                []
+    incT (T [ T [ T field, T k ] ])
+
+
+pub mutualShared : A
+mutualShared =
+    k = [ C [] ]
+    incA (A [ C [ A [ C [ A k ], C [ A [ C [ A k ] ] ] ] ] ])
+
+
+pub mutualDistinct : A
+mutualDistinct =
+    k1 = [ C [] ]
+    k2 = [ C [] ]
+    incA (A [ C [ A [ C [ A k1 ], C [ A [ C [ A k2 ] ] ] ] ] ])
+
+
+pub prefixShared : R2
+prefixShared =
+    k = [ T [] ]
+    incR2 (R2 [ T k, T [ T k ] ])
+
+
+pub prefixDistinct : R2
+prefixDistinct =
+    k1 = [ T [] ]
+    k2 = [ T [] ]
+    incR2 (R2 [ T k1, T [ T k2 ] ])
+
+
+pub symbolic : List T → T
+symbolic q =
+    k = [ T [] ]
+    incT (T [ T [ T q, T k ] ])
+
+
+pub symbolicShared : List T → T
+symbolicShared q = incT (T [ T [ T q, T q ] ])
+
+
+pub opened : Bool → T
+opened c =
+    k = [ T [] ]
+    incT (T [ T [ if c then T k else T [] ] ])

@@ -1,0 +1,74 @@
+-- ownership: a join of a view with an alias or a copy, then a write of the
+-- base through a call (ownership-v2.md Appendix B, V×J; R-4.2.1,
+-- R-4.5.1). `v` is `rest` (a view of `xs`) in one arm and `xs` itself in
+-- the other; `pushList xs` while `v` lives is refused, whether the join is
+-- made in the frame (`joinedHere`) or by a callee (`joinedByCall`). With
+-- copies in both arms the write accepts (`copiesHere`, `copiesByCall`).
+-- A read of `rest` in the arm beside the write keeps nothing live in the
+-- writing arm (`siblingArm`), accepted.
+pushList : List Int → List Int
+pushList xs = List.push xs 1
+
+
+restOrSelf : Bool, List Int → List Int
+restOrSelf c xs =
+    case xs of
+        [ _, …rest ] →
+            if c then rest else xs
+
+        [] →
+            xs
+
+
+copies : Bool, List Int → List Int
+copies c xs =
+    case xs of
+        [ _, …rest ] →
+            if c then List.copy rest else List.copy xs
+
+        [] →
+            []
+
+
+pub joinedHere : Bool, List Int → List Int × List Int
+joinedHere c xs =
+    case xs of
+        [ _, …rest ] →
+            v = if c then rest else xs
+            ( pushList xs, v )
+
+        [] →
+            ( xs, [] )
+
+
+pub joinedByCall : Bool, List Int → List Int × List Int
+joinedByCall c xs =
+    v = restOrSelf c xs
+    ( pushList xs, v )
+
+
+pub copiesHere : Bool, List Int → List Int × List Int
+copiesHere c xs =
+    case xs of
+        [ _, …rest ] →
+            v = if c then List.copy rest else List.copy xs
+            ( pushList xs, v )
+
+        [] →
+            ( xs, [] )
+
+
+pub copiesByCall : Bool, List Int → List Int × List Int
+copiesByCall c xs =
+    v = copies c xs
+    ( pushList xs, v )
+
+
+pub siblingArm : Bool, List Int → Int
+siblingArm c xs =
+    case xs of
+        [ _, …rest ] →
+            if c then List.length (pushList xs) else List.length rest
+
+        [] →
+            0

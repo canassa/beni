@@ -1,0 +1,31 @@
+-- `Io.readDir` under `--release` once `Io.js` is gone
+-- (plans/runtime-in-beni.md step 14): `startReadDir` asks `process` for
+-- `node:fs/promises` and calls `readdir` with `withFileTypes`; the
+-- fulfilment sorts the host array by name with `Buffer.compare` and maps
+-- it to `Entry`s with the host's `map`, the rejection handler reads the
+-- code table by its own keys and throws anything else; `Result` is no
+-- longer pinned by a `foreign` annotation and carries integer tags,
+-- while `Entry`, `EntryKind` (through the mapping lambda's `Js.from`)
+-- and `FileError` keep their names and strings.
+import Io
+import Node exposing (Program)
+
+
+describe : Io.Entry → String
+describe entry =
+    case entry.kind of
+        Io.Directory →
+            "${entry.name}/"
+
+        _ →
+            entry.name
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Io.readDir "." of
+        Ok entries →
+            Node.printLines (List.map entries describe)
+
+        Err _ →
+            Node.exitWith "cannot list" 2

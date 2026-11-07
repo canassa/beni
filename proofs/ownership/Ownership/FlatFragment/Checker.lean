@@ -49,47 +49,12 @@ namespace Ownership.FlatFragment.VariableFacts
 
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Env
 
-theorem lookup_exists_of_same_keys (left : Env α) (right : Env β)
-    (keys : left.map Prod.fst = right.map Prod.fst)
-    (found : right.lookup key = some value) : ∃ actual, left.lookup key = some actual := by
-  have present : (right.lookup key).isSome := by simp [found]
-  obtain ⟨pair, member, equal⟩ := List.lookup_isSome_iff.mp present
-  have rightKey : pair.1 ∈ right.map Prod.fst := List.mem_map.mpr ⟨pair, member, rfl⟩
-  rw [← keys] at rightKey
-  obtain ⟨actualPair, actualMember, sameName⟩ := List.mem_map.mp rightKey
-  have actualEqual : key == actualPair.1 := by simpa only [sameName] using equal
-  have actualPresent : (left.lookup key).isSome :=
-    List.lookup_isSome_iff.mpr ⟨actualPair, actualMember, actualEqual⟩
-  cases actual : left.lookup key with
-  | none => simp [actual] at actualPresent
-  | some value => exact ⟨value, rfl⟩
-
 theorem runtime_binding_of_abstract
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (found : aenv.lookup key = some abstract) :
     ∃ observation actual, env.lookup key = some (observation, actual) := by
   obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env aenv inv.abstractKeys found
   exact ⟨pair.1, pair.2, binding⟩
-
-theorem live_variable_result
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (use : (key, []) ∈ live)
-    (binding : env.lookup key = some (observation, actual))
-    (abstractBinding : aenv.lookup key = some abstract) :
-    Corresponds hs.heap observation actual ∧ Describes gamma hs.heap abstract actual ∧
-      ∃ type, tenv.lookup key = some type ∧ FlatType type ∧ FlatAbstract type abstract ∧
-        obsTyped declarations observation type = true ∧ ValueTyped declarations hs.heap actual type := by
-  obtain ⟨observed, value, observationPath, valuePath, paired⟩ :=
-    inv.bindings key [] use observation actual binding
-  simp only [projectObs, projectVal, Option.some.injEq] at observationPath valuePath
-  cases observationPath
-  cases valuePath
-  have description := inv.described key [] use observation actual abstract actual binding abstractBinding rfl
-  obtain ⟨type, declared, observationTyped, actualTyped⟩ :=
-    inv.bindingsTyped key observation actual binding
-  refine ⟨paired, ?_, type, declared, inv.types key type declared,
-    inv.abstractShapes key type abstract declared abstractBinding, observationTyped, actualTyped⟩
-  simpa only [Abstract.atPath] using description
 
 end Ownership.FlatFragment.VariableFacts
 
@@ -962,6 +927,133 @@ end Ownership.FlatFragment.InferChainCase
 Shadow freshness and prefix key alignment exclude the let binder from the
 outer continuation. This derives the branch premise used by let extraction.
 -/
+
+namespace Ownership.FlatFragment.InferAssign
+
+/-! An update `{ base | f = v, … }` (#316) is an expression: the checker reads
+its base and values, then makes one demand on the base's objects. -/
+
+open Ownership.FlatFragment.CheckerExtraction
+
+/-- The fields an update keeps, their cells, and the new values' cells
+(`Checker.lean`, `.assign`). -/
+def assignKept (written : List Nat) (fs : List Abstract) : List Abstract :=
+  (fs.zipIdx.filter fun (_, i) => !written.contains i).map Prod.fst
+
+def cellsOf (xs : List Abstract) : List Origin := xs.foldl (fun xs a => union xs a.cells) []
+
+/-- The checker's result of an update on an object. -/
+def assignResult (ctx : Context) (later : List Origin) (written : List Nat) (cs : List Origin)
+    (fs : List Abstract) (ex : Certificate) (vs : List Abstract) : Abstract :=
+  .list cs (.record (assignFields fs written vs))
+    ⟨ex.deep && storeExclusive ctx vs later (cellsOf (assignKept written fs)),
+      ex.spine && storeSpines ctx vs later (cellsOf (assignKept written fs)) &&
+        ((assignKept written fs).flatMap containers).all
+          (fun (_, old) => individuallyOwned ctx old && !cellOverlap old (cellsOf vs))⟩
+
+/-- The checker's rule of an update, with its operands' abstracts read. -/
+def assignStep (ctx : Context) (aenv : Env Abstract) (after : Live) (written : List Nat)
+    (b : Abstract) (vs : List Abstract) : CheckM Abstract :=
+  match b with
+  | .bottom => pure .bottom
+  | .list cs (.record fs) ex => do
+    recordDemand ctx.config cs written (union (recordLiveCells written cs aenv after) ctx.pinned)
+      (union (cellsOf (assignKept written fs)) (cellsOf vs))
+    pure (assignResult ctx (union (liveCellsWith ctx.config aenv after) ctx.pinned) written cs fs ex vs)
+  | _ => throw "abstract update shape"
+
+theorem infer_assign_equation {ctx : Context} {aenv : Env Abstract} {width : Nat} {written : List Nat}
+    {base : Atom} {values : List Atom} {b : Abstract} {vs : List Abstract} {after : Live} {site : List Nat}
+    {before : St} {fuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (baseRun : abstractAtom aenv base = .ok b)
+    (valuesRun : values.mapM (m := Except String) (abstractAtom aenv) = .ok vs)
+    (scope : liveScope aenv after = .ok ()) :
+    (inferExpr (fuel + 1) ctx aenv (.assign width written base values) after site).run before =
+      (assignStep {ctx with escaped := union ctx.escaped before.facts.escapes} aenv after written b vs).run
+        before := by
+  simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope, baseRun, valuesRun, assignStep,
+    assignResult, assignKept, cellsOf,
+    StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+    Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+    MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+    MonadExceptOf.throw] <;> rfl
+
+theorem infer_assign_success {ctx : Context} {aenv : Env Abstract} {width : Nat} {written : List Nat}
+    {base : Atom} {values : List Atom} {after : Live} {site : List Nat}
+    {before next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.assign width written base values) after site).run before =
+      .ok (result, next)) :
+    ∃ childFuel b vs, inferenceFuel = childFuel + 1 ∧ liveScope aenv after = .ok () ∧
+      abstractAtom aenv base = .ok b ∧ values.mapM (m := Except String) (abstractAtom aenv) = .ok vs ∧
+      (assignStep {ctx with escaped := union ctx.escaped before.facts.escapes} aenv after written b vs).run
+        before = .ok (result, next) := by
+  cases inferenceFuel with
+  | zero =>
+    simp [inferExpr, bridgeObserve, defaultConfig, Config.has,
+      StateT.run, StateT.bind, StateT.get, StateT.lift, Except.bind,
+      Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+      MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+      MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+        Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+        MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+        MonadExceptOf.throw] at accepted
+    | ok finished =>
+      cases finished
+      cases baseRun : abstractAtom aenv base with
+      | error problem =>
+        simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope, baseRun,
+          StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+          Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+          MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+          MonadExceptOf.throw] at accepted
+      | ok b =>
+        cases valuesRun : values.mapM (m := Except String) (abstractAtom aenv) with
+        | error problem =>
+          simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope, baseRun, valuesRun,
+            StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+            Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+            MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+            MonadExceptOf.throw] at accepted
+        | ok vs =>
+          rw [infer_assign_equation defaultConfig baseRun valuesRun scope] at accepted
+          exact ⟨childFuel, b, vs, rfl, rfl, rfl, rfl, accepted⟩
+
+/-- The update's rule on an object: one demand, then the result. A dead base
+gives bottom. -/
+theorem assignStep_success {ctx : Context} {aenv : Env Abstract} {after : Live} {written : List Nat}
+    {b : Abstract} {vs : List Abstract} {before next : St} {result : Abstract}
+    (run : (assignStep ctx aenv after written b vs).run before = .ok (result, next)) :
+    (b = .bottom ∧ result = .bottom ∧ next = before) ∨
+    ∃ cs fs ex, b = .list cs (.record fs) ex ∧
+      (recordDemand ctx.config cs written (union (recordLiveCells written cs aenv after) ctx.pinned)
+        (union (cellsOf (assignKept written fs)) (cellsOf vs))).run before = .ok ((), next) ∧
+      result = assignResult ctx (union (liveCellsWith ctx.config aenv after) ctx.pinned) written cs fs ex vs := by
+  unfold assignStep at run
+  split at run
+  · simp only [StateT.run, pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at run
+    exact Or.inl ⟨rfl, run.1.symm, run.2.symm⟩
+  · rename_i cs fs ex
+    refine Or.inr ⟨cs, fs, ex, rfl, ?_⟩
+    simp only [StateT.run, bind, StateT.bind, Except.bind] at run
+    split at run
+    · cases run
+    · rename_i r demandOk
+      obtain ⟨u, mid⟩ := r
+      cases u
+      simp only [pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      exact ⟨demandOk, rfl⟩
+  · simp [StateT.run, throw, throwThe, MonadExceptOf.throw, StateT.lift, liftM, monadLift,
+      MonadLift.monadLift, Functor.map, Except.map] at run
+
+end Ownership.FlatFragment.InferAssign
 
 namespace Ownership.FlatFragment.Scope
 

@@ -8,6 +8,15 @@ on:
   pull_request:
   push:
     branches: [master]
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      browser_corpus:
+        description: Chrome corpus to run
+        type: choice
+        options: [full, managed]
+        default: full
 
 permissions: {}
 
@@ -75,6 +84,19 @@ jobs:
           echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
           ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
 
+      # The run-hash cache (tests/blackbox/run_hash.zig): one empty file
+      # per emitted program that ran under Node and matched its golden,
+      # named by the digest of everything the verdict depended on. The
+      # gates skip Node for a program whose digest is there. The dev shell
+      # puts it in `~/.cache/beni-run-hashes` unless BENI_RUN_HASH_DIR is
+      # set already (flake.nix, `runHashCache`); pinned here, as the Zig
+      # cache is, to the path the cache steps restore and save. If the
+      # shell stops keeping the value, this step fails.
+      - name: the run-hash cache's directory
+        run: |
+          echo "BENI_RUN_HASH_DIR=$HOME/.cache/beni-run-hashes" >> "$GITHUB_ENV"
+          BENI_RUN_HASH_DIR=$HOME/.cache/beni-run-hashes nix develop --command sh -c 'test "$BENI_RUN_HASH_DIR" = "$HOME/.cache/beni-run-hashes"'
+
       # Zig's local and global caches, from master's newest build.
       - name: restore the Zig caches
         id: zig-cache
@@ -98,6 +120,39 @@ jobs:
           if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
             echo "Zig caches over 3 GiB: removed"
             rm -rf .zig-cache ~/.cache/zig
+          fi
+
+      # The run-hash cache, from the newest run of this pull request, else
+      # from master's newest. A pull request's key is its own merge
+      # commit's, so a second push to it restores what the first verified.
+      # Restoring takes master's entries into a pull request, never the
+      # other way: a pull request saves in its own scope, which master
+      # never restores, so CI's verdict on master depends on no pull
+      # request's cache and on no developer's. The key hashes the harness
+      # that decides "passed" (the owner, 2026-10-28): a digest does not
+      # cover it, so a run with a changed harness restores no entry an
+      # older one wrote.
+      - name: restore the run-hash cache
+        id: run-hash-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/beni-run-hashes
+          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
+          restore-keys: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-
+
+      # A digest is never removed, and each master run saves the restored
+      # cache plus its own additions. When a master run restores more than
+      # 50 000 digests (the gates verify about 2 600), it starts from
+      # nothing and runs every program once. A pull request keeps what it
+      # restored.
+      - name: bound the run-hash cache
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          count=$(find ~/.cache/beni-run-hashes -type f 2>/dev/null | wc -l)
+          echo "$count verified digests restored"
+          if [ "$count" -gt 50000 ]; then
+            echo "run-hash cache over 50 000 digests: removed"
+            rm -rf ~/.cache/beni-run-hashes
           fi
 
       - name: zig build gates
@@ -125,6 +180,18 @@ jobs:
             .zig-cache
             ~/.cache/zig
           key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
+      # The run-hash cache is saved from every run, also when a test fails:
+      # a failed program writes no digest, and the programs that passed
+      # are verified. A push to master saves in master's scope, which
+      # every later run restores; a pull request saves in its own. The key
+      # is new for each commit, so only a re-run finds it saved already.
+      - name: save the run-hash cache
+        if: ${{ !cancelled() && steps.run-hash-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/beni-run-hashes
+          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
 
   # The playground's shipped compiler against the native one, byte for
   # byte, on the corpus (docs/design/playground.md §6): `zig build
@@ -345,10 +412,322 @@ jobs:
             exit 1
           fi
 
+  # A job-local path filter: unrelated PRs keep the existing checks and
+  # avoid installing Chromium. Pushes/nightlies run the whole corpus and
+  # the site check. Two outputs, one per step of `browser`: `run` says
+  # whether the Chrome corpus runs, `pages` whether the site check
+  # (`zig build test-pages`, issue #244) runs. The job runs when one of
+  # them is true, and each step has its own `if:`, so a pull request that
+  # changes only the examples runs only the site check (the owner,
+  # 2026-11-05).
+  browser-plan:
+    name: choose Chrome corpus
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      corpus: ${{ steps.plan.outputs.corpus }}
+      pages: ${{ steps.plan.outputs.pages }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: choose the corpus and check changed paths
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          CORPUS: ${{ inputs.browser_corpus }}
+        run: |
+          corpus=full
+          if [ "$EVENT" = pull_request ] || [ "$CORPUS" = managed ]; then
+            corpus=managed
+          fi
+          echo "corpus=$corpus" >> "$GITHUB_OUTPUT"
+          run=true
+          pages=true
+          if [ "$corpus" = managed ] && [ ! -d tests/corpus/browser/managed ]; then
+            echo "::notice::Managed Chrome fixtures are not on this ref yet; skip the Chrome corpus until browser/managed lands."
+            run=false
+          fi
+          if [ "$EVENT" = pull_request ]; then
+            git rev-parse --verify --quiet HEAD^2 > /dev/null || { echo "HEAD is not a merge commit"; exit 1; }
+            # Task's explicit imports and their dependencies, including
+            # the prelude. Keep this list with Task's imports.
+            runtime=(platforms/browser src/js
+              core/{Task,Duration,Schedule,Js,List,Basics,Maybe,Result,String,Char,Int,Float,Debug}.{beni,js})
+            changed=$(git diff --name-only HEAD^1 HEAD -- "${runtime[@]}")
+            if [ -z "$changed" ]; then
+              echo "::notice::No browser runtime, Task dependency or JavaScript backend changed; skip the Chrome corpus."
+              run=false
+            fi
+            # The site check also reads the examples and their site build,
+            # the platform that Conduit is written for, and the check itself.
+            site=$(git diff --name-only HEAD^1 HEAD -- "${runtime[@]}" examples platforms/browser-tea tests/browser/pages.mjs)
+            if [ -z "$site" ]; then
+              echo "::notice::No example, browser runtime or site check changed; skip the site check."
+              pages=false
+            fi
+            echo "$site"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "pages=$pages" >> "$GITHUB_OUTPUT"
+
+  # A fixed name: on a skipped job, GitHub shows a name's `${{ }}` as it
+  # is written. The step `build and test Chrome fixtures` shows the corpus
+  # in its environment, `CORPUS`.
+  browser:
+    name: Chrome
+    needs: browser-plan
+    if: ${{ needs.browser-plan.outputs.run == 'true' || needs.browser-plan.outputs.pages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    # `deploy-pages` deploys only a site whose check passed.
+    outputs:
+      site: ${{ steps.site.outcome }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: short Chrome socket directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/b"
+          echo "TMPDIR=$RUNNER_TEMP/b" >> "$GITHUB_ENV"
+      # Ubuntu restricts user namespaces to AppArmor-listed binaries. The
+      # Nix store Chromium is not on that list; allow its user-namespace
+      # sandbox on this disposable runner, rather than disabling sandboxing.
+      - name: allow the Chromium user-namespace sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+      # Chromium enlarges the closure, so its cache has its own key and
+      # profile root; fall back to the store that the tests job saves.
+      - name: restore the Nix store
+        id: nix-cache
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-browser-${{ runner.os }}-${{ runner.arch }}-
+            nix-${{ runner.os }}-${{ runner.arch }}-
+      - name: browser dev shell
+        id: dev-shell
+        run: nix develop .#browser --profile "$RUNNER_TEMP/browser-shell" --command true
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop .#browser --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+      - name: restore the Zig caches
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: |
+            zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+            zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+      - name: bound the Zig caches
+        if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+        run: |
+          du -sh .zig-cache ~/.cache/zig 2>/dev/null || true
+          if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
+            echo "Zig caches over 3 GiB: removed"
+            rm -rf .zig-cache ~/.cache/zig
+          fi
+      - name: build and test Chrome fixtures
+        if: ${{ needs.browser-plan.outputs.run == 'true' }}
+        env:
+          CORPUS: ${{ needs.browser-plan.outputs.corpus }}
+        run: |
+          args=()
+          if [ "$CORPUS" = managed ]; then
+            args=(-Dcorpus=browser/managed)
+          fi
+          nix develop .#browser --command zig build test-browser "${args[@]}" --summary all
+      # The examples' site as GitHub Pages serves it (issue #244): built
+      # with the beni of the step above, served on 127.0.0.1 with Pages'
+      # 404 rule, and loaded in Chrome with no host but 127.0.0.1. 404.html
+      # must stand in for each routed program's shell at a deep path. It
+      # also runs when the corpus failed, so one run reports both.
+      - name: load the site's pages and deep paths
+        id: site
+        if: ${{ !cancelled() && steps.dev-shell.outcome == 'success' && needs.browser-plan.outputs.pages == 'true' }}
+        run: nix develop .#browser --command zig build test-pages --summary all
+      - name: save the Nix store
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          gc-max-store-size-linux: 4G
+      - name: save the Zig caches
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.zig-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
+  # The `workers/` corpus (docs/design/boundary.md §9.12 (k)): Workers
+  # built for the `cloudflare` platform, run under Miniflare's `workerd` by
+  # tests/workers/driver.mjs, on 127.0.0.1, with nothing deployed and no
+  # account used: `zig build test-workers`. Its shell, `.#workers`, adds
+  # nixpkgs' wrangler to the default shell (a closure of 3.05 GB, against
+  # 1.0 GB), so its Nix store has a key and a bound of its own and the
+  # `tests` job's store stays under 2 GiB. It runs on every pull request,
+  # because a change to `core/`, the emitter or the platform can break a
+  # Worker, and `check` needs it. It uses no run-hash cache: an empty
+  # BENI_RUN_HASH_DIR, which the shell keeps, so every program runs every
+  # time, 34 s for the corpus locally. It builds the beni the `tests` job
+  # builds, so it restores that job's Zig caches and saves none.
+  workers:
+    name: workers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+      # Wrangler enlarges the closure, so its cache has its own key and
+      # profile root; fall back to the store that the tests job saves,
+      # which holds Zig.
+      - name: restore the Nix store
+        id: nix-cache
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-workers-${{ runner.os }}-${{ runner.arch }}-
+            nix-${{ runner.os }}-${{ runner.arch }}-
+      - name: workers dev shell
+        id: dev-shell
+        run: nix develop .#workers --profile "$RUNNER_TEMP/workers-shell" --command true
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop .#workers --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+      # Empty: no run-hash cache (build.zig, `runHashDir`). If the shell
+      # stops keeping the value, this step fails.
+      - name: no run-hash cache
+        run: |
+          echo "BENI_RUN_HASH_DIR=" >> "$GITHUB_ENV"
+          BENI_RUN_HASH_DIR='' nix develop .#workers --command sh -c 'test -z "$BENI_RUN_HASH_DIR" && test -n "$BENI_MINIFLARE"'
+      # The tests job's Zig caches, from master's newest build. This job
+      # saves none, so it cannot grow them.
+      - name: restore the Zig caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+      - name: zig build test-workers
+        run: nix develop .#workers --command zig build test-workers --summary all
+      # Only a push to master saves, as the tests job does: every pull
+      # request starts from master's store, and its own run writes none.
+      - name: save the Nix store
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          gc-max-store-size-linux: 4G
+
+  # The examples' site (pages.yml), on every run. ci.yml calls it, and it
+  # is not a workflow of its own, so that the deploy below can need the
+  # `browser` job: a job cannot need a job of another workflow.
+  pages:
+    name: pages
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+
+  # The Pages deploy, on a push to master only: the site that `pages`
+  # built, after the whole `browser` job passed. Thus a site whose 404
+  # stand-in fails in Chrome is never deployed (the owner, 2026-11-05),
+  # and a failed Chrome corpus also stops the deploy. Each push to master
+  # has a run of its own, and the Chrome jobs of two quick pushes can end
+  # in either order. Thus a run whose commit is no longer master's head
+  # deploys nothing, and the run of the head deploys: an older site never
+  # replaces a newer one. When the run of the head fails, the site stays
+  # on an older commit until a newer push passes, or a re-run of the
+  # head's failed jobs. This job has no environment, so a run that does
+  # not deploy writes no deployment.
+  pages-head:
+    name: compare with master's head
+    needs: [pages, browser]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.browser.outputs.site == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      current: ${{ steps.head.outputs.current }}
+    steps:
+      - name: compare this commit with master's head
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          head=$(gh api "repos/$REPO/git/ref/heads/master" --jq .object.sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::master is at $head, not at $GITHUB_SHA: the run of $head deploys."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Deploys run one at a time, and a newer one replaces a waiting one.
+  deploy-pages:
+    name: deploy to GitHub Pages
+    needs: pages-head
+    if: ${{ needs.pages-head.outputs.current == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    timeout-minutes: 10
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes
-  # only when every job in `needs:` succeeded. No other job in any
-  # workflow may be named `check`.
+  # only when every job in `needs:` succeeded, except that Chrome may be
+  # skipped by its path or missing-corpus filter. No other job in any
+  # workflow may be named `check`. `pages-head` and `deploy-pages` are not
+  # in `needs:`: they run only on a push to master, after the merge.
   #
   # `if: always()`: a skipped job counts as a passed required check, and
   # without it a failed or cancelled `tests` skips the guard. When a newer
@@ -364,7 +743,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests, playground, lean]
+    needs: [tests, playground, lean, browser-plan, browser, workers, pages]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -375,4 +754,4 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS"
-          echo "$RESULTS" | jq --exit-status 'all(.[].result; . == "success")' > /dev/null
+          echo "$RESULTS" | jq --exit-status 'all(to_entries[]; .value.result == "success" or (.key == "browser" and .value.result == "skipped"))' > /dev/null

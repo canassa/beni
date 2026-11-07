@@ -1,0 +1,105 @@
+pub type alias Pt =
+    xs : List Int
+    a : List Int
+
+
+pub type N
+    = N (List Int) (List Int)
+
+
+pub type Box
+    = Box (List Int)
+
+
+pub ctor : List Int, List Int → Pt
+ctor = Pt
+
+
+pub nominal : List Int, List Int → N
+nominal = N
+
+
+pub sec : N → List Int
+sec n =
+    case n of
+        N _ b →
+            b
+
+
+pub lam : List Int, List Int → Pt
+lam = λu v → { xs = u, a = v }
+
+
+pick : List Int, List Int → Pt
+pick u v = { xs = u, a = v }
+
+
+flag : Bool
+flag = True
+
+
+pub choice : List Int, List Int → Pt
+choice = if flag then pick else Pt
+
+
+build : ⊤ → (List Int, List Int → Pt)
+build _ = Pt
+
+
+pub called : List Int, List Int → Pt
+called = build ⊤
+
+
+value : List Int, List Int → Pt
+value = Pt
+
+
+pub named : List Int, List Int → Pt
+named = value
+
+
+pub meth : Box, List Int → Pt
+meth = λb v → { xs = [], a = v }
+
+
+pub same : List Int → List Int
+same = λu → u
+
+
+pub f : Box → (List Int → Pt)
+f b = λv → { xs = [], a = v }
+
+
+pub type T
+    = T (List Int)
+
+
+pub eq : T, T → Bool
+eq = λa b → size a == size b
+
+
+size : T → Int
+size t =
+    case t of
+        T l →
+            List.length l
+
+
+pub wrap : List Int → T
+wrap l = T l
+
+
+grow : List Int → List Int
+grow v = List.push v 1
+
+
+pub writer : List Int → List Int
+writer = grow
+
+
+pub grows : Box, List Int → List Int
+grows = growing
+
+
+growing : Box, List Int → List Int
+growing b v = List.push v 1

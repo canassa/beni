@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "list wire passed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"list wire passed"</output>
+  </main>
+</body>

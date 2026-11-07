@@ -17,8 +17,8 @@
 --! `read`, `write`, `close`, `buffered` and `protocol` are the same on the
 --! `browser` platform's `WebSocket`, so a module that uses only them checks
 --! on both. `write` never waits; `buffered` and `drain` are how a sender
---! sees a client that reads slowly. The sibling `WebSocket.js` reads and
---! writes the frames of RFC 6455.
+--! sees a client that reads slowly. The module reads and writes the frames
+--! of RFC 6455 itself, over `Js` (`boundary.md` §9.11, *The sibling, moved*).
 
 import Js
 import Task exposing (Resume)
@@ -135,25 +135,940 @@ upgraded incoming chosenProtocol limit =
         Just ( socket, λ⊤ → finish socket )
 
 
-foreign impure fromUpgrade : Js.Value, String, Int → Js.Value
+-- The former sibling `WebSocket.js`, in beni over `Js` (`boundary.md`
+-- §9.11, *The sibling, moved*). A connection's state is a host object
+-- `{ raw, state, queue, sizes, queued, readers, end, drainers, chunks,
+-- bytes, frame, parts, partBytes, max, protocol, timer, paused, done,
+-- writes, flushed, pendingPong, path }`: the `net.Socket`; `open`,
+-- `closing` (this side sent a close frame) or `closed`; the text messages
+-- no one has read and their bytes; the fibers waiting in `read`; why the
+-- connection ended, once it has; the fibers waiting in `drain`; the bytes
+-- received and not yet parsed; the frame whose header is read; the
+-- fragments of a message and their bytes; the largest message accepted;
+-- the subprotocol; the timer that destroys a connection that does not
+-- close; whether reading is paused; whether the session has returned; the
+-- writes made and flushed; the ping kept while the socket is full; and
+-- the request's path, for the lines on standard error.
+--
+-- Every failure Node documents for a socket is caught by its code, and
+-- nothing else is caught (`CLAUDE.md` rule 9): anything else is thrown
+-- again, and Node reports it and exits 1.
+-- The host modules, opened once when the module loads, as the sibling's
+-- imports were: a frame's loops read them as bindings, not by a call.
+builtin : String → Js.Value
+builtin name = Js.call (Js.global "process") "getBuiltinModule" [ Js.from name ]
 
 
-foreign impure next : Socket, Resume (Result Close String) → (⊤ → ⊤)
+buffer : Js.Value
+buffer = Js.get (builtin "node:buffer") "Buffer"
 
 
-foreign impure send : Socket, String → Bool
+isUtf8 : Js.Value → Bool
+isUtf8 bytes = Js.to (Js.call (builtin "node:buffer") "isUtf8" [ bytes ])
 
 
-foreign impure begin : Socket, Int, String → ⊤
+crypto : Js.Value
+crypto = builtin "node:crypto"
 
 
-foreign impure finish : Socket → ⊤
+-- `ENETRESET`'s number, negated as libuv reports it (macOS and the BSDs;
+-- `NaN` where the platform has none, which matches nothing).
+enetreset : Int
+enetreset = 0 - Js.to (Js.get (Js.get (Js.get (builtin "node:os") "constants") "errno") "ENETRESET")
 
 
-foreign impure unsent : Socket → Int
+-- RFC 6455 §1.3: the GUID the accept key is hashed with.
+guid : String
+guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
-foreign impure chosen : Socket → String
+-- §9.11 (h): reading stops while the unread messages hold more than this.
+highWater : Int
+highWater = 64 * 1024
 
 
-foreign impure awaitDrain : Socket, Resume ⊤ → (⊤ → ⊤)
+-- §9.11 (f): how long this side waits for the peer's close frame.
+closingTime : Int
+closingTime = 5000
+
+
+-- The three states.
+open : Int
+open = 0
+
+
+closing : Int
+closing = 1
+
+
+closed : Int
+closed = 2
+
+
+-- The codes of `error` on a socket that mean one client's connection is
+-- gone (§9.11, amendment item 15): a reset, a write to a closed peer, a
+-- timeout, the errors of ICMP messages that Linux keeps until the
+-- retransmissions give up (`icmp_err_convert`, `icmpv6_err_convert`; errno
+-- 95 is libuv's `ENOTSUP`), an aborted connection, and an interface that
+-- went down; `isGone` adds a network reset. The same list as
+-- `Http/Server.beni`'s, which imports this module and not the reverse.
+gone : Js.Value
+gone =
+    Js.object
+        [ ( "ECONNRESET", Js.from True )
+        , ( "EPIPE", Js.from True )
+        , ( "ETIMEDOUT", Js.from True )
+        , ( "ENETUNREACH", Js.from True )
+        , ( "EHOSTUNREACH", Js.from True )
+        , ( "EHOSTDOWN", Js.from True )
+        , ( "ENONET", Js.from True )
+        , ( "ENOPROTOOPT", Js.from True )
+        , ( "ECONNREFUSED", Js.from True )
+        , ( "ENOTSUP", Js.from True )
+        , ( "EPROTO", Js.from True )
+        , ( "EACCES", Js.from True )
+        , ( "ECONNABORTED", Js.from True )
+        , ( "ENETDOWN", Js.from True )
+        ]
+
+
+-- One client's connection is gone: an `error` whose `code` is in `gone`,
+-- or whose number is `ENETRESET` (macOS and the BSDs), which libuv does
+-- not name, so its `code` is not `ENETRESET`.
+isGone : Js.Value → Bool
+isGone error =
+    Js.instanceOf error (Js.global "Error")
+        && (Js.to (Js.call (Js.global "Object") "hasOwn" [ gone, Js.get error "code" ])
+               || Js.same (Js.get error "errno") (Js.from enetreset)
+           )
+
+
+-- A close code RFC 6455 §7.4 and the IANA registry allow on the wire.
+wireCode : Int → Bool
+wireCode code =
+    (code ≥ 1000 && code ≤ 1014 && code ≠ 1004 && code ≠ 1005 && code ≠ 1006)
+        || (code ≥ 3000 && code ≤ 4999)
+
+
+length : Js.Value → Int
+length array = Js.to (Js.get array "length")
+
+
+push : Js.Value, Js.Value → ⊤
+push array value =
+    _ = Js.call array "push" [ value ]
+    ⊤
+
+
+shift : Js.Value → Js.Value
+shift array = Js.call array "shift" []
+
+
+-- Take `value` out of `array`, when it is there.
+remove : Js.Value, Js.Value → ⊤
+remove array value =
+    i : Int
+    i = Js.to (Js.call array "indexOf" [ value ])
+    if i ≥ 0 then
+        _ = Js.call array "splice" [ Js.from i, Js.from 1 ]
+        ⊤
+
+
+stderrLine : String → ⊤
+stderrLine line =
+    _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from (line ++ "\n") ]
+    ⊤
+
+
+emptyBuffer : ⊤ → Js.Value
+emptyBuffer ⊤ = Js.call buffer "alloc" [ Js.from 0 ]
+
+
+isOpen : Js.Value → Bool
+isOpen ws = Js.same (Js.get ws "state") (Js.from open)
+
+
+hasEnded : Js.Value → Bool
+hasEnded ws = not (Js.isNull (Js.get ws "end"))
+
+
+-- The `Close` a reader is given, from the end kept on the connection.
+closeOf : Js.Value → Close
+closeOf end = { code = Js.to (Js.get end "code"), reason = Js.to (Js.get end "reason") }
+
+
+-- A waiting reader is a host function that takes the text, or the end
+-- object, and resumes the fiber with the `Result` built here: the typed
+-- `Resume` never crosses, so `Result` is not pinned (§4).
+reader : Resume (Result Close String) → Js.Value
+reader resume = Js.from λanswer →
+    if Js.typeIs answer "string" then
+        Task.resume resume (Ok (Js.to answer))
+    else
+        Task.resume resume (Err (closeOf answer))
+
+
+resumeReader : Js.Value, Js.Value → ⊤
+resumeReader waiting answer =
+    _ = Js.apply waiting [ answer ]
+    ⊤
+
+
+resumeDrainer : Js.Value → ⊤
+resumeDrainer drainer =
+    resume : Resume ⊤
+    resume = Js.to drainer
+    Task.resume resume ⊤
+
+
+-- A frame's header is 2, 4 or 10 bytes.
+headSize : Int → Int
+headSize n =
+    if n < 126 then
+        2
+    else if n < 65536 then
+        4
+    else
+        10
+
+
+-- A frame's buffer with its header written: `first` is the `fin` bit and
+-- the opcode, `n` the payload's length; the payload goes after `headSize n`.
+header : Int, Int → Js.Value
+header first n =
+    out = Js.call buffer "allocUnsafe" [ Js.from (headSize n + n) ]
+    Js.setAt out 0 (Js.from first)
+    if n < 126 then
+        Js.setAt out 1 (Js.from n)
+    else if n < 65536 then
+        Js.setAt out 1 (Js.from 126)
+        _ = Js.call out "writeUInt16BE" [ Js.from n, Js.from 2 ]
+        ⊤
+    else
+        Js.setAt out 1 (Js.from 127)
+        _ = Js.call out "writeUInt32BE" [ Js.from (floor (toFloat n / 4294967296)), Js.from 2 ]
+        _ = Js.call out "writeUInt32BE" [ Js.from (Js.shiftRightZero n 0), Js.from 6 ]
+        ⊤
+    out
+
+
+-- One frame, unmasked, as a server sends it: `fin`, the opcode, and the
+-- payload.
+frame : Int, Js.Value → Js.Value
+frame opcode payload =
+    n = length payload
+    out = header (0x80 + opcode) n
+    _ = Js.call payload "copy" [ out, Js.from (headSize n) ]
+    out
+
+
+-- A text frame, encoded straight into the frame's buffer: one allocation
+-- and one write per message.
+textFrame : String → Js.Value
+textFrame text =
+    n : Int
+    n = Js.to (Js.call buffer "byteLength" [ Js.from text, Js.from "utf8" ])
+    out = header 0x81 n
+    _ = Js.call out "write" [ Js.from text, Js.from (headSize n), Js.from "utf8" ]
+    out
+
+
+-- The last text `send` framed, and its frame: a state sent to every player
+-- is encoded once (§9.11, amendment item 27). A frame is never changed
+-- once made, so one buffer can be written to many sockets.
+lastText : Js.Ref Js.Value
+lastText = Js.ref Js.null
+
+
+lastFrame : Js.Ref Js.Value
+lastFrame = Js.ref Js.null
+
+
+-- Write `bytes` and count it, so `drain` can wait for the callback of the
+-- last write (amendment item 14). A callback's error — `ECANCELED` for a
+-- write pending at `destroy()`, `ERR_STREAM_DESTROYED` — ends nothing
+-- here: the socket's `close` ends the connection, and any other failure
+-- is the socket's `error`, handled where it is emitted.
+put : Js.Value, Js.Value → ⊤
+put ws bytes =
+    n = Js.to (Js.get ws "writes") + 1
+    Js.set ws "writes" (Js.from n)
+    _ =
+        Js.call (Js.get ws "raw") "write"
+            [ bytes
+            , Js.from λ_ →
+                Js.set ws "flushed" (Js.from n)
+                drained ws
+            ]
+    ⊤
+
+
+closeFrame : Int, String → Js.Value
+closeFrame code reason =
+    if code == 1005 then
+        frame 0x8 (emptyBuffer ⊤)
+    else
+        text = Js.call buffer "from" [ Js.from reason, Js.from "utf8" ]
+        payload = Js.call buffer "allocUnsafe" [ Js.from (2 + length text) ]
+        _ = Js.call payload "writeUInt16BE" [ Js.from code, Js.from 0 ]
+        _ = Js.call text "copy" [ payload, Js.from 2 ]
+        frame 0x8 payload
+
+
+-- The first `n` bytes received, taken out of the list of chunks.
+take : Js.Value, Int → Js.Value
+take ws n =
+    Js.set ws "bytes" (Js.from (Js.to (Js.get ws "bytes") - n))
+    chunks = Js.get ws "chunks"
+    first = Js.at chunks 0
+    firstLength = length first
+    if firstLength == n then
+        shift chunks
+    else if firstLength > n then
+        Js.setAt chunks 0 (Js.call first "subarray" [ Js.from n ])
+        Js.call first "subarray" [ Js.from 0, Js.from n ]
+    else
+        out = Js.call buffer "allocUnsafe" [ Js.from n ]
+        gather chunks out 0 n
+        out
+
+
+-- Copy chunks into `out` from `at` until `n` bytes are copied.
+gather : Js.Value, Js.Value, Int, Int → ⊤
+gather chunks out at n =
+    if at < n then
+        chunk = Js.at chunks 0
+        chunkLength = length chunk
+        k = min chunkLength (n - at)
+        _ = Js.call chunk "copy" [ out, Js.from at, Js.from 0, Js.from k ]
+        if k == chunkLength then
+            _ = shift chunks
+            ⊤
+        else
+            Js.setAt chunks 0 (Js.call chunk "subarray" [ Js.from k ])
+        gather chunks out (at + k) n
+
+
+-- The byte at `i` of what is received, not taken.
+byteAt : Js.Value, Int → Int
+byteAt ws i = byteIn (Js.get ws "chunks") 0 i
+
+
+byteIn : Js.Value, Int, Int → Int
+byteIn chunks j i =
+    if j ≥ length chunks then
+        0 - 1
+    else
+        chunk = Js.at chunks j
+        chunkLength = length chunk
+        if i < chunkLength then
+            Js.to (Js.at chunk i)
+        else
+            byteIn chunks (j + 1) (i - chunkLength)
+
+
+-- Answer the oldest reader with `text`, or keep it.
+deliver : Js.Value, String, Int → ⊤
+deliver ws text size =
+    readers = Js.get ws "readers"
+    if length readers ≠ 0 then
+        resumeReader (shift readers) (Js.from text)
+    else
+        push (Js.get ws "queue") (Js.from text)
+        push (Js.get ws "sizes") (Js.from size)
+        queued = Js.to (Js.get ws "queued") + size
+        Js.set ws "queued" (Js.from queued)
+        if not (Js.to (Js.get ws "paused")) && queued > highWater then
+            Js.set ws "paused" (Js.from True)
+            _ = Js.call (Js.get ws "raw") "pause" []
+            ⊤
+
+
+-- The connection ended: why is kept, and every fiber that waits in `read`
+-- or `drain` is answered.
+ended : Js.Value, Int, String → ⊤
+ended ws code reason =
+    if not (hasEnded ws) then
+        end = Js.object [ ( "code", Js.from code ), ( "reason", Js.from reason ) ]
+        Js.set ws "end" end
+        Js.set ws "state" (Js.from closed)
+        readers = Js.get ws "readers"
+        Js.set ws "readers" (Js.array [])
+        Js.each readers λwaiting → resumeReader waiting end
+        drained ws
+
+
+-- Answer each fiber in `drain` whose last write is flushed, or every one
+-- once the connection has ended.
+drained : Js.Value → ⊤
+drained ws =
+    drainers = Js.get ws "drainers"
+    if length drainers ≠ 0 then
+        waiting = Js.array []
+        over = hasEnded ws
+        flushed : Int
+        flushed = Js.to (Js.get ws "flushed")
+        Js.each drainers λdrainer →
+            if over || flushed ≥ Js.to (Js.get drainer "target") then
+                resumeDrainer (Js.get drainer "resume")
+            else
+                push waiting drainer
+        Js.set ws "drainers" waiting
+
+
+-- The TCP connection is destroyed when it has not closed within
+-- `closingTime`: a peer that never answers a close frame, or never reads
+-- the last bytes, cannot keep it, or the process, alive. The socket's
+-- `close` clears the timer.
+deadline : Js.Value → ⊤
+deadline ws =
+    if Js.isNull (Js.get ws "timer") then
+        timer =
+            Js.apply (Js.global "setTimeout")
+                [ Js.from λ_ →
+                    Js.set ws "timer" Js.null
+                    _ = Js.call (Js.get ws "raw") "destroy" []
+                    ⊤
+                , Js.from closingTime
+                ]
+        Js.set ws "timer" timer
+        _ = Js.call timer "unref" []
+        ⊤
+
+
+-- Once a close frame is sent or received, reading goes on, so the peer's
+-- close frame, FIN or RST is seen; data frames are dropped from then on
+-- (amendment item 18).
+reading : Js.Value → ⊤
+reading ws =
+    if Js.to (Js.get ws "paused") then
+        Js.set ws "paused" (Js.from False)
+        _ = Js.call (Js.get ws "raw") "resume" []
+        ⊤
+
+
+-- This side starts the closing handshake: the close frame, then a wait
+-- for the peer's.
+sendClose : Js.Value, Int, String → ⊤
+sendClose ws code reason =
+    if isOpen ws then
+        Js.set ws "state" (Js.from closing)
+        put ws (closeFrame code reason)
+        reading ws
+        deadline ws
+
+
+-- Fail the connection (RFC 6455 §7.1.7) for a fault of the peer: the close
+-- frame with `code`, then the end of the TCP connection, with nothing more
+-- read. `read` reports `code` (§9.11 (a), rule 3).
+fail : Js.Value, Int, String → ⊤
+fail ws code why =
+    path : String
+    path = Js.to (Js.get ws "path")
+    stderrLine
+        ("beni: WebSocket: the connection to "
+            ++ path
+            ++ " failed with "
+            ++ String.fromInt code
+            ++ ": "
+            ++ why
+        )
+    if isOpen ws then
+        put ws (closeFrame code "")
+    Js.set ws "state" (Js.from closed)
+    Js.set ws "chunks" (Js.array [])
+    Js.set ws "bytes" (Js.from 0)
+    _ = Js.call (Js.get ws "raw") "destroySoon" []
+    deadline ws
+    ended ws code ""
+
+
+-- `fail`, for the header check: the frame is not whole.
+refuse : Js.Value, Int, String → Bool
+refuse ws code why =
+    fail ws code why
+    False
+
+
+-- Answer a ping. While more than `highWater` bytes wait to be sent, only
+-- the latest ping is answered, when the socket drains (RFC 6455 §5.5.3;
+-- amendment item 25): a client that pings and never reads cannot grow
+-- the server's buffer.
+pong : Js.Value, Js.Value → ⊤
+pong ws payload =
+    if isOpen ws then
+        if Js.to (Js.get (Js.get ws "raw") "writableLength") > highWater then
+            Js.set ws "pendingPong" (Js.call buffer "from" [ payload ])
+        else
+            put ws (frame 0xa payload)
+
+
+-- Read every whole frame received. A frame's header is checked as soon as
+-- it is whole, so a message over the limit is refused before its bytes
+-- are kept. One self-recursive tail function, so the tail-call loop
+-- writes it as the sibling's `while`: a chunk of ten thousand tiny frames
+-- runs in constant stack (#1801).
+parse : Js.Value → ⊤
+parse ws =
+    if not (hasEnded ws) then
+        if headerReady ws then
+            if bodyWhole ws then
+                takeFrame ws
+                parse ws
+
+
+-- The next frame's header, read when it is not yet: `False` while bytes
+-- are missing or once the connection failed.
+headerReady : Js.Value → Bool
+headerReady ws =
+    if Js.isNull (Js.get ws "frame") then
+        readHeader ws
+    else
+        True
+
+
+bodyWhole : Js.Value → Bool
+bodyWhole ws =
+    frameLength : Int
+    frameLength = Js.to (Js.get (Js.get ws "frame") "length")
+    Js.to (Js.get ws "bytes") ≥ frameLength
+
+
+-- The header of the next frame, when it is whole: `True` with `frame` set,
+-- `False` while bytes are missing or once the connection failed.
+readHeader : Js.Value → Bool
+readHeader ws =
+    bytes : Int
+    bytes = Js.to (Js.get ws "bytes")
+    if bytes < 2 then
+        False
+    else
+        b1 = byteAt ws 1
+        short = Js.bitAnd b1 0x7f
+        size =
+            2
+                + (if short == 126 then
+                      2
+                   else if short == 127 then
+                      8
+                   else
+                      0
+                  )
+                + 4
+        if Js.bitAnd b1 0x80 == 0 then
+            refuse ws 1002 "a frame from the client is not masked"
+        else if bytes < size then
+            False
+        else
+            head = take ws size
+            b0 : Int
+            b0 = Js.to (Js.at head 0)
+            fin = Js.bitAnd b0 0x80 ≠ 0
+            opcode = Js.bitAnd b0 0x0f
+            if Js.bitAnd b0 0x70 ≠ 0 then
+                refuse ws 1002 "a frame sets a reserved bit"
+            else if short == 127 && Js.bitAnd (readU32 head 2) 0x80000000 ≠ 0 then
+                refuse ws 1002 "a frame's length sets its highest bit"
+            else
+                -- A length past 2³² is over any `maxMessage` a session uses; the
+                -- sum below is exact up to 2⁵³ (amendment item 24).
+                frameLength =
+                    if short == 126 then
+                        readU16 head 2
+                    else if short == 127 then
+                        readU32 head 2 * 4294967296 + readU32 head 6
+                    else
+                        short
+                case headerFault ws fin opcode frameLength of
+                    Just ( code, why ) →
+                        refuse ws code why
+
+                    Nothing →
+                        Js.set ws "frame"
+                            (Js.object
+                                [ ( "fin", Js.from fin )
+                                , ( "opcode", Js.from opcode )
+                                , ( "length", Js.from frameLength )
+                                , ( "mask", Js.call head "subarray" [ Js.from (size - 4) ] )
+                                ]
+                            )
+                        True
+
+
+readU16 : Js.Value, Int → Int
+readU16 bytes at = Js.to (Js.call bytes "readUInt16BE" [ Js.from at ])
+
+
+readU32 : Js.Value, Int → Int
+readU32 bytes at = Js.to (Js.call bytes "readUInt32BE" [ Js.from at ])
+
+
+-- What is wrong with a frame's header, by RFC 6455 §5: the close code and
+-- the line for standard error.
+headerFault : Js.Value, Bool, Int, Int → Maybe (Int × String)
+headerFault ws fin opcode frameLength =
+    parts = Js.get ws "parts"
+    if opcode ≥ 0x8 then
+        if opcode > 0xa then
+            Just ( 1002, "a frame has the reserved opcode " ++ String.fromInt opcode )
+        else if not fin then
+            Just ( 1002, "a control frame is fragmented" )
+        else if frameLength > 125 then
+            Just ( 1002, "a control frame is longer than 125 bytes" )
+        else
+            Nothing
+    else if opcode == 0x0 then
+        if Js.isNull parts then
+            Just ( 1002, "a continuation frame has no message to continue" )
+        else
+            overLimit ws frameLength
+    else if opcode == 0x1 || opcode == 0x2 then
+        if not (Js.isNull parts) then
+            Just ( 1002, "a new message starts before the last one is whole" )
+        else if opcode == 0x2 then
+            Just ( 1003, "a binary message, which this version cannot read" )
+        else
+            overLimit ws frameLength
+    else
+        Just ( 1002, "a frame has the reserved opcode " ++ String.fromInt opcode )
+
+
+overLimit : Js.Value, Int → Maybe (Int × String)
+overLimit ws frameLength =
+    have : Int
+    have =
+        if Js.isNull (Js.get ws "parts") then
+            0
+        else
+            Js.to (Js.get ws "partBytes")
+    limit : Int
+    limit = Js.to (Js.get ws "max")
+    if have + frameLength > limit then
+        Just ( 1009, "a message is longer than " ++ String.fromInt limit ++ " bytes" )
+    else
+        Nothing
+
+
+-- The frame whose header is read and whose payload is whole: taken,
+-- unmasked and handled by its opcode.
+takeFrame : Js.Value → ⊤
+takeFrame ws =
+    current = Js.get ws "frame"
+    frameLength : Int
+    frameLength = Js.to (Js.get current "length")
+    Js.set ws "frame" Js.null
+    payload =
+        if frameLength == 0 then
+            emptyBuffer ⊤
+        else
+            take ws frameLength
+    unmask payload (Js.get current "mask") 0 (length payload)
+    opcode : Int
+    opcode = Js.to (Js.get current "opcode")
+    if opcode == 0x8 then
+        peerClosed ws payload
+    else if opcode == 0x9 then
+        pong ws payload
+    else if opcode == 0xa then
+        -- A pong answers nothing this side asked: it is ignored.
+        ⊤
+    else
+        dataFrame ws (Js.to (Js.get current "fin")) payload
+
+
+-- Unmask `payload` in place with the 4-byte `mask`, from `i` to `n`.
+unmask : Js.Value, Js.Value, Int, Int → ⊤
+unmask payload mask i n =
+    if i < n then
+        Js.setAt
+            payload
+            i
+            (Js.from (Js.bitXor (Js.to (Js.at payload i)) (Js.to (Js.at mask (Js.bitAnd i 3)))))
+        unmask payload mask (i + 1) n
+
+
+-- A text frame or a continuation: kept as a fragment, and delivered whole
+-- at `fin`.
+dataFrame : Js.Value, Bool, Js.Value → ⊤
+dataFrame ws fin payload =
+    if Js.isNull (Js.get ws "parts") then
+        Js.set ws "parts" (Js.array [])
+        Js.set ws "partBytes" (Js.from 0)
+    parts = Js.get ws "parts"
+    push parts payload
+    partBytes = Js.to (Js.get ws "partBytes") + length payload
+    Js.set ws "partBytes" (Js.from partBytes)
+    if fin then
+        whole =
+            if length parts == 1 then
+                Js.at parts 0
+            else
+                Js.call buffer "concat" [ parts, Js.from partBytes ]
+        Js.set ws "parts" Js.null
+        Js.set ws "partBytes" (Js.from 0)
+        if not (isUtf8 whole) then
+            fail ws 1007 "a text message is not valid UTF-8"
+        else if isOpen ws && not (Js.to (Js.get ws "done")) then
+            -- After the session returned, or while this side closes, no one
+            -- reads: the message is dropped.
+            deliver ws (Js.to (Js.call whole "toString" [ Js.from "utf8" ])) (length whole)
+
+
+-- The peer's close frame: its code and reason are the end. When the peer
+-- closed first, the same code is sent back; then this side ends the TCP
+-- connection, as a server does (RFC 6455 §7.1.1).
+peerClosed : Js.Value, Js.Value → ⊤
+peerClosed ws payload =
+    n = length payload
+    if n == 1 then
+        fail ws 1002 "a close frame holds one byte"
+    else
+        code =
+            if n ≥ 2 then
+                readU16 payload 0
+            else
+                1005
+        text = Js.call payload "subarray" [ Js.from 2 ]
+        if n ≥ 2 && not (wireCode code) then
+            fail ws 1002 ("a close frame holds the code " ++ String.fromInt code)
+        else if n ≥ 2 && not (isUtf8 text) then
+            fail ws 1007 "a close frame's reason is not valid UTF-8"
+        else
+            reason : String
+            reason =
+                if n ≥ 2 then
+                    Js.to (Js.call text "toString" [ Js.from "utf8" ])
+                else
+                    ""
+            if isOpen ws then
+                put ws (closeFrame code "")
+            Js.set ws "state" (Js.from closed)
+            reading ws
+            _ = Js.call (Js.get ws "raw") "destroySoon" []
+            deadline ws
+            ended ws code reason
+
+
+-- --- The former foreign values ----------------------------------------------
+
+-- The socket of an accepted upgrade, or `null` when the client went away
+-- while the program decided: then no session starts, and the socket
+-- keeps `Server.beni`'s listener, which names the codes of a client that
+-- is gone, until it closes.
+fromUpgrade : Js.Value, String, Int → Js.Value
+fromUpgrade incoming chosenProtocol limit =
+    req = Js.get incoming "req"
+    raw = Js.get incoming "socket"
+    head = Js.get incoming "head"
+    handle = Js.get incoming "handle"
+    if Js.to (Js.get raw "destroyed") || not (Js.to (Js.get raw "writable")) then
+        Js.null
+    else
+        _ = Js.call raw "off" [ Js.from "error", Js.get incoming "waiting" ]
+        key : String
+        key = Js.to (Js.get (Js.get req "headers") "sec-websocket-key")
+        accept : String
+        accept =
+            Js.to
+                (Js.call
+                    (Js.call (Js.call crypto "createHash" [ Js.from "sha1" ]) "update"
+                        [ Js.from (key ++ guid) ]
+                    )
+                    "digest"
+                    [ Js.from "base64" ]
+                )
+        chosenLine =
+            if chosenProtocol ≠ "" then
+                "\r\nsec-websocket-protocol: " ++ chosenProtocol
+            else
+                ""
+        _ =
+            Js.call raw "write"
+                [ Js.from
+                    ("HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\nsec-websocket-accept: "
+                        ++ accept
+                        ++ chosenLine
+                        ++ "\r\n\r\n"
+                    )
+                ]
+        _ = Js.call raw "setNoDelay" [ Js.from True ]
+        -- A client that vanishes is found in about a minute (amendment item 20).
+        _ = Js.call raw "setKeepAlive" [ Js.from True, Js.from 30000, Js.from 10000, Js.from 3 ]
+        ws =
+            Js.object
+                [ ( "raw", raw )
+                , ( "state", Js.from open )
+                , ( "queue", Js.array [] )
+                , ( "sizes", Js.array [] )
+                , ( "queued", Js.from 0 )
+                , ( "readers", Js.array [] )
+                , ( "end", Js.null )
+                , ( "drainers", Js.array [] )
+                , ( "chunks", Js.array [] )
+                , ( "bytes", Js.from 0 )
+                , ( "frame", Js.null )
+                , ( "parts", Js.null )
+                , ( "partBytes", Js.from 0 )
+                , ( "max", Js.from limit )
+                , ( "protocol", Js.from chosenProtocol )
+                , ( "timer", Js.null )
+                , ( "paused", Js.from False )
+                , ( "done", Js.from False )
+                , ( "writes", Js.from 0 )
+                , ( "flushed", Js.from 0 )
+                , ( "pendingPong", Js.null )
+                , ( "path", Js.get req "url" )
+                ]
+        _ =
+            Js.call raw "on"
+                [ Js.from "data"
+                , Js.from λchunk →
+                    if not (hasEnded ws) then
+                        push (Js.get ws "chunks") chunk
+                        Js.set ws "bytes" (Js.from (Js.to (Js.get ws "bytes") + length chunk))
+                        parse ws
+                ]
+        _ =
+            Js.call raw "on"
+                [ Js.from "drain"
+                , Js.from λ_ →
+                    pending = Js.get ws "pendingPong"
+                    if not (Js.isNull pending) && isOpen ws then
+                        Js.set ws "pendingPong" Js.null
+                        put ws (frame 0xa pending)
+                ]
+        _ =
+            Js.call raw "on"
+                [ Js.from "error"
+                , Js.from λerror →
+                    -- The connection is gone: `close` follows, and ends it with 1006.
+                    if isGone error then
+                        ⊤
+                    else
+                        Js.throw error
+                ]
+        -- Node's HTTP server keeps a socket half open when its peer ends it, so a
+        -- peer that ends the TCP connection without a close frame would leave
+        -- this one open: it is ended here too, with 1006 unless a close frame
+        -- arrived first, and `destroySoon` flushes a close frame still being
+        -- written (amendment item 17).
+        _ =
+            Js.call raw "on"
+                [ Js.from "end"
+                , Js.from λ_ →
+                    ended ws 1006 ""
+                    _ = Js.call raw "destroySoon" []
+                    deadline ws
+                ]
+        _ =
+            Js.call raw "on"
+                [ Js.from "close"
+                , Js.from λ_ →
+                    timer = Js.get ws "timer"
+                    if not (Js.isNull timer) then
+                        _ = Js.apply (Js.global "clearTimeout") [ timer ]
+                        Js.set ws "timer" Js.null
+                    ended ws 1006 ""
+                ]
+        -- `Server.close` closes every connection with 1001, this one too, even
+        -- when it opened after the close.
+        Js.set incoming "goAway" (Js.from λ⊤ → sendClose ws 1001 "")
+        if Js.to (Js.get handle "closing") then
+            sendClose ws 1001 ""
+        if length head ≠ 0 then
+            push (Js.get ws "chunks") head
+            Js.set ws "bytes" (Js.from (Js.to (Js.get ws "bytes") + length head))
+            parse ws
+        ws
+
+
+next : Socket, Resume (Result Close String) → (⊤ → ⊤)
+next socket resume =
+    ws = Js.from socket
+    queue = Js.get ws "queue"
+    if length queue ≠ 0 then
+        text : String
+        text = Js.to (shift queue)
+        queued = Js.to (Js.get ws "queued") - Js.to (shift (Js.get ws "sizes"))
+        Js.set ws "queued" (Js.from queued)
+        if Js.to (Js.get ws "paused") && queued ≤ highWater && not (hasEnded ws) then
+            Js.set ws "paused" (Js.from False)
+            _ = Js.call (Js.get ws "raw") "resume" []
+            ⊤
+        Task.resume resume (Ok text)
+        λ⊤ → ⊤
+    else if hasEnded ws then
+        Task.resume resume (Err (closeOf (Js.get ws "end")))
+        λ⊤ → ⊤
+    else
+        readers = Js.get ws "readers"
+        waiting = reader resume
+        push readers waiting
+        λ⊤ → remove readers waiting
+
+
+send : Socket, String → Bool
+send socket text =
+    ws = Js.from socket
+    if not (isOpen ws) || not (Js.to (Js.get (Js.get ws "raw") "writable")) then
+        False
+    else
+        if not (Js.same (Js.read lastText) (Js.from text)) then
+            Js.write lastFrame (textFrame text)
+            Js.write lastText (Js.from text)
+        put ws (Js.read lastFrame)
+        True
+
+
+begin : Socket, Int, String → ⊤
+begin socket code reason = sendClose (Js.from socket) code reason
+
+
+-- The session returned: nothing reads from now on, and an open connection
+-- is closed with 1000.
+finish : Socket → ⊤
+finish socket =
+    ws = Js.from socket
+    Js.set ws "done" (Js.from True)
+    Js.set ws "queue" (Js.array [])
+    Js.set ws "sizes" (Js.array [])
+    Js.set ws "queued" (Js.from 0)
+    reading ws
+    sendClose ws 1000 ""
+
+
+unsent : Socket → Int
+unsent socket =
+    ws = Js.from socket
+    raw = Js.get ws "raw"
+    if hasEnded ws || Js.to (Js.get raw "destroyed") then
+        0
+    else
+        Js.to (Js.get raw "writableLength")
+
+
+chosen : Socket → String
+chosen socket = Js.to (Js.get (Js.from socket) "protocol")
+
+
+-- `drain` (amendment item 14): at once when nothing waits to be sent or
+-- the connection has ended; otherwise when the callback of the last write
+-- made so far is called. Node's `drain` event comes only after a write
+-- that returned `false`, so waiting for it could wait forever.
+awaitDrain : Socket, Resume ⊤ → (⊤ → ⊤)
+awaitDrain socket resume =
+    ws = Js.from socket
+    writes : Int
+    writes = Js.to (Js.get ws "writes")
+    if
+        hasEnded ws
+            || Js.same (Js.get (Js.get ws "raw") "writableLength") (Js.from 0)
+            || Js.to (Js.get ws "flushed") ≥ writes
+    then
+        Task.resume resume ⊤
+        λ⊤ → ⊤
+    else
+        drainers = Js.get ws "drainers"
+        waiter = Js.object [ ( "resume", Js.from resume ), ( "target", Js.from writes ) ]
+        push drainers waiter
+        λ⊤ → remove drainers waiter

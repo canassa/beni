@@ -1,0 +1,22 @@
+module CallOtherPathsSharedLeaf
+  24:9 List.push <call CallOtherPathsSharedLeaf.hd>: accepted param
+  28:7 call CallOtherPathsSharedLeaf.f <record>.x[*]: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (CallOtherPathsSharedLeaf.f writes π1.x[*]) (approx)
+  32:8 call CallOtherPathsSharedLeaf.g <literal>[*]: accepted param (CallOtherPathsSharedLeaf.g writes π1[*])
+  36:18 call CallOtherPathsSharedLeaf.f <record>.x[*]: accepted param (CallOtherPathsSharedLeaf.f writes π1.x[*])
+  40:17 call CallOtherPathsSharedLeaf.f <record>.x[*]: accepted param (CallOtherPathsSharedLeaf.f writes π1.x[*])
+  46:5 call CallOtherPathsSharedLeaf.twoParams l[*]: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (CallOtherPathsSharedLeaf.twoParams writes π1[*]) (approx)
+  50:14 call CallOtherPathsSharedLeaf.f <expression>.x[*]: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (CallOtherPathsSharedLeaf.f writes π1.x[*]) (approx)
+  58:14 call CallOtherPathsSharedLeaf.f <call CallOtherPathsSharedLeaf.mk>.x[*]: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (CallOtherPathsSharedLeaf.f writes π1.x[*]) (approx)
+  summary hd: π1 R, π1[*] RA; res fresh1 π1[*]{excl π1}
+  summary f: π1.x R, π1.x[*] RAw[storage], π1.x[*][*] A, π1.y R, π1.y[*] RA; res .0 ~condition(fresh1) ~fresh1 ~π1.x[*]{excl π1.x}, .0[*] ~condition(fresh2) ~fresh2 ~π1.x[*][*], .1 ~condition(fresh3) ~fresh3 ~π1.y[*]{excl π1.y}, condition(fresh4){sep π1.x[*] π1.y[*], sep π1.x[*][*] π1.y[*]}r{sep π1.x[*] π1.y[*], sep π1.x[*][*] π1.y[*]}
+  summary g: π1 R, π1[*] Aw[storage], π1[*][*] A; res .0 ~condition(fresh1){excl π1} ~fresh1 ~π1[*]{excl π1}, .0[*] ~condition(fresh3) ~fresh3 ~π1[*][*], .1 ~condition(fresh2){excl π1} ~fresh2 ~π1[*]{excl π1}, condition(fresh4){lost}
+  summary h: π1 RAw[storage], π1[*] A; res .0 ~condition(fresh1){excl π1} ~fresh1 ~π1, .0[*] ~condition(fresh3) ~fresh3 ~π1[*], .1 ~condition(fresh2){excl π1} ~fresh2 ~π1, condition(fresh4){lost}
+  summary twoLists: π1 RAw[storage], π1[*] A, π2 RA; res .0 ~condition(fresh1){excl π1} ~fresh1 ~π1, .0[*] ~condition(fresh2) ~fresh2 ~π1[*], .1 ~condition(fresh3){excl π2} ~fresh3 ~π2, condition(fresh4){sep π1 π2, sep π1[*] π2}
+  summary twoParams: π1 R, π1[*] Aw[storage], π1[*][*] A, π2 R, π2[*] A; res .0 ~condition(fresh1){excl π1} ~fresh1 ~π1[*]{excl π1}, .0[*] ~condition(fresh2) ~fresh2 ~π1[*][*], .1 ~condition(fresh3){excl π2} ~fresh3 ~π2[*]{excl π2}, condition(fresh4){sep π1[*] π2[*], sep π1[*][*] π2[*]}
+  summary oneActual: π1 RAw[storage], π1[*] RA; res .0 ~condition(fresh1){excl π1} ~fresh1 ~π1, .0[*] ~condition(fresh2) ~fresh2 ~π1[*], .1 ~condition(fresh3){excl π1} ~fresh3 ~π1, condition(fresh4){shared}
+  summary chosen: π2 R, π2[*] Aw[storage], π2[*][*] A; res .0 ~condition(fresh1){excl π2} ~fresh1{excl π2} ~π2[*]{excl π2}, .0[*] ~condition(fresh3) ~fresh3 ~π2[*][*], .1 ~condition(fresh2){excl π2} ~fresh2{excl π2} ~π2[*]{excl π2}, condition(fresh4){lost}
+  summary mk: π1 RA; res .x condition(fresh2) π1, .y condition(fresh3) π1, condition(fresh1){shared} fresh501◦
+  summary viaCalls: π1 R, π1[*] Aw[storage], π1[*][*] A; res .0 ~condition(fresh1){excl π1} ~fresh1 ~π1[*]{excl π1}, .0[*] ~condition(fresh3) ~fresh3 ~π1[*][*], .1 ~condition(fresh2){excl π1} ~fresh2 ~π1[*]{excl π1}, condition(fresh4){lost}
+  demands 8: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 8: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause call 4

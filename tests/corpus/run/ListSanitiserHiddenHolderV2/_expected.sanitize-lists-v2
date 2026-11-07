@@ -1,0 +1,2 @@
+The list stale-read sanitiser under --ownership=v2 (ownership-v2.md §7.3) traps a holder older than a
+write v2 accepted, here one a platform keeps where the ownership checker cannot see it.

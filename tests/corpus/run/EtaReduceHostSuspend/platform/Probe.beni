@@ -1,0 +1,33 @@
+-- A `Js.apply` lambda after a suspension point, which item 6 must leave
+-- as written: in a tail-call loop the rest after the park is copied
+-- (`Suspend`'s loop mode), and the callee is bound before the park — a
+-- local `const` read into `p`, or the top-level `maxFn` — so the copy does
+-- not bind it again. `parseInt` under `map` would read the index as its
+-- radix, `Math.max` the index and the array.
+import Io
+import Js
+
+
+pub parsedLoop : List String, Int, List Int → List Int
+parsedLoop xs n acc =
+    if n == 0 then
+        acc
+    else
+        p = Js.global "parseInt"
+        Io.sleep 0
+        ys = Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+        parsedLoop xs (n - 1) (List.append acc ys)
+
+
+maxFn : Js.Value
+maxFn = Js.get (Js.global "Math") "max"
+
+
+pub maxedLoop : List Int, Int, List Int → List Int
+maxedLoop xs n acc =
+    if n == 0 then
+        acc
+    else
+        Io.sleep 0
+        ys = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Js.apply maxFn [ Js.from x ] ])
+        maxedLoop xs (n - 1) (List.append acc ys)

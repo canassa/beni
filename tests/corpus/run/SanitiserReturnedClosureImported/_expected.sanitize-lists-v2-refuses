@@ -1,0 +1,5 @@
+# v2 refuses each edit of a list a closure of another module still reaches (§2.11.3).
+18:9 list_still_used List.push
+26:9 list_still_used List.push
+34:9 list_still_used List.push
+42:9 list_still_used List.push

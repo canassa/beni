@@ -63,6 +63,10 @@ fn expectRefused(option: []const u8, named: []const u8) !void {
 
 test "gates refuses an ownership checker broken on purpose" {
     try expectRefused("-Downership-record-mutation=hoist-whole", "drop -Downership-record-mutation");
+    try expectRefused("-Downership-v2-mutation=fold_read_off", "drop -Downership-v2-mutation");
+    try expectRefused("-Dno-v2-parity", "drop -Dno-v2-parity");
+    try expectRefused("-Dharness-prefix=/nowhere", "drop -Dharness-prefix");
+    try expectRefused("-Dcorpus-except=Adt", "drop -Dcorpus-except");
 }
 
 test "gates refuses a corpus filter" {
@@ -96,8 +100,8 @@ fn expectProbe(mode: []const u8, exit_code: u8, stderr: []const u8) !void {
     if (exit_code == 0) try testing.expectEqualStrings(stderr, r.stderr) else try testing.expect(std.mem.indexOf(u8, r.stderr, stderr) != null);
 }
 
-test "a crashing test fails at once and names itself: a bad pointer, a stack overflow, a crash while stderr is held" {
-    for ([_][]const u8{ "segv", "overflow", "locked" }) |mode| {
+test "a crashing test fails at once and names itself: a bad pointer, a stack overflow, a crash while stderr or the debug info is held, on a test thread and on the main thread" {
+    for ([_][]const u8{ "segv", "overflow", "locked", "selfinfo", "main-segv", "main-overflow" }) |mode| {
         var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
         defer arena_state.deinit();
         const arena = arena_state.allocator();

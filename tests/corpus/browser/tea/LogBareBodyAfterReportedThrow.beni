@@ -1,0 +1,55 @@
+-- A throw out of an event handler does not reach the code that fired the
+-- event: the DOM reports it, and `Dom.focus` returns (boundary.md
+-- §9.8.16 (b), amended 2026-10-24, #859). This body has no log context of
+-- its own, and it does not wait, so it runs with no fiber (§9.8.11). It
+-- focuses an input whose `onFocus` sends `Boom`. `Boom`'s `update` sets
+-- the first slot of the page (`annotate`), opens a `bracket` and throws.
+-- After each `update`, `send` puts back the caller's slots, here the
+-- defaults (§9.8.16 (b), amended 2026-11-06, #1153). So the rest of the
+-- body has no context, and `Boom`'s release still has `update`'s at the
+-- teardown. `LogBareBodyAfterReportedThrowFiber` is a body in a fiber,
+-- `…Nested` nests the scopes, and `…Slotted` sets a slot before.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n + 1
+            , Cmd.perform λ_ →
+                _ = Dom.focus "target"
+                Log.info "the body, after the focus"
+            )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

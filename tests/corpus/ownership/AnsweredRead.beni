@@ -1,0 +1,135 @@
+-- ownership: a call whose callee answers a part of its argument (`A` in
+-- its class) is a read, for the caller's liveness, of that part and of
+-- every path below it (ownership-v2.md §2.7, *A part a callee answers*,
+-- #1370). The result holds the object, and what the caller then does
+-- with the result is not a use of the argument's local. So a push of a
+-- list that `k` holds, with `k` answered later by a monomorphic `idl` and
+-- the result read deeply (`Debug.toString`), is refused, as v1
+-- refuses it. The same with `wkids`, which takes a non-recursive record
+-- out of its constructor; with `rkids`, a field; with the result bound
+-- first (`bound`); inside a construction (`inTuple`); through a pipeline
+-- (`piped`); read by a deep-reading callee (`viaShow`); and read through
+-- a pattern, the pushed list itself (`pattern`). `onCycle` answers a tree
+-- of a recursive type. `sibling` holds the list at a path the callee does
+-- not answer, and is accepted, as v1 accepts it.
+type Outer
+    = Outer { v : List Int, kids : List Inner }
+
+
+type Inner
+    = Inner { w : List Int }
+
+
+type Tree
+    = Tree { v : List Int, kids : List Tree }
+
+
+idl : List (List Int) → List (List Int)
+idl x = x
+
+
+wkids : Outer → List Inner
+wkids t =
+    case t of
+        Outer r →
+            r.kids
+
+
+rkids : { v : List Int, kids : List (List Int) } → List (List Int)
+rkids r = r.kids
+
+
+show : List (List Int) → String
+show x = Debug.toString x
+
+
+pub idlRead : Int → Int
+idlRead n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (Debug.toString (idl k)) + List.length p
+
+
+pub wkidsRead : Int → Int
+wkidsRead n =
+    l = [ n ]
+    t = Outer { v = [], kids = [ Inner { w = l } ] }
+    p = List.push l 5
+    String.length (Debug.toString (wkids t)) + List.length p
+
+
+pub rkidsRead : Int → Int
+rkidsRead n =
+    l = [ n ]
+    t = { v = [], kids = [ l ] }
+    p = List.push l 5
+    String.length (Debug.toString (rkids t)) + List.length p
+
+
+pub bound : Int → Int
+bound n =
+    l = [ n ]
+    t = Outer { v = [], kids = [ Inner { w = l } ] }
+    p = List.push l 5
+    x = wkids t
+    String.length (Debug.toString x) + List.length p
+
+
+pub inTuple : Int → Int
+inTuple n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (Debug.toString ( idl k, 1 )) + List.length p
+
+
+pub piped : Int → Int
+piped n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (k ▷ idl ▷ Debug.toString) + List.length p
+
+
+pub viaShow : Int → Int
+viaShow n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (show (idl k)) + List.length p
+
+
+pub pattern : Int → Int
+pattern n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    case idl k of
+        [ y ] →
+            List.length y + List.length p
+
+        _ →
+            0
+
+
+pub onCycle : Int → Int
+onCycle n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString (idl2 r.kids)) + List.length p
+
+
+idl2 : List Tree → List Tree
+idl2 x = x
+
+
+pub sibling : Int → Int
+sibling n =
+    l = [ n ]
+    t = { v = l, kids = [ [ 1 ] ] }
+    p = List.push l 5
+    String.length (Debug.toString (rkids t)) + List.length p

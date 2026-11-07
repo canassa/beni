@@ -1,0 +1,13 @@
+-- Calls into core read core's own contracts under the checker v2 as well
+-- (`ownership-v2.md` §3.6, *The checked core*): the embedded pack carries
+-- each core module's v2 block beside the entry with v1's. `List.update`
+-- then makes its write demand, refused because `xs` is read after it, and
+-- the fresh list `List.range` answers may be pushed in place. Read as
+-- pessimistic, the first made no demand and the second was refused.
+
+changedThenRead : List Int → Int × List Int
+changedThenRead xs = ( List.length (List.update xs 0 λx → x + 1), xs )
+
+
+pushedFresh : Int → Int
+pushedFresh n = List.length (List.push (List.range 1 n) 41)

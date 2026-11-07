@@ -401,6 +401,77 @@ test "an annotation over an alias DAG whose uses differ in their arguments is no
     try s.finish("an annotation over an alias DAG with arguments", try s.ratio("D16.beni", "D32.beni", 16));
 }
 
+// Three diamonds of aliases, each `depth` deep: `A{i} a = A{i-1} (A{i-1}
+// a)` over `A0 a = a`, the same over `K0 a = String`, and `P{i} a b =
+// P{i-1} a (P{i-1} a b)` over `P0 a b = { value : a }` (#1475). Each names
+// 2^depth applications, and its type is `Int`, `String` or `{ value : a }`.
+// The outer application's argument is the inner alias variable, a new root
+// at every level, so a read that keys an alias by all its arguments' roots
+// expanded 2^depth bodies. It keys one by the arguments its type shows
+// (checker-v2.md §7.4, amended 2026-11-06), so each level costs one
+// expansion. `Chain` reads them in its own module, in a private constructor
+// nothing calls (the issue's form) and in public declarations; `Main` reads
+// them through `Chain`'s interface and through its declarations.
+// Calibration (ReleaseFast): see `diamondChain`.
+test "checking a diamond of aliases is linear in its depth" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    for ([_]usize{ 100, 200 }) |depth| {
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Chain.beni", .{depth}), try diamondChain(s.arena(), depth));
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Main.beni", .{depth}), try diamondMain(s.arena(), depth));
+    }
+    try s.finish("a diamond of aliases", try s.ratio("D100", "D200", 100));
+}
+
+/// The three diamonds of the scenario above, `depth` deep, and the
+/// declarations that read them.
+fn diamondChain(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 a =\n    a\n\n\ntype alias K0 a =\n    String\n\n\ntype alias P0 a b =\n    value : a\n\n\n");
+    for (1..depth + 1) |i| {
+        try out.print(arena, "type alias A{d} a =\n    A{d} (A{d} a)\n\n\n", .{ i, i - 1, i - 1 });
+        try out.print(arena, "type alias K{d} a =\n    K{d} (K{d} a)\n\n\n", .{ i, i - 1, i - 1 });
+        try out.print(arena, "type alias P{d} a b =\n    P{d} a (P{d} a b)\n\n\n", .{ i, i - 1, i - 1 });
+    }
+    try out.print(arena,
+        \\pub type alias Deep a =
+        \\    A{d} a
+        \\
+        \\
+        \\type Unused
+        \\    = Unused (A{d} Int)
+        \\
+        \\
+        \\pub type Hidden
+        \\    = Hidden (A{d} Int)
+        \\
+        \\
+        \\pub name : K{d} Bool
+        \\name = "K"
+        \\
+        \\
+        \\pub boxed : P{d} Int (A{d} String)
+        \\boxed = {{ value = 41 }}
+        \\
+    , .{ depth, depth, depth, depth, depth, depth });
+    return out.items;
+}
+
+fn diamondMain(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    _ = depth;
+    return try arena.dupe(u8,
+        \\import Chain exposing (Hidden)
+        \\
+        \\
+        \\pub six : Chain.Deep Int
+        \\six =
+        \\    case Hidden 5 of
+        \\        Hidden n →
+        \\            n + Chain.boxed.value
+        \\
+    );
+}
+
 /// `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1}
 /// (List a) )` up to `depth`, and `f : A{depth} Int -> Int`.
 fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
@@ -408,6 +479,76 @@ fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     try out.appendSlice(arena, "type alias A0 a =\n    Maybe a\n\n\n");
     for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    ( A{d} a, A{d} (List a) )\n\n\n", .{ i, i - 1, i - 1 });
     try out.print(arena, "f : A{d} Int → Int\nf _ =\n    1\n", .{depth});
+    return out.items;
+}
+
+// A record that doubles, `w{i} = { a = w{i-1}, b = w{i-1} }`, each value
+// annotated with its `type alias W{i}` (#1238). Its type is a DAG of `depth`
+// aliases and its value a DAG of `depth` records, so checking it must not
+// cost the 2^depth leaves of the tree: an alias is expanded once per read
+// (checker-v2.md §7.4), and each value's type is its annotation's. It is not
+// linear either: each of the `depth` annotations expands its own chain of
+// aliases, so the cost grows about ×3 when the depth doubles (#2074).
+// Ownership v1, the default checker, walks the value's 2^depth paths and
+// grows ×4 a level (pending_test.zig's "the default checker's check of a
+// doubling record is not exponential in its depth"), so this claim is the
+// type checker's and v2's, under `--ownership=v2`. Calibration
+// (ReleaseFast, master 2350de11b1, instructions above an empty module's
+// 16.1 M): 4.8 / 14.1 / 47 / 171 / 502 / 1 533 M at depth 16 / 32 / 64 /
+// 128 / 256 / 512, so 16 / 32 is a ratio of 1.45 with the floor; under v1,
+// `check` takes 2.9 s at depth 13 and 9.9 s at 16, where v1's summary limit
+// stops it.
+test "checking a doubling record under annotations is not exponential in its depth" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("R16.beni", try doublingRecord(s.arena(), 16, .annotated));
+    try s.w.write("R32.beni", try doublingRecord(s.arena(), 32, .annotated));
+    try s.finish("a doubling record under annotations", try s.ratioWith("R16.beni", "R32.beni", 16, &.{"--ownership=v2"}));
+}
+
+// The same record with no annotation, inside one function, from `xs = [ 1 ]`.
+// `1` is a `number`, so `xs` is generalised, and each use of a let-bound
+// `w{i-1}` takes fresh variables: `w1 : { a : { items : List number3 }, b : {
+// items : List number4 } }`. The principal type of `w{depth}` has 2^depth
+// distinct variables, as in Elm, and no sharing can make it smaller. The
+// claim is that checking costs that type's size: one level more doubles the
+// type, and must cost at most 2.5 times as much. `n` counts the type's
+// leaves. Calibration (ReleaseFast, master 2350de11b1, `--ownership=v2`):
+// 235 / 454 M instructions at depth 13 / 14, a ratio of 1.93; the `check`
+// event takes 13 / 59 / 100 / 175 ms at depth 12 / 14 / 15 / 16, and `dump
+// --stage=types` prints 289 / 575 KB at depth 12 / 13. Under v1, `check`
+// takes 2.4 s at depth 13 and 198 s at 16.
+test "checking an unannotated doubling record is linear in the size of its type" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("L13.beni", try doublingRecord(s.arena(), 13, .local));
+    try s.w.write("L14.beni", try doublingRecord(s.arena(), 14, .local));
+    try s.finish("an unannotated doubling record", try s.ratioWith("L13.beni", "L14.beni", 1 << 13, &.{"--ownership=v2"}));
+}
+
+/// `w0 = { items = … }` and `w{i} = { a = w{i-1}, b = w{i-1} }` up to
+/// `depth`, read once at the end of the left spine: `.annotated` as top-level
+/// values, each with its `type alias W{i}`; `.local` as the bindings of one
+/// function, from `xs = [ 1 ]`, with no annotation. `pending_test.zig`
+/// keeps a copy of the `.annotated` form: change both together.
+fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated, local }) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    switch (form) {
+        .annotated => {
+            try out.appendSlice(arena, "type alias W0 =\n    items : List Int\n\n\n");
+            for (1..depth + 1) |i| try out.print(arena, "type alias W{d} =\n    a : W{d}\n    b : W{d}\n\n\n", .{ i, i - 1, i - 1 });
+            try out.appendSlice(arena, "w0 : W0\nw0 =\n    { items = [ 1 ] }\n\n\n");
+            for (1..depth + 1) |i| try out.print(arena, "w{d} : W{d}\nw{d} =\n    {{ a = w{d}, b = w{d} }}\n\n\n", .{ i, i, i, i - 1, i - 1 });
+            try out.print(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    List.length w{d}.", .{depth});
+        },
+        .local => {
+            try out.appendSlice(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    xs = [ 1 ]\n    w0 = { items = xs }\n");
+            for (1..depth + 1) |i| try out.print(arena, "    w{d} = {{ a = w{d}, b = w{d} }}\n", .{ i, i - 1, i - 1 });
+            try out.print(arena, "    List.length w{d}.", .{depth});
+        },
+    }
+    for (0..depth) |_| try out.appendSlice(arena, "a.");
+    try out.appendSlice(arena, "items\n");
     return out.items;
 }
 

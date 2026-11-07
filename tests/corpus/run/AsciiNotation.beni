@@ -1,0 +1,48 @@
+-- Every ASCII synonym, including flat and nested product types.
+import List
+import Node exposing (Program)
+import String
+
+
+with : a, (a -> b) -> b
+with value fn = fn value
+
+
+impossible : Never -> a
+impossible value = never value
+
+
+unit : () -> ()
+unit () = ()
+
+
+triple : Int * String * Bool
+triple = ( 7, "seven", True )
+
+
+nested : (Int * String) * Bool
+nested = ( ( 8, "eight" ), False )
+
+
+main : Program
+main =
+    value <- with 3
+    increment = \n -> n + 1
+    values = [ 1, ...[ 2, 3 ] ]
+    first =
+        case values of
+            [ x, ..._ ] ->
+                x
+            [] ->
+                0
+    Node.printLines
+        [ String.fromInt (value |> increment)
+        , String.fromInt (increment <| first)
+        , if 1 /= 2 && 1 <= 2 && 2 >= 1 then "yes" else "no"
+        , triple.1
+        , nested.0.1
+        , String.fromInt (List.length values)
+        , case unit () of
+            () ->
+                "unit"
+        ]

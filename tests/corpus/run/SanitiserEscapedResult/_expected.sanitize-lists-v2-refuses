@@ -1,0 +1,6 @@
+# v2 refuses each edit of a list that escaped where it was made and is returned (§2.10, host objects).
+59:9 list_may_be_shared List.set
+61:9 list_may_be_shared List.set
+63:9 list_may_be_shared List.set
+65:9 list_may_be_shared List.set
+68:9 list_may_be_shared List.set

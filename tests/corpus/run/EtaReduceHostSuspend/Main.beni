@@ -1,0 +1,20 @@
+-- Item 6 of the release optimiser (`backend.md` §9) keeps a `Js.apply`
+-- lambda as written after a suspension point too: in a tail-call loop the
+-- rest after the park is copied (`Suspend`'s loop mode), and the copy
+-- keeps the call's host mark. Both builds print the same
+-- (`platform/Probe.beni` has the shapes).
+import Io
+import Node
+import Probe
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) " "
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ "parsedLoop " ++ ints (Probe.parsedLoop [ "10", "10", "10" ] 2 [])
+        , "maxedLoop " ++ ints (Probe.maxedLoop [ 1, 2 ] 2 [])
+        ]

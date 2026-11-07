@@ -1,0 +1,22 @@
+-- Regression #1673: walking arithmetic iteratively preserves grouping and
+-- evaluates each operand once in written order, including a hoisting RHS.
+import Node exposing (Program)
+import String
+
+
+note : String, Int → Int
+note tag n = Debug.log tag n
+
+
+main : Program
+main =
+    value =
+        (note "first" 20 - note "second" 3)
+            - (case note "test" 1 of
+                  1 →
+                      note "third" 5
+                  _ →
+                      note "other" 99
+              )
+            + (note "fourth" 2 * note "fifth" 3)
+    Node.printLines [ String.fromInt value, String.fromInt (2 ^ 3 ^ 2) ]

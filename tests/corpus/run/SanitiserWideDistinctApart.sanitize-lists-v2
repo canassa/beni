@@ -1,0 +1,3 @@
+The controls of SanitiserWideDistinct (ownership-v2.md §2.3.2, §2.9.3, #1963): as wide, a slice a pattern binds and the
+fronts or backs it skips hold each list once. Built again under --ownership=v2 and the list stale-read sanitiser. v2
+accepts each edit, and the sanitised run prints the golden.

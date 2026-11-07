@@ -1,0 +1,74 @@
+-- ownership (project): `PushedPositions` with the callees in another module
+-- (ownership-v2.md §2.9 *Two positions of one image*): their blocks publish
+-- the answer's elements as `shared`, so an in-place edit of the first is
+-- refused here as in one module.
+import Pushed exposing (inF, pairUp, prepend, twin, twinHead, twinSpread)
+
+
+pub edit : ⊤ → List (List Int)
+edit ⊤ =
+    case twin [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editSpread : ⊤ → List (List Int)
+editSpread ⊤ =
+    case twinSpread [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editHead : ⊤ → List (List Int)
+editHead ⊤ =
+    case twinHead [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editPrepend : ⊤ → List (List Int)
+editPrepend ⊤ =
+    case prepend [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editOne : ⊤ → List (List Int)
+editOne ⊤ =
+    case twin [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            case r of
+                [ x ] →
+                    [ List.push f 9, x ]
+
+                _ →
+                    []
+
+        [] →
+            []
+
+
+pub inFCall : ⊤ → List (List Int)
+inFCall ⊤ = inF [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ]
+
+
+pub editPair : ⊤ → List (List Int)
+editPair ⊤ =
+    case pairUp [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []

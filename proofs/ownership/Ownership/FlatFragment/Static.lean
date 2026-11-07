@@ -26,6 +26,245 @@ open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.AtomInteger Own
 open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.FlatFragment.Shared Ownership.FlatFragment.Push Ownership.FlatFragment.AtomInference
 open Ownership.FlatFragment.Fields Ownership.FlatFragment.Record
 
+/-! ### Record objects: the checker's steps (#316) -/
+
+theorem primitive_object_run (ctx : Context) (site : List Nat) (xs : List Abstract) (later : List Origin)
+    (before : St) :
+    (primitive ctx site .object xs later).run before =
+      .ok (.list [.site site 0] (.record xs)
+        ⟨storeExclusive ctx [.record xs] later [], storeSpines ctx [.record xs] later []⟩, before) := by
+  unfold primitive
+  rfl
+
+theorem primitive_get_run (ctx : Context) (site : List Nat) (i : Nat) (roots : List Origin)
+    (fs : List Abstract) (certificate : Certificate) (later : List Origin) (before : St)
+    {field : Abstract} (found : fs[i]? = some field) :
+    (primitive ctx site (.get i) [.list roots (.record fs) certificate] later).run before =
+      .ok (field, {before with facts := {before.facts with
+        reads := union before.facts.reads (roots.filter external)}}) := by
+  unfold primitive
+  simp [noteRead, modifyFacts, found, Option.toExcept, StateT.run, bind, StateT.bind, modify,
+    modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, pure, StateT.pure, Except.pure, Except.bind,
+    liftM, monadLift, MonadLift.monadLift, StateT.lift]
+
+theorem primitive_get_bottom_run (ctx : Context) (site : List Nat) (i : Nat) (later : List Origin) (before : St) :
+    (primitive ctx site (.get i) [.bottom] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
+
+theorem primitive_get_slot_bottom_run (ctx : Context) (site : List Nat) (i : Nat) (roots : List Origin)
+    (certificate : Certificate) (later : List Origin) (before : St) :
+    ∃ message, (primitive ctx site (.get i) [.list roots .bottom certificate] later).run before = .error message := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  exact ⟨_, rfl⟩
+
+theorem primitive_recordCopy_run (ctx : Context) (site : List Nat) (roots : List Origin) (element : Abstract)
+    (certificate : Certificate) (later : List Origin) (before : St) :
+    (primitive ctx site .recordCopy [.list roots element certificate] later).run before =
+      .ok (.list [.site site 0] element false,
+        {before with facts := {before.facts with
+          reads := union before.facts.reads (roots.filter external)}}) := by
+  unfold primitive
+  rfl
+
+theorem primitive_recordCopy_bottom_run (ctx : Context) (site : List Nat) (later : List Origin) (before : St) :
+    (primitive ctx site .recordCopy [.bottom] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
+
+/-! ### Dictionaries: typing and the checker's steps (#522) -/
+
+theorem primType_dictEmpty_success {t type : Ty} (run : primType (.dictEmpty t) [] = .ok type) :
+    type = .dict t := by
+  simp [primType, pure, Except.pure] at run
+  exact run.symm
+
+theorem primType_dictSize_success {ty type : Ty} (flat : FlatType ty)
+    (run : primType .dictSize [ty] = .ok type) : ∃ t, ty = .dict t ∧ type = .int := by
+  cases flat with
+  | dict t _ =>
+    simp [primType] at run
+    exact ⟨t, rfl, by cases run; rfl⟩
+  | _ => simp [primType] at run
+
+theorem primType_dictGet_success {tR tK type : Ty} (flat : FlatType tR)
+    (run : primType .dictGet [tR, tK] = .ok type) : ∃ t, tR = .dict t ∧ tK = .int ∧ type = .result .int t := by
+  cases flat with
+  | dict t _ =>
+    cases tK <;> simp [primType] at run
+    exact ⟨t, rfl, rfl, by cases run; rfl⟩
+  | _ => simp [primType] at run
+
+theorem primType_dictRemove_success {tR tK type : Ty} (flat : FlatType tR)
+    (run : primType .dictRemove [tR, tK] = .ok type) : ∃ t, tR = .dict t ∧ tK = .int ∧ type = .dict t := by
+  cases flat with
+  | dict t _ =>
+    cases tK <;> simp [primType] at run
+    exact ⟨t, rfl, rfl, by cases run; rfl⟩
+  | _ => simp [primType] at run
+
+theorem primType_dictInsert_success {tR tK tI type : Ty} (flat : FlatType tR)
+    (run : primType .dictInsert [tR, tK, tI] = .ok type) :
+    ∃ t, tR = .dict t ∧ tK = .int ∧ tI = t ∧ type = .dict t := by
+  cases flat with
+  | dict t flatT =>
+    cases tK <;> simp [primType] at run
+    split at run
+    · rename_i same
+      have : t = tI := ty_equal_flat flatT (by simpa using same)
+      exact ⟨t, rfl, rfl, this.symm, by cases run; rfl⟩
+    · cases run
+  | _ => simp [primType] at run
+
+theorem exprType_dictSize_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {receiver : Atom}
+    {type : Ty} (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .dictSize [receiver]) = .ok type) :
+    ∃ t, atomType tenv receiver = .ok (.dict t) ∧ type = .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  have restNil := except_mapM_nil_success restTyped
+  subst restNil
+  obtain ⟨t, rfl, rfl⟩ := primType_dictSize_success (flatTypes _ _ receiverTyped) primTyped
+  exact ⟨t, receiverTyped, rfl⟩
+
+theorem exprType_dictGet_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {receiver key : Atom}
+    {type : Ty} (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .dictGet [receiver, key]) = .ok type) :
+    ∃ t, atomType tenv receiver = .ok (.dict t) ∧ atomType tenv key = .ok .int ∧ type = .result .int t := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tK, rest', keyTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  have restNil := except_mapM_nil_success restTyped'
+  subst restNil
+  obtain ⟨t, rfl, rfl, rfl⟩ := primType_dictGet_success (flatTypes _ _ receiverTyped) primTyped
+  exact ⟨t, receiverTyped, keyTyped, rfl⟩
+
+theorem exprType_dictRemove_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {receiver key : Atom}
+    {type : Ty} (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .dictRemove [receiver, key]) = .ok type) :
+    ∃ t, atomType tenv receiver = .ok (.dict t) ∧ atomType tenv key = .ok .int ∧ type = .dict t := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tK, rest', keyTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  have restNil := except_mapM_nil_success restTyped'
+  subst restNil
+  obtain ⟨t, rfl, rfl, rfl⟩ := primType_dictRemove_success (flatTypes _ _ receiverTyped) primTyped
+  exact ⟨t, receiverTyped, keyTyped, rfl⟩
+
+theorem exprType_dictInsert_success {declarations : List Decl} {self : Decl} {tenv : Env Ty}
+    {receiver key item : Atom} {type : Ty}
+    (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .dictInsert [receiver, key, item]) = .ok type) :
+    ∃ t, atomType tenv receiver = .ok (.dict t) ∧ atomType tenv key = .ok .int ∧
+      atomType tenv item = .ok t ∧ type = .dict t := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tK, rest', keyTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  obtain ⟨tI, rest'', itemTyped, restTyped'', rfl⟩ := except_mapM_cons_success restTyped'
+  have restNil := except_mapM_nil_success restTyped''
+  subst restNil
+  obtain ⟨t, rfl, rfl, itemEq, rfl⟩ := primType_dictInsert_success (flatTypes _ _ receiverTyped) primTyped
+  rw [itemEq] at itemTyped
+  exact ⟨t, receiverTyped, keyTyped, itemTyped, rfl⟩
+
+theorem exprType_dictEmpty_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {t type : Ty}
+    (typed : exprType declarations self tenv (.prim (.dictEmpty t) []) = .ok type) : type = .dict t := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  have restNil := except_mapM_nil_success atomsTyped
+  subst restNil
+  exact primType_dictEmpty_success primTyped
+
+theorem primitive_dictEmpty_run (ctx : Context) (site : List Nat) (t : Ty) (later : List Origin) (before : St) :
+    (primitive ctx site (.dictEmpty t) [] later).run before = .ok (.list [.site site 0] .bottom true, before) := by
+  unfold primitive
+  rfl
+
+theorem primitive_dictSize_run (ctx : Context) (site : List Nat) (a : Abstract) (later : List Origin)
+    (before : St) :
+    (primitive ctx site .dictSize [a] later).run before =
+      .ok (.scalar, {before with facts :=
+        {before.facts with reads := union before.facts.reads (a.roots.filter external)}}) := by
+  unfold primitive
+  rfl
+
+theorem primitive_dictGet_run (ctx : Context) (site : List Nat) (roots : List Origin) (value : Abstract)
+    (certificate : Certificate) (key : Abstract) (later : List Origin) (before : St) :
+    (primitive ctx site .dictGet [.list roots value certificate, key] later).run before =
+      .ok (.record [.scalar, .scalar, value], {before with facts := {before.facts with
+        reads := union before.facts.reads ((union roots value.cells).filter external)}}) := by
+  unfold primitive
+  rfl
+
+theorem primitive_dictGet_bottom_run (ctx : Context) (site : List Nat) (key : Abstract)
+    (later : List Origin) (before : St) :
+    (primitive ctx site .dictGet [.bottom, key] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
+
+theorem primitive_dictRemove_bottom_run (ctx : Context) (site : List Nat) (key : Abstract)
+    (later : List Origin) (before : St) :
+    (primitive ctx site .dictRemove [.bottom, key] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
+
+theorem primitive_dictInsert_bottom_run (ctx : Context) (site : List Nat) (key item : Abstract)
+    (later : List Origin) (before : St) :
+    (primitive ctx site .dictInsert [.bottom, key, item] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
+
+/-- A remove is a demand on the entries that keeps every value; the result is
+    the dictionary's abstract. -/
+theorem primitive_dictRemove_run {ctx : Context} {site : List Nat} {before after : St} {result : Abstract}
+    {roots later : List Origin} {value key : Abstract} {certificate : Certificate}
+    (run : (primitive ctx site .dictRemove [.list roots value certificate, key] later).run before =
+      .ok (result, after)) :
+    (demand ctx.config roots later value.cells).run before = .ok ((), after) ∧
+      result = .list roots value certificate := by
+  unfold primitive at run
+  obtain ⟨finished, middle, demanded, returned⟩ := checkM_bind_success run
+  cases finished
+  have equal := Except.ok.inj returned
+  have same : middle = after := congrArg Prod.snd equal
+  exact ⟨same ▸ demanded, (congrArg Prod.fst equal).symm⟩
+
+/-- An insert makes the push's demand and stores with the push's certificate
+    rule (`ownership-checker.md` §20.8). -/
+theorem primitive_dictInsert_demand_run {ctx : Context} {site : List Nat} {before after : St}
+    {result : Abstract} {roots later : List Origin} {value key item : Abstract} {certificate : Certificate}
+    (run : (primitive ctx site .dictInsert [.list roots value certificate, key, item] later).run before =
+      .ok (result, after)) :
+    (demand ctx.config roots later (union value.cells item.cells)).run before = .ok ((), after) := by
+  unfold primitive at run
+  obtain ⟨finished, middle, demanded, returned⟩ := checkM_bind_success run
+  cases finished
+  have same : middle = after := congrArg Prod.snd (Except.ok.inj returned)
+  exact same ▸ demanded
+
+theorem primitive_dictInsert_result {ctx : Context} {site : List Nat} {before next : St} {result : Abstract}
+    {roots later : List Origin} {value key item : Abstract} {certificate : Certificate}
+    (defaultConfig : ctx.config = {})
+    (run : (primitive ctx site .dictInsert [.list roots value certificate, key, item] later).run before =
+      .ok (result, next)) :
+    result = .list roots (value.join item)
+      ⟨certificate.deep && storeExclusive ctx [item] later value.cells,
+       certificate.spine && storeSpines ctx [item] later value.cells &&
+         (containers value).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩ := by
+  unfold primitive at run
+  obtain ⟨finished, middle, _, returned⟩ := checkM_bind_success run
+  cases finished
+  have equal := Except.ok.inj returned
+  have first : _ = result := congrArg Prod.fst equal
+  rw [← first]
+  simp [defaultConfig, default_has, show (Prim.dictInsert == Prim.put) = false from rfl,
+    show (Prim.dictInsert == Prim.set) = false from rfl]
+
 /-! ### Environment lookups -/
 
 /-- Any successful default inference ran the live-scope check first. -/
@@ -146,15 +385,23 @@ theorem static_atom_scalar {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {
   | bottom _ => exact Or.inl rfl
   | int => exact Or.inr rfl
 
-theorem static_atom_list {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {abstract : Abstract}
-    (static : FlatStatic aenv tenv) (typed : atomType tenv atom = .ok (.list .int))
+theorem static_atom_list {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {abstract : Abstract} {t : Ty}
+    (static : FlatStatic aenv tenv) (typed : atomType tenv atom = .ok (.list t))
     (run : abstractAtom aenv atom = .ok abstract) :
     abstract = .bottom ∨ ∃ roots element certificate, abstract = .list roots element certificate ∧
-      (element = .bottom ∨ element = .scalar) := by
+      Origin.unknown ∉ roots ∧ FlatAbstract t element := by
   cases static_atom_shape static typed run with
   | bottom _ => exact Or.inl rfl
-  | listBottom roots certificate => exact Or.inr ⟨roots, .bottom, certificate, rfl, Or.inl rfl⟩
-  | listScalar roots certificate => exact Or.inr ⟨roots, .scalar, certificate, rfl, Or.inr rfl⟩
+  | list _ roots element certificate noUnk shape => exact Or.inr ⟨roots, element, certificate, rfl, noUnk, shape⟩
+
+theorem static_atom_dict {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {abstract : Abstract} {t : Ty}
+    (static : FlatStatic aenv tenv) (typed : atomType tenv atom = .ok (.dict t))
+    (run : abstractAtom aenv atom = .ok abstract) :
+    abstract = .bottom ∨ ∃ roots value certificate, abstract = .list roots value certificate ∧
+      Origin.unknown ∉ roots ∧ FlatAbstract t value := by
+  cases static_atom_shape static typed run with
+  | bottom _ => exact Or.inl rfl
+  | dict _ roots value certificate noUnk shape => exact Or.inr ⟨roots, value, certificate, rfl, noUnk, shape⟩
 
 theorem static_atom_chain {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {abstract : Abstract}
     (static : FlatStatic aenv tenv) (typed : atomType tenv atom = .ok (.chain .int))
@@ -196,12 +443,6 @@ theorem static_atoms_abstract {aenv : Env Abstract} {tenv : Env Ty} {args : List
   obtain ⟨atom, args_i⟩ := index_of_same_length lenA.symm as_i
   exact ⟨static_atom_type static (fieldsT i atom t args_i types_i),
     static_atom_shape static (fieldsT i atom t args_i types_i) (fieldsA i atom a args_i as_i)⟩
-
-theorem list_mapOrigins_flat (f : Path → List Origin → List Origin) (roots : List Origin)
-    (element : Abstract) (certificate : Certificate)
-    (flat : element = .bottom ∨ element = .scalar) :
-    (Abstract.list roots element certificate).mapOrigins f [] = .list (f [] roots) element certificate := by
-  rcases flat with rfl | rfl <;> simp [Abstract.mapOrigins]
 
 /-! ### The type of a typed fragment expression -/
 
@@ -246,11 +487,11 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     intro tenv type types typed
     obtain ⟨_, yesTyped, _⟩ := exprType_branch_success typed
     exact ihYes tenv type types yesTyped
-  | @literal args =>
+  | @literal args t elemT =>
     intro tenv type types typed
     obtain ⟨_, _, primTyped⟩ := exprType_prim_success typed
-    obtain ⟨rfl, _⟩ := primType_literal_int_success primTyped
-    exact .listInt
+    obtain ⟨rfl, _⟩ := primType_literal_success primTyped
+    exact .list t elemT
   | @push receiver item =>
     intro tenv type types typed
     obtain ⟨_, atomsTyped, primTyped⟩ := exprType_prim_success typed
@@ -258,16 +499,16 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     obtain ⟨tI, _, itemTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
     have restNil := except_mapM_nil_success restTyped'
     subst restNil
-    obtain ⟨_, _, rfl⟩ := primType_push_success (atom_type_flat types headTyped)
-      (atom_type_flat types itemTyped) primTyped
-    exact .listInt
+    obtain ⟨t, listType, _, rfl⟩ := primType_push_success (atom_type_flat types headTyped) primTyped
+    subst listType
+    exact atom_type_flat types headTyped
   | @length receiver =>
     intro tenv type types typed
     obtain ⟨_, atomsTyped, primTyped⟩ := exprType_prim_success typed
     obtain ⟨headType, _, headTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
     have restNil := except_mapM_nil_success restTyped
     subst restNil
-    obtain ⟨_, rfl⟩ := primType_length_success (atom_type_flat types headTyped) primTyped
+    obtain ⟨_, _, rfl⟩ := primType_length_success (atom_type_flat types headTyped) primTyped
     exact .int
   | @scalar op a b sop =>
     intro tenv type types typed
@@ -318,20 +559,71 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     exact ihEnd tenv type types endTyped
   | @atRead receiver index fallback =>
     intro tenv type types typed
-    obtain ⟨_, _, _, rfl⟩ := exprType_at_success (fun _ _ h => atom_type_flat types h) typed
-    exact .int
+    obtain ⟨t, receiverTyped, _, _, rfl⟩ := exprType_at_success (fun _ _ h => atom_type_flat types h) typed
+    cases atom_type_flat types receiverTyped with
+    | list _ elemT => exact elemT
   | @set receiver index item =>
     intro tenv type types typed
-    obtain ⟨_, _, _, rfl⟩ := exprType_set_success (fun _ _ h => atom_type_flat types h) typed
-    exact .listInt
+    obtain ⟨t, receiverTyped, _, _, rfl⟩ := exprType_set_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
   | @copy receiver =>
     intro tenv type types typed
-    obtain ⟨_, rfl⟩ := exprType_copy_success (fun _ _ h => atom_type_flat types h) typed
-    exact .listInt
+    obtain ⟨t, receiverTyped, rfl⟩ := exprType_copy_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
+  | @view receiver front =>
+    intro tenv type types typed
+    obtain ⟨t, receiverTyped, rfl⟩ := exprType_view_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
   | @prepend item receiver =>
     intro tenv type types typed
-    obtain ⟨_, _, rfl⟩ := exprType_prepend_success (fun _ _ h => atom_type_flat types h) typed
-    exact .listInt
+    obtain ⟨t, _, receiverTyped, rfl⟩ := exprType_prepend_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
+  | @dictEmpty t flatT =>
+    intro tenv type types typed
+    rw [exprType_dictEmpty_success typed]
+    exact .dict t flatT
+  | @dictInsert receiver key item =>
+    intro tenv type types typed
+    obtain ⟨t, receiverTyped, _, _, rfl⟩ :=
+      exprType_dictInsert_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
+  | @dictRemove receiver key =>
+    intro tenv type types typed
+    obtain ⟨t, receiverTyped, _, rfl⟩ :=
+      exprType_dictRemove_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
+  | @dictGet receiver key =>
+    intro tenv type types typed
+    obtain ⟨t, receiverTyped, _, rfl⟩ :=
+      exprType_dictGet_success (fun _ _ h => atom_type_flat types h) typed
+    cases atom_type_flat types receiverTyped with
+    | dict _ flatT => exact .result _ _ .int flatT
+  | @dictSize receiver =>
+    intro tenv type types typed
+    obtain ⟨t, _, rfl⟩ := exprType_dictSize_success (fun _ _ h => atom_type_flat types h) typed
+    exact .int
+  | @object args =>
+    intro tenv type types typed
+    obtain ⟨ts, atomsTyped, rfl⟩ := exprType_object_success typed
+    obtain ⟨len, fields⟩ := mapM_ok_fields atomsTyped
+    refine .object ts ?_
+    intro t member
+    obtain ⟨i, ts_i⟩ := List.mem_iff_getElem?.mp member
+    obtain ⟨atom, args_i⟩ := index_of_same_length len.symm ts_i
+    exact atom_type_flat types (fields i atom t args_i ts_i)
+  | @get receiver index =>
+    intro tenv type types typed
+    obtain ⟨ts, receiverTyped, found⟩ := exprType_get_success typed
+    cases atom_type_flat types receiverTyped with
+    | object _ fields => exact fields type (List.mem_of_getElem? found)
+  | @recordCopy receiver =>
+    intro tenv type types typed
+    obtain ⟨ts, receiverTyped, rfl⟩ := exprType_recordCopy_success typed
+    exact atom_type_flat types receiverTyped
+  | @assign width fields base values =>
+    intro tenv type types typed
+    obtain ⟨ts, baseTyped, rfl, _⟩ := exprType_assign_success typed
+    exact atom_type_flat types baseTyped
 
 /-- The static facts of an integer primitive: an `Int` result described as a
 scalar, and no new escape. -/
@@ -433,22 +725,27 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     intro origin escaped
     rw [nextEq, join_escapes]
     exact escaped_mono _ (yesMono origin escaped)
-  | @literal args =>
+  | @literal args t elemT =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
     obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
-    obtain ⟨listType, allInt⟩ := primType_literal_int_success primTyped
+    obtain ⟨listType, allT⟩ := primType_literal_success primTyped
     subst listType
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
-    have flatAs := static_atoms_scalar static atomsTyped allInt argsRun
-    obtain ⟨checkerState, element, certificate, resultShape, elementFlat⟩ :=
-      infer_literal_success defaultConfig argsRun flatAs accepted
-    subst checkerState
-    refine ⟨.listInt, ?_, fun _ escaped => escaped⟩
-    rw [resultShape]
-    rcases elementFlat with rfl | rfl
-    · exact .listBottom _ _
-    · exact .listScalar _ _
+    obtain ⟨lenA, fields⟩ := static_atoms_abstract static atomsTyped argsRun
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rw [primitive_literal_run] at run
+    obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+    have shapesA : ∀ a ∈ as, FlatAbstract t a := by
+      intro a member
+      obtain ⟨i, as_i⟩ := List.mem_iff_getElem?.mp member
+      obtain ⟨ty, types_i⟩ := index_of_same_length lenA as_i
+      have shape := (fields i ty a types_i as_i).2
+      rw [ty_equal_flat_right elemT (allT ty (List.mem_of_getElem? types_i))] at shape
+      exact shape
+    refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+    rw [← first]
+    exact .list _ _ _ _ (by simp) (flatAbstract_fold_join shapesA .bottom (.bottom t))
   | @push receiver item =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
@@ -459,12 +756,14 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst shape
     subst shape'
     subst restNil
-    obtain ⟨listType, intType, resultType⟩ :=
-      primType_push_success (static_atom_type static headTyped)
-        (static_atom_type static itemTyped) primTyped
+    obtain ⟨t, listType, itemType, resultType⟩ :=
+      primType_push_success (static_atom_type static headTyped) primTyped
     subst listType
-    subst intType
+    subst tI
     subst resultType
+    have elemT : FlatType t := by
+      cases static_atom_type static headTyped with
+      | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨it, rest2, itemRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -472,28 +771,28 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst shape1
     subst shape2
     subst restNil'
-    have itemFlat := static_atom_scalar static itemTyped itemRun
+    have itemShape := static_atom_shape static itemTyped itemRun
     obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
     rcases static_atom_list static headTyped receiverRun with rfl |
-      ⟨roots, element, certificate, rfl, elementFlat⟩
+      ⟨roots, element, certificate, rfl, noUnk, elementShape⟩
     · -- A push onto a dead receiver: the checker returns bottom.
       rw [primitive_push_bottom_run] at run
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.listInt, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · have demanded := primitive_push_demand_run run
       rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
         defaultConfig] at demanded
       have escapesEq := demand_success_escapes demanded
-      obtain ⟨certificate', resultEq⟩ := primitive_push_result_flat itemFlat run
-      refine ⟨.listInt, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      have resultEq := primitive_push_result_values
+        (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+          defaultConfig) run
+      refine ⟨.list t elemT, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
       rw [resultEq]
-      rcases flat_join_flat elementFlat itemFlat with joined | joined
-      · rw [joined]; exact .listBottom _ _
-      · rw [joined]; exact .listScalar _ _
+      exact .list _ _ _ _ noUnk (flatAbstract_join elementShape itemShape)
   | @length receiver =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
@@ -502,7 +801,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have restNil := except_mapM_nil_success restTyped
     subst shape
     subst restNil
-    obtain ⟨listType, intType⟩ :=
+    obtain ⟨t, listType, intType⟩ :=
       primType_length_success (static_atom_type static headTyped) primTyped
     subst listType
     subst intType
@@ -544,7 +843,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have second : next = {before with facts := {before.facts with
         escapes := union before.facts.escapes abstract.cells}} := (congrArg Prod.snd equal).symm
     refine ⟨flatType, ?_, ?_⟩
-    · rw [← first]; exact flatAbstract_mapOrigins _ shape []
+    · rw [← first]; exact flatAbstract_mapOrigins sharedMark (fun path cs h => sharedMark_no_unknown path h) shape []
     · rw [second]
       exact fun _ escaped => escaped_mono _ escaped
   | @record args =>
@@ -818,9 +1117,12 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
   | @atRead receiver index fallback =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
-    obtain ⟨receiverTyped, indexTyped, fallbackTyped, intType⟩ :=
+    obtain ⟨t, receiverTyped, indexTyped, fallbackTyped, typeEq⟩ :=
       exprType_at_success (fun _ _ h => static_atom_type static h) typed
-    subst intType
+    subst type
+    have elemT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨ix, rest2, indexRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -830,15 +1132,15 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst shape2
     subst shape3
     subst restNil'
-    have fallbackFlat := static_atom_scalar static fallbackTyped fallbackRun
+    have fallbackShape := static_atom_shape static fallbackTyped fallbackRun
     obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
     rcases static_atom_list static receiverTyped receiverRun with rfl |
-      ⟨roots, element, certificate, rfl, elementFlat⟩
+      ⟨roots, element, certificate, rfl, _, elementShape⟩
     · rw [primitive_at_bottom_run] at run
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.int, ?_, ?_⟩
+      refine ⟨elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · rw [primitive_at_run] at run
@@ -847,18 +1149,18 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have second : next = {before with facts := {before.facts with
           reads := union before.facts.reads ((union roots element.cells).filter external)}} :=
         (congrArg Prod.snd equal).symm
-      refine ⟨.int, ?_, ?_⟩
-      · rw [← first]
-        rcases flat_join_flat elementFlat fallbackFlat with joined | joined
-        · rw [joined]; exact .bottom _
-        · rw [joined]; exact .int
+      refine ⟨elemT, ?_, ?_⟩
+      · rw [← first]; exact flatAbstract_join elementShape fallbackShape
       · rw [second]; exact fun _ escaped => escaped
   | @set receiver index item =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
-    obtain ⟨receiverTyped, indexTyped, itemTyped, listType⟩ :=
+    obtain ⟨t, receiverTyped, indexTyped, itemTyped, listType⟩ :=
       exprType_set_success (fun _ _ h => static_atom_type static h) typed
     subst listType
+    have elemT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨ix, rest2, indexRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -868,33 +1170,36 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst shape2
     subst shape3
     subst restNil'
-    have itemFlat := static_atom_scalar static itemTyped itemRun
+    have itemShape := static_atom_shape static itemTyped itemRun
     obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
     rcases static_atom_list static receiverTyped receiverRun with rfl |
-      ⟨roots, element, certificate, rfl, elementFlat⟩
+      ⟨roots, element, certificate, rfl, noUnk, elementShape⟩
     · rw [primitive_set_bottom_run] at run
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.listInt, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · have demanded := primitive_set_demand_run run
       rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
         defaultConfig] at demanded
       have escapesEq := demand_success_escapes demanded
-      obtain ⟨certificate', resultEq⟩ := primitive_set_result itemFlat run
-      refine ⟨.listInt, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      have resultEq := primitive_set_result_values
+        (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+          defaultConfig) run
+      refine ⟨.list t elemT, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
       rw [resultEq]
-      rcases flat_join_flat elementFlat itemFlat with joined | joined
-      · rw [joined]; exact .listBottom _ _
-      · rw [joined]; exact .listScalar _ _
+      exact .list _ _ _ _ noUnk (flatAbstract_join elementShape itemShape)
   | @copy receiver =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
-    obtain ⟨receiverTyped, listType⟩ :=
+    obtain ⟨t, receiverTyped, listType⟩ :=
       exprType_copy_success (fun _ _ h => static_atom_type static h) typed
     subst listType
+    have elemT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     have restNil' := except_mapM_nil_success restRun
@@ -902,33 +1207,63 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst restNil'
     obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
     rcases static_atom_list static receiverTyped receiverRun with rfl |
-      ⟨roots, element, certificate, rfl, elementFlat⟩
+      ⟨roots, element, certificate, rfl, _, elementShape⟩
     · rw [primitive_copy_bottom_run] at run
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.listInt, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
-    · obtain ⟨certificate', copyRun⟩ := primitive_copy_run
-        {ctx with escaped := union ctx.escaped before.facts.escapes} site roots element certificate
-        (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
-      rw [copyRun] at run
-      have equal := Except.ok.inj run
-      have first : Abstract.list [.site site 0] element certificate' = result := congrArg Prod.fst equal
-      have second : next = {before with facts := {before.facts with
-          reads := union before.facts.reads (roots.filter external)}} := (congrArg Prod.snd equal).symm
-      refine ⟨.listInt, ?_, by rw [second]; exact fun _ escaped => escaped⟩
+    · rw [primitive_copy_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
       rw [← first]
-      rcases elementFlat with rfl | rfl
-      · exact .listBottom _ _
-      · exact .listScalar _ _
+      exact .list _ _ _ _ (by simp) elementShape
+  | @view receiver front =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, receiverTyped, listType⟩ :=
+      exprType_view_success (fun _ _ h => static_atom_type static h) typed
+    subst listType
+    have elemT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | list _ elemT => exact elemT
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    have restNil' := except_mapM_nil_success restRun
+    subst shape1
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_list static receiverTyped receiverRun with rfl |
+      ⟨roots, element, certificate, rfl, noUnk, elementShape⟩
+    · rw [primitive_view_bottom_run] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.list t elemT, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · rw [primitive_view_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      rw [← first]
+      split
+      · exact .list _ _ _ _ (by simp) elementShape
+      · refine .list _ _ _ _ ?_ elementShape
+        intro member
+        rcases mem_union_cases _ _ _ member with old | new
+        · exact noUnk old
+        · simp at new
   | @prepend item receiver =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
-    obtain ⟨itemTyped, receiverTyped, listType⟩ :=
+    obtain ⟨t, itemTyped, receiverTyped, listType⟩ :=
       exprType_prepend_success (fun _ _ h => static_atom_type static h) typed
     subst listType
+    have elemT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨it, rest1, itemRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨r, rest2, receiverRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -936,30 +1271,252 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst shape1
     subst shape2
     subst restNil'
-    have itemFlat := static_atom_scalar static itemTyped itemRun
+    have itemShape := static_atom_shape static itemTyped itemRun
     obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
     rcases static_atom_list static receiverTyped receiverRun with rfl |
-      ⟨roots, element, certificate, rfl, elementFlat⟩
+      ⟨roots, element, certificate, rfl, noUnk, elementShape⟩
     · rw [primitive_prepend_bottom_run] at run
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.listInt, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
-    · obtain ⟨certificate', prependRun⟩ := primitive_prepend_run
-        {ctx with escaped := union ctx.escaped before.facts.escapes} site it roots element certificate
-        (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
-      rw [prependRun] at run
-      have equal := Except.ok.inj run
-      have first : Abstract.list (union [.site site 0] roots) (it.join element) certificate' = result :=
-        congrArg Prod.fst equal
-      have second : next = {before with facts := {before.facts with
-          reads := union before.facts.reads (roots.filter external)}} := (congrArg Prod.snd equal).symm
-      refine ⟨.listInt, ?_, by rw [second]; exact fun _ escaped => escaped⟩
+    · rw [primitive_prepend_run_values _ (show ({ctx with escaped := union ctx.escaped before.facts.escapes} :
+        Context).config = {} from defaultConfig)] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      have noUnkNew : Origin.unknown ∉ union [.site site 0] roots := by
+        intro member
+        rcases mem_union_cases _ _ _ member with fresh | old
+        · simp at fresh
+        · exact noUnk old
+      refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
       rw [← first]
-      rcases flat_join_flat itemFlat elementFlat with joined | joined
-      · rw [joined]; exact .listBottom _ _
-      · rw [joined]; exact .listScalar _ _
+      exact .list _ _ _ _ noUnkNew (flatAbstract_join itemShape elementShape)
+  | @dictEmpty t flatT =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    rw [exprType_dictEmpty_success typed]
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    have restNil := except_mapM_nil_success argsRun
+    subst restNil
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rw [primitive_dictEmpty_run] at run
+    obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+    refine ⟨.dict t flatT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+    rw [← first]
+    exact .dict _ _ _ _ (by simp) (.bottom _)
+  | @dictInsert receiver key item =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, receiverTyped, keyTyped, itemTyped, rfl⟩ :=
+      exprType_dictInsert_success (fun _ _ h => static_atom_type static h) typed
+    have flatD := static_atom_type static receiverTyped
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨k, rest2, _, restRun', shape2⟩ := except_mapM_cons_success restRun
+    obtain ⟨it, rest3, itemRun, restRun'', shape3⟩ := except_mapM_cons_success restRun'
+    have restNil' := except_mapM_nil_success restRun''
+    subst shape1
+    subst shape2
+    subst shape3
+    subst restNil'
+    have itemShape := static_atom_shape static itemTyped itemRun
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_dict static receiverTyped receiverRun with rfl |
+      ⟨roots, value, certificate, rfl, noUnk, valueShape⟩
+    · rw [primitive_dictInsert_bottom_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨flatD, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      rw [← first]; exact .bottom _
+    · have demanded := primitive_dictInsert_demand_run run
+      rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+        defaultConfig] at demanded
+      have escapesEq := demand_success_escapes demanded
+      have resultEq := primitive_dictInsert_result
+        (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+          defaultConfig) run
+      refine ⟨flatD, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      rw [resultEq]
+      exact .dict _ _ _ _ noUnk (flatAbstract_join valueShape itemShape)
+  | @dictRemove receiver key =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, receiverTyped, keyTyped, rfl⟩ :=
+      exprType_dictRemove_success (fun _ _ h => static_atom_type static h) typed
+    have flatD := static_atom_type static receiverTyped
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨k, rest2, _, restRun', shape2⟩ := except_mapM_cons_success restRun
+    have restNil' := except_mapM_nil_success restRun'
+    subst shape1
+    subst shape2
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_dict static receiverTyped receiverRun with rfl |
+      ⟨roots, value, certificate, rfl, noUnk, valueShape⟩
+    · rw [primitive_dictRemove_bottom_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨flatD, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      rw [← first]; exact .bottom _
+    · obtain ⟨demanded, resultEq⟩ := primitive_dictRemove_run run
+      rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+        defaultConfig] at demanded
+      have escapesEq := demand_success_escapes demanded
+      refine ⟨flatD, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      rw [resultEq]
+      exact .dict _ _ _ _ noUnk valueShape
+  | @dictGet receiver key =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, receiverTyped, keyTyped, rfl⟩ :=
+      exprType_dictGet_success (fun _ _ h => static_atom_type static h) typed
+    have flatT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | dict _ flatT => exact flatT
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨k, rest2, _, restRun', shape2⟩ := except_mapM_cons_success restRun
+    have restNil' := except_mapM_nil_success restRun'
+    subst shape1
+    subst shape2
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_dict static receiverTyped receiverRun with rfl |
+      ⟨roots, value, certificate, rfl, noUnk, valueShape⟩
+    · rw [primitive_dictGet_bottom_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨.result _ _ .int flatT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      rw [← first]; exact .bottom _
+    · rw [primitive_dictGet_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨.result _ _ .int flatT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      rw [← first]
+      exact .result _ _ _ _ .int valueShape
+  | @dictSize receiver =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, receiverTyped, rfl⟩ := exprType_dictSize_success (fun _ _ h => static_atom_type static h) typed
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, _, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    have restNil' := except_mapM_nil_success restRun
+    subst shape1
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rw [primitive_dictSize_run] at run
+    obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+    refine ⟨.int, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+    rw [← first]; exact .int
+  | @object args =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨types, atomsTyped, rfl⟩ := exprType_object_success typed
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨lenA, fields⟩ := static_atoms_abstract static atomsTyped argsRun
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rw [primitive_object_run] at run
+    obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+    refine ⟨.object types ?_, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+    · intro t member
+      obtain ⟨i, types_i⟩ := List.mem_iff_getElem?.mp member
+      obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i
+      exact (fields i t a types_i as_i).1
+    · rw [← first]
+      exact .object types _ _ _ (by simp)
+        (.record types as lenA.symm (fun i t a types_i as_i => (fields i t a types_i as_i).2))
+  | @get receiver index =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨ts, receiverTyped, found⟩ := exprType_get_success typed
+    have flatObject := static_atom_type static receiverTyped
+    have flatField : FlatType type := by
+      cases flatObject with
+      | object _ fs => exact fs type (List.mem_of_getElem? found)
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    have restNil' := except_mapM_nil_success restRun
+    subst shape1
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases flatAbstract_object (static_atom_shape static receiverTyped receiverRun) with rfl |
+      ⟨roots, element, certificate, rfl, _, elementShape⟩
+    · rw [primitive_get_bottom_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      exact ⟨flatField, by rw [← first]; exact .bottom _, by rw [← second]; exact fun _ escaped => escaped⟩
+    · rcases flatAbstract_record elementShape with rfl | ⟨fs, rfl, lenF, fieldsF⟩
+      · obtain ⟨message, refused⟩ := primitive_get_slot_bottom_run
+          {ctx with escaped := union ctx.escaped before.facts.escapes} site index roots certificate
+          (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
+        rw [refused] at run
+        cases run
+      · obtain ⟨field, fs_i, fieldShape⟩ := flatAbstract_record_field lenF fieldsF found
+        rw [primitive_get_run _ _ _ _ _ _ _ _ fs_i] at run
+        obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+        exact ⟨flatField, by rw [← first]; exact fieldShape, by rw [← second]; exact fun _ escaped => escaped⟩
+  | @recordCopy receiver =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨ts, receiverTyped, rfl⟩ := exprType_recordCopy_success typed
+    have flatObject := static_atom_type static receiverTyped
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    have restNil' := except_mapM_nil_success restRun
+    subst shape1
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases flatAbstract_object (static_atom_shape static receiverTyped receiverRun) with rfl |
+      ⟨roots, element, certificate, rfl, _, elementShape⟩
+    · rw [primitive_recordCopy_bottom_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      exact ⟨flatObject, by rw [← first]; exact .bottom _, by rw [← second]; exact fun _ escaped => escaped⟩
+    · rw [primitive_recordCopy_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      exact ⟨flatObject, by rw [← first]; exact .object _ _ _ _ (by simp) elementShape,
+        by rw [← second]; exact fun _ escaped => escaped⟩
+  | @assign width fields base values =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨ts, baseTyped, rfl, _, _, valuesTyped⟩ := exprType_assign_success typed
+    have flatObject := static_atom_type static baseTyped
+    have flatFields : ∀ t ∈ ts, FlatType t := by
+      cases flatObject with
+      | object _ fs => exact fs
+    obtain ⟨childFuel, b, vs, _, _, baseRun, valuesRun, step⟩ :=
+      Ownership.FlatFragment.InferAssign.infer_assign_success defaultConfig accepted
+    rcases Ownership.FlatFragment.InferAssign.assignStep_success step with ⟨rfl, rfl, rfl⟩ |
+      ⟨cs, fs, ex, rfl, demanded, rfl⟩
+    · exact ⟨flatObject, .bottom _, fun _ escaped => escaped⟩
+    · refine ⟨flatObject, ?_, ?_⟩
+      · cases static_atom_shape static baseTyped baseRun with
+        | object _ _ _ _ noUnk elementShape =>
+          rcases flatAbstract_record elementShape with same | ⟨fs', same, lenF, fieldsF⟩
+          · cases same
+          · cases same
+            unfold Ownership.FlatFragment.InferAssign.assignResult
+            refine .object ts cs _ _ noUnk (.record ts _ (by rw [assignFields_length]; exact lenF) ?_)
+            intro i t a ts_i at_i
+            refine assignFields_forall (P := fun i a => ∀ t, ts[i]? = some t → FlatAbstract t a)
+              (fun i a fs_i t ts_i => fieldsF i t a ts_i fs_i) ?_ i a at_i t ts_i
+            intro f v member t ts_f
+            obtain ⟨j, zipped⟩ := List.mem_iff_getElem?.mp member
+            rw [List.getElem?_zip_eq_some] at zipped
+            obtain ⟨fields_j, vs_j⟩ := zipped
+            obtain ⟨lenV, valuesF⟩ := mapM_ok_fields valuesRun
+            obtain ⟨atom, values_j⟩ := index_of_same_length lenV.symm vs_j
+            have pair : (f, atom) ∈ fields.zip values := by
+              apply List.mem_of_getElem? (i := j)
+              rw [List.getElem?_zip_eq_some]
+              exact ⟨fields_j, values_j⟩
+            obtain ⟨t', u, ts_f', atomTyped, equal⟩ := valuesTyped f atom pair
+            rw [ts_f] at ts_f'
+            cases ts_f'
+            have same := ty_equal_flat_right (flatFields t (List.mem_of_getElem? ts_f)) equal
+            subst same
+            exact static_atom_shape static atomTyped (valuesF j atom v values_j vs_j)
+      · rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+          defaultConfig] at demanded
+        have escapesEq := (Ownership.FlatFragment.Support.recordDemand_success demanded).2
+        rw [escapesEq]
+        exact fun _ escaped => escaped
 
 end Ownership.FlatFragment.Static

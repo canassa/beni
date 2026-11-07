@@ -1,0 +1,51 @@
+-- ownership (project): see Main.beni. `incAll` and `incList` push onto
+-- every kids list of a `Rose`; `nestOne` and `nestTwo` write their
+-- arguments under a new node; `regraft` and `apartKids` answer taken kids
+-- stored again at another depth.
+pub type Rose
+    = Rose (List Rose)
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+pub incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub nestOne : Rose → Rose
+nestOne a = incAll (Rose [ a ])
+
+
+pub nestTwo : Rose, Rose → Rose
+nestTwo a b = incAll (Rose [ a, Rose [ b ] ])
+
+
+pub regraft : Rose → Rose
+regraft t =
+    case t of
+        Rose [ k, …_ ] →
+            Rose [ t, Rose [ k ] ]
+
+        _ →
+            t
+
+
+pub apartKids : Rose → Rose
+apartKids t =
+    case t of
+        Rose [ a, b, …_ ] →
+            Rose [ a, Rose [ b ] ]
+
+        _ →
+            t

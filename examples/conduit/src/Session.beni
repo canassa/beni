@@ -1,33 +1,46 @@
---! Who is using the page: a signed-in `Viewer`, or a guest. Every page
---! keeps the session it was opened with, and hands it back to `Main` when
---! the route changes.
+--! Who is using the page: a signed-in `Viewer`, or a guest, and the time
+--! zone their dates are shown in. Every page keeps the session it was
+--! opened with, and hands it back to `Main` when the route changes.
+--! elm-spa-example keeps the zone in each page and asks `Time.here` for
+--! it; here `Main` asks `Date.here` once, when the program starts.
 
 import Api exposing (Cred, Viewer)
 import Browser.Navigation as Navigation
+import Date
 
 
 pub type Session
-    = LoggedIn Navigation.Key Viewer
-    | Guest Navigation.Key
+    = LoggedIn Navigation.Key Date.Zone Viewer
+    | Guest Navigation.Key Date.Zone
 
 
 pub navKey : Session → Navigation.Key
 navKey session =
     case session of
-        LoggedIn key _ →
+        LoggedIn key _ _ →
             key
 
-        Guest key →
+        Guest key _ →
             key
+
+
+pub zone : Session → Date.Zone
+zone session =
+    case session of
+        LoggedIn _ z _ →
+            z
+
+        Guest _ z →
+            z
 
 
 pub viewer : Session → Maybe Viewer
 viewer session =
     case session of
-        LoggedIn _ v →
+        LoggedIn _ _ v →
             Just v
 
-        Guest _ →
+        Guest _ _ →
             Nothing
 
 
@@ -35,11 +48,21 @@ pub cred : Session → Maybe Cred
 cred session = Maybe.map (viewer session) .cred
 
 
-pub fromViewer : Navigation.Key, Maybe Viewer → Session
-fromViewer key maybeViewer =
+pub fromViewer : Navigation.Key, Date.Zone, Maybe Viewer → Session
+fromViewer key z maybeViewer =
     case maybeViewer of
         Just v →
-            LoggedIn key v
+            LoggedIn key z v
 
         Nothing →
-            Guest key
+            Guest key z
+
+
+--| The same tab, signed in as `v`.
+pub signIn : Session, Viewer → Session
+signIn session v = LoggedIn (navKey session) (zone session) v
+
+
+--| The same tab, signed out.
+pub signOut : Session → Session
+signOut session = Guest (navKey session) (zone session)

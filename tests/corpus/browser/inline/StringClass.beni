@@ -1,0 +1,41 @@
+-- Scalar class values keep their attribute semantics, including empty values
+-- independently of the vocabulary's additional class-list form.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : String
+
+
+type Msg
+    = Set
+    | Clear
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Set →
+            { model | name = "hot & \"quoted\"" }
+
+        Clear →
+            { model | name = "" }
+
+
+view : Model → Html Msg
+view model =
+    <main class="fixed &amp; &quot;quoted&quot;">
+        <p id="dynamic" class={Debug.log "class value" model.name}>dynamic</p>
+        <textarea id="control" class={model.name} />
+        <button id="set" onClick={Set}>set</button>
+        <button id="clear" onClick={Clear}>clear</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { name = "cold" }, update = update, view = view })
+        "root"

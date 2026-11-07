@@ -1,0 +1,5 @@
+import Js
+
+
+pub store : { form : { name : String } } → Js.Ref { form : { name : String } }
+store model = Js.ref model

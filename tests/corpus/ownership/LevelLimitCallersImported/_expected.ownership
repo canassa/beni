@@ -1,0 +1,25 @@
+module Levels
+  14:23 List.push xs: rejected level: ys may hold it at another level, and is read at 14:39 (approx)
+  27:15 List.push a: rejected level: b may hold it at another level, and is read at 27:13 (approx)
+  summary inline: π1 RAW[storage], π1[*] A, π2 R; res .0 condition(fresh1) fresh1 π1{sep π1 π2}, .0[*] ~condition(fresh2) ~π1[*]
+  summary two: π1 R, π1#Node.0⟨Tree⟩#Node.1 RAW[storage], π1#Node.0⟨Tree⟩#Node.1[*] A; res .0 condition(fresh2) fresh2 π1#Node.0⟨Tree⟩#Node.1, .0[*] ~condition(fresh3) ~π1#Node.0⟨Tree⟩#Node.1[*], .1 fresh5 ~condition(fresh4) π1#Node.0⟨Tree⟩#Node.1, condition(fresh1){lost}
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+module Main
+  10:17 call Levels.inline xs: rejected disjoint: another operand of the same operation reaches it (Levels.inline writes π1)
+  14:24 call Levels.inline xs: accepted param (Levels.inline writes π1)
+  19:16 call Levels.inline xs: rejected later-use: xs is read again at 20:25 (Levels.inline writes π1)
+  25:16 call Levels.inline xs: accepted param (Levels.inline writes π1)
+  32:16 call Levels.two <Node …>#Node.0⟨Tree⟩#Node.1: rejected exclusive: the callee needs the list's elements not to share, and they may (Levels.two writes π1#Node.0⟨Tree⟩#Node.1)
+  38:16 call Levels.two <Node …>#Node.0⟨Tree⟩#Node.1: accepted fresh (Levels.two writes π1#Node.0⟨Tree⟩#Node.1)
+  summary inlineSame: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) ~fresh1 ~π1{shared}, .0[*] ~condition(fresh3) ~π1[*]
+  summary inlineDistinct: π1 RAW[storage], π1[*] RA, π2 R; res .0 condition(fresh2) ~fresh1 ~π1{sep π1 π2}, .0[*] ~condition(fresh3) ~π1[*]
+  summary inlineReadAgain: π1 RW[storage], π1[*] R
+  summary inlineOnce: π1 RW[storage], π1[*] R
+  summary twoShared: unused
+  summary twoDistinct: unused
+  demands 6: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 8: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 1
+cause later-use 1
+cause exclusive 1
+cause level 2

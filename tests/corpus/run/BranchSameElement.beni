@@ -1,0 +1,24 @@
+-- BranchSameElement (Appendix B, S4; R-4.6.2, R-4.6.7): the two arms hold the
+-- same `x` once each. The list is one alternative or the other, never both,
+-- so the write into its element is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pick : Bool, List Int → List (List Int)
+pick c x = if c then [ x ] else [ x ]
+
+
+main : Program
+main = Node.print (show (List.update (pick True [ 1 ]) 0 λl → List.push l 9))

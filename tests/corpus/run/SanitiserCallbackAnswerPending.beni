@@ -1,0 +1,46 @@
+-- A runtime check that a callback's answer, pending while the same label
+-- is called again, does not keep that later supply (`ownership-v2.md`
+-- §2.9.2 step 7). `mapL` holds `f x` in its list literal while it hands
+-- `rest`'s elements to `f`, and `pair` holds `f x` while it calls `f y`.
+-- v2 took every answer to hold anything, so each label kept its supply
+-- and the writing callbacks were refused. The answer holds what its call
+-- supplied and what its function holds, and the label's condition keeps
+-- both apart: the pushes are accepted, and the sanitised run agrees.
+import List
+import Node exposing (Program)
+import String
+
+
+mapL : List a, (a → b) → List b
+mapL l f =
+    case l of
+        [] →
+            []
+
+        [ x, …rest ] →
+            [ f x, …mapL rest f ]
+
+
+pair : List a, (a → b) → List b
+pair l f =
+    case l of
+        [ x, y ] →
+            [ f x, f y ]
+
+        _ →
+            []
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+showAll : List (List Int) → String
+showAll ls = String.join (List.map ls show) " "
+
+
+main : Program
+main =
+    r = mapL [ [ 5 ], [ 6 ], [ 7 ] ] λl → List.push l 1
+    s = pair [ [ 8 ], [ 9 ] ] λl → List.push l 2
+    Node.print "${showAll r} ${showAll s}"

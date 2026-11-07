@@ -1,0 +1,14 @@
+module SlotRecursiveFamilies
+  19:15 List.push a: accepted param
+  19:30 List.push b: accepted param
+  23:15 call SlotRecursiveFamilies.pushBoth <call SlotRecursiveFamilies.swapN>.0: rejected call: another operand may be it, through the call at 23:25 (SlotRecursiveFamilies.pushBoth writes π1.0) (approx)
+  23:15 call SlotRecursiveFamilies.pushBoth <call SlotRecursiveFamilies.swapN>.1: rejected call: another operand may be it, through the call at 23:25 (SlotRecursiveFamilies.pushBoth writes π1.1) (approx)
+  27:11 call SlotRecursiveFamilies.pushBoth <call SlotRecursiveFamilies.swapN>.0: rejected call: another operand may be it, through the call at 27:21 (SlotRecursiveFamilies.pushBoth writes π1.0) (approx)
+  27:11 call SlotRecursiveFamilies.pushBoth <call SlotRecursiveFamilies.swapN>.1: rejected call: another operand may be it, through the call at 27:21 (SlotRecursiveFamilies.pushBoth writes π1.1) (approx)
+  summary swapN: π2 RA, π3 RA; res .0 condition(fresh2) ~π3 π2, .1 condition(fresh3) ~π2 π3, condition(fresh1){sep π2 π3}
+  summary pushBoth: π1 R, π1.0 RAW[storage], π1.0[*] A, π1.1 RAW[storage], π1.1[*] A; res .0 ~condition(fresh2) π1.0, .0[*] ~condition(fresh4) ~π1.0[*], .1 ~condition(fresh3) π1.1, .1[*] ~condition(fresh5) ~π1.1[*], condition(fresh1){sep π1.0 π1.1, sep π1.0 π1.1[*], sep π1.0[*] π1.1[*], sep π1.1 π1.0[*]}r{sep π1.0[*] π1.1[*]}
+  summary apart: π1 RAw[storage], π1[*] A, π2 RAw[storage], π2[*] A; res .0 condition(fresh1) ~condition(fresh4) ~π1 ~π2, .0[*] ~condition(fresh6) ~π1[*] ~π2[*], .1 condition(fresh2) ~condition(fresh5) ~π1 ~π2, .1[*] ~condition(fresh7) ~π1[*] ~π2[*], condition(fresh3){lost}
+  summary same: π1 RAw[storage], π1[*] A; res .0 condition(fresh1) ~condition(fresh4) ~π1, .0[*] ~condition(fresh6) ~π1[*], .1 condition(fresh2) ~condition(fresh5) ~π1, .1[*] ~condition(fresh7) ~π1[*], condition(fresh3){lost}
+  demands 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause call 4

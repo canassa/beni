@@ -1,0 +1,149 @@
+-- One object stored at two slots of a cell (`ownership-v2.md` §2.13.7,
+-- *The contents relation*, #1984, #1986). The frame reads one name per
+-- slot, so such a store makes the contents escape, and each edit below is
+-- refused. Each line prints the cell after the edit: were an edit
+-- accepted, the second slot would read it.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+lists : List (List Int) → String
+lists xs =
+    sep = ";"
+    String.join (List.map xs ints) sep
+
+
+pair : Ref (List Int × List Int) → String
+pair r =
+    case Ref.get r of
+        ( a, b ) →
+            "${ints a} ${ints b}"
+
+
+edit : Ref (List Int × List Int) → ⊤
+edit r = Ref.update r λp →
+    case p of
+        ( x, y ) →
+            ( List.push x 8, y )
+
+
+viaSet : ⊤ → String
+viaSet ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    n = [ 7 ]
+    Ref.set r ( n, n )
+    edit r
+    pair r
+
+
+viaAnswer : ⊤ → String
+viaAnswer ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.update r λ_ →
+        n = [ 7 ]
+        ( n, n )
+    edit r
+    pair r
+
+
+viaModify : ⊤ → String
+viaModify ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    _ = Ref.modify r λ_ →
+        n = [ 7 ]
+        ( 0, ( n, n ) )
+    edit r
+    pair r
+
+
+viaOld : ⊤ → String
+viaOld ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.update r λp →
+        case p of
+            ( x, _ ) →
+                ( x, x )
+    edit r
+    pair r
+
+
+viaList : ⊤ → String
+viaList ⊤ =
+    r = Ref.make [ [ 1 ], [ 2 ] ]
+    Ref.update r λ_ →
+        n = [ 7 ]
+        [ n, n ]
+    Ref.update r λl → List.update l 0 λi → List.push i 8
+    lists (Ref.get r)
+
+
+viaField : ⊤ → String
+viaField ⊤ =
+    c = Ref.make { p = [ 1 ], q = [ 2 ] }
+    Ref.update c λs → { p = s.p, q = s.p }
+    Ref.update c λs → { p = List.push s.p 9, q = s.q }
+    "${ints (Ref.get c).p} ${ints (Ref.get c).q}"
+
+
+putTwice : Ref (List Int × List Int), List Int → ⊤
+putTwice r n = Ref.set r ( n, n )
+
+
+viaHelper : ⊤ → String
+viaHelper ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    putTwice r [ 7 ]
+    edit r
+    pair r
+
+
+viaClosure : ⊤ → String
+viaClosure ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    n = [ 7 ]
+    c = λ⊤ → Ref.set r ( n, n )
+    c ⊤
+    edit r
+    pair r
+
+
+editThenStore : Ref (List Int × List Int) → String
+editThenStore r =
+    edit r
+    now = pair r
+    n = [ 7 ]
+    Ref.set r ( n, n )
+    now
+
+
+inOrder : ⊤ → String
+inOrder ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    a = editThenStore r
+    b = editThenStore r
+    "${a} ${b}"
+
+
+main : Program
+main =
+    lines =
+        [ viaSet ⊤
+        , viaAnswer ⊤
+        , viaModify ⊤
+        , viaOld ⊤
+        , viaList ⊤
+        , viaField ⊤
+        , viaHelper ⊤
+        , viaClosure ⊤
+        , inOrder ⊤
+        ]
+    Node.print (String.join lines "\n")

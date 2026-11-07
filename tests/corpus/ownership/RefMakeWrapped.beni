@@ -1,0 +1,17 @@
+-- ownership (v2): `Ref.make` consumes what it is handed, a list holding a
+-- parameter included, so `wrapped xs` takes `xs` as `Ref.make xs` does and
+-- `( wrapped xs, xs )` is refused (ownership-v2.md §2.8: a deep demand writes
+-- everything its base reaches).
+import Ref exposing (Ref)
+
+
+wrapped : List Int → Ref (List (List Int))
+wrapped xs = Ref.make [ xs ]
+
+
+pub kept : List Int → Ref (List (List Int)) × List Int
+kept xs = ( wrapped xs, xs )
+
+
+pub keptDirect : List Int → Ref (List Int) × List Int
+keptDirect xs = ( Ref.make xs, xs )

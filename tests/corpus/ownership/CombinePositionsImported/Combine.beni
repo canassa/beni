@@ -1,0 +1,35 @@
+-- ownership (project): see Main.beni. `combineHelp` pushes each `Ok`
+-- payload of its first list onto its second; `twoMatches` matches one rest
+-- twice.
+pub combine : List (Result String (List Int)) → Result String (List (List Int))
+combine results = combineHelp results []
+
+
+pub combineHelp : List (Result String (List Int)), List (List Int) → Result String (List (List Int))
+combineHelp results values =
+    case results of
+        [] →
+            Ok values
+
+        [ first, …rest ] →
+            case first of
+                Ok value →
+                    combineHelp rest (List.push values value)
+
+                Err x →
+                    Err x
+
+
+pub twoMatches : List (Result String (List Int)) → List (List Int)
+twoMatches rs =
+    case rs of
+        [ _, …rest ] →
+            case ( rest, rest ) of
+                ( [ Ok a, …_ ], [ Ok c, …_ ] ) →
+                    [ List.push a 1, c ]
+
+                _ →
+                    []
+
+        [] →
+            []

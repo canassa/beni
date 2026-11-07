@@ -1,0 +1,98 @@
+-- ownership: a recursive value whose deeper kids list is a view of a list
+-- read after, written by a recursive writer (ownership-v2.md Appendix B,
+-- V×F, the S3b half with a group writer; R-4.7.1, R-5.7.1; #1129).
+-- `incAll` pushes onto the kids list of every `Rose` at every depth, and
+-- `incList` walks a list of `Rose`; they are one group. `deep rest` puts
+-- `rest`, a view of `xs`, one level down. The writer pushes onto the view,
+-- which shares `xs`'s storage, so with `xs` read after it is refused
+-- (`viewRead`), and so it is through the identity `ident` (`viewIdent`).
+-- With `xs` not read after, the write is `xs`'s own and is accepted
+-- (`viewDead`). A shallow copy of the view is no control: its elements are
+-- `xs`'s, whose kids lists the writer pushes onto too (`copyRead`,
+-- refused). A fresh subtree is accepted (`freshRead`), and so it should be
+-- two levels down (`freshDeeper`); v2 refuses it, a known entry (#1501).
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+ident : Rose → Rose
+ident r = r
+
+
+deep : List Rose → Rose
+deep ks = Rose [ Rose ks ]
+
+
+deeper : List Rose → Rose
+deeper ks = Rose [ Rose [ Rose ks ] ]
+
+
+pub viewRead : List Rose → Rose × List Rose
+viewRead xs =
+    case xs of
+        [ _, …rest ] →
+            ( incAll (deep rest), xs )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub viewIdent : List Rose → Rose × List Rose
+viewIdent xs =
+    case xs of
+        [ _, …rest ] →
+            ( incAll (ident (deep rest)), xs )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub viewDead : List Rose → Rose
+viewDead xs =
+    case xs of
+        [ _, …rest ] →
+            incAll (deep rest)
+
+        [] →
+            Rose []
+
+
+pub copyRead : List Rose → Rose × List Rose
+copyRead xs =
+    case xs of
+        [ _, …rest ] →
+            ( incAll (deep (List.copy rest)), xs )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub freshRead : List Rose → Rose × List Rose
+freshRead xs =
+    case xs of
+        [ _, …rest ] →
+            ( incAll (ident (deep [ Rose [] ])), rest )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub freshDeeper : ⊤ → Rose
+freshDeeper ⊤ = incAll (deeper [ Rose [] ])

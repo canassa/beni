@@ -1,0 +1,4 @@
+A runtime catch for a cell callback that stores a list its caller still names (ownership-v2.md §2.13.7, #1955),
+handed to the cell directly, through a helper that passes it on and through a helper's own callback. Built again
+under --ownership=v2 and the list stale-read sanitiser. v2 refuses each later edit; were it to accept one, the
+sanitised run would print the edited list through the cell.

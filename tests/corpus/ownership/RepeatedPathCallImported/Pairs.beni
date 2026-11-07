@@ -1,0 +1,27 @@
+-- ownership (project): see Main.beni. `pair a b` answers
+-- `( a, ( a, b ) )`; `writeFirst` pushes onto the first of a pair;
+-- `pushAll` pushes onto each list of a list and `both a b` answers
+-- `[ a, b ]`.
+pub pair : List Int, List Int → List Int × (List Int × List Int)
+pair a b = ( a, ( a, b ) )
+
+
+pub writeFirst : List Int × List Int → List Int
+writeFirst p =
+    case p of
+        ( a, _ ) →
+            List.push a 1
+
+
+pub pushAll : List (List Int) → List (List Int)
+pushAll xss =
+    case xss of
+        [ xs, …rest ] →
+            [ List.push xs 1, …pushAll rest ]
+
+        [] →
+            []
+
+
+pub both : List Int, List Int → List (List Int)
+both a b = [ a, b ]

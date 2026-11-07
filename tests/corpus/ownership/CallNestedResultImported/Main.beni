@@ -1,0 +1,76 @@
+-- ownership (project): `CallNestedResult` with the callees in another
+-- module (ownership-v2.md §2.11 *Re-rooting at a parameter*, §3.6,
+-- #1364). The block publishes `Pairs.w2`'s result with `π1` at every
+-- leaf, so `a`, bound from `Pairs.w2 xs` and pushed onto while `xs` is
+-- read later, is refused `alias`: through two and three calls, an
+-- identity over a pair, a list literal written by `Pairs.tl`, two
+-- different callees, a callee that takes the tuple apart, a callee that
+-- writes every leaf (`Pairs.t2`), a local `w2` over the imported `w1`,
+-- and `Pairs.inner`, which reads `w2`'s result in its own module.
+-- `alone` reads `xs` nowhere after the push: accepted. Under v2, `Pairs`'
+-- block does not decode yet (#1374), so `Main` is unchecked there.
+import Pairs
+
+
+w2 x = Pairs.w1 (Pairs.w1 x)
+
+
+pub twice : List Int → Int
+twice xs =
+    case Pairs.w2 xs of
+        ( ( a, _ ), _ ) →
+            Pairs.touch0 a + List.length xs
+
+
+pub thrice : List Int → Int
+thrice xs =
+    case Pairs.w3 xs of
+        ( ( ( a, _ ), _ ), _ ) →
+            Pairs.touch0 a + List.length xs
+
+
+pub local : List Int → Int
+local xs =
+    case w2 xs of
+        ( ( a, _ ), _ ) →
+            Pairs.touch0 a + List.length xs
+
+
+pub idPair : List Int → Int
+idPair xs =
+    case Pairs.idn (Pairs.w1 xs) of
+        ( a, _ ) →
+            Pairs.touch0 a + List.length xs
+
+
+pub inList : List Int → Int
+inList xs = Pairs.tl (Pairs.w1 [ xs ]) + List.length xs
+
+
+pub mixed : List Int → Int
+mixed xs =
+    case Pairs.pair (Pairs.w1 xs) xs of
+        ( ( _, a ), _ ) →
+            Pairs.touch0 a + List.length xs
+
+
+pub swapped : List Int → Int
+swapped xs =
+    case Pairs.sw (Pairs.w2 xs) of
+        ( ( a, _ ), _ ) →
+            Pairs.touch0 a + List.length xs
+
+
+pub allLeaves : List Int → Int
+allLeaves xs = Pairs.t2 (Pairs.w2 xs) + List.length xs
+
+
+pub viaInner : List Int → Int
+viaInner xs = Pairs.inner xs
+
+
+pub alone : List Int → Int
+alone xs =
+    case Pairs.w2 xs of
+        ( ( a, _ ), _ ) →
+            Pairs.touch0 a

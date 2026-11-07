@@ -1,0 +1,20 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- throws click-wait button output "unreachable"
+console.log: platform defect hook
+(threw: TypeError: layered original defect)
+<body>
+  <main>
+    <button disabled="">"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- advance 1000
+(the DOM did not change)
+-- click button
+(the DOM did not change)

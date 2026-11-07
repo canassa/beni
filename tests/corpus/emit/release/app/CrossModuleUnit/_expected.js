@@ -1,1 +1,1 @@
-import process from"node:process";const d=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};const a=b=>({code:0,out:`${b}\n`});const b=a=>String(a.cups);const c=a(b({cups:-1}));d(c);
+const a=b=>{let c=b.$o;if(c.length!==0)globalThis.process.stdout.write(c);globalThis.process.exitCode=0};const b=a=>({$o:a+"\n"});const c=a=>String(a.cups);const d=b(c({cups:-1}));a(d);

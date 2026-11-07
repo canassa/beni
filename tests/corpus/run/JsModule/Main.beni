@@ -1,0 +1,16 @@
+-- `Js.module`, a static import of a host built-in written by a platform
+-- module (boundary.md §4.2, added 2026-11-04): a named export, the default
+-- export, one binding for two calls of one specifier, and two built-ins
+-- in one module.
+import Hosts
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Hosts.baseName "/tmp/x/file.txt"
+        , Hosts.extension "/tmp/x/file.txt"
+        , if String.length (Hosts.platform ⊤) > 0 then "platform known" else "platform unknown"
+        , Hosts.fileUrl "/tmp/x/file.txt"
+        ]

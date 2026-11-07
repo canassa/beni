@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <aside id="observed">"waiting"</aside>
+  </main>
+</body>
+-- throws click-wait button output "unreachable"
+(threw: Error: nested parent defect)
+(the DOM did not change)
+-- click-wait button aside "nested cleaned"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <aside id="observed" data-closed="yes">"nested cleaned"</aside>
+  </main>
+</body>

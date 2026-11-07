@@ -1,0 +1,23 @@
+module WriteOneLevel
+  18:23 List.push ys: accepted param
+  28:10 WriteOneLevel.f <Node …>#Node.0#Node.1: accepted param
+  34:5 WriteOneLevel.f <Node …>#Node.0#Node.1: accepted fresh
+  41:18 List.push xs: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.0#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.0⟨Tree⟩#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.2#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.2⟨Tree⟩#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.0#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.0⟨Tree⟩#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.2#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.2⟨Tree⟩#Node.1: accepted param
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 19: accepted 14 (fresh 1, call 0, param 13, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 19: accepted 14 (fresh 1, call 0, param 13, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 5

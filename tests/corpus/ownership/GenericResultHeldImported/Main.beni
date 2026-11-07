@@ -1,0 +1,53 @@
+-- ownership (v2, #1516, project): GenericResultHeld with the generic
+-- callees imported (`Helpers`), whose class comes from their summary
+-- block. A local bound to their result holds it, and a later read refuses
+-- a write of it: a push read again in a tuple (`push`), a construction
+-- read again (`spread`), through nested calls (`nested`), in a record
+-- (`inRecord`) and in an arm (`inArm`). `pushOnce` is accepted.
+import Helpers
+
+
+pub push : List Int → List (List Int) × List (List Int)
+push b =
+    l0 = Helpers.wrap b
+    l3 = List.push l0 [ 5 ]
+    ( l0, l3 )
+
+
+pub spread : List Int → List (List Int) × List (List Int)
+spread b =
+    l0 = Helpers.wrap [ 7 ]
+    l2 = [ …l0, b ]
+    ( l0, l2 )
+
+
+pub nested : List Int → List (List Int) × List (List Int)
+nested b =
+    l0 = Helpers.idt (Helpers.two (Helpers.wrap 7) b)
+    l3 = List.push l0 [ 5 ]
+    ( l0, l3 )
+
+
+pub inRecord : Int → { a : List Int, c : List Int }
+inRecord b =
+    l0 = Helpers.wrap b
+    l3 = List.push l0 5
+    { a = l0, c = l3 }
+
+
+pub inArm : Int → Int
+inArm b =
+    l0 = Helpers.wrap b
+    l3 = List.push l0 5
+    case l3 of
+        [] →
+            0
+
+        _ →
+            List.length l0
+
+
+pub pushOnce : Int → List Int
+pushOnce b =
+    l0 = Helpers.wrap b
+    List.push l0 5

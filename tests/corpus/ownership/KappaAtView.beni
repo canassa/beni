@@ -1,0 +1,30 @@
+-- ownership: κ at a call's result (§2.11 *κ at a view*, the review's point 1).
+-- `twoOf x = [ x, x ]` answers one list twice: a head pushed beside its
+-- rest is refused. `twoFresh` answers two lists: accepted. Pinned before
+-- calls answer views, so the κ a view reads over its chain keeps both.
+twoOf : List Int → List (List Int)
+twoOf x = [ x, x ]
+
+
+twoFresh : ⊤ → List (List Int)
+twoFresh ⊤ = [ [ 0 ], [ 0 ] ]
+
+
+pub sharedHead : ⊤ → List Int × Int
+sharedHead ⊤ =
+    case twoOf [ 0 ] of
+        [ a, …rest ] →
+            ( List.push a 1, List.length rest )
+
+        [] →
+            ( [], 0 )
+
+
+pub freshHead : ⊤ → List Int × Int
+freshHead ⊤ =
+    case twoFresh ⊤ of
+        [ a, …rest ] →
+            ( List.push a 1, List.length rest )
+
+        [] →
+            ( [], 0 )

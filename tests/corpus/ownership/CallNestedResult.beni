@@ -1,0 +1,102 @@
+-- ownership: a call whose argument is itself a built value keeps that
+-- value's cells in its result (ownership-v2.md §2.11 *Re-rooting at a
+-- parameter*, #1364). `w2 x = w1 (w1 x)` hands `w1` a tuple at a type
+-- variable's place, and the result holds `x` at every leaf, `.0.0` to
+-- `.1.1`. So `a`, bound from `w2 xs` and pushed onto while `xs` is read
+-- later, is refused `alias`, never accepted `fresh`. The same through
+-- three calls (`w3`), an identity over a pair (`idn (w1 x)`), a list
+-- literal (`w1 [ x ]`, written by `tl`), two different callees (`pair
+-- (w1 x) x`), a callee that takes the tuple apart (`sw (w2 x)`), and a
+-- callee that writes every leaf of `w2`'s result (`t2`). `alone` pushes
+-- onto `a` with `xs` read nowhere after it: accepted, and its class
+-- writes `π1`.
+touch0 : List Int → Int
+touch0 xs = List.length (List.push xs 1)
+
+
+w1 x = ( x, x )
+
+
+w2 x = w1 (w1 x)
+
+
+w3 x = w1 (w2 x)
+
+
+idn x = x
+
+
+pair x y = ( x, y )
+
+
+sw p =
+    case p of
+        ( l, r ) →
+            ( r, l )
+
+
+pub twice : List Int → Int
+twice xs =
+    case w2 xs of
+        ( ( a, _ ), _ ) →
+            touch0 a + List.length xs
+
+
+pub thrice : List Int → Int
+thrice xs =
+    case w3 xs of
+        ( ( ( a, _ ), _ ), _ ) →
+            touch0 a + List.length xs
+
+
+pub idPair : List Int → Int
+idPair xs =
+    case idn (w1 xs) of
+        ( a, _ ) →
+            touch0 a + List.length xs
+
+
+tl : List (List Int) × List (List Int) → Int
+tl p =
+    case p of
+        ( [ a ], _ ) →
+            touch0 a
+
+        _ →
+            0
+
+
+pub inList : List Int → Int
+inList xs = tl (w1 [ xs ]) + List.length xs
+
+
+pub mixed : List Int → Int
+mixed xs =
+    case pair (w1 xs) xs of
+        ( ( _, a ), _ ) →
+            touch0 a + List.length xs
+
+
+pub swapped : List Int → Int
+swapped xs =
+    case sw (w2 xs) of
+        ( ( a, _ ), _ ) →
+            touch0 a + List.length xs
+
+
+t2 : (List Int × List Int) × (List Int × List Int) → Int
+t2 p =
+    case p of
+        ( ( a, b ), ( c, d ) ) →
+            touch0 a + touch0 b + touch0 c + touch0 d
+
+
+pub allLeaves : List Int → Int
+allLeaves xs = t2 (w2 xs) + List.length xs
+
+
+pub alone : List Int → Int
+alone xs =
+    case w2 xs of
+        ( ( a, _ ), _ ) →
+            touch0 a

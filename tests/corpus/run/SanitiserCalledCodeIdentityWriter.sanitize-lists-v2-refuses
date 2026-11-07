@@ -1,0 +1,3 @@
+# v2 refuses the arm that writes; before #2076 the compiler crashed.
+22:20 list_may_be_shared once
+28:10 list_still_used List.map

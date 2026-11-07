@@ -1,0 +1,3 @@
+# v2 refuses the write(s) below; the edit would change what the program prints.
+25:9 list_still_used f
+26:9 list_still_used g

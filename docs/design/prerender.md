@@ -146,8 +146,8 @@ by the causes §3.3 names, none of which is in the program.
      the build machine's clock (`build/bad/prerender/PointFreeInit`, `PointFreeDebug`): a
      defect, not a limit.
 
-   A method call or an operator the checker answers impure is still refused at the call, whatever
-   the type's function does: the walk does not follow a dispatch target yet (#1247). Since the
+   A method call or an operator the checker answers impure was still refused at the call, whatever
+   the type's function does: the walk did not follow a dispatch target (#1247, below). Since the
    walk reads another module's body and not only its interface, the program module's lowering
    depends on that body; the program module is the app's, and an app module is lowered by every
    build, never read from a row (`backend.md` §9, *The join*), so no build answers with a stale
@@ -157,6 +157,35 @@ by the causes §3.3 names, none of which is in the program.
    away, behind a `Debug.log`), `OtherPointFree`, `OtherImpureConstant`, `OtherImpureClosure`,
    `ConstantBehindCall`, `ConstantInLambda`, `ConstantInSchema`,
    `PointFreeInit` and `PointFreeDebug`.
+
+   *Amended 2026-11-06, as built for #1247.* **A method call or an operator is answered by the
+   function its dispatch resolves to**, as a call of that function is. The walk reads the target
+   the checker resolved at the site (the site's callee, `Dispatch.calleeOf`, the same lookup
+   `Totality`'s proof reads for the site). When the target is a top-level function of the module
+   the walk is in, or of an app's or a platform's module, the call is answered by that function's
+   body, walked once in its module, by the rules above: a body whose only effect is `Debug`'s adds
+   `Debug`'s effect, a call in it that may be impure is named where it is, and a function bound
+   point-free, or a body that shows no effect, is the effect at the call. So `<` on a type whose
+   `compare` only logs, and `x.m a` on another module's type whose `m` only logs, build.
+
+   - **The evidence the call passes is not followed.** It is a parameter of the target: a call of
+     it in the target's body (`a < b` under `where a.compare : a, a → Order`) is a call of an
+     evidence parameter, which the checker answers impure when the evidence it may be used with
+     may be impure (`checker-v2.md` §26), and that call is the effect, named there.
+   - **Any other target is the effect at the call, as before**: an evidence parameter of the code
+     the walk is in, a record field's value, a derived function (`==` on a type that declares no
+     `eq`, whose derived row calls a field type's `eq`), another module's derived function, a
+     codec, and a function of core (`List.compare` passed an element type's `compare`), whose code
+     is answered at its calls. Each is a limit of the build, not a rule. One is a defect today:
+     the checker does not answer a derived function's site impure when the row calls a field
+     type's impure `eq`, so the build accepts such a `==` (#2115).
+
+   No program that built before builds differently: the walk only decides whether the build
+   refuses, and a method call it now follows was refused before. The fixtures are
+   `browser/prerender/DispatchDebug` (`<` on a type whose `compare` logs, and a dot-call of
+   another module's method that logs) and `build/bad/prerender/` `DispatchImpure` (another
+   module's method that reads the clock, named in that module) and `DispatchEvidence` (the
+   clock read by the evidence a `compare` is passed, named at its call in that `compare`).
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the
@@ -242,6 +271,8 @@ place:
   absent when false. A control's `value` is its `value` attribute (a `textarea`'s, its text); a
   `select`'s `value` marks the `option` whose `value` it equals as `selected`, where the option's
   value is a constant or a hole of the same unit, and otherwise the first pass writes it.
+  *Amended 2026-11-05 (`browser-inline.md` §10.5, #1169):* a URL binding's value is
+  `safeUrl` of it, `""` for a script URL, so the page holds what the client's first pass writes.
 - **An event** — nothing. A listener is the client's (research 36 §2.12 records the same for
   Solid's `ssr`).
 - **An eager `when`** (§8.2 there) — the arm `init`'s model shows is written; **an arm it hides is
@@ -1505,8 +1536,8 @@ same cache, built for `node` into `.<out>.data` in development mode with no sour
 are each a source root of their own, so a site built with `--root` (which names the site's modules)
 does not lend it its root. Its diagnostics are rendered in the site's one render
 (`Session.foreign`, `Session.exportLate`), a diagnostic the site says already at the same place
-with the same text dropped. `Prerender.pages` (`platforms/node/Prerender.beni`, one `impure`
-`foreign`, `writeRecords`) writes `{"route", "data"}` per page and `{"end": n}`; an `Err` is one
+with the same text dropped. `Prerender.pages` (`platforms/node/Prerender.beni`; its one `foreign`,
+`writeRecords`, is beni over `Js` since 2026-11-03, `plans/runtime-in-beni.md` step 14) writes `{"route", "data"}` per page and `{"end": n}`; an `Err` is one
 record `{"error": why}`, and a value its schema cannot encode ends the records at
 `{"route", "issues"}`, each issue a line `.path: message`; both exit 1 after a line on standard
 output. The build escapes each text as §8.6 says (`pageText`), refuses one with a control

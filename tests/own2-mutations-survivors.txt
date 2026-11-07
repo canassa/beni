@@ -1,0 +1,40 @@
+# The mutants of `src/own2/Mutate.zig` that nothing kills, the gates' corpus included:
+# `<name> <class> <issue and why>`. A line here is a rule nothing pins.
+#
+# dead        no program reaches the rule, in the corpus or the probes
+# redundant   another rule answers every program so far: "so far", not shown
+# equivalent  the rule changes no answer anything reads
+# open        no finding yet
+#
+fold_read_off dead #2187: its adding arm is unreached, 0 of 21 122 programs; re-measure under #2104 before removing it
+walker_row_scalar dead #2187: a row step at a tuple or a constructor
+inst_no_contract_empty dead #2187: every call has a contract
+inst_live_no_contract_empty dead #2187: every call has a contract
+inst_below_no_contract_empty dead #2187: every call has a contract
+arrival_no_arg_empty dead #2187: a parameter past the arguments
+known_answer_empty dead #2187: `knownAnswer`'s last `⊤`
+lend_empty dead #2187: `lend`'s `⊤`
+targets_empty_accepted dead #2187: `callWriteFrom` drops an empty write first
+runs_each_true dead #2188: a gate of `each`, unreached
+apart_sources_true dead #2188: a gate of `each`, unreached
+exclusive_off dead #2188: the first `relied.no` answers
+join_calls_second dead #2188: rounds only grow
+overlap_host_no dead #2188: unreached
+one_family_true redundant #2188: a gate of `each`
+fed_covered_true redundant #2188: F2, `fed`
+sep_answer_supply_off redundant #2188: F2
+below_outer_off redundant #2188: F2
+across_no_answers redundant #2188: another rule refuses the probes
+labels_add_up_off redundant #2188: `Once.demands` refuses the probes
+word_unknown equivalent #2188: no answer reads it
+each_kept_ignored open #2188: a gate of `each`
+made_meets_off open #2188
+inst_memo_under_cut open #2188, #2146
+within_always open #2188: `within` is false on 8 fixtures, and with it ignored no verdict moves
+weaker_always open #2188: as `within_always`
+stack_agg_off open #2188: a fast path's other half
+word_builderdone open #2188
+word_lentoptional open #2188
+word_prepended open #2188
+word_unused open #2188: precision only
+repeats_stale_labels dead #2166: a truly stale label reached `AnswerKeep.repeats` on no probe (audit bit over `review-2173/g9`, `review-2173b` `g11`-`g17`, the ledger). The mutant differs only by counting quiet labels, on 240 of `g9`'s programs, and moves no verdict.

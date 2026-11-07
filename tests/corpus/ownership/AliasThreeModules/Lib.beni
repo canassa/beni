@@ -1,0 +1,5 @@
+import Mid
+
+
+pub a1 : List Int → List Int
+a1 = Mid.a2

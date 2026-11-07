@@ -1,0 +1,15 @@
+module AliasGroupCall
+  13:9 call AliasGroupCall.pushOdd <call List.push>: accepted param (AliasGroupCall.pushOdd writes π2)
+  13:26 List.push xs: accepted param
+  21:9 call AliasGroupCall.pushN <call List.push>: accepted param (AliasGroupCall.pushN writes π2)
+  21:24 List.push xs: accepted param
+  25:9 value AliasGroupCall.pushN: pending: it is returned
+  29:13 call AliasGroupCall.pushN xs: rejected later-use: xs is read again at 29:11 (AliasGroupCall.pushN writes π2)
+  33:12 call AliasGroupCall.pushN xs: accepted param (AliasGroupCall.pushN writes π2)
+  summary pushN: π2 RAW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary pushOdd: π2 RAW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary kept: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary owned: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  demands 7: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+total 7: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+cause later-use 1

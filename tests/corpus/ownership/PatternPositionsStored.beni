@@ -1,0 +1,164 @@
+-- ownership: a match on a rest splits the rest's positions only where the
+-- rest is all the list holds there (ownership-v2.md §2.13.3, #1390's
+-- review). A head stored beside the rest — by a join with `[ a ]`, a push,
+-- `List.set`, `++`, a push onto a rest of a rest, or the literal
+-- `[ a, …rest ]` — is a position no split of the rest stands for, so the
+-- match splits the list again and `c` may be `a`: every `go a c` is
+-- refused. `headRest` writes the head while its rest is answered: accepted,
+-- and refused at a caller whose two positions share one box, as v1 does.
+type Box
+    = Box (List Int)
+
+
+type Pair
+    = Pair Box Box
+
+
+type W
+    = W Box Int
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+rightLeft : Pair → List Int × Box
+rightLeft p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+go : Box, Box → Int × Int
+go a c =
+    case rightLeft (Pair a c) of
+        ( ys, l ) →
+            ( List.length ys, sizeBox l )
+
+
+pub joinLit : Bool, List Box → Int × Int
+joinLit t xs =
+    case xs of
+        [ a, …rest ] →
+            l = if t then rest else [ a ]
+            case l of
+                [ c, …_ ] →
+                    go a c
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub relay : ⊤ → Int × Int
+relay ⊤ = joinLit False [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub pushRest : List Box → Int × Int
+pushRest xs =
+    case xs of
+        [ a, …rest ] →
+            case List.push rest a of
+                [ …_, c ] →
+                    go a c
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub setRest : List Box → Int × Int
+setRest xs =
+    case xs of
+        [ a, …rest ] →
+            case List.set rest 0 a of
+                [ c, …_ ] →
+                    go a c
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub appendRest : List Box → Int × Int
+appendRest xs =
+    case xs of
+        [ a, …rest ] →
+            case rest ++ [ a ] of
+                [ c, …_ ] →
+                    go a c
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub pushRestRest : List Box → Int × Int
+pushRestRest xs =
+    case xs of
+        [ _, …r1 ] →
+            case r1 of
+                [ a, …r2 ] →
+                    case List.push r2 a of
+                        [ …_, c ] →
+                            go a c
+
+                        _ →
+                            ( 0, 0 )
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub literal : List Box → Int × Int
+literal xs =
+    case xs of
+        [ a, …rest ] →
+            case [ a, …rest ] of
+                [ c, …_ ] →
+                    go a c
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub headRest : List W → List Int × List W
+headRest ws =
+    case ws of
+        [ W a _, …rest ] →
+            ( kidsBox a, rest )
+
+        _ →
+            ( [], [] )
+
+
+pub headRestShared : ⊤ → Int
+headRestShared ⊤ =
+    b = Box [ 0 ]
+    case headRest [ W b 0, W b 1 ] of
+        ( ys, r ) →
+            List.length ys + List.length r

@@ -1,0 +1,18 @@
+module ComparisonWrites
+  14:31 List.push a: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  18:11 List.push xs: accepted param
+  23:21 ComparisonWrites.grow a: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  30:14 ComparisonWrites.compare x#T.0: accepted param
+  account eq: source 20, baseline 291, growth 0 of 65536, total 291, continuation 189 of 20480, demands 28, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 21, step lanes 1
+  crossing: reads 0, redone 0, base moves 1
+  summary eq: π1#T.0 RW, π2#T.0 R
+  account grow: source 12, baseline 259, growth 0 of 65536, total 259, continuation 202 of 12288, demands 22, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 13
+  summary grow: π1 RAW, π1[*] A; res [*] π1[*]{excl π1[*]}, π1
+  account compare: source 28, baseline 310, growth 0 of 65536, total 310, continuation 213 of 28672, demands 39, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 31
+  summary compare: π1#T.0 RW, π1#T.0[*] R, π2#T.0 R
+  account less: source 9, baseline 159, growth 0 of 65536, total 159, continuation 147 of 9216, demands 40, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 10, step lanes 1
+  summary less: π1 R, π1#T.0 RW, π1#T.0[*] R, π2 R, π2#T.0 R
+  block: 832 bytes, hash 4ae5b18ecc280488
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause comparison 2

@@ -55,7 +55,7 @@ module Inline
   value arrived : Url → ⊤  -- impure
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
-  value commands : (Cmd V), V → ⊤  -- impure
+  value commands : Cmd V, V → ⊤  -- impure
   value decoded : Schema e d, V → V  -- impure
   value deliver : V → ⊤  -- impure
   value entry : V, V → V  -- impure
@@ -92,6 +92,7 @@ module Inline
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
   value run : V → ⊤  -- impure
+  value safeUrl : V → V  -- impure
   value send : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
@@ -100,20 +101,20 @@ module Inline
   value title : String → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Listen
-  value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
 module Sub
   type Sub a
     Sub
   value batch : List (Sub msg) → Sub msg
-  value map : (Sub a), (a → msg) → Sub msg
+  value map : Sub a, (a → msg) → Sub msg
   value none : Sub msg
-  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order
+  value on : k, ((a → ⊤) → ⊤ → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order
 module Tea
   alias Document a
     Document
   alias Program
-  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program
-  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program
-  value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → Program
-  value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program
+  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program  -- impure
+  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program  -- impure
+  value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → Program  -- impure
+  value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
 ```

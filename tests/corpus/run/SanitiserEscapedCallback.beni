@@ -1,0 +1,22 @@
+-- A runtime catch for a callback that writes its own parameter, handed to
+-- a callee whose contract is the pessimistic one (`ownership-v2.md` §2.11.4,
+-- O1): under `--ownership=v2` `List.foldl`'s contract is pessimistic, so
+-- the lambda escapes and its caller is unknown. v2 accepted each write as
+-- `param`, relying on callers it cannot see, and the sanitised build's read
+-- of `xs`, which the first callback had pushed onto in place, trapped. The
+-- write is refused at the call that lets the closure escape.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    r = List.foldl [ 2, 3 ] xs λx acc → List.push acc x
+    s = List.foldl [ 4 ] xs λx acc → [ …acc, x ]
+    Node.print "${show xs} ${show r} ${show s}"

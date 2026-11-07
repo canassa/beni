@@ -1,0 +1,5 @@
+-- Default chainless checking accepts this; explicit ownership must reject the sharing.
+pub bad : List Int → List Int × List Int
+bad values =
+    changed = List.push values 1
+    ( changed, values )

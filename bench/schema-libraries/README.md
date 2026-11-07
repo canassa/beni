@@ -61,15 +61,8 @@ second result matrix and must not be used for reported numbers.
 
 ## The beni rows, and the short comparison
 
-`adapters/beni.mjs` and `adapters/beni-library.mjs` are beni's rows: the
-workloads as `schema` declarations in `beni/Bench.beni`, built by
-`beni/build.mjs` with `--library --release` — once as written, where `parse`
-and `print` are the specialised code of `docs/design/schema.md` §6, and once
-with `--schema-library`, where the same declarations run through the library
-interpreter. Both use strict options with no defaults: the first error, unknown
-keys rejected. `tree` has no beni row, because a recursive record is not a v1
-declaration, and the encode faults are not run for beni: an ill-typed program
-value cannot reach a beni `print`.
+The beni adapter measures compiled parse and print workers. The build script writes
+out-compiled and names-compiled; there is no interpreter benchmark row.
 
 `quick.mjs` is a bounded comparison for a decision, not the protocol's capture:
 each row in a fresh process, every cell checked for correctness first, the

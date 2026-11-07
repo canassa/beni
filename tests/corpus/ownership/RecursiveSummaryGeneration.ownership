@@ -1,0 +1,10 @@
+module RecursiveSummaryGeneration
+  24:15 List.push p: rejected call: ys may hold it through the call at 22:10, and is read at 24:30 (approx)
+  31:15 List.push p: accepted param
+  summary swap: π1 RA, π2 RA; res .0 condition(fresh2) ~π2 π1, .1 condition(fresh3) ~π1 π2, condition(fresh1){sep π1 π2}
+  summary again: π1 RA, π2 RA; res .0 condition(fresh2) ~π1 ~π2, .1 condition(fresh3) ~π1 ~π2, condition(fresh1){sep π1 π2}
+  summary unsafe: π1 RAw[storage], π1[*] A, π2 RAw[storage], π2[*] A; res .0 condition(fresh1) ~π1 ~π2, .0[*] ~condition(fresh2) ~π1[*] ~π2[*]
+  summary fresh: π1 RAw[storage], π1[*] A; res .0 condition(fresh2) ~fresh1 ~π1, .0[*] ~π1[*]
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

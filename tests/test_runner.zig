@@ -373,52 +373,102 @@ fn hangGuardProbe(mode: []const u8) void {
 }
 
 /// `--crash-probe=<mode>`: a test that crashes, for the runner's own tests
-/// (`tests/blackbox/gates_test.zig`). `segv` writes through a bad pointer on
-/// a thread, `overflow` recurses on a 64 KiB thread until its stack is gone,
-/// `locked` crashes while another thread holds stderr's lock, as a test that
-/// is printing does. Each must fail at once, naming the test.
-const probe_names = [_][]const u8{ "crash probe segv", "crash probe overflow", "crash probe locked" };
+/// (`tests/blackbox/gates_test.zig`). Each must fail at once, naming the
+/// test. On a thread of 64 KiB, as a test's `small_stack` thread is:
+///   - `segv` writes through a bad pointer;
+///   - `overflow` recurses until the stack is gone;
+///   - `locked` crashes while another thread holds stderr's lock, as a test
+///     that is printing does;
+///   - `selfinfo` overflows while it holds std's debug-info lock, as a thread
+///     does inside a stack-trace capture: std's handler waited for that lock
+///     forever, and the gates hung to their timeout with no line (#1171).
+/// On the main thread: `main-segv` and `main-overflow`.
+const CrashProbe = enum { segv, overflow, locked, selfinfo, @"main-segv", @"main-overflow" };
+
+const probe_names: std.enums.EnumArray(CrashProbe, []const u8) = .init(.{
+    .segv = "crash probe segv",
+    .overflow = "crash probe overflow",
+    .locked = "crash probe locked",
+    .selfinfo = "crash probe selfinfo",
+    .@"main-segv" = "crash probe main-segv",
+    .@"main-overflow" = "crash probe main-overflow",
+});
 
 /// The test running now, for `onCrash`: a pointer to its name, stored and
 /// loaded whole, so a crash never reads a name half written.
 var crash_name: std.atomic.Value(?*const []const u8) = .init(null);
 
 fn crashProbe(mode: []const u8) void {
-    const Probe = struct {
-        fn segv() void {
-            const p: *volatile u32 = @ptrFromInt(64);
-            p.* = 1;
-        }
-        fn deep(n: u64) u64 {
-            var buf: [512]u8 = undefined;
-            buf[n % buf.len] = @truncate(n);
-            return @call(.never_inline, deep, .{n + 1}) +% buf[(n * 7) % buf.len];
-        }
-        fn overflow() void {
-            std.mem.doNotOptimizeAway(deep(0));
-        }
-        fn holdStderr() void {
-            _ = std.debug.lockStderr(&.{});
-            while (true) Io.sleep(runner_io, .fromSeconds(1), .awake) catch {};
-        }
-    };
-    const which: usize = if (std.mem.eql(u8, mode, "segv")) 0 else if (std.mem.eql(u8, mode, "overflow")) 1 else if (std.mem.eql(u8, mode, "locked")) 2 else @panic("unknown crash probe");
-    crash_name.store(&probe_names[which], .release);
+    const probe = std.meta.stringToEnum(CrashProbe, mode) orelse @panic("unknown crash probe");
+    const name = probe_names.getPtrConst(probe);
+    crash_name.store(name, .release);
     var guard: HangGuard = .{};
-    guard.start(probe_names[which]) catch @panic("cannot start probe guard");
-    if (std.mem.eql(u8, mode, "locked")) {
-        _ = std.Thread.spawn(.{}, Probe.holdStderr, .{}) catch @panic("cannot start probe thread");
-        Io.sleep(runner_io, .fromMilliseconds(50), .awake) catch {};
+    guard.start(name.*) catch @panic("cannot start probe guard");
+    defer guard.finish();
+    switch (probe) {
+        .segv => Probe.onSmallThread(Probe.segv),
+        .overflow => Probe.onSmallThread(Probe.overflow),
+        .locked => {
+            _ = std.Thread.spawn(.{}, Probe.holdStderr, .{}) catch @panic("cannot start probe thread");
+            Io.sleep(runner_io, .fromMilliseconds(50), .awake) catch {};
+            Probe.onSmallThread(Probe.segv);
+        },
+        .selfinfo => Probe.onSmallThread(Probe.overflowHoldingDebugInfo),
+        .@"main-segv" => Probe.segv(),
+        .@"main-overflow" => {
+            Probe.boundMainStack();
+            Probe.overflow();
+        },
     }
-    const crash: *const fn () void = if (std.mem.eql(u8, mode, "overflow")) &Probe.overflow else &Probe.segv;
-    const t = std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
-        fn run(f: *const fn () void) void {
-            f();
-        }
-    }.run, .{crash}) catch @panic("cannot start probe thread");
-    t.join();
-    guard.finish();
 }
+
+/// The crashes `crashProbe` makes.
+const Probe = struct {
+    fn onSmallThread(comptime crash: fn () void) void {
+        const t = std.Thread.spawn(.{ .stack_size = 64 << 10 }, crash, .{}) catch @panic("cannot start probe thread");
+        t.join();
+    }
+    fn segv() void {
+        const p: *volatile u32 = @ptrFromInt(64);
+        p.* = 1;
+    }
+    fn deep(n: u64) u64 {
+        var buf: [512]u8 = undefined;
+        buf[n % buf.len] = @truncate(n);
+        return @call(.never_inline, deep, .{n + 1}) +% buf[(n * 7) % buf.len];
+    }
+    fn overflow() void {
+        std.mem.doNotOptimizeAway(deep(0));
+    }
+    fn holdStderr() void {
+        _ = std.debug.lockStderr(&.{});
+        while (true) Io.sleep(runner_io, .fromSeconds(1), .awake) catch {};
+    }
+    /// Take the lock std's stack-trace writer takes first
+    /// (`SelfInfo.findModule`), and keep it.
+    fn overflowHoldingDebugInfo() void {
+        const SelfInfo = std.debug.SelfInfo;
+        if (SelfInfo != void) {
+            const info = std.debug.getSelfDebugInfo() catch unreachable;
+            const io = std.Options.debug_io;
+            if (@hasField(SelfInfo, "rwlock")) info.rwlock.lockUncancelable(io) else if (@hasField(SelfInfo, "mutex")) info.mutex.lockUncancelable(io) else info.lock.lockUncancelable(io);
+        }
+        overflow();
+    }
+    /// The main thread's stack grows on demand up to the soft stack limit,
+    /// which `zig build` raises and a shell can lift: hold the probe to 8 MiB.
+    /// Linux reads the limit at each growth; macOS fixes the main stack at
+    /// exec, 8 MiB unless the limit was raised, and may refuse the call.
+    fn boundMainStack() void {
+        const most = 8 << 20;
+        const limits = std.posix.getrlimit(.STACK) catch @panic("cannot read the stack limit");
+        if (limits.cur <= most) return;
+        std.posix.setrlimit(.STACK, .{ .cur = most, .max = limits.max }) catch |err| switch (err) {
+            error.LimitTooBig => {},
+            error.PermissionDenied, error.Unexpected => @panic("cannot lower the stack limit"),
+        };
+    }
+};
 
 /// A crash (a bad pointer, a stack overflow, an illegal instruction) fails
 /// the process at once, naming the test (#1197). std's handler prints a

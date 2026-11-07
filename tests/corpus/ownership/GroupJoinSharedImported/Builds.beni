@@ -1,0 +1,8 @@
+-- `h3` pushes `x` on every level: the elements of its answer may share one
+-- list, which a join of its rounds keys below a choice (#1399).
+pub h3 : List Int, Int → List (List Int)
+h3 x n =
+    if n == 0 then
+        []
+    else
+        List.push (h3 x (n - 1)) x

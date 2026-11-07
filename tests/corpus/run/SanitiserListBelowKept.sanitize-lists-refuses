@@ -1,0 +1,2 @@
+# v1 refuses a list below a record handed to a function that keeps it (#1001).
+27:42 list_may_be_shared `Box`

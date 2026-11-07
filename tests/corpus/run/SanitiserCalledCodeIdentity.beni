@@ -1,0 +1,26 @@
+-- A compiler crash (`ownership-v2.md` §2.11.2, *the identity control*, #2076): a
+-- called code's closing call has parameters for arguments and no argument
+-- expression, and the control read the expression. It takes the ordinary path
+-- now. `SanitiserCalledCodeIdentityWriter` is the twin that writes.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls λl → String.join (List.map l String.fromInt) ",") ";"
+
+
+idf : a → a
+idf x = x
+
+
+pick : Bool → (List Int → List Int)
+pick c = if c then idf else idf
+
+
+main : Program
+main =
+    q = [ [ 1 ] ]
+    ys = List.map q (pick True)
+    Node.print (show ys ++ "|" ++ show q)

@@ -1,0 +1,32 @@
+-- A release worker writes a page-only global as `globalThis.document`, not as a
+-- bare `document`, which throws `ReferenceError` in a worker (#2207).
+import Page
+import RealmJs
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → RealmJs.probeDocument ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ = Page.button launch
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle Page.text
+            Worker.send handle "go"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start

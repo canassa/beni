@@ -1,0 +1,4 @@
+A runtime catch for a loan across a suspension (ownership-v2.md §2.11.4, §2.13.7): one branch of Task.par holds a loan
+of a cell's contents across a sleep while the other edits the contents in place. Built again under --ownership=v2 and
+the list stale-read sanitiser. v2 refuses each edit as once, where par hands the closure to another fiber; were the
+edit exempt from once, the sanitised run would show the first branch's stale read.

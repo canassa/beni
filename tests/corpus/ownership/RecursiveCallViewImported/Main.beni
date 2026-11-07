@@ -1,0 +1,15 @@
+-- ownership (project): `RecursiveCallView` with the recursive helper in
+-- another module (ownership-v2.md Appendix B, C×A; §8 S3b slice 4). A call
+-- of an imported member applies the class its block publishes, so the
+-- verdicts are the same-module fixture's: writing the subtree `leftmost`
+-- answers while the whole tree is read after is refused; with a second
+-- tree read after instead, the write is accepted.
+import Trees exposing (Tree)
+
+
+pub refused : Tree → List Int × Tree
+refused t = ( Trees.pushRoot (Trees.leftmost t), t )
+
+
+pub accepted : Tree, Tree → List Int × Tree
+accepted t u = ( Trees.pushRoot (Trees.leftmost t), u )

@@ -1,6 +1,7 @@
 import Ownership.Oracle
 import Ownership.Falsify
 import Ownership.Question
+import Ownership.RecordPrograms
 
 /-! Small executable projections of the Zig ownership fixtures. Markup's opaque
 slots are positional fields; a constructor is an ordinary zero-capture record
@@ -610,7 +611,10 @@ def holes : List (Mutant × Program) := [
   (.foldInvariant, invariant 1 .range true), (.modelInvariant, invariant 1 .model true),
   (.constructorArgs, constructor 1 true), (.eventCapture, markup 1 true),
   (.taggerNeed, owned 1 0), (.captureEmpty, owned 1 1), (.forwardNeed, owned 1 2),
-  (.constructDisjoint, construction 1 0 0), (.viewAlias, viewAlias 1 true 0 0)]
+  (.constructDisjoint, construction 1 0 0), (.viewAlias, viewAlias 1 true 0 0),
+  -- Records written in place (#1872).
+  (.recordDead, RecordPrograms.readAfter 1 0 0), (.updateBase, RecordPrograms.updateTwice 1 0 1),
+  (.callFields, RecordPrograms.callRead 1 0 0)]
 
 def preservationProbes : List (Mutant × Program) := [
   (.modelInvariant, modelUpdate 1 true), (.foldInvariant, badFold 1 3)]

@@ -33,6 +33,31 @@ fn expectPageTestIn(w: *World, cwd: std.process.Child.Cwd, args: []const []const
     }
 }
 
+/// Build `playground/src/` as `zig build playground` does
+/// (`playground.md` §10.8), with the compiler under test, into `lib/` of the
+/// world's project: the page's beni, which `page_test.mjs` imports from
+/// there. `playground/src/` holds no directory yet, so the copy is flat.
+fn buildPageBeni(w: *World) !void {
+    const arena = w.arena.allocator();
+    var src = try std.Io.Dir.cwd().openDir(w.io, page_beni_dir, .{ .iterate = true });
+    defer src.close(w.io);
+    var files = src.iterate();
+    while (try files.next(w.io)) |entry| {
+        if (!std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        const from = try std.fs.path.join(arena, &.{ page_beni_dir, entry.name });
+        const text = try std.Io.Dir.cwd().readFileAlloc(w.io, from, arena, .limited(world.max_stream_bytes));
+        try w.write(try std.fs.path.join(arena, &.{ "src", entry.name }), text);
+    }
+    const built = try w.run(&.{ "build", "--library", "--platform=browser-tea", "--no-source-maps", "--no-cache", "--out=lib", "src" });
+    if (built.exit_code != 0) {
+        std.debug.print("the page's beni did not build: exit {d}\n--- stderr ---\n{s}\n", .{ built.exit_code, built.stderr });
+        return error.PageBeniDidNotBuild;
+    }
+}
+
+/// Where the page's beni is, from the repository root.
+const page_beni_dir = "playground/src";
+
 test "the playground marks a diagnostic on the text it names, past Unicode notation and an astral character" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -62,6 +87,17 @@ test "the playground's link gives back the source and the platform it was made f
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try expectPageTest(&w, &.{"share"});
+}
+
+test "the playground's short link opens its sample, and a fragment with no program the first sample with a note" {
+    // The short link is beni (`playground/src/Share.beni`, `playground.md`
+    // §4.5): the beni build of the compiler under test reads each fragment
+    // as `URLSearchParams` reads it, and a fragment with `code` is a code
+    // link, whatever else it holds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try buildPageBeni(&w);
+    try expectPageTest(&w, &.{ "links", "lib" });
 }
 
 test "the playground's output frame gets the CSS pane's text unchanged, and nothing when the pane is empty" {
@@ -100,9 +136,13 @@ test "every tab of the playground page controls a panel the page has" {
 }
 
 test "the playground's grammar names comments, strings, keywords, notation and markup" {
+    // The grammar is beni (`playground/src/Syntax.beni`, `playground.md`
+    // §10.7): the beni build of the compiler under test names each piece,
+    // and every piece of a line together is the line.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try expectPageTest(&w, &.{"syntax"});
+    try buildPageBeni(&w);
+    try expectPageTest(&w, &.{ "syntax", "lib" });
 }
 
 test "the editor's vendored modules are the bytes their checksums name, and the page loads them from the site" {

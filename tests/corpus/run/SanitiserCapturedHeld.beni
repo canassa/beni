@@ -1,0 +1,23 @@
+-- A runtime catch for a closure a callee hands back (`ownership-v2.md`
+-- §2.10 *Read-off*, #1772): `mk`'s result is the closure `Task.keepLogContext`
+-- was handed, and that closure reads `xs`. No place below a function type
+-- names a capture, so the result held the closure object only, and the push
+-- of `xs` while `f` still reads it was accepted. The arrival of a closure now
+-- takes its captures, deep: the push is refused. Accepted, the sanitised run
+-- shows 3 where the copy shows 2.
+import Io
+import List
+import Node exposing (Program)
+import Task
+
+
+mk : List Int → (⊤ → Int)
+mk xs = Task.keepLogContext λ⊤ → List.length xs
+
+
+main : Program
+main = Io.run λ⊤ →
+    xs = [ 1, 2 ]
+    f = mk xs
+    ys = List.push xs 3
+    Node.printLines [ String.fromInt (f ⊤), String.fromInt (List.length ys) ]

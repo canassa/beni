@@ -1,0 +1,43 @@
+-- A record alias's constructor builds the record (`ownership-v2.md` §2.1, *A record
+-- alias's constructor*, #2056): `Pt k n` is `{ xs = k, a = n }`, its field `.xs` is `k`,
+-- a pattern `Pt ys _` takes that field, and the constructor as a function hands its
+-- arguments to the fields of their declaration, not of their text order.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Pt =
+    xs : List Int
+    a : List Int
+
+
+first : Pt → List Int
+first p =
+    case p of
+        Pt ys _ →
+            ys
+
+
+apply : (List Int, List Int → Pt), List Int → Pt
+apply f k = f k []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    x = (Pt k []).xs
+    n = List.push k 2
+    m = [ 1 ]
+    y = first (Pt m [])
+    o = List.push m 2
+    c = [ 1 ]
+    z = (apply Pt c).xs
+    p = List.push c 2
+    Node.print
+        (show n ++ "|" ++ show x ++ "|" ++ show o ++ "|" ++ show y ++ "|" ++ show p ++ "|" ++ show z
+        )

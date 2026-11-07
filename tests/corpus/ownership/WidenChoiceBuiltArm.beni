@@ -1,0 +1,74 @@
+-- ownership (v2): a non-recursive function's branch join stays exact
+-- (ownership-v2.md §2.3, *On the cycle*, #1360). Its arm builds a node at
+-- `#Node.0`, a finite tree with no cycle, so widen keeps the join as master
+-- does; opening it would merge every level's list into one class. `gpw`
+-- pushes `wrap t`'s root list, which is `t`'s, and `hw` reads `t`'s left
+-- child's list after it: accepted, as v1 accepts it. `ins` and `hi` are the
+-- same with a new node holding the caller's list.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub wrap : Tree → Tree
+wrap t =
+    case t of
+        Node a xs b →
+            Node (Node a [] Leaf) (List.push xs 1) b
+
+        Leaf →
+            Leaf
+
+
+pub gpw : Tree → List Int
+gpw t =
+    case wrap t of
+        Node _ ys _ →
+            List.push ys 2
+
+        Leaf →
+            []
+
+
+pub hw : ⊤ → Int
+hw ⊤ =
+    t = Node (Node Leaf [ 1 ] Leaf) [ 2 ] Leaf
+    case t of
+        Node (Node _ zs _) _ _ →
+            n = List.length (gpw t)
+            n + List.length zs
+
+        _ →
+            0
+
+
+pub ins : Tree, List Int → Tree
+ins t v =
+    case t of
+        Node a xs b →
+            Node (Node Leaf v Leaf) (List.push xs 1) (Node a [] b)
+
+        Leaf →
+            Node Leaf v Leaf
+
+
+pub gpi : Tree → List Int
+gpi t =
+    case ins t [ 9 ] of
+        Node _ ys _ →
+            List.push ys 2
+
+        Leaf →
+            []
+
+
+pub hi : ⊤ → Int
+hi ⊤ =
+    t = Node (Node Leaf [ 1 ] Leaf) [ 2 ] Leaf
+    case t of
+        Node (Node _ zs _) _ _ →
+            n = List.length (gpi t)
+            n + List.length zs
+
+        _ →
+            0

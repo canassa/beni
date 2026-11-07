@@ -1,22 +1,22 @@
 module JsWords
-  20:12 construction xs: rejected alias: v holds it and is read at 22:12
-  31:12 construction a: rejected alias: xs holds it and is read at 34:5
-  32:12 construction b: rejected alias: ys holds it and is read at 35:11
-  33:12 construction c: rejected call: zs may hold it through the call at 30:9, and is read at 36:11 (approx)
-  45:12 construction d: rejected alias: ws holds it and is read at 46:5
-  54:12 construction xs: accepted param
-  62:12 construction xs: accepted param
-  71:12 construction xs: accepted param
-  82:12 construction xs: accepted param
-  96:12 construction xs: rejected call: a⋆ may hold it through the call at 95:9, and is read at 97:14 (approx)
-  103:12 construction xs: rejected call: o⋆ may hold it through the call at 102:9, and is read at 104:14 (approx)
-  109:12 construction xs: accepted param
-  110:36 List.push ys: rejected once: it is handed to Js.each, which may call it more than once
-  122:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  135:12 construction xs: accepted call
-  142:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  144:14 construction ys: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  147:14 construction held: rejected unknown: the list came from JavaScript (approx)
+  21:12 construction xs: rejected alias: v holds it and is read at 23:12
+  32:12 construction a: rejected alias: xs holds it and is read at 35:5
+  33:12 construction b: rejected alias: ys holds it and is read at 36:11
+  34:12 construction c: rejected call: zs may hold it through the call at 31:9, and is read at 37:11 (approx)
+  46:12 construction d: rejected alias: ws holds it and is read at 47:5
+  56:12 construction xs: accepted param
+  64:12 construction xs: accepted param
+  73:12 construction xs: accepted param
+  84:12 construction xs: accepted param
+  98:12 construction xs: rejected call: a⋆ may hold it through the call at 97:9, and is read at 99:14 (approx)
+  105:12 construction xs: rejected call: o⋆ may hold it through the call at 104:9, and is read at 106:14 (approx)
+  111:12 construction xs: accepted param
+  112:36 List.push ys: rejected once: it is handed to Js.each, which may call it more than once
+  124:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  137:12 construction xs: accepted call
+  144:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  146:14 construction ys: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  149:14 construction held: rejected unknown: the list came from JavaScript (approx)
   summary returns: π1 RW
   summary returnsFromFunctions: π1 RW, π2 RW, π3 Rw
   summary returnsSuspending: π1 RW

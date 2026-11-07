@@ -1,0 +1,1 @@
+v2 refuses a write in a type's `eq` or `compare` written as an alias, at the write of the function it names (R-5.13.1, R-5.5.6); v1 has no such code and makes the alias pending.

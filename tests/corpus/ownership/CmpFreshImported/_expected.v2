@@ -1,0 +1,1 @@
+v2 writes a fresh value holding a parameter through a comparison's component; v1 loses the write (#1349).

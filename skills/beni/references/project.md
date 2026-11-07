@@ -27,6 +27,7 @@ The project file, in the directory `beni` runs from (or `--root`):
 | `"build"."base"` | the URL path the output is served under; ends in `/` | `/` |
 | `"build"."origin"` | the address a prerendered site is served at, `https://example.com`: no path; a prerendered `Tea.application` needs it (`prerender.md`) | none |
 | `"html"` | the page shell, a file relative to `beni.json` | the platform's |
+| `"trustedTypes"` | `true` when the page is served with the CSP `require-trusted-types-for 'script'`; see `markup.md`, *Trusted Types*. A boolean, else `build` refuses | `false` |
 | `"exports"` | the names the entry file exports, a list of ASCII identifier names (letters, digits, `_`, `$`), not `default` or `flush`; read when the platform declares `"exports": "program"`, a warning otherwise | none |
 
 A command-line flag replaces the manifest's value, field by field. `check` always takes its paths.
@@ -49,7 +50,7 @@ A command-line flag replaces the manifest's value, field by field. `check` alway
 | `out/about.html`, `out/blog/index.html` | a prerendered page per route, on `browser-inline` with `Browser.prerender` (`prerender.md`) |
 | `out/<Module>.mjs`, `out/Ui/Card.mjs` | your modules, one file each |
 | `out/_core/`, `out/_platform/` | core and the platform; only what the program reaches |
-| `*.mjs.map` | a source map beside every module, with the beni source inside; `--no-source-maps` drops them |
+| `*.mjs.map` | a source map beside every module, with the beni source inside; under `--release`, also beside a compacted hand-written `.js` file, with the `.js` text inside; `--no-source-maps` drops them |
 
 - Reserved names start with `_`; a module cannot take one.
 - `--release` drops dead bindings, shortens names, joins constants and prints compactly. It refuses

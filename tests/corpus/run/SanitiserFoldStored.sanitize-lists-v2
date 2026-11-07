@@ -1,0 +1,3 @@
+A fold's accumulator that is not what the next run writes alone (ownership-v2.md §2.11.3, a fold's storage): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses each write; with the slot's rule unasked, the sanitised runs trap
+or print the edit.

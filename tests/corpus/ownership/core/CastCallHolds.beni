@@ -1,0 +1,218 @@
+-- ownership (core): a value inside a cast, returned through a call
+-- (`ownership-v2.md` §2.13.9, #1311). A step into a cast whose inner has no
+-- such part (`[*]` of a cast list, a cast tuple's elements, a cast record's
+-- field) is some value inside the inner: what the inner reaches, read
+-- approximately. A call's result keeps that reading, so the caller sees
+-- that `a` may be `l`, and an edit of it while `l` is read again is refused,
+-- as v1 refuses it. Each `fresh` twin hands the call lists that nothing else
+-- holds, and its edit is accepted. A step into such a value is inside it
+-- again (`deeper`, through the call and inline): it is never the inner's
+-- own part, though their places agree.
+import Js
+
+
+generic : List a → List a
+generic xs = Js.to (Js.from xs)
+
+
+deepGeneric : List (List Int) → List (List Int)
+deepGeneric xss = List.push (generic xss) [ 1 ]
+
+
+pub sharedElems : Int → Int
+sharedElems n =
+    l = [ n ]
+    r = deepGeneric [ l, l ]
+    case r of
+        [ a, …_ ] →
+            List.length (List.push a 5) + List.length l
+
+        [] →
+            0
+
+
+pub freshElems : Int → Int
+freshElems n =
+    r = deepGeneric [ [ n ], [ n ] ]
+    case r of
+        [ a, …_ ] →
+            List.length (List.push a 5)
+
+        [] →
+            0
+
+
+tupleFirst : List Int × List Int → List Int
+tupleFirst t =
+    r : List (List Int)
+    r = Js.to (Js.from t)
+    case r of
+        [ a, …_ ] →
+            a
+
+        [] →
+            []
+
+
+pub sharedTuple : Int → Int
+sharedTuple n =
+    l = [ n ]
+    a = tupleFirst ( l, [] )
+    List.length (List.push a 5) + List.length l
+
+
+pub freshTuple : Int → Int
+freshTuple n =
+    a = tupleFirst ( [ n ], [] )
+    List.length (List.push a 5)
+
+
+recordPack : { r | values : List a } → Js.Value
+recordPack record = Js.from record
+
+
+recordUnpack : Js.Value → { r | values : List a }
+recordUnpack value = Js.to value
+
+
+valuesOf : List Int → List Int
+valuesOf xs =
+    record : { count : Int, values : List Int }
+    record = recordUnpack (recordPack { count = 0, values = xs })
+    record.values
+
+
+pub sharedRecord : Int → Int
+sharedRecord n =
+    l = [ n ]
+    v = valuesOf l
+    List.length (List.push v 5) + List.length l
+
+
+pub freshRecord : Int → Int
+freshRecord n =
+    v = valuesOf [ n ]
+    List.length (List.push v 5)
+
+
+pack : List a × Int → Js.Value
+pack value = Js.from value
+
+
+unpack : Js.Value → List a × Int
+unpack value = Js.to value
+
+
+firstOf : List Int → List Int
+firstOf xs =
+    ( ys, _ ) = unpack (pack ( xs, 0 ))
+    ys
+
+
+pub sharedPair : Int → Int
+sharedPair n =
+    l = [ n ]
+    v = firstOf l
+    List.length (List.push v 5) + List.length l
+
+
+pub freshPair : Int → Int
+freshPair n =
+    v = firstOf [ n ]
+    List.length (List.push v 5)
+
+
+-- A step into a value inside a cast is still inside it: `b` may be `l`.
+deeper : List (List (List Int)) → List (List (List (List Int)))
+deeper x = Js.to (Js.from x)
+
+
+pub sharedDeeper : Int → Int
+sharedDeeper n =
+    l = [ n ]
+    r = deeper [ [ l ] ]
+    case r of
+        [ a, …_ ] →
+            case a of
+                [ b, …_ ] →
+                    List.length (List.push b [ 5 ]) + List.length l
+
+                [] →
+                    0
+
+        [] →
+            0
+
+
+pub sharedDeeperInline : Int → Int
+sharedDeeperInline n =
+    l = [ n ]
+    r : List (List (List (List Int)))
+    r = Js.to (Js.from [ [ l ] ])
+    case r of
+        [ a, …_ ] →
+            case a of
+                [ b, …_ ] →
+                    List.length (List.push b [ 5 ]) + List.length l
+
+                [] →
+                    0
+
+        [] →
+            0
+
+
+pub freshDeeper : Int → Int
+freshDeeper n =
+    r = deeper [ [ [ n ] ] ]
+    case r of
+        [ a, …_ ] →
+            case a of
+                [ b, …_ ] →
+                    List.length (List.push b [ 5 ])
+
+                [] →
+                    0
+
+        [] →
+            0
+
+
+-- The same through a view: `deeperFirstVia` publishes the view of a class
+-- whose result steps into the cast (`deeperFirst`), and its caller projects
+-- it. The published eager image keeps that step whole (#1309's review).
+deeperFirst : List (List (List Int)) → List (List (List Int))
+deeperFirst x =
+    case deeper x of
+        [ a, …_ ] →
+            a
+
+        [] →
+            []
+
+
+deeperFirstVia : List (List (List Int)) → List (List (List Int))
+deeperFirstVia x = deeperFirst x
+
+
+pub sharedDeeperView : Int → Int
+sharedDeeperView n =
+    l = [ n ]
+    a = deeperFirstVia [ [ l ] ]
+    case a of
+        [ b, …_ ] →
+            List.length (List.push b [ 5 ]) + List.length l
+
+        [] →
+            0
+
+
+pub freshDeeperView : Int → Int
+freshDeeperView n =
+    a = deeperFirstVia [ [ [ n ] ] ]
+    case a of
+        [ b, …_ ] →
+            List.length (List.push b [ 5 ])
+
+        [] →
+            0

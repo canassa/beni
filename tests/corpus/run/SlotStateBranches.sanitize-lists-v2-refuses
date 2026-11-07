@@ -1,0 +1,4 @@
+# v2 refuses the store of a list that is read later, in one arm or through another name of the handle (§2.13.7).
+20:5 list_still_used Ref.set
+29:15 list_still_used Ref.set
+39:5 list_still_used Ref.set

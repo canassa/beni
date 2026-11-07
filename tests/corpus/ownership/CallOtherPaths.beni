@@ -1,0 +1,127 @@
+-- ownership: a write at a call is disjoint from every other path of its
+-- argument the callee touches (ownership-v2.md §2.11 item 3, #1016), by
+-- three rules, each pinned by an accepted and a refused twin. (a) A path
+-- above the write that the callee answers holds the written object:
+-- `keepAll` answers its tree after pushing a list of it, refused (its
+-- other subtree holds the list too);
+-- `pushA` answers a sibling list, accepted. (b) A path below a `[*]` write
+-- is below another position: `elems` writes one element and answers an
+-- element of another, refused over `[ em, [ em ] ]`, accepted over
+-- distinct lists. (c) The caller's own parameter at two paths of the
+-- callee: `twoPaths` writes `.x` and answers `.y`; over `{ x = xs, y = xs
+-- }` one object is written and held, refused; over `{ x = xs, y = ys }`
+-- accepted. And through `⟲` (`viaLeft`, below): the folded paths owe
+-- `excl` upward, refused over one list at both depths, accepted over two.
+type alias R =
+    a : List Int
+    b : List Int
+
+
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+keepAll : Tree → List Int × Tree
+keepAll t =
+    case t of
+        Node _ xs _ →
+            ( List.push xs 1, t )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pushA : R → List Int × List Int
+pushA r = ( List.push r.a 1, r.b )
+
+
+pub keepShared : ⊤ → Int
+keepShared ⊤ =
+    xs = [ 1 ]
+    ( l, _ ) = keepAll (Node Leaf xs (Node Leaf xs Leaf))
+    List.length l
+
+
+pub siblingFresh : ⊤ → Int
+siblingFresh ⊤ =
+    ( l, _ ) = pushA { a = [ 1 ], b = [ 2 ] }
+    List.length l
+
+
+elems : List (List (List Int)) → List (List Int) × List Int
+elems ys =
+    case ys of
+        [ a, b ] →
+            case b of
+                [ c ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub elemsShared : ⊤ → Int
+elemsShared ⊤ =
+    em = []
+    ( l, _ ) = elems [ em, [ em ] ]
+    List.length l
+
+
+pub elemsDistinct : ⊤ → Int
+elemsDistinct ⊤ =
+    ( l, _ ) = elems [ [ [ 1 ] ], [ [ 2 ] ] ]
+    List.length l
+
+
+type alias P =
+    x : List Int
+    y : List Int
+
+
+twoPaths : P → List Int × List Int
+twoPaths p = ( List.push p.x 1, p.y )
+
+
+pub sameParam : List Int → List Int × List Int
+sameParam xs = twoPaths { x = xs, y = xs }
+
+
+pub twoParams : List Int, List Int → List Int × List Int
+twoParams xs ys = twoPaths { x = xs, y = ys }
+
+
+-- (c) through `⟲`: `twoDepths` writes a tree's list and the list one
+-- level below; `viaLeft` hands it its own left subtree, where both paths
+-- fold into one, so it owes their distinctness (`excl`) to its caller.
+twoDepths : Tree → Int
+twoDepths t =
+    case t of
+        Node (Node _ a _) xs _ →
+            List.length (List.push xs 1) + List.length (List.push a 2)
+
+        _ →
+            0
+
+
+viaLeft : Tree → Int
+viaLeft t =
+    case t of
+        Node l _ _ →
+            twoDepths l
+
+        Leaf →
+            0
+
+
+pub depthsShared : ⊤ → Int
+depthsShared ⊤ =
+    xs = [ 0 ]
+    viaLeft (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub depthsDistinct : ⊤ → Int
+depthsDistinct ⊤ = viaLeft (Node (Node (Node Leaf [ 1 ] Leaf) [ 2 ] Leaf) [] Leaf)

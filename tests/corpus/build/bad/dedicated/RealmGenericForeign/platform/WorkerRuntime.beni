@@ -1,0 +1,5 @@
+import Worker
+
+
+pub run : Worker.Program request reply state → ⊤
+run definition = Worker.run definition

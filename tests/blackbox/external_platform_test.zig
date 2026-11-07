@@ -124,3 +124,32 @@ test "a release application calls the runtime's start and run inside its one fil
         \\
     , try w.read("out/_main.mjs"));
 }
+
+test "a shared generated call is rewritten once when its replacement is a call" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #2178: the toy platform's `shared-toy` lowering puts one generated
+    // `flip` call on both sides of a separator. Release inlines `flip` into
+    // a `combine` call with its arguments reversed, once per occurrence.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/external-platform/SharedCallForward", "_");
+    for ([_][]const []const u8{
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "--release", "Main.beni" },
+    }) |args| {
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const built = try w.runWith(args, .{ .raw_diagnostics = true });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        if (built.exit_code != 0) std.debug.print("{s}\n", .{built.stderr});
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "rightleft/rightleft\n" });
+    }
+}

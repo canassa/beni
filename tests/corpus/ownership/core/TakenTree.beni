@@ -1,0 +1,48 @@
+-- ownership (core): a `taken` element that holds something below it
+-- (ownership-v2.md §2.11 item 6, *A taken result*, #1393). The element
+-- `takeAt` hands out of a literal, a pushed or spread list, a branch or a
+-- pattern's rest is that list's element value whole: `Node b` holds `b`
+-- at `#Node.0`. Storing it into `b` itself would make `b` hold itself,
+-- so every such write is refused, as v1 refuses it. An element that
+-- holds another list (`apartNode`) is stored into `b` and accepted.
+type Tree
+    = Node (List Tree)
+
+
+pub foreign pure takeAt : borrowed List a, borrowed Int → taken a
+
+
+pub cyc4 : List Tree → List Tree
+cyc4 b = List.set b 0 (takeAt [ Node b ] 0)
+
+
+pub letBound : List Tree → List Tree
+letBound b =
+    n = Node b
+    List.set b 0 (takeAt [ n ] 0)
+
+
+pub pushed : List Tree, List Tree → List Tree
+pushed a b = List.set b 0 (takeAt (List.push a (Node b)) 0)
+
+
+pub choice : Bool, List Tree, List Tree → List Tree
+choice c xs b = List.set b 0 (takeAt (if c then xs else [ Node b ]) 0)
+
+
+pub viewed : List Tree → List Tree
+viewed b =
+    case [ Node b, Node [] ] of
+        [ _, …rest ] →
+            List.set b 0 (takeAt rest 0)
+
+        [] →
+            b
+
+
+pub spreadSet : List Tree, List Tree → List Tree
+spreadSet xs b = List.set b 0 (takeAt [ …xs, Node b ] 0)
+
+
+pub apartNode : List Tree, List Tree → List Tree
+apartNode xs b = List.set b 0 (takeAt [ Node xs ] 0)

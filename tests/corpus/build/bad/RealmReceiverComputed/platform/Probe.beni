@@ -1,0 +1,7 @@
+-- Kept receiver use must be proved without following aliases (#2120).
+import Js
+
+
+pub run _ =
+    member = "document"
+    Js.to (Js.get (Js.global "globalThis") member)

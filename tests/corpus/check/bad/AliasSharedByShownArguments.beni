@@ -1,0 +1,45 @@
+-- check/bad: an alias applied again in one read with the same SHOWN
+-- arguments is not expanded again (checker-v2.md §7.4, amended 2026-11-06),
+-- and no message can tell. `Twice` forwards its argument, so `Twice (Twice
+-- Int)` takes `Twice Int`'s expansion; `Box` shows `a` and hides `b`, so the
+-- second `Box a …` in `Pair` takes the first one's record. Every message
+-- still prints the arguments the program wrote and the expansion it would
+-- have printed, and the variables keep their names. The golden is the one
+-- the read printed before the change.
+type alias Id a =
+    a
+
+
+type alias Twice a =
+    Id (Id a)
+
+
+type alias Drop a b =
+    a
+
+
+type alias Box a b =
+    Drop { value : a } b
+
+
+type alias Pair a b =
+    Box a b × Box a (Twice b)
+
+
+wrongTwice : Twice Int × Twice (Twice Int)
+wrongTwice = ( "one", "two" )
+
+
+wrongBox : Pair String Int
+wrongBox = ( { value = 1 }, { value = 2 } )
+
+
+wrongVars : Pair a b → Pair b a
+wrongVars p = p
+
+
+wrongField : Pair Int Bool → Int
+wrongField p =
+    case p of
+        ( first, second ) →
+            first.value + second.missing

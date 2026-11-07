@@ -22,7 +22,17 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
-| 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys stay |
+| 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys followed on 2026-10-26 (`plans/core-in-beni.md`, step 4b) |
+| 8 | **`Dom.js`**: `focus`, `blur`, `box`, `scrollTo`, `scrollIntoView`, `viewport` | **landed 2026-10-29**, below: the sibling deleted |
+| 9 | **`Browser/Events.js`** (`size`, `hidden`) and **`browser-inline`'s `Tea.js`** (`sandbox`, `element`) | **built 2026-10-29**, #1228, below: both siblings deleted |
+| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
+| 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
+| 12 | **`node`'s `Http/Server.js`** (`startListen`, `nextRequest`, `requestOf`, `isUpgrade`, `refuseUpgrade`, `notOffered`, `write`, `awaitClosed`, `beginClose`, `boundAddress`) | **specified 2026-11-01**, below: eleven exports and thirteen helpers; `WebSocket.js` stays |
+| 13 | **`node`'s `WebSocket.js`** (`fromUpgrade`, `next`, `send`, `begin`, `finish`, `unsent`, `chosen`, `awaitDrain`) | **specified 2026-11-03**, below: eight exports and twenty helpers; the frames over the host buffer by `Js.setAt` and `Js.bitXor` |
+| 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
+| 15 | **`node`'s `markup.js` and `runtime.js`** (`escape`, `escapeAttr`, `safeUrl`, `list`, `classes`, `styles`, `rawText`, `text`, `map`; `run`) | **specified 2026-11-03**, below: the runtime module `Rt.beni`, as `browser`'s; both files deleted |
+| 16 | **A runtime module without markup** (`cloudflare`'s `runtime.js` needs it; #1812) | **built 2026-11-04**, below: a top-level `"module"` key for a chain with no lowering; the build waits on `runtime-in-beni-q3` (#1813) |
+| 17 | **`cloudflare`'s `runtime.js`** (`run`: the handler table and `exports(name)`, the Durable Object class) | **built 2026-11-04**, below: `Js.method` with parameters and `Js.module` (`boundary.md` §4.2), then the runtime module `Rt.beni` over step 16; the last file of #877 |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -864,7 +874,7 @@ identities' text, and in beni `<` on two `String`s is `String.compare`'s code-po
 a page that compares no strings otherwise never ships. Written so, 12 of the 54 `tea/` pages grew
 (`DirectEvents` +50, the TodoMVC of the time +12). The identities are ASCII, where
 JavaScript's `<` orders them alike, but `Js` has no operator for it: a `Js` comparison is what
-moving the keys waits for.
+moving the keys waits for. *Moved 2026-10-26, over `Js.lt` (#882): `plans/core-in-beni.md`, step 4b.*
 
 **Sizes** (`--release`, brotli 11, the whole bundle): TodoMVC **8 515 → 8 416**; `bench/size.mjs`'s
 pages `navigation` 3 905 → 3 836, `links` 3 742 → 3 699, `application` 4 129 → 4 065, `effects`
@@ -881,3 +891,471 @@ relay's queue — a program array's `push` — and reaches the tagger through `J
 read out of an array, neither of which fact 3 follows.
 
 *Decided by the owner, 2026-10-02:* a `Js` comparison intrinsic (`Js.lt` and its siblings, written in place as JavaScript's `<` and friends, specified in `boundary.md` §4.2 before it is built) so that `Hosted.js`'s last functions, `keyOf` and `compareKeys`, move to beni without reaching `String.compare`.
+
+## Step 11 — the `cloudflare` siblings (2026-10-29)
+
+**What moved.** The three siblings' four exports, each a `catch` or a walk. `resolveUrl` is
+`Js.catchIf` around `new URL(target, base)`, naming the `TypeError` that call alone throws
+(`boundary.md` §9.12 (d)) and answering `Nothing`; `idFromString` the same around the namespace's
+`idFromString`, whose `TypeError` is "Invalid Durable Object ID". `kvPut` is `Js.catchIf` around
+`kv.put`, naming an `Error` whose message holds `SQLITE_FULL` and answering `False`; anything else
+each catch throws again (`CLAUDE.md` rule 9), which is `Js.catchIf`'s contract (§4.2). `repliesIn`
+is the walk over a message's arrays and plain objects, in beni: a `Set` of what was seen, a handle
+`{ id, instance, schema }` whose `instance` is an object record pushes its `id`, an array walks its
+elements with `Js.each`, a plain object (its prototype `Object.prototype` or `null`,
+`Object.getPrototypeOf` through `Js.call`) walks `Object.values`, and a host object stops it. All
+four are `impure` by inference, as the `foreign`s declared. `runtime.js`, the Durable Object
+classes, is the platform's one file of JavaScript now.
+
+**What changes shape.** The two `Maybe`s and the `Bool` crossed the boundary through the
+`foreign` annotations; nothing crosses now, so a release build gives `Maybe` integer tags in
+the whole program (`redirect` and `byId`, and `HelloWorker`'s `Worker.var` and header reads
+alike). The handle's three keys stay plain names: the walk reads
+them as plain properties, and `ask` writes the record through `Js.from`. The Workers corpus pins
+the behaviour under Miniflare (`tests/corpus/workers/`, `zig build test-workers`, not a gate):
+`HelloWorker`'s redirects (a target that does not resolve is a 500), `ObjectCounter`'s `byId`
+(an invalid id is `Err InvalidId`, the id a `byName` ref reports resolves), `ObjectStorage`'s
+and `ObjectCounter`'s `put`, and the ask fixtures' replies through `post` to `self`.
+
+**Sizes.** A Worker is measured by neither `bench/size.mjs` nor `pages.mjs`, so the 13 projects
+of `tests/corpus/workers/` were built `--release` (with the corpus's `--allow-debug`) with master's
+compiler and the branch's and compared as brotli 11 over each bundle: 124 061 → 123 976 B (−85,
+raw −212), 5 smaller — the five that reach a moved export, `HelloWorker` −35, `ObjectCounter`
+−30, `ObjectHolders` −8, `ObjectIsolation` −7, `ObjectStorage` −5 — and 8 byte for byte, none
+larger. The full lines are in the pull request's body.
+
+## Step 8 — `Dom.js` (2026-10-29)
+
+**What moved.** The six DOM capabilities of `boundary.md` §9.8.6 — `focus`, `blur`, `box`,
+`scrollTo`, `scrollIntoView` and `viewport` — are beni over `Js` in `Dom.beni`, beside the full
+screen functions that were written so on 2026-10-23, and `platforms/browser/Dom.js` is deleted.
+One private function finds the node: `Js.call (Js.global "document") "getElementById"
+[ Js.from id ]`, and `Js.isNull` on the answer is `Err (NotFound id)`. Each capability then calls
+the node's method through `Js.call` (`focus`, `blur`, `getBoundingClientRect`, `scrollTo`,
+`scrollIntoView`), and `viewport` reads `innerWidth`, `innerHeight`, `scrollX` and `scrollY` with
+`Js.global`. Every body is `impure` by inference, as the `foreign` declared. None of these host
+calls documents a failure, so nothing is caught (`CLAUDE.md` rule 9), as the sibling caught
+nothing.
+
+**What changes shape.** `Dom.Error`, `Box` and `Viewport` crossed the boundary through the
+`foreign` declarations, so every release build kept `NotFound`'s string tag and the two records'
+field names for the sibling to write (`boundary.md` §4, *What JavaScript may read of a beni
+value*). They cross nothing now: `Result` gets integer tags, and `NotFound id` is written as `id`,
+a type of one constructor with one field being its field (`backend.md` §9). The records keep
+their field names where `box` is live: `box` reads the host rectangle's `x`, `y`, `width` and
+`height` with `Js.get`, and a field name the build also writes as a plain property is never
+renamed (`backend.md` §9 item 4's closed list), so a page that measures a node ships those four
+names as before, and a page that only reads the viewport renames `height` and `width`.
+`emit/release/tea/DomCapabilities` pins the shape, and `browser/tea/DomCapabilities` runs all six,
+and the `NotFound` of the five that take an id, under happy-dom in both builds and in headless
+Chrome (`DomCapabilities.chrome-expected`, the layout of a fixed box).
+
+**Sizes.** Measured against `master` at `cdd26f460`, both compilers ReleaseSafe, release brotli 11
+over each concatenated bundle (`zig-out/scratch/pages.mjs` over the `browser/` corpus, 416 of 420
+pages built on both sides; `bench/size.mjs`). The six pages that use `Dom` are smaller in raw and
+in brotli bytes: `tea/AfterRenderFocus` 4 783 → 4 764 (−19, raw −41), `tea/FocusInFlush`
+3 218 → 3 192 (−26, raw −62), `tea/LogCommandContext` 9 777 → 9 748 (−29, raw −72), `tea/TodoMVC`
+9 007 → 8 960 (−47, raw −103), `tea/TodoRouting` 8 301 → 8 258 (−43, raw −117), and the new
+`tea/DomCapabilities` 3 536 → 3 518 (−18, raw −126); the 410 other pages are byte-identical, as is
+every one of the 642 node lines, and the TodoMVC app line of `size.mjs` is −47. The first cut
+wrote each capability over `Result.map` and a `done` helper, and two pages that only focus grew by
+35 and 17 raw bytes; the bodies then took the sibling's own shape — one `found id use` with the
+continuation, a block lambda per capability — and every page fell below the sibling's. No speed
+claim: a capability is one host call either way.
+
+## Step 9 — `Browser/Events.js` and `browser-inline`'s `Tea.js` (2026-10-29)
+
+**What moved.** Two siblings of two exports each. `Browser.Events.size` is a record of
+`Js.global "innerWidth"` and `"innerHeight"`, and the private `hidden`, which `visibility` reads,
+is `Js.same (Js.get (Js.global "document") "visibilityState") (Js.from "hidden")`: an `===` on a
+string, so a page that reads its visibility ships no `String.eq`. Both are `impure` by inference,
+as the `foreign`s declared. `browser-inline`'s `Tea.sandbox` and `Tea.element` take the shape
+`document` and `application` have had since `browser-inline.md` §10.5: a body `unreachable app`
+that no call reaches, since the `inline` lowering compiles each call as the program's mount
+(`Lowering.constructs`) and refuses a constructor used as a value. The platform has no sibling
+left, so a development build copies none. Nothing is caught: none of the four reads can fail.
+
+**What changes shape.** `Size` keeps its field names only where `Dom.box` is live: `box` reads
+`width` and `height` of a rectangle as plain properties, and item 4's closed list pins a text the
+build writes both ways; a page that reads the window and measures no node renames them
+(`{c:globalThis.innerHeight,b:globalThis.innerWidth}`), which is right, since no JavaScript reads
+a `Size`. `Visibility`'s tags were integers already: the `foreign` returned a `Bool`. `emit/release/tea/WindowSize` pins
+the two reads in place. The `word-bodies.txt` rows of `Tea.sandbox` and `Tea.element` move from
+`Tea.js` to `Tea.beni`, with the hash of the beni body; their trusted `entry` words stand, since
+the body is never reached (`ownership-checker.md` §24.8). One representation-key golden moves,
+`repkeys/inline/ArmPiece`: the unit type's key loses its `wild` mark, since the `foreign`
+`sandbox`'s annotation named `⊤` as a closed type a live `foreign` reaches, and no `foreign` does
+now; JavaScript reads no unit value, so nothing observes it.
+
+**Sizes.** Measured against `master` at `eedceaaa0` as step 8 was (428 of 433 `browser/` pages
+built on both sides; `bench/size.mjs`). Four pages move, each smaller in raw and brotli bytes:
+`tea/WindowEvents` 4 193 → 4 170 (−23, raw −62), `tea/DefectReleasesHost` 7 125 → 7 117 (−8,
+raw −21), and two inline pages, `inline/InputInSend` 1 074 → 1 060 (−14) and
+`inline/PointerInSend` 1 407 → 1 389 (−18), where `Cmd` gets integer tags: the `foreign`
+`Tea.element`'s annotation named `Cmd msg`, which kept `Cmd`, `Main.Msg`, `List (Cmd Msg)` and
+`⊤` in the wild set, and no `foreign` names them now (`{$:"Batch",…}` → `{$:2,…}`, `case "None"`
+→ `case 0`; no hand-written code reads `Cmd`'s tags). The 424 other pages and every `size.mjs`
+line are byte for byte. A release build of an inline page never shipped `Tea.js`'s exports
+(`Minify` keeps only what a build imports), so an inline page's release bytes change only where
+a type left the wild set, as on those two; its development tree loses the sibling file.
+
+## Step 10 — `node`'s `Io.js` (2026-10-29)
+
+**What moved.** The two `foreign`s of `Io.beni`. `finish` reads the fiber's `Exit`: `Done program`
+writes the `Program`'s `out` to standard output when it is not empty and sets `process.exitCode`
+to its `code`, `Cancelled` sets 130; a `Program` is the host object `Node`'s sibling builds, read
+by `Js.get`. `startRead` makes an `AbortController`, asks `process.getBuiltinModule` for
+`node:fs/promises` at each call — so a platform that replaces `readFile` (`run/ReadFileDefect`) is
+seen, as the sibling saw it through `syncBuiltinESMExports` — and calls `readFile` with the
+encoding and the signal; `then` takes two lambdas, the fulfilment resuming the fiber with `Ok`,
+the rejection handler `rejected`: an `AbortError` while the signal is aborted is the canceller's
+own and resumes no one; an `Error` whose `code` is a key of the table (`codes`, one `Js.object`
+of the twelve codes to their constructors, read by its own keys with `Object.hasOwn` and
+`Reflect.get`) resumes with that `FileError`; anything else is thrown again, a rejection nothing
+handles, so Node reports it and exits 1 (`CLAUDE.md` rule 9). A `case` over the twelve strings
+was the first cut; it made the two programs that read a file 333 raw bytes larger than the
+sibling, and the table is the sibling's own shape. The canceller aborts the controller.
+Both are `impure` by inference, as the `foreign`s declared, and `startRead`'s lambdas are `sync`.
+`Io.js` keeps only the newer `startReadDir`, added on the base while this move was pending;
+its directory listing, errors, ordering and cancellation stay unchanged. The `node` platform
+also keeps `Node.js`, `Http/Server.js` and `WebSocket.js`.
+
+**What changes shape.** `Exit` and `Result FileError String` crossed the boundary through the
+`foreign` annotations; they cross nothing now, so a release build gives `Exit` and `Result`
+integer tags when no other boundary pins them. The newer `startReadDir` still exposes
+`Result FileError (List Entry)`, so `Result` keeps string tags in a build that reaches it.
+`FileError` keeps its string tags: the table holds its constructors through
+`Js.from`, a use at the type that pins it (`backend.md` §9 item 4), as the sibling's annotation
+did. `Program` stays a `foreign type` of `Node`, read by its two plain properties.
+`emit/release/app/IoReadFile` pins the shape; `run/SuspendReadFile`, `run/ReadFileErrors` (the
+code table through real failures) and `run/ReadFileDefect` (an `EIO` rejection crashes the
+program) run both builds.
+
+**Sizes.** Measured against `master` at `e359de0ff` as step 8 was (`bench/size.mjs`; the
+`browser/` corpus for the pages, which do not reach the `node` platform). The 642 node lines:
+1 344 511 → 1 341 985 B brotli (−2 526, −0.19 %), raw −7 265; 142 smaller, 483 equal, 17 larger
+— each of the 17 by 1 to 16 B at 38 fewer raw bytes, the compressor on `finish`'s shorter code,
+accepted under R47-3's reading (the owner, 2026-10-28). The three programs that read a file:
+`run/ReadFileErrors` 2 402 → 2 367 (−35, raw −54), `run/ReadFileDefect` +14 at raw −25,
+`run/SuspendReadFile` +6 at raw −23. Every page and every `size.mjs` page line is byte for byte.
+The first cut, with the code table as a `case` over twelve strings, made the two `readFile`
+programs 333 raw bytes larger; the sibling's object table put them below it.
+
+
+## Step 12 — `node`'s `Http/Server.js` (2026-11-01)
+
+**What moves.** The eleven exports of `platforms/node/Http/Server.js` (`boundary.md` §9.10,
+§9.11 (e), (g)) and the thirteen helpers behind them, written in beni over `Js` in
+`Server.beni`, and the file deleted; `WebSocket.js` stays, and takes the upgrade record
+`Server.beni` now makes (§9.11 item 26, amended). The two `catch`es of `invalid` are
+`Js.catchIf`, each naming the `TypeError` codes Node documents; the three error-event handlers
+end in `Js.throw`; `Handle` stays a `foreign type` with no sibling. The host is reached through
+`process.getBuiltinModule` (`node:http`, `node:buffer`, `node:os`) and the globals.
+
+**What changes shape.** `Request` and `Response` crossed the boundary through the `foreign`
+annotations of `requestOf` and `write`, which pinned `method`, `path`, `headers`, `body` and
+`status` in every release build of a program that serves; they cross nothing now, so those
+fields get short names. For that the upgrade record carries no `Request`: its eighth key is
+`body`, the raw string, where the sibling's was `request`, and `Server.beni` builds the `Request`
+from `req` and `body` in `requestOf`, once per request (a beni record stored through `Js.from`
+keeps its field names, `boundary.md` §4). The other seven keys are the sibling's, as a
+`Js.object`, never renamed (§9.11 item 26, amended).
+
+**The bar** (`core-in-beni.md` R47-3): release brotli no larger on the 24 `run/` programs that
+import `Http.Server` (`bench/size.mjs`, both compilers), the sibling's shape side by side in
+`emit/release/app/HttpServe`, and no reproducible slowdown of a request: the three per-request
+loops are timed against master, both builds, two processes each, and the figures go in the pull
+request's body before it is pushed.
+
+
+## Step 13 — `node`'s `WebSocket.js` (2026-11-03)
+
+**What moves.** The eight exports of `platforms/node/WebSocket.js` (`boundary.md` §9.11 (f)–(i),
+the amendment's items 14–28) and the twenty helpers behind them — the frame writer, the frame
+parser with its fault table, the close handshake, the back pressure, the pong queue, the readers
+and the drainers — written in beni over `Js` in `WebSocket.beni`, and the file deleted. `Socket`
+stays a `foreign type` with no sibling; a connection's state is a `Js.object` of the sibling's
+names, written with `Js.set`. The frames are built over `Buffer` by `Js.call` and `Js.setAt`, and
+the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and `Js.bitXor`; the parser
+is one self-recursive tail function, so a chunk of any number of frames runs in constant stack
+(#1801: it was mutual recursion at first, and a hostile chunk overflowed the stack). The one
+handler that filters by code ends in `Js.throw`. The host is reached through
+`process.getBuiltinModule` (`node:buffer`, `node:crypto`, `node:os`) and the globals. The upgrade
+record stays the `Js.object` of §9.11 item 26, and `upgraded` keeps its signature: typing the
+record is a later step.
+
+**What changes shape.** `Result` crossed the boundary through `foreign next`'s
+`Resume (Result Close String)`, which pinned its string tags in every release build that serves
+a WebSocket; a waiting reader is a host function now (`Js.from` of a lambda typed
+`Js.Value → ⊤`, holding the typed `Resume` and building the `Result` from the text or the end
+object), so `read` stays one `Task.callback` and a release build gives `Result` integer tags where
+nothing else pins them. `Close` keeps `code` and `reason` (one text, one spelling, `boundary.md` §4
+amended 2026-10-22: `code` is the host property `isGone` reads, `reason` the end object's key).
+
+**The bar** (`core-in-beni.md` R47-3): release brotli no larger on the ten `run/WebSocket*`
+programs, the chat example and the websocket bench (`bench/size.mjs`, both compilers), the
+sibling's shape side by side in a new `emit/release/app/WebSocketEcho`, and no reproducible
+slowdown: §9.11 (m)'s load (`bench/websocket/load.mjs`, 100 players) runs against master in the
+release build, and the server's CPU time and instructions per message go in the pull request's
+body before it is pushed.
+
+
+## Step 14 — the three thin files (`Html.js`, `Prerender.js`, `Io.js`) (2026-11-03)
+
+**What moves.** Three siblings, five exports, one pull request, and no compiler change: #925
+(2026-10-30) lets a vocabulary's `via` name a beni declaration, which was the one feature
+`Html.js` waited for (`boundary.md` §9.3, amended 2026-10-23).
+
+- `platforms/html/Html.js` → `Html.beni`: `targetValue e = Js.to (Js.get (Js.get (Js.from e)
+  "target") "value")`, `targetChecked` the same over `checked`, both `pub` as before; `pointer`,
+  not `pub` as before (§9.8.20, amended 2026-10-22), reads the dispatched event's `currentTarget`
+  and its `getBoundingClientRect` while the event is dispatched (§9.8.20 (d): `currentTarget` is
+  null after it), and returns `Js.to` of a `Js.object` of three keys — `ev`, the event, which
+  `pointerEvent` reads, and `x` and `y`, `clientX − left` and `clientY − top` — as `Pointer`. The
+  sibling's two facts hold in beni for other reasons and are kept as comments: no parameter is
+  called `event` (the window's global, which the minifier never renamed; a beni parameter is
+  renamed by the release renamer and shadows nothing in development), and the key `ev` is not `e`
+  (a key the minifier never renamed; now no minifier sees the file, and `Js.object`'s keys are
+  literal in every build).
+- `platforms/node/Prerender.js` → `Prerender.beni`: `writeRecords text` reads `process.argv[2]`
+  with `Js.at`; `undefined` writes `text` to `process.stdout`, a name writes it with `node:fs`'s
+  `writeFileSync`, asked of `process.getBuiltinModule`. A failure to write is not caught and
+  crashes the program (rule 9), as the sibling's did.
+- `platforms/node/Io.js` → `Io.beni`: `startReadDir path resume` calls `node:fs/promises`'s
+  `readdir` with `withFileTypes`, asked of `process.getBuiltinModule` at each call as `startRead`
+  is; `then` takes two lambdas. The fulfilment, unless the canceller ran (a `Js.Ref Bool`:
+  `readdir` takes no signal, so a cancelled fiber's listing finishes and no one waits for it),
+  sorts the host array of `Dirent`s with the host's `sort` and a comparator of `Buffer.compare`
+  over the names (code point order, the sibling's own), maps it with the host's `map` to an
+  `Entry` each — `name` by `Js.get`, `kind` by the entry's `isFile`, `isDirectory` and
+  `isSymbolicLink` in that order, else `Other` — and resumes with `Ok` of `Js.to` of the array.
+  Both loops are the host's, as the sibling's were: a first cut used `List.sortBy` on
+  `String.compare` (the same order) and `List.map`, and each of the four `run/ReadDir*` programs
+  grew by 264 to 444 brotli bytes for core's merge sort, then by 22 to 78 for its map loop
+  alone. The rejection handler
+  `dirRejected` is `rejected`'s shape with no abort case: an `Error` whose `code` is a key of
+  `dirCodes` — the sibling's nine codes, a `Js.object` read by `Object.hasOwn` and `Reflect.get`,
+  kept apart from `codes` because `IsADirectory` and `TooLarge` are never a listing's answer —
+  resumes with that `FileError` unless cancelled; anything else is `Js.throw`n, a rejection
+  nothing handles, so Node reports it and exits 1 (rule 9). The canceller writes the ref. Then
+  `Io.js` is deleted, and `node` keeps `markup.js` and `runtime.js` (steps 15 and 16).
+
+**What changes shape.** `Result FileError (List Entry)` crossed the boundary through
+`startReadDir`'s `foreign` annotation, which pinned `Result`'s tags, `Entry`'s `name` and `kind`
+and `EntryKind`'s tags in every release build that lists a directory. `Result` crosses nothing
+now, so a release build gives it integer tags where nothing else pins them. `Entry` and
+`EntryKind` still cross: the mapping lambda is handed to the host's `map` through `Js.from` at
+`Value → Entry`, a use at the type that pins it (`backend.md` §9 item 4), so `name` and `kind`
+keep their names and `EntryKind` its string tags, as the sibling's annotation kept them. (`name`
+would keep its name either way: `Js.get entry "name"` reads the `Dirent`'s property of that text,
+and one source text has one spelling everywhere, `boundary.md` §4 amended 2026-10-22.)
+`FileError` keeps its string tags, as step 10 says: `dirCodes` holds its constructors through
+`Js.from`. `Event`, `Dispatched` and `Pointer` stay `foreign type`s, and `Pointer`'s three keys
+stay literal (`Js.object`), so `pointerEvent`, `localX` and `localY` read what they read. `String`
+and `⊤` cross nothing new. A development build no longer copies a sibling file for `Html` (523
+raw bytes in TodoMVC, §9.8.20 as built), `Prerender` or `Io`.
+
+**The bar** (`core-in-beni.md` R47-3): release brotli no larger on the programs that reach each
+piece — every page of the `browser/` corpus and `bench/size.mjs`'s page lines for `Html.js`
+(TodoMVC and Conduit reach `targetValue`; the pointer pages reach `pointer`), the `run/ReadDir*`
+programs for `Io.js`, and the prerender data programs (`browser/prerender/Data*`, built for
+`node` with `--release`) for `Prerender.js` — measured with both compilers on the same sources;
+the shape side by side in `emit/release/app/IoReadDir` (new) and the existing `dom`/`tea` release
+goldens that reach an extractor; and no slowdown to measure: each export runs once per event,
+once per listing or once per program, and does the same host calls in the same order.
+
+**Sizes** (2026-11-03, master `2b7214fb35` against the branch, both compilers on the same sources,
+release brotli 11). `bench/size.mjs`'s 665 node lines: 1 364 855 → 1 364 675 B (−180), raw −320;
+4 smaller, 661 equal, 0 larger — the four are `run/ReadDir` −35, `run/ReadDirDefect` −38,
+`run/ReadDirErrors` −59, `run/ReadDirFaults` −48. Its 19 page lines: −18; TodoMVC +9 at raw −12,
+conduit −22, steer −5. The `browser/` corpus's 442 pages: 1 329 314 → 1 329 306 (−8), raw −74;
+6 smaller, 433 equal, 3 larger (`tea/PointerInput` +5, `tea/TodoMVC` +9, `inline/LinkWidget` +1,
+each at fewer raw bytes, the compressor's block choices, accepted under R47-3's reading of
+2026-10-28). The seven prerender data programs with one, built from their two roots: in
+development, what the site build runs, −142 to −160 brotli each (the sibling file no longer
+copied); under `--release`, raw −14 each, brotli −5 (`DataBlog`) to +13 (`DataUnicode`), the
+same reading. Six `emit/release/inline/*` goldens moved: `targetValue`'s short name is drawn from
+the beni namespace, two letters swap, five byte counts are the same and `ArmSingle` is 4 bytes
+smaller (the listener helper's one call passed the extractor as an argument; a top-level name
+needs no parameter). The first cut of the listing used `List.sortBy` and `List.map` and made the
+four `ReadDir*` programs 264 to 444 bytes larger, then 22 to 78 with `List.map` alone; the host's
+loops put them below the sibling.
+
+
+## Step 15 — `node`'s `markup.js` and `runtime.js` (2026-11-03)
+
+**What moves.** The nine exports of `platforms/node/markup.js` (`backend.md` §15.6: the `ssr`
+lowering's seven and the two markup primitives) and the one of `platforms/node/runtime.js`
+(`run`), written in beni over `Js` in a runtime module `platforms/node/Rt.beni`, and both files
+deleted. The manifest says `"markup": { "lowering": "ssr", "module": "Rt" }` and no `"runtime"`:
+the module is the whole runtime (`boundary.md` §5.2 and §9.2, amended 2026-10-02 for `browser`),
+so no compiler feature is needed (#1810). Each `pub` value takes the declared count of parameters
+over `Js.Value`, as `browser`'s `Rt.beni` does:
+
+- `run program` writes `program.$o` to standard output when it is not empty and sets
+  `process.exitCode` to `program.$c`, the two keys `Node.beni` builds — the host calls `Io`'s
+  `finish` makes (step 10), through `Js.global "process"`.
+- `escape text` and `escapeAttr value` replace `&`, `<`, `\r` (and `"`) with their references in
+  one pass of `replace` over a `g` pattern and one replacer function reading one object, as the
+  file does. `Js.regExp` refuses `g` (§4.2: a shared `lastIndex`), and `String.prototype.replace`
+  resets `lastIndex` itself, so the pattern is `new RegExp("[&<\\r]", "g")`, a top-level value made
+  once (`Js.construct`), priced against the file's literal; a chain of three `replaceAll`s is the
+  second price. If both cost bytes, the owner is asked whether `Js.regExp` may take `g` for a
+  literal that only `replace` reads.
+- `safeUrl url` tests `Js.regExp`'s `i` pattern, `browser`'s `Rt.beni` text.
+- `list items row fallback`: an empty list is the fallback's `t` or `""`; otherwise the rows' `t`
+  concatenated, each `row(item, position)`, over the elements by `backend.md` §4's protocol
+  (`elements`, as `browser`'s), in a self-recursive tail function over `Js.at` (the tail-call loop,
+  §8).
+- `classes entries` is the names whose flag is `True`, each once, in first-occurrence order, a
+  name holding whitespace being several (`split` on `Js.regExp "[\\t\\n\\f\\r ]+"`), joined by
+  one space, through a `Set`; `styles entries` writes `name:value;` for each property's last
+  non-empty value in first-occurrence order, through a `Map`; a tuple is read as `{ a, b }`.
+- `rawText text tag` replaces `</` before the element's own name, in any case, with `<\/`: a
+  `RegExp` made per call with `gi`, as the file does.
+- `text s` is `{ t: escape s }` (a `Js.object`); `map html f` is `html`.
+
+**What changes shape.** Nothing a program sees: markup under `ssr` stays `{ t }`, a `Program`
+stays `{ $c, $o }`, and every `run/Markup*` fixture prints what it printed. The entry file imports
+`run` from `_platform/Rt.mjs` instead of the copied `runtime.foreign.mjs`, so every development
+build of a `node` program changes its tree, and every `emit/release/app/*` golden its hoisted
+runtime text; the markup goldens (`emit/MarkupSsr`, …) read `Rt$escape` where they read the
+file's `escape`.
+
+**The bar** (`core-in-beni.md` R47-3): every node line of `bench/size.mjs` reaches `run`, so
+release brotli no larger over all of them (both compilers, same sources), the `run/Markup*`
+programs named; the shapes side by side in `emit/release/app/*` and `emit/release/*Markup*`; and
+no reproducible slowdown: `escape` is the one export on a hot path (every text hole of a render),
+and it keeps one pass of `replace`; the chat and HTTP servers that render are the programs to
+time if the pattern's form changes.
+
+**Sizes** (2026-11-03, master `2b7214fb35` against the branch, both compilers on the same sources,
+release brotli 11). `bench/size.mjs`'s 665 node lines, every one of which reaches `run`:
+1 364 855 → 1 351 910 B (−12 945, −0.95 %), raw −11 574; 621 smaller, 4 equal, 40 larger — each
+of the 40 at fewer raw bytes (the import line gone and the compressor's block choices; `bench/corpus`
++72 at raw −4, `run/WideTypeArityEq` +71 at raw −15, `run/LetHelperOverTheCap` +47 at raw −15),
+accepted under R47-3's reading of 2026-10-28. Every `run/Markup*` program is smaller:
+`MarkupBlocks` −93, `MarkupClassStyle` −75, `MarkupHoles` −32, `MarkupSvg` −32, `MarkupText` −28,
+`MarkupComponents` −22, `MarkupNestedRows` −21, `MarkupShow` −13, `MarkupFor` −9, `MarkupAttributes`
+−5 (raw +7). The 19 page lines and the `browser/` corpus's 441 pages are byte for byte. The `g`
+pattern as `new RegExp(…, "g")` and the `case` replacer cost about 37 raw bytes against the file's
+literal and table, and the import line's absence and the renamer's short names pay for them; no
+question for the owner. The first cut concatenated the rows with `++`, which is `Basics.append`
+for strings and lists both, and `MarkupFor` was +23, `MarkupHoles` +12, `MarkupNestedRows` +18,
+`MarkupComponents` +17 and `MarkupSvg` +5; interpolation, which is `+`, put them below the file.
+258 `emit/` goldens moved.
+
+**As built.** A `Js.object` key must be an identifier, so the replacer is a `case` over the four
+characters. `"markup".module` is read from the package that declares the chain's first `lowering`
+(`boundary.md` §9.2, amended): a platform over `node` with a markup file of its own saw `node`'s
+`Rt` and failed as a split pair. `node` owns the module name `Rt` now, and the three
+`build/bad/MarkupRuntime*` platforms declare their file as their program runtime too. The
+playground frame defines `globalThis.process`, which the runtime reads where the file imported
+`node:process` (`playground.md` §5).
+
+
+## Step 16 — a runtime module without markup (2026-11-03)
+
+**What is wanted.** `boundary.md` §5.2 lets a chain leave out `"runtime"` when it names a markup
+`"lowering"` and a runtime module (`"markup".module`), which supplies `run`. `cloudflare` declares
+no markup, so its `run` has nowhere to live but `runtime.js`. A top-level `"module"` key of the
+package that declares `"program"` names a beni module that supplies `run` and nothing else
+(§5.2, amended 2026-11-03; issue #1812). The compiler change: `Manifest` gains the key,
+`platform.zig` reads it (`chain.first("module")`, refused beside `"runtime"` in one package and
+beside a `lowering` in the chain), and `Emit.moduleIsRuntime` takes a chain with a runtime module
+and no lowering, whose expected export set is `run` alone (`checkMarkupRuntime` asks no lowering
+for its list); the entry file, the hoisting, the reachability roots and the release map already
+read `runtime_module`. Proof: `tests/platforms/program-module`, a platform over nothing with
+`"program"`, `"module": "Rt"` and a `Rt.beni` whose `run` prints the program's text through
+`Js`, and a `run/` fixture built for it; a `build/bad/` fixture per refusal.
+
+**Why it waits.** Its one consumer is `cloudflare`'s `runtime.js` (#1813), whose move needs two
+`Js` spellings the owner decides (`runtime-in-beni-q3`, 2026-11-03): under A the feature is built
+and the move follows; under B `runtime.js` stays, and a runtime module without markup serves
+nothing, so it is not built. The spec stands either way.
+
+**The answer** (Jayson, 2026-11-04 06:26 UTC, `runtime-in-beni-q3`): A, both spellings. So the
+feature is built, and the move (#1813, step 17) follows on a stacked branch.
+
+**As built (2026-11-04).** `Manifest.zig` has the top-level `module` key; `platform.resolveChain`
+refuses it beside `"runtime"` in one package (`module_beside_runtime`) and beside a lowering in
+the chain (`module_with_lowering`), two exit-2 lines; `platform.load` counts it as the whole
+runtime and hands `Emit` a `program_module` with its package's root. `Emit.moduleIsRuntime` is
+true for it, `checkMarkupRuntime` asks no lowering for a list — `run` is the one expected export —
+and a missing module or `run` is reported against the manifest that named the module. Two things
+the plan did not foresee: `"exports": "program"` refused every runtime module (`backend.md` §2,
+"not in this slice"), and `cloudflare` declares it, so the refusal is now the markup runtime
+module's only and `emitEntryExporting` imports `run` from the module; and under `--release` the
+entry's `run(main)` was handed to the specialisation pass "its result unread", which pruned
+`run`'s returned object to `{}` under the exports mode — the pass now gets the call only when
+the entry does not read the result, so a chain with `"exports"` does not specialise `run` on
+`main` (`backend.md` §9, *The entry's call is a call*, amended; a form that hands the call over
+with its result read is open, and `run/ProgramModuleExports` is its measure). Proof: the
+`run/` fixtures `ProgramModule` and `ProgramModuleExports`, each a project with a platform of its
+own, built and run in both builds (the exports one is the red fixture of the pruning); five
+`World` tests in `platform_test.zig` for the entry file, the exports entry, the two refusals and
+the missing module. No size figure: the feature changes no existing program, and the `emit/`
+goldens prove it byte for byte. Found on the way: `backend.md` holds a double-encoded
+section sign on 1 091 lines, which is #886 (open since `540e16e03`); the evidence is there.
+
+
+## Step 17 — `cloudflare`'s `runtime.js` (2026-11-04)
+
+**What is wanted.** The last hand-written file of the platforms (`core/Js.js` stays, the owner's
+deferral of 2026-10-02): `platforms/cloudflare/runtime.js`, whose `run` answers the Worker's
+handler table and `exports(name)`, the Durable Object class of a definition, written in beni as
+the runtime module `platforms/cloudflare/Rt.beni` over step 16's top-level `"module"` and the
+file deleted (#1813). It needs two `Js` spellings the owner chose on 2026-11-04
+(`runtime-in-beni-q3`, A): **`Js.method` with parameters** — `Js.method λself request → …` is
+`function (request) { const self = this; … }`, the checker typing the lambda by its own count and
+holding it `sync` — for the constructor (`self.constructor` in place of `new.target`), `fetch`,
+`alarm`, `$beni` and the WebSocket hooks; and **`Js.module "cloudflare:workers"`**, a static
+namespace import of a host built-in, since `DurableObject` is no global, Workers have no
+`getBuiltinModule`, and `exports(name)` runs at load before a dynamic `import()` could settle.
+Spec: `boundary.md` §4.2 (both paragraphs), `backend.md` §4 (*`Js.method` is a `function`*) and
+§9 (*Host imports*), `checker-v2.md` §30.
+
+**The order.** The two spellings first, each with fixtures of its own (`run/JsMethodParams`,
+`emit/core/JsMethodParams`, `check/bad/core/MethodParamsSuspends`; `run/JsModule` over `node:`,
+`emit/release/core/JsModule` for the hoisted import, `check/bad/core/JsModuleNotBuiltin`), then
+the move, with the `workers/` corpus under Miniflare (`zig build test-workers`) as the proof that
+the class the host gets is the same: RPC on its stub, the alarm, the WebSocket hooks. The bar is
+R47-3 on the `workers/` programs' release builds, measured against master's `runtime.js`.
+
+**What the sibling's comments say that the module keeps.** `exports(name)` throws, in beni's
+words, for a name the program defines nothing for (§9.12 (c)); the class is built over
+`DurableObject` through `Reflect.construct`, so the host offers RPC on its stub (§9.12 (e.11)),
+with its methods on the prototype; the two keywords the release compactor cannot hoist past
+(`class`, `new.target`) stay out, which `Js.method` and `Reflect.construct` keep true.
+
+**As built (2026-11-04).** The two spellings first, each its own pair of commits. `Js.method`:
+`Lower.methodFunc` keeps the lambda's parameters after the first as the `function`'s; the checker
+(`constrain/Expr.zig`, `methodLambda`) types a lambda of two or more parameters against an arrow
+of its own count, each parameter `Js.Value`, generates the declaration against a variable of its
+own so the use is recorded, and demands the arrow `sync` at the reference to `Js.method`, which
+gives `check/bad/core/MethodParamsSuspends` the one-parameter form's words. `Js.module`:
+`JsIntrinsic.Which.module` with its specifier in place; `invalid_js_module` from `Module.zig`
+for a non-literal or a specifier that is no `node:`/`cloudflare:` built-in; the lowering records
+each specifier once and binds `<Module>$$<specifier sanitised>` (`JsIntrinsic.moduleBindingBase`),
+writing `import * as … from "…"` first among the module's statements (a `Specifier` whose
+`imported` is `none`); the scope-hoisted file skips the module's statement and writes
+`import*as <short> from"…";` at its top, once per text, beside the hand-written files' host
+imports. Two defects on the way to the move, both hidden by the first fixtures: `Session.
+isPlatformRoot` did not root a top-level `"module"`, so an embedded platform's program that did
+not import `Rt` failed to find it (the `ProgramModule` fixtures import theirs, and a directory
+platform roots every module); and the hoist plan took the host import for an emitted module it
+could not find and declined the one file, so every Workers program came out as the multi-file
+layout, +214 to +539 brotli, before `planHoist` learned to skip a host built-in — and its first
+one-file text lacked the space after the binding. The move itself is the draft above, with
+`self.constructor` for `new.target` and `_ =` on the two `setPrototypeOf` calls.
+
+**Sizes** (the 15 `workers/` programs, release, brotli 11 over the emitted files, master
+`3b6170d9ad` against the head): every program 88 to 92 raw bytes smaller — the shape beside the
+file's: `let f=a.DurableObject,g=function(c,d){let h=Reflect.construct(f,[c,d],this.constructor)…`
+against `function a(e,f){let self=Reflect.construct(DurableObject,[e,f],new.target??a)…`, the
+prototype in a local, the arrow's `if` without braces — and 14 smaller after brotli (−4 to −90),
+one larger: `ObjectHolders` +3 at −90 raw. Total 147 142 → 146 594 (−548, −0.37 %). No
+reproducible slowdown: `run` runs once at load, and the hooks are one call each, as before. The
+`workers/` corpus under Miniflare (`zig build test-workers`) is green in both builds: RPC on the
+stub, the alarm, the WebSocket hooks. No file of the platforms is hand-written JavaScript now;
+`core/Js.js` stays (the owner's deferral of 2026-10-02), the one file a build copies.

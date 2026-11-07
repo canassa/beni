@@ -76,13 +76,17 @@ pub roundTrip : User.Type → Result (List Issue) String
 roundTrip user = User.print user
 ```
 
-## The library
+## Compiled composition
 
-`core/Schema` has the same engine as a library, for a schema built at run time: builders
-(`Schema.string`, `Schema.int`, `Schema.list`, `Schema.record` with `Schema.field` and
-`Schema.optional`, `Schema.nullable`, `Schema.tagged`), the runners (`Schema.parse`, `Schema.print`, `Schema.decode`, `Schema.encode`) and `Schema.describe`,
-which renders a description. A `schema` declaration compiles to specialised code and is faster
-than the library on every workload; use the library where the shape is known only at run time.
+Every schema runs compiled workers. The builders in core/Schema construct and combine those
+workers: Schema.string, Schema.int, Schema.list, Schema.nullable, Schema.converted,
+Schema.record with Schema.field and Schema.optional, Schema.tagged, and Schema.recursive.
+The runners include Schema.parse, Schema.print, Schema.decode, Schema.encode, Schema.read and
+Schema.write, with options in their With forms. Schema.describe returns inspection data.
+Descriptions are not executable validators.
+
+Schema.flip, Schema.typeOnly and Schema.encodedOnly are unavailable.
+Runtime imports from a description or JSON Schema are unavailable.
 
 `Json.decode text` and `Json.encode value` read and write a plain type through its derived
 `codec` method (`where a.codec`); `api-core.md` has their types.

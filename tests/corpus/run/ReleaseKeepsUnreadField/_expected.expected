@@ -1,0 +1,20 @@
+log z ran
+log a ran
+debug z ran: 26
+debug a ran: 1
+say z ran
+say a ran
+pair z ran
+pair a ran
+call zz ran
+call aa ran
+get z ran
+get a ran
+get z ran
+get a ran
+1
+9
+10
+1
+1
+27

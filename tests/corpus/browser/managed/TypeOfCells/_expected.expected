@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "nofn:fn,nofn:fn,noobj:obj,obj:obj"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"nofn:fn,nofn:fn,noobj:obj,obj:obj"</output>
+  </main>
+</body>

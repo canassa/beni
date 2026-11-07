@@ -14,11 +14,15 @@
 // A list is a plain array, a view `{ b, o, length, p, $plain }` or a trie
 // header `{ length, h, hc, T, t, p, $plain }` (`core/List.beni`).
 //
-// - A plain array loses its elements and keeps its `length`: JavaScript makes
-//   an array's `length` non-configurable, so it cannot throw. Each index is a
-//   hole, and a hole is read from the prototype, which is a proxy that throws.
-//   So does every method the array is read through (`slice`, `concat`, the
-//   iterator).
+// - A plain array loses its elements, and its `length` becomes the written
+//   list's: JavaScript makes an array's `length` non-configurable, so it
+//   cannot throw, but it can say what an in-place write would have left
+//   there. A stale read of the length alone (`List.length`, a pattern's
+//   `[]` or `[ _, …_ ]` test) then answers what the in-place run answers,
+//   and the program's output differs from its golden; a read past it traps.
+//   Each index is a hole, and a hole is read from the prototype, which is a
+//   proxy that throws. So does every method the array is read through
+//   (`slice`, `concat`, the iterator).
 // - A view's own properties throw, `length` included, and its base array is
 //   poisoned as well: a view aliases its base's cells.
 // - A trie header's own properties throw, and so do its tree's (`T`), the
@@ -42,8 +46,7 @@ const trap = (site) =>
     has: (_, key) => stale(site, `test ${String(key)}`),
   });
 
-const poisonArray = (a, site) => {
-  const n = a.length;
+const poisonArray = (a, site, n = a.length) => {
   a.length = 0;
   a.length = n;
   Object.setPrototypeOf(a, trap(site));
@@ -55,8 +58,9 @@ const poisonObject = (o, site) => {
   }
 };
 
-const poison = (xs, site) => {
-  if (Array.isArray(xs)) return poisonArray(xs, site);
+// `n`: the written list's length, which a plain base takes.
+const poison = (xs, site, n) => {
+  if (Array.isArray(xs)) return poisonArray(xs, site, n);
   // Every part is read before any is poisoned.
   const view = xs.o !== undefined;
   const { b, p, h, t, T } = xs;
@@ -89,7 +93,7 @@ const fresh = (xs) => {
 export const list = (site, writer, base, ...rest) => {
   const copy = fresh(base);
   const result = writer(copy, ...rest);
-  poison(base, site);
+  poison(base, site, result.length);
   return result;
 };
 

@@ -251,7 +251,7 @@ pub const Node = struct {
         /// a `SubRange` of parameter type nodes (one or more), `rhs` the
         /// result type.
         type_fn,
-        /// `⊤`, or `()` until the enforce step (language.md §12.10).
+        /// `⊤` or the accepted synonym `()` (language.md §12.10).
         /// `main_token` is the `⊤`, or the `(`.
         type_unit,
         /// `⊥`, core's empty type (language.md §12.10). `main_token` is
@@ -322,7 +322,7 @@ pub const Node = struct {
         /// `(+)` — an operator as a function. `main_token` is the operator
         /// token (the parentheses are the neighbouring tokens).
         op_fn,
-        /// `⊤`, or `()` until the enforce step (language.md §12.10).
+        /// `⊤` or the accepted synonym `()` (language.md §12.10).
         /// `main_token` is the `⊤`, or the `(`.
         unit,
 
@@ -478,7 +478,7 @@ pub const Node = struct {
         /// A string without interpolation. `main_token` is `str_start`; the
         /// tokens up to the matching `str_end` are the content.
         pat_string,
-        /// `⊤`, or `()` until the enforce step (language.md §12.10).
+        /// `⊤` or the accepted synonym `()` (language.md §12.10).
         /// `main_token` is the `⊤`, or the `(`.
         pat_unit,
         /// `( p )`, grouping. `main_token` is `(`; `lhs` is the inner

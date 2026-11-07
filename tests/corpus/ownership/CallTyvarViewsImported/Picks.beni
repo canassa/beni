@@ -1,0 +1,10 @@
+-- ownership (project): see Main.beni. The unannotated callees, whose
+-- results sit at a type variable's place (#1350).
+pub choose b l r =
+    if b then
+        l
+    else
+        r
+
+
+pub ans r = r.b

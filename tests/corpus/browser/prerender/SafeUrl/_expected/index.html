@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Safe URL</title>
+    <script type="module" src="/_main.mjs"></script>
+  </head>
+  <body>
+    <div id="root"><script>(()=>{let d=document,r=[],k=["click"],f=e=>{let t=e.target;t.closest?.("[data-beni]")&&r.push([e,t.value,t.checked,t.selectedIndex])};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{for(let n of k)d.removeEventListener(n,f,!0);return r};d.currentScript.remove()})()</script><main data-beni="/"><a id=plain href="">plain</a><a id=query href="/q?x=1&amp;y=&quot;2&quot;">query</a><a id=html href="">html</a><a id=nbsp href="">nbsp</a><a id=uber href="über">uber</a><button id=flip>flip</button></main></div>
+  </body>
+</html>

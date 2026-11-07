@@ -1,0 +1,53 @@
+-- The accepted twins of `SanitiserRecordKeptInLiteral` (#1000): nothing is
+-- written after the call, the function keeps nothing, the record is written
+-- first, or a copy is handed over. Each stays an in-place write or no write.
+import Debug
+import List
+import Node exposing (Program)
+import Record
+import String
+
+
+type alias R =
+    x : Int
+
+
+type Box a
+    = Box a
+
+
+readAfter : (List R → Box (List R)), R → Box (List R) × Int
+readAfter f r =
+    b = f [ r ]
+    ( b, r.x )
+
+
+keepsNothing : (List R → Int), R → Int × R
+keepsNothing f r =
+    n = f [ r ]
+    r2 = { r | x = 1 }
+    ( n, r2 )
+
+
+writtenFirst : (List R → Box (List R)), R → Box (List R)
+writtenFirst f r =
+    r2 = { r | x = 1 }
+    f [ r2 ]
+
+
+copied : (List R → Box (List R)), R → Box (List R) × R
+copied f r =
+    b = f [ Record.copy r ]
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+main : Program
+main =
+    lines =
+        [ Debug.toString (readAfter Box { x = 0 })
+        , Debug.toString (keepsNothing List.length { x = 0 })
+        , Debug.toString (writtenFirst Box { x = 0 })
+        , Debug.toString (copied Box { x = 0 })
+        ]
+    Node.print (String.join lines "\n")

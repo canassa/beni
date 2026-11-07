@@ -1,8 +1,8 @@
 // The playground's editors and its view of the emitted JavaScript
 // (docs/design/playground.md §4.2, §4.6): CodeMirror 6, each package vendored
 // at the version `index.html`'s import map pins. The beni editor has beni's
-// grammar, CodeMirror's Elm mode extended with beni's tokens (`syntax.js`),
-// and the compiler's diagnostics as lint marks at their positions
+// grammar (`src/Syntax.beni`, which holds the rules of CodeMirror's Elm mode
+// and beni's own), and the compiler's diagnostics as lint marks at their positions
 // (`positions.js`); the CSS editor has CodeMirror's CSS grammar
 // (`@codemirror/lang-css`). The emitted JavaScript is a read-only view with
 // CodeMirror's JavaScript grammar (`@codemirror/lang-javascript`), so one
@@ -24,8 +24,36 @@ import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { javascript } from "@codemirror/lang-javascript";
 import { css } from "@codemirror/lang-css";
 import { tags } from "@lezer/highlight";
-import { beni } from "./syntax.js";
+import { Syntax$line, Syntax$start } from "./beni/Syntax.mjs";
 import { rangeOf } from "./positions.js";
+
+// A beni list as an array: it is one, or a view that `$plain()` copies.
+const plain = (list) => (Array.isArray(list) ? list : list.$plain());
+
+// beni's grammar in CodeMirror's `StreamLanguage` (playground.md §10.7),
+// until the beni editor replaces CodeMirror (§10.10). The grammar reads a
+// whole line: at the start of each line this asks it for the line's pieces
+// and the state after the line, and each call of `token` moves the stream
+// over one piece. A piece's text is a JavaScript string, so its `length` is
+// the UTF-16 units the stream counts.
+const beni = {
+  name: "beni",
+  startState: () => ({ state: Syntax$start, pieces: [], next: 0 }),
+  copyState: (s) => ({ state: s.state, pieces: s.pieces, next: s.next }),
+  token(stream, s) {
+    if (stream.sol()) {
+      const line = Syntax$line(s.state, stream.string);
+      s.state = line.state;
+      s.pieces = plain(line.pieces);
+      s.next = 0;
+    }
+    const piece = s.pieces[s.next];
+    s.next += 1;
+    stream.pos += piece.text.length;
+    return piece.name === "" ? null : piece.name;
+  },
+  languageData: { commentTokens: { line: "--" } },
+};
 
 // Colours from `style.css`, so that a dark page gets dark colours. One style
 // for every grammar: a tag the JavaScript or the CSS grammar uses and beni's

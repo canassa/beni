@@ -1,0 +1,195 @@
+-- An owned take is still refused where something else holds the old
+-- contents (`ownership-v2.md` §2.13.7, #1977): a loan taken before the
+-- take; a helper that takes and edits, called while a loan is live; a
+-- capture or a loan stored as `.1`; a loan through an alias of the
+-- handle, a branch, a record, a closure or a helper; a callback passed on
+-- through a helper; a loan stored into another cell; a shallow copy kept
+-- as `.1`; one cell handed for two; and a take inside a fiber while the
+-- other branch holds a loan across a sleep. Each line prints the edited
+-- take, then the holder: were an edit accepted, the holder would read the
+-- edited list.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+emptied : Ref (List Int) → List Int
+emptied r = Ref.modify r λold → ( old, [] )
+
+
+before : ⊤ → String
+before ⊤ =
+    r = Ref.make [ 0 ]
+    v = Ref.get r
+    u = List.push (emptied r) 1
+    "before ${ints u} ${ints v}"
+
+
+grow : Ref (List Int) → List Int
+grow r = List.push (emptied r) 9
+
+
+grown : ⊤ → String
+grown ⊤ =
+    r = Ref.make [ 1, 2 ]
+    v = Ref.get r
+    g = grow r
+    "grown ${ints g} ${ints v}"
+
+
+capture : ⊤ → String
+capture ⊤ =
+    ys = [ 5 ]
+    r = Ref.make [ 0 ]
+    t = Ref.modify r λold → ( old, ys )
+    u = List.push t 1
+    w = List.push ys 6
+    "capture ${ints u} ${ints w} ${ints (Ref.get r)}"
+
+
+loanKept : ⊤ → String
+loanKept ⊤ =
+    r = Ref.make [ 0 ]
+    v = Ref.get r
+    t = Ref.modify r λold → ( old, v )
+    u = List.push t 1
+    "loanKept ${ints u} ${ints (Ref.get r)}"
+
+
+aliased : ⊤ → String
+aliased ⊤ =
+    a = Ref.make [ 1 ]
+    c = a
+    v = Ref.get c
+    u = List.push (emptied a) 2
+    "aliased ${ints u} ${ints v}"
+
+
+branch : Bool → String
+branch p =
+    a = Ref.make [ 1 ]
+    b = Ref.make [ 2 ]
+    c = if p then a else b
+    v = Ref.get c
+    u = List.push (emptied b) 3
+    "branch ${ints u} ${ints v}"
+
+
+record : ⊤ → String
+record ⊤ =
+    a = Ref.make [ 1 ]
+    box = { v = Ref.get a, n = 1 }
+    u = List.push (emptied a) 4
+    "record ${ints u} ${ints box.v}"
+
+
+closure : ⊤ → String
+closure ⊤ =
+    a = Ref.make [ 1 ]
+    g = λ⊤ → Ref.get a
+    v = g ⊤
+    u = List.push (emptied a) 2
+    "closure ${ints u} ${ints v}"
+
+
+peek : Ref (List Int) → List Int
+peek r = Ref.get r
+
+
+peeked : ⊤ → String
+peeked ⊤ =
+    a = Ref.make [ 1 ]
+    v = peek a
+    u = List.push (emptied a) 2
+    "peeked ${ints u} ${ints v}"
+
+
+modifyWith : Ref (List Int), (List Int → List Int × List Int) → List Int
+modifyWith r f = Ref.modify r f
+
+
+passed : ⊤ → String
+passed ⊤ =
+    a = Ref.make [ 1 ]
+    t = modifyWith a λold → ( old, old )
+    u = List.push t 2
+    "passed ${ints u} ${ints (Ref.get a)}"
+
+
+stored : ⊤ → String
+stored ⊤ =
+    a = Ref.make [ 1 ]
+    b = Ref.make []
+    Ref.set b (Ref.get a)
+    u = List.push (emptied a) 2
+    "stored ${ints u} ${ints (Ref.get b)}"
+
+
+nested : ⊤ → String
+nested ⊤ =
+    r = Ref.make [ [ 0 ], [ 1 ] ]
+    t = Ref.modify r λold → ( old, List.copy old )
+    u = List.update t 0 λl → List.push l 9
+    sep = ";"
+    a = String.join (List.map u ints) sep
+    b = String.join (List.map (Ref.get r) ints) sep
+    "nested ${a} ${b}"
+
+
+edit : Ref (List Int), Ref (List Int) → String
+edit a b =
+    v = Ref.get a
+    Ref.update b λxs → List.push xs 1
+    ints v
+
+
+oneForTwo : ⊤ → String
+oneForTwo ⊤ =
+    c = Ref.make [ 0 ]
+    "oneForTwo ${edit c c} ${ints (Ref.get c)}"
+
+
+fibered : ⊤ → String
+fibered ⊤ =
+    r = Ref.make [ 0 ]
+    ( a, _ ) =
+        Task.par
+            (λ⊤ →
+                v = Ref.get r
+                Io.sleep 10
+                ints v
+            )
+            λ⊤ →
+                Io.sleep 1
+                ints (List.push (emptied r) 1)
+    "fibered ${a}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ before ⊤
+        , grown ⊤
+        , capture ⊤
+        , loanKept ⊤
+        , aliased ⊤
+        , branch False
+        , record ⊤
+        , closure ⊤
+        , peeked ⊤
+        , passed ⊤
+        , stored ⊤
+        , nested ⊤
+        , oneForTwo ⊤
+        , fibered ⊤
+        ]

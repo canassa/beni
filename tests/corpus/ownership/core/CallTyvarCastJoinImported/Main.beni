@@ -1,0 +1,42 @@
+-- ownership (core project): `CallTyvarCastJoin` with the callees in
+-- another module (ownership-v2.md §2.11 *Re-rooting at a parameter*,
+-- §2.13.9, §3.6, #1350): the published join of a parameter and a cast
+-- stands at the actual's place, so a field of it reads `g.x.c` and a
+-- write through it writes `g.x.c`.
+import Casts exposing (mix, mix2, mix3)
+import Js
+
+
+n g v = List.length (mix True g.x v).c
+
+
+pub viaMix : List Int, Js.Value → Int
+viaMix xs v =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n g v + List.length p
+
+
+n2 g = List.length (mix2 True g.x).c
+
+
+pub viaCast : List Int → Int
+viaCast xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n2 g + List.length p
+
+
+w g =
+    v = mix3 True g.x
+    List.push v.c 1
+
+
+pub viaWrite : List Int → Int
+viaWrite xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = w g
+    List.length xs + List.length p

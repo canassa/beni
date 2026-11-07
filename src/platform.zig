@@ -82,11 +82,11 @@ pub const Chain = struct {
         return false;
     }
 
-    /// Whether the chain always runs in a page (`boundary.md` §5.2, added
-    /// 2026-10-24): its first `"host"`, down the chain.
+    /// Whether the entry runs in a window: the first explicit `entryHost`
+    /// down the platform chain (`boundary.md` §5.2).
     pub fn inPage(chain: *const Chain) bool {
         for (chain.layers) |layer| {
-            if (layer.manifest.host) |h| return h == .page;
+            if (layer.manifest.entryHost) |h| return h == .window;
         }
         return false;
     }
@@ -103,6 +103,17 @@ pub const Chain = struct {
             }
         }
         return null;
+    }
+
+    /// The runtime module of the package that declares the chain's first
+    /// `lowering`, or null: a lower package's `module` is shadowed with its
+    /// `lowering` and `runtime` (§9.2, amended 2026-11-03, #1810), as a
+    /// platform over `node` that names `ssr` with a file of its own sees
+    /// nothing of `node`'s `Rt`.
+    pub fn loweringModule(chain: *const Chain) ?Found {
+        const lowering = chain.firstMarkup("lowering") orelse return null;
+        const value = chain.layers[lowering.layer].manifest.markup.module orelse return null;
+        return .{ .value = value, .layer = lowering.layer };
     }
 
     /// As `first`, for one field of `"markup"` (§9.2).
@@ -153,6 +164,14 @@ pub const Failure = union(enum) {
     /// The first `"markup".lowering` and the first `"markup".runtime` of the
     /// chain are declared by two different packages (§9.2).
     markup_split: struct { lowering: []const u8, runtime: []const u8 },
+    /// A package declares both `"runtime"` and a top-level `"module"`
+    /// (§5.2, *A runtime module without markup*): its name.
+    module_beside_runtime: []const u8,
+    /// A top-level `"module"` in a chain that declares a markup
+    /// `"lowering"`, whose runtime module is `"markup"`'s (§5.2, §9.2): the
+    /// package that declares the module and the one that declares the
+    /// lowering.
+    module_with_lowering: struct { module: []const u8, lowering: []const u8 },
     /// A dependency whose output directory's name — its `"name"`, or its
     /// directory's when it has none (`named` false) — is not one plain
     /// directory name.
@@ -216,19 +235,21 @@ pub fn resolveChainIn(
             .lowering = chain.layers[lowering.layer].name,
             .runtime = chain.layers[runtime.layer].name,
         } });
-        // The runtime module is the runtime's other half, of its package.
-        if (chain.firstMarkup("module")) |module| if (module.layer != runtime.layer) return r.fail(.{ .markup_split = .{
-            .lowering = chain.layers[lowering.layer].name,
-            .runtime = chain.layers[module.layer].name,
-        } });
-    } else if (chain.firstMarkup("module")) |module| {
-        // No runtime file: the runtime module is the whole runtime, and it
-        // too is written for the lowering (§9.2, amended 2026-10-02).
-        if (lowering.layer != module.layer) return r.fail(.{ .markup_split = .{
-            .lowering = chain.layers[lowering.layer].name,
-            .runtime = chain.layers[module.layer].name,
-        } });
+        // The runtime module is the runtime's other half, of its package:
+        // `loweringModule` reads it from the lowering's package alone, so
+        // a lower package's module cannot split the pair.
     };
+    // A runtime module without markup (§5.2, amended 2026-11-03): a
+    // package names a runtime file or such a module, not both, and a chain
+    // with a lowering names its runtime module under `"markup"`.
+    if (chain.first("module")) |module| {
+        const layer = chain.layers[module.layer];
+        if (layer.manifest.runtime != null) return r.fail(.{ .module_beside_runtime = layer.name });
+        if (chain.firstMarkup("lowering")) |lowering| return r.fail(.{ .module_with_lowering = .{
+            .module = layer.name,
+            .lowering = chain.layers[lowering.layer].name,
+        } });
+    }
     return chain;
 }
 
@@ -427,6 +448,16 @@ pub fn report(stderr: *Io.Writer, f: Failure) u8 {
             "beni: the markup lowering is declared by '{s}' and the markup runtime by '{s}'; a \"markup\" \"lowering\" and its \"runtime\" must come from one package",
             .{ s.lowering, s.runtime },
         ),
+        .module_beside_runtime => |name| fail(
+            stderr,
+            "beni: platform '{s}' declares both \"runtime\" and \"module\"; a runtime module without markup is the whole runtime, so a package names one or the other",
+            .{name},
+        ),
+        .module_with_lowering => |m| fail(
+            stderr,
+            "beni: platform '{s}' declares a top-level \"module\" and '{s}' a \"markup\" \"lowering\"; a chain with a markup lowering names its runtime module under \"markup\"",
+            .{ m.module, m.lowering },
+        ),
     };
 }
 
@@ -447,27 +478,50 @@ pub const LoadError = error{
 
 /// The output shape, inherited field by field down the chain (§9.1). A
 /// `program` without a `runtime` — or a markup `lowering` and runtime
-/// `module`, which then is the whole runtime — or the reverse is `Incomplete`
-/// for a program build; `check` and a library build need neither.
+/// `module`, or a top-level `module`, which then is the whole runtime — or
+/// the reverse is `Incomplete` for a program build; `check` and a library
+/// build need neither.
 pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_program: bool) LoadError!Loaded {
     const program = chain.first("program");
     const runtime = chain.first("runtime");
     // A chain whose runtime module is the whole runtime names no file
     // (`boundary.md` §5.2, amended 2026-10-02): the module's `run` is what
-    // the entry file hands `main` to, held to that by `Emit`.
-    const module_runtime = chain.firstMarkup("lowering") != null and chain.firstMarkup("module") != null;
+    // the entry file hands `main` to, held to that by `Emit`. Since
+    // 2026-11-04 a chain with no markup names one at the top level.
+    const program_module = chain.first("module");
+    var has_entry_runtime = false;
+    if (program) |p| for (chain.layers) |layer| {
+        for (layer.manifest.entryKinds) |kind| {
+            if (std.mem.eql(u8, kind.programType, p.value)) has_entry_runtime = true;
+        }
+    };
+    const has_entry_kinds = for (chain.layers) |layer| {
+        if (layer.manifest.entryKinds.len != 0) break true;
+    } else false;
+    // An invalid row is diagnosed against its own manifest after interfaces
+    // resolve. Do not hide that semantic error behind the legacy load error.
+    const module_runtime = has_entry_kinds or chain.loweringModule() != null or program_module != null;
     if (needs_program and (program == null or (runtime == null and !module_runtime))) return error.Incomplete;
     const entry = chain.first("entry");
     const html = chain.first("html");
     const exports = chain.firstExports();
     const lowering = chain.firstMarkup("lowering");
     const markup_runtime = chain.firstMarkup("runtime");
+    var entry_kinds: std.ArrayList(Emit.EntryKind) = .empty;
+    for (chain.layers, 0..) |layer, layer_index| {
+        for (layer.manifest.entryKinds) |kind| try entry_kinds.append(arena, .{
+            .definition = kind,
+            .root = layer.root,
+            .layer = @intCast(layer_index),
+        });
+    }
     const dirs = try arena.alloc([]const u8, chain.layers.len);
     for (dirs, chain.layers) |*d, layer| d.* = layer.out_dir;
     return .{
         .platform = .{
             .program = if (program) |p| p.value else null,
-            .runtime = if (runtime) |r| r.value else null,
+            .entry_kinds = entry_kinds.items,
+            .runtime = if (has_entry_runtime) null else if (runtime) |r| r.value else null,
             .runtime_root = if (runtime) |r| chain.layers[r.layer].root else chain.top().root,
             .runtime_dir = if (runtime) |r| chain.layers[r.layer].out_dir else Emit.platform_dir,
             // Optional: a chain that says nothing about the entry file gets
@@ -484,12 +538,20 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .lowering_root = if (lowering) |l| chain.layers[l.layer].root else chain.top().root,
             .markup_runtime = if (markup_runtime) |r| r.value else null,
             .markup_runtime_dir = if (markup_runtime) |r| chain.layers[r.layer].out_dir else Emit.platform_dir,
-            .markup_module = if (chain.firstMarkup("module")) |m| m.value else null,
+            .markup_module = if (chain.loweringModule()) |m| m.value else null,
+            .program_module = if (program_module) |m| m.value else null,
+            .program_module_root = if (program_module) |m| chain.layers[m.layer].root else chain.top().root,
             .html = if (html) |h| h.value else null,
             .html_root = if (html) |h| chain.layers[h.layer].root else chain.top().root,
             .exports = if (exports) |x| x.decl else .none,
             .exports_root = if (exports) |x| chain.layers[x.layer].root else chain.top().root,
             .page = chain.inPage(),
+            .entry_host = for (chain.layers) |layer| {
+                if (layer.manifest.entryHost) |host| break @as(@import("entry/Plan.zig").Realm, @fromBackingInt(@intCast(@backingInt(host))));
+            } else .unknown,
+            .obsolete_host_root = for (chain.layers) |layer| {
+                if (layer.manifest.host != null) break layer.root;
+            } else null,
         },
         .embedded = try collectEmbedded(arena, session, chain),
     };
@@ -501,7 +563,7 @@ pub fn reportLoad(stderr: *Io.Writer, requested: []const u8, err: LoadError) u8 
         error.OutOfMemory => fail(stderr, "beni: out of memory", .{}),
         error.Incomplete => fail(
             stderr,
-            "beni: '{s}' does not declare what `main` is; its {s} needs \"program\" and \"runtime\"",
+            "beni: '{s}' does not declare what `main` is; its {s} needs \"program\" and \"runtime\" (or a runtime \"module\")",
             .{ requested, Manifest.file_name },
         ),
     };

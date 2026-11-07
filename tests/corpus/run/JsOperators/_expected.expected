@@ -12,3 +12,6 @@ slashes a,b,c
 caseless yes no
 empty x,y,z
 built yes no
+lt-ints yes no yes no no no yes yes no yes no yes
+lt-strings yes no yes no no yes no yes no no yes yes
+lt-values yes no yes no

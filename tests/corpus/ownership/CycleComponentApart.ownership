@@ -1,0 +1,17 @@
+module CycleComponentApart
+  13:25 List.push xs: accepted param
+  23:13 call CycleComponentApart.touch a: accepted param (CycleComponentApart.touch writes π1)
+  33:13 call CycleComponentApart.w0 l#Node.1: accepted param (CycleComponentApart.w0 writes π1#Node.1)
+  48:21 call CycleComponentApart.w1 l#Node.0⟨Tree⟩#Node.1: rejected level: a may hold it at another level, and is read at 48:28 (CycleComponentApart.w1 writes π1#Node.0⟨Tree⟩#Node.1) (approx)
+  52:14 call CycleComponentApart.holdL1 <Node …>#Node.0⟨Tree⟩#Node.1: accepted fresh (CycleComponentApart.holdL1 writes π1#Node.0⟨Tree⟩#Node.1)
+  58:5 call CycleComponentApart.holdL1 <Node …>#Node.0⟨Tree⟩#Node.1: rejected exclusive: the callee needs the list's elements not to share, and they may (CycleComponentApart.holdL1 writes π1#Node.0⟨Tree⟩#Node.1)
+  summary touch: π1 RW[storage]
+  summary w0: π1 R, π1#Node.1 RW[storage]
+  summary w1: π1 R, π1#Node.0 R, π1#Node.0⟨Tree⟩#Node.1 RW[storage]
+  summary holdL1: π1 R, π1#Node.0 R, π1#Node.0⟨Tree⟩#Node.0 R, π1#Node.0⟨Tree⟩#Node.1 RW[storage]; xreq excl π1#Node.0⟨Tree⟩#Node.0
+  summary distinct: unused
+  summary shared: unused
+  demands 6: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 1
+cause level 1

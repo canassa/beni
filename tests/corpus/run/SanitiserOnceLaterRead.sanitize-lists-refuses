@@ -1,0 +1,5 @@
+# v1 refuses each write of a capture that the closure reads again another way (§18.8, #1956).
+14:16 list_still_used `List.push`
+21:16 list_still_used `List.push`
+27:16 list_still_used `List.push`
+34:16 list_still_used `List.push`

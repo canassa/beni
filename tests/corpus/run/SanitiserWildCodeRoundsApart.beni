@@ -1,0 +1,25 @@
+-- `SanitiserWildCodeRounds`' twin (`ownership-v2.md` §2.11.3, *A virtual
+-- call is an evaluation's*, #2166): the lambda writes a list of its own, so it may run
+-- any number of times once it has escaped.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Box =
+    f : List Int → List Int
+
+
+many : Box, List (List Int) → List (List Int)
+many b l = List.map l b.f
+
+
+main : Program
+main =
+    b = { f = λ_ → List.push [ 1 ] 9 }
+    m = many b [ [ 7 ], [ 8 ] ]
+    Node.print (show (List.concat m))

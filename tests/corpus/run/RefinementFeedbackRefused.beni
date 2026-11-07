@@ -1,0 +1,27 @@
+-- RefinementFeedbackRefused (Appendix B, S4; R-5.3.2, R-3.1): the red half of
+-- RefinementFeedbackTwice. The previous item is carried and pushed with the
+-- current one, so each list is in the result twice and the element write is
+-- refused after the refinement is folded.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List (List Int)
+build xs =
+    ( _, st ) = List.foldr xs ( [], [] ) λx ( prev, s ) → ( x, List.push (List.push s prev) x )
+    List.update st 0 λl → List.push l 5
+
+
+main : Program
+main = Node.print (show (build [ [ 1 ], [ 2 ] ]))

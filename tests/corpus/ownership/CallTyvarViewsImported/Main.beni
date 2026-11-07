@@ -1,0 +1,119 @@
+-- ownership (project): `CallTyvarViews` with the callees in another
+-- module (ownership-v2.md §2.11 *Re-rooting at a parameter*, §3.6,
+-- #1350). An imported call's result at a type variable's place, when it
+-- is a view, stands at its actual's place wherever it goes next: handed
+-- to `Picks.choose`, a `choose` inside a `choose`, two views, a bound
+-- view, a `choose` in a record handed to `Picks.ans`, a write through a
+-- chosen view, and a view stored in a record literal and projected. Each
+-- reads `g.x.c`, so the push of its list is refused.
+import Picks
+
+
+a1 g = List.length (Picks.choose True (Picks.ans { b = g.x }) g.y).c
+
+
+pub viewActual : List Int → Int
+viewActual xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a1 g + List.length p
+
+
+a2 g = List.length (Picks.choose True g.y (Picks.choose False g.y g.x)).c
+
+
+pub chooseInChoose : List Int → Int
+chooseInChoose xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a2 g + List.length p
+
+
+a3 g = List.length (Picks.choose True (Picks.ans { b = g.x }) (Picks.ans { b = g.y })).c
+
+
+pub twoViews : List Int → Int
+twoViews xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a3 g + List.length p
+
+
+a4 g =
+    v = Picks.ans { b = g.x }
+    List.length (Picks.choose True v g.y).c
+
+
+pub boundView : List Int → Int
+boundView xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a4 g + List.length p
+
+
+a5 g = List.length (Picks.ans { b = Picks.choose True g.y g.x }).c
+
+
+pub chooseInRecord : List Int → Int
+chooseInRecord xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a5 g + List.length p
+
+
+wv g =
+    v = Picks.choose True (Picks.ans { b = g.x }) g.y
+    List.push v.c 1
+
+
+pub writtenView : List Int → Int
+writtenView xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = wv g
+    List.length xs + List.length p
+
+
+b1 g =
+    v = { b = Picks.choose True g.y g.x }
+    List.length v.b.c
+
+
+pub storedChoice : List Int → Int
+storedChoice xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    b1 g + List.length p
+
+
+b2 g =
+    v = { b = Picks.ans { b = g.x } }
+    List.length v.b.c
+
+
+pub storedSelector : List Int → Int
+storedSelector xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    b2 g + List.length p
+
+
+b3 g =
+    v = Picks.ans { b = g.x }
+    w = { b = v }
+    List.length w.b.c
+
+
+pub storedBound : List Int → Int
+storedBound xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    b3 g + List.length p

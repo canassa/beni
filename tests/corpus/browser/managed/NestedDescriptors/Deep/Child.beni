@@ -1,0 +1,27 @@
+-- This descriptor moves from the child module into the hoisted worker entry.
+import Browser.Worker as Worker
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ request → Ok ("child:" ++ request)
+        }
+
+
+pub run : String → String
+run request = Task.scope λscope →
+    case Worker.open scope worker ⊤ Worker.options of
+        Err _ →
+            "child open failed"
+        Ok handle →
+            reply = Worker.call handle request
+            _ = Worker.close handle
+            case reply of
+                Ok text →
+                    text
+                Err _ →
+                    "child call failed"

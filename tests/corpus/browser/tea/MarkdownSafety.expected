@@ -1,0 +1,64 @@
+-- load
+<body>
+  <div class="article-content">
+    <h2>
+      "Before "
+      <em>
+        "payloads"
+        <!---->
+      </em>
+      <!---->
+    </h2>
+    <p>
+      "Before payload: "
+      "<script>"
+      "alert(1)"
+      "</script>"
+      " After payload"
+      <!---->
+    </p>
+    <p>
+      "Before payload: "
+      "<img src=x onerror=\"alert(1)\">"
+      " After payload"
+      <!---->
+    </p>
+    <p>
+      "Before payload: "
+      "<svg onload=\"alert(1)\">"
+      " After payload"
+      <!---->
+    </p>
+    <p>
+      "Before payload: "
+      "<iframe srcdoc=\"<script>alert(1)</script>\">"
+      " After payload"
+      <!---->
+    </p>
+    <p>
+      "Before payload: "
+      "<a href=\"javascript:alert(1)\">"
+      "click me"
+      "</a>"
+      " After payload"
+      <!---->
+    </p>
+    <p>"<div onmouseover=\"alert(1)\">hover me</div>"</p>
+    <p>
+      <a href="">
+        "a link"
+        <!---->
+      </a>
+      " and "
+      <a href="https://example.com">
+        "a safe one"
+        <!---->
+      </a>
+      <!---->
+    </p>
+    <pre>
+      <code class="language-a\"onclick=alert(1)">"code\n"</code>
+    </pre>
+    <!---->
+  </div>
+</body>

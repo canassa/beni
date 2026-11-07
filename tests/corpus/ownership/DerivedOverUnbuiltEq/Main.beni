@@ -1,0 +1,17 @@
+-- ownership (project): `Wrap` derives `==` over `Lib.Key`, whose `eq` has no
+-- class. `Wrap` is declared in a third module, and `Local` in this one: both
+-- callers are unchecked, never accepted (ownership-v2.md §2.13.13).
+import Lib
+import Wrap
+
+
+type Local
+    = Local Lib.Key
+
+
+pub viaThird : List Int → Bool × List Int
+viaThird xs = ( Wrap.Wrap (Lib.Key xs) == Wrap.Wrap (Lib.Key []), xs )
+
+
+pub viaLocal : List Int → Bool × List Int
+viaLocal xs = ( Local (Lib.Key xs) == Local (Lib.Key []), xs )

@@ -1,0 +1,55 @@
+-- A runtime catch for a fold whose accumulator has parts
+-- (`ownership-v2.md` §2.9.3, *candidates of one object*): two parts are two
+-- places, so a part's candidates are apart from the other part's. Each
+-- fold here holds one list at both parts: in its first value, or in an
+-- answer an earlier round handed back, through `List.foldl`, a user-written
+-- fold and a record. Each write is refused; read as candidates of one
+-- object, the sanitised runs show the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Acc =
+    lo : List Int
+    hi : List Int
+
+
+pushBoth : Int, List Int × List Int → List Int × List Int
+pushBoth n ( p, q ) = ( List.push p n, List.push q (n * 10) )
+
+
+aliased : Int, List Int × List Int → List Int × List Int
+aliased n ( p, q ) = if n == 1 then ( p, p ) else ( List.push p n, List.push q (n * 10) )
+
+
+aliasRec : Int, Acc → Acc
+aliasRec n a =
+    if n == 1 then
+        { lo = a.lo, hi = a.lo }
+    else
+        { lo = List.push a.lo n, hi = List.push a.hi (n * 10) }
+
+
+myFold : List a, b, (a, b → b) → b
+myFold xs acc f =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            myFold rest (f x acc) f
+
+
+main : Program
+main =
+    t = [ 0 ]
+    ( a, b ) = List.foldl [ 1, 2 ] ( t, t ) pushBoth
+    ( c, d ) = List.foldl [ 1, 2, 3 ] ( [], [] ) aliased
+    ( g, h ) = myFold [ 1, 2, 3 ] ( [ 7 ], [ 8 ] ) aliased
+    r = List.foldl [ 1, 2, 3 ] { lo = [], hi = [] } aliasRec
+    Node.printLines [ show a, show b, show c, show d, show g, show h, show r.lo, show r.hi ]

@@ -1,0 +1,12 @@
+--! A list JavaScript keeps, and reads back later; and an identity.
+
+--| Keep `xs`: a later `kept` reads it.
+pub foreign impure keep : List Int → ⊤
+
+
+--| What the last `keep` was handed, joined by commas.
+pub foreign impure kept : ⊤ → String
+
+
+--| Its argument, through JavaScript.
+pub foreign impure ident : a → a

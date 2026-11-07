@@ -1,0 +1,12 @@
+-- ownership (project): see Main.beni. `swap` and `again` are one group:
+-- `swap` answers its two lists, swapped on each round trip.
+pub swap : List Int, List Int, Int → List Int × List Int
+swap a b n =
+    if n == 0 then
+        ( a, b )
+    else
+        again b a (n - 1)
+
+
+pub again : List Int, List Int, Int → List Int × List Int
+again a b n = swap a b n

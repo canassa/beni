@@ -1,0 +1,55 @@
+-- ownership: a `Ref`'s `◆` is a barrier (ownership-v2.md §2.13.7): a
+-- holder of the handle is not a holder of its contents, and the only
+-- outside holders of the contents are loans. So the writer demand
+-- `Ref.set` makes on `◆` is not refused by a later use of the handle,
+-- even a use that writes the cell again: a later write or read through
+-- the handle sees the new contents, not the old ones (#1366). `setThen`
+-- is the issue's probe, with a call that writes the cell after the set
+-- (`poke`); `setSet` writes it twice directly, `pokeTwice` through the
+-- call twice, `aliasSet` through a second name for the handle. v1 reads
+-- a Ref's contents as escaped and has no demand; v2 accepts each.
+-- `storedReadAfter` is the twin that stays refused: the old contents are
+-- read after the cell is written again, and `Ref.set` consumed them when
+-- it stored them.
+import Ref exposing (Ref)
+
+
+poke : Ref Int → ⊤
+poke cell = Ref.set cell 0
+
+
+pub setThen : Ref Int, Int → ⊤
+setThen cell n =
+    k = Ref.get cell
+    Ref.set cell (k + n)
+    poke cell
+
+
+pub setSet : Ref Int → ⊤
+setSet cell =
+    Ref.set cell 1
+    Ref.set cell 2
+
+
+pub pokeTwice : Ref Int → ⊤
+pokeTwice cell =
+    poke cell
+    poke cell
+
+
+pub aliasSet : Ref Int → ⊤
+aliasSet cell =
+    other = cell
+    Ref.set cell 1
+    poke other
+
+
+pokeList : Ref (List Int) → ⊤
+pokeList cell = Ref.set cell []
+
+
+pub storedReadAfter : Ref (List Int), List Int → Int
+storedReadAfter cell xs =
+    Ref.set cell xs
+    pokeList cell
+    List.length xs

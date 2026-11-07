@@ -24,39 +24,39 @@ pub type alias Machine =
     bayGate : Gate
     bucket : Bucket
     trapdoor : Trapdoor
-    send : World → ⊤
+    send : World -> ()
 
 
-pub perBatch : Machine → Int
+pub perBatch : Machine -> Int
 perBatch m = (Ref.get m.world).perBatch
 
 
-pub make : (World → ⊤) → Machine
+pub make : (World -> ()) -> Machine
 make send =
     world : Ref World
-    world = Ref.make (fresh ⊤)
+    world = Ref.make (fresh ())
     { world = world
-    , hopper = Queue.unbounded ⊤
-    , exit = Queue.unbounded ⊤
-    , bay = Queue.unbounded ⊤
+    , hopper = Queue.unbounded ()
+    , exit = Queue.unbounded ()
+    , bay = Queue.unbounded ()
     , entry =
-        { open = λ⊤ → Ref.update world λw → { w | entry = w.entry + 1 }
-        , through = Queue.unbounded ⊤
+        { open = \() -> Ref.update world \w -> { w | entry = w.entry + 1 }
+        , through = Queue.unbounded ()
         }
     , bayGate =
-        { open = λ⊤ → openBay world
-        , through = Queue.unbounded ⊤
+        { open = \() -> openBay world
+        , through = Queue.unbounded ()
         }
     , bucket =
-        { open = λn → Ref.update world λw → { w | bucketDoor = n, asked = n }
-        , close = λ⊤ → closeBucket world
-        , landed = Queue.unbounded ⊤
-        , settled = Queue.unbounded ⊤
+        { open = \n -> Ref.update world \w -> { w | bucketDoor = n, asked = n }
+        , close = \() -> closeBucket world
+        , landed = Queue.unbounded ()
+        , settled = Queue.unbounded ()
         }
     , trapdoor =
-        { open = λ⊤ → Ref.update world openTrap
-        , close = λ⊤ → Ref.update world λw → { w | trapOpen = False, armed = False }
-        , emptied = Queue.unbounded ⊤
+        { open = \() -> Ref.update world openTrap
+        , close = \() -> Ref.update world \w -> { w | trapOpen = False, armed = False }
+        , emptied = Queue.unbounded ()
         }
     , send = send
     }
@@ -65,96 +65,96 @@ make send =
 -- With `?debug` in the page's address, as on the flow page, the machine
 -- logs each ball it lets in, each batch it drops and each retry, with the
 -- times on the page's clock.
-pub debugging : ⊤ → Bool
-debugging ⊤ =
-    case Browser.Navigation.currentUrl ⊤ of
-        Just url →
+pub debugging : () -> Bool
+debugging () =
+    case Browser.Navigation.currentUrl () of
+        Just url ->
             url.query == Just "debug"
 
-        Nothing →
+        Nothing ->
             False
 
 
-closeBucket : Ref World → ⊤
+closeBucket : Ref World -> ()
 closeBucket world =
     w = Ref.get world
-    bucket = List.filter w.balls λb → b.bucketed
-    first = Maybe.withDefault (List.minimum (List.map bucket λb → b.landedAt)) w.now
-    Log.debug "batch: ${List.length bucket} of ${w.asked}, the first in for ${clock ⊤ - first} ms"
-    Ref.update world λv → { v | bucketDoor = 0, settling = True }
+    bucket = List.filter w.balls \b -> b.bucketed
+    first = Maybe.withDefault (List.minimum (List.map bucket \b -> b.landedAt)) w.now
+    Log.debug "batch: ${List.length bucket} of ${w.asked}, the first in for ${clock () - first} ms"
+    Ref.update world \v -> { v | bucketDoor = 0, settling = True }
 
 
-openBay : Ref World → ⊤
+openBay : Ref World -> ()
 openBay world =
     w = Ref.get world
-    waiting = List.sortBy (List.filter w.balls λb → b.stage == Returning && b.sensed) λb →
+    waiting = List.sortBy (List.filter w.balls \b -> b.stage == Returning && b.sensed) \b ->
         b.arrivedAt
     case waiting of
-        [ b, …_ ] →
+        [ b, ..._ ] ->
             Log.debug
-                "retry: ball ${b.id} went round ${b.attempts} times before and waited ${clock ⊤ - max b.arrivedAt w.bayFreeAt} ms"
+                "retry: ball ${b.id} went round ${b.attempts} times before and waited ${clock () - max b.arrivedAt w.bayFreeAt} ms"
 
-        [] →
-            ⊤
-    Ref.update world λv → { v | bayDoor = v.bayDoor + 1 }
+        [] ->
+            ()
+    Ref.update world \v -> { v | bayDoor = v.bayDoor + 1 }
 
 
-simulate : Machine, Semaphore → ⊤
-simulate m room = Browser.Events.eachAnimationFrameDelta λms →
+simulate : Machine, Semaphore -> ()
+simulate m room = Browser.Events.eachAnimationFrameDelta \ms ->
     now = Ref.get m.world
-    if now.sized ≠ now.atOnce then
+    if now.sized /= now.atOnce then
         Semaphore.resize room now.atOnce
-        Ref.update m.world λw → { w | sized = w.atOnce }
-    signals = Ref.modify m.world λw → step w (min (1 / 30) (ms / 1000)) (clock ⊤)
-    _ = List.map signals λs → signal m s
+        Ref.update m.world \w -> { w | sized = w.atOnce }
+    signals = Ref.modify m.world \w -> step w (min (1 / 30) (ms / 1000)) (clock ())
+    _ = List.map signals \s -> signal m s
     if List.any signals isEntered then
         w = Ref.get m.world
         Log.debug "in: ${held w} of ${w.atOnce} in the machine"
     m.send (Ref.get m.world)
 
 
-isEntered : Signal → Bool
+isEntered : Signal -> Bool
 isEntered s =
     case s of
-        Entered _ →
+        Entered _ ->
             True
 
-        _ →
+        _ ->
             False
 
 
-signal : Machine, Signal → ⊤
+signal : Machine, Signal -> ()
 signal m s =
     _ =
         case s of
-            AtHopper ball →
+            AtHopper ball ->
                 Queue.offer m.hopper ball
 
-            Entered ball →
+            Entered ball ->
                 Queue.offer m.entry.through ball
 
-            Landed ball →
+            Landed ball ->
                 Queue.offer m.bucket.landed ball
 
-            Settled →
-                Queue.offer m.bucket.settled ⊤
+            Settled ->
+                Queue.offer m.bucket.settled ()
 
-            Emptied →
-                Queue.offer m.trapdoor.emptied ⊤
+            Emptied ->
+                Queue.offer m.trapdoor.emptied ()
 
-            Exited ball →
+            Exited ball ->
                 Queue.offer m.exit ball
 
-            AtBay ball →
+            AtBay ball ->
                 Queue.offer m.bay ball
 
-            Returned ball →
+            Returned ball ->
                 Queue.offer m.bayGate.through ball
-    ⊤
+    ()
 
 
 --| Run the simulation in the same scope as the four control fibers.
-pub simulateIn : Task.Scope, Machine, Semaphore → ⊤
+pub simulateIn : Task.Scope, Machine, Semaphore -> ()
 simulateIn scope m room =
-    _ = Task.spawnIn scope λ⊤ → simulate m room
-    ⊤
+    _ = Task.spawnIn scope \() -> simulate m room
+    ()

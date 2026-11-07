@@ -1,0 +1,11 @@
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : ⊤ → Html ⊤
+view _ = <main class={[ ( "active", True ) ]}>class list</main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → ⊤, update = λ_ model → model, view = view }

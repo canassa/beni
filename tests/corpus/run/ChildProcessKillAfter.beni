@@ -1,0 +1,40 @@
+-- run: a child that ignores `SIGTERM` gets `SIGKILL` after `killAfter`
+-- (boundary.md §9.14 (d)). The child sets `SIGTERM` to ignored and then
+-- becomes `sleep 1000`, which keeps that setting. Cancelling its fiber
+-- sends `SIGTERM`, which does nothing, then `SIGKILL` 50 ms later, and
+-- `Task.cancel` returns when the child has exited. Without the `SIGKILL`,
+-- `cancel` would not return for 1 000 seconds, and the case would run
+-- into its hang guard.
+import ChildProcess
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+waitFor : String, Int → Bool
+waitFor path tries =
+    case Io.readFile path of
+        Ok _ →
+            True
+
+        Err _ →
+            if tries == 0 then
+                False
+            else
+                Io.sleep 5
+                waitFor path (tries - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    _ = ChildProcess.run (ChildProcess.command "/bin/sh" [ "-c", "rm -f stubborn.txt" ])
+    stubborn =
+        { ChildProcess.command "/bin/sh"
+                [ "-c", "trap '' TERM; echo > stubborn.txt; exec sleep 1000" ]
+            | killAfter = Duration.millis 50
+        }
+    child = Task.spawn λ⊤ → ChildProcess.run stubborn
+    started = waitFor "stubborn.txt" 2000
+    Task.cancel child
+    Node.printLines [ if started then "started" else "never started", "cancel returned" ]

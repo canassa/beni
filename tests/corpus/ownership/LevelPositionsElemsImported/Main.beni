@@ -1,0 +1,44 @@
+-- ownership (project): LevelPositionsElems with the group in `Walk`
+-- (§2.9 rule 3's condition (b) below `[*]`): every form is refused, as
+-- in the same-module fixture.
+import Walk exposing (B)
+
+
+pub viaPush : List B → B
+viaPush bs =
+    case bs of
+        [ x, y, …_ ] →
+            Walk.incAll (B (List.push [ x ] y) [])
+
+        _ →
+            B [] []
+
+
+pub viaAppend : List B → B
+viaAppend bs =
+    case bs of
+        [ x, y, …_ ] →
+            Walk.incAll (B (List.append [ x ] [ y ]) [])
+
+        _ →
+            B [] []
+
+
+pub viaPushes : List B → B
+viaPushes bs =
+    case bs of
+        [ x, y, …_ ] →
+            Walk.incAll (B (List.push (List.push [] x) y) [])
+
+        _ →
+            B [] []
+
+
+pub viaLiteral : List B → B
+viaLiteral bs =
+    case bs of
+        [ x, y, …_ ] →
+            Walk.incAll (B [ x, y ] [])
+
+        _ →
+            B [] []

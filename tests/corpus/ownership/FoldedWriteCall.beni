@@ -1,0 +1,51 @@
+-- ownership: Appendix B's FoldedWriteCall (F×A; ownership-v2.md §8, slice
+-- 4's plan, 4a), written as mutual pattern recursion (#1394). `incT` writes
+-- the kids list of every `T` at every depth, and `incTs` walks a list of
+-- `T` with `[ t, …rest ]`. `run` builds a folded `T` whose distinct list
+-- parameters `a` and `b` sit at different depths, `T [ T a, T [ T b ] ]`,
+-- and writes it. `same` instantiates both with `xs`: refused through the
+-- substituted apart obligation. `shallowCopy` passes `List.copy xs` as `b`:
+-- the copy is a new list but its elements are `xs`'s, whose kids lists are
+-- written, so it is refused too. `separate` passes two parameters and
+-- `fresh` two literals: both accepted. Under v2 `run`'s own call of `incT`
+-- is refused until #1253 tells apart the levels below the first return
+-- (known entries).
+type T
+    = T (List T)
+
+
+incT : T → T
+incT t =
+    case t of
+        T kids →
+            T (incTs (List.push kids (T [])))
+
+
+incTs : List T → List T
+incTs ts =
+    case ts of
+        [ t, …rest ] →
+            [ incT t, …incTs rest ]
+
+        [] →
+            []
+
+
+run : List T, List T → T
+run a b = incT (T [ T a, T [ T b ] ])
+
+
+pub same : List T → T
+same xs = run xs xs
+
+
+pub shallowCopy : List T → T
+shallowCopy xs = run xs (List.copy xs)
+
+
+pub separate : List T, List T → T
+separate xs ys = run xs ys
+
+
+pub fresh : T
+fresh = run [ T [] ] [ T [] ]

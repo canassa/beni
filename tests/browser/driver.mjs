@@ -153,6 +153,13 @@
 //                               key does
 //   timers                      log `(timers: <n>)`, the timers the virtual
 //                               clock holds that have not fired or been cleared
+//   posted                      wait in real time, 5 s at most, until every
+//                               `iframe` with a `srcdoc` has loaded, and
+//                               100 ms more; then log
+//                               `(#<id> posted <json>)` for each message a
+//                               frame posted to the page since the last
+//                               `posted`, by frame in document order, or
+//                               `(no frame posted)`
 //   listeners <window|document> [<name>]
 //                               log `(listeners: <n>)`, the listeners the page
 //                               added to that target (for that event) and has
@@ -242,7 +249,9 @@
 // loop while the scheduler has a continuation queued — a `setImmediate`
 // under happy-dom, a message to a `MessagePort` in Chrome, which has no
 // `setImmediate` and whose messages the prelude counts from the post to the
-// delivery. After 1 000 such turns the driver stops waiting and fails the
+// delivery. A turn is one task the driver queues in that same queue — a
+// `setImmediate`, a message to a port of its own — and waits for no real
+// time. After 1 000 such turns the driver stops waiting and fails the
 // step with an error that says so; the step fires no later timer, frame or
 // chunk, and a later settle of that page waits one turn. Work a page starts
 // outside that scheduler — a
@@ -401,6 +410,27 @@ function prelude() {
     for (const f of clock.drawing) if (f.id === id) f.cancelled = true;
     clock.frames = clock.frames.filter((f) => f.id !== id);
   };
+  // `settle`'s turn of the event loop: one task the driver queues in the
+  // queue core's scheduler goes on in, and no timer, which Node holds to
+  // 1 ms and Chrome, nested, to 4 ms. Under happy-dom it is Node's
+  // `setImmediate`; in Chrome, which has none, a message to a port of the
+  // driver's own channel, made here before the page runs and before the
+  // ports below are counted, so the count never sees it. Each message
+  // resolves the oldest turn waiting.
+  if (typeof process === "object") {
+    const immediate = globalThis.setImmediate;
+    record.turn = () => new Promise((done) => immediate(done));
+  } else {
+    const channel = new MessageChannel();
+    const send = MessagePort.prototype.postMessage;
+    const waiting = [];
+    channel.port1.onmessage = () => waiting.shift()();
+    record.turn = () =>
+      new Promise((done) => {
+        waiting.push(done);
+        send.call(channel.port2, null);
+      });
+  }
   // Where the host has no `setImmediate` — Chrome — core's scheduler goes on
   // in a message to a `MessagePort`, so the messages the page posted and
   // that were not yet delivered are counted, for `settle`: a post that did
@@ -859,8 +889,161 @@ function prelude() {
   } else {
     record.trust = null;
   }
+  // Boxes. happy-dom lays nothing out and puts every box at 0, so under it
+  // a reader of a box that subtracts the wrong element's box, or none,
+  // reads what a correct one reads (`Html.localX`, issue #558). So under
+  // happy-dom an element gets the box Chrome gives it on a page that is
+  // not scrolled when an allow list leaves nothing else that can move or
+  // size its box:
+  // - the document has no style sheet, and no `style` or `link` element;
+  // - the element is a `div` or a `span`, which have no default margin,
+  //   border or padding. Its inline style sets `position: absolute` or
+  //   `fixed`, `left` and `top` as `Npx` or `0`, and `width` and `height`
+  //   as `Npx` or `0` that is not negative;
+  // - each ancestor is an `html`, `body`, `main`, `div` or `span`, whose
+  //   children Chrome renders;
+  // - the element and each ancestor are HTML elements with no `hidden` or
+  //   `popover` attribute. Their inline style names no property but
+  //   `position`, `left`, `top`, `width`, `height` and `touch-action`, and
+  //   names each one once;
+  // - the element is in the document, not in a shadow tree.
+  // happy-dom keeps a declaration only for a property that it knows, so a
+  // `-webkit-` alias or an unknown name leaves no trace in `element.style`.
+  // The names therefore come from the `style` attribute's text, which
+  // happy-dom keeps as written until a write through `element.style`
+  // writes it again. Every such write reads `element.style` first: its
+  // getter marks the element when the text names a property outside the
+  // list, and `setProperty` marks it when its name is outside the list. A
+  // marked element is never placed. The marks see the two writes that the
+  // runtimes make, the `style` attribute and `setProperty`, and not
+  // `cssText`, a style property's assignment (`style.left = …`),
+  // `attachShadow` or `element.animate`: a runtime that starts to use one
+  // of those must add it here.
+  // The box is from the containing block: the viewport for `fixed`; for
+  // `absolute`, the box of the nearest ancestor whose inline `position` is
+  // not `static`, which the list must allow too, or the page's origin when
+  // there is none. Every other element keeps happy-dom's box at 0. The list
+  // reads no computed style: happy-dom computes CSS in part only, so a
+  // computed value can differ from Chrome's. Installed once, as above.
+  if (globalThis.happyDOM !== undefined && !Object.hasOwn(Element.prototype, "__beniBox")) {
+    const own = Element.prototype.getBoundingClientRect;
+    const html = "http://www.w3.org/1999/xhtml";
+    const allowed = new Set(["position", "left", "top", "width", "height", "touch-action"]);
+    const tags = new Set(["html", "body", "main", "div", "span"]);
+    // A name is tested as it is written. Chrome applies `LEFT` or `Left`,
+    // and happy-dom drops them, so another case is outside the list.
+    const names = (text) =>
+      text
+        .split(";")
+        .map((d) => (d.includes(":") ? d.slice(0, d.indexOf(":")) : d).trim())
+        .filter((name) => name !== "");
+    const listed = (text) => {
+      const all = names(text);
+      return all.every((name) => allowed.has(name)) && new Set(all).size === all.length;
+    };
+    // The marks. `element.style` is a proxy of happy-dom's, and the `this`
+    // of `setProperty` is the declaration behind it, which `__beniSelf`
+    // returns: `owner` maps each declaration to its element.
+    const marked = new WeakSet();
+    const owner = new WeakMap();
+    const declaration = CSSStyleDeclaration.prototype;
+    Object.defineProperty(declaration, "__beniSelf", {
+      value() {
+        return this;
+      },
+    });
+    let holder = Object.getPrototypeOf(document.createElement("div"));
+    while (!Object.hasOwn(holder, "style")) holder = Object.getPrototypeOf(holder);
+    const style = Object.getOwnPropertyDescriptor(holder, "style");
+    Object.defineProperty(holder, "style", {
+      ...style,
+      get() {
+        const text = this.getAttribute("style");
+        if (text !== null && !listed(text)) marked.add(this);
+        const d = style.get.call(this);
+        owner.set(d.__beniSelf(), this);
+        return d;
+      },
+    });
+    const setProperty = declaration.setProperty;
+    declaration.setProperty = function (name, value, priority) {
+      const element = owner.get(this);
+      if (element !== undefined && !allowed.has(String(name))) marked.add(element);
+      return setProperty.call(this, name, value, priority);
+    };
+    const pixels = (text) => {
+      if (text === "0") return 0;
+      const match = /^(-?[0-9]+(?:\.[0-9]+)?)px$/.exec(text);
+      return match === null ? null : Number(match[1]);
+    };
+    const size = (text) => {
+      const n = pixels(text);
+      return n === null || n < 0 ? null : n;
+    };
+    // An element whose markup and inline style the list allows.
+    const plain = (element, kinds) => {
+      if (element.namespaceURI !== html || !kinds.has(element.localName)) return false;
+      if (element.hasAttribute("hidden") || element.hasAttribute("popover")) return false;
+      const text = element.getAttribute("style");
+      if (text !== null && !listed(text)) return false;
+      return !marked.has(element);
+    };
+    const boxes = new Set(["div", "span"]);
+    const placed = (element) => {
+      const style = element.style;
+      if (style === undefined || (style.position !== "absolute" && style.position !== "fixed")) return null;
+      if (element.getRootNode() !== document || !plain(element, boxes)) return null;
+      if (document.styleSheets.length !== 0 || document.adoptedStyleSheets?.length || document.querySelector("style, link") !== null) return null;
+      const box = { x: pixels(style.left), y: pixels(style.top), width: size(style.width), height: size(style.height) };
+      if (box.x === null || box.y === null || box.width === null || box.height === null) return null;
+      let block = null;
+      for (let up = element.parentElement; up !== null; up = up.parentElement) {
+        if (!plain(up, tags)) return null;
+        if (block === null && style.position === "absolute" && up.style.position !== "" && up.style.position !== "static") block = up;
+      }
+      if (block === null) return box;
+      const origin = placed(block);
+      if (origin === null) return null;
+      box.x += origin.x;
+      box.y += origin.y;
+      return box;
+    };
+    Object.defineProperty(Element.prototype, "__beniBox", { value: true });
+    Element.prototype.getBoundingClientRect = function () {
+      const box = placed(this);
+      return box === null ? own.call(this) : new DOMRect(box.x, box.y, box.width, box.height);
+    };
+  }
+  // The delegated pointer events' walk defines `currentTarget` on the event
+  // while it calls a handler, and removes it when the walk ends
+  // (`boundary.md` §9.8.20 (d)). A listener on the window, after every
+  // listener of the page, records an error for an event whose walk left
+  // it: an own `currentTarget`, or one that is not the window.
+  for (const name of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
+    globalThis.addEventListener(name, (event) => {
+      if (Object.hasOwn(event, "currentTarget") || event.currentTarget !== document.defaultView) {
+        record.errors.push(`a \`${name}\` reached the window with \`currentTarget\` defined by the walk`);
+      }
+    });
+  }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
+  // What the page's frames post to it, in the order it came, and the frames
+  // that have loaded, for the `posted` step. A post of the page itself or
+  // of a worker is not a frame's. `load` does not bubble, so the document
+  // hears a frame's in its capture phase.
+  record.posted = [];
+  record.framesLoaded = new WeakSet();
+  globalThis.addEventListener("message", (event) => {
+    if (event.source !== null && event.source !== globalThis) record.posted.push({ source: event.source, data: event.data });
+  });
+  document.addEventListener(
+    "load",
+    (event) => {
+      if (event.target?.localName === "iframe") record.framesLoaded.add(event.target);
+    },
+    true,
+  );
   // Every listener the page adds to the window or the document from here
   // on, and has not removed, by target: a registration is its type, its
   // listener and its capture flag, as the DOM's own, so adding one twice
@@ -922,6 +1105,24 @@ async function load({ url, runtime }) {
 // Run one step. Returns null, or why the step could not run — or, for
 // `advance`, a promise of one.
 function step(s) {
+  // One action and one observable completion, guarded by a real deadline.
+  // Native workers are outside the scheduler tracked by settle().
+  if (s.command === "click-wait") {
+    const clicked = step({ ...s, command: "click" });
+    if (clicked !== null) return clicked;
+    const now = globalThis.performance.now();
+    return new Promise((resolve) => {
+      const poll = () => {
+        if (globalThis.__beniHarness.errors.length !== 0) return resolve(null);
+        const target = document.querySelector(s.target);
+        if (target !== null && target.textContent === s.text) return resolve(null);
+        if (globalThis.performance.now() - now >= 5000) return resolve(`click-wait: ${s.target} did not become ${JSON.stringify(s.text)}`);
+        globalThis.__beniHarness.clock.real(poll, 5);
+      };
+      poll();
+    });
+  }
+
   // An `early` step acts on a prerendered page before its program loads; a
   // page with no prerendered unit has nothing to act on.
   if (s.early && document.querySelector("[data-beni]") === null) return null;
@@ -1249,6 +1450,35 @@ function step(s) {
     globalThis.__beniHarness.log.push(`(timers: ${globalThis.__beniHarness.clock.timers.length})`);
     return null;
   }
+  if (s.command === "posted") {
+    // Wait in real time, 5 s at most, until every frame of the page that
+    // has a `srcdoc` has loaded — happy-dom loads no other frame, and fires
+    // no `load` at one — then 100 ms more for what a frame posted as it
+    // loaded. Then
+    // log each post since the last `posted`, by frame in document order,
+    // and in the order it came within one frame.
+    const harness = globalThis.__beniHarness;
+    return new Promise((done) => {
+      let turns = 0;
+      const report = () => {
+        const frames = [...document.querySelectorAll("iframe")];
+        const named = (i) => (i < 0 ? "a frame no longer in the page" : frames[i].id !== "" ? `#${frames[i].id}` : `iframe ${i + 1}`);
+        const posts = harness.posted.map((p, k) => ({ ...p, k, at: frames.findIndex((f) => f.contentWindow === p.source) }));
+        posts.sort((a, b) => (a.at < 0) - (b.at < 0) || a.at - b.at || a.k - b.k);
+        harness.posted = [];
+        if (posts.length === 0) harness.log.push("(no frame posted)");
+        for (const p of posts) harness.log.push(`(${named(p.at)} posted ${JSON.stringify(p.data)})`);
+        done(null);
+      };
+      const wait = () => {
+        const waiting = [...document.querySelectorAll("iframe[srcdoc]")].filter((f) => !harness.framesLoaded.has(f));
+        if (waiting.length === 0) return void harness.clock.real(report, 100);
+        if (++turns > 1000) return void done(`${waiting.length} of the page's frames with a \`srcdoc\` did not load within 5 s`);
+        harness.clock.real(wait, 5);
+      };
+      wait();
+    });
+  }
   if (s.command === "listeners") {
     let n = 0;
     for (const [key, set] of globalThis.__beniHarness.listening[s.selector]) {
@@ -1371,14 +1601,44 @@ function step(s) {
     // A pointer event at a point of a box: `x` and `y` are CSS pixels from
     // the top-left corner of the `box:` element (by default the element the
     // event is dispatched on), so its `clientX` is that box's left plus `x`.
-    // happy-dom has no layout and puts every box at 0; Chrome lays the page
-    // out, so only Chrome shows the conversion. `pointerenter` and
+    // happy-dom has no layout, so there only an element that the prelude's
+    // allow list places has a box away from 0 (*Boxes*); Chrome
+    // lays out every element. `pointerenter` and
     // `pointerleave` neither bubble nor cancel, and nor does
     // `pointercancel`, as the Pointer Events standard fires them.
     case "pointer": {
       const box = s.box === undefined ? target : document.querySelector(s.box);
       if (box === null) return `no element matches \`${s.box}\``;
       const r = box.getBoundingClientRect();
+      // A user's mouse move (`trusted`), at the point. Chrome's is the
+      // driver's to send, through `Input.dispatchMouseEvent`: this answers
+      // where the point is, refuses one where a user's mouse would be over
+      // an element outside the target, and arms a listener on the window
+      // that tells the driver when Chrome has dispatched the move, which it
+      // does at a frame and not when the command returns. happy-dom's is
+      // dispatched here, `isTrusted` as the prelude reads it, as Chrome
+      // makes it: `pointermove`, then `mousemove`. Neither logs whether a
+      // handler prevented its default. Chrome also sends the over, out,
+      // enter and leave events of the elements the mouse crosses, and
+      // happy-dom does not.
+      if (s.trusted) {
+        const x = r.left + s.x;
+        const y = r.top + s.y;
+        const trust = globalThis.__beniHarness.trust;
+        if (trust === null) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit === null || !target.contains(hit)) {
+            const name = hit === null ? "nothing" : `<${hit.localName}${hit.id ? `#${hit.id}` : ""}>`;
+            return `\`${s.selector}\` cannot be moved over at ${s.x}, ${s.y}: a user's mouse there is over ${name}`;
+          }
+          globalThis.__beniHarness.moved = new Promise((done) => addEventListener("mousemove", () => done(), { once: true, capture: true }));
+          return { move: true, x, y };
+        }
+        const at = { ...init, clientX: x, clientY: y };
+        target.dispatchEvent(trust(new PointerEvent("pointermove", { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true })));
+        target.dispatchEvent(trust(new MouseEvent("mousemove", at)));
+        return null;
+      }
       const bubbles = s.name !== "pointerenter" && s.name !== "pointerleave";
       const cancelable = s.name === "pointerdown" || s.name === "pointermove" || s.name === "pointerup" || s.name === "pointerover" || s.name === "pointerout";
       const event = new PointerEvent(s.name, {
@@ -1467,17 +1727,21 @@ function step(s) {
 // 64 tasks a turn and escapes for the rest to a `setImmediate` where the
 // host has one (happy-dom, in Node) and to a message to a `MessagePort`
 // where it has not (Chrome), so a phase that starts more work than that is
-// not over after one timer's turn, and where the timer fell among those
+// not over after one turn, and where the turn fell among those
 // turns would be what a transcript shows (`browser/tea/SettlesManyFibers`,
 // `browser/direct/SettlesManyFibers`). Under happy-dom a pending
 // `setImmediate` is one Node lists; in Chrome a message is pending from its
-// post to its delivery (the prelude counts them). A page that queues one
+// post to its delivery (the prelude counts them). A turn is the prelude's
+// (`record.turn`): a task in the queue the scheduler goes on in, which
+// waits for no real time; where it falls among the scheduler's tasks
+// changes only how many turns a settle takes, since the count, not the
+// turn, says when the page has settled. A page that queues one
 // forever is not waited for after 1 000 turns: the step fails, and every
 // later settle of the page waits one turn. Resolves to whether the page
 // settled.
 async function settle() {
   const record = globalThis.__beniHarness;
-  const turn = () => new Promise((done) => record.clock.real(done, 0));
+  const turn = record.turn;
   const node = typeof process === "object";
   const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : record.ports.pending > 0);
   await turn();
@@ -1625,6 +1889,16 @@ function editPage(s) {
   return null;
 }
 
+// Chrome's half of a trusted `pointer` move: wait for the `mousemove`
+// that follows the move's `pointermove`, which the step armed a listener
+// for. Chrome dispatches a mouse move at a frame, not when the command
+// that sent it returns. Resolves to null, or to why no move came; the
+// wait is on the page's real clock, which no step moves.
+function arrived() {
+  const late = new Promise((done) => globalThis.__beniHarness.clock.real(() => done("Chrome dispatched no `mousemove` within 5 s of the move"), 5000));
+  return Promise.race([globalThis.__beniHarness.moved.then(() => null), late]);
+}
+
 // The numbers of the requests no step answered and nothing aborted.
 function pendingRequests() {
   return globalThis.__beniHarness.requests.filter((r) => !r.settled).map((r) => r.n);
@@ -1660,8 +1934,10 @@ function drain() {
 // text control's selection. With `{offer: true}`, `offer` is what the page
 // offers the next action, null otherwise: the elements an event may go to,
 // in document order, each with a selector the driver accepts (no spaces:
-// `*` for a name that is not plain HTML), whether it takes text and whether
-// it is a control; and the strings and ints the page shows — its text and
+// `*` for a name that is not plain HTML), whether it takes text, whether
+// it is a control, and whether it holds a pointer handler (the `dom`
+// runtime's `$$pointerdown` and the rest, which its walk and its own
+// listeners read alike); and the strings and ints the page shows — its text and
 // its `id`, `value`, `href` and `data-` attributes, forty of each at most,
 // for messages to name. Neither looks inside a `<template>`.
 let comments = true;
@@ -1687,6 +1963,7 @@ function serialise(also) {
   const offering = fuzzing && also.offer === true;
   const props = [];
   const targets = [];
+  const pointerKeys = ["$$pointerdown", "$$pointermove", "$$pointerup", "$$pointercancel", "$$pointerenter", "$$pointerleave"];
   const strings = new Set();
   const ints = new Set();
   const take = (text) => {
@@ -1719,6 +1996,7 @@ function serialise(also) {
       selector: target,
       text: tag === "textarea" || (tag === "input" && !["checkbox", "radio", "button", "submit", "reset", "file"].includes(node.type)),
       control: ["input", "textarea", "select", "button", "a"].includes(tag) || node.tabIndex >= 0,
+      pointer: pointerKeys.some((key) => node[key] !== undefined),
     });
   };
   // `node` at `depth`; `state` and `target` its selectors when the fuzzer
@@ -1893,6 +2171,7 @@ function parseStep(written, where) {
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "sockets") return void steps.push({ line: written, where, command: "sockets", throws });
+    if (line === "posted") return void steps.push({ line: written, where, command: "posted", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
     if (line === "load" && (!throws || steps.some((s) => !s.early && !setupCommands.includes(s.command)))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
@@ -1967,6 +2246,8 @@ function parseStep(written, where) {
       if ((selector !== "local" && selector !== "session") || argument !== undefined) usage(`${where}: \`storage\` takes \`local\` or \`session\``);
     } else if (command === "timers") {
       usage(`${where}: \`timers\` takes nothing`);
+    } else if (command === "posted") {
+      usage(`${where}: \`posted\` takes nothing`);
     } else if (command === "listeners") {
       if ((selector !== "window" && selector !== "document") || (argument !== undefined && !/^[a-z]+$/.test(argument))) {
         usage(`${where}: \`listeners\` takes \`window\` or \`document\` and at most an event name`);
@@ -2083,6 +2364,11 @@ function parseStep(written, where) {
           else usage(`${where}: \`socket <n> wait\` takes a number of messages, \`open\` or \`closed\``);
         } else if (rest !== undefined) usage(`${where}: \`socket <n> ${s.action}\` takes nothing more`);
       }
+    } else if (command === "click-wait") {
+      const match = (argument ?? "").match(/^(\S+)\s+("(?:[^"\\]|\\.)*")$/);
+      if (match === null) usage(`${where}: \`click-wait\` takes a click selector, a target selector and JSON text`);
+      s.target = match[1];
+      s.text = JSON.parse(match[2]);
     } else if (command === "flush") {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
     } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur" || command === "press") {
@@ -2115,8 +2401,10 @@ function parseStep(written, where) {
       if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
       s.name = argument;
     } else if (command === "pointer") {
-      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]`;
+      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>] [trusted]`;
       // `type:none` is a `pointerType` of "", a device the browser cannot name.
+      // `trusted` is a user's mouse move: Chrome sends one only as its own
+      // mouse, `pointerId` 1 and primary.
       const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
       const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout"];
       if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\``);
@@ -2138,8 +2426,11 @@ function parseStep(written, where) {
         else if (/^type:(mouse|pen|touch|none)$/.test(w)) s.type = w === "type:none" ? "" : w.slice("type:".length);
         else if (w === "secondary") s.primary = false;
         else if (/^box:\S+$/.test(w)) s.box = w.slice("box:".length);
-        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\` or \`box:<selector>\` after the name, not \`${w}\``);
+        else if (w === "trusted") s.trusted = true;
+        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\`, \`box:<selector>\` or \`trusted\` after the name, not \`${w}\``);
       }
+      if (s.trusted && (s.name !== "pointermove" || s.type !== "mouse" || s.id !== 1 || !s.primary))
+        usage(`${where}: \`trusted\` is a user's mouse move: it goes with \`pointermove\`, the mouse, \`id:1\` and a primary pointer`);
     } else if (command === "drag") {
       if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
       s.name = argument;
@@ -2166,9 +2457,15 @@ const blank = "<!DOCTYPE html><html><head></head><body></body></html>";
 
 async function serve() {
   const { createServer } = await import("node:http");
+  const { createHash } = await import("node:crypto");
   const types = { ".mjs": "text/javascript", ".js": "text/javascript", ".html": "text/html", ".css": "text/css", ".json": "application/json" };
   const server = createServer((request, response) => {
     const path = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
+    // The worker-network fixture resolves both transports relative to its entry.
+    if (path.includes("/_workers/") && path.endsWith("/worker-network")) {
+      response.writeHead(200, { "content-type": "text/plain" });
+      return void response.end("worker-http");
+    }
     if (path === "/_page.html") {
       response.writeHead(200, { "content-type": "text/html" });
       return void response.end(blank);
@@ -2192,6 +2489,30 @@ async function serve() {
     const cors = fromFile ? { "access-control-allow-origin": "*" } : {};
     response.writeHead(200, { "content-type": types[dot === -1 ? "" : file.slice(dot)] ?? "application/octet-stream", ...cors });
     response.end(bytes);
+  });
+  // A bounded, short-text WebSocket echo for the real-worker network fixture.
+  server.on("upgrade", (request, socket, head) => {
+    const path = new URL(request.url, "http://127.0.0.1").pathname;
+    if (!path.includes("/_workers/") || !path.endsWith("/worker-network")) return socket.destroy();
+    const accept = createHash("sha1").update(request.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+    socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n");
+    let pending = head;
+    const receive = (chunk) => {
+      pending = Buffer.concat([pending, chunk]);
+      while (pending.length >= 2) {
+        const opcode = pending[0] & 15, size = pending[1] & 127;
+        if (!(pending[1] & 128) || size > 125) return socket.destroy();
+        if (pending.length < size + 6) return;
+        const payload = Buffer.from(pending.subarray(6, size + 6));
+        for (let i = 0; i < size; i++) payload[i] ^= pending[2 + i % 4];
+        pending = pending.subarray(size + 6);
+        if (opcode === 8) return socket.end(Buffer.concat([Buffer.from([136, size]), payload]));
+        if (opcode !== 1) return socket.destroy();
+        socket.write(Buffer.concat([Buffer.from([129, size]), payload]));
+      }
+    };
+    socket.on("data", receive);
+    if (head.length) receive(Buffer.alloc(0));
   });
   await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -2343,7 +2664,7 @@ async function chromePage(endpoint) {
   // The target opened at `about:blank`: its history begins at the page, as
   // happy-dom's does, so no traversal leaves the page's document.
   await send("Page.resetNavigationHistory", {}, sessionId);
-  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage};`;
+  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -2353,9 +2674,10 @@ async function chromePage(endpoint) {
     },
     // Half of a trusted click at a point of the page, as a user's: the
     // button pressed or released, resolved once the renderer has handled
-    // it.
+    // it. Or a move to the point with no button down (`mouseMoved`).
     mouse: async (type, x, y) => {
-      await send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: 1 }, sessionId);
+      const move = type === "mouseMoved";
+      await send("Input.dispatchMouseEvent", { type, x, y, button: move ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: move ? 0 : 1 }, sessionId);
     },
     close: async () => {
       await send("Target.closeTarget", { targetId });
@@ -2514,7 +2836,12 @@ async function runPage(entry, fiber, html = false) {
           // A `press`: the button goes down, the page settles, and it comes
           // up — in Chrome as a user's would, under happy-dom as the step
           // dispatches it.
-          if (why !== null && typeof why === "object") why = await released(page, t, why);
+          // A trusted move in Chrome: the mouse goes to the point, and the
+          // step waits for the move's dispatch.
+          if (why !== null && typeof why === "object" && why.move) {
+            await page.mouse("mouseMoved", why.x, why.y);
+            why = await page.run(arrived);
+          } else if (why !== null && typeof why === "object") why = await released(page, t, why);
           if (why !== null) return `${s.where}: ${s.line}: ${why}`;
         }
         return null;

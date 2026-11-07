@@ -80,14 +80,17 @@ const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const fs_read = @import("../fs_read.zig");
 const Lower = @import("Lower.zig");
+const CheckedTypes = @import("../check/Types.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
+const EntryPlan = @import("../entry/Plan.zig");
 const JsIr = @import("JsIr.zig");
 const Join = @import("Join.zig");
 const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
 const SourceMap = @import("SourceMap.zig");
 const Rename = @import("Rename.zig");
+const JsIntrinsic = @import("JsIntrinsic.zig");
 const Fields = @import("Fields.zig");
 const DebugShape = @import("DebugShape.zig");
 const Arena = @import("../Arena.zig");
@@ -111,6 +114,7 @@ const beni_markup = @import("beni_markup");
 const Interface = @import("../resolve/Interface.zig");
 const Writes = @import("../writes/Writes.zig");
 const Lift = @import("Lift.zig");
+const WorkerEntry = @import("WorkerEntry.zig");
 
 const Emit = @This();
 
@@ -158,7 +162,16 @@ const entry_export_binding = "$beniExport";
 
 /// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
 /// output key taken from the first package of the chain that declares it.
+pub const EntryKind = struct {
+    definition: Manifest.EntryKind,
+    root: []const u8,
+    layer: u32,
+};
+
 pub const Platform = struct {
+    entry_kinds: []const EntryKind = &.{},
+    entry_host: EntryPlan.Realm = .unknown,
+    obsolete_host_root: ?[]const u8 = null,
     /// Module-qualified name of the opaque `Program` type `main` must have.
     /// Null for a chain that declares none, which only a library builds for.
     program: ?[]const u8 = null,
@@ -202,6 +215,13 @@ pub const Platform = struct {
     /// module*): a module of the runtime's package whose `pub` values supply
     /// runtime exports in the file's place.
     markup_module: ?[]const u8 = null,
+    /// The chain's top-level `"module"` (`boundary.md` §5.2, *A runtime
+    /// module without markup*, 2026-11-04): a module of the package that
+    /// declares it, which supplies `run` and nothing else, since the chain
+    /// has no lowering. `platform.resolveChain` has refused it beside a
+    /// `"runtime"` of its package and beside a lowering of the chain.
+    program_module: ?[]const u8 = null,
+    program_module_root: []const u8 = "",
     /// The page shell (§2, *The page shell*): a template relative to
     /// `html_root` whose `{{entry}}` becomes the entry file, written as
     /// `index.html`. The chain's `"html"`, or the app manifest's, which
@@ -478,11 +498,6 @@ pub const Options = struct {
     /// `--sanitize-lists`, the hidden test-only flag (`src/Cli.zig`,
     /// `Lower.Input.sanitize_lists`, `ownership-v2.md` §7.3).
     sanitize_lists: bool = false,
-    /// `--schema-library`, the hidden test-only flag (`src/Cli.zig`): every
-    /// schema declaration's `parse` and `print` run its description through
-    /// the library interpreter, and no worker is written — the forced
-    /// library path of `schema.md` §10, which changes no answer.
-    schema_library: bool = false,
     /// `--schema-shapes`: shapes for every validator run with one (true),
     /// or for none (false), whatever the count; null, the count decides.
     schema_shapes: ?bool = null,
@@ -519,6 +534,9 @@ pub const Options = struct {
     /// left out.
     origin: ?[]const u8 = null,
     address: []const u8 = "",
+    /// The project's `"trustedTypes": true` (`frontend.md` §10.1), handed
+    /// to the lowering as `Build.trusted_types` (`boundary.md` §9.4.7).
+    trusted_types: bool = false,
     /// A prerendering build's: whether the program `main` prerenders is a
     /// `Named.routed` constructor's, which needs `origin`
     /// (`prerender_needs_origin`).
@@ -664,6 +682,7 @@ pub fn run(
     options: Options,
     io_failure: *?Session.IoFailure,
 ) Error!Result {
+    session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -687,12 +706,14 @@ pub fn run(
     // platform whose manifest names an impossible entry file is broken
     // whatever the program does, and `--library` — which writes no entry
     // file at all — must not be the way to find out it is fine.
+    if (options.platform.obsolete_host_root) |root| try e.reportInFile(.obsolete_host_promise, .{ .path = try std.fmt.allocPrint(scratch, "{s}/beni.json", .{root}) }, "The platform-wide `host: page` promise is obsolete. Declare `entryHost: window` for the page entry; entryKinds supply each worker realm. EntryHost checks every entry separately.", .{});
     try e.checkEntryFileName();
     try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
+    try e.checkEntryKinds();
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -701,6 +722,10 @@ pub fn run(
     // export list — `Reach.collectRoots` says why at length.
     const entry = if (options.library) null else try e.findEntry();
     if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
+    if (session.entry_plan.selected != .none) {
+        e.options.platform.entry_host = session.entry_plan.kinds.get(@backingInt(session.entry_plan.selected)).realm;
+        e.options.platform.page = false;
+    }
 
     // §9's reachability walk, between `findEntry` and `emitModules` and
     // BEFORE lowering: an unreachable declaration is then never lowered at
@@ -720,6 +745,11 @@ pub fn run(
         for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
         e.clean_modules = clean;
     }
+    // Whether v2 checked every module of the program whole: then every
+    // caller of every write was checked (§7.3, the sanitiser's trap says so).
+    e.v2_whole = for (e.session.checked.channels) |c| {
+        if (!c.clean) break false;
+    } else true;
     // The write-set pass, for a lowering that compiles programs whole
     // (`boundary.md` §9.4.6, version 1.7), before reachability: the pieces
     // it lifts are nodes of the walk (`browser-inline.md` §7).
@@ -728,7 +758,15 @@ pub fn run(
         try e.findLifts();
         try e.cutPrerender();
     };
-    try e.eliminate(entry);
+    try e.workerDiscoveryReach(entry);
+    try e.planWorkers(entry);
+    try e.directWorkerWire(entry);
+    if (e.workerHostModule() != null) {
+        e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
+        try e.walk();
+    }
+    if (entry) |root| try e.checkEntryRealm(root);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     try e.shareValidators();
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -769,6 +807,8 @@ pub fn run(
     // §2's page shell, beside the entry file, in either layout.
     if (entry) |at| try e.emitShell(at);
     try e.emitDirectPlan();
+    try e.emitWorkers();
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.hasErrors()) return e.nothingWritten(gpa);
@@ -807,6 +847,7 @@ pub fn run(
 /// Diagnostics are owned by the caller, messages included, like `run`'s.
 pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
     var io_failure: ?Session.IoFailure = null;
+    session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -817,12 +858,38 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
+    if (options.platform.obsolete_host_root) |root| try e.reportInFile(.obsolete_host_promise, .{ .path = try std.fmt.allocPrint(scratch, "{s}/beni.json", .{root}) }, "The platform-wide `host: page` promise is obsolete. Declare `entryHost: window` for the page entry; entryKinds supply each worker realm. EntryHost checks every entry separately.", .{});
     try e.checkEntryFileName();
     try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
+    try e.checkEntryKinds();
+    // Entry reachability is needed only when this check can reach a worker
+    // launch. Ordinary checks keep their existing declaration-only path.
+    if (!e.hasErrors() and session.entry_plan.launches.len != 0) {
+        var entry: ?Emitter.Entry = null;
+        var multiple = false;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            if (e.graph().modulePackage(m) != .app) continue;
+            const b = e.bir(m);
+            for (b.decls, 0..) |d, di| {
+                if (d.kind != .value or b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
+                if (entry != null) multiple = true else entry = .{ .module = m, .decl = @fromBackingInt(@intCast(di)) };
+            }
+        }
+        if (multiple) entry = null;
+        e.options.library = entry == null;
+        var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
+        defer pool.deinit();
+        e.pool = &pool;
+        e.extra_roots = try e.coarseRuntimeRoots();
+        try e.workerDiscoveryReach(entry);
+        var found: std.ArrayList(u32) = .empty;
+        try e.discoverWorkers(entry, &found);
+    }
     return e.diagnostics.toOwnedSlice(gpa);
 }
 
@@ -1290,10 +1357,20 @@ const Emitter = struct {
     /// Scratch-owned, filled by `eliminate` before the first module is
     /// lowered.
     live: Reach.Result = .empty,
+    worker_fingerprint: []const u8 = "",
+    worker_candidates: []const WorkerEntry.Descriptor = &.{},
+    deferred: []const Reach.Node = &.{},
+    worker_entries: []const WorkerEntry.Descriptor = &.{},
+    worker_runtime: ?EntryPlan.Value = null,
+    worker_kind: EntryPlan.KindIndex = .none,
+    worker_events: ?bool = null,
+    output_prefix: []const u8 = "",
     /// `Lower.Input.core_private`, the same for every module of the build.
     core_private: Lower.CorePrivate = @splat(true),
     /// `Lower.Input.clean_modules`, the same for every module of the build.
     clean_modules: []const bool = &.{},
+    /// `Lower.Input.callers_checked`, the same for every module.
+    v2_whole: bool = false,
     /// §9 item 2's whole-program namespace: one table for the BUILD, so that
     /// an `import` specifier in one file and the `export` in another are
     /// given the same short name. Empty and unused in a dev build.
@@ -1303,6 +1380,11 @@ const Emitter = struct {
     /// file's of `main` (`markImported`). A module's `export` list is cut
     /// to them. Scratch-owned; empty and unused otherwise.
     imported: Print.Imported = .{},
+    /// `--release`: the whole-program ordinals of names the build imports
+    /// from a hand-written file — a `foreign`'s sibling export, the platform's
+    /// runtime — which `Print.resolve` never writes in place of an arrow
+    /// (`backend.md` §9 item 6; `markHandWritten`).
+    hand_written: Print.Imported = .{},
     /// What the build produced, path and bytes, before any of it reaches
     /// the disk. Scratch-owned.
     pending: std.ArrayList(Output) = .empty,
@@ -1363,6 +1445,9 @@ const Emitter = struct {
     fuzz_seeds: []const Fields.Seed = &.{},
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
+    wire_names: ?*const Fields.Table = null,
+    worker_wire_direct_module: ?Graph.Index = null,
+    worker_wire_direct_calls: []const Bir.Inst.Index = &.{},
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
@@ -1458,11 +1543,557 @@ const Emitter = struct {
         }
     };
 
-    fn graph(e: *Emitter) *const Graph {
+    fn resolvedValue(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index) ?Reach.Node {
+        const b = e.bir(m);
+        const d = b.instData(at);
+        return switch (b.instTag(at)) {
+            .top => .{ .module = m, .kind = .decl, .index = d.lhs },
+            .ext_value => blk: {
+                const other: Graph.Index = @fromBackingInt(d.lhs);
+                if (other.int() >= e.session.resolution.provenance.len) return null;
+                const p = e.session.resolution.provenance[other.int()];
+                if (d.rhs >= p.value_decl.len) return null;
+                break :blk .{ .module = other, .kind = .decl, .index = p.value_decl[d.rhs].int() };
+            },
+            else => null,
+        };
+    }
+
+    fn constructorKind(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index) ?EntryPlan.KindIndex {
+        const b = e.bir(m);
+        if (b.instTag(at) != .call) return null;
+        const callee = e.resolvedValue(m, @fromBackingInt(b.instData(at).lhs)) orelse return null;
+        const plan = &e.session.entry_plan;
+        for (0..plan.kinds.len) |ki| {
+            const k = plan.kinds.get(ki);
+            if (k.launches.len == 0) continue;
+            for (k.constructors.start..k.constructors.start + k.constructors.len) |ci| {
+                const c = plan.constructors.get(ci).value;
+                if (callee.module == c.module and callee.index == c.decl) return @fromBackingInt(@intCast(ki));
+            }
+        }
+        return null;
+    }
+
+    // Browser workers share the page's existing private fatal path. Keep the
+    // bridge in worker-bearing entries, so Rt's source (including source maps)
+    // and every ordinary page remain byte-for-byte unchanged.
+    fn workerHostModule(e: *const Emitter) ?Graph.Index {
+        if (e.worker_runtime != null or e.worker_entries.len == 0) return null;
+        if (!std.mem.eql(u8, e.options.platform.program orelse return null, "Browser.Program")) return null;
+        return e.runtime_module;
+    }
+
+    fn workerHostClient(e: *Emitter) ?Graph.Index {
+        if (e.workerHostModule() == null) return null;
+        return e.graph().find(.platform, e.session.interner.find("Browser.Worker") orelse return null);
+    }
+
+    fn workerHostRoots(e: *Emitter, out: *std.ArrayList(Reach.Node)) !void {
+        const module = e.workerHostModule() orelse return;
+        const b = e.bir(module);
+        for (b.decls, 0..) |d, di| {
+            const name = e.session.interner.slice(b.symbol(d.name));
+            if (std.mem.eql(u8, name, "stop") or std.mem.eql(u8, name, "stopped"))
+                try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(di) });
+        }
+        if (e.workerHostClient()) |client| for (e.bir(client).decls, 0..) |d, di| {
+            if (std.mem.eql(u8, e.session.interner.slice(e.bir(client).symbol(d.name)), "installHostStop"))
+                try out.append(e.scratch, .{ .module = client, .kind = .decl, .index = @intCast(di) });
+        };
+    }
+
+    fn workerHostBridge(e: *Emitter, text: *std.ArrayList(u8), hoisted: bool) !void {
+        const module = e.workerHostModule() orelse return;
+        const client = e.workerHostClient() orelse return;
+        const install = try e.moduleSpelling(client, "installHostStop");
+        const stop = try e.moduleSpelling(module, "stop");
+        const stopped = try e.moduleSpelling(module, "stopped");
+        if (hoisted) {
+            try text.print(e.scratch, "{s}({s},{s});", .{ install, stop, stopped });
+        } else {
+            try text.print(e.scratch, "import{{{s} as __beniWorkerStop,{s} as __beniWorkerStopped}}from\"./{s}\";\nimport{{{s} as __beniInstallWorkerStop}}from\"./{s}\";\n__beniInstallWorkerStop(__beniWorkerStop,__beniWorkerStopped);\n", .{ stop, stopped, try e.outputPath(module), install, try e.outputPath(client) });
+        }
+    }
+
+    fn workerDiscoveryReach(e: *Emitter, entry: ?Entry) !void {
+        try e.eliminate(entry);
+        if (e.hasWorkerLaunch() or e.session.entry_plan.selected != .none) {
+            try e.workerCandidates();
+            e.reach.deferred = e.deferred;
+            var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
+            for (e.worker_candidates) |descriptor| {
+                if (descriptor.wire) |wire| try wire_types.appendSlice(e.scratch, wire.types);
+            }
+            e.reach.wire_types = wire_types.items;
+            try e.walk();
+        }
+    }
+
+    fn hasWorkerLaunch(e: *const Emitter) bool {
+        const plan = &e.session.entry_plan;
+        for (0..plan.constructors.len) |ci| {
+            const value = plan.constructors.get(ci).value;
+            if (e.live.decl(value.module, value.decl) or e.live.twin(value.module, value.decl)) return true;
+        }
+        for (0..plan.launches.len) |li| {
+            const value = plan.launches.get(li).value;
+            if (e.live.decl(value.module, value.decl) or e.live.twin(value.module, value.decl)) return true;
+        }
+        return false;
+    }
+
+    fn builtinWorkerWire(e: *Emitter) ?Graph.Index {
+        const worker = e.graph().find(.platform, e.session.interner.find("Browser.Worker") orelse return null) orelse return null;
+        const normalizer = e.graph().find(.platform, e.session.interner.find("Browser.WorkerWire") orelse return null) orelse return null;
+        // A user-supplied platform with these module names is still user code.
+        if (!e.session.store.isEmbedded(e.graph().moduleFile(worker)) or !e.session.store.isEmbedded(e.graph().moduleFile(normalizer))) return null;
+        return worker;
+    }
+
+    fn encodeWorkerPrivate(e: *Emitter) bool {
+        if (!e.options.release or e.worker_candidates.len == 0) return false;
+        for (e.worker_candidates) |descriptor| if (!e.workerWirePlanOptional(descriptor.kind)) return false;
+        return true;
+    }
+
+    fn privateWorkerModule(e: *Emitter, module: Graph.Index) bool {
+        return e.encodeWorkerPrivate() and e.builtinWorkerWire() == module;
+    }
+
+    fn workerWirePlanOptional(e: *Emitter, kind: EntryPlan.KindIndex) bool {
+        const runtime = e.session.entry_plan.kinds.get(@backingInt(kind)).runtime;
+        const module = e.graph().find(.platform, e.session.interner.find("Browser.WorkerRuntime") orelse return false) orelse return false;
+        return runtime.module == module and e.session.store.isEmbedded(e.graph().moduleFile(module)) and e.builtinWorkerWire() != null;
+    }
+
+    // A runtime shared by several connections needs the interpreter if any
+    // connection in this entry can cross a representation that needs a walk.
+    // Keep shared wire naming independent of this entry-local omission.
+    fn directWorkerWire(e: *Emitter, entry: ?Entry) !void {
+        if (e.worker_candidates.len == 0) return;
+        var found = false;
+        for (e.worker_candidates) |descriptor| {
+            if (!e.live.decl(descriptor.module, descriptor.decl) and !e.live.twin(descriptor.module, descriptor.decl)) continue;
+            const wire = descriptor.wire orelse return;
+            const root = for (wire.roots) |root| {
+                if (root.decl == descriptor.decl) break root;
+            } else return;
+            const needs = try @import("../check/Wire.zig").normalization(e.scratch, wire);
+            for (wire.roles[root.roles.start..][0..root.roles.len]) |role| if (needs[role.node]) return;
+            found = true;
+        }
+        if (!found) return;
+        const worker = e.builtinWorkerWire() orelse return;
+        const normalizer = e.graph().find(.platform, e.session.interner.find("Browser.WorkerWire") orelse return) orelse return;
+        const normalize = for (e.bir(normalizer).decls, 0..) |d, i| {
+            if (std.mem.eql(u8, e.session.interner.slice(e.bir(normalizer).symbol(d.name)), "normalize")) break i;
+        } else return;
+        const b = e.bir(worker);
+        var calls: std.ArrayList(Bir.Inst.Index) = .empty;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        try cuts.appendSlice(e.scratch, e.cuts);
+        for (b.insts.items(.tag), b.insts.items(.data), 0..) |tag, d, i| {
+            if (tag != .call) continue;
+            const callee = e.resolvedValue(worker, @fromBackingInt(d.lhs)) orelse continue;
+            if (callee.module != normalizer or callee.index != normalize) continue;
+            try calls.append(e.scratch, @fromBackingInt(@intCast(i)));
+            try cuts.append(e.scratch, .{ .module = worker, .lo = d.lhs, .hi = d.lhs });
+        }
+        if (calls.items.len == 0) return;
+        e.worker_wire_direct_module = worker;
+        e.worker_wire_direct_calls = calls.items;
+        e.cuts = cuts.items;
+        try e.eliminate(entry);
+    }
+
+    fn workerCandidates(e: *Emitter) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        var fingerprint = std.hash.Wyhash.init(1);
+        fingerprint.update(if (e.options.release) "release" else "development");
+        if (e.options.release and e.builtinWorkerWire() != null) fingerprint.update(@import("WorkerEncoding.zig").version);
+        for (e.options.platform.entry_kinds) |kind| fingerprint.update(try std.json.Stringify.valueAlloc(e.scratch, kind.definition, .{}));
+        for (0..e.graph().count()) |mi| {
+            const module: Graph.Index = @fromBackingInt(@intCast(mi));
+            const file = e.graph().moduleFile(module);
+            fingerprint.update(e.session.interner.slice(e.graph().moduleName(module)));
+            fingerprint.update(&.{0});
+            fingerprint.update(e.session.store.bytes(file));
+            for (e.bir(module).decls) |decl| if (decl.kind == .foreign_value) {
+                if (e.readAsset(try e.siblingPath(e.session.store.path(file)))) |bytes| fingerprint.update(bytes);
+                break;
+            };
+        }
+        e.worker_fingerprint = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{fingerprint.final()});
+        var out: std.ArrayList(WorkerEntry.Descriptor) = .empty;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |d, di| {
+                if (d.kind != .value or d.params_start != d.params_end) continue;
+                const body = d.body.unwrap() orelse continue;
+                const kind = e.constructorKind(m, body) orelse continue;
+                const identity = try std.fmt.allocPrint(e.scratch, "{s}/{s}/{s}", .{
+                    try e.outputPath(m), e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(d.name)),
+                });
+                // Input-derived identity, independent of discovery order and jobs.
+                const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire, .elide_stable_wire = e.workerWirePlanOptional(kind), .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{s}", .{ e.worker_fingerprint, id }) });
+            }
+        }
+        std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {
+            fn less(_: void, a: WorkerEntry.Descriptor, b: WorkerEntry.Descriptor) bool {
+                return std.mem.lessThan(u8, a.identity, b.identity);
+            }
+        }.less);
+        e.worker_candidates = out.items;
+        const deferred = try e.scratch.alloc(Reach.Node, out.items.len);
+        for (deferred, out.items) |*n, d| n.* = .{ .module = d.module, .kind = .decl, .index = d.decl };
+        e.deferred = deferred;
+    }
+
+    fn staticPrograms(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index, kind: EntryPlan.KindIndex, found: *std.ArrayList(u32), allowed: ?[][]bool, depth: u32) Allocator.Error!bool {
+        if (depth > max_alias_depth) return false;
+        const b = e.bir(m);
+        if (e.resolvedValue(m, at)) |n| {
+            for (e.worker_candidates, 0..) |candidate, i| {
+                if (candidate.module == n.module and candidate.decl == n.index and candidate.kind == kind) {
+                    if (std.mem.indexOfScalar(u32, found.items, @intCast(i)) == null) try found.append(e.scratch, @intCast(i));
+                    if (allowed) |refs| refs[m.int()][at.int()] = true;
+                    return true;
+                }
+            }
+            const target = e.bir(n.module).decls[n.index];
+            if (target.params_start != target.params_end) return false;
+            const ok = try e.staticPrograms(n.module, target.body.unwrap() orelse return false, kind, found, allowed, depth + 1);
+            if (ok) if (allowed) |refs| {
+                refs[m.int()][at.int()] = true;
+            };
+            return ok;
+        }
+        const d = b.instData(at);
+        switch (b.instTag(at)) {
+            .case => {
+                const branches = b.extraSlice(b.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
+                for (branches) |branch| {
+                    if (!try e.staticPrograms(m, @fromBackingInt(b.instData(branch).rhs), kind, found, allowed, depth + 1)) return false;
+                }
+                return branches.len != 0;
+            },
+            else => return false,
+        }
+    }
+
+    fn isDeferred(e: *Emitter, m: Graph.Index, di: usize, selected: ?Entry) bool {
+        for (e.deferred) |n| {
+            if (n.module == m and n.index == di) return selected == null or selected.?.module != m or selected.?.decl.int() != di;
+        }
+        return false;
+    }
+
+    fn discoverWorkers(e: *Emitter, selected: ?Entry, found: *std.ArrayList(u32)) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        const plan = &e.session.entry_plan;
+        const allowed = try e.scratch.alloc([]bool, e.graph().count());
+        for (allowed, 0..) |*refs, mi| {
+            refs.* = try e.scratch.alloc(bool, e.bir(@fromBackingInt(@intCast(mi))).insts.len);
+            @memset(refs.*, false);
+        }
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di) and !e.live.twin(m, di)) continue;
+                if (e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    if (b.instTag(at) != .call) continue;
+                    const data = b.instData(at);
+                    const callee = e.resolvedValue(m, @fromBackingInt(data.lhs)) orelse continue;
+                    for (0..plan.kinds.len) |ki| {
+                        const k = plan.kinds.get(ki);
+                        for (k.launches.start..k.launches.start + k.launches.len) |li| {
+                            const launch = plan.launches.get(li);
+                            if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
+                            allowed[mi][data.lhs] = true;
+                            if (e.options.library) {
+                                try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
+                                continue;
+                            }
+                            const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                            if (launch.parameter >= args.len or !try e.staticPrograms(m, args[launch.parameter], @fromBackingInt(@intCast(ki)), found, allowed, 0)) {
+                                try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "This launch needs a top-level Program declaration, or a finite choice between such references. A runtime factory cannot define a worker entry.", .{});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only the callee position of a direct call is a supported launch
+        // reference. Passing it to a callback or alias would hide the edge.
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di) and !e.live.twin(m, di)) continue;
+                if (e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    if (allowed[mi][ii]) continue;
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    const value = e.resolvedValue(m, at) orelse continue;
+                    for (0..plan.launches.len) |li| {
+                        const launch = plan.launches.get(li).value;
+                        if (value.module != launch.module or value.index != launch.decl) continue;
+                        try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Use this worker launch as a direct call. Passing or aliasing the launch function hides its worker entry.", .{});
+                    }
+                }
+            }
+        }
+        if (e.hasErrors()) return;
+        // Program bodies belong to their own realm. Only references reached
+        // through a launch argument may become descriptors in this realm.
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!(e.live.decl(m, di) or e.live.twin(m, di)) or e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    if (allowed[mi][ii]) continue;
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    if (e.resolvedValue(m, at) == null) continue;
+                    for (0..plan.kinds.len) |ki| {
+                        var candidates: std.ArrayList(u32) = .empty;
+                        if (!try e.staticPrograms(m, at, @fromBackingInt(@intCast(ki)), &candidates, null, 0) or candidates.items.len == 0) continue;
+                        try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Use this Program only as a worker launch argument, directly or through an alias or finite choice. Its body runs only in its own worker.", .{});
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn descriptorsFor(e: *Emitter, module: Graph.Index) ![]const WorkerEntry.Descriptor {
+        if (e.worker_candidates.len == 0) return &.{};
+        const out = try e.scratch.dupe(WorkerEntry.Descriptor, e.worker_candidates);
+        const from = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, try e.outputPath(module) });
+        for (out) |*d| {
+            const to = try std.fmt.allocPrint(e.scratch, "_workers/{s}/_main.mjs", .{d.id});
+            d.url = try relativeSpecifier(e.scratch, from, to);
+        }
+        return out;
+    }
+
+    fn selectedRuntime(e: *const Emitter) ?EntryPlan.Value {
+        return e.worker_runtime orelse e.session.entry_plan.runtime();
+    }
+
+    fn workerPrelude(e: *Emitter, text: *std.ArrayList(u8)) !void {
+        // Install the realm listeners before any emitted or imported initializer.
+        try text.print(e.scratch, "globalThis.__beniWorkerFingerprint = \"{s}\";\n", .{e.worker_fingerprint});
+        try text.appendSlice(e.scratch,
+            \\const report = event => {
+            \\  const cause = event.error ?? event.reason;
+            \\  globalThis.postMessage({worker: 1, kind: "Defect", payload: {
+            \\    name: typeof cause?.name === "string" ? cause.name.slice(0, 64) : null,
+            \\    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").slice(0, 4096),
+            \\    stack: String(cause?.stack ?? "").slice(0, 16384)
+            \\  }});
+            \\};
+            \\globalThis.addEventListener("error", report);
+            \\globalThis.addEventListener("unhandledrejection", report);
+            \\const pending = [];
+            \\const hold = event => {
+            \\  event.stopImmediatePropagation();
+            \\  if (pending.length === 64) {
+            \\    for (const port of event.ports ?? []) port.close();
+            \\    throw new RangeError("Worker startup message queue is full");
+            \\  }
+            \\  pending.push(event);
+            \\};
+            \\globalThis.addEventListener("message", hold);
+            \\globalThis.addEventListener("messageerror", hold);
+            \\
+        );
+    }
+
+    fn workerFinally(e: *Emitter, text: *std.ArrayList(u8)) !void {
+        try text.appendSlice(e.scratch,
+            \\} finally {
+            \\  globalThis.removeEventListener("message", hold);
+            \\  globalThis.removeEventListener("messageerror", hold);
+            \\}
+            \\for (const event of pending) globalThis.dispatchEvent(new MessageEvent(event.type, {
+            \\  data: event.data, origin: event.origin, lastEventId: event.lastEventId,
+            \\  source: event.source, ports: event.ports
+            \\}));
+            \\
+        );
+    }
+
+    fn workerBootstrap(e: *Emitter, entry: Entry) !void {
+        const runner = e.worker_runtime.?;
+        const runtime_path = try e.outputPath(runner.module);
+        const main_path = try e.outputPath(entry.module);
+        const run_name = try e.moduleSpelling(runner.module, "run");
+        const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
+        var text: std.ArrayList(u8) = .empty;
+        try e.workerPrelude(&text);
+        try text.print(e.scratch,
+            \\try {{
+            \\  const runtime = await import("./{s}");
+            \\  const program = await import("./{s}");
+            \\  runtime.{s}(program.{s});
+            \\
+        , .{ runtime_path, main_path, run_name, main_name });
+        try e.workerFinally(&text);
+        try e.produce(default_entry_file, text.items, e.session.store.path(e.graph().moduleFile(entry.module)));
+    }
+    fn workerEventCapability(e: *Emitter, descriptor: WorkerEntry.Descriptor) Allocator.Error!?bool {
+        const parameters = e.options.platform.entry_kinds[@backingInt(descriptor.kind)].definition.parameters;
+        const wire = &e.session.checked.type_keys[descriptor.module.int()].wire;
+        for (parameters, 0..) |parameter, pi| {
+            if (!std.mem.eql(u8, parameter.role, "wire") or parameter.path.len != 1 or !std.mem.eql(u8, parameter.path[0], "event")) continue;
+            for (wire.roots) |root| {
+                if (root.decl != descriptor.decl) continue;
+                for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+                    if (role.index != pi) continue;
+                    const has_value = try @import("../check/Wire.zig").inhabited(e.scratch, wire);
+                    return has_value[role.node];
+                }
+            }
+            return true;
+        }
+        return null;
+    }
+
+    fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
+        var options = e.options;
+        options.platform.entry_host = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).realm;
+        options.platform.page = false;
+        options.platform.lowering = null;
+        options.platform.markup_runtime = null;
+        options.platform.markup_module = null;
+        options.platform.runtime = null;
+        options.platform.html = null;
+        options.platform.exports = .none;
+        options.platform.entry_exports = &.{};
+        options.platform.entry = default_entry_file;
+        options.fuzz = false;
+        return .{
+            .gpa = e.gpa,
+            .scratch = e.scratch,
+            .session = e.session,
+            .options = options,
+            .io_failure = e.io_failure,
+            .pool = e.pool,
+            .core_private = e.core_private,
+            .clean_modules = e.clean_modules,
+            .v2_whole = e.v2_whole,
+            .forwarding_foreigns = e.forwarding_foreigns,
+            .worker_fingerprint = descriptor.fingerprint,
+            .worker_kind = descriptor.kind,
+            .worker_events = try e.workerEventCapability(descriptor),
+            .worker_candidates = e.worker_candidates,
+            .deferred = e.deferred,
+            .worker_entries = e.worker_entries,
+            .wire_names = e.wire_names,
+            .worker_runtime = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime,
+            .output_prefix = try std.fmt.allocPrint(e.scratch, "_workers/{s}/", .{descriptor.id}),
+        };
+    }
+
+    fn planWorkers(e: *Emitter, entry: ?Entry) !void {
+        if (e.worker_candidates.len == 0 and !e.hasWorkerLaunch()) return;
+        var found: std.ArrayList(u32) = .empty;
+        try e.discoverWorkers(entry, &found);
+        if (e.options.library) {
+            for (e.worker_candidates) |d| if (e.live.decl(d.module, d.decl) or e.live.twin(d.module, d.decl)) {
+                try e.report(.not_implemented, e.graph().moduleFile(d.module), e.bir(d.module).decls[d.decl].name_token, "Worker Program exports in `--library` builds are not implemented yet.", .{});
+            };
+            return;
+        }
+        var at: usize = 0;
+        while (at < found.items.len and !e.hasErrors()) : (at += 1) {
+            const descriptor = e.worker_candidates[found.items[at]];
+            var projection = try e.workerProjection(descriptor);
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
+            try projection.eliminate(root);
+            try projection.checkEntryRealm(root);
+            try projection.discoverWorkers(root, &found);
+            try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
+            projection.diagnostics.deinit(e.gpa);
+        }
+        const selected = try e.scratch.alloc(bool, e.worker_candidates.len);
+        @memset(selected, false);
+        for (found.items) |i| selected[i] = true;
+        var entries: std.ArrayList(WorkerEntry.Descriptor) = .empty;
+        for (e.worker_candidates, selected) |d, keep| if (keep) try entries.append(e.scratch, d);
+        if (e.hasErrors()) return;
+        e.worker_entries = entries.items;
+        try e.planWireNames();
+        for (entries.items) |d| try e.session.entry_plan.entries.append(e.gpa, .{
+            .module = d.module,
+            .decl = d.decl,
+            .kind = d.kind,
+            .id = std.hash.Wyhash.hash(0, d.identity),
+        });
+    }
+
+    fn emitWorkers(e: *Emitter) !void {
+        const plan = &e.session.entry_plan;
+        for (0..plan.entries.len) |i| {
+            const root_entry = plan.entries.get(i);
+            const descriptor: WorkerEntry.Descriptor = .{
+                .module = root_entry.module,
+                .decl = root_entry.decl,
+                .kind = root_entry.kind,
+                .identity = "",
+                .id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{root_entry.id}),
+                .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{x:0>16}", .{ e.worker_fingerprint, root_entry.id }),
+            };
+            var projection = try e.workerProjection(descriptor);
+            defer {
+                for (projection.owned.items) |bytes| e.gpa.free(bytes);
+                projection.owned.deinit(e.gpa);
+                projection.points_to.deinit(e.gpa);
+                projection.rep_key_text.deinit(e.gpa);
+            }
+            const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            try projection.eliminate(root);
+            try projection.directWorkerWire(root);
+            try projection.shareValidators();
+            try projection.refuseMarkupWithoutLowering();
+            if (e.options.release and !e.options.allow_debug) try projection.refuseDebug();
+            if (!projection.hasErrors()) {
+                try projection.openDebugContext();
+                try projection.emitModules(root);
+                if (!projection.hasErrors()) {
+                    if (!projection.hoisted) {
+                        try projection.copyAssets();
+                        try projection.workerBootstrap(root);
+                    }
+                }
+            }
+            try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
+            projection.diagnostics.deinit(e.gpa);
+            // Produce copies before freeing this projection's print buffers.
+            for (projection.pending.items) |out| try e.produce(out.path, out.bytes, out.origin);
+            if (e.hasErrors()) return;
+        }
+    }
+
+    fn checkEntryRealm(e: *Emitter, entry: Entry) !void {
+        try @import("RealmCheck.zig").check(e, entry.module, entry.decl.int());
+    }
+
+    pub fn graph(e: *Emitter) *const Graph {
         return &e.session.graph;
     }
 
-    fn bir(e: *Emitter, m: Graph.Index) *const Bir {
+    pub fn bir(e: *Emitter, m: Graph.Index) *const Bir {
         return e.session.artifacts.bir(e.graph().moduleFile(m));
     }
 
@@ -1579,7 +2210,7 @@ const Emitter = struct {
         return diagnostic.position(line_starts, e.session.store.bytes(file), tokens.starts[token]);
     }
 
-    fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
+    pub fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{ .code = code, .file = file, .token = token, .message = message });
@@ -1595,7 +2226,7 @@ const Emitter = struct {
     /// manifest failure is an exit-2 line naming the path
     /// (`src/platform.zig`), and this is the same honesty inside a
     /// diagnostic.
-    fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
+    pub fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
         return e.reportInFileAs(code, .@"error", at, fmt, args);
     }
 
@@ -1626,7 +2257,7 @@ const Emitter = struct {
     /// wrong*: an `At` covering `length` bytes of `source` from `offset`,
     /// which is what `js/Sibling.zig` hands back for every export,
     /// reference and specifier it reads.
-    fn inSibling(path: []const u8, source: []const u8, offset: u32, length: u32) Session.At {
+    pub fn inSibling(path: []const u8, source: []const u8, offset: u32, length: u32) Session.At {
         return .{
             .path = path,
             .start = positionIn(source, offset),
@@ -1718,6 +2349,11 @@ const Emitter = struct {
             var declared: std.ArrayList(Declared) = .empty;
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
+                // This private selector has no sibling: even library output
+                // writes its fallback inline, so unrelated Js.js users pay nothing.
+                if (e.graph().modulePackage(m) == .core and
+                    std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js") and
+                    std.mem.eql(u8, e.session.interner.slice(b.symbol(d.name)), "entryWindow")) continue;
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
                 // so check 4 and the call sites cannot disagree: the arity is
@@ -2041,14 +2677,35 @@ const Emitter = struct {
     /// (`boundary.md` §5.2 and §9.2, amended 2026-10-02).
     fn moduleIsRuntime(e: *const Emitter) bool {
         const p = e.options.platform;
-        if (p.runtime != null or p.markup_runtime != null or p.markup_module == null) return false;
+        if (p.runtime != null or p.markup_runtime != null) return false;
+        // A runtime module without markup (`boundary.md` §5.2, amended
+        // 2026-11-03): the chain has no lowering, and the module is the
+        // whole runtime, `run` its one export.
+        if (p.program_module != null) return true;
+        if (p.markup_module == null) return false;
         return findLowering(p.lowering orelse return false) != null;
+    }
+
+    /// The runtime module the chain names, under `"markup"` or at the top
+    /// level, or null.
+    fn runtimeModuleName(e: *const Emitter) ?[]const u8 {
+        const p = e.options.platform;
+        return p.markup_module orelse p.program_module;
+    }
+
+    /// The manifest that named the runtime module: the lowering package's,
+    /// or the package's that declares the top-level `"module"`.
+    fn runtimeModuleManifest(e: *Emitter) ![]const u8 {
+        const p = e.options.platform;
+        const root = if (p.markup_module != null) p.lowering_root else p.program_module_root;
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
     }
 
     /// Whether the markup runtime is also the program runtime (§9.2): one
     /// file, copied once, whose exports include `run` — or no file, the
     /// runtime module being both (`moduleIsRuntime`).
     fn markupRuntimeIsProgramRuntime(e: *Emitter) bool {
+        if (e.genericRuntimeSelected()) return false;
         const p = e.options.platform;
         if (e.moduleIsRuntime()) return true;
         const markup = p.markup_runtime orelse return false;
@@ -2072,9 +2729,12 @@ const Emitter = struct {
     fn checkMarkupRuntime(e: *Emitter) !void {
         const runtime_file = try e.markupRuntimePath();
         if (runtime_file == null and !e.moduleIsRuntime()) return;
-        const lowering = findLowering(e.options.platform.lowering.?).?;
+        // A runtime module without markup (§5.2, amended 2026-11-03) has no
+        // lowering to ask for a list: `run` is its one export.
+        const lowering: ?*const beni_markup.Lowering = if (e.options.platform.lowering) |name| findLowering(name) else null;
+        const lowering_name = if (lowering) |l| l.name else "";
         var expected: std.ArrayList(Expected) = .empty;
-        for (lowering.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
+        if (lowering) |l| for (l.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
         // With no runtime file, `run` is asked of the module only when the
         // chain declares a `program` for it to run.
         const runs = e.markupRuntimeIsProgramRuntime() and (!e.moduleIsRuntime() or e.options.platform.program != null);
@@ -2082,7 +2742,7 @@ const Emitter = struct {
         // A lowering with no run-time value of the markup type refuses
         // every use of a primitive (§9.4.6, version 1.6), so its runtime
         // implements none.
-        if (e.graph().markup.vocabulary) |vocabulary| if (lowering.no_markup_values == null) {
+        if (e.graph().markup.vocabulary) |vocabulary| if (lowering != null and lowering.?.no_markup_values == null) {
             const b = e.bir(vocabulary);
             const file = e.graph().moduleFile(vocabulary);
             const dispatch = e.dispatchOf(vocabulary);
@@ -2095,7 +2755,7 @@ const Emitter = struct {
                 // A primitive named like one of the lowering's own exports
                 // would be two exports of one name.
                 var clash = false;
-                for (lowering.runtime) |r| clash = clash or std.mem.eql(u8, r.name, name);
+                for (lowering.?.runtime) |r| clash = clash or std.mem.eql(u8, r.name, name);
                 if (clash) {
                     try e.report(
                         .duplicate_declaration,
@@ -2108,7 +2768,7 @@ const Emitter = struct {
                         \\lowering's own exports (`docs/design/boundary.md` §9.4.5), so the two would be
                         \\one export. Rename the primitive.
                     ,
-                        .{ name, lowering.name },
+                        .{ name, lowering_name },
                     );
                     continue;
                 }
@@ -2127,9 +2787,9 @@ const Emitter = struct {
             }
         };
         // The runtime module supplies what it declares; the file, the rest.
-        try e.takeSupplied(&expected, lowering.name);
+        try e.takeSupplied(&expected, lowering_name);
 
-        const path = runtime_file orelse return e.reportUnsupplied(expected.items, lowering.name);
+        const path = runtime_file orelse return e.reportUnsupplied(expected.items, lowering_name);
         const bytes = e.readAsset(path) orelse {
             try e.reportInFile(
                 .foreign_sibling_missing,
@@ -2171,7 +2831,7 @@ const Emitter = struct {
                     \\(`docs/design/boundary.md` §9.4.5). Add `export const {s} = …;` taking {d}
                     \\parameter{s}.
                 ,
-                    .{ want.name, lowering.name, want.name, want.arity, plural(want.arity) },
+                    .{ want.name, lowering_name, want.name, want.arity, plural(want.arity) },
                 );
                 continue;
             };
@@ -2197,7 +2857,7 @@ const Emitter = struct {
                 .{
                     want.name,
                     if (written) |n| try std.fmt.allocPrint(e.scratch, "with {d} parameter{s}", .{ n, plural(n) }) else "so that its parameters cannot be counted",
-                    lowering.name,
+                    lowering_name,
                     want.arity,
                     plural(want.arity),
                     want.arity,
@@ -2219,7 +2879,7 @@ const Emitter = struct {
                 \\markup primitive (`docs/design/boundary.md` §9.4.5), so that every export is a
                 \\node elimination can see. Stop exporting it, or declare the primitive.
             ,
-                .{ got.name, lowering.name },
+                .{ got.name, lowering_name },
             );
         }
         for (found.unbound) |reference| {
@@ -2256,7 +2916,7 @@ const Emitter = struct {
     fn reportUnsupplied(e: *Emitter, unsupplied: []const Expected, lowering_name: []const u8) !void {
         // A module that is not there was reported by `takeSupplied`.
         if (e.runtime_module == null) return;
-        const module_name = e.options.platform.markup_module.?;
+        const module_name = e.runtimeModuleName().?;
         for (unsupplied) |want| {
             if (want.primitive) |p| {
                 try e.report(
@@ -2276,7 +2936,7 @@ const Emitter = struct {
             }
             try e.reportInFile(
                 .foreign_export_mismatch,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try e.runtimeModuleManifest() },
                 \\The runtime module `{s}` declares no `pub` value `{s}`, which {s}, and this
                 \\platform names no runtime file to supply it.
                 \\
@@ -2299,18 +2959,393 @@ const Emitter = struct {
         }
     }
 
+    /// Checked interface view, including alias arguments. No checker inference
+    /// runs in emit: this reads the immutable schemes it already proved.
+    fn genericRuntimeSelected(e: *const Emitter) bool {
+        if (e.session.entry_plan.validated) return e.selectedRuntime() != null;
+        // Before validation this selects the legacy markup export request,
+        // not an executable or trusted runtime. Publication follows below.
+        const program = e.options.platform.program orelse return false;
+        for (e.options.platform.entry_kinds) |kind| {
+            if (std.mem.eql(u8, program, kind.definition.programType)) return true;
+        }
+        return false;
+    }
+
+    fn entryRun(e: *const Emitter) ?struct { module: Graph.Index, decl: u32 } {
+        if (e.selectedRuntime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
+        const module = e.runtime_module orelse return null;
+        const runner = e.suppliedAs("run") orelse return null;
+        return .{ .module = module, .decl = runner.decl };
+    }
+
+    const RuntimeType = struct {
+        iface: *const Interface,
+        at: Interface.TermIndex,
+        bindings: []const RuntimeType = &.{},
+    };
+
+    fn expandRuntimeType(e: *Emitter, original: RuntimeType) !RuntimeType {
+        var view = original;
+        for (0..max_alias_depth) |_| {
+            const term = view.iface.term(view.at);
+            switch (term.tag) {
+                .@"var" => {
+                    if (term.lhs >= view.bindings.len) return view;
+                    view = view.bindings[term.lhs];
+                },
+                .alias => {
+                    const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return view;
+                    if (ref.body == .none) return view;
+                    const args = view.iface.range(term.rhs);
+                    const bindings = try e.scratch.alloc(RuntimeType, args.len);
+                    for (args, bindings) |arg, *binding| binding.* = .{ .iface = view.iface, .at = @fromBackingInt(@intCast(arg)), .bindings = view.bindings };
+                    view = .{ .iface = view.iface, .at = ref.body, .bindings = bindings };
+                },
+                else => return view,
+            }
+        }
+        return view;
+    }
+
+    fn runtimeNamesProgram(e: *Emitter, original: RuntimeType, qualified: []const u8, arity: u32, generic: ?Interface.Scheme) !bool {
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag != .app) return false;
+        const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return false;
+        if (ref.package != .platform or
+            !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.module)), platformModule(qualified)) or
+            !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.name)), shortName(qualified))) return false;
+        const args = view.iface.range(term.rhs);
+        if (args.len != arity) return false;
+        if (generic) |scheme| {
+            const seen = try e.scratch.alloc(u32, args.len);
+            for (args, 0..) |arg, i| {
+                const argument = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(arg)), .bindings = view.bindings });
+                const t = argument.iface.term(argument.at);
+                if (t.tag != .@"var" or t.lhs >= scheme.quantified_count) return false;
+                const quantified = view.iface.quantified(scheme, t.lhs);
+                if ((quantified.flags() & ~(Interface.Quantified.wire_bit | Interface.Quantified.crosses_bit)) != 0 or quantified.constraints_len != 0) return false;
+                for (seen[0..i]) |previous| if (previous == t.lhs) return false;
+                seen[i] = t.lhs;
+            }
+        }
+        return true;
+    }
+
+    fn entryKindError(e: *Emitter, kind: EntryKind, comptime fmt: []const u8, args: anytype) !void {
+        try e.reportInFile(.invalid_entry_kind, .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ kind.root, Manifest.file_name }) }, fmt, args);
+    }
+
+    fn entryKindModule(e: *Emitter, name: []const u8) !?Graph.Index {
+        return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
+    }
+
+    const RuntimeValue = struct { module: Graph.Index, decl: u32, iface: *const Interface, scheme: Interface.Scheme, scheme_index: Interface.SchemeIndex };
+
+    fn entryKindValue(e: *Emitter, qualified: []const u8) !?RuntimeValue {
+        const module = try e.entryKindModule(platformModule(qualified)) orelse return null;
+        const decl = e.moduleValue(module, shortName(qualified)) orelse return null;
+        if (module.int() >= e.session.resolution.interfaces.len) return null;
+        const iface = &e.session.resolution.interfaces[module.int()];
+        const b = e.bir(module);
+        const value = iface.findValue(&e.session.interner, b.symbol(b.decls[decl].name)) orelse return null;
+        const scheme_index = iface.values[@backingInt(value)].scheme;
+        if (scheme_index == .none or @backingInt(scheme_index) >= iface.schemes.len) return null;
+        return .{ .module = module, .decl = decl, .iface = iface, .scheme = iface.schemes[@backingInt(scheme_index)], .scheme_index = scheme_index };
+    }
+
+    /// A concrete record exposes its field path now. Generic variables retain
+    /// the path obligation in the entry row for instantiation; they are not
+    /// certified Wire merely because this structural check succeeds.
+    fn entryRolesFit(e: *Emitter, original: RuntimeType, row: Manifest.EntryKind) !bool {
+        const root = try e.expandRuntimeType(original);
+        const term = root.iface.term(root.at);
+        if (term.tag != .app) return false;
+        const args = root.iface.range(term.rhs);
+        for (row.parameters) |parameter| {
+            if (parameter.index >= args.len) return false;
+            var view: RuntimeType = .{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[parameter.index])), .bindings = root.bindings };
+            for (parameter.path) |field_name| {
+                view = try e.expandRuntimeType(view);
+                const field_type = view.iface.term(view.at);
+                if (field_type.tag == .@"var") break;
+                if (field_type.tag != .record) return false;
+                const fields = view.iface.range(field_type.lhs);
+                var found: ?Interface.TermIndex = null;
+                var i: usize = 0;
+                while (i < fields.len) : (i += 2) {
+                    const symbol = view.iface.symbol(@fromBackingInt(@intCast(fields[i])));
+                    if (std.mem.eql(u8, e.session.interner.slice(symbol), field_name)) {
+                        found = @fromBackingInt(@intCast(fields[i + 1]));
+                        break;
+                    }
+                }
+                view.at = found orelse return false;
+            }
+        }
+        return true;
+    }
+
+    fn checkConstructorRecord(e: *Emitter, original: RuntimeType, machine: bool) !bool {
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag != .record) return false;
+        const extension = try e.expandRuntimeType(.{
+            .iface = view.iface,
+            .at = @fromBackingInt(@intCast(term.rhs)),
+            .bindings = view.bindings,
+        });
+        if (extension.iface.term(extension.at).tag != .empty_record) return false;
+        const fields = view.iface.range(term.lhs);
+        const names: []const []const u8 = if (machine) &.{ "init", "update", "subscriptions", "request" } else &.{ "init", "start", "handle" };
+        const arities: []const u32 = if (machine) &.{ 2, 3, 1, 2 } else &.{ 2, 2, 3 };
+        if (fields.len != names.len * 2) return false;
+        for (names, arities) |name, arity| {
+            var found = false;
+            var field_index: usize = 0;
+            while (field_index < fields.len) : (field_index += 2) {
+                const symbol = view.iface.symbol(@fromBackingInt(@intCast(fields[field_index])));
+                if (!std.mem.eql(u8, e.session.interner.slice(symbol), name)) continue;
+                const field = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(fields[field_index + 1])), .bindings = view.bindings });
+                const function = field.iface.term(field.at);
+                if (function.tag != .func or field.iface.range(function.lhs).len != arity) return false;
+                found = true;
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    fn checkEntryKinds(e: *Emitter) !void {
+        const plan = &e.session.entry_plan;
+        plan.reset();
+        if (e.options.platform.entry_kinds.len == 0) return;
+        errdefer plan.reset();
+        var active: std.ArrayList(EntryKind) = .empty;
+        for (e.options.platform.entry_kinds) |kind| {
+            const name = platformModule(kind.definition.programType);
+            const symbol = try e.session.interner.getOrPut(e.gpa, name);
+            if (e.graph().find(.platform, symbol) == null) {
+                const waiting = for (0..e.session.store.count()) |fi| {
+                    const file: SourceStore.Index = @fromBackingInt(@intCast(fi));
+                    if (e.session.store.package(file) == .platform and e.session.store.isEmbedded(file) and
+                        std.mem.eql(u8, e.session.store.moduleName(file), name)) break true;
+                } else false;
+                if (waiting) continue;
+            }
+            try active.append(e.scratch, kind);
+        }
+        e.options.platform.entry_kinds = active.items;
+        const Identity = struct { module: Graph.Index, type: Interface.TypeIndex };
+        const identities = try e.scratch.alloc(?Identity, e.options.platform.entry_kinds.len);
+        @memset(identities, null);
+        for (e.options.platform.entry_kinds, 0..) |kind, kind_index| {
+            const row = kind.definition;
+            const errors_before = e.diagnostics.items.len;
+            const realm = std.meta.stringToEnum(EntryPlan.Realm, row.realm);
+            if (realm == null) {
+                try e.entryKindError(kind, "The entry kind `{s}` names unknown realm `{s}`.", .{ row.programType, row.realm });
+                continue;
+            }
+            const program_module = try e.entryKindModule(platformModule(row.programType)) orelse {
+                try e.entryKindError(kind, "I cannot find the entry kind's Program module `{s}`.", .{platformModule(row.programType)});
+                continue;
+            };
+            if (program_module.int() >= e.session.resolution.interfaces.len) continue;
+            const program_iface = &e.session.resolution.interfaces[program_module.int()];
+            const program_name = try e.session.interner.getOrPut(e.gpa, shortName(row.programType));
+            const type_index = program_iface.findType(&e.session.interner, program_name) orelse {
+                try e.entryKindError(kind, "The entry kind `{s}` must name a public nominal Program type.", .{row.programType});
+                continue;
+            };
+            const identity: Identity = .{ .module = program_module, .type = type_index };
+            const duplicate = for (identities[0..kind_index]) |previous| {
+                if (previous) |actual| if (actual.module == identity.module and actual.type == identity.type) break true;
+            } else false;
+            identities[kind_index] = identity;
+            if (duplicate) {
+                try e.entryKindError(kind, "The entry kind `{s}` is declared more than once. A Program type identifies one entry kind.", .{row.programType});
+                continue;
+            }
+            const program_type = program_iface.types[@backingInt(type_index)];
+            if (program_type.kind == .alias) {
+                try e.entryKindError(kind, "The entry kind `{s}` names an alias. Name its nominal Program type instead.", .{row.programType});
+                continue;
+            }
+            for (row.parameters, 0..) |parameter, parameter_index| {
+                if (parameter.index >= program_type.arity or (!std.mem.eql(u8, parameter.role, "wire") and !std.mem.eql(u8, parameter.role, "local"))) {
+                    try e.entryKindError(kind, "The entry kind `{s}` has an invalid type-parameter role at index {d}.", .{ row.programType, parameter.index });
+                    continue;
+                }
+                for (parameter.path) |field| if (field.len == 0) {
+                    try e.entryKindError(kind, "The entry kind `{s}` has an empty field in a type-role path.", .{row.programType});
+                };
+                for (row.parameters[0..parameter_index]) |previous| {
+                    if (previous.index != parameter.index) continue;
+                    const prefix = @min(previous.path.len, parameter.path.len);
+                    var overlap = true;
+                    for (previous.path[0..prefix], parameter.path[0..prefix]) |a, b| overlap = overlap and std.mem.eql(u8, a, b);
+                    if (overlap) try e.entryKindError(kind, "The entry kind `{s}` has overlapping type roles at index {d}.", .{ row.programType, parameter.index });
+                }
+            }
+            for (0..program_type.arity) |parameter_index| {
+                const covered = for (row.parameters) |parameter| {
+                    if (parameter.index == parameter_index) break true;
+                } else false;
+                if (!covered) try e.entryKindError(kind, "The entry kind `{s}` has no role for type parameter {d}.", .{ row.programType, parameter_index });
+            }
+            var constructors: std.ArrayList(EntryPlan.Constructor) = .empty;
+            for (row.constructors) |constructor| {
+                const protocol_known = std.mem.eql(u8, constructor.callbackProtocol, "handlers") or std.mem.eql(u8, constructor.callbackProtocol, "machine");
+                const value = try e.entryKindValue(constructor.name);
+                if (!protocol_known or value == null) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` must resolve to a public beni function and name callbackProtocol handlers or machine.", .{constructor.name});
+                    continue;
+                }
+                const root = try e.expandRuntimeType(.{ .iface = value.?.iface, .at = value.?.scheme.body });
+                const term = root.iface.term(root.at);
+                if (term.tag != .func or constructor.parameter >= root.iface.range(term.lhs).len or
+                    !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings }, row.programType, program_type.arity, null))
+                {
+                    try e.entryKindError(kind, "The entry constructor `{s}` has an invalid callback parameter index or Program result.", .{constructor.name});
+                    continue;
+                }
+                if (!try e.entryRolesFit(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings }, row)) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` has a Program result that does not contain the declared type-role paths.", .{constructor.name});
+                }
+                const callback = root.iface.range(term.lhs)[constructor.parameter];
+                if (!try e.checkConstructorRecord(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(callback)), .bindings = root.bindings }, std.mem.eql(u8, constructor.callbackProtocol, "machine"))) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` needs a closed `{s}` callback record with the protocol's field arities.", .{ constructor.name, constructor.callbackProtocol });
+                }
+                try constructors.append(e.scratch, .{
+                    .value = .{ .module = value.?.module, .decl = value.?.decl, .scheme = value.?.scheme_index },
+                    .parameter = constructor.parameter,
+                    .protocol = std.meta.stringToEnum(EntryPlan.Protocol, constructor.callbackProtocol).?,
+                });
+            }
+            var launches: std.ArrayList(EntryPlan.Launch) = .empty;
+            for (row.launches) |launch| {
+                const value = try e.entryKindValue(launch.name) orelse {
+                    try e.entryKindError(kind, "I cannot find the public beni entry launch `{s}`.", .{launch.name});
+                    continue;
+                };
+                const root = try e.expandRuntimeType(.{ .iface = value.iface, .at = value.scheme.body });
+                const term = root.iface.term(root.at);
+                const args = if (term.tag == .func) root.iface.range(term.lhs) else &.{};
+                if (launch.parameter >= args.len or
+                    !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[launch.parameter])), .bindings = root.bindings }, row.programType, program_type.arity, null))
+                {
+                    try e.entryKindError(kind, "The entry launch `{s}` has an invalid Program parameter index or type.", .{launch.name});
+                    continue;
+                }
+                if (!try e.entryRolesFit(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[launch.parameter])), .bindings = root.bindings }, row)) {
+                    try e.entryKindError(kind, "The entry launch `{s}` has a Program parameter that does not contain the declared type-role paths.", .{launch.name});
+                }
+                try launches.append(e.scratch, .{
+                    .value = .{ .module = value.module, .decl = value.decl, .scheme = value.scheme_index },
+                    .parameter = launch.parameter,
+                });
+            }
+            const run_name = try std.fmt.allocPrint(e.scratch, "{s}.run", .{row.runtime});
+            const runner = try e.entryKindValue(run_name) orelse {
+                try e.entryKindError(kind, "The entry kind `{s}` needs runtime module `{s}` with a public beni `run` value.", .{ row.programType, row.runtime });
+                continue;
+            };
+            const file = e.graph().moduleFile(runner.module);
+            if (file.int() >= e.session.file_layers.len or e.session.file_layers[file.int()] != kind.layer) {
+                try e.entryKindError(kind, "The runtime module `{s}` must belong to the platform package declaring entry kind `{s}`.", .{ row.runtime, row.programType });
+                continue;
+            }
+            const root = try e.expandRuntimeType(.{ .iface = runner.iface, .at = runner.scheme.body });
+            const term = root.iface.term(root.at);
+            if (term.tag != .func) {
+                try e.report(.invalid_entry_kind, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` must take exactly one `{s}` and return `⊤`, with no evidence parameters or specialized type arguments.", .{ row.runtime, row.programType });
+                continue;
+            }
+            const args = root.iface.range(term.lhs);
+            const result = try e.expandRuntimeType(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings });
+            const convention = Convention.ofDecl(e.dispatchOf(runner.module), e.bir(runner.module), runner.decl);
+            if (term.tag != .func or args.len != 1 or convention.arity != 1 or convention.evidence != 0 or result.iface.term(result.at).tag != .unit or
+                !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[0])), .bindings = root.bindings }, row.programType, program_type.arity, runner.scheme))
+            {
+                try e.report(.invalid_entry_kind, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` must take exactly one `{s}` and return `⊤`, with no evidence parameters or specialized type arguments.", .{ row.runtime, row.programType });
+                continue;
+            }
+            var may_suspend = false;
+            if (runner.iface.effectBlock(runner.scheme)) |effects| {
+                var sites = effects.sites();
+                while (sites.next()) |site| {
+                    if (site.root != 0) continue;
+                    // Alias expansions still name run's own arrow. Structural
+                    // steps enter a parameter/result or another nested value.
+                    const own_arrow = for (site.steps) |step| {
+                        if (Interface.EffectBlock.stepKind(step) != @backingInt(@import("../check/Walk.zig").StepKind.expansion) or
+                            Interface.EffectBlock.stepIndex(step) != 0) break false;
+                    } else true;
+                    if (!own_arrow) continue;
+                    const class = effects.class(site.class);
+                    const effect_dependency = for (class.deps) |dependency| {
+                        if (dependency & Interface.EffectBlock.realm_only == 0) break true;
+                    } else false;
+                    may_suspend = may_suspend or class.rung == 2 or (effect_dependency and !class.sync);
+                }
+            }
+            if (may_suspend) {
+                try e.report(.entry_runtime_suspends, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` may suspend, but the generated entry calls it synchronously. Install listeners, start an owned root fiber, then return; initialization may suspend inside that fiber.", .{row.runtime});
+                continue;
+            }
+            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+                if (e.exportsProgram()) {
+                    try e.entryKindError(kind, "The generic entry runtime for `{s}` returns `⊤`, so it cannot also supply the result required by exports program.", .{row.programType});
+                    continue;
+                }
+            };
+            if (e.diagnostics.items.len != errors_before) continue;
+            const constructor_start: u32 = @intCast(plan.constructors.len);
+            for (constructors.items) |constructor| try plan.constructors.append(e.gpa, constructor);
+            const launch_start: u32 = @intCast(plan.launches.len);
+            for (launches.items) |launch| try plan.launches.append(e.gpa, launch);
+            const role_start: u32 = @intCast(plan.roles.len);
+            for (row.parameters) |parameter| {
+                const symbols = try e.scratch.alloc(InternPool.Symbol, parameter.path.len);
+                for (parameter.path, symbols) |field, *symbol| symbol.* = try e.session.interner.getOrPut(e.gpa, field);
+                try plan.appendRole(e.gpa, parameter.index, std.meta.stringToEnum(EntryPlan.RoleKind, parameter.role).?, symbols);
+            }
+            const resolved = try plan.appendKind(e.gpa, .{
+                .program = e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(row.programType)), program_name),
+                .module = program_module,
+                .interface_type = type_index,
+                .arity = program_type.arity,
+                .realm = realm.?,
+                .layer = kind.layer,
+                .runtime = .{ .module = runner.module, .decl = runner.decl, .scheme = runner.scheme_index },
+                .constructors = .{ .start = constructor_start, .len = @intCast(constructors.items.len) },
+                .launches = .{ .start = launch_start, .len = @intCast(launches.items.len) },
+                .roles = .{ .start = role_start, .len = @intCast(row.parameters.len) },
+            });
+            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+                plan.selected = resolved;
+            };
+        }
+        if (!e.options.library and !e.hasErrors() and e.options.platform.entry_kinds.len != 0 and e.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
+            if (e.options.platform.program) |program| try e.reportInFile(.invalid_entry_kind, .{ .path = try e.manifestPath() }, "The platform has no runtime file or entryKinds row for its top Program `{s}`.", .{program});
+        }
+        if (e.hasErrors()) plan.reset() else plan.finish();
+    }
+
     // ---- boundary.md §9.2: the runtime module -----------------------------
 
     /// The runtime module the chain names, or null (`boundary.md` §9.2, *A
     /// runtime module*).
     fn markupModule(e: *Emitter) !?Graph.Index {
-        const name = e.options.platform.markup_module orelse return null;
+        const name = e.runtimeModuleName() orelse return null;
         return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
     }
 
     /// `beni:<Module>`, the specifier the markup runtime imports it by.
     fn programSpecifier(e: *Emitter) !?[]const u8 {
-        const name = e.options.platform.markup_module orelse return null;
+        const name = e.runtimeModuleName() orelse return null;
         return try std.fmt.allocPrint(e.scratch, "beni:{s}", .{name});
     }
 
@@ -2331,16 +3366,26 @@ const Emitter = struct {
     /// 4 counts a sibling's. A markup primitive is supplied likewise, and
     /// its uses then read the module's value (`Lower.primitiveName`).
     fn takeSupplied(e: *Emitter, expected: *std.ArrayList(Expected), lowering_name: []const u8) !void {
-        const name = e.options.platform.markup_module orelse return;
+        const name = e.runtimeModuleName() orelse return;
         const module = try e.markupModule() orelse {
-            try e.reportInFile(
+            if (e.options.platform.markup_module != null) try e.reportInFile(
                 .foreign_sibling_missing,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try e.runtimeModuleManifest() },
                 \\I cannot find the runtime module `{s}`.
                 \\
                 \\A platform's manifest may name, in `"markup"` `"module"`, a beni module of its
                 \\own whose `pub` values stand in for markup runtime exports
                 \\(`docs/design/boundary.md` §9.2), and this platform has no module of that name.
+            ,
+                .{name},
+            ) else try e.reportInFile(
+                .foreign_sibling_missing,
+                .{ .path = try e.runtimeModuleManifest() },
+                \\I cannot find the runtime module `{s}`.
+                \\
+                \\A platform's manifest may name, in a top-level `"module"`, a beni module of its
+                \\own whose `pub` value `run` the entry file hands `main` to
+                \\(`docs/design/boundary.md` §5.2), and this platform has no module of that name.
             ,
                 .{name},
             );
@@ -2440,8 +3485,10 @@ const Emitter = struct {
     /// module*), coarse: every export it supplies and every value the file
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
-        const module = e.runtime_module orelse return &.{};
         var out: std.ArrayList(Reach.Node) = .empty;
+        try e.workerHostRoots(&out);
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtime_module orelse return out.items;
         for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
         for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
@@ -2453,7 +3500,10 @@ const Emitter = struct {
     /// a lowering imported, `run` and `start` where the entry file calls
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
-        const module = e.runtime_module orelse return &.{};
+        var out: std.ArrayList(Reach.Node) = .empty;
+        try e.workerHostRoots(&out);
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
         try names.appendSlice(e.scratch, e.module_uses.items);
         if (entry != null) {
@@ -2473,7 +3523,7 @@ const Emitter = struct {
         const uses = try e.programUses(entry);
         try names.appendSlice(e.scratch, uses);
         e.program_uses = uses;
-        var out: std.ArrayList(Reach.Node) = .empty;
+
         for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
         };
@@ -2529,20 +3579,24 @@ const Emitter = struct {
     /// each `import { … } from "beni:<Module>"` an import of the names the
     /// kept part of the file mentions, spelled as the build spells them,
     /// from the module's file (`backend.md` §15.1, *The runtime module*).
-    fn rewriteProgramImports(e: *Emitter, bytes: []const u8, out: []const u8) ![]const u8 {
-        const spec = try e.programSpecifier() orelse return bytes;
-        const module = e.runtime_module orelse return bytes;
+    /// The edits go with the text, for its map (§11.2, *Hand-written
+    /// JavaScript*, amended 2026-11-04).
+    fn rewriteProgramImports(e: *Emitter, bytes: []const u8, out: []const u8) !HandText {
+        const spec = try e.programSpecifier() orelse return .{ .text = bytes };
+        const module = e.runtime_module orelse return .{ .text = bytes };
         const tokens = Minify.tokenize(e.scratch, bytes) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
-            error.Unsupported => return bytes,
+            error.Unsupported => return .{ .text = bytes },
         };
         const imports = try Minify.programImports(e.scratch, bytes, tokens, spec);
-        if (imports.len == 0) return bytes;
+        if (imports.len == 0) return .{ .text = bytes };
         const target = try relativeSpecifier(e.scratch, out, try e.outputPath(module));
         var text: std.ArrayList(u8) = .empty;
+        var edits: std.ArrayList(HandText.Edit) = .empty;
         var at: usize = 0;
         for (imports) |imp| {
             try text.appendSlice(e.scratch, bytes[at..imp.bytes_start]);
+            const start = text.items.len;
             var first = true;
             for (imp.names) |n| {
                 const used = for (e.program_uses) |u| {
@@ -2554,10 +3608,11 @@ const Emitter = struct {
                 try text.print(e.scratch, "{s} as {s}", .{ try e.moduleSpelling(module, n.name), n.name });
             }
             if (!first) try text.print(e.scratch, " }} from \"{s}\";", .{target});
+            try edits.append(e.scratch, .{ .text_start = @intCast(start), .text_end = @intCast(text.items.len), .file_start = imp.bytes_start, .file_end = imp.bytes_end });
             at = imp.bytes_end;
         }
         try text.appendSlice(e.scratch, bytes[at..]);
-        return text.items;
+        return .{ .text = text.items, .file = bytes, .edits = edits.items };
     }
 
     fn dispatchOf(e: *Emitter, m: Graph.Index) *const Dispatch {
@@ -2689,9 +3744,22 @@ const Emitter = struct {
         ,
             .{try e.writtenProgramName(entry.module)},
         );
+        const program = e.options.platform.program orelse "";
+        const expected = try e.platformProgramType(program);
         if (e.expandedTypeName(entry.module, b, annotation, null, 0)) |t| {
-            if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program orelse "")) and
-                std.mem.eql(u8, t.name, shortName(e.options.platform.program orelse ""))) return;
+            if (expected != .none and t.id == expected) return;
+            if (expected != .none and
+                std.mem.eql(u8, t.module, e.session.interner.slice(e.session.checked.types.entry(expected).module_name)) and
+                std.mem.eql(u8, t.name, e.session.interner.slice(e.session.checked.types.entry(expected).name)))
+            {
+                return e.report(.main_not_program, file, d.name_token,
+                    \\`main` must use the platform's `{s}`.
+                    \\
+                    \\This annotation names `{s}` from a different package. Matching names
+                    \\are not the same nominal type. Rename the local module so it does not shadow
+                    \\the platform module.
+                , .{ try e.writtenProgramName(entry.module), e.writtenTypeName(entry.module, t) });
+            }
         }
         // The message names the type as it was WRITTEN, alias and all: that
         // is the name the reader can find above the definition.
@@ -2713,8 +3781,27 @@ const Emitter = struct {
         );
     }
 
+    /// Resolve the manifest's platform-owned type through the same aliases as
+    /// the entry annotation. A missing type has no identity to impersonate.
+    fn platformProgramType(e: *Emitter, program: []const u8) !CheckedTypes.TypeId {
+        const types = &e.session.checked.types;
+        const id = types.find(
+            e.graph(),
+            .platform,
+            try e.session.interner.getOrPut(e.gpa, platformModule(program)),
+            try e.session.interner.getOrPut(e.gpa, shortName(program)),
+        );
+        if (id == .none) return .none;
+        const named = types.entry(id);
+        if (named.kind != .alias) return id;
+        const b = e.bir(named.module);
+        const body = b.decl(named.decl).annotation.unwrap() orelse return .none;
+        const expanded = e.expandedTypeName(named.module, b, body, null, 0) orelse return .none;
+        return expanded.id;
+    }
+
     /// A resolved type reference, split into the two halves a message needs.
-    const TypeRef = struct { module: []const u8, name: []const u8 };
+    const TypeRef = struct { module: []const u8, name: []const u8, id: CheckedTypes.TypeId = .none };
 
     /// An alias being looked through by `expandedTypeName`: its parameters,
     /// and the arguments of the use being expanded, which are instructions
@@ -2736,8 +3823,9 @@ const Emitter = struct {
     /// is looked through (`boundary.md` §5: an alias is the same type, so
     /// `main : App` with `type alias App = Node.Program` is a program), or
     /// null for anything that is not a named type — a function, a record,
-    /// an unbound parameter. An applied nominal type is null too: the
-    /// platform's `Program` takes no arguments.
+    /// an unbound parameter. An applied nominal Program is accepted when
+    /// entryKinds supplies its checked generic runtime contract; legacy
+    /// platform program declarations retain their zero-argument contract.
     fn expandedTypeName(
         e: *Emitter,
         module: Graph.Index,
@@ -2772,10 +3860,11 @@ const Emitter = struct {
         if (id == .none) return null;
         const named = types.entry(id);
         if (named.kind != .alias) {
-            if (args.len != 0) return null;
+            if (args.len != 0 and !e.genericRuntimeSelected()) return null;
             return .{
                 .module = e.session.interner.slice(named.module_name),
                 .name = e.session.interner.slice(named.name),
+                .id = id,
             };
         }
         const alias_bir = e.bir(named.module);
@@ -2983,7 +4072,7 @@ const Emitter = struct {
         const sg = if (e.schema_graph) |*g| g else return;
         // A size optimisation, priced on what ships: a development build
         // writes every branch in place, as it did.
-        if (e.options.schema_library or !e.options.release) return;
+        if (!e.options.release) return;
         sg.share = try SchemaShare.decide(e.scratch, sg, &e.live);
         e.share_roots = try SchemaShare.roots(e.scratch, sg, sg.share);
         if (e.share_roots.len == 0) return;
@@ -2997,7 +4086,7 @@ const Emitter = struct {
     /// more walk settles it.
     fn reshareValidators(e: *Emitter) !bool {
         const sg = if (e.schema_graph) |*g| g else return false;
-        if (e.options.schema_library or !e.options.release) return false;
+        if (!e.options.release) return false;
         const again = try SchemaShare.decide(e.scratch, sg, &e.live);
         if (again.set.eql(sg.share.set)) return false;
         sg.share = again;
@@ -4793,6 +5882,72 @@ const Emitter = struct {
     /// name, and a build that reaches `Debug` — only under the harness's
     /// `--allow-debug` — prints field names and tags: neither renames a
     /// field or gives a type integer tags.
+    /// Union the real entry boundaries before assigning the wire palette.
+    /// Complete solved row facts supply interference, including private fields
+    /// that will be shortened independently in each projection.
+    fn planWireNames(e: *Emitter) !void {
+        if (!e.options.release or e.worker_entries.len == 0) return;
+        var wire_fields: std.StringArrayHashMapUnmanaged(void) = .empty;
+        for (e.worker_entries) |descriptor| {
+            const plan = descriptor.wire orelse continue;
+            const kind = e.options.platform.entry_kinds[@backingInt(descriptor.kind)].definition;
+            for (kind.parameters) |parameter| {
+                if (!std.mem.eql(u8, parameter.role, "wire")) continue;
+                for (parameter.path) |field| try wire_fields.put(e.scratch, field, {});
+            }
+            for (plan.nodes) |node| {
+                if (node.kind != .record and node.kind != .open_record) continue;
+                for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
+                    const label = edge.label.unwrap() orelse continue;
+                    try wire_fields.put(e.scratch, try e.scratch.dupe(u8, e.session.interner.slice(label)), {});
+                }
+            }
+        }
+        if (wire_fields.count() == 0) return;
+        var pinned: std.StringHashMapUnmanaged(void) = .empty;
+        var plain: std.StringHashMapUnmanaged(void) = .empty;
+        // Constructor slots and representation/runtime properties are plain
+        // JavaScript properties, not record fields.
+        for ("abcdefghijklmnopqrstuvwxyz") |ch| {
+            const text = try e.scratch.dupe(u8, &.{ch});
+            try plain.put(e.scratch, text, {});
+        }
+        for ([_][]const u8{ "$", "$wire", "$plain", "$b", "$o", "length", "id", "url" }) |text| try plain.put(e.scratch, text, {});
+        try e.closeBoundary();
+        if (e.boundary) |boundary| {
+            var it = boundary.pinned.keyIterator();
+            while (it.next()) |text| try pinned.put(e.scratch, text.*, {});
+        } else for (wire_fields.keys()) |text| try pinned.put(e.scratch, text, {});
+        for (e.worker_entries) |descriptor| {
+            var projection = try e.workerProjection(descriptor);
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            try projection.eliminate(.{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) });
+            try projection.closeBoundary();
+            if (projection.boundary) |boundary| {
+                var it = boundary.pinned.keyIterator();
+                while (it.next()) |text| try pinned.put(e.scratch, text.*, {});
+            } else for (wire_fields.keys()) |text| try pinned.put(e.scratch, text, {});
+            projection.diagnostics.deinit(e.gpa);
+        }
+        var it = pinned.keyIterator();
+        while (it.next()) |text| try plain.put(e.scratch, text.*, {});
+        const counts = try e.scratch.alloc(Fields.Count, wire_fields.count());
+        for (counts, wire_fields.keys()) |*count, text| count.* = .{ .text = text, .uses = 1 };
+        var conflicts = try e.fieldConflicts(counts);
+        const table = try e.scratch.create(Fields.Table);
+        table.* = try Fields.assignReserved(e.scratch, counts, &pinned, &plain, &conflicts, &plain);
+        e.wire_names = table;
+    }
+
+    /// A JavaScript platform runtime receives the manifest's Program in its
+    /// development representation, even when the app has no worker entries.
+    /// Keep the same seed when specialization refines the field boundary.
+    fn jsRuntimeProgramType(e: *Emitter) !Dispatch.TypeId {
+        if (e.options.platform.runtime == null) return .none;
+        const qualified = e.options.platform.program orelse return .none;
+        return e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(qualified)), try e.session.interner.getOrPut(e.gpa, shortName(qualified)));
+    }
+
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
         if (!e.options.release or e.options.library or e.reachesDebug()) return;
@@ -4810,7 +5965,10 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
+        const runtime_types = [_]Dispatch.TypeId{try e.jsRuntimeProgramType()};
         e.boundary = try Fields.close(.{
+            .observed_types = &runtime_types,
+
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,
@@ -4820,6 +5978,10 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .seeds = e.fuzz_seeds,
         });
+        if (e.boundary) |*boundary| for (e.worker_entries) |descriptor| {
+            const plan = descriptor.wire orelse continue;
+            for (plan.types) |id| if (id != .none and id.int() < boundary.integer_tags.bit_length) boundary.integer_tags.unset(id.int());
+        };
     }
 
     /// `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type
@@ -4997,7 +6159,29 @@ const Emitter = struct {
         for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
         var conflicts = try e.fieldConflicts(counts);
         for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
-        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
+        var reserved: std.StringHashMapUnmanaged(void) = .empty;
+        // Reserve the wire palette before assigning entry-local names. A
+        // page-private field can never steal a wire spelling in this entry.
+        if (e.wire_names) |wire| {
+            var kept = wire.kept.keyIterator();
+            while (kept.next()) |text| {
+                try boundary.pinned.put(e.scratch, text.*, {});
+                try reserved.put(e.scratch, text.*, {});
+            }
+            var names = wire.map.iterator();
+            while (names.next()) |entry| {
+                try boundary.pinned.put(e.scratch, entry.key_ptr.*, {});
+                try reserved.put(e.scratch, entry.value_ptr.*, {});
+            }
+        }
+        e.field_table = try Fields.assignReserved(e.scratch, counts, &boundary.pinned, &plain, &conflicts, &reserved);
+        if (e.wire_names) |wire| {
+            var names = wire.map.iterator();
+            while (names.next()) |entry| {
+                _ = e.field_table.?.kept.remove(entry.key_ptr.*);
+                try e.field_table.?.map.put(e.scratch, entry.key_ptr.*, entry.value_ptr.*);
+            }
+        }
     }
 
     /// `browser-inline.md` §8.4, amended 2026-10-24: a route whose function
@@ -5023,7 +6207,7 @@ const Emitter = struct {
             for (@constCast(prog.routes.rows)) |*row| {
                 if (row.decode == Writes.none) continue;
                 const fm: Graph.Index = @fromBackingInt(@intCast(row.fn_module));
-                const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, false, true);
+                const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, true);
                 const k = sites.shapeCodecOfCall(row.decode) orelse continue;
                 if (row.case_form and !caseRowFits(in, sg, birs[row.fn_module], fm, k, row)) continue;
                 row.shape = k;
@@ -5093,7 +6277,16 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
+        // Entry roles are bidirectional boundary types: their constructors
+        // may arrive from a peer even when this projection never builds one.
+        var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
+        for (e.worker_candidates) |descriptor| {
+            const wire = descriptor.wire orelse continue;
+            try wire_types.appendSlice(e.scratch, wire.types);
+        }
         var in: Reach.Input = .{
+            .entry_window = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library),
+            .wire_types = wire_types.items,
             .graph = e.graph(),
             .store = &e.session.store,
             .birs = birs,
@@ -5107,8 +6300,8 @@ const Emitter = struct {
             .release = e.options.release,
             .vocabulary = e.graph().markup.vocabulary,
             .extra_roots = e.extra_roots,
+            .deferred = e.deferred,
             .plans = e.session.checked.plans,
-            .schema_library = e.options.schema_library,
             .test_hooks = e.options.test_hooks,
             .forwarding_foreigns = e.forwarding_foreigns,
             .cuts = e.cuts,
@@ -5133,7 +6326,7 @@ const Emitter = struct {
         // core, under its module key and the two options they depend on
         // (`EdgePack`; `fast-compiler.md` §8, *The checked core, embedded*).
         const rows = try e.scratch.alloc(?[]const u8, count);
-        const options: EdgePack.Options = .{ .release = e.options.release, .schema_library = e.options.schema_library };
+        const options: EdgePack.Options = .{ .release = e.options.release };
         var built_insts: usize = 0;
         for (rows, birs, 0..) |*row, b, i| {
             const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
@@ -5141,7 +6334,9 @@ const Emitter = struct {
             // No packed row holds `--test-hooks`: that build makes every
             // edge list afresh (`backend.md` §4, *`Js.testHooks` is the
             // build's test hooks*).
-            if (!e.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
+            // Embedded edge rows were made without a concrete entry realm.
+            const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, b, &e.session.interner);
+            if (!realm_sensitive and !e.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
                 row.* = e.session.pack.find(.edges, EdgePack.key(e.session.keys.of(m), options));
             }
             if (row.* == null) built_insts += b.insts.len;
@@ -5151,12 +6346,12 @@ const Emitter = struct {
         // runs over the modules whose edges are built here, in module order,
         // serially, before any edge list is made, so it is input-derived
         // (CLAUDE.md rule 5).
-        if (!e.options.schema_library) {
+        {
             var runs: usize = 0;
             for (rows, birs, 0..) |row, b, i| {
                 if (row != null) continue;
                 const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, false, true);
+                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, true);
                 runs += SchemaValid.shapeRunCount(s);
             }
             in.schema_shapes = e.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
@@ -5558,6 +6753,7 @@ const Emitter = struct {
                 const source_path = e.session.store.path(e.graph().moduleFile(m));
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
+                slot.worker_descriptors = try e.descriptorsFor(m);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
                 if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
@@ -5567,7 +6763,7 @@ const Emitter = struct {
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
                     .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
-                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode(), .address = e.options.address },
+                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode(), .address = e.options.address, .trusted_types = e.options.trusted_types },
                     .module = e.runtime_module,
                     .supplied = e.supplied,
                 };
@@ -5696,6 +6892,7 @@ const Emitter = struct {
                 if (!e.options.library) try e.markImported(slots, todo.items, entry);
             }
             e.hoisted = hoist != null;
+            if (lowered_clean) try e.markHandWritten(slots, todo.items);
             if (hoist) |*h| e.bare_blocked = try e.bareBlocked(h);
             try e.assignFields(slots, todo.items);
             // A hoisted build writes only the modules its one file holds:
@@ -5767,6 +6964,7 @@ const Emitter = struct {
     /// One module's way from `Bir` to bytes. Written by the one worker that
     /// took the module, read by the calling thread once every worker is done.
     const ModuleSlot = struct {
+        worker_descriptors: []const WorkerEntry.Descriptor = &.{},
         specifiers: []const []const u8 = &.{},
         sibling: []const u8 = "",
         derived_runtime: []const u8 = "",
@@ -5833,6 +7031,9 @@ const Emitter = struct {
         /// In the printing worker's `kept` arena.
         marks: []const SourceMap.Mapping = &.{},
         mark_names: []const []const u8 = &.{},
+        /// The module's `JsIr.far`, for the rows `marks` name: the IR is
+        /// gone when the one file is linked.
+        mark_far: []const JsIr.FarPos = &.{},
         /// The lowering is the first lowering's, taken as it is (#608):
         /// `Task.lower` does not lower the module again.
         adopted: bool = false,
@@ -6078,14 +7279,24 @@ const Emitter = struct {
             // module, if it has one (`backend.md` §9, *The join*). A
             // release build reads no row: its bytes come from the release
             // optimiser, not from development text.
+            var event_constructors: std.ArrayList(u32) = .empty;
+            if (e.worker_events != null and e.worker_kind != .none) {
+                const range = e.session.entry_plan.kinds.get(@backingInt(e.worker_kind)).constructors;
+                for (range.start..range.start + range.len) |ci| {
+                    const ctor = e.session.entry_plan.constructors.get(ci);
+                    if (ctor.value.module == m) try event_constructors.append(scratch, ctor.value.decl);
+                }
+            }
             var reuse: ?*const EmitPack.Row = null;
             // Walk 1 is untouched (`lower_only`): its one purpose is what
             // the module uses of the runtime module, and it prints nothing.
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
-                const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
+            // A guarded module must be lowered for this entry, not from the unknown-realm pack.
+            const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, e.bir(m), &e.session.interner);
+            if (!realm_sensitive and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+                const key = EmitPack.key(e.session.keys.of(m), .{});
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
                         const row = try scratch.create(EmitPack.Row);
@@ -6095,7 +7306,18 @@ const Emitter = struct {
                 }
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
+                .entry_window = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library),
+                .encode_worker_private = e.privateWorkerModule(m),
+                .worker_events = e.worker_events,
+                .worker_event_constructors = event_constructors.items,
                 .bir = e.bir(m),
+                .worker_host = e.workerHostModule() == m,
+                .worker_host_client = (e.workerHostClient()) == m,
+                .worker_kinds = e.options.platform.entry_kinds,
+                .worker_wire = &e.session.checked.type_keys[m.int()].wire,
+                .worker_wire_direct_calls = if (e.worker_wire_direct_module == m) e.worker_wire_direct_calls else &.{},
+                .worker_descriptors = slot.worker_descriptors,
+                .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
@@ -6112,6 +7334,13 @@ const Emitter = struct {
                     table.clean = table.clean and e.session.enforce_ownership;
                     break :own table;
                 },
+                // v2's channel (`own2/Hoists.zig`): the list writes v2
+                // accepted, in a build that enforces, for the sanitiser.
+                .list_writes = if (e.session.options.ownership_v2 and e.session.enforce_ownership and m.int() < e.session.checked.channels.len)
+                    &e.session.checked.channels[m.int()]
+                else
+                    null,
+                .callers_checked = e.v2_whole,
                 .types = &e.session.checked.types,
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,
@@ -6131,7 +7360,6 @@ const Emitter = struct {
                 .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
-                .schema_library = e.options.schema_library,
                 .schema_shapes = e.reach.schema_shapes and m.int() < e.edges_read.len and !e.edges_read[m.int()],
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,
@@ -6251,11 +7479,14 @@ const Emitter = struct {
                 .unobserved = slot.unobserved,
                 .rename = &renamer,
                 .compact = true,
+                .artifact_path = if (e.worker_entries.len != 0) try std.fmt.allocPrint(scratch, "{s}{s}", .{ e.output_prefix, if (e.hoisted) e.options.platform.entry else try e.outputPath(@fromBackingInt(@intCast(i))) }) else "",
                 .imported = if (e.options.library or e.hoisted) null else &e.imported,
+                .hand_written = &e.hand_written,
                 .hoisted = e.hoisted,
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
                 .page = e.options.platform.page,
+                .realm = e.options.platform.entry_host,
                 .fields = if (e.field_table) |*table| table else null,
                 .marks = if (mapped) &marks else null,
                 .footer = if (mapped and !e.hoisted) slot.map_footer else "",
@@ -6269,9 +7500,18 @@ const Emitter = struct {
                 const texts = try kept.alloc([]const u8, marks.names.items.len);
                 for (texts, marks.names.items) |*text, symbol| text.* = try kept.dupe(u8, names.text(symbol));
                 slot.mark_names = texts;
+                slot.mark_far = try kept.dupe(JsIr.FarPos, lowered.ir.far);
                 return;
             }
             const store = &e.session.store;
+            // §11.2, *Deferred* item 2 (amended 2026-11-04): a body copied
+            // from another module maps to that module's source, one more
+            // entry of the map's `sources` after the module's own.
+            var others: std.ArrayList(SourceMap.Source) = .empty;
+            var far_sources: FarSources = .{ .alloc = scratch, .sources = &others, .base = 1, .of = try scratch.alloc(u32, e.graph().count()), .map_file = slot.map_file };
+            @memset(far_sources.of, SourceMap.Stretch.unmapped);
+            far_sources.of[i] = 0;
+            const far = try e.farRows(&far_sources, lowered.ir.far, marks.list.items);
             slot.map = try SourceMap.write(e.gpa, scratch, .{
                 .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
                 .source_url = slot.source_url,
@@ -6282,6 +7522,8 @@ const Emitter = struct {
                 .names = marks.names.items,
                 .name_text = names.forMap(),
                 .end_line = true,
+                .others = others.items,
+                .far = far,
             });
         }
     };
@@ -6292,6 +7534,7 @@ const Emitter = struct {
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
     fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry_or_library: ?Entry, one_scope: bool) !void {
+        // Worker target paths remain symbolic until final artifact printing (#1627).
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
@@ -6355,6 +7598,7 @@ const Emitter = struct {
                 .prop = prop,
                 .tables = tables,
                 .self = e.graph().moduleName(@fromBackingInt(@intCast(i))).toOptional(),
+                .id = @intCast(i),
             });
             try spec_slots.append(e.scratch, i);
         }
@@ -6369,6 +7613,7 @@ const Emitter = struct {
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
+            if (e.workerHostModule() == module) try names.appendSlice(e.scratch, &.{ "stop", "stopped" });
             for ([_][]const u8{ "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
@@ -6376,6 +7621,10 @@ const Emitter = struct {
                 if (ids.get(Rename.Globals.key(try e.moduleName(module, n)))) |g| try escaping.append(e.scratch, g);
             }
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
+        }
+        if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
+        if (e.workerHostClient()) |client| {
+            if (ids.get(Rename.Globals.key(try e.moduleName(client, "installHostStop")))) |g| try escaping.append(e.scratch, g);
         }
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
@@ -6407,7 +7656,11 @@ const Emitter = struct {
             }
         }
         var entry_call: ?Spec.Entry = null;
-        if (run_id != null and main_id != null) {
+        // Under `"exports": "program"` the entry file reads `run`'s result
+        // (`boundary.md` §9.12 (c)), which the pass cannot see, so both
+        // names escape as at any unknown call (backend.md §9, *The entry's
+        // call is a call*, amended 2026-11-04).
+        if (run_id != null and main_id != null and !e.exportsProgram()) {
             entry_call = .{ .callee = run_id.?, .args = try e.scratch.dupe(u32, &.{main_id.?}) };
         } else {
             if (run_id) |g| try escaping.append(e.scratch, g);
@@ -6459,6 +7712,7 @@ const Emitter = struct {
         std.mem.sortUnstable(Spec.FieldKey, field_keys.items, {}, Spec.FieldKey.lessThan);
         var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
+            .fold_worker_metadata = e.worker_runtime != null,
             .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
             .modules = modules.items,
             .globals = ids.count(),
@@ -6811,7 +8065,9 @@ const Emitter = struct {
             bb.* = e.bir(m);
             dt.* = e.dispatchOf(m);
         }
+        const runtime_types = [_]Dispatch.TypeId{try e.jsRuntimeProgramType()};
         const refined = try Fields.close(.{
+            .observed_types = &runtime_types,
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,
@@ -7050,6 +8306,59 @@ const Emitter = struct {
     // one entry, and the three steps take the pieces they join as a list so
     // that a chunker can hand them a subset.
 
+    /// The text of a hand-written file that the build writes, and where it
+    /// came from: the file as written, or that file with its `import`s of
+    /// the runtime module rewritten (`rewriteProgramImports`).
+    const HandText = struct {
+        text: []const u8,
+        /// The file as written, when `text` is not it.
+        file: ?[]const u8 = null,
+        /// Each rewritten `import`, in order: its bytes in `text` and in
+        /// `file`.
+        edits: []const Edit = &.{},
+        /// Whether a person wrote it, so that a map can name it
+        /// (`HandFile.mapped`).
+        mapped: bool = true,
+
+        const Edit = struct { text_start: u32, text_end: u32, file_start: u32, file_end: u32 };
+
+        /// A byte of `text` as a byte of the file as written (§11.2,
+        /// *Hand-written JavaScript*, amended 2026-11-04): past an edit it
+        /// moves by the difference of the two lengths, and inside one it is
+        /// the `import`'s first byte.
+        fn fileOffset(h: HandText, at: u32) u32 {
+            var moved = at;
+            for (h.edits) |edit| {
+                if (at < edit.text_start) break;
+                moved = if (at < edit.text_end) edit.file_start else at - edit.text_end + edit.file_end;
+            }
+            return moved;
+        }
+    };
+
+    /// A hand-written file's line table for its map (§11.2, *Hand-written
+    /// JavaScript*, amended 2026-11-04): a line ends at `\n`, at `\r\n` and
+    /// at a `\r` alone, as an editor counts them.
+    fn handLineStarts(scratch: Allocator, text: []const u8) Allocator.Error![]const u32 {
+        var starts: std.ArrayList(u32) = .empty;
+        try starts.append(scratch, 0);
+        for (text, 0..) |c, i| {
+            const ends = c == '\n' or (c == '\r' and (i + 1 == text.len or text[i + 1] != '\n'));
+            if (ends) try starts.append(scratch, @intCast(i + 1));
+        }
+        return starts.items;
+    }
+
+    /// The URL of the hand-written file at `path` in the map at `map_file`:
+    /// §11.1's rule for a `.beni` file (`sourceUrl`), by the asset's path.
+    fn assetUrl(e: *Emitter, root: MapRoot, map_file: []const u8, path: []const u8) Allocator.Error![]const u8 {
+        for (e.options.embedded) |asset| {
+            if (std.mem.eql(u8, asset.path, path)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{path});
+        }
+        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
+        return SourceMap.relativeUrl(e.scratch, map_path, try SourceMap.absolute(e.scratch, root.cwd, path));
+    }
+
     /// A hand-written file of a scope-hoisted build.
     const HandFile = struct {
         /// Where the multi-file layout writes it, and what it is read from.
@@ -7067,6 +8376,11 @@ const Emitter = struct {
         declined: bool = false,
         /// Its renamed top-level bindings' spellings in the one scope.
         forced: Minify.Forced = .empty,
+        /// Whether a person wrote it, so that its stretch of the one file
+        /// maps to it: not the derived-comparison engine, whose compacted
+        /// text the compiler holds (§11.2, *Hand-written JavaScript*,
+        /// amended 2026-11-04).
+        mapped: bool = true,
 
         const Use = struct { name: []const u8, local: JsIr.Name };
 
@@ -7103,6 +8417,13 @@ const Emitter = struct {
         start: ?struct { file: ?u32, data: []const u8 },
         /// Spellings no whole-program name may take (`Rename.Globals.skip`).
         skip: Rename.Globals.Spellings = .empty,
+        /// Per module slot, the host built-ins its `Js.module` calls import
+        /// (`boundary.md` §4.2): the specifier and the binding's whole-program
+        /// name, written at the top of the one file (`backend.md` §9, *Host
+        /// imports*). Empty for a module with none.
+        host_imports: []const []const HostImport = &.{},
+
+        const HostImport = struct { specifier: []const u8, name: JsIr.Name };
     };
 
     /// Read every hand-written file the build writes and decide whether the
@@ -7110,6 +8431,10 @@ const Emitter = struct {
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
     fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+        // Worker bindings are inside the bootstrap try block; none may
+        // be exported by the module-level footer after its finally.
+        if (e.worker_runtime != null and
+            (e.exportsProgram() or e.suppliedAs("flush") != null or e.suppliedAs("stop") != null)) return null;
         const scratch = e.scratch;
         var files: std.ArrayList(HandFile) = .empty;
 
@@ -7143,7 +8468,7 @@ const Emitter = struct {
             // `run` and `start` are the file's unless the runtime module
             // supplies them (`backend.md` §15.1, *The runtime module*).
             if (e.suppliedAs("run") == null) try files.items[runtime_index.?].keep.appendSlice(scratch, &.{"run"});
-        } else if (!e.moduleIsRuntime() or e.suppliedAs("run") == null) return null;
+        } else if (e.entryRun() == null) return null;
         var markup_index: ?u32 = null;
         if (e.markupRuntimeIsProgramRuntime()) {
             markup_index = runtime_index;
@@ -7158,7 +8483,7 @@ const Emitter = struct {
         var derived_index: ?u32 = null;
         if (uses_runtime) {
             derived_index = @intCast(files.items.len);
-            try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact });
+            try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact, .mapped = false });
         }
 
         var module_at: std.StringHashMapUnmanaged(u32) = .empty;
@@ -7170,14 +8495,27 @@ const Emitter = struct {
         // which is the order ES evaluates what they name.
         const module_edges = try scratch.alloc([]const Piece, slots.len);
         @memset(module_edges, &.{});
+        const module_hosts = try scratch.alloc([]const Hoist.HostImport, slots.len);
+        @memset(module_hosts, &.{});
         for (todo) |i| {
             const slot = &slots[i];
             const ir = &slot.lowered.?.ir;
             var edges: std.ArrayList(Piece) = .empty;
+            var hosts: std.ArrayList(Hoist.HostImport) = .empty;
             for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
                 if (ir.tag(stmt) != .import_stmt or slot.plan.isDropped(stmt)) continue;
                 const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
                 const source = ir.string_bytes[imp.source_start..][0..imp.source_len];
+                // A host built-in `Js.module` imports (`boundary.md` §4.2)
+                // is no piece: the one file writes it at its top, by the
+                // binding's whole-program name (`backend.md` §9, *Host
+                // imports*).
+                if (JsIntrinsic.isHostBuiltin(source)) {
+                    for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                        try hosts.append(scratch, .{ .specifier = try scratch.dupe(u8, source), .name = try e.poolName(slot, spec.local) });
+                    }
+                    continue;
+                }
                 const target: ?u32 = if (std.mem.eql(u8, source, slot.sibling))
                     sibling_of[i]
                 else if (std.mem.eql(u8, source, slot.derived_runtime))
@@ -7205,6 +8543,7 @@ const Emitter = struct {
                 try edges.append(scratch, .{ .module = m });
             }
             module_edges[i] = edges.items;
+            module_hosts[i] = hosts.items;
         }
 
         // The entry file's own imports, in `emitEntry`'s order.
@@ -7214,7 +8553,10 @@ const Emitter = struct {
             (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
         else
             null;
-        if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
+        if (e.selectedRuntime()) |runner| {
+            if (module_at.get(paths[runner.module.int()]) == null) return null;
+            try entry_edges.append(scratch, .{ .module = runner.module.int() });
+        } else if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
         var start: @FieldType(Hoist, "start") = null;
         if (try e.startData()) |s| {
             if (e.suppliedAs("start") != null) {
@@ -7349,6 +8691,16 @@ const Emitter = struct {
             }
         }
 
+        if (e.worker_runtime != null) for (files.items, 0..) |f, i| {
+            if (f.declined or f.read.imports.len != 0) return null;
+            if (runtime_index == @as(?u32, @intCast(i)) and f.read.exportBinding("flush") != null) return null;
+            // The bootstrap lives outside the body's try scope. Its bindings
+            // must not shadow a hand-written file's free host names.
+            for ([_][]const u8{ "report", "pending", "hold" }) |name| {
+                if (f.read.free.contains(name)) return null;
+            }
+        };
+
         return .{
             .entry = entry,
             .files = files.items,
@@ -7356,6 +8708,7 @@ const Emitter = struct {
             .runtime = runtime_index,
             .start = start,
             .skip = skip,
+            .host_imports = module_hosts,
         };
     }
 
@@ -7492,14 +8845,15 @@ const Emitter = struct {
     /// which each module that builds one declares — is declared once, by the
     /// first module in the file's order that keeps it, and every later
     /// module's declaration of it is dropped and its name is the first one's.
-    /// Each is the same object literal of constants (the constructor's one
-    /// representation), the first is evaluated before every later module,
+    /// The kept literal covers every copy (including after field pruning),
+    /// the first is evaluated before every later module,
     /// and values are immutable, so each use reads an equal value, as one
     /// module's uses already share one. The answer maps each dropped name's
     /// key to the first declaration's name.
     fn shareNullaries(e: *Emitter, slots: []ModuleSlot, h: *const Hoist) !std.AutoHashMapUnmanaged(Rename.Globals.Key, JsIr.Name) {
+        const Copy = struct { name: JsIr.Name, module: usize, stmt: JsIr.Node.Index, value: JsIr.Node.Index };
         const interner = &e.session.interner;
-        var first: std.StringHashMapUnmanaged(JsIr.Name) = .empty;
+        var groups: std.StringHashMapUnmanaged(std.ArrayList(Copy)) = .empty;
         var shared: std.AutoHashMapUnmanaged(Rename.Globals.Key, JsIr.Name) = .empty;
         for (h.order) |p| switch (p) {
             .file => {},
@@ -7510,25 +8864,101 @@ const Emitter = struct {
                 for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
                     if (ir.tag(stmt) != .const_decl or slot.plan.isDropped(stmt)) continue;
                     const d = ir.data(stmt);
-                    if (!nullaryLiteral(ir, @fromBackingInt(@intCast(d.rhs)))) continue;
+                    const value: JsIr.Node.Index = @fromBackingInt(@intCast(d.rhs));
+                    if (!nullaryLiteral(ir, value)) continue;
                     const name = try e.poolName(slot, @fromBackingInt(@intCast(d.lhs)));
                     if (name.module == .none or !importedNullaryBase(interner.slice(name.base))) continue;
-                    const text = interner.slice(name.base);
-                    const got = try first.getOrPut(e.scratch, text);
-                    if (!got.found_existing) {
-                        got.value_ptr.* = name;
-                        continue;
+                    // Property names must compare in the shared pool too.
+                    for (ir.extraSlice(JsIr.inlineRange(ir.data(value)), JsIr.Node.Index)) |prop| {
+                        _ = try e.poolName(slot, @fromBackingInt(@intCast(ir.data(prop).lhs)));
                     }
-                    // The plan has a bit for every node it ran on (`Opt.run`);
-                    // a module with none keeps its declaration and its name.
-                    const words: []u32 = @constCast(slot.plan.dropped);
-                    if (stmt.int() / 32 >= words.len) continue;
-                    try shared.put(e.scratch, Rename.Globals.key(name), got.value_ptr.*);
-                    words[stmt.int() / 32] |= @as(u32, 1) << @intCast(stmt.int() % 32);
+                    const group = try groups.getOrPut(e.scratch, interner.slice(name.base));
+                    if (!group.found_existing) group.value_ptr.* = .empty;
+                    try group.value_ptr.append(e.scratch, .{ .name = name, .module = i, .stmt = stmt, .value = value });
                 }
             },
         };
+        var it = groups.valueIterator();
+        while (it.next()) |group| {
+            const copies = group.items;
+            if (copies.len < 2) continue;
+            var fullest: usize = 0;
+            var most_fields: usize = 0;
+            for (copies, 0..) |candidate, ci| {
+                const ir = &slots[candidate.module].lowered.?.ir;
+                const count = ir.extraSlice(JsIr.inlineRange(ir.data(candidate.value)), JsIr.Node.Index).len;
+                // A covering copy must be one of the largest. Two largest
+                // copies can cover each other only if their fields agree,
+                // so one deterministic choice and one coverage pass suffice.
+                if (count > most_fields or (count == most_fields and std.mem.order(u8, interner.slice(candidate.name.module.unwrap().?), interner.slice(copies[fullest].name.module.unwrap().?)) == .lt)) {
+                    fullest = ci;
+                    most_fields = count;
+                }
+            }
+            const chosen = copies[fullest];
+            const chosen_ir = &slots[chosen.module].lowered.?.ir;
+            const covered = for (copies) |other| {
+                if (!nullaryCovers(chosen_ir, chosen.value, &slots[other.module].lowered.?.ir, other.value)) break false;
+            } else true;
+            if (!covered) continue;
+            const kept = copies[0];
+            // Keep the earliest declaration's position, so an earlier use
+            // cannot read a later module's uninitialised constant. Its
+            // initializer is the deterministically chosen covering literal.
+            if (chosen.module != kept.module or chosen.value != kept.value) {
+                try e.copyNullaryLiteral(&slots[kept.module], kept.value, &slots[chosen.module], chosen.value);
+            }
+            const kept_ir = &slots[kept.module].lowered.?.ir;
+            for (copies[1..]) |copy| {
+                const slot = &slots[copy.module];
+                if (std.debug.runtime_safety) std.debug.assert(nullaryCovers(kept_ir, kept.value, &slot.lowered.?.ir, copy.value));
+                const words: []u32 = @constCast(slot.plan.dropped);
+                if (copy.stmt.int() / 32 >= words.len) continue;
+                try shared.put(e.scratch, Rename.Globals.key(copy.name), kept.name);
+                words[copy.stmt.int() / 32] |= @as(u32, 1) << @intCast(copy.stmt.int() % 32);
+            }
+        }
         return shared;
+    }
+
+    /// Move a small literal between modules, keeping every index and byte
+    /// offset local to its owner. Allocate each column once for the copy.
+    fn copyNullaryLiteral(e: *Emitter, dst: *ModuleSlot, target: JsIr.Node.Index, src: *ModuleSlot, value: JsIr.Node.Index) !void {
+        const ir = &dst.lowered.?.ir;
+        const source = &src.lowered.?.ir;
+        const props = source.extraSlice(JsIr.inlineRange(source.data(value)), JsIr.Node.Index);
+        const names_at = ir.names.len;
+        const bytes_at = ir.string_bytes.len;
+        const extra_at = ir.extra.len;
+        var bytes_len: usize = 0;
+        for (props) |prop| {
+            const v: JsIr.Node.Index = @fromBackingInt(@intCast(source.data(prop).rhs));
+            if (source.tag(v) == .string or source.tag(v) == .number) bytes_len += source.bytes(v).len;
+        }
+        ir.names = try e.gpa.realloc(@constCast(ir.names), names_at + props.len);
+        ir.string_bytes = try e.gpa.realloc(@constCast(ir.string_bytes), bytes_at + bytes_len);
+        ir.extra = try e.gpa.realloc(@constCast(ir.extra), extra_at + props.len);
+        var nodes = ir.nodes.toMultiArrayList();
+        try nodes.ensureUnusedCapacity(e.gpa, props.len * 2);
+        defer ir.nodes = nodes.slice();
+        var at = bytes_at;
+        for (props, 0..) |prop, i| {
+            const d = source.data(prop);
+            @constCast(ir.names)[names_at + i] = source.name(@fromBackingInt(@intCast(d.lhs)));
+            const v: JsIr.Node.Index = @fromBackingInt(@intCast(d.rhs));
+            var data: JsIr.Node.Data = .{ .lhs = 0, .rhs = 0 };
+            if (source.tag(v) == .string or source.tag(v) == .number) {
+                const bytes = source.bytes(v);
+                @memcpy(@constCast(ir.string_bytes)[at..][0..bytes.len], bytes);
+                data = .{ .lhs = @intCast(at), .rhs = @intCast(bytes.len) };
+                at += bytes.len;
+            }
+            const vi: u32 = @intCast(nodes.len);
+            nodes.appendAssumeCapacity(.{ .tag = source.tag(v), .pos = JsIr.Node.no_pos, .data = data });
+            @constCast(ir.extra)[extra_at + i] = @intCast(nodes.len);
+            nodes.appendAssumeCapacity(.{ .tag = .property, .pos = JsIr.Node.no_pos, .data = .{ .lhs = @intCast(names_at + i), .rhs = vi } });
+        }
+        nodes.items(.data)[target.int()] = .{ .lhs = @intCast(extra_at), .rhs = @intCast(extra_at + props.len) };
     }
 
     /// The table's key for a hand-written top-level binding nothing imports:
@@ -7545,11 +8975,15 @@ const Emitter = struct {
     /// then an `export` of whatever else of the program runtime survived.
     fn linkHoisted(e: *Emitter, slots: []ModuleSlot, h: *Hoist) !void {
         const scratch = e.scratch;
+        const mapped = e.map_root != null;
         const printed = try scratch.alloc(?Minify.Printed, h.files.len);
         @memset(printed, null);
+        const marks = try scratch.alloc(Minify.Marks, h.files.len);
+        @memset(marks, .{});
         for (h.order) |p| switch (p) {
             .file => |x| if (!h.files[x].declined) {
-                printed[x] = try Minify.printHoisted(scratch, &h.files[x].read, &h.files[x].forced);
+                const f = &h.files[x];
+                printed[x] = try Minify.printHoisted(scratch, &f.read, &f.forced, if (mapped and f.mapped) &marks[x] else null);
             },
             .module => {},
         };
@@ -7561,26 +8995,46 @@ const Emitter = struct {
                 if ((try seen.getOrPut(scratch, text)).found_existing) continue;
                 try appendJoined(scratch, &out, text, false);
             },
-            .module => {},
+            // An emitted module's `Js.module` imports (`boundary.md` §4.2),
+            // spelled as the one scope spells the binding.
+            .module => |i| for (h.host_imports[i]) |imp| {
+                const ordinal = e.globals.lookup(imp.name) orelse unreachable;
+                var short: [8]u8 = undefined;
+                const text = try std.fmt.allocPrint(scratch, "import*as {s} from\"{s}\";", .{ Rename.spell(ordinal, &short), imp.specifier });
+                if ((try seen.getOrPut(scratch, text)).found_existing) continue;
+                try appendJoined(scratch, &out, text, false);
+            },
         };
         for (h.order) |p| switch (p) {
             .file => |x| if (h.files[x].declined) try e.importDeclined(&out, h, x),
             .module => {},
         };
 
+        if (e.worker_runtime != null) {
+            try e.workerPrelude(&out);
+            try out.appendSlice(scratch, "try {\n");
+        }
+
         // §11.2, *The join*: each module's marks become a stretch of the
         // one file's map, and everything else the file holds is unmapped.
         var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
         var sources: std.ArrayList(SourceMap.Source) = .empty;
-        const mapped = e.map_root != null;
+        var far_sources: FarSources = .{
+            .alloc = scratch,
+            .sources = &sources,
+            .base = 0,
+            .of = try scratch.alloc(u32, slots.len),
+            .map_file = try std.fmt.allocPrint(scratch, "{s}.map", .{e.options.platform.entry}),
+        };
+        @memset(far_sources.of, SourceMap.Stretch.unmapped);
         for (h.order) |p| switch (p) {
             .module => |i| if (slots[i].text) |text| {
-                if (mapped) try e.mapStretch(&stretches, &sources, &slots[i], i, out.items.len);
+                if (mapped) try e.mapStretch(&stretches, &far_sources, &slots[i], i, out.items.len);
                 try appendJoined(scratch, &out, text, true);
             },
             .file => |x| if (printed[x]) |pr| {
                 const f = &h.files[x];
-                if (mapped) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
+                if (mapped) try e.mapHandStretch(&stretches, &sources, f, &marks[x], out.items.len);
                 try appendJoined(scratch, &out, pr.body, false);
                 var aliased: std.ArrayList(JsIr.Name) = .empty;
                 for (f.uses.items) |u| {
@@ -7590,6 +9044,8 @@ const Emitter = struct {
                         if (a.eql(u.local)) break true;
                     } else false;
                     if (already) continue;
+                    // The aliases are the link step's bytes, unmapped.
+                    if (mapped and aliased.items.len == 0) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
                     try out.appendSlice(scratch, if (aliased.items.len == 0) "const " else ",");
                     try aliased.append(scratch, u.local);
                     var buf: [8]u8 = undefined;
@@ -7616,23 +9072,29 @@ const Emitter = struct {
             } else try e.moduleSpelling(e.runtime_module.?, "start");
             try out.print(scratch, "{s}({s});", .{ callee, s.data });
         }
-        const run_name = if (e.suppliedAs("run") != null)
-            try e.moduleSpelling(e.runtime_module.?, "run")
-        else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
-        if (e.options.prerender == .tree) {
-            // No call: the exports above are the whole entry.
-        } else if (e.exportsProgram()) {
-            // `boundary.md` §9.12 (c): the hoisted file exports what `run`
-            // returns. The bindings are longer than any short name `Rename`
-            // spells (8 characters at most), so no hoisted declaration can
-            // take them.
-            const prog = entry_program_binding;
-            const exp = entry_export_binding;
-            try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
-            for (e.options.platform.entry_exports, 0..) |name, i| {
-                try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
-            }
-        } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        try e.workerHostBridge(&out, true);
+        if (e.options.prerender != .tree) {
+            const run_name = if (e.entryRun()) |runner|
+                try e.moduleSpelling(runner.module, "run")
+            else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
+            if (e.exportsProgram()) {
+                // `boundary.md` §9.12 (c): the hoisted file exports what `run`
+                // returns. The bindings are longer than any short name `Rename`
+                // spells (8 characters at most), so no hoisted declaration can
+                // take them.
+                const prog = entry_program_binding;
+                const exp = entry_export_binding;
+                try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
+                for (e.options.platform.entry_exports, 0..) |name, i| {
+                    try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
+                }
+            } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        }
+
+        if (e.worker_runtime != null) {
+            try out.appendSlice(scratch, "\n");
+            try e.workerFinally(&out);
+        }
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
@@ -7656,9 +9118,10 @@ const Emitter = struct {
                 try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17),
-        // the runtime module's, exported as `flush` is. Only a runtime
-        // module supplies `stop`, and the exports mode refuses a runtime
-        // module, so no listed name can meet it: `stop` stays listable.
+        // the runtime module's, exported as `flush` is. Only a markup
+        // runtime module supplies `stop`, and the exports mode refuses a
+        // markup runtime module, so no listed name can meet it: `stop`
+        // stays listable.
         if (e.suppliedAs("stop") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
                 var buf: [8]u8 = undefined;
@@ -7684,31 +9147,102 @@ const Emitter = struct {
     }
 
     /// §11.2, *The join*: the stretch of the one file that module `i`'s
-    /// bytes take from `start`, and its source, named from the entry
-    /// file's map. A module with no mark maps nothing, so its bytes are
-    /// an unmapped stretch and its text is not in the map.
+    /// bytes take from `start`, and its sources, named from the entry
+    /// file's map. A module has an entry in `sources` when a mark maps to
+    /// it: its own, or a row of another module's `far` (*Deferred* item 2,
+    /// amended 2026-11-04). A module with no mark maps nothing, so its bytes
+    /// are an unmapped stretch.
     fn mapStretch(
         e: *Emitter,
         stretches: *std.ArrayList(SourceMap.Stretch),
-        sources: *std.ArrayList(SourceMap.Source),
+        far_sources: *FarSources,
         slot: *const ModuleSlot,
         i: u32,
         start: usize,
     ) Allocator.Error!void {
         if (slot.marks.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
+        var own: u32 = SourceMap.Stretch.unmapped;
+        for (slot.marks) |m| if (m.source & SourceMap.Mapping.far_bit == 0) {
+            own = try e.mapSource(far_sources, i);
+            break;
+        };
+        try stretches.append(e.scratch, .{
+            .start = @intCast(start),
+            .source = own,
+            .mappings = slot.marks,
+            .names = slot.mark_names,
+            .far = try e.farRows(far_sources, slot.mark_far, slot.marks),
+        });
+    }
+
+    /// The sources of one map that a module's marks name (§11.2, *Deferred*
+    /// item 2, amended 2026-11-04): each module's entry, added the first
+    /// time a mark maps to it.
+    const FarSources = struct {
+        alloc: Allocator,
+        sources: *std.ArrayList(SourceMap.Source),
+        /// The map's index of `sources.items[0]`.
+        base: u32,
+        /// Per module (graph index): its index in the map, or `unmapped`.
+        of: []u32,
+        /// The map's path in the output tree, which the URLs are relative to.
+        map_file: []const u8,
+    };
+
+    /// Module `module`'s index in the map of `fs`, its entry added when it
+    /// has none.
+    fn mapSource(e: *Emitter, fs: *FarSources, module: u32) Allocator.Error!u32 {
+        if (fs.of[module] != SourceMap.Stretch.unmapped) return fs.of[module];
         const store = &e.session.store;
-        const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
-        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
-        try sources.append(e.scratch, .{
-            .url = try e.sourceUrl(e.map_root.?, map_file, file),
+        const file = e.graph().moduleFile(@fromBackingInt(module));
+        try fs.sources.append(fs.alloc, .{
+            .url = try e.sourceUrlWith(fs.alloc, e.map_root.?, fs.map_file, file),
             .text = store.bytes(file),
             .line_starts = store.lineStarts(file),
+        });
+        fs.of[module] = fs.base + @as(u32, @intCast(fs.sources.items.len - 1));
+        return fs.of[module];
+    }
+
+    /// `far`'s rows as `SourceMap.Stretch.far`: each row a mark names, by
+    /// its module's entry in the map; every other row `unmapped`.
+    fn farRows(e: *Emitter, fs: *FarSources, far: []const JsIr.FarPos, marks: []const SourceMap.Mapping) Allocator.Error![]const SourceMap.Stretch.Far {
+        if (far.len == 0) return &.{};
+        const rows = try fs.alloc.alloc(SourceMap.Stretch.Far, far.len);
+        @memset(rows, .{});
+        for (marks) |m| {
+            if (m.source & SourceMap.Mapping.far_bit == 0) continue;
+            const row = m.source & ~SourceMap.Mapping.far_bit;
+            if (rows[row].source != SourceMap.Stretch.unmapped) continue;
+            rows[row] = .{ .source = try e.mapSource(fs, far[row].module), .offset = far[row].offset };
+        }
+        return rows;
+    }
+
+    /// §11.2, *Hand-written JavaScript* (amended 2026-11-04): the stretch of
+    /// the one file that hand-written file `f`'s body takes from `start`,
+    /// and its `.js` source. A body with no mark, or the derived-comparison
+    /// engine's, is an unmapped stretch with no source.
+    fn mapHandStretch(
+        e: *Emitter,
+        stretches: *std.ArrayList(SourceMap.Stretch),
+        sources: *std.ArrayList(SourceMap.Source),
+        f: *const HandFile,
+        marks: *const Minify.Marks,
+        start: usize,
+    ) Allocator.Error!void {
+        if (marks.list.items.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
+        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
+        try sources.append(e.scratch, .{
+            .url = try e.assetUrl(e.map_root.?, map_file, f.origin),
+            .text = f.bytes,
+            .line_starts = try handLineStarts(e.scratch, f.bytes),
         });
         try stretches.append(e.scratch, .{
             .start = @intCast(start),
             .source = @intCast(sources.items.len - 1),
-            .mappings = slot.marks,
-            .names = slot.mark_names,
+            .mappings = marks.list.items,
+            .names = marks.names.items,
         });
     }
 
@@ -7732,7 +9266,7 @@ const Emitter = struct {
     fn importDeclined(e: *Emitter, out: *std.ArrayList(u8), h: *const Hoist, x: u32) !void {
         const scratch = e.scratch;
         const f = &h.files[x];
-        try e.produceHandWritten(f.out, f.bytes, f.origin, f.keep.items);
+        try e.produceHandWritten(f.out, .{ .text = f.bytes, .mapped = f.mapped }, f.origin, f.keep.items);
         // `run` and `start` in a statement of their own, in the form the
         // multi-file entry file writes and `tests/browser/driver.mjs` reads.
         const runs = h.runtime == x;
@@ -7767,6 +9301,34 @@ const Emitter = struct {
     /// module — the output tree is the program — so an export outside this
     /// set is bytes no one can ask for. After `numberGlobals`, so every
     /// name has its ordinal and its session symbol.
+    /// The names the build imports from a hand-written file: an `import`
+    /// specifier whose imported name is not its local one is a sibling's
+    /// export (`import { add as Basics$add } from "./Basics.foreign.mjs"`)
+    /// or the platform runtime's; an import from an emitted module carries
+    /// the one name on both sides. §9 item 6 prints no such name in place
+    /// of a forwarding arrow: a hand-written function may read `arguments`
+    /// or `this`, and a host holding the value may call it with more
+    /// arguments than the lambda took (`Print.resolve`). Every release
+    /// path, hoisted or not, `--library` or not.
+    fn markHandWritten(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        e.hand_written = try .initEmpty(e.scratch, e.globals.next);
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (ir.tag(stmt) != .import_stmt) continue;
+                const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
+                for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                    if (spec.imported == spec.local) continue;
+                    const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
+                    e.hand_written.set(ordinal);
+                }
+            }
+        }
+    }
+
     fn markImported(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: ?Entry) Allocator.Error!void {
         e.imported = try .initEmpty(e.scratch, e.globals.next);
         for (todo) |i| {
@@ -7784,11 +9346,18 @@ const Emitter = struct {
                 }
             }
         }
+        if (entry != null) if (e.selectedRuntime()) |runner| {
+            if (e.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.imported.set(ordinal);
+        };
+        if (e.workerHostClient()) |client| {
+            if (e.globals.lookup(try e.moduleName(client, "installHostStop"))) |ordinal| e.imported.set(ordinal);
+        }
         // What the markup runtime and the entry file import from the
         // runtime module (`backend.md` §15.1, *The runtime module*).
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
+            if (e.workerHostModule() == module) try names.appendSlice(e.scratch, &.{ "stop", "stopped" });
             if (entry != null) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             };
@@ -8091,7 +9660,7 @@ const Emitter = struct {
             const sibling_source = try e.siblingPath(source_path);
             const bytes = e.readAsset(sibling_source) orelse continue;
             const out = try e.siblingOutputPath(m);
-            try e.produceHandWritten(out, bytes, sibling_source, surviving.items);
+            try e.produceHandWritten(out, .{ .text = bytes }, sibling_source, surviving.items);
         }
         try e.copyMarkupRuntime();
         // The platform's runtime (§5.2). It is not a sibling of any module,
@@ -8123,7 +9692,7 @@ const Emitter = struct {
         try keep.appendSlice(e.scratch, &.{ "run", "start" });
         if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.markup_exports.items);
         const out = try e.runtimeOutputPath();
-        const text = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else bytes;
+        const text: HandText = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else .{ .text = bytes };
         try e.produceHandWritten(out, text, runtime_source, keep.items);
     }
 
@@ -8131,11 +9700,33 @@ const Emitter = struct {
     /// under `--release` compacted and cut to the exports `keep` names
     /// (§9, *Hand-written JavaScript under `--release`*). A file `Minify`
     /// cannot read exactly is copied as written in either mode.
-    fn produceHandWritten(e: *Emitter, out: []const u8, bytes: []const u8, origin: []const u8, keep: []const []const u8) !void {
+    ///
+    /// With `--source-maps`, a compacted file gets a map beside it, back to
+    /// the file as written (§11.2, *Hand-written JavaScript*, amended
+    /// 2026-11-04). A copied file IS its source and gets none.
+    fn produceHandWritten(e: *Emitter, out: []const u8, file: HandText, origin: []const u8, keep: []const []const u8) !void {
         if (e.options.release) {
-            if (try Minify.minify(e.scratch, bytes, keep, Minify.release)) |compact| return e.produce(out, compact, origin);
+            const root = if (file.mapped) e.map_root else null;
+            var marks: Minify.Marks = .{};
+            if (try Minify.minifyMarked(e.scratch, file.text, keep, Minify.release, if (root != null) &marks else null)) |compact| {
+                if (root == null or marks.list.items.len == 0) return e.produce(out, compact, origin);
+                const scratch = e.scratch;
+                for (marks.list.items) |*m| m.source = file.fileOffset(m.source);
+                const written = file.file orelse file.text;
+                const map_file = try std.fmt.allocPrint(scratch, "{s}.map", .{out});
+                const map = try SourceMap.writeJoined(e.gpa, scratch, .{
+                    .file = std.fs.path.basenamePosix(out),
+                    .generated = compact,
+                    .sources = &.{.{ .url = try e.assetUrl(root.?, map_file, origin), .text = written, .line_starts = try handLineStarts(scratch, written) }},
+                    .stretches = &.{.{ .start = 0, .source = 0, .mappings = marks.list.items, .names = marks.names.items }},
+                    .end_line = true,
+                });
+                const footer = try std.fmt.allocPrint(scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(out)});
+                try e.produce(out, try std.mem.concat(scratch, u8, &.{ compact, footer }), origin);
+                return e.produceOwned(map_file, map, origin);
+            }
         }
-        try e.produce(out, bytes, origin);
+        try e.produce(out, file.text, origin);
     }
 
     /// The markup runtime, copied iff a module written imports it
@@ -8177,8 +9768,10 @@ const Emitter = struct {
         if (e.options.prerender == .tree) return e.emitPrerenderEntry(module_path, imported);
         const start = try e.startData();
         // `checkEntryExports` has refused the one chain this cannot serve,
-        // a runtime module, so `exportsProgram` here means a runtime file.
+        // a markup runtime module, so `exportsProgram` here means a runtime
+        // file or a runtime module without markup (§5.2, 2026-11-04).
         if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
+        if (e.selectedRuntime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -8306,7 +9899,23 @@ const Emitter = struct {
             \\// the platform's output shape asks for.
             \\
         );
-        if (start) |s| if (std.mem.eql(u8, s.path, runtime_path)) {
+        // A runtime module without markup (`boundary.md` §5.2, amended
+        // 2026-11-04) supplies `run`, and nothing else the entry calls.
+        if (e.runtime_module != null and e.suppliedAs("run") != null) {
+            const module = e.runtime_module.?;
+            const spelled = try e.moduleSpelling(module, "run");
+            const from = try e.outputPath(module);
+            if (release)
+                try text.print(e.scratch, "import{{{s} as $run}}from\"./{s}\";\n", .{ spelled, from })
+            else
+                try text.print(e.scratch, "import {{ {s} as $run }} from \"./{s}\";\n", .{ spelled, from });
+            if (start) |s| {
+                if (release)
+                    try text.print(e.scratch, "import{{start as $start}}from\"./{s}\";\n", .{s.path})
+                else
+                    try text.print(e.scratch, "import {{ start as $start }} from \"./{s}\";\n", .{s.path});
+            }
+        } else if (start) |s| if (std.mem.eql(u8, s.path, runtime_path)) {
             // The program runtime's own `start`: one import names both.
             if (release)
                 try text.print(e.scratch, "import{{run as $run,start as $start}}from\"./{s}\";\n", .{runtime_path})
@@ -8365,12 +9974,12 @@ const Emitter = struct {
             }
         };
         const as = " as ";
-        if (e.suppliedAs("run") != null) {
+        if (e.entryRun() != null) {
             try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}run", .{ try e.moduleSpelling(module, "run"), as }));
         } else try Add.one(e, &imports, runtime_path, "run");
         if (start) |s| {
             if (e.suppliedAs("start") != null) {
-                try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(module, "start"), as }));
+                try Add.one(e, &imports, try e.outputPath(e.runtime_module.?), try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(e.runtime_module.?, "start"), as }));
             } else try Add.one(e, &imports, s.path, "start");
         }
         var text: std.ArrayList(u8) = .empty;
@@ -8389,25 +9998,26 @@ const Emitter = struct {
             try text.print(e.scratch, "import{{{s}}}from\"./{s}\";\n", .{ imported, try e.outputPath(entry.module) })
         else
             try text.print(e.scratch, "import {{ {s} }} from \"./{s}\";\n\n", .{ imported, try e.outputPath(entry.module) });
+        try e.workerHostBridge(&text, false);
         if (start) |s| try text.print(e.scratch, "start({s});\n", .{s.data});
         try text.print(e.scratch, "run({s});\n", .{imported});
         // The page's `flush` (§15.11), from the module the page loads when
         // the runtime module supplies it: the entry file imports `run` from
         // no program runtime, so it is the one a harness reads.
-        if (e.suppliedAs("flush")) |s| if (e.live.decl(module, s.decl)) {
-            const spelled = try e.moduleSpelling(module, "flush");
+        if (e.suppliedAs("flush")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtime_module.?, "flush");
             if (release)
-                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, module_path })
+                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
             else
-                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, module_path });
+                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17).
-        if (e.suppliedAs("stop")) |s| if (e.live.decl(module, s.decl)) {
-            const spelled = try e.moduleSpelling(module, "stop");
+        if (e.suppliedAs("stop")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtime_module.?, "stop");
             if (release)
-                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, module_path })
+                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
             else
-                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, module_path });
+                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }
@@ -8844,7 +10454,7 @@ const Emitter = struct {
 
     /// Where a module's sibling JavaScript is READ from: next to the source,
     /// under its own name. `core/Basics.beni` becomes `core/Basics.js`.
-    fn siblingPath(e: *Emitter, source_path: []const u8) ![]const u8 {
+    pub fn siblingPath(e: *Emitter, source_path: []const u8) ![]const u8 {
         return std.fmt.allocPrint(e.scratch, "{s}.js", .{stripExtension(source_path, SourceStore.extension)});
     }
 
@@ -8877,7 +10487,7 @@ const Emitter = struct {
 
     /// The bytes of an asset: the embedded copy when the compiler carries
     /// one, else the file on disk.
-    fn readAsset(e: *Emitter, path: []const u8) ?[]const u8 {
+    pub fn readAsset(e: *Emitter, path: []const u8) ?[]const u8 {
         for (e.options.embedded) |asset| {
             if (std.mem.eql(u8, asset.path, path)) return asset.bytes;
         }
@@ -8912,17 +10522,23 @@ const Emitter = struct {
     fn planMap(e: *Emitter, slot: *ModuleSlot, root: MapRoot, path: []const u8, file: SourceStore.Index) Allocator.Error!void {
         slot.map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{path});
         slot.map_footer = try std.fmt.allocPrint(e.scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(path)});
-        slot.source_url = try e.sourceUrl(root, slot.map_file, file);
+        slot.source_url = try e.sourceUrl(root, try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, slot.map_file }), file);
     }
 
     /// The URL of `file` in the map at `map_file`, a path in the output
     /// tree (§11.1's `sources`).
     fn sourceUrl(e: *Emitter, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
+        return e.sourceUrlWith(e.scratch, root, map_file, file);
+    }
+
+    /// `sourceUrl` into `alloc`, which a worker may call: it reads the
+    /// store and the options, and writes nothing of the emitter.
+    fn sourceUrlWith(e: *Emitter, alloc: Allocator, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
         const store = &e.session.store;
-        if (store.isEmbedded(file)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
-        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
-        const source_path = try SourceMap.absolute(e.scratch, root.cwd, store.path(file));
-        return SourceMap.relativeUrl(e.scratch, map_path, source_path);
+        if (store.isEmbedded(file)) return std.fmt.allocPrint(alloc, "beni:///{s}", .{store.path(file)});
+        const map_path = try SourceMap.absolute(alloc, root.cwd, try std.fmt.allocPrint(alloc, "{s}/{s}", .{ e.options.out_dir, map_file }));
+        const source_path = try SourceMap.absolute(alloc, root.cwd, store.path(file));
+        return SourceMap.relativeUrl(alloc, map_path, source_path);
     }
 
     fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {
@@ -8931,7 +10547,7 @@ const Emitter = struct {
             try e.owned.append(e.gpa, bytes);
         }
         try e.pending.append(e.scratch, .{
-            .path = try e.scratch.dupe(u8, relative_path),
+            .path = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, relative_path }),
             .bytes = bytes,
             .origin = try e.scratch.dupe(u8, origin),
         });
@@ -8939,7 +10555,7 @@ const Emitter = struct {
 
     fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8, origin: []const u8) Allocator.Error!void {
         try e.pending.append(e.scratch, .{
-            .path = try e.scratch.dupe(u8, relative_path),
+            .path = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, relative_path }),
             .bytes = try e.scratch.dupe(u8, bytes),
             .origin = try e.scratch.dupe(u8, origin),
         });
@@ -9044,11 +10660,13 @@ const Emitter = struct {
                 );
                 return;
             } else if (p.lowering != null and p.markup_module != null) {
-                // A chain whose runtime is a module (`boundary.md` §9.2,
-                // amended 2026-10-02) has no `run` result the entry file could
-                // hold: not in this slice. Known from the chain alone, so
-                // `check`, a development build and a release build refuse it
-                // alike, before anything is built.
+                // A chain whose runtime is a markup module (`boundary.md`
+                // §9.2, amended 2026-10-02) has no `run` result the entry
+                // file could hold: not in this slice. Known from the chain
+                // alone, so `check`, a development build and a release build
+                // refuse it alike, before anything is built. A runtime
+                // module without markup (§5.2, amended 2026-11-04) supplies
+                // `run` alone, and the key takes it.
                 try e.reportInFile(
                     .unknown_exports_mode,
                     .{ .path = platform_manifest },
@@ -9365,6 +10983,29 @@ fn importedNullaryBase(base: []const u8) bool {
     return segments >= 2;
 }
 
+/// Every field of a dropped copy must exist in the kept literal with
+/// exactly the same value. Conflicting or incomparable copies are not shared.
+fn nullaryCovers(a: *const JsIr, av: JsIr.Node.Index, b: *const JsIr, bv: JsIr.Node.Index) bool {
+    const ap = a.extraSlice(JsIr.inlineRange(a.data(av)), JsIr.Node.Index);
+    const bp = b.extraSlice(JsIr.inlineRange(b.data(bv)), JsIr.Node.Index);
+    for (bp) |y| {
+        const by = b.data(y);
+        const vb: JsIr.Node.Index = @fromBackingInt(@intCast(by.rhs));
+        for (ap) |x| {
+            const ax = a.data(x);
+            if (!a.name(@fromBackingInt(@intCast(ax.lhs))).eql(b.name(@fromBackingInt(@intCast(by.lhs))))) continue;
+            const va: JsIr.Node.Index = @fromBackingInt(@intCast(ax.rhs));
+            if (a.tag(va) != b.tag(vb)) return false;
+            switch (a.tag(va)) {
+                .number, .string => if (!std.mem.eql(u8, a.bytes(va), b.bytes(vb))) return false,
+                else => {},
+            }
+            break;
+        } else return false;
+    }
+    return true;
+}
+
 /// Whether `value` is an object literal of plain properties whose values
 /// are literals: what a padded nullary constructor's constant is.
 fn nullaryLiteral(ir: *const JsIr, value: JsIr.Node.Index) bool {
@@ -9449,6 +11090,7 @@ fn sameIr(a: *const JsIr, ao: *const InternPool.Overlay, b: *const JsIr, bo: *co
     if (!std.mem.eql(u32, a.extra, b.extra) or !std.mem.eql(u8, a.string_bytes, b.string_bytes)) return false;
     if (!std.meta.eql(a.body, b.body)) return false;
     if (!std.mem.eql(u8, bytes(a.node_keys), bytes(b.node_keys)) or !std.mem.eql(u8, bytes(a.name_key), bytes(b.name_key))) return false;
+    if (!std.mem.eql(u8, bytes(a.far), bytes(b.far))) return false;
     for (a.names, b.names) |x, y| {
         if (x.tag != y.tag or (x.module == .none) != (y.module == .none)) return false;
         if (!std.mem.eql(u8, ao.slice(x.base), bo.slice(y.base))) return false;
@@ -9651,4 +11293,37 @@ fn bracketOf(src: []const u8, start: u32) i32 {
         ')', '}', ']' => -1,
         else => 0,
     };
+}
+
+test "a shared nullary literal covers all fields and rejects conflicts" {
+    var b: JsIr.Builder = .init(testing.allocator);
+    defer b.deinit();
+    const make = struct {
+        fn object(builder: *JsIr.Builder, fields: []const u32) !JsIr.Node.Index {
+            var props: std.ArrayList(JsIr.Node.Index) = .empty;
+            defer props.deinit(builder.gpa);
+            for (fields, 0..) |v, i| {
+                const name = try builder.intern(JsIr.Name.local(@fromBackingInt(@intCast(i))));
+                const number = try builder.addString(if (v == 0) "0" else "1");
+                const value = try builder.addParts(.number, JsIr.Node.no_pos, number[0], number[1]);
+                try props.append(builder.gpa, try builder.addParts(.property, JsIr.Node.no_pos, name.int(), value.int()));
+            }
+            const range = try builder.addRange(props.items);
+            return builder.addParts(.object, JsIr.Node.no_pos, @backingInt(range.start), @backingInt(range.end));
+        }
+    }.object;
+    const empty = try make(&b, &.{});
+    const tag = try make(&b, &.{0});
+    const full = try make(&b, &.{ 0, 1 });
+    const equal = try make(&b, &.{ 0, 1 });
+    const conflict = try make(&b, &.{ 1, 1 });
+    var ir = try b.toOwned(.empty);
+    defer ir.deinit(testing.allocator);
+    try testing.expect(nullaryCovers(&ir, full, &ir, empty));
+    try testing.expect(nullaryCovers(&ir, full, &ir, tag));
+    try testing.expect(nullaryCovers(&ir, full, &ir, equal));
+    try testing.expect(!nullaryCovers(&ir, empty, &ir, tag));
+    try testing.expect(!nullaryCovers(&ir, tag, &ir, full));
+    try testing.expect(!nullaryCovers(&ir, full, &ir, conflict));
+    try testing.expect(!nullaryCovers(&ir, conflict, &ir, full));
 }

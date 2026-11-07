@@ -1,0 +1,4 @@
+Two joins of one fiber answer the same object (ownership-v2.md §2.13.7): `Task.join` is a loan of the fiber's
+contents. Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses the in-place edit of one join
+while the other is read; were a join the work's answer as its own, the sanitised run would show the other join's
+stale read.

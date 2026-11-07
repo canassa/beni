@@ -1,0 +1,53 @@
+module Elements
+  16:13 List.push xs: accepted param
+  23:15 call Elements.kidsBox r#Box.0: accepted param (Elements.kidsBox writes π1#Box.0)
+  37:18 call Elements.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Elements.rightLeft writes π1#Pair.1#Box.0)
+  49:18 call Elements.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Elements.rightLeft writes π1#Pair.1#Box.0)
+  58:11 call Elements.t8 bs[*]#Box.0: accepted param (Elements.t8 writes π1[*]#Box.0)
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary rightLeft: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary t8: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary t3: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary pass: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  demands 5: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  15:5 call Elements.t8 <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t8 writes π1[*]#Box.0)
+  19:9 call Elements.t8 <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t8 writes π1[*]#Box.0)
+  23:11 call Elements.t8 <literal>[*]#Box.0: accepted param (Elements.t8 writes π1[*]#Box.0)
+  27:9 call Elements.t8 <literal>[*]#Box.0: accepted fresh (Elements.t8 writes π1[*]#Box.0)
+  33:5 call Elements.t3 <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t3 writes π1[*]#Box.0)
+  37:9 call Elements.t3 <literal>[*]#Box.0: accepted fresh (Elements.t3 writes π1[*]#Box.0)
+  41:12 call Elements.pass bs[*]#Box.0: accepted param (Elements.pass writes π1[*]#Box.0)
+  47:5 call Main.relay <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Main.relay writes π1[*]#Box.0)
+  51:19 call Main.relay <literal>[*]#Box.0: accepted fresh (Main.relay writes π1[*]#Box.0)
+  58:5 call Elements.t8 <call List.push>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t8 writes π1[*]#Box.0)
+  58:18 List.push <literal>: accepted fresh
+  64:5 call Elements.t8 <call List.set>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t8 writes π1[*]#Box.0)
+  64:18 List.set <literal>: accepted fresh
+  70:10 List.push <literal>: accepted fresh
+  71:5 call Elements.t8 <call List.push>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t8 writes π1[*]#Box.0) (approx)
+  71:18 List.push xs: accepted fresh
+  78:5 call Elements.t8 ys[*]#Box.0: accepted fresh (Elements.t8 writes π1[*]#Box.0)
+  85:5 call Elements.t8 ys[*]#Box.0: accepted param (Elements.t8 writes π1[*]#Box.0)
+  91:5 call Elements.t8 ys[*]#Box.0: accepted param (Elements.t8 writes π1[*]#Box.0)
+  99:5 call Elements.t8 ys[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Elements.t8 writes π1[*]#Box.0)
+  summary t8e: unused
+  summary t8c: π1 R, π1#Box.0 W[storage]
+  summary t8d: π1 R, π1#Box.0 W[storage], π2 R, π2#Box.0 W[storage]; xreq excl π1, excl π2, sep π1 π2
+  summary t8f: unused
+  summary t3e: unused
+  summary t3f: unused
+  summary relay: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary relayShared: unused
+  summary relayDistinct: unused
+  summary a1: unused
+  summary a4: unused
+  summary a7: unused
+  summary sd: unused
+  summary sp2: π1 R, π1#Box.0 RW[storage], π1#Box.0[*] R, π2 R, π2#Box.0 RW[storage], π2#Box.0[*] R; xreq excl π1, excl π2, sep π1 π2
+  summary sp3: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary spShared: unused
+  demands 20: accepted 12 (fresh 8, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 25: accepted 17 (fresh 8, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause exclusive 8

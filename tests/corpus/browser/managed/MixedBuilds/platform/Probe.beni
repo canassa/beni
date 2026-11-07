@@ -1,0 +1,14 @@
+import Js
+
+
+pub install : ⊤ → ⊤
+install _ = installFor (Js.development ⊤)
+
+
+foreign impure installFor : Bool → ⊤
+
+
+pub foreign impure started : ⊤ → ⊤
+
+
+pub foreign impure untouched : ⊤ → Bool

@@ -1,0 +1,110 @@
+-- ownership: a call's use path keeps the callee's own steps below the
+-- argument (ownership-v2.md §2.7, §2.10's read-off, #1325). `rxb2 g = rb
+-- g.x` reads `g.x.b` inside `rb`, so its class reads `π1.x.b`, not only
+-- `π1.x`, and a push of a list `g.x.b` holds, with `g` read later, is
+-- refused `alias`. The same through two calls (`rxb3`), a tuple part
+-- (`txb2`) and a constructor field (`cxb2`). `rxa2` reads `g.x.a` only, so
+-- the push of `g.x.b`'s list is accepted (both annotated: #1327 refuses
+-- an unannotated twin). `wxb2` writes `π1.x.b` through `wb` and reads its
+-- elements (`[*] R`). `both` reads `π2.x.b` as it reads `π1.x.b`: two
+-- parameters of one type share their paths.
+type Box
+    = Box (List Int) Int
+
+
+rb r = List.length r.b
+
+
+ra : { a : List Int, b : List Int } → Int
+ra r = List.length r.a
+
+
+rxb2 g = rb g.x
+
+
+rxa2 : { x : { a : List Int, b : List Int }, y : List Int } → Int
+rxa2 g = ra g.x
+
+
+rxb3 k = rxb2 k.y
+
+
+pub twoCalls : List Int → Int
+twoCalls xs =
+    ys = [ 3 ]
+    g = { x = { a = ys, b = xs }, y = ys }
+    p = List.push xs 1
+    rxb2 g + List.length p
+
+
+pub threeCalls : List Int → Int
+threeCalls xs =
+    ys = [ 3 ]
+    k = { y = { x = { a = ys, b = xs }, y = ys }, z = ys }
+    p = List.push xs 1
+    rxb3 k + List.length p
+
+
+pub otherField : List Int → Int
+otherField xs =
+    ys = [ 3 ]
+    g = { x = { a = ys, b = xs }, y = ys }
+    p = List.push xs 1
+    rxa2 g + List.length p
+
+
+tb ( _, l ) = List.length l
+
+
+txb2 g = tb g.x
+
+
+pub tuplePart : List Int → Int
+tuplePart xs =
+    ys = [ 3 ]
+    g = { x = ( ys, xs ), y = ys }
+    p = List.push xs 1
+    txb2 g + List.length p
+
+
+cb b =
+    case b of
+        Box l _ →
+            List.length l
+
+
+cxb2 g = cb g.x
+
+
+pub ctorField : List Int → Int
+ctorField xs =
+    ys = [ 3 ]
+    g = { x = Box xs 0, y = ys }
+    p = List.push xs 1
+    cxb2 g + List.length p
+
+
+wb r = List.push r.b 1
+
+
+wxb2 g = wb g.x
+
+
+pub written : List Int → Int
+written xs =
+    ys = [ 3 ]
+    g = { x = { a = ys, b = xs }, y = ys }
+    p = wxb2 g
+    List.length xs + List.length p
+
+
+both g h = rxb2 g + rxb2 h
+
+
+pub secondArgument : List Int → Int
+secondArgument xs =
+    ys = [ 3 ]
+    g = { x = { a = ys, b = ys }, y = ys }
+    h = { x = { a = ys, b = xs }, y = ys }
+    p = List.push xs 1
+    both g h + List.length p

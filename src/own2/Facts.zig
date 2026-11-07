@@ -98,6 +98,14 @@ pub const Cause = enum(u8) {
     payload,
     read_only,
     level,
+    comparison,
+    loan,
+
+    /// Whether a refusal says nothing of who else holds the object: its
+    /// known parts are judged on their own, and no label keeps it.
+    pub fn unseen(c: Cause) bool {
+        return c == .unknown or c == .loan;
+    }
 };
 
 /// How a verdict was reached (R-6.3): exact sharing, an approximation, or
@@ -295,6 +303,8 @@ pub fn causeText(c: Cause) []const u8 {
         .payload => "payload",
         .read_only => "read-only",
         .level => "level",
+        .comparison => "comparison",
+        .loan => "loan",
     };
 }
 
@@ -314,9 +324,10 @@ comptime {
 
 const testing = std.testing;
 
-test "the causes are R-6.3's nineteen, in print order" {
-    try testing.expectEqual(@as(usize, 19), @typeInfo(Cause).@"enum".field_names.len);
+test "the causes are R-6.3's, in print order" {
+    try testing.expectEqual(@as(usize, 21), @typeInfo(Cause).@"enum".field_names.len);
     try testing.expectEqual(@as(u8, 0), @backingInt(Cause.unknown));
     try testing.expectEqual(@as(u8, 18), @backingInt(Cause.level));
+    try testing.expectEqual(@as(u8, 19), @backingInt(Cause.comparison));
     try testing.expect(DemandKind.send.isDeep() and !DemandKind.writer.isDeep());
 }

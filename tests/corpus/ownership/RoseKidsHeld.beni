@@ -1,0 +1,53 @@
+-- ownership: Appendix B's RoseKidsHeld (R-4.7.1, R-4.7.4; ownership-v2.md
+-- §8, slice 4's plan, 4a), the red twin of §2.8's cycle anchors, written as
+-- mutual pattern recursion (#1394). `incKids` writes the kids list of every
+-- subtree below the root, `π1⟲#Rose.0`, but not the root's own: `incRose`
+-- pushes a subtree's list and `incRoses` walks a list with `[ s, …rest ]`.
+-- `held` answers `( kids, incKids r )`: `kids` holds the subtrees whose
+-- lists are written, so in place the answered `kids` would see the pushes:
+-- refused. A climb of trie ancestors alone accepted it. `lengthOnly` reads
+-- `kids`'s length, and `alone` reads nothing else: both accepted.
+type Rose
+    = Rose (List Rose)
+
+
+incKids : Rose → Rose
+incKids r =
+    case r of
+        Rose kids →
+            Rose (incRoses kids)
+
+
+incRose : Rose → Rose
+incRose r =
+    case r of
+        Rose kids →
+            Rose (incRoses (List.push kids (Rose [])))
+
+
+incRoses : List Rose → List Rose
+incRoses rs =
+    case rs of
+        [ s, …rest ] →
+            [ incRose s, …incRoses rest ]
+
+        [] →
+            []
+
+
+pub held : Rose → List Rose × Rose
+held r =
+    case r of
+        Rose kids →
+            ( kids, incKids r )
+
+
+pub lengthOnly : Rose → Int × Rose
+lengthOnly r =
+    case r of
+        Rose kids →
+            ( List.length kids, incKids r )
+
+
+pub alone : Rose → Rose
+alone r = incKids r

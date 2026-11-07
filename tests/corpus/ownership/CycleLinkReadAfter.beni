@@ -1,0 +1,49 @@
+-- ownership: a list taken from below a recursive value's first level and
+-- written while that value is still read (#1562). `wrap2 xs` builds
+-- `Rose [] [ Rose [] xs ]`, `innerKids` answers its inner kids list, which
+-- is `xs`, and `incLabels` writes each kid's label. With the wrapped value
+-- read after (`wrappedRead`) or the list itself (`kidsRead`), the write
+-- would change what the read sees: both are refused. v1 accepted both
+-- once: `innerKids`'s answer under the canonical form, `⟨Rose⟩⁺#Rose.1`,
+-- lost the kids' labels, which `wrap2`'s answer folds to `⟨Rose⟩⁺#Rose.0`,
+-- so the write had no base but the call's answer (`ownership-checker.md`
+-- §16.7, *The canonical form*). A `--sanitize-lists` run showed the stale
+-- read.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+wrap2 : List Rose → Rose
+wrap2 xs = Rose [] [ Rose [] xs ]
+
+
+incLabels : List Rose → List Rose
+incLabels ks =
+    case ks of
+        [ Rose l k, …rest ] →
+            [ Rose (List.push l 1) k, …incLabels rest ]
+
+        [] →
+            []
+
+
+innerKids : Rose → List Rose
+innerKids t =
+    case t of
+        Rose _ [ Rose _ ks ] →
+            ks
+
+        _ →
+            []
+
+
+pub wrappedRead : ⊤ → List Rose × Rose
+wrappedRead ⊤ =
+    w = wrap2 [ Rose [ 0 ] [], Rose [ 0 ] [] ]
+    ( incLabels (innerKids w), w )
+
+
+pub kidsRead : ⊤ → List Rose × List Rose
+kidsRead ⊤ =
+    v = [ Rose [ 0 ] [], Rose [ 0 ] [] ]
+    ( incLabels (innerKids (wrap2 v)), v )

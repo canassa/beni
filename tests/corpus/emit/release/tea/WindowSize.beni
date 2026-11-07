@@ -1,0 +1,46 @@
+-- `Browser.Events.size` and `visibility` under `--release` once
+-- `Browser/Events.js` is gone (plans/runtime-in-beni.md step 9): the two
+-- window reads and `document.visibilityState === "hidden"` are written in
+-- place, folded into the one `update` that reads them, and `Visibility`'s
+-- tags are integers. `Size` keeps `width` and `height` only where
+-- `Dom.box` is live, which this page is not.
+import Browser.Events as Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Measure
+
+
+update : Msg, String → String × Cmd Msg
+update Measure _ =
+    size = Events.size ⊤
+    seen =
+        case Events.visibility ⊤ of
+            Events.Visible →
+                "visible"
+
+            Events.Hidden →
+                "hidden"
+    ( "${String.fromInt size.width}×${String.fromInt size.height} ${seen}", Cmd.none )
+
+
+view : String → Html Msg
+view text =
+    <main>
+        <button onClick={Measure}>measure</button>
+        <p>{text}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

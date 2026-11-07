@@ -1,0 +1,2 @@
+-- Corrupt only the native send to exercise an actual DataCloneError.
+pub foreign impure install : ⊤ → ⊤

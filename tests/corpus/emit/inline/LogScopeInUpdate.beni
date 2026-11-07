@@ -1,0 +1,55 @@
+-- An `update` arm written inside `Log.annotate`, `Log.span` or
+-- `Log.minimum` is read through it (#751): its model is written and its
+-- own lines carry the arm's context. Until then `browser-inline` refused
+-- every such arm, a limit of the compiler. A command with a body made
+-- inside a scope is still refused (`build/bad/inline/CommandInLogScope`,
+-- #1003). The transcript is browser-tea's for the same program.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Annotated
+    | Spanned
+
+
+type alias Model =
+    n : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    next = { model | n = model.n + 1 }
+    case msg of
+        Annotated →
+            Log.annotate "request" "p1" λ⊤ →
+                Log.minimum Log.Debug λ⊤ →
+                    Log.debug "in the arm"
+                    ( next, Cmd.none )
+
+        Spanned →
+            Log.span "save" λ⊤ →
+                Log.info "in a span"
+                ( next, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="annotated" onClick={Annotated}>annotated</button>
+        <button id="spanned" onClick={Spanned}>spanned</button>
+        <p>{model.n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

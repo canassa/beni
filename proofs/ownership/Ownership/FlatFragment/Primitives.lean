@@ -64,86 +64,57 @@ theorem observed_external (vs : ValueSemantics.State) (hs : State)
 
 /-! ### The checker's literal step -/
 
-theorem primitive_literal_run (ctx : Context) (site : List Nat) (xs : List Abstract)
+theorem primitive_literal_run (ctx : Context) (site : List Nat) (t : Ty) (xs : List Abstract)
     (later : List Origin) (before : St) :
-    (primitive ctx site (.literal .int) xs later).run before =
+    (primitive ctx site (.literal t) xs later).run before =
       .ok (.list [.site site 0] (xs.foldl Abstract.join .bottom)
         ⟨storeExclusive ctx xs later [], storeSpines ctx xs later []⟩, before) := by
   unfold primitive
   rfl
-
-/-- The fold of scalars and bottoms (a dead operand) over a scalar or bottom. -/
-theorem flat_fold_flat (as : List Abstract) (flatAs : ∀ a ∈ as, a = .bottom ∨ a = .scalar)
-    (start : Abstract) (flat : start = .bottom ∨ start = .scalar) :
-    as.foldl Abstract.join start = .bottom ∨ as.foldl Abstract.join start = .scalar := by
-  induction as generalizing start with
-  | nil => simpa using flat
-  | cons a rest ih =>
-    simp only [List.foldl_cons]
-    apply ih (fun x member => flatAs x (List.mem_cons_of_mem _ member))
-    rcases flat with rfl | rfl <;> rcases flatAs a (by simp) with rfl | rfl <;> simp [Abstract.join]
-
-/-- The actual literal inference: a fresh site root, a flat element, and an
-unchanged checker state. Every operand is a scalar or the bottom of dead code. -/
-theorem infer_literal_success {aenv : Env Abstract} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {args : List Atom} {as : List Abstract}
-    (defaultConfig : ctx.config = {})
-    (argsRun : args.mapM (m := Except String) (abstractAtom aenv) = .ok as)
-    (flatAs : ∀ a ∈ as, a = .bottom ∨ a = .scalar)
-    (accepted : (inferExpr inferenceFuel ctx aenv (.prim (.literal .int) args) after site).run before =
-      .ok (result, next)) :
-    next = before ∧ ∃ element certificate,
-      result = .list [.site site 0] element certificate ∧
-      (element = .bottom ∨ element = .scalar) := by
-  obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
-  rw [primitive_literal_run] at run
-  have equal := Except.ok.inj run
-  refine ⟨(congrArg Prod.snd equal).symm, _, _, (congrArg Prod.fst equal).symm, ?_⟩
-  exact flat_fold_flat as flatAs .bottom (Or.inl rfl)
 
 /-! ### The literal expression case -/
 
 def heapAllocated (hs : State) (integers : List Int) : State :=
   {hs with fuel := hs.fuel - 1, heap := hs.heap.push (heapInts integers)}
 
-theorem heap_literal_prim_run (hs : State) (integers : List Int) :
-    (prim (.literal .int) (heapInts integers)).run (heapTicked hs) =
-      .ok (.ref hs.heap.size, heapAllocated hs integers) := rfl
+def heapAllocatedValues (hs : State) (stored : List Value) : State :=
+  {hs with fuel := hs.fuel - 1, heap := hs.heap.push stored}
 
-theorem literal_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {args : List Atom}
+theorem value_literal_run_values (s : ValueSemantics.State) (t : Ty) (os : List Observation) :
+    (ValueSemantics.prim (.literal t) os).run s = .ok (.list os, s) := rfl
+
+theorem heap_literal_run_values (hs : State) (t : Ty) (ws : List Value) :
+    (prim (.literal t) ws).run (heapTicked hs) = .ok (.ref hs.heap.size, heapAllocatedValues hs ws) := rfl
+
+theorem literal_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {depth : Nat} {t : Ty} {args : List Atom} {os : List Observation} {ws : List Value}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueAtoms : args.mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok (valueInts integers))
-    (heapAtoms : args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok (heapInts integers))
+    (valueAtoms : args.mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) = .ok os)
+    (heapAtoms : args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) = .ok ws)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
-    (ValueSemantics.eval depth declarations none (valueEnv env)
-      (.prim (.literal .int) args)).run vs =
-      .ok (.list (valueInts integers), valueObserved (valueTicked vs)) ∧
-    (InPlaceSemantics.eval depth declarations none (heapEnv env)
-      (.prim (.literal .int) args)).run hs =
-      .ok (.ref hs.heap.size, heapObserved (heapAllocated hs integers) vs.kept.toList) := by
+    (ValueSemantics.eval depth declarations none (valueEnv env) (.prim (.literal t) args)).run vs =
+      .ok (.list os, valueObserved (valueTicked vs)) ∧
+    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim (.literal t) args)).run hs =
+      .ok (.ref hs.heap.size, heapObserved (heapAllocatedValues hs ws) vs.kept.toList) := by
   obtain ⟨footprint, represented⟩ := inv.observers
   have valueObservedRun := value_observeKept_run (valueTicked vs) represented
-  have heapObservedRun := heap_observeKept_run (heapAllocated hs integers)
-    (representsMany_after_alloc (xs := heapInts integers) represented)
+  have heapObservedRun := heap_observeKept_run (heapAllocatedValues hs ws)
+    (representsMany_after_alloc (xs := ws) represented)
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   constructor
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
-    simp [hasDepth, hasFuel, value_literal_run, valueObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, hasFuel, value_literal_run_values, valueObservedRun, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, heap_literal_prim_run, heapObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, heapFuel, heap_literal_run_values, heapObservedRun, Except.bind, Except.pure, bind, pure]
 
-theorem literal_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {args : List Atom}
+theorem literal_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {depth : Nat} {t : Ty} {args : List Atom} {os : List Observation} {ws : List Value} {message : String}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueAtoms : args.mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok (valueInts integers))
-    (heapAtoms : args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok (heapInts integers))
+    (valueAtoms : args.mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) = .ok os)
+    (heapAtoms : args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) = .ok ws)
     (failed : (ValueSemantics.eval depth declarations none (valueEnv env)
-      (.prim (.literal .int) args)).run vs = .error message) :
+      (.prim (.literal t) args)).run vs = .error message) :
     ∃ actualMessage,
       (InPlaceSemantics.eval depth declarations none (heapEnv env)
-        (.prim (.literal .int) args)).run hs = .error actualMessage := by
+        (.prim (.literal t) args)).run hs = .error actualMessage := by
   by_cases noDepth : depth = 0
   · exact ⟨"in-place execution exhausted depth", by
       rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
@@ -153,19 +124,23 @@ theorem literal_failure {declarations : List Decl} {vs : ValueSemantics.State} {
       exact ⟨"in-place execution exhausted fuel", by
         rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
         simp [noDepth, heapFuel]⟩
-    · have success := (literal_runtime_success inv valueAtoms heapAtoms noDepth noFuel).1
+    · have success := (literal_runtime_success (t := t) inv valueAtoms heapAtoms noDepth noFuel).1
       rw [success] at failed
       contradiction
 
-/-- The post-relation after a real allocation: the naming extends at the
-actual new address, the hole is that address, and no old binding or
-observer names it. -/
-theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming}
+/-- The relation after an allocation of shaped values at the real address: the
+naming extends at the site, every binding keeps its description (slice 2b of #522). -/
+theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    {vs' : ValueSemantics.State} {hs' : State}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (integers : List Int) (site : List Nat) :
+    (stored : List Value) (site : List Nat)
+    (heapEq : hs'.heap = hs.heap.push stored) (links : hs'.links = hs.links)
+    (keptSame : hs'.kept = hs.kept) (valueKeptSame : vs'.kept = vs.kept)
+    (reads : vs'.reads = hs'.reads) (external : vs'.externalReads = hs'.externalReads)
+    (fuel : vs'.fuel = hs'.fuel)
+    (heapKinds : ∃ kinds, StateKinded kinds hs' env tenv) :
     ∃ gamma',
-      FlatInvariant declarations (valueObserved (valueTicked vs))
-        (heapObserved (heapAllocated hs integers) vs.kept.toList) env live aenv tenv escapes gamma' ∧
+      FlatInvariant declarations vs' hs' env live aenv tenv escapes gamma' ∧
       hs.heap.size ∈ gamma' (.site site 0) ∧
       (∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin)) := by
   obtain ⟨gamma', extension, bounded, separating, old⟩ :=
@@ -173,101 +148,367 @@ theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.S
       (fun origin address member => inv.namingBound origin address member) inv.separating site
   obtain ⟨footprint, represented⟩ := inv.observers
   refine ⟨gamma', ?_, (extension (.site site 0) hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old⟩
-  have heapEq : (heapObserved (heapAllocated hs integers) vs.kept.toList).heap =
-      hs.heap.push (heapInts integers) := by
-    rw [heapObserved_heap]; rfl
-  refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) ?_ ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
-    (fun _ escaped => escaped)
-  · rw [heapEq]; exact flatHeap_after_allocation inv.heapInts integers
-  · rw [heapEq]; simp
-  · rw [heapObserved_links]; exact inv.links
-  · intro c _ different
+  have linksValid' : LinksValid hs' :=
+    Ownership.LinkClauses.linksValid_of_same (Ownership.LinkClauses.linksValid_push inv.toInvariant.linksValid stored)
+      heapEq links
+  have linkClosed' : Ownership.LinkClauses.LinkClosed hs'.links gamma' := by
+    rw [links]
+    exact Ownership.LinkClauses.linkClosed_of_old inv.toInvariant.linksValid inv.linkClosed old
+  refine flatInvariant_heap_frame inv (inside := (· = hs.heap.size)) (footprint := footprint)
+    (fun _ member => member) (by rw [heapEq]; simp) linksValid' linkClosed' ?_ ?_ ?_
+    represented ?_ keptSame valueKeptSame old ?_ separating reads external fuel (fun _ escaped => escaped)
+    heapKinds
+  · intro c different
     rw [heapEq]
-    simp [Array.getElem?_push, different]
-  · intro x p _ o w w' binding projected q c located
+    simp [Array.getElem?_push, show c ≠ hs.heap.size from different]
+  · intro x p _ o w w' binding projected q c located same
     have := live_path_below inv x p o w w' binding projected q c located
     omega
-  · intro member
+  · refine projected_of_route (inside := (· = hs.heap.size)) (fun c different => ?_) ?_
+    · rw [heapEq]
+      simp [Array.getElem?_push, show c ≠ hs.heap.size from different]
+    · intro x p _ o w q c rest binding _ located same
+      have := live_path_route_below inv x o w q c binding located
+      omega
+  · intro c member same
     have bound := representsMany_bound represented _ member
     omega
-  · rw [heapObserved_kept]; rfl
-  · rw [valueObserved_kept]; rfl
   · rw [heapEq]
     simp only [Array.size_push]
     intro origin address member
     exact bounded origin address member
-  · rw [valueObserved_reads, heapObserved_reads]; exact inv.reads
-  · exact observed_external (valueTicked vs) (heapAllocated hs integers) inv.keptSize inv.external
-  · rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocated, inv.fuel]
 
-/-- The literal expression case. Typing fixes the operand types to `Int`;
-the live uses supply the operand values (any atoms); acceptance supplies the result. -/
-theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {args : List Atom} {self : Decl} {type : Ty}
+/-- The relation after a literal: a fresh allocation at the real address, named
+by the site. -/
+theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (integers : List Int) (site : List Nat)
+    (heapKinds : ∃ kinds, StateKinded kinds (heapObserved (heapAllocated hs integers) vs.kept.toList) env tenv) :
+    ∃ gamma',
+      FlatInvariant declarations (valueObserved (valueTicked vs))
+        (heapObserved (heapAllocated hs integers) vs.kept.toList) env live aenv tenv escapes gamma' ∧
+      hs.heap.size ∈ gamma' (.site site 0) ∧
+      (∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin)) :=
+  alloc_post_invariant inv (heapInts integers) site (by rw [heapObserved_heap]; rfl)
+    (by rw [heapObserved_links]; rfl)
+    (by rw [heapObserved_kept]; rfl)
+    (by rw [valueObserved_kept]; rfl) (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
+    (observed_external (valueTicked vs) (heapAllocated hs integers) inv.keptSize inv.external)
+    (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocated, inv.fuel])
+    heapKinds
+
+/-- The heap typing after an integer allocation of a chain or a dictionary
+type: the new address has that type. -/
+theorem literal_kinds {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (integers : List Int) {t : Ty}
+    (contents : ∀ kinds, ContentsKinded kinds t (heapInts integers)) :
+    ∃ kinds', StateKinded kinds' (heapObserved (heapAllocated hs integers) vs.kept.toList) env tenv ∧
+      kinds' hs.heap.size = some t := by
+  obtain ⟨kinds, state⟩ := inv.heapKinds
+  obtain ⟨kinds', state', _, typed⟩ := state.of_alloc (contents kinds)
+    (hs' := heapObserved (heapAllocated hs integers) vs.kept.toList)
+    (by rw [heapObserved_heap]; rfl) (by rw [heapObserved_links]; rfl)
+  exact ⟨kinds', state', typed⟩
+
+/-- The heap typing after an allocation of contents of a source type: the
+new address has that type. -/
+theorem alloc_kinds_of {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    {hs' : State} {stored : List Value} {t : Ty}
+    (heapEq : hs'.heap = hs.heap.push stored) (links : hs'.links = hs.links)
+    (contents : ∀ kinds, StateKinded kinds hs env tenv → ContentsKinded kinds t stored) :
+    ∃ kinds', StateKinded kinds' hs' env tenv ∧ kinds' hs.heap.size = some t := by
+  obtain ⟨kinds, state⟩ := inv.heapKinds
+  obtain ⟨kinds', state', _, typed⟩ := state.of_alloc (contents kinds state) heapEq links
+  exact ⟨kinds', state', typed⟩
+
+/-- An integer array is a chain of integers under any heap typing. -/
+theorem chain_contents_ints (kinds : Nat → Option Ty) (integers : List Int) :
+    ContentsKinded kinds (.chain .int) (heapInts integers) := by
+  refine .chain .int _ fun x member => ?_
+  obtain ⟨i, _, rfl⟩ := List.mem_map.mp member
+  exact .int i
+
+/-- The literal expression case over element values (slice 2b of #522): typing
+fixes the operand types to the element type, the live uses supply the values,
+the fresh array is described by the fold of the items' abstracts, and the
+checker's exclusivity and spine certificates hold for its footprint. -/
+theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {args : List Atom} {self : Decl} {type : Ty} {t : Ty}
+    (elemT : FlatType t)
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
-    (typed : exprType declarations self tenv (.prim (.literal .int) args) = .ok type)
+    (typed : exprType declarations self tenv (.prim (.literal t) args) = .ok type)
     (covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live)
     (defaultConfig : ctx.config = {})
-    (accepted : (inferExpr inferenceFuel ctx aenv (.prim (.literal .int) args) after site).run before =
+    (accepted : (inferExpr inferenceFuel ctx aenv (.prim (.literal t) args) after site).run before =
       .ok (result, next)) :
-    type = .list .int ∧ next.facts = before.facts ∧
-    (∃ element certificate, result = .list [.site site 0] element certificate ∧
-      (element = .bottom ∨ element = .scalar)) ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
-        (.prim (.literal .int) args)).run vs = .ok (value, vs') →
+        (.prim (.literal t) args)).run vs = .ok (value, vs') →
       ∃ actual hs' gamma',
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
-          (.prim (.literal .int) args)).run hs = .ok (actual, hs') ∧
+          (.prim (.literal t) args)).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
-        (.prim (.literal .int) args)).run vs = .error message →
+        (.prim (.literal t) args)).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
-          (.prim (.literal .int) args)).run hs = .error actualMessage) := by
+          (.prim (.literal t) args)).run hs = .error actualMessage) := by
   obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
-  obtain ⟨listType, allInt⟩ := primType_literal_int_success primTyped
+  obtain ⟨listType, allT⟩ := primType_literal_success primTyped
   subst listType
-  obtain ⟨integers, valueAtoms, heapAtoms, abstractAtoms⟩ :=
-    flat_atoms_integers inv atomsTyped allInt covered
-  obtain ⟨checkerState, element, certificate, resultShape, elementFlat⟩ :=
-    infer_literal_success defaultConfig abstractAtoms
-      (fun a member => by obtain ⟨_, _, rfl⟩ := List.mem_map.mp member; exact Or.inr rfl) accepted
-  subst checkerState
-  refine ⟨rfl, rfl, ⟨element, certificate, resultShape, elementFlat⟩, ?_, ?_⟩
-  · intro value vs' run
+  have typesT : ∀ ty ∈ types, ty = t := fun ty member =>
+    ty_equal_flat_right elemT (allT ty member)
+  obtain ⟨os, ws, as, valueAtoms, heapAtoms, abstractAtoms, lenO, lenW, lenA, fields⟩ :=
+    flat_atoms_values inv atomsTyped covered
+  -- The items' heap facts are at the element's representation (#1840): its type
+  -- `entryType t` and the items' abstracts read through the type, `bs`.
+  obtain ⟨bs, bsDef⟩ : ∃ bs, bs = as.map (entryAbstract declarations t) := ⟨_, rfl⟩
+  have lenB : bs.length = types.length := by rw [bsDef, List.length_map]; exact lenA
+  have sourceFacts : ∀ (i : Nat) o w a, os[i]? = some o → ws[i]? = some w → as[i]? = some a →
+      Corresponds hs.heap o w ∧ Describes gamma hs.heap (entryAbstract declarations t a) w ∧
+      obsTyped declarations o t = true ∧ ValueTyped declarations hs.heap w t ∧
+      FlatType t ∧ FlatAbstract t a ∧ AllocatedFlatValue hs.heap w (entryType t) ∧
+      ResultTags (entryType t) (entryAbstract declarations t a) w ∧ ChainTags (entryType t) (entryAbstract declarations t a) o ∧
+      TagsDeep hs.heap (entryType t) (entryAbstract declarations t a) w := by
+    intro i o w a os_i ws_i as_i
+    obtain ⟨ty, types_i⟩ := index_of_same_length lenO os_i
+    have facts := fields i o w a ty os_i ws_i as_i types_i
+    rw [typesT ty (List.mem_of_getElem? types_i)] at facts
+    exact facts
+  have factsAt : ∀ (i : Nat) o w b, os[i]? = some o → ws[i]? = some w → bs[i]? = some b →
+      Corresponds hs.heap o w ∧ Describes gamma hs.heap b w ∧
+      obsTyped declarations o t = true ∧ ValueTyped declarations hs.heap w t ∧
+      FlatType (entryType t) ∧ FlatAbstract (entryType t) b ∧ AllocatedFlatValue hs.heap w (entryType t) ∧ ResultTags (entryType t) b w ∧ ChainTags (entryType t) b o ∧
+      TagsDeep hs.heap (entryType t) b w := by
+    intro i o w b os_i ws_i bs_i
+    rw [bsDef, List.getElem?_map] at bs_i
+    cases as_i : as[i]? with
+    | none => rw [as_i] at bs_i; cases bs_i
+    | some a =>
+      rw [as_i] at bs_i
+      cases Option.some.inj bs_i
+      obtain ⟨paired, described, observed, valueTyped, flat, shape, allocated, tags, chains, deep⟩ :=
+        sourceFacts i o w a os_i ws_i as_i
+      exact ⟨paired, described, observed, valueTyped, flatType_entryType flat,
+        flatAbstract_entry shape, allocated, tags, chains, deep⟩
+  have witnesses : ∀ (i : Nat) w, ws[i]? = some w → ∃ o b, os[i]? = some o ∧ bs[i]? = some b := by
+    intro i w ws_i
+    obtain ⟨o, os_i⟩ := index_of_same_length (lenW.trans lenO.symm) ws_i
+    obtain ⟨b, bs_i⟩ := index_of_same_length (lenW.trans lenB.symm) ws_i
+    exact ⟨o, b, os_i, bs_i⟩
+  have shapesA : ∀ a ∈ as, FlatAbstract t a := by
+    intro a member
+    obtain ⟨i, as_i⟩ := List.mem_iff_getElem?.mp member
+    obtain ⟨o, os_i⟩ := index_of_same_length (lenA.trans lenO.symm) as_i
+    obtain ⟨w, ws_i⟩ := index_of_same_length (lenA.trans lenW.symm) as_i
+    exact (sourceFacts i o w a os_i ws_i as_i).2.2.2.2.2.1
+  have shapesB : ∀ b ∈ bs, FlatAbstract (entryType t) b := by
+    intro b member
+    obtain ⟨i, bs_i⟩ := List.mem_iff_getElem?.mp member
+    obtain ⟨o, os_i⟩ := index_of_same_length (lenB.trans lenO.symm) bs_i
+    obtain ⟨w, ws_i⟩ := index_of_same_length (lenB.trans lenW.symm) bs_i
+    exact (factsAt i o w b os_i ws_i bs_i).2.2.2.2.2.1
+  have elemsShaped : ∀ w ∈ ws, AllocatedFlatValue hs.heap w (entryType t) := by
+    intro w member
+    obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+    obtain ⟨o, a, os_i, as_i⟩ := witnesses i w ws_i
+    exact (factsAt i o w a os_i ws_i as_i).2.2.2.2.2.2.1
+  have foldShape : FlatAbstract t (as.foldl Abstract.join .bottom) :=
+    flatAbstract_fold_join shapesA .bottom (.bottom t)
+  obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
+  rw [primitive_literal_run] at run
+  obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+  have resultEq := first.symm
+  -- The checker's result read through the type: the fold and both store tests
+  -- give the same answers on the items' representations.
+  have resultRep := congrArg (entryAbstract declarations (.list t)) resultEq
+  rw [entryAbstract_list_list, entryAbstract_fold_join shapesA .bottom (.bottom t), entryAbstract_bottom,
+    ← storeExclusive_entry (ds := declarations) shapesA, ← storeSpines_entry (ds := declarations) shapesA,
+    ← bsDef] at resultRep
+  have nextEscapes : next.facts.escapes = before.facts.escapes := by rw [← second]
+  refine ⟨.list t elemT, nextEscapes, by rw [resultEq]; exact .list _ _ _ _ (by simp) foldShape, ?_, ?_⟩
+  · intro value vs' run'
     by_cases noDepth : depth = 0
-    · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
-      simp [noDepth] at run
+    · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
+      simp [noDepth] at run'
     · by_cases noFuel : vs.fuel = 0
-      · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
-        simp [noDepth, noFuel] at run
-      · obtain ⟨valueRun, heapRun⟩ := literal_runtime_success inv valueAtoms heapAtoms noDepth noFuel
-        rw [valueRun] at run
-        cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv integers site
-        have heapEq : (heapObserved (heapAllocated hs integers) vs.kept.toList).heap =
-            hs.heap.push (heapInts integers) := by
+      · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
+        simp [noDepth, noFuel] at run'
+      · obtain ⟨valueRun, heapRun⟩ := literal_runtime_success (t := t) inv valueAtoms heapAtoms noDepth noFuel
+        rw [valueRun] at run'
+        cases run'
+        have heapEq : (heapObserved (heapAllocatedValues hs ws) vs.kept.toList).heap = hs.heap.push ws := by
           rw [heapObserved_heap]; rfl
-        have lookupNew : (heapObserved (heapAllocated hs integers) vs.kept.toList).heap[hs.heap.size]? =
-            some (heapInts integers) := by
-          rw [heapEq]; simp
-        refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs integers) vs.kept.toList, gamma',
-          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, by rw [resultShape]; exact .listInt _ _ _ _,
-          .listInt _ _⟩
+        have lookupNew : (hs.heap.push ws)[hs.heap.size]? = some ws := by simp
+        have agree : ∀ w ∈ ws, ∀ c, Reaches hs.heap w (.ref c) → (hs.heap.push ws)[c]? = hs.heap[c]? := by
+          intro w member c reach
+          have bound := allocated_reach_bound (elemsShaped w member) reach
+          simp [Array.getElem?_push, Nat.ne_of_lt bound]
+        have shapedZ : ∀ w ∈ ws, AllocatedFlatValue (hs.heap.push ws) w (entryType t) :=
+          fun w member => allocated_of_agree (elemsShaped w member) (agree w member)
+        have shapedNew : AllocatedFlatValue (hs.heap.push ws) (.ref hs.heap.size) (.list (entryType t)) :=
+          .list _ ws (entryType t) lookupNew shapedZ
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have itemsKinded : ∀ w ∈ ws, Kinded kinds t w := by
+          intro w member
+          obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+          obtain ⟨ty, types_i⟩ := index_of_same_length lenW ws_i
+          have k := kinded_atoms inv state atomsTyped covered heapAtoms i w ty ws_i types_i
+          rwa [typesT ty (List.mem_of_getElem? types_i)] at k
+        obtain ⟨kinds', state', _, newTyped⟩ :=
+          state.of_alloc (hs' := heapObserved (heapAllocatedValues hs ws) vs.kept.toList)
+            (ContentsKinded.list t ws itemsKinded) heapEq (by rw [heapObserved_links]; rfl)
+        obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv ws site heapEq
+          (by rw [heapObserved_links]; rfl)
+          (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl)
+          (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
+          (observed_external (valueTicked vs) (heapAllocatedValues hs ws) inv.keptSize inv.external)
+          (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocatedValues, inv.fuel])
+          ⟨kinds', state'⟩
+        have rootNamed' : named gamma' [.site site 0] hs.heap.size := ⟨.site site 0, by simp, fresh⟩
+        have rootApart : ∀ w ∈ ws, ¬ Reaches (hs.heap.push ws) w (.ref hs.heap.size) := by
+          intro w member reach
+          have := allocated_reach_bound (elemsShaped w member) (reaches_of_agree_rev (agree w member) reach)
+          omega
+        -- each item, described under the extended naming and in the new heap
+        have itemFacts : ∀ (i : Nat) w, ws[i]? = some w → ∃ a, bs[i]? = some a ∧ FlatAbstract (entryType t) a ∧
+            Describes gamma' hs.heap a w ∧ Describes gamma' (hs.heap.push ws) a w := by
+          intro i w ws_i
+          obtain ⟨o, a, os_i, as_i⟩ := witnesses i w ws_i
+          have facts := factsAt i o w a os_i ws_i as_i
+          have described' : Describes gamma' hs.heap a w :=
+            describes_naming_same facts.2.2.2.2.2.2.1 old
+              (fun c reach => allocated_reach_bound facts.2.2.2.2.2.2.1 reach) facts.2.1
+          exact ⟨a, as_i, facts.2.2.2.2.2.1, described', describes_of_agree (agree w (List.mem_of_getElem? ws_i)) described'⟩
+        have elementsDescribed : ∀ w ∈ ws,
+            Describes gamma' (hs.heap.push ws) (bs.foldl Abstract.join .bottom) w := by
+          intro w member
+          obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+          obtain ⟨a, as_i, shapeA, _, describedNew⟩ := itemFacts i w ws_i
+          exact describes_fold_join (shapedZ w member) shapesB .bottom (.bottom (entryType t))
+            (Or.inr ⟨a, List.mem_of_getElem? as_i, describedNew⟩)
+        -- the cross-item apartness the exclusivity test gives, and the container apartness the spine test gives
+        have describedNew : Describes gamma' (hs.heap.push ws) (entryAbstract declarations (.list t) result)
+            (.ref hs.heap.size) := by
+          rw [resultRep]
+          refine list_described_of_elements rootNamed' (by simp) lookupNew shapedNew elementsDescribed ?_ ?_
+          · intro d
+            obtain ⟨deepAll, sepVals, _⟩ := storeExclusive_facts_many d
+            obtain ⟨eachSep, cross⟩ := separatedValues_sound sepVals
+            refine fresh_footprint_nodup lookupNew rootApart ?_ ?_
+            · intro i w ws_i n o fp rep
+              obtain ⟨a, as_i, shapeA, described', _⟩ := itemFacts i w ws_i
+              have aMember := List.mem_of_getElem? as_i
+              exact nodup_of_deepExclusive (elemsShaped w (List.mem_of_getElem? ws_i)) shapeA described'
+                (deepAll a aMember) (pathsApart_of_separated postInvariant.separating (eachSep a aMember)) n o fp
+                (represents_of_agree_rev (agree w (List.mem_of_getElem? ws_i)) rep)
+            · intro i j ne wi wj ws_i ws_j c reachI reachJ
+              obtain ⟨ai, as_i, shapeI, describedI, _⟩ := itemFacts i wi ws_i
+              obtain ⟨aj, as_j, shapeJ, describedJ, _⟩ := itemFacts j wj ws_j
+              have reachI' := reaches_of_agree_rev (agree wi (List.mem_of_getElem? ws_i)) reachI
+              have reachJ' := reaches_of_agree_rev (agree wj (List.mem_of_getElem? ws_j)) reachJ
+              rcases Nat.lt_or_gt_of_ne ne with lt | gt
+              · exact reach_apart_of_covers postInvariant.separating shapeI shapeJ describedI.1.1 describedJ.1.1
+                  (cross i j lt ai aj as_i as_j) c reachI' reachJ'
+              · exact reach_apart_of_covers postInvariant.separating shapeJ shapeI describedJ.1.1 describedI.1.1
+                  (cross j i gt aj ai as_j as_i) c reachJ' reachI'
+          · intro sp
+            obtain ⟨sepFlat, perItem⟩ := storeSpines_facts_many sp
+            refine fresh_footprint_once lookupNew rootApart ?_ ?_
+            · intro i w ws_i n o fp rep p c container located
+              obtain ⟨a, as_i, shapeA, described', _⟩ := itemFacts i w ws_i
+              have aMember := List.mem_of_getElem? as_i
+              have wMember := List.mem_of_getElem? ws_i
+              exact once_of_separated postInvariant.separating shapeA (elemsShaped w wMember) described'.1.1
+                (separatedPaths_sublist (sublist_flatMap_of_mem aMember) sepFlat)
+                (fun e eMember f fMember => (perItem a aMember e eMember).2 a aMember f fMember)
+                n o fp (represents_of_agree_rev (agree w wMember) rep) p c container
+                (atPath_of_agree_rev (agree w wMember) located)
+            · intro i j ne wi wj ws_i ws_j p c container located reachJ
+              obtain ⟨ai, as_i, shapeI, describedI, _⟩ := itemFacts i wi ws_i
+              obtain ⟨aj, as_j, shapeJ, describedJ, _⟩ := itemFacts j wj ws_j
+              have located' := atPath_of_agree_rev (agree wi (List.mem_of_getElem? ws_i)) located
+              have reachJ' := reaches_of_agree_rev (agree wj (List.mem_of_getElem? ws_j)) reachJ
+              obtain ⟨q, locatedJ⟩ := arrayAt_of_reaches reachJ'
+              obtain ⟨oI, mI, aI⟩ := describedI.1.1 p c located'
+              obtain ⟨oJ, mJ, aJ⟩ := describedJ.1.1 q c locatedJ
+              obtain ⟨cs, eI, inI⟩ :=
+                mem_namesAt_of_arrayAt shapeI (elemsShaped wi (List.mem_of_getElem? ws_i)) p c oI located' mI
+              obtain ⟨ds, eJ, inJ⟩ :=
+                mem_namesAt_of_arrayAt shapeJ (elemsShaped wj (List.mem_of_getElem? ws_j)) q c oJ locatedJ mJ
+              have cI : (p, cs) ∈ containers ai := List.mem_filter.mpr ⟨eI, container⟩
+              rcases (perItem ai (List.mem_of_getElem? as_i) (p, cs) cI).2 aj (List.mem_of_getElem? as_j) (q, ds) eJ
+                with containerQ | disjoint
+              · have cJ : (q, ds) ∈ containers aj := List.mem_filter.mpr ⟨eJ, containerQ⟩
+                rcases Nat.lt_or_gt_of_ne ne with lt | gt
+                · exact cellOverlap_sound gamma' postInvariant.separating cs ds
+                    (separatedPaths_flatMap_cross sepFlat i j lt ai aj as_i as_j (p, cs) cI (q, ds) cJ) c
+                    ⟨oI, inI, aI⟩ ⟨oJ, inJ, aJ⟩
+                · exact cellOverlap_sound gamma' postInvariant.separating ds cs
+                    (separatedPaths_flatMap_cross sepFlat j i gt aj ai as_j as_i (q, ds) cJ (p, cs) cI) c
+                    ⟨oJ, inJ, aJ⟩ ⟨oI, inI, aI⟩
+              · exact cellOverlap_sound gamma' postInvariant.separating cs ds disjoint c ⟨oI, inI, aI⟩ ⟨oJ, inJ, aJ⟩
+        have deepNew : ∀ roots cert, TagsDeep (hs.heap.push ws) (.list (entryType t))
+            (.list roots (bs.foldl Abstract.join .bottom) cert) (.ref hs.heap.size) := by
+          intro roots cert
+          apply tagsDeep_list lookupNew
+          intro w member
+          obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+          obtain ⟨o, a, os_i, as_i⟩ := witnesses i w ws_i
+          have facts := factsAt i o w a os_i ws_i as_i
+          exact elementTags_of_agree
+            (elementTags_fold_join shapesB .bottom (.bottom (entryType t))
+              (Or.inr ⟨a, List.mem_of_getElem? as_i,
+                elementTags_of_corresponds facts.1 facts.2.2.2.2.2.2.2.1
+                  facts.2.2.2.2.2.2.2.2.1 facts.2.2.2.2.2.2.2.2.2⟩)) (agree w member)
+        refine ⟨.ref hs.heap.size, heapObserved (heapAllocatedValues hs ws) vs.kept.toList, gamma',
+          heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, ?_, ?_, ?_,
+          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _,
+          by rw [heapEq, resultRep]; exact deepNew _ _, ⟨kinds', state', .list t _ newTyped⟩⟩
         · rw [heapEq]; simp
-        · exact corresponds_integer_ref lookupNew
-        · rw [resultShape]
-          exact allocated_list_described lookupNew ⟨.site site 0, by simp, fresh⟩
-        · exact integer_list_observation_typed declarations integers
-        · exact allocated_integer_list_typed declarations lookupNew
+        · rw [heapEq]
+          exact corresponds_list_of_elements lookupNew (lenO.trans lenW.symm) (fun i o w os_i ws_i => by
+            obtain ⟨o', a, os_i', as_i⟩ := witnesses i w ws_i
+            rw [os_i] at os_i'
+            cases Option.some.inj os_i'
+            exact corresponds_of_agree (agree w (List.mem_of_getElem? ws_i)) (factsAt i o w a os_i ws_i as_i).1)
+        · rw [heapEq]; exact describedNew
+        · exact obsTyped_list_of_elements (fun o member => by
+            obtain ⟨i, os_i⟩ := List.mem_iff_getElem?.mp member
+            obtain ⟨w, ws_i⟩ := index_of_same_length (lenO.trans lenW.symm) os_i
+            obtain ⟨o', a, os_i', as_i⟩ := witnesses i w ws_i
+            rw [os_i] at os_i'
+            cases Option.some.inj os_i'
+            exact (factsAt i o w a os_i ws_i as_i).2.2.1)
+        · rw [heapEq]
+          refine valueTyped_of_corresponds (o := .list os) ?_ ?_
+          · exact corresponds_list_of_elements lookupNew (lenO.trans lenW.symm) (fun i o w os_i ws_i => by
+              obtain ⟨o', a, os_i', as_i⟩ := witnesses i w ws_i
+              rw [os_i] at os_i'
+              cases Option.some.inj os_i'
+              exact corresponds_of_agree (agree w (List.mem_of_getElem? ws_i)) (factsAt i o w a os_i ws_i as_i).1)
+          · exact obsTyped_list_of_elements (fun o member => by
+              obtain ⟨i, os_i⟩ := List.mem_iff_getElem?.mp member
+              obtain ⟨w, ws_i⟩ := index_of_same_length (lenO.trans lenW.symm) os_i
+              obtain ⟨o', a, os_i', as_i⟩ := witnesses i w ws_i
+              rw [os_i] at os_i'
+              cases Option.some.inj os_i'
+              exact (factsAt i o w a os_i ws_i as_i).2.2.1)
+        · rw [heapEq]; exact shapedNew
   · intro message failed
-    exact literal_failure inv valueAtoms heapAtoms failed
+    exact literal_failure (t := t) inv valueAtoms heapAtoms failed
 
 end Ownership.FlatFragment.Literal
 
@@ -306,46 +547,47 @@ theorem flat_atom_type {declarations : List Decl} {vs : ValueSemantics.State} {h
     exact flatType_tyAt (inv.types k tk declared) at_p
 
 theorem primType_length_success {type : Ty} {ty : Ty} (flat : FlatType ty) (run : primType .length [ty] = .ok type) :
-    ty = .list .int ∧ type = .int := by
+    ∃ t, ty = .list t ∧ type = .int := by
   cases flat with
   | int => simp [primType] at run
   | record _ _ => simp [primType] at run
   | result _ _ _ _ => simp [primType] at run
+  | dict _ _ => simp [primType] at run
+  | object _ _ => simp [primType] at run
   | chainInt => simp [primType] at run
-  | listInt =>
+  | list t _ =>
     simp [primType] at run
-    change Except.ok Ty.int = Except.ok type at run
-    cases Except.ok.inj run
-    exact ⟨rfl, rfl⟩
+    have typeInt : type = .int := by cases run; rfl
+    exact ⟨t, rfl, typeInt⟩
 
 /-- The single-operand typing equation of a length expression. -/
 theorem exprType_length_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {receiver : Atom} {self : Decl} {type : Ty} {escapes : List Origin}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (typed : exprType declarations self tenv (.prim .length [receiver]) = .ok type) :
-    atomType tenv receiver = .ok (.list .int) ∧ type = .int := by
+    ∃ t, atomType tenv receiver = .ok (.list t) ∧ type = .int := by
   obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
   obtain ⟨headType, rest, headTyped, restTyped, shape⟩ := except_mapM_cons_success atomsTyped
   have restNil := except_mapM_nil_success restTyped
   subst shape
   subst restNil
-  obtain ⟨listType, intType⟩ := primType_length_success (flat_atom_type inv headTyped) primTyped
+  obtain ⟨t, listType, intType⟩ := primType_length_success (flat_atom_type inv headTyped) primTyped
   subst listType
-  exact ⟨headTyped, intType⟩
+  exact ⟨t, headTyped, intType⟩
 
-theorem value_length_run (s : ValueSemantics.State) (integers : List Int) :
-    (ValueSemantics.prim .length [.list (valueInts integers)]).run s =
-      .ok (.int integers.length, {s with reads := s.reads.push (.int integers.length)}) := by
+theorem value_length_run (s : ValueSemantics.State) (os : List Observation) :
+    (ValueSemantics.prim .length [.list os]).run s =
+      .ok (.int os.length, {s with reads := s.reads.push (.int os.length)}) := by
   simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, Observation.depth,
-    observationDepth, valueInts, StateT.run, StateT.bind, StateT.map, StateT.get, StateT.set,
+    observationDepth, StateT.run, StateT.bind, StateT.map, StateT.get, StateT.set,
     StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe,
     MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
     modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
 
-theorem heap_length_run (s : State) (integers : List Int)
-    (lookup : s.heap[root]? = some (heapInts integers)) :
+theorem heap_length_run (s : State) (ys : List Value)
+    (lookup : s.heap[root]? = some ys) :
     (prim .length [.ref root]).run s =
-      .ok (.int integers.length, {s with reads := s.reads.push (.int integers.length)}) := by
-  simp [prim, array, lookup, InPlaceSemantics.read, snapshot, observationDepth, heapInts,
+      .ok (.int ys.length, {s with reads := s.reads.push (.int ys.length)}) := by
+  simp [prim, array, lookup, InPlaceSemantics.read, snapshot, observationDepth,
     Option.toExcept, StateT.run, StateT.bind, StateT.map, StateT.get, StateT.set,
     StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe,
     MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
@@ -373,22 +615,22 @@ theorem read_post_invariant {declarations : List Decl} {vs : ValueSemantics.Stat
 
 theorem length_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {receiver : Atom} {escapes : List Origin}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueAtom : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts integers)))
+    (valueAtom : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapAtom : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
-    (lookup : hs.heap[root]? = some (heapInts integers))
+    (lookup : hs.heap[root]? = some ys) (len : os.length = ys.length)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
     (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .length [receiver])).run vs =
-      .ok (.int integers.length, valueRead vs (.int integers.length)) ∧
+      .ok (.int os.length, valueRead vs (.int os.length)) ∧
     (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .length [receiver])).run hs =
-      .ok (.int integers.length, heapRead hs (.int integers.length) vs.kept.toList) := by
+      .ok (.int os.length, heapRead hs (.int os.length) vs.kept.toList) := by
   obtain ⟨footprint, represented⟩ := inv.observers
   have valueObservedRun := value_observeKept_run
-    ({vs with fuel := vs.fuel - 1, reads := vs.reads.push (.int integers.length)}) represented
+    ({vs with fuel := vs.fuel - 1, reads := vs.reads.push (.int os.length)}) represented
   have heapObservedRun := heap_observeKept_run
-    ({hs with fuel := hs.fuel - 1, reads := hs.reads.push (.int integers.length)}) represented
+    ({hs with fuel := hs.fuel - 1, reads := hs.reads.push (.int ys.length)}) represented
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts integers)] := except_mapM_cons valueAtom rfl
+      .ok [.list os] := except_mapM_cons valueAtom rfl
   have heapAtoms : [receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root] := except_mapM_cons heapAtom rfl
   constructor
@@ -396,7 +638,7 @@ theorem length_runtime_success {declarations : List Decl} {vs : ValueSemantics.S
     simp [hasDepth, hasFuel, valueTicked, value_length_run, valueObservedRun, valueRead,
       Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, heapTicked, heap_length_run {hs with fuel := hs.fuel - 1} integers lookup,
+    simp [hasDepth, heapFuel, heapTicked, heap_length_run {hs with fuel := hs.fuel - 1} ys lookup, len,
       heapObservedRun, heapRead,
       Except.bind, Except.pure, bind, pure]
 
@@ -418,16 +660,18 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         hs.heap.size ≤ hs'.heap.size ∧
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual type ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .length [receiver])).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
           (.prim .length [receiver])).run hs = .error actualMessage) := by
-  obtain ⟨receiverTyped, intType⟩ := exprType_length_success inv typed
+  obtain ⟨t, receiverTyped, intType⟩ := exprType_length_success inv typed
   subst intType
-  obtain ⟨root, integers, roots, element, certificate, lookup, _, _,
+  obtain ⟨root, ys, os, roots, element, certificate, lookup, _, _, _, _, _, _, _, len, _, _, _, _,
     valueAtom, heapAtom, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped covered
   have abstractAtoms : [receiver].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots element certificate] := except_mapM_cons abstractReceiver rfl
@@ -443,7 +687,7 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
   refine ⟨rfl, nextEscapes, resultScalar, ?_, ?_⟩
   · intro value vs' run
     have valueAtoms : [receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-        .ok [.list (valueInts integers)] := except_mapM_cons valueAtom rfl
+        .ok [.list os] := except_mapM_cons valueAtom rfl
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
       simp [noDepth] at run
@@ -451,19 +695,21 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
         simp [noDepth, noFuel] at run
       · obtain ⟨valueRun, heapRun⟩ :=
-          length_runtime_success inv valueAtom heapAtom lookup noDepth noFuel
+          length_runtime_success inv valueAtom heapAtom lookup len noDepth noFuel
         rw [valueRun] at run
         cases run
-        refine ⟨.int integers.length, heapRead hs (.int integers.length) vs.kept.toList, gamma,
+        refine ⟨.int os.length, heapRead hs (.int os.length) vs.kept.toList, gamma,
           heapRun, ?_, ?_, Ownership.FlatFragment.AtomPreservation.integer_corresponds _, ?_, by simp [obsTyped],
-          ⟨1, .int integers.length, [], .int, by simp [obsTyped]⟩, by rw [resultScalar]; exact .int _,
-          .int _ _⟩
+          ⟨1, .int os.length, [], .int, by simp [obsTyped]⟩, .int _, by rw [resultScalar]; exact .int _,
+          .int _ _, .int _ _,
+          inv.kindsAt_of (by unfold heapRead; rw [heapObserved_heap]) (by unfold heapRead; rw [heapObserved_links])
+            (fun _ _ => .int _)⟩
         · rw [nextEscapes]; exact read_post_invariant inv _
         · exact Nat.le_of_eq (by unfold heapRead; rw [heapObserved_heap])
         · rw [resultScalar]; exact Ownership.FlatFragment.AtomPreservation.integer_described _
   · intro message failed
     have valueAtoms : [receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-        .ok [.list (valueInts integers)] := except_mapM_cons valueAtom rfl
+        .ok [.list os] := except_mapM_cons valueAtom rfl
     have heapAtoms : [receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
         .ok [.ref root] := except_mapM_cons heapAtom rfl
     by_cases noDepth : depth = 0
@@ -475,7 +721,7 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         exact ⟨"in-place execution exhausted fuel", by
           rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
           simp [noDepth, heapFuel]⟩
-      · have success := (length_runtime_success inv valueAtom heapAtom lookup noDepth noFuel).1
+      · have success := (length_runtime_success inv valueAtom heapAtom lookup len noDepth noFuel).1
         rw [success] at failed
         contradiction
 
@@ -574,7 +820,9 @@ theorem scalar_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         hs.heap.size ≤ hs'.heap.size ∧
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual type ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim op [a, b])).run vs = .error message →
@@ -610,8 +858,12 @@ theorem scalar_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         refine ⟨.int (scalarResult op x y),
           AtomPreservation.heapAtomPost hs vs.kept.toList, gamma,
           heapRun, ?_, ?_, AtomPreservation.integer_corresponds _, ?_,
-          by simp [obsTyped], ⟨1, .int (scalarResult op x y), [], .int, by simp [obsTyped]⟩,
-          by rw [resultScalar]; exact .int _, .int _ _⟩
+          by simp [obsTyped], ⟨1, .int (scalarResult op x y), [], .int, by simp [obsTyped]⟩, .int _,
+          by rw [resultScalar]; exact .int _, .int _ _, .int _ _,
+          inv.kindsAt_of
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_heap])
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_links])
+            (fun _ _ => .int _)⟩
         · rw [nextEscapes]; exact AtomPreservation.integer_atom_post_invariant inv
         · exact Nat.le_of_eq (by
             unfold AtomPreservation.heapAtomPost
@@ -692,13 +944,6 @@ theorem bottom_mapOrigins (f : Path → List Origin → List Origin) (path : Pat
     Abstract.bottom.mapOrigins f path = .bottom := by
   simp [Abstract.mapOrigins]
 
-theorem flat_list_shared (roots : List Origin) (element : Abstract) (certificate : Certificate)
-    (flat : element = .bottom ∨ element = .scalar) (nonempty : roots ≠ []) :
-    (Abstract.list roots element certificate).mapOrigins
-        (fun _ cs => if cs.isEmpty then [] else union cs [.shared]) [] =
-      .list (union roots [.shared]) element certificate := by
-  rcases flat with rfl | rfl <;> simp [Abstract.mapOrigins, nonempty]
-
 /-! ### Runtime -/
 
 theorem value_shared_run (s : ValueSemantics.State) (x : Observation) :
@@ -771,24 +1016,34 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
       kept := ?_
       keptEscaped := ?_
       bindings := by simpa only [heapSame] using inv.bindings
-      described := by simpa only [heapSame] using inv.described
+      described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
+      linksValid := Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid heapSame
+        (by unfold heapShared; rw [heapObserved_links])
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed
+        (by unfold heapShared; rw [heapObserved_links]; exact inv.linkClosed)
     }
-    heapInts := by rw [heapSame]; exact inv.heapInts
-    links := by unfold heapShared; rw [heapObserved_links]; exact inv.links
+    linkClosed := by unfold heapShared; rw [heapObserved_links]; exact inv.linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    deepTags := by simpa only [heapSame] using inv.deepTags
+    bindingsBounded := by simpa only [heapSame] using inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
     liveTyped := inv.liveTyped
     namingBound := by rw [heapSame]; exact inv.namingBound
     observers := ⟨_, witnessList⟩
+    heapKinds := by
+      obtain ⟨kinds, state⟩ := inv.heapKinds
+      exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame])
+        (by unfold heapShared; rw [heapObserved_links])⟩
+    observationsTyped := inv.observationsTyped
+    objectsCertified := by simpa only [heapSame] using inv.objectsCertified
+    liveTags := by simpa only [heapSame] using inv.liveTags
   }
   · unfold valueShared heapShared valueObserved heapObserved
     simp [Array.isEmpty, Array.size_push, inv.external]
@@ -947,9 +1202,14 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           (.prim .shared [atom])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .shared [atom])).run vs = .error message →
@@ -958,7 +1218,7 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           (.prim .shared [atom])).run hs = .error actualMessage) := by
   have atomTyped := exprType_shared_success typed
   obtain ⟨x, v, a, valueAtom, heapAtom, abstractValue, paired, described, observed, valueTyped,
-    flatType, shape, allocated, tags, chains⟩ := flat_atom_values inv atomTyped covered
+    flatType, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv atomTyped covered
   have abstractAtoms : [atom].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
     except_mapM_cons abstractValue rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
@@ -971,9 +1231,15 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
   have escapesEq : next.facts.escapes = union before.facts.escapes a.cells :=
     congrArg (fun s : St => s.facts.escapes) second
   have resultFlat : FlatAbstract type result := by
-    rw [← first]; exact flatAbstract_mapOrigins _ shape []
-  have resultDescribed : Describes gamma hs.heap result v := by
-    rw [← first]; exact describes_mapOrigins_shared allocated shape tags inv.heapInts described []
+    rw [← first]; exact flatAbstract_mapOrigins sharedMark (fun path cs h => sharedMark_no_unknown path h) shape []
+  have typedResult : entryAbstract declarations type result =
+      (entryAbstract declarations type a).mapOrigins
+        (fun _ cs => if cs.isEmpty then [] else union cs [Origin.shared]) [] := by
+    rw [← first]
+    exact entryAbstract_mapOrigins (fun _ cs => if cs.isEmpty then [] else union cs [Origin.shared])
+      (fun _ _ _ => rfl) shape [] []
+  have resultDescribed : Describes gamma hs.heap (entryAbstract declarations type result) v := by
+    rw [typedResult]; exact describes_mapOrigins_shared allocated (flatAbstract_entry shape) described []
   have mono : ∀ origin, Escaped before.facts.escapes origin → Escaped next.facts.escapes origin := by
     intro origin escaped
     rw [escapesEq]
@@ -981,10 +1247,11 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
   have newEscaped : ∀ c, Reaches hs.heap v (.ref c) → ∀ origin, c ∈ gamma origin →
       Escaped next.facts.escapes origin := by
     intro c reachable origin member
-    obtain ⟨q, located⟩ := reaches_flat allocated inv.heapInts reachable
-    have names := named_cellsAt_of_covers allocated shape inv.heapInts described.1.1 located
+    obtain ⟨q, located⟩ := arrayAt_of_reaches reachable
+    obtain ⟨o', typedMember, address⟩ := named_cells_of_covers (flatAbstract_entry shape) described.1.1 located
+    have names : named gamma a.cells c := ⟨o', mem_cells_entryAbstract typedMember, address⟩
     rw [escapesEq]
-    exact named_cell_escaped inv.separating names member (fun o h => cellsAt_subset_cells h)
+    exact named_cell_escaped inv.separating names member (fun o h => h)
   have valueAtoms : [atom].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
       .ok [x] := except_mapM_cons valueAtom rfl
   have heapAtoms : [atom].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
@@ -1017,12 +1284,16 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           unfold heapShared; rw [heapObserved_heap]
         refine ⟨v, heapShared hs v (vs.kept.toList ++ [x]), gamma, heapRun,
           shared_post_invariant inv witness mono newEscaped,
-          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, ?_⟩
+          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · rw [heapSame]; exact paired
         · rw [heapSame]; exact resultDescribed
         · rw [heapSame]; exact valueTyped
-        · rw [← first]; exact resultTags_mapOrigins _ tags []
-        · rw [← first]; exact chainTags_mapOrigins _ chains []
+        · rw [heapSame]; exact allocated
+        · rw [typedResult]; exact resultTags_mapOrigins _ tags []
+        · rw [typedResult]; exact chainTags_mapOrigins _ chains []
+        · rw [heapSame, typedResult]; exact tagsDeep_mapOrigins _ deepTags []
+        · exact inv.kindsAt_of heapSame (by unfold heapShared; rw [heapObserved_links])
+            (fun _ state => kinded_atom inv state atomTyped covered heapAtom)
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1072,7 +1343,8 @@ theorem demand_run_none {before : St} {cs : List Origin} {later : List Origin} {
     (problem : demandProblem ({} : Config) before.facts.escapes cs later others = none) :
     (demand ({} : Config) cs later others).run before =
       .ok ((), {before with facts :=
-        {before.facts with writes := union before.facts.writes (cs.filter external)}}) := by
+        {before.facts with writes := union before.facts.writes (cs.filter external),
+                           fieldWrites := wholeFieldWrites before.facts.fieldWrites (cs.filter external)}}) := by
   dsimp [demand, getFacts, StateT.run, StateT.bind, StateT.map, StateT.get]
   simp only [pure_bind]
   rw [problem]
@@ -1084,46 +1356,34 @@ theorem demand_success_escapes {before : St} {next : St} {cs : List Origin} {lat
   rw [demand_run_none (demand_success_problem run)] at run
   have equal := Except.ok.inj run
   have same : next = {before with facts :=
-      {before.facts with writes := union before.facts.writes (cs.filter external)}} :=
+      {before.facts with writes := union before.facts.writes (cs.filter external),
+                         fieldWrites := wholeFieldWrites before.facts.fieldWrites (cs.filter external)}} :=
     (congrArg Prod.snd equal).symm
   subst same
   rfl
 
-theorem primitive_push_result {ctx : Context} {site : List Nat} {before : St} {next : St} {result : Abstract} {roots : List Origin} {later : List Origin} {element : Abstract} {certificate : Certificate}
-    (run : (primitive ctx site .push [.list roots element certificate, .scalar] later).run before =
+/-- The checker's push result under the default configuration: the item joins
+the element, and the certificate records the store tests (slice 2b of #522). -/
+theorem primitive_push_result_values {ctx : Context} {site : List Nat} {before next : St} {result : Abstract}
+    {roots later : List Origin} {element item : Abstract} {certificate : Certificate}
+    (defaultConfig : ctx.config = {})
+    (run : (primitive ctx site .push [.list roots element certificate, item] later).run before =
       .ok (result, next)) :
-    ∃ certificate', result = .list roots (element.join .scalar) certificate' := by
+    result = .list roots (element.join item)
+      ⟨certificate.deep && storeExclusive ctx [item] later element.cells,
+       certificate.spine && storeSpines ctx [item] later element.cells &&
+         (containers element).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩ := by
   unfold primitive at run
   obtain ⟨finished, middle, _, returned⟩ := checkM_bind_success run
   cases finished
   have equal := Except.ok.inj returned
   have first : _ = result := congrArg Prod.fst equal
   rw [← first]
-  exact ⟨_, by simp [Abstract.grantExclusive] <;> rfl⟩
-
-/-- The same with a dead item (its abstract bottom), for the static facts. -/
-theorem primitive_push_result_flat {ctx : Context} {site : List Nat} {before : St} {next : St} {result : Abstract} {roots : List Origin} {later : List Origin} {element item : Abstract} {certificate : Certificate}
-    (flatI : item = .bottom ∨ item = .scalar)
-    (run : (primitive ctx site .push [.list roots element certificate, item] later).run before =
-      .ok (result, next)) :
-    ∃ certificate', result = .list roots (element.join item) certificate' := by
-  rcases flatI with rfl | rfl
-  · unfold primitive at run
-    obtain ⟨finished, middle, _, returned⟩ := checkM_bind_success run
-    cases finished
-    have equal := Except.ok.inj returned
-    have first : _ = result := congrArg Prod.fst equal
-    rw [← first]
-    exact ⟨_, by simp [Abstract.grantExclusive] <;> rfl⟩
-  · exact primitive_push_result run
+  simp [defaultConfig, default_has, Abstract.grantExclusive, show (Prim.push == Prim.put) = false from rfl]
 
 theorem liveCellsWith_default (env : Env Abstract) (l : Live) :
     liveCellsWith ({} : Config) env l = liveCells env l := by
   simp [liveCellsWith, default_has]
-
-theorem flat_join_scalar {element : Abstract} (flat : element = .bottom ∨ element = .scalar) :
-    element.join .scalar = .scalar := by
-  rcases flat with rfl | rfl <;> simp [Abstract.join]
 
 /-- The element after a push of a scalar or of a dead operand. -/
 theorem flat_join_flat {element item : Abstract} (flatE : element = .bottom ∨ element = .scalar)
@@ -1139,16 +1399,24 @@ theorem primitive_push_bottom_run (ctx : Context) (site : List Nat) (item : Abst
   simp [BEq.beq, Abstract.equal]
   rfl
 
-theorem primType_push_success {type : Ty} {tR : Ty} {tI : Ty} (flatR : FlatType tR) (flatI : FlatType tI)
+theorem primType_push_success {type : Ty} {tR : Ty} {tI : Ty} (flatR : FlatType tR)
     (run : primType .push [tR, tI] = .ok type) :
-    tR = .list .int ∧ tI = .int ∧ type = .list .int := by
-  cases flatR <;> cases flatI <;> simp [primType, BEq.beq, Ty.equal] at run <;>
-    (change Except.ok _ = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl⟩)
+    ∃ t, tR = .list t ∧ tI = t ∧ type = .list t := by
+  cases flatR with
+  | list t elemT =>
+    simp [primType] at run
+    split at run
+    · rename_i same
+      have : t = tI := ty_equal_flat elemT (by simpa using same)
+      have typeEq : type = .list t := by cases run; rfl
+      exact ⟨t, rfl, this.symm, typeEq⟩
+    · cases run
+  | _ => simp [primType] at run
 
-theorem exprType_push_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {receiver : Atom} {item : Atom} {self : Decl} {type : Ty} {escapes : List Origin}
+theorem exprType_push_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {self : Decl} {receiver item : Atom} {type : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (typed : exprType declarations self tenv (.prim .push [receiver, item]) = .ok type) :
-    atomType tenv receiver = .ok (.list .int) ∧ atomType tenv item = .ok .int ∧ type = .list .int := by
+    ∃ t, atomType tenv receiver = .ok (.list t) ∧ atomType tenv item = .ok t ∧ type = .list t := by
   obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
   obtain ⟨tR, rest, headTyped, restTyped, shape⟩ := except_mapM_cons_success atomsTyped
   obtain ⟨tI, rest', itemTyped, restTyped', shape'⟩ := except_mapM_cons_success restTyped
@@ -1156,67 +1424,116 @@ theorem exprType_push_success {declarations : List Decl} {vs : ValueSemantics.St
   subst shape
   subst shape'
   subst restNil
-  obtain ⟨listType, intType, resultType⟩ :=
-    primType_push_success (flat_atom_type inv headTyped) (flat_atom_type inv itemTyped) primTyped
+  obtain ⟨t, listType, itemType, resultType⟩ := primType_push_success (flat_atom_type inv headTyped) primTyped
   subst listType
-  subst intType
-  exact ⟨headTyped, itemTyped, resultType⟩
+  subst tI
+  exact ⟨t, headTyped, itemTyped, resultType⟩
 
 /-! ### Runtime -/
 
-def heapPushed (hs : State) (root : Nat) (xs : List Int) (item : Int) : State :=
+/-- The state after a counted write that put `stored` where `ys` was, with
+the heap `h` the linked write left (#169). -/
+def heapWrittenValues (hs : State) (h : Heap) (ys stored : List Value) : State :=
   { hs with
     fuel := hs.fuel - 1
-    heap := hs.heap.set! root (heapInts xs ++ [.int item])
-    writes := (if heapInts xs == heapInts xs ++ [.int item] then hs.writes else hs.writes + 1) }
+    heap := h
+    writes := (if ys == stored then hs.writes else hs.writes + 1) }
 
-theorem heapPushed_heap (hs : State) (root : Nat) (xs : List Int) (item : Int) :
-    (heapPushed hs root xs item).heap = hs.heap.set! root (heapInts (xs ++ [item])) := by
-  simp [heapPushed, heapInts]
+theorem value_push_run_values (s : ValueSemantics.State) (os : List Observation) (o : Observation) :
+    (ValueSemantics.prim .push [.list os, o]).run s = .ok (.list (os ++ [o]), s) := rfl
 
-theorem push_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {receiver : Atom} {item : Atom} {escapes : List Origin}
+/-- The push of any value onto an allocated array, on a state with valid
+links: a counted linked write that does not shorten the array (#169). -/
+theorem heap_push_run_linked (s : State) (ys : List Value) (item : Value)
+    (lookup : s.heap[root]? = some ys) (valid : LinksValid s) :
+    ∃ h, (prim .push [.ref root, item]).run s = .ok (.ref root,
+        {s with heap := h, writes := if ys == ys ++ [item] then s.writes else s.writes + 1}) ∧
+      h.size = s.heap.size ∧ h[root]? = some (ys ++ [item]) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected s.links root a → h[a]? = s.heap[a]?) ∧
+      LinksValid {s with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom s.links root (ys ++ [item]) s {s with heap := h} := by
+  obtain ⟨h, written, rest⟩ :=
+    Ownership.LinkedWriteRun.writeCounted_linked (stored := ys ++ [item]) valid lookup (by simp)
+  refine ⟨h, ?_, rest⟩
+  simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get, Option.toExcept, Except.bind, Except.pure,
+    bind, pure, get, getThe, MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift,
+    MonadLift.monadLift] using written
+
+/-- The correspondence of two lists extends to one element appended to each. -/
+theorem pointwise_snoc {heap : Heap} {os : List Observation} {ys : List Value} {o : Observation} {w : Value}
+    (lenO : os.length = ys.length)
+    (pointwise : ∀ (i : Nat) o' y, os[i]? = some o' → ys[i]? = some y → Corresponds heap o' y)
+    (paired : Corresponds heap o w) :
+    ∀ (i : Nat) o' y, (os ++ [o])[i]? = some o' → (ys ++ [w])[i]? = some y → Corresponds heap o' y := by
+  intro i o' y os_i ys_i
+  by_cases lt : i < os.length
+  · rw [List.getElem?_append_left lt] at os_i
+    rw [List.getElem?_append_left (by omega)] at ys_i
+    exact pointwise i o' y os_i ys_i
+  · have le : os.length ≤ i := Nat.le_of_not_lt lt
+    rw [List.getElem?_append_right le] at os_i
+    rw [List.getElem?_append_right (by omega)] at ys_i
+    cases h : i - os.length with
+    | zero =>
+      have h' : i - ys.length = 0 := by omega
+      rw [h] at os_i
+      rw [h'] at ys_i
+      simp at os_i ys_i
+      subst os_i
+      subst ys_i
+      exact paired
+    | succ k =>
+      rw [h] at os_i
+      simp at os_i
+
+theorem push_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver item : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {footprint : List Nat} {depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts xs)))
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
-    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok (.int n))
-    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok (.int n))
-    (lookup : hs.heap[root]? = some (heapInts xs))
-    (rootOutside : root ∉ footprint)
+    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
+    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
+    (lookup : hs.heap[root]? = some ys)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
-    (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .push [receiver, item])).run vs =
-      .ok (.list (valueInts (xs ++ [n])), valueObserved (valueTicked vs)) ∧
-    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .push [receiver, item])).run hs =
-      .ok (.ref root, heapObserved (heapPushed hs root xs n) vs.kept.toList) := by
+    ∃ h, (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .push [receiver, item])).run vs =
+        .ok (.list (os ++ [o]), valueObserved (valueTicked vs)) ∧
+      (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .push [receiver, item])).run hs =
+        .ok (.ref root, heapObserved (heapWrittenValues hs h ys (ys ++ [w])) vs.kept.toList) ∧
+      h.size = hs.heap.size ∧ h[root]? = some (ys ++ [w]) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root a → h[a]? = hs.heap[a]?) ∧
+      LinksValid {hs with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom hs.links root (ys ++ [w]) hs {hs with heap := h} := by
+  obtain ⟨h, pushRun, hSize, hRoot, hFrame, hValid, hFrom⟩ :=
+    heap_push_run_linked (root := root) (heapTicked hs) ys w lookup
+      (Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid rfl rfl)
   have valueObservedRun := value_observeKept_run (valueTicked vs) represented
-  have framed : RepresentsMany (hs.heap.set! root (heapInts xs ++ [Value.int n])) observationDepth
-      hs.kept.toList vs.kept.toList footprint :=
-    representsMany_after_write (xs := heapInts xs ++ [Value.int n]) represented rootOutside
-  have heapObservedRun : InPlaceSemantics.observeKept.run (heapPushed hs root xs n) =
-      .ok ((), heapObserved (heapPushed hs root xs n) vs.kept.toList) :=
-    heap_observeKept_run (heapPushed hs root xs n) framed
+  have framed : RepresentsMany h observationDepth hs.kept.toList vs.kept.toList footprint :=
+    representsMany_frame represented (fun c member => hFrame c (rootOutside c member))
+  have heapObservedRun : InPlaceSemantics.observeKept.run (heapWrittenValues hs h ys (ys ++ [w])) =
+      .ok ((), heapObserved (heapWrittenValues hs h ys (ys ++ [w])) vs.kept.toList) :=
+    heap_observeKept_run (heapWrittenValues hs h ys (ys ++ [w])) framed
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts xs), .int n] := except_mapM_cons valueReceiver (except_mapM_cons valueItem rfl)
+      .ok [.list os, o] := except_mapM_cons valueReceiver (except_mapM_cons valueItem rfl)
   have heapAtoms : [receiver, item].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.ref root, .int n] := except_mapM_cons heapReceiver (except_mapM_cons heapItem rfl)
-  have pushRun : (prim .push [.ref root, .int n]).run (heapTicked hs) =
-      .ok (.ref root, heapPushed hs root xs n) :=
-    primitive_push_run (heapTicked hs) xs n lookup inv.links
-  constructor
+      .ok [.ref root, w] := except_mapM_cons heapReceiver (except_mapM_cons heapItem rfl)
+  have pushRun' : (prim .push [.ref root, w]).run (heapTicked hs) =
+      .ok (.ref root, heapWrittenValues hs h ys (ys ++ [w])) := pushRun
+  refine ⟨h, ?_, ?_, hSize, hRoot, hFrame, Ownership.LinkClauses.linksValid_of_same hValid rfl rfl, hFrom⟩
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
-    simp [hasDepth, hasFuel, value_primitive_push_run, valueObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, hasFuel, value_push_run_values, valueObservedRun, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, pushRun, heapObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, heapFuel, pushRun', heapObservedRun, Except.bind, Except.pure, bind, pure]
 
-theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {receiver : Atom} {item : Atom} {escapes : List Origin}
+theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver item : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {footprint : List Nat} {depth : Nat} {message : String}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts xs)))
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
-    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok (.int n))
-    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok (.int n))
-    (lookup : hs.heap[root]? = some (heapInts xs))
-    (rootOutside : root ∉ footprint)
+    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
+    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
+    (lookup : hs.heap[root]? = some ys)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (failed : (ValueSemantics.eval depth declarations none (valueEnv env)
       (.prim .push [receiver, item])).run vs = .error message) :
@@ -1224,7 +1541,7 @@ theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs 
       (InPlaceSemantics.eval depth declarations none (heapEnv env)
         (.prim .push [receiver, item])).run hs = .error actualMessage := by
   have heapAtoms : [receiver, item].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.ref root, .int n] := except_mapM_cons heapReceiver (except_mapM_cons heapItem rfl)
+      .ok [.ref root, w] := except_mapM_cons heapReceiver (except_mapM_cons heapItem rfl)
   by_cases noDepth : depth = 0
   · exact ⟨"in-place execution exhausted depth", by
       rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
@@ -1234,16 +1551,12 @@ theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs 
       exact ⟨"in-place execution exhausted fuel", by
         rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
         simp [noDepth, heapFuel]⟩
-    · have success := (push_runtime_success inv valueReceiver heapReceiver valueItem heapItem lookup
-        rootOutside represented noDepth noFuel).1
+    · obtain ⟨_, success, _⟩ := push_runtime_success inv valueReceiver heapReceiver valueItem heapItem lookup
+        rootOutside represented noDepth noFuel
       rw [success] at failed
       contradiction
 
-/-! ### The live continuation avoids the written array -/
-
-/-! ### The push expression case -/
-
-theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {receiver : Atom} {item : Atom} {self : Decl} {type : Ty}
+theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {receiver item : Atom} {type : Ty} {self : Decl} {ctx : Context} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim .push [receiver, item]) = .ok type)
     (coveredR : ∀ use ∈ atomUses receiver, use ∈ live)
@@ -1252,7 +1565,7 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
     (defaultConfig : ctx.config = {})
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim .push [receiver, item]) after site).run before =
       .ok (result, next)) :
-    type = .list .int ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .push [receiver, item])).run vs = .ok (value, vs') →
@@ -1261,84 +1574,239 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           (.prim .push [receiver, item])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env after aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .push [receiver, item])).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
           (.prim .push [receiver, item])).run hs = .error actualMessage) := by
-  obtain ⟨receiverTyped, itemTyped, listType⟩ := exprType_push_success inv typed
+  obtain ⟨t, receiverTyped, itemTyped, listType⟩ := exprType_push_success inv typed
   subst listType
-  obtain ⟨root, xs, roots, element, certificate, lookup, receiverNamed, elementFlat,
+  obtain ⟨root, ys, os, roots, element, certificate, lookup, receiverNamed, noUnk, elemT, elemTags, elemShape0,
+    elemsShaped, elemsDescribed, lenO, elemsTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
-  obtain ⟨n, valueItem, heapItem, abstractItem⟩ := flat_atom_integer inv itemTyped coveredI
+  obtain ⟨o, w, aN, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN0,
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_entry inv itemTyped coveredI
+  -- The heap facts are at the element's representation (#1840).
+  have elemShape := flatAbstract_entry (ds := declarations) elemShape0
+  have shapeN := flatAbstract_entry (ds := declarations) shapeN0
   have abstractAtoms : [receiver, item].mapM (m := Except String) (abstractAtom aenv) =
-      .ok [.list roots element certificate, .scalar] :=
+      .ok [.list roots element certificate, aN] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractItem rfl)
   obtain ⟨childFuel, _, scope, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
   have demanded := primitive_push_demand_run run
   rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
     defaultConfig, liveCellsWith_default] at demanded
+  rw [← cells_entryAbstract (ds := declarations) elemShape0, ← cells_entryAbstract (ds := declarations) shapeN0]
+    at demanded
   have escapesEq := demand_success_escapes demanded
-  obtain ⟨certificate', resultEq⟩ := primitive_push_result run
-  have joined := flat_join_scalar elementFlat
-  have resultFlat : FlatAbstract (.list .int) result := by
-    rw [resultEq, joined]; exact .listScalar _ _
+  have resultEq := primitive_push_result_values
+    (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+      defaultConfig) run
+  have resultRep := entryAbstract_stored (ds := declarations) elemShape0 shapeN0
+    (entryAbstract_join elemShape0 shapeN0) resultEq
   obtain ⟨footprint, represented⟩ := inv.observers
-  have rootOutside : root ∉ footprint :=
-    demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
+  -- The written array's link component has the receiver's origins (#169).
+  have componentNamed : ∀ c, Ownership.LinkedWriteFrame.LinkConnected hs.links root c → named gamma roots c := by
+    intro c connected
+    obtain ⟨origin, originMember, rootIn⟩ := receiverNamed
+    exact ⟨origin, originMember,
+      (Ownership.LinkClauses.linkConnected_same_origins inv.linkClosed connected origin).mp rootIn⟩
+  have rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c member connected =>
+      demand_success_observer_footprint inv.toInvariant demanded (componentNamed c connected) represented member
   have separate := demand_success_live_separate inv.separating demanded
-  have apart := live_path_apart inv scope afterSub receiverNamed separate
-  refine ⟨rfl, escapesEq, resultFlat, ?_, ?_⟩
+  have componentApart : ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) →
+      projectHeap hs.heap w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w w' binding projected q c located connected =>
+      live_path_apart inv scope afterSub (componentNamed c connected) separate x p use o w w' binding projected
+        q c located rfl
+  have routeApart : ∀ x p, (x, p) ∈ after → ∀ o w q c rest, env.lookup x = some (o, w) →
+      p = q ++ .element :: rest → ArrayAt hs.heap w q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w q c rest binding route located connected =>
+      live_path_route_apart inv scope afterSub (componentNamed c connected) separate x p use o w q c rest
+        binding route located rfl
+  have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
+    value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
+      (fun o' member => mem_union _ _ _ (Or.inr member))
+  have itemApart : ∀ c, Reaches hs.heap w (.ref c) → ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c reach connected =>
+      value_apart_root shapeN describedN.1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' member => mem_union _ _ _ (Or.inr member)) reach
+  have elementApart : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) →
+      ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun y member c reach connected =>
+      value_apart_root elemShape (elemsDescribed y member).1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' m => mem_union _ _ _ (Or.inl m)) reach
+  refine ⟨.list t elemT, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape0 shapeN0),
+    ?_, ?_⟩
   · intro value vs' run'
     have valueAtoms : [receiver, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-        .ok [.list (valueInts xs), .int n] :=
-      except_mapM_cons valueReceiver (except_mapM_cons valueItem rfl)
+        .ok [.list os, o] := except_mapM_cons valueReceiver (except_mapM_cons valueItem rfl)
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
       simp [noDepth] at run'
     · by_cases noFuel : vs.fuel = 0
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
         simp [noDepth, noFuel] at run'
-      · obtain ⟨valueRun, heapRun⟩ := push_runtime_success inv valueReceiver heapReceiver valueItem
-          heapItem lookup rootOutside represented noDepth noFuel
+      · obtain ⟨next, valueRun, heapRun, sizeEq, lookupNew, nextFrame, nextValid, nextFrom⟩ :=
+          push_runtime_success inv valueReceiver heapReceiver valueItem heapItem lookup rootOutside represented
+            noDepth noFuel
         rw [valueRun] at run'
         cases run'
-        have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
-        have heapEq : (heapObserved (heapPushed hs root xs n) vs.kept.toList).heap =
-            hs.heap.set! root (heapInts (xs ++ [n])) := by
-          rw [heapObserved_heap, heapPushed_heap]
-        have lookupNew : (heapObserved (heapPushed hs root xs n) vs.kept.toList).heap[root]? =
-            some (heapInts (xs ++ [n])) := by
-          rw [heapEq]; simp [valid]
-        have sizeEq : (heapObserved (heapPushed hs root xs n) vs.kept.toList).heap.size = hs.heap.size := by
-          rw [heapEq]; simp
-        refine ⟨.ref root, heapObserved (heapPushed hs root xs n) vs.kept.toList, gamma, heapRun, ?_,
-          Nat.le_of_eq sizeEq.symm, corresponds_integer_ref lookupNew, ?_,
-          integer_list_observation_typed declarations (xs ++ [n]),
-          allocated_integer_list_typed declarations lookupNew, by rw [resultEq, joined]; exact .listInt _ _ _ _,
-          .listInt _ _⟩
+        have heapEq : (heapObserved (heapWrittenValues hs next ys (ys ++ [w])) vs.kept.toList).heap = next := by
+          rw [heapObserved_heap]; rfl
+        obtain ⟨cs0, represented0⟩ := represents_of_snapshot _ _ _ (pairedList _ (Nat.le_refl _))
+        have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) → next[c]? = hs.heap[c]? :=
+          fun y member c reach => nextFrame c (elementApart y member c reach)
+        have agreeItem : ∀ c, Reaches hs.heap w (.ref c) → next[c]? = hs.heap[c]? :=
+          fun c reach => nextFrame c (itemApart c reach)
+        have shapedZ : ∀ z ∈ ys ++ [w], AllocatedFlatValue next z (entryType t) := by
+          intro z member
+          rcases List.mem_append.mp member with old | new
+          · exact allocated_of_agree (elemsShaped z old) (agreeOld z old)
+          · rw [List.mem_singleton.mp new]
+            exact allocated_of_agree allocatedN agreeItem
+        have shapedNew : AllocatedFlatValue next (.ref root) (.list (entryType t)) :=
+          .list root _ (entryType t) lookupNew shapedZ
+        have rootApart : ∀ z ∈ ys ++ [w], ¬ Reaches next z (.ref root) := by
+          intro z member reach
+          rcases List.mem_append.mp member with old | new
+          · exact no_element_reaches_root lookup old _ _ (Nat.le_refl _) _ _ represented0
+              (reaches_of_agree_rev (agreeOld z old) reach)
+          · rw [List.mem_singleton.mp new] at reach
+            exact itemApartRoot (reaches_of_agree_rev agreeItem reach)
+        have elementsDescribed' : ∀ z ∈ ys ++ [w],
+            Describes gamma next
+              ((entryAbstract declarations t element).join (entryAbstract declarations t aN)) z := by
+          intro z member
+          rcases List.mem_append.mp member with old | new
+          · exact describes_join (allocated_of_agree (elemsShaped z old) (agreeOld z old)) elemShape shapeN
+              (Or.inl (describes_of_agree (agreeOld z old) (elemsDescribed z old)))
+          · rw [List.mem_singleton.mp new]
+            exact describes_join (allocated_of_agree allocatedN agreeItem) elemShape shapeN
+              (Or.inr (describes_of_agree agreeItem describedN))
+        have lookup' : hs.heap[root]? = some (ys ++ [] ++ []) := by simpa using lookup
+        have agreeOld' : ∀ y ∈ ys ++ [] ++ [], ∀ c, Reaches hs.heap y (.ref c) →
+            next[c]? = hs.heap[c]? :=
+          fun y member => agreeOld y (by simpa using member)
+        have oldCert := described.1.2 [] roots (entryAbstract declarations t element) certificate (.ref root) rfl
+          (.here _)
+        have describedNew : Describes gamma next (entryAbstract declarations (.list t) result)
+            (.ref root) := by
+          rw [resultRep]
+          refine list_described_of_elements receiverNamed noUnk lookupNew shapedNew elementsDescribed' ?_ ?_
+          · intro d
+            obtain ⟨oldDeep, exclusive⟩ := Bool.and_eq_true_iff.mp d
+            obtain ⟨deepI, sepI, overlapI⟩ := storeExclusive_facts exclusive
+            exact inserted_footprint_nodup (mid := []) lookup' lookupNew represented0 agreeOld' agreeItem rootApart
+              (fun n o' fp rep => (oldCert n o' fp rep).1 oldDeep)
+              (nodup_of_deepExclusive allocatedN shapeN describedN deepI
+                (pathsApart_of_separated inv.separating sepI))
+              (fun y member c reachI reachY => reach_apart_of_covers inv.separating shapeN elemShape
+                describedN.1.1 (elemsDescribed y (by simpa using member)).1.1
+                (cellOverlap_union_right_false overlapI).2 c reachI reachY)
+          · intro sp
+            have h := Bool.and_eq_true_iff.mp sp
+            obtain ⟨oldSpine, spines⟩ := Bool.and_eq_true_iff.mp h.1
+            have containersOk := h.2
+            exact inserted_footprint_once (mid := []) lookup' lookupNew represented0 agreeOld' agreeItem rootApart
+              (fun n o' fp rep => (oldCert n o' fp rep).2 oldSpine)
+              (once_of_storeSpines inv.separating shapeN allocatedN describedN.1.1 spines)
+              (fun p c container located reachI => by
+                cases located with
+                | element lookup'' yMember inner =>
+                  rw [lookup] at lookup''
+                  cases lookup''
+                  obtain ⟨o', m', a'⟩ := (elemsDescribed _ yMember).1.1 p c inner
+                  obtain ⟨cs, entry, inCs⟩ :=
+                    mem_namesAt_of_arrayAt elemShape (elemsShaped _ yMember) p c o' inner m'
+                  exact cell_apart_of_covers inv.separating shapeN describedN.1.1 ⟨o', inCs, a'⟩
+                    (containers_all_facts containersOk (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)) reachI)
+              (fun p c container located y yMember reachY => by
+                obtain ⟨o', m', a'⟩ := describedN.1.1 p c located
+                obtain ⟨cs, entry, inCs⟩ := mem_namesAt_of_arrayAt shapeN allocatedN p c o' located m'
+                have disjoint :=
+                  ((storeSpines_facts spines).2 (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)).1
+                exact cell_apart_of_covers inv.separating elemShape
+                  (elemsDescribed y (by simpa using yMember)).1.1 ⟨o', inCs, a'⟩
+                  (cellOverlap_union_right_false disjoint).2 reachY)
+        have deepNew : ∀ roots cert, TagsDeep next (.list (entryType t))
+            (.list roots ((entryAbstract declarations t element).join (entryAbstract declarations t aN)) cert)
+            (.ref root) := by
+          intro roots cert
+          apply tagsDeep_list lookupNew
+          intro z member
+          rcases List.mem_append.mp member with old | new
+          · exact elementTags_of_agree (elementTags_join (elemTags z old) elemShape shapeN) (agreeOld z old)
+          · rw [List.mem_singleton.mp new]
+            exact elementTags_of_agree
+              (elementTags_join_right (elementTags_of_corresponds pairedN tagsN chainsN deepN) elemShape shapeN) agreeItem
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have rootTyped : kinds root = some (.list t) := by
+          obtain ⟨c0, same0, typed0⟩ :=
+            kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+          cases same0
+          exact typed0
+        have state' : StateKinded kinds (heapObserved (heapWrittenValues hs next ys (ys ++ [w])) vs.kept.toList) env tenv :=
+          state.of_linked_write rootTyped (fun z member => by
+              rcases List.mem_append.mp member with old | new
+              · exact state.list_contents rootTyped lookup z old
+              · rw [List.mem_singleton.mp new]; exact kinded_atom inv state itemTyped coveredI heapItem)
+            (fun a outside => by rw [heapEq]; exact nextFrame a outside) (by rw [heapEq]; exact sizeEq)
+            (fun a zs z found member connected => by
+              rw [heapEq] at found
+              exact nextFrom a zs z found member connected)
+            (by rw [heapObserved_links]; rfl)
+        refine ⟨.ref root, heapObserved (heapWrittenValues hs next ys (ys ++ [w])) vs.kept.toList, gamma, heapRun, ?_,
+          Nat.le_of_eq (by rw [heapEq, sizeEq]), ?_, ?_, ?_, ?_, ?_,
+          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
+          ⟨kinds, state', .list t root rootTyped⟩⟩
         · rw [escapesEq]
-          refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            ?_ ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
-            ?_ ?_ ?_ (fun _ escaped => escaped)
-          · rw [heapEq]; exact flatHeap_after_write inv.heapInts valid (xs ++ [n])
-          · exact Nat.le_of_eq sizeEq.symm
-          · rw [heapObserved_links]; exact inv.links
-          · intro c _ different
-            rw [heapEq]
-            exact lookup_set_other hs.heap root _ different
-          · rw [heapObserved_kept]; rfl
-          · rw [valueObserved_kept]; rfl
-          · rw [sizeEq]; exact inv.namingBound
-          · rw [valueObserved_reads, heapObserved_reads]; exact inv.reads
-          · exact observed_external (valueTicked vs) (heapPushed hs root xs n) inv.keptSize inv.external
-          · rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapPushed, inv.fuel]
-        · rw [resultEq, joined]
-          exact allocated_list_described lookupNew receiverNamed
+          refine flatInvariant_heap_frame inv (inside := Ownership.LinkedWriteFrame.LinkConnected hs.links root)
+            (footprint := footprint) afterSub
+            (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
+            (Ownership.LinkClauses.linksValid_of_same nextValid (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
+            (by rw [heapObserved_links]; exact inv.linkClosed)
+            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart
+            (projected_of_route (fun c outside => by rw [heapEq]; exact nextFrame c outside) routeApart)
+            represented rootOutside
+            (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
+            (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
+            (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
+            (observed_external (valueTicked vs) (heapWrittenValues hs next ys (ys ++ [w])) inv.keptSize inv.external)
+            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapWrittenValues, inv.fuel])
+            (fun _ escaped => escaped) ⟨kinds, state'⟩
+        · rw [heapEq]
+          exact corresponds_list_of_elements lookupNew (by simp [lenO])
+            (pointwise_snoc lenO (fun i o' y os_i ys_i =>
+              corresponds_of_agree (agreeOld y (List.mem_of_getElem? ys_i)) (pointwise i o' y os_i ys_i))
+              (corresponds_of_agree agreeItem pairedN))
+        · rw [heapEq]; exact describedNew
+        · exact obsTyped_list_of_elements (fun o' member => by
+            rcases List.mem_append.mp member with old | new
+            · exact elemsTyped o' old
+            · rw [List.mem_singleton.mp new]; exact observedN)
+        · rw [heapEq]
+          refine valueTyped_of_corresponds ?_ (obsTyped_list_of_elements (fun o' member => by
+            rcases List.mem_append.mp member with old | new
+            · exact elemsTyped o' old
+            · rw [List.mem_singleton.mp new]; exact observedN))
+          exact corresponds_list_of_elements lookupNew (by simp [lenO])
+            (pointwise_snoc lenO (fun i o' y os_i ys_i =>
+              corresponds_of_agree (agreeOld y (List.mem_of_getElem? ys_i)) (pointwise i o' y os_i ys_i))
+              (corresponds_of_agree agreeItem pairedN))
+        · rw [heapEq]; exact shapedNew
   · intro message failed
     exact push_failure inv valueReceiver heapReceiver valueItem heapItem lookup rootOutside
       represented failed
@@ -1362,46 +1830,6 @@ theorem heapAtomPost_heap (hs : State) (observations : List Observation) :
     (AtomPreservation.heapAtomPost hs observations).heap = hs.heap := by
   unfold AtomPreservation.heapAtomPost heapObserved AtomPreservation.heapTicked
   split <;> rfl
-
-/-- The operands of a record constructor, pointwise. -/
-theorem flat_atoms_values {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {args : List Atom} {types : List Ty}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (typed : args.mapM (atomType tenv) = .ok types)
-    (covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live) :
-    ∃ (os : List Observation) (ws : List Value) (as : List Abstract),
-      args.mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) = .ok os ∧
-      args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) = .ok ws ∧
-      args.mapM (m := Except String) (abstractAtom aenv) = .ok as ∧
-      os.length = types.length ∧ ws.length = types.length ∧ as.length = types.length ∧
-      ∀ (i : Nat) (o : Observation) (w : Value) (a : Abstract) (t : Ty),
-        os[i]? = some o → ws[i]? = some w → as[i]? = some a → types[i]? = some t →
-        Corresponds hs.heap o w ∧ Describes gamma hs.heap a w ∧
-        obsTyped declarations o t = true ∧ ValueTyped declarations hs.heap w t ∧
-        FlatType t ∧ FlatAbstract t a ∧ AllocatedFlatValue hs.heap w t ∧ ResultTags t a w ∧
-        ChainTags t a o := by
-  induction args generalizing types with
-  | nil =>
-    have := except_mapM_nil_success typed
-    subst this
-    exact ⟨[], [], [], rfl, rfl, rfl, rfl, rfl, rfl, fun i o w a t h => by simp at h⟩
-  | cons atom rest ih =>
-    obtain ⟨t, restTypes, headTyped, restTyped, rfl⟩ := except_mapM_cons_success typed
-    obtain ⟨os, ws, as, valueRest, heapRest, abstractRest, lenO, lenW, lenA, fields⟩ :=
-      ih restTyped (fun atom member => covered atom (by simp [member]))
-    obtain ⟨o, w, a, valueHead, heapHead, abstractHead, paired, described, observed, valueTyped,
-      flatType, shape, allocated, tags, chains⟩ := flat_atom_values inv headTyped (covered atom (by simp))
-    refine ⟨o :: os, w :: ws, a :: as, except_mapM_cons valueHead valueRest,
-      except_mapM_cons heapHead heapRest, except_mapM_cons abstractHead abstractRest,
-      by simp [lenO], by simp [lenW], by simp [lenA], ?_⟩
-    intro i o' w' a' t' os_i ws_i as_i types_i
-    cases i with
-    | zero =>
-      simp at os_i ws_i as_i types_i
-      subst os_i; subst ws_i; subst as_i; subst types_i
-      exact ⟨paired, described, observed, valueTyped, flatType, shape, allocated, tags, chains⟩
-    | succ i =>
-      exact fields i o' w' a' t' (by simpa using os_i) (by simpa using ws_i) (by simpa using as_i)
-        (by simpa using types_i)
 
 theorem record_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {args : List Atom} {os : List Observation} {ws : List Value} {escapes : List Origin}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
@@ -1442,9 +1870,14 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           (.prim .record args)).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .record args)).run vs = .error message →
@@ -1494,8 +1927,14 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         rw [valueRun] at run
         cases run
         have heapSame := heapAtomPost_heap hs vs.kept.toList
+        have kindsNew : KindsAt (AtomPreservation.heapAtomPost hs vs.kept.toList) env tenv (.record types)
+            (.record ws) :=
+          inv.kindsAt_of heapSame
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_links])
+            (fun _ state => .record types ws lenW (fun i t w types_i ws_i =>
+              kinded_atoms inv state atomsTyped covered heapAtoms i w t ws_i types_i))
         refine ⟨.record ws, AtomPreservation.heapAtomPost hs vs.kept.toList, gamma, heapRun, ?_,
-          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, ?_, ?_, ?_, ?_⟩
+          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, kindsNew⟩
         · rw [nextEscapes]; exact AtomPreservation.integer_atom_post_invariant inv
         · rw [heapSame]
           refine corresponds_record_of_fields (lenO.trans lenW.symm) ?_
@@ -1504,11 +1943,13 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i
           exact (fields i o w a t os_i ws_i as_i types_i).1
         · rw [heapSame, resultEq]
-          refine describes_record_of_fields (lenA.trans lenW.symm) ?_
-          intro i a w as_i ws_i
-          obtain ⟨t, types_i⟩ := index_of_same_length lenA as_i
+          refine describes_record_of_fields (by rw [entryFields_length]; exact lenA.trans lenW.symm) ?_
+          intro i a' w as_i ws_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨t, types_i⟩ := index_of_same_length lenA as_i'
           obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.1
+          rw [types_i]
+          exact (fields i o w a t os_i ws_i as_i' types_i).2.1
         · refine obsTyped_record_of_fields lenO ?_
           intro i o t os_i types_i
           obtain ⟨w, ws_i⟩ := index_of_same_length lenW.symm types_i
@@ -1520,16 +1961,40 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
           obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i
           exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.1
+        · rw [heapSame]
+          refine .record ws (entryTypes types) (by rw [entryTypes_length]; exact lenW) ?_
+          intro i w t' ws_i types_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i'
+          obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i'
+          exact (fields i o w a t os_i ws_i as_i types_i').2.2.2.2.2.2.1
         · rw [resultEq]
-          refine .record types as ws lenA.symm ?_
-          intro i t a w types_i as_i ws_i
-          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.2.2.2.2.1
+          refine .record (entryTypes types) (entryFields declarations types as) ws
+            (by rw [entryTypes_length, entryFields_length]; exact lenA.symm) ?_
+          intro i t' a' w types_i as_i ws_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i'
+          rw [types_i']
+          exact (fields i o w a t os_i ws_i as_i' types_i').2.2.2.2.2.2.2.1
         · rw [resultEq]
-          refine .record types as os lenA.symm ?_
-          intro i t a o types_i as_i os_i
-          obtain ⟨w, ws_i⟩ := index_of_same_length lenW.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.2.2.2.2.2
+          refine .record (entryTypes types) (entryFields declarations types as) os
+            (by rw [entryTypes_length, entryFields_length]; exact lenA.symm) ?_
+          intro i t' a' o types_i as_i os_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨w, ws_i⟩ := index_of_same_length lenW.symm types_i'
+          rw [types_i']
+          exact (fields i o w a t os_i ws_i as_i' types_i').2.2.2.2.2.2.2.2.1
+        · rw [heapSame, resultEq]
+          refine .record (entryTypes types) (entryFields declarations types as) ws
+            (by rw [entryTypes_length, entryFields_length]; exact lenA.symm) ?_
+          intro i t' a' w types_i as_i ws_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i'
+          rw [types_i']
+          exact (fields i o w a t os_i ws_i as_i' types_i').2.2.2.2.2.2.2.2.2
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1617,7 +2082,7 @@ theorem result_runtime_success {declarations : List Decl} {vs : ValueSemantics.S
 
 /-- Both runtime directions of a result constructor from the operand's facts:
 the record of the tag, the payload and the dead integer. -/
-theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {op : Prim} {x : Atom} {o : Observation} {w : Value} {escapes : List Origin} {type : Ty} {result : Abstract}
+theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {op : Prim} {x : Atom} {o : Observation} {w : Value} {escapes : List Origin} {type shapeType : Ty} {result : Abstract}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (valueAtom : ValueSemantics.atom (valueEnv env) x = .ok o)
     (heapAtom : InPlaceSemantics.atom (heapEnv env) x = .ok w)
@@ -1626,7 +2091,10 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
     (paired : Corresponds hs.heap value actual) (described : Describes gamma hs.heap result actual)
     (observed : obsTyped declarations value type = true)
     (valueTyped : ValueTyped declarations hs.heap actual type)
-    (tags : ResultTags type result actual) (chains : ChainTags type result value) :
+    (shaped : AllocatedFlatValue hs.heap actual shapeType)
+    (tags : ResultTags shapeType result actual) (chains : ChainTags shapeType result value)
+    (deepTags : TagsDeep hs.heap shapeType result actual)
+    (kinded : ∀ kinds, StateKinded kinds hs env tenv → Kinded kinds type actual) :
     (∀ value' vs',
       (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [x])).run vs =
         .ok (value', vs') →
@@ -1637,7 +2105,9 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
         hs.heap.size ≤ hs'.heap.size ∧
         Corresponds hs'.heap value' actual' ∧ Describes gamma' hs'.heap result actual' ∧
         obsTyped declarations value' type = true ∧ ValueTyped declarations hs'.heap actual' type ∧
-        ResultTags type result actual' ∧ ChainTags type result value') ∧
+        AllocatedFlatValue hs'.heap actual' shapeType ∧
+        ResultTags shapeType result actual' ∧ ChainTags shapeType result value' ∧
+        TagsDeep hs'.heap shapeType result actual' ∧ KindsAt hs' env tenv type actual') ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [x])).run vs =
         .error message →
@@ -1663,10 +2133,15 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
         have heapSame := heapAtomPost_heap hs vs.kept.toList
         refine ⟨actual, AtomPreservation.heapAtomPost hs vs.kept.toList, gamma, heapRun,
           AtomPreservation.integer_atom_post_invariant inv,
-          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, tags, chains⟩
+          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, tags, chains,
+          by simpa only [heapSame] using deepTags,
+          inv.kindsAt_of heapSame
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_links])
+            kinded⟩
         · rw [heapSame]; exact paired
         · rw [heapSame]; exact described
         · rw [heapSame]; exact valueTyped
+        · rw [heapSame]; exact shaped
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1737,9 +2212,14 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
           (.prim (.ok error) [x])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.ok error) [x])).run vs = .error message →
@@ -1748,7 +2228,7 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
           (.prim (.ok error) [x])).run hs = .error actualMessage) := by
   obtain ⟨t, atomTyped, rfl⟩ := exprType_ok_success typed
   obtain ⟨o, w, a, valueAtom, heapAtom, abstractValue, paired, described, observed, valueTyped,
-    flatT, shape, allocated, tags, chains⟩ := flat_atom_values inv atomTyped covered
+    flatT, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv atomTyped covered
   have abstractAtoms : [x].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
     except_mapM_cons abstractValue rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
@@ -1761,14 +2241,25 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
   refine ⟨rfl, .result error t flatError flatT, ?_, ?_⟩
   · rw [resultEq]
     exact .result error t .bottom a (.bottom _) shape
-  · rw [resultEq]
-    refine result_preserved_of_parts (value := .record [.int 1, .int 0, o])
+  · have typedResult : entryAbstract declarations (.result error t) (.record [.scalar, .bottom, a]) =
+        .record [.scalar, .bottom, entryAbstract declarations t a] := by
+      show Abstract.record [entryAbstract declarations .int .scalar, entryAbstract declarations error .bottom,
+        entryAbstract declarations t a] = _
+      rw [entryAbstract_bottom]
+      rfl
+    have observedOk : obsTyped declarations (.record [.int 1, .int 0, o]) (.result error t) = true := by
+      simpa [obsTyped] using observed
+    rw [resultEq, typedResult]
+    exact result_preserved_of_parts (value := .record [.int 1, .int 0, o])
       (actual := .record [.int 1, .int 0, w]) inv valueAtom heapAtom
       (fun s => value_ok_run error s o) (fun s => heap_ok_run error s w)
-      (corresponds_ok paired) (describes_ok described) ?_
-      (valueTyped_of_allocated (.ok error t w allocated) inv.heapInts)
-      (.ok error t _ _ _ w (resultTags_ne_bottom tags) tags) (.ok error t _ _ _ o chains)
-    simpa [obsTyped] using observed
+      (corresponds_ok paired) (describes_ok described) observedOk
+      (valueTyped_of_corresponds (corresponds_ok paired) observedOk)
+      (.ok (entryType error) (entryType t) w allocated)
+      (.ok (entryType error) (entryType t) _ _ _ w (resultTags_ne_bottom tags) tags)
+      (.ok (entryType error) (entryType t) _ _ _ o chains)
+      (.ok (entryType error) (entryType t) _ _ _ w deepTags)
+      (fun _ state => .ok error t w (kinded_atom inv state atomTyped covered heapAtom))
 
 theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {success : Ty} {x : Atom} {self : Decl} {type : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
@@ -1787,9 +2278,14 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           (.prim (.err success) [x])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.err success) [x])).run vs = .error message →
@@ -1798,7 +2294,7 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           (.prim (.err success) [x])).run hs = .error actualMessage) := by
   obtain ⟨t, atomTyped, rfl⟩ := exprType_err_success typed
   obtain ⟨o, w, a, valueAtom, heapAtom, abstractValue, paired, described, observed, valueTyped,
-    flatT, shape, allocated, tags, chains⟩ := flat_atom_values inv atomTyped covered
+    flatT, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv atomTyped covered
   have abstractAtoms : [x].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
     except_mapM_cons abstractValue rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
@@ -1812,14 +2308,25 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
   refine ⟨rfl, .result t success flatT flatSuccess, ?_, ?_⟩
   · rw [resultEq]
     exact .result t success a .bottom shape (.bottom _)
-  · rw [resultEq]
-    refine result_preserved_of_parts (value := .record [.int 0, o, .int 0])
+  · have typedResult : entryAbstract declarations (.result t success) (.record [.scalar, a, .bottom]) =
+        .record [.scalar, entryAbstract declarations t a, .bottom] := by
+      show Abstract.record [entryAbstract declarations .int .scalar, entryAbstract declarations t a,
+        entryAbstract declarations success .bottom] = _
+      rw [entryAbstract_bottom]
+      rfl
+    have observedErr : obsTyped declarations (.record [.int 0, o, .int 0]) (.result t success) = true := by
+      simpa [obsTyped] using observed
+    rw [resultEq, typedResult]
+    exact result_preserved_of_parts (value := .record [.int 0, o, .int 0])
       (actual := .record [.int 0, w, .int 0]) inv valueAtom heapAtom
       (fun s => value_err_run success s o) (fun s => heap_err_run success s w)
-      (corresponds_err paired) (describes_err described) ?_
-      (valueTyped_of_allocated (.err t success w allocated) inv.heapInts)
-      (.err t success _ _ _ w (resultTags_ne_bottom tags) tags) (.err t success _ _ _ o chains)
-    simpa [obsTyped] using observed
+      (corresponds_err paired) (describes_err described) observedErr
+      (valueTyped_of_corresponds (corresponds_err paired) observedErr)
+      (.err (entryType t) (entryType success) w allocated)
+      (.err (entryType t) (entryType success) _ _ _ w (resultTags_ne_bottom tags) tags)
+      (.err (entryType t) (entryType success) _ _ _ o chains)
+      (.err (entryType t) (entryType success) _ _ _ w deepTags)
+      (fun _ state => .err t success w (kinded_atom inv state atomTyped covered heapAtom))
 
 end Ownership.FlatFragment.Result
 
@@ -1970,7 +2477,9 @@ theorem endChain_preserved {declarations : List Decl} {vs : ValueSemantics.State
         hs.heap.size ≤ hs'.heap.size ∧
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual type ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.endChain .int) [])).run vs = .error message →
@@ -1993,7 +2502,8 @@ theorem endChain_preserved {declarations : List Decl} {vs : ValueSemantics.State
       · obtain ⟨valueRun, heapRun⟩ := endChain_runtime_success inv noDepth noFuel
         rw [valueRun] at run
         cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv [] site
+        obtain ⟨kinds', state', newTyped⟩ := literal_kinds inv [] (chain_contents_ints · [])
+        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv [] site ⟨kinds', state'⟩
         have heapEq : (heapObserved (heapAllocated hs []) vs.kept.toList).heap =
             hs.heap.push (heapInts []) := by
           rw [heapObserved_heap]; rfl
@@ -2001,7 +2511,8 @@ theorem endChain_preserved {declarations : List Decl} {vs : ValueSemantics.State
             some (heapInts []) := by
           rw [heapEq]; simp
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs []) vs.kept.toList, gamma',
-          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chainInt _ _ _ _, .chainBottom _ _⟩
+          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chain _ [] lookupNew, .chainInt _ _ _ _, .chainBottom _ _, .chain _ _,
+          ⟨kinds', state', .chain .int _ newTyped⟩⟩
         · rw [heapEq]; simp
         · exact corresponds_integer_ref lookupNew
         · exact allocated_list_described lookupNew ⟨.site site 0, by simp, fresh⟩
@@ -2040,7 +2551,9 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
         hs.heap.size ≤ hs'.heap.size ∧
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual type ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .link [head, tail])).run vs = .error message →
@@ -2076,7 +2589,8 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           link_runtime_success inv valueHead heapHead valueTail heapTail lookup noDepth noFuel
         rw [valueRun] at run
         cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv (n :: integers) site
+        obtain ⟨kinds', state', newTyped⟩ := literal_kinds inv (n :: integers) (chain_contents_ints · _)
+        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv (n :: integers) site ⟨kinds', state'⟩
         have heapEq : (heapObserved (heapAllocated hs (n :: integers)) vs.kept.toList).heap =
             hs.heap.push (heapInts (n :: integers)) := by
           rw [heapObserved_heap]; rfl
@@ -2084,7 +2598,8 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
             some (heapInts (n :: integers)) := by
           rw [heapEq]; simp
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs (n :: integers)) vs.kept.toList, gamma',
-          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chainInt _ _ _ _, .chainScalar _ _ _⟩
+          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chain _ (n :: integers) lookupNew, .chainInt _ _ _ _,
+          .chainScalar _ _ _, .chain _ _, ⟨kinds', state', .chain .int _ newTyped⟩⟩
         · rw [heapEq]; simp
         · exact corresponds_integer_ref lookupNew
         · exact allocated_list_described lookupNew ⟨.site site 0, by simp, fresh⟩
@@ -2169,10 +2684,31 @@ theorem primitive_set_result {ctx : Context} {site : List Nat} {before : St} {ne
 
 theorem primitive_copy_run (ctx : Context) (site : List Nat) (roots : List Origin) (element : Abstract)
     (certificate : Certificate) (later : List Origin) (before : St) :
-    ∃ certificate', (primitive ctx site .copy [.list roots element certificate] later).run before =
-      .ok (.list [.site site 0] element certificate', {before with facts := {before.facts with
-        reads := union before.facts.reads (roots.filter external)}}) :=
-  ⟨_, by unfold primitive; rfl⟩
+    (primitive ctx site .copy [.list roots element certificate] later).run before =
+      .ok (.list [.site site 0] element ((ctx.config.has .copyExclusive : Bool) : Certificate),
+        {before with facts := {before.facts with
+          reads := union before.facts.reads (roots.filter external)}}) := by
+  unfold primitive
+  rfl
+
+/-- The checker's view: a read of the source, and the source's description
+with the fresh site among its roots (#169). -/
+theorem primitive_view_run (ctx : Context) (site : List Nat) (front : Bool) (roots : List Origin)
+    (element : Abstract) (certificate : Certificate) (later : List Origin) (before : St) :
+    (primitive ctx site (.view front) [.list roots element certificate] later).run before =
+      .ok (.list (if ctx.config.has .viewAlias then [.site site 0] else union roots [.site site 0]) element
+          certificate,
+        {before with facts := {before.facts with
+          reads := union before.facts.reads (roots.filter external)}}) := by
+  unfold primitive
+  rfl
+
+theorem primitive_view_bottom_run (ctx : Context) (site : List Nat) (front : Bool) (later : List Origin)
+    (before : St) :
+    (primitive ctx site (.view front) [.bottom] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
 
 theorem primitive_copy_bottom_run (ctx : Context) (site : List Nat) (later : List Origin) (before : St) :
     (primitive ctx site .copy [.bottom] later).run before = .ok (.bottom, before) := by
@@ -2197,77 +2733,154 @@ theorem primitive_prepend_bottom_run (ctx : Context) (site : List Nat) (item : A
 /-! ### The element read -/
 
 /-- The element both runtimes read: the fallback for a negative or out-of-range index. -/
-def atResult (integers : List Int) (index fallback : Int) : Int :=
-  if index < 0 then fallback else integers[index.toNat]?.getD fallback
+def atObs (os : List Observation) (index : Int) (fallback : Observation) : Observation :=
+  if index < 0 then fallback else os[index.toNat]?.getD fallback
 
-theorem valueInts_getD (integers : List Int) (k : Nat) (fallback : Int) :
-    (valueInts integers)[k]?.getD (.int fallback) = .int (integers[k]?.getD fallback) := by
-  simp only [valueInts, List.getElem?_map]
-  cases integers[k]? <;> rfl
+def atVal (ys : List Value) (index : Int) (fallback : Value) : Value :=
+  if index < 0 then fallback else ys[index.toNat]?.getD fallback
 
-theorem heapInts_getD (integers : List Int) (k : Nat) (fallback : Int) :
-    (heapInts integers)[k]?.getD (.int fallback) = .int (integers[k]?.getD fallback) := by
-  simp only [heapInts, List.getElem?_map]
-  cases integers[k]? <;> rfl
+theorem atVal_cases (ys : List Value) (index : Int) (fallback : Value) :
+    atVal ys index fallback = fallback ∨ ∃ y ∈ ys, atVal ys index fallback = y := by
+  unfold atVal
+  split
+  · exact Or.inl rfl
+  · cases h : ys[index.toNat]? with
+    | none => exact Or.inl rfl
+    | some y => exact Or.inr ⟨y, List.mem_of_getElem? h, rfl⟩
 
-theorem value_at_run (s : ValueSemantics.State) (integers : List Int) (index fallback : Int) :
-    (ValueSemantics.prim .at [.list (valueInts integers), .int index, .int fallback]).run s =
-      .ok (.int (atResult integers index fallback),
-        {s with reads := s.reads.push (.int (atResult integers index fallback))}) := by
+theorem atObs_cases (os : List Observation) (index : Int) (fallback : Observation) :
+    atObs os index fallback = fallback ∨ ∃ o ∈ os, atObs os index fallback = o := by
+  unfold atObs
+  split
+  · exact Or.inl rfl
+  · cases h : os[index.toNat]? with
+    | none => exact Or.inl rfl
+    | some o => exact Or.inr ⟨o, List.mem_of_getElem? h, rfl⟩
+
+/-- The read elements correspond when the lists do, element by element. -/
+theorem corresponds_atVal {heap : Heap} {os : List Observation} {ys : List Value} {d : Observation} {w : Value}
+    (lenO : os.length = ys.length)
+    (pointwise : ∀ (i : Nat) (o : Observation) (y : Value), os[i]? = some o → ys[i]? = some y → Corresponds heap o y)
+    (pairedD : Corresponds heap d w) (index : Int) :
+    Corresponds heap (atObs os index d) (atVal ys index w) := by
+  unfold atObs atVal
+  split
+  · exact pairedD
+  · cases h : os[index.toNat]? with
+    | none =>
+      have h' : ys[index.toNat]? = none := by
+        rw [List.getElem?_eq_none_iff] at h ⊢
+        omega
+      rw [h']
+      exact pairedD
+    | some o =>
+      obtain ⟨y, h'⟩ := index_of_same_length lenO h
+      rw [h']
+      exact pointwise _ _ _ h h'
+
+theorem value_at_run (s : ValueSemantics.State) (os : List Observation) (index : Int) (d : Observation)
+    (shallow : ¬ (atObs os index d).depth > observationDepth) :
+    (ValueSemantics.prim .at [.list os, .int index, d]).run s =
+      .ok (atObs os index d, {s with reads := s.reads.push (atObs os index d)}) := by
   by_cases neg : index < 0 <;>
-    simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, Observation.depth,
-      observationDepth, atResult, neg, valueInts_getD, StateT.run, StateT.bind, StateT.map, StateT.get,
-      StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe,
-      MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify, modifyGet,
-      MonadStateOf.modifyGet, StateT.modifyGet]
-
-theorem heap_at_run (s : State) (integers : List Int) (index fallback : Int)
-    (lookup : s.heap[root]? = some (heapInts integers)) :
-    (prim .at [.ref root, .int index, .int fallback]).run s =
-      .ok (.int (atResult integers index fallback),
-        {s with reads := s.reads.push (.int (atResult integers index fallback))}) := by
-  by_cases neg : index < 0 <;>
-    simp [prim, array, lookup, InPlaceSemantics.read, snapshot, observationDepth, atResult, neg,
-      heapInts_getD, Option.toExcept, StateT.run, StateT.bind, StateT.map, StateT.get, StateT.set,
-      StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe,
-      MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
+    simp only [atObs, neg, ite_true, ite_false] at shallow ⊢ <;>
+    simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, neg, shallow, StateT.run,
+      StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind,
+      pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
       modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
 
-theorem at_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {escapes : List Origin} {receiver index fallback : Atom} {integers : List Int} {root : Nat} {i d : Int}
+theorem value_at_run_deep (s : ValueSemantics.State) (os : List Observation) (index : Int) (d : Observation)
+    (deep : (atObs os index d).depth > observationDepth) :
+    (ValueSemantics.prim .at [.list os, .int index, d]).run s = .error "snapshot exhausted depth" := by
+  by_cases neg : index < 0 <;>
+    simp only [atObs, neg, ite_true, ite_false] at deep ⊢ <;>
+    simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, neg, deep, StateT.run,
+      StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind,
+      pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
+      modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, throw, throwThe, MonadExceptOf.throw, Except.error]
+
+theorem heap_at_run (s : State) (ys : List Value) (index : Int) (w : Value) {o : Observation}
+    (lookup : s.heap[root]? = some ys)
+    (snap : snapshot s.heap observationDepth (atVal ys index w) = .ok o) :
+    (prim .at [.ref root, .int index, w]).run s = .ok (atVal ys index w, {s with reads := s.reads.push o}) := by
+  by_cases neg : index < 0 <;>
+    simp only [atVal, neg, ite_true, ite_false] at snap ⊢ <;>
+    simp [prim, array, lookup, InPlaceSemantics.read, snap, neg, Option.toExcept, StateT.run, StateT.bind,
+      StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get,
+      getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify, modifyGet,
+      MonadStateOf.modifyGet, StateT.modifyGet]
+
+theorem heap_at_run_deep (s : State) (ys : List Value) (index : Int) (w : Value) {e : String}
+    (lookup : s.heap[root]? = some ys)
+    (snap : snapshot s.heap observationDepth (atVal ys index w) = .error e) :
+    (prim .at [.ref root, .int index, w]).run s = .error e := by
+  by_cases neg : index < 0 <;>
+    simp only [atVal, neg, ite_true, ite_false] at snap ⊢ <;>
+    simp [prim, array, lookup, InPlaceSemantics.read, snap, neg, Option.toExcept, StateT.run, StateT.bind,
+      StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get,
+      getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify, modifyGet,
+      MonadStateOf.modifyGet, StateT.modifyGet]
+
+theorem at_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver index fallback : Atom} {os : List Observation} {ys : List Value} {root : Nat} {i : Int} {d : Observation} {w : Value} {depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts integers)))
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
     (valueIndex : ValueSemantics.atom (valueEnv env) index = .ok (.int i))
     (heapIndex : InPlaceSemantics.atom (heapEnv env) index = .ok (.int i))
-    (valueFallback : ValueSemantics.atom (valueEnv env) fallback = .ok (.int d))
-    (heapFallback : InPlaceSemantics.atom (heapEnv env) fallback = .ok (.int d))
-    (lookup : hs.heap[root]? = some (heapInts integers))
+    (valueFallback : ValueSemantics.atom (valueEnv env) fallback = .ok d)
+    (heapFallback : InPlaceSemantics.atom (heapEnv env) fallback = .ok w)
+    (lookup : hs.heap[root]? = some ys)
+    (snap : snapshot hs.heap observationDepth (atVal ys i w) = .ok (atObs os i d))
+    (shallow : ¬ (atObs os i d).depth > observationDepth)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
     (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .at [receiver, index, fallback])).run vs =
-      .ok (.int (atResult integers i d), valueRead vs (.int (atResult integers i d))) ∧
+      .ok (atObs os i d, valueRead vs (atObs os i d)) ∧
     (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .at [receiver, index, fallback])).run hs =
-      .ok (.int (atResult integers i d), heapRead hs (.int (atResult integers i d)) vs.kept.toList) := by
+      .ok (atVal ys i w, heapRead hs (atObs os i d) vs.kept.toList) := by
   obtain ⟨footprint, represented⟩ := inv.observers
   have valueObservedRun := value_observeKept_run
-    ({vs with fuel := vs.fuel - 1, reads := vs.reads.push (.int (atResult integers i d))}) represented
+    ({vs with fuel := vs.fuel - 1, reads := vs.reads.push (atObs os i d)}) represented
   have heapObservedRun := heap_observeKept_run
-    ({hs with fuel := hs.fuel - 1, reads := hs.reads.push (.int (atResult integers i d))}) represented
+    ({hs with fuel := hs.fuel - 1, reads := hs.reads.push (atObs os i d)}) represented
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver, index, fallback].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts integers), .int i, .int d] :=
+      .ok [.list os, .int i, d] :=
     except_mapM_cons valueReceiver (except_mapM_cons valueIndex (except_mapM_cons valueFallback rfl))
   have heapAtoms : [receiver, index, fallback].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.ref root, .int i, .int d] :=
+      .ok [.ref root, .int i, w] :=
     except_mapM_cons heapReceiver (except_mapM_cons heapIndex (except_mapM_cons heapFallback rfl))
   constructor
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
-    simp [hasDepth, hasFuel, valueTicked, value_at_run, valueObservedRun, valueRead,
+    simp [hasDepth, hasFuel, valueTicked, value_at_run (valueTicked vs) os i d shallow,
+      value_at_run {vs with fuel := vs.fuel - 1} os i d shallow, valueObservedRun, valueRead,
       Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, heapTicked, heap_at_run {hs with fuel := hs.fuel - 1} integers i d lookup,
+    simp [hasDepth, heapFuel, heapTicked, heap_at_run {hs with fuel := hs.fuel - 1} ys i w lookup snap,
       heapObservedRun, heapRead, Except.bind, Except.pure, bind, pure]
 
-theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {receiver index fallback : Atom} {self : Decl} {type : Ty}
+/-- A read too deep to observe fails on both sides. -/
+theorem at_runtime_deep {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver index fallback : Atom} {os : List Observation} {ys : List Value} {root : Nat} {i : Int} {d : Observation} {w : Value} {depth : Nat}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
+    (heapIndex : InPlaceSemantics.atom (heapEnv env) index = .ok (.int i))
+    (heapFallback : InPlaceSemantics.atom (heapEnv env) fallback = .ok w)
+    (lookup : hs.heap[root]? = some ys)
+    (paired : Corresponds hs.heap (atObs os i d) (atVal ys i w))
+    (deep : (atObs os i d).depth > observationDepth)
+    (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
+    ∃ e, (InPlaceSemantics.eval depth declarations none (heapEnv env)
+      (.prim .at [receiver, index, fallback])).run hs = .error e := by
+  have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
+  have heapAtoms : [receiver, index, fallback].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
+      .ok [.ref root, .int i, w] :=
+    except_mapM_cons heapReceiver (except_mapM_cons heapIndex (except_mapM_cons heapFallback rfl))
+  obtain ⟨e, snapErr⟩ := Ownership.FlatFragment.Shared.snapshot_deep_error paired deep
+  refine ⟨e, ?_⟩
+  rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
+  simp [hasDepth, heapFuel, heapTicked, heap_at_run_deep {hs with fuel := hs.fuel - 1} ys i w lookup snapErr,
+    Except.bind, bind]
+
+theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {receiver index fallback : Atom} {type : Ty} {self : Decl} {ctx : Context} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim .at [receiver, index, fallback]) = .ok type)
     (coveredR : ∀ use ∈ atomUses receiver, use ∈ live)
@@ -2276,7 +2889,7 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
     (defaultConfig : ctx.config = {})
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim .at [receiver, index, fallback]) after site).run before =
       .ok (result, next)) :
-    type = .int ∧ next.facts.escapes = before.facts.escapes ∧ result = .scalar ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .at [receiver, index, fallback])).run vs = .ok (value, vs') →
@@ -2285,43 +2898,75 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
           (.prim .at [receiver, index, fallback])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .at [receiver, index, fallback])).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
           (.prim .at [receiver, index, fallback])).run hs = .error actualMessage) := by
-  obtain ⟨receiverTyped, indexTyped, fallbackTyped, intType⟩ :=
+  obtain ⟨t, receiverTyped, indexTyped, fallbackTyped, typeEq⟩ :=
     exprType_at_success (fun _ _ h => flat_atom_type inv h) typed
-  subst intType
-  obtain ⟨root, integers, roots, element, certificate, lookup, _, elementFlat,
-    valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
+  subst type
+  obtain ⟨root, ys, os, roots, element, certificate, lookup, _, _, flatT, elemTags, elemShape0, elemsShaped,
+    elemsDescribed, lenO, elemsTyped, pointwise, _, _, valueReceiver, heapReceiver, abstractReceiver⟩ :=
+    flat_atom_list_path inv receiverTyped coveredR
   obtain ⟨i, valueIndex, heapIndex, abstractIndex⟩ := flat_atom_integer inv indexTyped coveredI
-  obtain ⟨d, valueFallback, heapFallback, abstractFallback⟩ := flat_atom_integer inv fallbackTyped coveredD
+  obtain ⟨d, w, aD, valueFallback, heapFallback, abstractFallback, pairedD, describedD, observedD, _, _,
+    shapeD0, allocatedD, tagsD, chainsD, deepD⟩ := flat_atom_entry inv fallbackTyped coveredD
+  -- The heap facts are at the element's representation (#1840).
+  have elemShape := flatAbstract_entry (ds := declarations) elemShape0
+  have shapeD := flatAbstract_entry (ds := declarations) shapeD0
   have abstractAtoms : [receiver, index, fallback].mapM (m := Except String) (abstractAtom aenv) =
-      .ok [.list roots element certificate, .scalar, .scalar] :=
+      .ok [.list roots element certificate, .scalar, aD] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractIndex (except_mapM_cons abstractFallback rfl))
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
   rw [primitive_at_run] at run
   have equal := Except.ok.inj run
-  have first : element.join Abstract.scalar = result := congrArg Prod.fst equal
-  have resultScalar : result = .scalar := by
-    rw [← first]; exact flat_join_scalar elementFlat
+  have resultEq : result = element.join aD := (congrArg Prod.fst equal).symm
+  have resultRep : entryAbstract declarations t result =
+      (entryAbstract declarations t element).join (entryAbstract declarations t aD) := by
+    rw [resultEq]; exact entryAbstract_join elemShape0 shapeD0
   have nextState : next = {before with facts := {before.facts with
       reads := union before.facts.reads ((union roots element.cells).filter external)}} :=
     (congrArg Prod.snd equal).symm
   have nextEscapes : next.facts.escapes = before.facts.escapes := by
     subst nextState; rfl
   have valueAtoms : [receiver, index, fallback].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts integers), .int i, .int d] :=
+      .ok [.list os, .int i, d] :=
     except_mapM_cons valueReceiver (except_mapM_cons valueIndex (except_mapM_cons valueFallback rfl))
   have heapAtoms : [receiver, index, fallback].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.ref root, .int i, .int d] :=
+      .ok [.ref root, .int i, w] :=
     except_mapM_cons heapReceiver (except_mapM_cons heapIndex (except_mapM_cons heapFallback rfl))
-  refine ⟨rfl, nextEscapes, resultScalar, ?_, ?_⟩
+  have paired : Corresponds hs.heap (atObs os i d) (atVal ys i w) := corresponds_atVal lenO pointwise pairedD i
+  have allocated : AllocatedFlatValue hs.heap (atVal ys i w) (entryType t) := by
+    rcases atVal_cases ys i w with h | ⟨y, member, h⟩
+    · rw [h]; exact allocatedD
+    · rw [h]; exact elemsShaped y member
+  have described : Describes gamma hs.heap
+      ((entryAbstract declarations t element).join (entryAbstract declarations t aD)) (atVal ys i w) := by
+    rcases atVal_cases ys i w with h | ⟨y, member, h⟩
+    · rw [h]; exact describes_join allocatedD elemShape shapeD (Or.inr describedD)
+    · rw [h]; exact describes_join (elemsShaped y member) elemShape shapeD (Or.inl (elemsDescribed y member))
+  have chosenTags : ElementTags hs.heap (entryType t)
+      ((entryAbstract declarations t element).join (entryAbstract declarations t aD)) (atVal ys i w) := by
+    rcases atVal_cases ys i w with h | ⟨y, member, h⟩
+    · rw [h]
+      exact elementTags_join_right (elementTags_of_corresponds pairedD tagsD chainsD deepD) elemShape shapeD
+    · rw [h]
+      exact elementTags_join (elemTags y member) elemShape shapeD
+  have observed : obsTyped declarations (atObs os i d) t = true := by
+    rcases atObs_cases os i d with h | ⟨o, member, h⟩
+    · rw [h]; exact observedD
+    · rw [h]; exact elemsTyped o member
+  refine ⟨flatT, nextEscapes, by rw [resultEq]; exact flatAbstract_join elemShape0 shapeD0, ?_, ?_⟩
   · intro value vs' run
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
@@ -2329,17 +2974,35 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
     · by_cases noFuel : vs.fuel = 0
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
         simp [noDepth, noFuel] at run
-      · obtain ⟨valueRun, heapRun⟩ := at_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex
-          valueFallback heapFallback lookup noDepth noFuel
-        rw [valueRun] at run
-        cases run
-        refine ⟨.int (atResult integers i d), heapRead hs (.int (atResult integers i d)) vs.kept.toList, gamma,
-          heapRun, ?_, ?_, Ownership.FlatFragment.AtomPreservation.integer_corresponds _, ?_, by simp [obsTyped],
-          ⟨1, .int (atResult integers i d), [], .int, by simp [obsTyped]⟩,
-          by rw [resultScalar]; exact .int _, .int _ _⟩
-        · rw [nextEscapes]; exact read_post_invariant inv _
-        · exact Nat.le_of_eq (by unfold heapRead; rw [heapObserved_heap])
-        · rw [resultScalar]; exact Ownership.FlatFragment.AtomPreservation.integer_described _
+      · by_cases deep : (atObs os i d).depth > observationDepth
+        · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
+          simp [noDepth, noFuel, valueTicked, value_at_run_deep (valueTicked vs) os i d deep,
+            value_at_run_deep {vs with fuel := vs.fuel - 1} os i d deep, Except.bind, bind] at run
+        · have snap : snapshot hs.heap observationDepth (atVal ys i w) = .ok (atObs os i d) :=
+            paired observationDepth (by omega)
+          obtain ⟨valueRun, heapRun⟩ := at_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex
+            valueFallback heapFallback lookup snap deep noDepth noFuel
+          rw [valueRun] at run
+          cases run
+          have heapSame : (heapRead hs (atObs os i d) vs.kept.toList).heap = hs.heap := by
+            unfold heapRead; rw [heapObserved_heap]
+          have kindsNew : KindsAt (heapRead hs (atObs os i d) vs.kept.toList) env tenv t (atVal ys i w) :=
+            inv.kindsAt_of heapSame (by unfold heapRead; rw [heapObserved_links]) (fun kinds state => by
+              obtain ⟨c, same, rootTyped⟩ :=
+                kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+              cases same
+              rcases atVal_cases ys i w with eq | ⟨y, member, eq⟩
+              · rw [eq]; exact kinded_atom inv state fallbackTyped coveredD heapFallback
+              · rw [eq]; exact state.list_contents rootTyped lookup y member)
+          refine ⟨atVal ys i w, heapRead hs (atObs os i d) vs.kept.toList, gamma, heapRun, ?_,
+            Nat.le_of_eq (congrArg Array.size heapSame.symm), by rw [heapSame]; exact paired,
+            by rw [heapSame, resultRep]; exact described,
+            observed, by rw [heapSame]; exact valueTyped_of_corresponds paired observed,
+            by rw [heapSame]; exact allocated,
+            by rw [resultRep]; exact chosenTags.1,
+            by rw [resultRep]; exact chosenTags.2.1 _ paired,
+            by rw [heapSame, resultRep]; exact chosenTags.2.2, kindsNew⟩
+          · rw [nextEscapes]; exact read_post_invariant inv _
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -2350,100 +3013,160 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
         exact ⟨"in-place execution exhausted fuel", by
           rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
           simp [noDepth, heapFuel]⟩
-      · have success := (at_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex
-          valueFallback heapFallback lookup noDepth noFuel).1
-        rw [success] at failed
-        contradiction
+      · by_cases deep : (atObs os i d).depth > observationDepth
+        · exact at_runtime_deep inv heapReceiver heapIndex heapFallback lookup paired deep noDepth noFuel
+        · have snap : snapshot hs.heap observationDepth (atVal ys i w) = .ok (atObs os i d) :=
+            paired observationDepth (by omega)
+          have success := (at_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex
+            valueFallback heapFallback lookup snap deep noDepth noFuel).1
+          rw [success] at failed
+          contradiction
 
 /-! ### The element write -/
 
+/-- The checker's set result under the default configuration: as a push's. -/
+theorem primitive_set_result_values {ctx : Context} {site : List Nat} {before next : St} {result : Abstract}
+    {roots later : List Origin} {element index item : Abstract} {certificate : Certificate}
+    (defaultConfig : ctx.config = {})
+    (run : (primitive ctx site .set [.list roots element certificate, index, item] later).run before =
+      .ok (result, next)) :
+    result = .list roots (element.join item)
+      ⟨certificate.deep && storeExclusive ctx [item] later element.cells,
+       certificate.spine && storeSpines ctx [item] later element.cells &&
+         (containers element).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩ := by
+  unfold primitive at run
+  obtain ⟨finished, middle, _, returned⟩ := checkM_bind_success run
+  cases finished
+  have equal := Except.ok.inj returned
+  have first : _ = result := congrArg Prod.fst equal
+  rw [← first]
+  simp [defaultConfig, default_has, Abstract.grantExclusive, show (Prim.set == Prim.put) = false from rfl]
+
 /-- The list after a `set`: unchanged for a negative or out-of-range index. -/
-def setResult (integers : List Int) (index item : Int) : List Int :=
-  if index < 0 then integers else integers.set index.toNat item
+def setObs (os : List Observation) (index : Int) (o : Observation) : List Observation :=
+  if index < 0 then os else os.set index.toNat o
 
-theorem valueInts_setResult (integers : List Int) (index item : Int) :
-    (if index < 0 then valueInts integers else (valueInts integers).set index.toNat (.int item)) =
-      valueInts (setResult integers index item) := by
-  by_cases neg : index < 0 <;> simp [setResult, neg, valueInts, List.map_set]
+def setVals (ys : List Value) (index : Int) (w : Value) : List Value :=
+  if index < 0 then ys else ys.set index.toNat w
 
-theorem heapInts_setResult (integers : List Int) (index item : Int) :
-    (if index < 0 then heapInts integers else (heapInts integers).set index.toNat (.int item)) =
-      heapInts (setResult integers index item) := by
-  by_cases neg : index < 0 <;> simp [setResult, neg, heapInts, List.map_set]
+theorem mem_setVals {ys : List Value} {index : Int} {w z : Value} (member : z ∈ setVals ys index w) :
+    z ∈ ys ∨ z = w := by
+  unfold setVals at member
+  split at member
+  · exact Or.inl member
+  · exact List.mem_or_eq_of_mem_set member
 
-theorem value_set_run (s : ValueSemantics.State) (integers : List Int) (index item : Int) :
-    (ValueSemantics.prim .set [.list (valueInts integers), .int index, .int item]).run s =
-      .ok (.list (valueInts (setResult integers index item)), s) := by
-  simp [ValueSemantics.prim, valueInts_setResult, StateT.run, pure, StateT.pure, Except.pure]
+theorem value_set_run_values (s : ValueSemantics.State) (os : List Observation) (index : Int) (o : Observation) :
+    (ValueSemantics.prim .set [.list os, .int index, o]).run s = .ok (.list (setObs os index o), s) := rfl
 
-theorem primitive_set_run (s : State) (integers : List Int) (index item : Int)
-    (lookup : s.heap[root]? = some (heapInts integers)) (links : s.links = []) :
-    (prim .set [.ref root, .int index, .int item]).run s = .ok (.ref root,
-      {s with heap := s.heap.set! root (heapInts (setResult integers index item)), writes := if heapInts integers == heapInts (setResult integers index item) then s.writes else s.writes + 1}) := by
-  have written := writeCounted_empty_run (root := root)
-    (stored := heapInts (setResult integers index item)) s lookup links
-  simpa [prim, array, lookup, heapInts_setResult, StateT.run, StateT.bind, StateT.get,
-    Option.toExcept, Except.bind, Except.pure, bind, pure, get, getThe,
-    MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift, MonadLift.monadLift] using written
+theorem setVals_length (ys : List Value) (index : Int) (w : Value) :
+    (setVals ys index w).length = ys.length := by
+  unfold setVals
+  split <;> simp
 
-def heapSet (hs : State) (root : Nat) (integers : List Int) (index item : Int) : State :=
-  { hs with
-    fuel := hs.fuel - 1
-    heap := hs.heap.set! root (heapInts (setResult integers index item))
-    writes := (if heapInts integers == heapInts (setResult integers index item) then hs.writes else hs.writes + 1) }
+/-- A set of an allocated array on a state with valid links: a counted
+linked write that keeps the array's length (#169). -/
+theorem heap_set_run_linked (s : State) (ys : List Value) (index : Int) (w : Value)
+    (lookup : s.heap[root]? = some ys) (valid : LinksValid s) :
+    ∃ h, (prim .set [.ref root, .int index, w]).run s = .ok (.ref root,
+        {s with heap := h, writes := if ys == setVals ys index w then s.writes else s.writes + 1}) ∧
+      h.size = s.heap.size ∧ h[root]? = some (setVals ys index w) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected s.links root a → h[a]? = s.heap[a]?) ∧
+      LinksValid {s with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom s.links root (setVals ys index w) s {s with heap := h} := by
+  obtain ⟨h, written, rest⟩ := Ownership.LinkedWriteRun.writeCounted_linked (stored := setVals ys index w)
+    valid lookup (by rw [setVals_length]; exact Nat.le_refl _)
+  refine ⟨h, ?_, rest⟩
+  simpa [prim, array, lookup, setVals, StateT.run, StateT.bind, StateT.get, Option.toExcept, Except.bind,
+    Except.pure, bind, pure, get, getThe, MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift,
+    MonadLift.monadLift] using written
 
-theorem heapSet_heap (hs : State) (root : Nat) (integers : List Int) (index item : Int) :
-    (heapSet hs root integers index item).heap = hs.heap.set! root (heapInts (setResult integers index item)) := rfl
+/-- The correspondence of two lists extends to one element replaced in each. -/
+theorem pointwise_set {heap : Heap} {os : List Observation} {ys : List Value} {o : Observation} {w : Value}
+    (lenO : os.length = ys.length)
+    (pointwise : ∀ (i : Nat) o' y, os[i]? = some o' → ys[i]? = some y → Corresponds heap o' y)
+    (paired : Corresponds heap o w) (index : Int) :
+    ∀ (i : Nat) o' y, (setObs os index o)[i]? = some o' → (setVals ys index w)[i]? = some y →
+      Corresponds heap o' y := by
+  intro i o' y os_i ys_i
+  unfold setObs at os_i
+  unfold setVals at ys_i
+  split at os_i <;> split at ys_i <;> try omega
+  · exact pointwise i o' y os_i ys_i
+  · by_cases same : index.toNat = i
+    · subst same
+      by_cases lt : index.toNat < os.length
+      · rw [List.getElem?_set_self lt] at os_i
+        rw [List.getElem?_set_self (by omega)] at ys_i
+        cases os_i
+        cases ys_i
+        exact paired
+      · have none : (os.set index.toNat o)[index.toNat]? = none :=
+          List.getElem?_eq_none_iff.mpr (by simp [List.length_set]; omega)
+        rw [none] at os_i
+        cases os_i
+    · rw [List.getElem?_set_ne same] at os_i ys_i
+      exact pointwise i o' y os_i ys_i
 
-theorem set_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {receiver index item : Atom} {escapes : List Origin} {integers : List Int} {root : Nat} {i n : Int} {footprint : List Nat}
+theorem setObs_length {os : List Observation} {ys : List Value} {o : Observation} {w : Value} (index : Int)
+    (lenO : os.length = ys.length) : (setObs os index o).length = (setVals ys index w).length := by
+  unfold setObs setVals
+  split <;> simp [lenO]
+
+theorem set_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver index item : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {i : Int} {footprint : List Nat} {depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts integers)))
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
     (valueIndex : ValueSemantics.atom (valueEnv env) index = .ok (.int i))
     (heapIndex : InPlaceSemantics.atom (heapEnv env) index = .ok (.int i))
-    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok (.int n))
-    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok (.int n))
-    (lookup : hs.heap[root]? = some (heapInts integers))
-    (rootOutside : root ∉ footprint)
+    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
+    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
+    (lookup : hs.heap[root]? = some ys)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
-    (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .set [receiver, index, item])).run vs =
-      .ok (.list (valueInts (setResult integers i n)), valueObserved (valueTicked vs)) ∧
-    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .set [receiver, index, item])).run hs =
-      .ok (.ref root, heapObserved (heapSet hs root integers i n) vs.kept.toList) := by
+    ∃ h, (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .set [receiver, index, item])).run vs =
+        .ok (.list (setObs os i o), valueObserved (valueTicked vs)) ∧
+      (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .set [receiver, index, item])).run hs =
+        .ok (.ref root, heapObserved (heapWrittenValues hs h ys (setVals ys i w)) vs.kept.toList) ∧
+      h.size = hs.heap.size ∧ h[root]? = some (setVals ys i w) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root a → h[a]? = hs.heap[a]?) ∧
+      LinksValid {hs with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom hs.links root (setVals ys i w) hs {hs with heap := h} := by
+  obtain ⟨h, setRun, hSize, hRoot, hFrame, hValid, hFrom⟩ :=
+    heap_set_run_linked (root := root) (heapTicked hs) ys i w lookup
+      (Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid rfl rfl)
   have valueObservedRun := value_observeKept_run (valueTicked vs) represented
-  have framed : RepresentsMany (hs.heap.set! root (heapInts (setResult integers i n))) observationDepth
-      hs.kept.toList vs.kept.toList footprint :=
-    representsMany_after_write (xs := heapInts (setResult integers i n)) represented rootOutside
-  have heapObservedRun : InPlaceSemantics.observeKept.run (heapSet hs root integers i n) =
-      .ok ((), heapObserved (heapSet hs root integers i n) vs.kept.toList) :=
-    heap_observeKept_run (heapSet hs root integers i n) framed
+  have framed : RepresentsMany h observationDepth hs.kept.toList vs.kept.toList footprint :=
+    representsMany_frame represented (fun c member => hFrame c (rootOutside c member))
+  have heapObservedRun : InPlaceSemantics.observeKept.run (heapWrittenValues hs h ys (setVals ys i w)) =
+      .ok ((), heapObserved (heapWrittenValues hs h ys (setVals ys i w)) vs.kept.toList) :=
+    heap_observeKept_run (heapWrittenValues hs h ys (setVals ys i w)) framed
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver, index, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts integers), .int i, .int n] :=
+      .ok [.list os, .int i, o] :=
     except_mapM_cons valueReceiver (except_mapM_cons valueIndex (except_mapM_cons valueItem rfl))
   have heapAtoms : [receiver, index, item].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.ref root, .int i, .int n] :=
+      .ok [.ref root, .int i, w] :=
     except_mapM_cons heapReceiver (except_mapM_cons heapIndex (except_mapM_cons heapItem rfl))
-  have setRun : (prim .set [.ref root, .int i, .int n]).run (heapTicked hs) =
-      .ok (.ref root, heapSet hs root integers i n) :=
-    primitive_set_run (heapTicked hs) integers i n lookup inv.links
-  constructor
+  have setRun' : (prim .set [.ref root, .int i, w]).run (heapTicked hs) =
+      .ok (.ref root, heapWrittenValues hs h ys (setVals ys i w)) := setRun
+  refine ⟨h, ?_, ?_, hSize, hRoot, hFrame, Ownership.LinkClauses.linksValid_of_same hValid rfl rfl, hFrom⟩
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
-    simp [hasDepth, hasFuel, value_set_run, valueObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, hasFuel, value_set_run_values, valueObservedRun, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, setRun, heapObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, heapFuel, setRun', heapObservedRun, Except.bind, Except.pure, bind, pure]
 
-theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {receiver index item : Atom} {escapes : List Origin} {integers : List Int} {root : Nat} {i n : Int} {footprint : List Nat}
+theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver index item : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {i : Int} {footprint : List Nat} {depth : Nat} {message : String}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts integers)))
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
     (valueIndex : ValueSemantics.atom (valueEnv env) index = .ok (.int i))
     (heapIndex : InPlaceSemantics.atom (heapEnv env) index = .ok (.int i))
-    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok (.int n))
-    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok (.int n))
-    (lookup : hs.heap[root]? = some (heapInts integers))
-    (rootOutside : root ∉ footprint)
+    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
+    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
+    (lookup : hs.heap[root]? = some ys)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (failed : (ValueSemantics.eval depth declarations none (valueEnv env)
       (.prim .set [receiver, index, item])).run vs = .error message) :
@@ -2451,7 +3174,7 @@ theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs :
       (InPlaceSemantics.eval depth declarations none (heapEnv env)
         (.prim .set [receiver, index, item])).run hs = .error actualMessage := by
   have heapAtoms : [receiver, index, item].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.ref root, .int i, .int n] :=
+      .ok [.ref root, .int i, w] :=
     except_mapM_cons heapReceiver (except_mapM_cons heapIndex (except_mapM_cons heapItem rfl))
   by_cases noDepth : depth = 0
   · exact ⟨"in-place execution exhausted depth", by
@@ -2462,12 +3185,12 @@ theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs :
       exact ⟨"in-place execution exhausted fuel", by
         rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
         simp [noDepth, heapFuel]⟩
-    · have success := (set_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex valueItem
-        heapItem lookup rootOutside represented noDepth noFuel).1
+    · obtain ⟨_, success, _⟩ := set_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex valueItem
+        heapItem lookup rootOutside represented noDepth noFuel
       rw [success] at failed
       contradiction
 
-theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {receiver index item : Atom} {self : Decl} {type : Ty}
+theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {receiver index item : Atom} {type : Ty} {self : Decl} {ctx : Context} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim .set [receiver, index, item]) = .ok type)
     (coveredR : ∀ use ∈ atomUses receiver, use ∈ live)
@@ -2477,7 +3200,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
     (defaultConfig : ctx.config = {})
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim .set [receiver, index, item]) after site).run before =
       .ok (result, next)) :
-    type = .list .int ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .set [receiver, index, item])).run vs = .ok (value, vs') →
@@ -2486,43 +3209,92 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           (.prim .set [receiver, index, item])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env after aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .set [receiver, index, item])).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
           (.prim .set [receiver, index, item])).run hs = .error actualMessage) := by
-  obtain ⟨receiverTyped, indexTyped, itemTyped, listType⟩ :=
+  obtain ⟨t, receiverTyped, indexTyped, itemTyped, listType⟩ :=
     exprType_set_success (fun _ _ h => flat_atom_type inv h) typed
   subst listType
-  obtain ⟨root, xs, roots, element, certificate, lookup, receiverNamed, elementFlat,
+  obtain ⟨root, ys, os, roots, element0, certificate, lookup, receiverNamed, noUnk, elemT, elemTags, elemShape0,
+    elemsShaped, elemsDescribed, lenO, elemsTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
   obtain ⟨i, valueIndex, heapIndex, abstractIndex⟩ := flat_atom_integer inv indexTyped coveredI
-  obtain ⟨n, valueItem, heapItem, abstractItem⟩ := flat_atom_integer inv itemTyped coveredV
+  obtain ⟨o, w, aN0, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN0,
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_entry inv itemTyped coveredV
   have abstractAtoms : [receiver, index, item].mapM (m := Except String) (abstractAtom aenv) =
-      .ok [.list roots element certificate, .scalar, .scalar] :=
+      .ok [.list roots element0 certificate, .scalar, aN0] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractIndex (except_mapM_cons abstractItem rfl))
   obtain ⟨childFuel, _, scope, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
   have demanded := primitive_set_demand_run run
   rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
     defaultConfig, liveCellsWith_default] at demanded
+  rw [← cells_entryAbstract (ds := declarations) elemShape0, ← cells_entryAbstract (ds := declarations) shapeN0]
+    at demanded
   have escapesEq := demand_success_escapes demanded
-  obtain ⟨certificate', resultEq⟩ := primitive_set_result (Or.inr rfl) run
-  have joined := flat_join_scalar elementFlat
-  have resultFlat : FlatAbstract (.list .int) result := by
-    rw [resultEq, joined]; exact .listScalar _ _
+  have resultEq := primitive_set_result_values
+    (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+      defaultConfig) run
+  have resultRep := entryAbstract_stored (ds := declarations) elemShape0 shapeN0
+    (entryAbstract_join elemShape0 shapeN0) resultEq
+  -- From here the element and the item are read at their representation (#1840):
+  -- the names `element` and `aN` denote `entryAbstract declarations t element0` and
+  -- `entryAbstract declarations t aN0`, and `element0` and `aN0` are the checker's abstracts.
+  have elemShape := flatAbstract_entry (ds := declarations) elemShape0
+  have shapeN := flatAbstract_entry (ds := declarations) shapeN0
+  obtain ⟨element, elementDef⟩ : ∃ x, x = entryAbstract declarations t element0 := ⟨_, rfl⟩
+  obtain ⟨aN, aNDef⟩ : ∃ x, x = entryAbstract declarations t aN0 := ⟨_, rfl⟩
+  simp only [← elementDef, ← aNDef] at elemTags elemsDescribed described describedN tagsN chainsN deepN elemShape shapeN demanded resultRep
   obtain ⟨footprint, represented⟩ := inv.observers
-  have rootOutside : root ∉ footprint :=
-    demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
+  -- The written array's link component has the receiver's origins (#169).
+  have componentNamed : ∀ c, Ownership.LinkedWriteFrame.LinkConnected hs.links root c → named gamma roots c := by
+    intro c connected
+    obtain ⟨origin, originMember, rootIn⟩ := receiverNamed
+    exact ⟨origin, originMember,
+      (Ownership.LinkClauses.linkConnected_same_origins inv.linkClosed connected origin).mp rootIn⟩
+  have rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c member connected =>
+      demand_success_observer_footprint inv.toInvariant demanded (componentNamed c connected) represented member
   have separate := demand_success_live_separate inv.separating demanded
-  have apart := live_path_apart inv scope afterSub receiverNamed separate
-  refine ⟨rfl, escapesEq, resultFlat, ?_, ?_⟩
+  have componentApart : ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) →
+      projectHeap hs.heap w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w w' binding projected q c located connected =>
+      live_path_apart inv scope afterSub (componentNamed c connected) separate x p use o w w' binding projected
+        q c located rfl
+  have routeApart : ∀ x p, (x, p) ∈ after → ∀ o w q c rest, env.lookup x = some (o, w) →
+      p = q ++ .element :: rest → ArrayAt hs.heap w q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w q c rest binding route located connected =>
+      live_path_route_apart inv scope afterSub (componentNamed c connected) separate x p use o w q c rest
+        binding route located rfl
+  have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
+    value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
+      (fun o' member => mem_union _ _ _ (Or.inr member))
+  have itemOutside : ∀ c, Reaches hs.heap w (.ref c) → ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c reach connected =>
+      value_apart_root shapeN describedN.1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' member => mem_union _ _ _ (Or.inr member)) reach
+  have elementOutside : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) →
+      ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun y member c reach connected =>
+      value_apart_root elemShape (elemsDescribed y member).1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' m => mem_union _ _ _ (Or.inl m)) reach
+  refine ⟨.list t elemT, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape0 shapeN0),
+    ?_, ?_⟩
   · intro value vs' run'
     have valueAtoms : [receiver, index, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-        .ok [.list (valueInts xs), .int i, .int n] :=
+        .ok [.list os, .int i, o] :=
       except_mapM_cons valueReceiver (except_mapM_cons valueIndex (except_mapM_cons valueItem rfl))
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
@@ -2530,93 +3302,300 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
     · by_cases noFuel : vs.fuel = 0
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
         simp [noDepth, noFuel] at run'
-      · obtain ⟨valueRun, heapRun⟩ := set_runtime_success inv valueReceiver heapReceiver valueIndex
-          heapIndex valueItem heapItem lookup rootOutside represented noDepth noFuel
+      · obtain ⟨next, valueRun, heapRun, sizeEq, lookupNew, nextFrame, nextValid, nextFrom⟩ :=
+          set_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex valueItem heapItem lookup
+            rootOutside represented noDepth noFuel
         rw [valueRun] at run'
         cases run'
-        have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
-        have heapEq : (heapObserved (heapSet hs root xs i n) vs.kept.toList).heap =
-            hs.heap.set! root (heapInts (setResult xs i n)) := by
-          rw [heapObserved_heap, heapSet_heap]
-        have lookupNew : (heapObserved (heapSet hs root xs i n) vs.kept.toList).heap[root]? =
-            some (heapInts (setResult xs i n)) := by
-          rw [heapEq]; simp [valid]
-        have sizeEq : (heapObserved (heapSet hs root xs i n) vs.kept.toList).heap.size = hs.heap.size := by
-          rw [heapEq]; simp
-        refine ⟨.ref root, heapObserved (heapSet hs root xs i n) vs.kept.toList, gamma, heapRun, ?_,
-          Nat.le_of_eq sizeEq.symm, corresponds_integer_ref lookupNew, ?_,
-          integer_list_observation_typed declarations (setResult xs i n),
-          allocated_integer_list_typed declarations lookupNew,
-          by rw [resultEq, joined]; exact .listInt _ _ _ _, .listInt _ _⟩
+        have heapEq : (heapObserved (heapWrittenValues hs next ys (setVals ys i w)) vs.kept.toList).heap = next := by
+          rw [heapObserved_heap]; rfl
+        obtain ⟨cs0, represented0⟩ := represents_of_snapshot _ _ _ (pairedList _ (Nat.le_refl _))
+        have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) → next[c]? = hs.heap[c]? :=
+          fun y member c reach => nextFrame c (elementOutside y member c reach)
+        have agreeItem : ∀ c, Reaches hs.heap w (.ref c) → next[c]? = hs.heap[c]? :=
+          fun c reach => nextFrame c (itemOutside c reach)
+        have shapedZ : ∀ z ∈ setVals ys i w, AllocatedFlatValue next z (entryType t) := by
+          intro z member
+          rcases mem_setVals member with old | new
+          · exact allocated_of_agree (elemsShaped z old) (agreeOld z old)
+          · rw [new]
+            exact allocated_of_agree allocatedN agreeItem
+        have shapedNew : AllocatedFlatValue next (.ref root)
+            (.list (entryType t)) :=
+          .list root _ (entryType t) lookupNew shapedZ
+        have rootApart : ∀ z ∈ setVals ys i w, ¬ Reaches next z (.ref root) := by
+          intro z member reach
+          rcases mem_setVals member with old | new
+          · exact no_element_reaches_root lookup old _ _ (Nat.le_refl _) _ _ represented0
+              (reaches_of_agree_rev (agreeOld z old) reach)
+          · rw [new] at reach
+            exact itemApartRoot (reaches_of_agree_rev agreeItem reach)
+        have elementsDescribed' : ∀ z ∈ setVals ys i w,
+            Describes gamma next (element.join aN) z := by
+          intro z member
+          rcases mem_setVals member with old | new
+          · exact describes_join (allocated_of_agree (elemsShaped z old) (agreeOld z old)) elemShape shapeN
+              (Or.inl (describes_of_agree (agreeOld z old) (elemsDescribed z old)))
+          · rw [new]
+            exact describes_join (allocated_of_agree allocatedN agreeItem) elemShape shapeN
+              (Or.inr (describes_of_agree agreeItem describedN))
+        have oldCert := described.1.2 [] roots element certificate (.ref root) rfl (.here _)
+        -- the item's apartness from the old elements, each way the store tests state it
+        have deepFacts : ∀ later : List Origin,
+            storeExclusive {ctx with escaped := union ctx.escaped before.facts.escapes} [aN] later element.cells = true →
+            (∀ n o' fp, Represents hs.heap n w o' fp → fp.Nodup) ∧
+            (∀ y ∈ ys, ∀ c, Reaches hs.heap w (.ref c) → ¬ Reaches hs.heap y (.ref c)) := by
+          intro later exclusive
+          obtain ⟨deepI, sepI, overlapI⟩ := storeExclusive_facts exclusive
+          exact ⟨nodup_of_deepExclusive allocatedN shapeN describedN deepI
+              (pathsApart_of_separated inv.separating sepI),
+            fun y member c reachI reachY => reach_apart_of_covers inv.separating shapeN elemShape
+              describedN.1.1 (elemsDescribed y member).1.1 (cellOverlap_union_right_false overlapI).2 c reachI reachY⟩
+        have spineFacts : ∀ later : List Origin,
+            storeSpines {ctx with escaped := union ctx.escaped before.facts.escapes} [aN] later element.cells = true →
+            (containers element).all (fun (_, old) =>
+              individuallyOwned {ctx with escaped := union ctx.escaped before.facts.escapes} old &&
+                !cellOverlap old aN.cells) = true →
+            (∀ n o' fp, Represents hs.heap n w o' fp →
+              ∀ p c, containerPath p = true → ArrayAt hs.heap w p c → fp.count c = 1) ∧
+            (∀ p c, containerPath p = true → ArrayAt hs.heap (.ref root) (.element :: p) c →
+              ¬ Reaches hs.heap w (.ref c)) ∧
+            (∀ p c, containerPath p = true → ArrayAt hs.heap w p c →
+              ∀ y ∈ ys, ¬ Reaches hs.heap y (.ref c)) := by
+          intro later spines containersOk
+          refine ⟨once_of_storeSpines inv.separating shapeN allocatedN describedN.1.1 spines, ?_, ?_⟩
+          · intro p c container located reachI
+            cases located with
+            | element lookup'' yMember inner =>
+              rw [lookup] at lookup''
+              cases lookup''
+              obtain ⟨o', m', a'⟩ := (elemsDescribed _ yMember).1.1 p c inner
+              obtain ⟨cs, entry, inCs⟩ :=
+                mem_namesAt_of_arrayAt elemShape (elemsShaped _ yMember) p c o' inner m'
+              exact cell_apart_of_covers inv.separating shapeN describedN.1.1 ⟨o', inCs, a'⟩
+                (containers_all_facts containersOk (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)) reachI
+          · intro p c container located y yMember reachY
+            obtain ⟨o', m', a'⟩ := describedN.1.1 p c located
+            obtain ⟨cs, entry, inCs⟩ := mem_namesAt_of_arrayAt shapeN allocatedN p c o' located m'
+            have disjoint :=
+              ((storeSpines_facts spines).2 (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)).1
+            exact cell_apart_of_covers inv.separating elemShape (elemsDescribed y yMember).1.1 ⟨o', inCs, a'⟩
+              (cellOverlap_union_right_false disjoint).2 reachY
+        have describedNew : Describes gamma next
+            (entryAbstract declarations (.list t) result) (.ref root) := by
+          rw [resultRep]
+          refine list_described_of_elements receiverNamed noUnk lookupNew shapedNew elementsDescribed' ?_ ?_
+          · intro d
+            obtain ⟨oldDeep, exclusive⟩ := Bool.and_eq_true_iff.mp d
+            obtain ⟨itemNodup, itemApart⟩ := deepFacts _ exclusive
+            by_cases inRange : 0 ≤ i ∧ i.toNat < ys.length
+            · obtain ⟨nonneg, lt⟩ := inRange
+              have decomposed : setVals ys i w = ys.take i.toNat ++ w :: ys.drop (i.toNat + 1) := by
+                unfold setVals
+                rw [if_neg (by omega), List.set_eq_take_append_cons_drop, if_pos lt]
+              have lookup' : hs.heap[root]? = some (ys.take i.toNat ++ [ys[i.toNat]] ++ ys.drop (i.toNat + 1)) := by
+                rw [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
+                  List.take_append_drop]
+                exact lookup
+              have lookupNew' : next[root]? =
+                  some (ys.take i.toNat ++ w :: ys.drop (i.toNat + 1)) := by
+                rw [lookupNew, decomposed]
+              have oldMember : ∀ y ∈ ys.take i.toNat ++ [ys[i.toNat]] ++ ys.drop (i.toNat + 1), y ∈ ys := by
+                intro y member
+                rwa [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
+                  List.take_append_drop] at member
+              have rootApart' : ∀ z ∈ ys.take i.toNat ++ w :: ys.drop (i.toNat + 1),
+                  ¬ Reaches next z (.ref root) := by
+                intro z member
+                rw [← decomposed] at member
+                exact rootApart z member
+              exact inserted_footprint_nodup lookup' lookupNew' represented0
+                (fun y member => agreeOld y (oldMember y member)) agreeItem rootApart'
+                (fun n o' fp rep => (oldCert n o' fp rep).1 oldDeep) itemNodup
+                (fun y member => itemApart y (oldMember y member))
+            · -- the list is unchanged: every array the root reaches keeps its contents
+              have unchanged : setVals ys i w = ys := by
+                unfold setVals
+                split
+                · rfl
+                · exact List.set_eq_of_length_le (by omega)
+              have agreeAll : ∀ (c : Nat), Reaches hs.heap (.ref root) (.ref c) → next[c]? = hs.heap[c]? := by
+                intro c reach
+                cases reach with
+                | refl => rw [lookupNew, unchanged, lookup]
+                | element lookup'' member rest =>
+                  rw [lookup] at lookup''
+                  cases lookup''
+                  exact agreeOld _ member c rest
+              intro n o' fp rep
+              exact (oldCert n o' fp (represents_of_agree_rev agreeAll rep)).1 oldDeep
+          · intro sp
+            have h := Bool.and_eq_true_iff.mp sp
+            obtain ⟨oldSpine, spines⟩ := Bool.and_eq_true_iff.mp h.1
+            obtain ⟨itemOnce, itemApartOld, oldApartItem⟩ := spineFacts _ spines h.2
+            by_cases inRange : 0 ≤ i ∧ i.toNat < ys.length
+            · obtain ⟨nonneg, lt⟩ := inRange
+              have decomposed : setVals ys i w = ys.take i.toNat ++ w :: ys.drop (i.toNat + 1) := by
+                unfold setVals
+                rw [if_neg (by omega), List.set_eq_take_append_cons_drop, if_pos lt]
+              have lookup' : hs.heap[root]? = some (ys.take i.toNat ++ [ys[i.toNat]] ++ ys.drop (i.toNat + 1)) := by
+                rw [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
+                  List.take_append_drop]
+                exact lookup
+              have lookupNew' : next[root]? =
+                  some (ys.take i.toNat ++ w :: ys.drop (i.toNat + 1)) := by
+                rw [lookupNew, decomposed]
+              have oldMember : ∀ y ∈ ys.take i.toNat ++ [ys[i.toNat]] ++ ys.drop (i.toNat + 1), y ∈ ys := by
+                intro y member
+                rwa [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
+                  List.take_append_drop] at member
+              have rootApart' : ∀ z ∈ ys.take i.toNat ++ w :: ys.drop (i.toNat + 1),
+                  ¬ Reaches next z (.ref root) := by
+                intro z member
+                rw [← decomposed] at member
+                exact rootApart z member
+              exact inserted_footprint_once lookup' lookupNew' represented0
+                (fun y member => agreeOld y (oldMember y member)) agreeItem rootApart'
+                (fun n o' fp rep => (oldCert n o' fp rep).2 oldSpine) itemOnce itemApartOld
+                (fun p c container located y member => oldApartItem p c container located y (oldMember y member))
+            · have unchanged : setVals ys i w = ys := by
+                unfold setVals
+                split
+                · rfl
+                · exact List.set_eq_of_length_le (by omega)
+              have agreeAll : ∀ (c : Nat), Reaches hs.heap (.ref root) (.ref c) → next[c]? = hs.heap[c]? := by
+                intro c reach
+                cases reach with
+                | refl => rw [lookupNew, unchanged, lookup]
+                | element lookup'' member rest =>
+                  rw [lookup] at lookup''
+                  cases lookup''
+                  exact agreeOld _ member c rest
+              intro n o' fp rep p c container located
+              exact (oldCert n o' fp (represents_of_agree_rev agreeAll rep)).2 oldSpine p c
+                container (atPath_of_agree_rev agreeAll located)
+        have deepNew : ∀ roots cert, TagsDeep next (.list (entryType t))
+            (.list roots (element.join aN) cert) (.ref root) := by
+          intro roots cert
+          apply tagsDeep_list lookupNew
+          intro z member
+          rcases mem_setVals member with old | new
+          · exact elementTags_of_agree (elementTags_join (elemTags z old) elemShape shapeN) (agreeOld z old)
+          · rw [new]
+            exact elementTags_of_agree
+              (elementTags_join_right (elementTags_of_corresponds pairedN tagsN chainsN deepN) elemShape shapeN) agreeItem
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have rootTyped : kinds root = some (.list t) := by
+          obtain ⟨c0, same0, typed0⟩ :=
+            kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+          cases same0
+          exact typed0
+        have state' : StateKinded kinds (heapObserved (heapWrittenValues hs next ys (setVals ys i w)) vs.kept.toList) env tenv :=
+          state.of_linked_write rootTyped (fun z member => by
+              rcases mem_setVals member with old | new
+              · exact state.list_contents rootTyped lookup z old
+              · rw [new]; exact kinded_atom inv state itemTyped coveredV heapItem)
+            (fun a outside => by rw [heapEq]; exact nextFrame a outside) (by rw [heapEq]; exact sizeEq)
+            (fun a zs z found member connected => by
+              rw [heapEq] at found
+              exact nextFrom a zs z found member connected)
+            (by rw [heapObserved_links]; rfl)
+        refine ⟨.ref root, heapObserved (heapWrittenValues hs next ys (setVals ys i w)) vs.kept.toList, gamma, heapRun, ?_,
+          Nat.le_of_eq (by rw [heapEq, sizeEq]), ?_, ?_, ?_, ?_, ?_,
+          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
+          ⟨kinds, state', .list t root rootTyped⟩⟩
         · rw [escapesEq]
-          refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            ?_ ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
-            ?_ ?_ ?_ (fun _ escaped => escaped)
-          · rw [heapEq]; exact flatHeap_after_write inv.heapInts valid (setResult xs i n)
-          · exact Nat.le_of_eq sizeEq.symm
-          · rw [heapObserved_links]; exact inv.links
-          · intro c _ different
-            rw [heapEq]
-            exact lookup_set_other hs.heap root _ different
-          · rw [heapObserved_kept]; rfl
-          · rw [valueObserved_kept]; rfl
-          · rw [sizeEq]; exact inv.namingBound
-          · rw [valueObserved_reads, heapObserved_reads]; exact inv.reads
-          · exact observed_external (valueTicked vs) (heapSet hs root xs i n) inv.keptSize inv.external
-          · rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapSet, inv.fuel]
-        · rw [resultEq, joined]
-          exact allocated_list_described lookupNew receiverNamed
+          refine flatInvariant_heap_frame inv (inside := Ownership.LinkedWriteFrame.LinkConnected hs.links root)
+            (footprint := footprint) afterSub
+            (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
+            (Ownership.LinkClauses.linksValid_of_same nextValid (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
+            (by rw [heapObserved_links]; exact inv.linkClosed)
+            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart
+            (projected_of_route (fun c outside => by rw [heapEq]; exact nextFrame c outside) routeApart)
+            represented rootOutside
+            (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
+            (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
+            (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
+            (observed_external (valueTicked vs) (heapWrittenValues hs next ys (setVals ys i w)) inv.keptSize inv.external)
+            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapWrittenValues, inv.fuel])
+            (fun _ escaped => escaped) ⟨kinds, state'⟩
+        · rw [heapEq]
+          exact corresponds_list_of_elements lookupNew (setObs_length i lenO)
+            (pointwise_set lenO (fun k o' y os_k ys_k =>
+              corresponds_of_agree (agreeOld y (List.mem_of_getElem? ys_k)) (pointwise k o' y os_k ys_k))
+              (corresponds_of_agree agreeItem pairedN) i)
+        · rw [heapEq]; exact describedNew
+        · exact obsTyped_list_of_elements (fun o' member => by
+            unfold setObs at member
+            split at member
+            · exact elemsTyped o' member
+            · rcases List.mem_or_eq_of_mem_set member with old | new
+              · exact elemsTyped o' old
+              · rw [new]; exact observedN)
+        · rw [heapEq]
+          refine valueTyped_of_corresponds (o := .list (setObs os i o)) ?_ ?_
+          · exact corresponds_list_of_elements lookupNew (setObs_length i lenO)
+              (pointwise_set lenO (fun k o' y os_k ys_k =>
+                corresponds_of_agree (agreeOld y (List.mem_of_getElem? ys_k)) (pointwise k o' y os_k ys_k))
+                (corresponds_of_agree agreeItem pairedN) i)
+          · exact obsTyped_list_of_elements (fun o' member => by
+              unfold setObs at member
+              split at member
+              · exact elemsTyped o' member
+              · rcases List.mem_or_eq_of_mem_set member with old | new
+                · exact elemsTyped o' old
+                · rw [new]; exact observedN)
+        · rw [heapEq]; exact shapedNew
   · intro message failed
     exact set_failure inv valueReceiver heapReceiver valueIndex heapIndex valueItem heapItem lookup
       rootOutside represented failed
 
 /-! ### The copy -/
 
-theorem value_copy_run (s : ValueSemantics.State) (integers : List Int) :
-    (ValueSemantics.prim .copy [.list (valueInts integers)]).run s =
-      .ok (.list (valueInts integers), s) := rfl
+theorem value_copy_run (s : ValueSemantics.State) (os : List Observation) :
+    (ValueSemantics.prim .copy [.list os]).run s = .ok (.list os, s) := rfl
 
-theorem heap_copy_prim_run (hs : State) (integers : List Int)
-    (lookup : hs.heap[root]? = some (heapInts integers)) :
-    (prim .copy [.ref root]).run (heapTicked hs) = .ok (.ref hs.heap.size, heapAllocated hs integers) := by
-  simp [prim, array, alloc, lookup, heapTicked, heapAllocated, Option.toExcept, StateT.run,
+theorem heap_copy_prim_run (hs : State) (ys : List Value)
+    (lookup : hs.heap[root]? = some ys) :
+    (prim .copy [.ref root]).run (heapTicked hs) = .ok (.ref hs.heap.size, heapAllocatedValues hs ys) := by
+  simp [prim, array, alloc, lookup, heapTicked, heapAllocatedValues, Option.toExcept, StateT.run,
     StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure,
     bind, pure, get, getThe, set, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift]
 
-theorem copy_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {escapes : List Origin} {receiver : Atom} {integers : List Int} {root : Nat}
+theorem copy_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver : Atom} {os : List Observation} {ys : List Value} {root : Nat} {depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts integers)))
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
-    (lookup : hs.heap[root]? = some (heapInts integers))
+    (lookup : hs.heap[root]? = some ys)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
     (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .copy [receiver])).run vs =
-      .ok (.list (valueInts integers), valueObserved (valueTicked vs)) ∧
+      .ok (.list os, valueObserved (valueTicked vs)) ∧
     (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .copy [receiver])).run hs =
-      .ok (.ref hs.heap.size, heapObserved (heapAllocated hs integers) vs.kept.toList) := by
+      .ok (.ref hs.heap.size, heapObserved (heapAllocatedValues hs ys) vs.kept.toList) := by
   obtain ⟨footprint, represented⟩ := inv.observers
   have valueObservedRun := value_observeKept_run (valueTicked vs) represented
-  have heapObservedRun := heap_observeKept_run (heapAllocated hs integers)
-    (representsMany_after_alloc (xs := heapInts integers) represented)
+  have heapObservedRun := heap_observeKept_run (heapAllocatedValues hs ys)
+    (representsMany_after_alloc (xs := ys) represented)
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts integers)] := except_mapM_cons valueReceiver rfl
+      .ok [.list os] := except_mapM_cons valueReceiver rfl
   have heapAtoms : [receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root] := except_mapM_cons heapReceiver rfl
   constructor
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
     simp [hasDepth, hasFuel, value_copy_run, valueObservedRun, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, heap_copy_prim_run hs integers lookup, heapObservedRun,
+    simp [hasDepth, heapFuel, heap_copy_prim_run hs ys lookup, heapObservedRun,
       Except.bind, Except.pure, bind, pure]
 
-theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {receiver : Atom} {self : Decl} {type : Ty}
+theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {receiver : Atom} {type : Ty} {self : Decl} {ctx : Context} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim .copy [receiver]) = .ok type)
     (covered : ∀ use ∈ atomUses receiver, use ∈ live)
     (defaultConfig : ctx.config = {})
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim .copy [receiver]) after site).run before =
       .ok (result, next)) :
-    type = .list .int ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .copy [receiver])).run vs = .ok (value, vs') →
@@ -2625,41 +3604,47 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           (.prim .copy [receiver])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .copy [receiver])).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
           (.prim .copy [receiver])).run hs = .error actualMessage) := by
-  obtain ⟨receiverTyped, listType⟩ := exprType_copy_success (fun _ _ h => flat_atom_type inv h) typed
+  obtain ⟨t, receiverTyped, listType⟩ := exprType_copy_success (fun _ _ h => flat_atom_type inv h) typed
   subst listType
-  obtain ⟨root, integers, roots, element, certificate, lookup, _, elementFlat,
-    valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped covered
+  obtain ⟨root, ys, os, roots, element, certificate, lookup, _, _, elemT, elemTags, elemShape0, elemsShaped,
+    elemsDescribed, lenO, elemsTyped, pointwise, _, _, valueReceiver, heapReceiver, abstractReceiver⟩ :=
+    flat_atom_list_path inv receiverTyped covered
   have abstractAtoms : [receiver].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots element certificate] := except_mapM_cons abstractReceiver rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
-  obtain ⟨certificate', copyRun⟩ := primitive_copy_run {ctx with escaped := union ctx.escaped before.facts.escapes}
-    site roots element certificate (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
-  rw [copyRun] at run
+  rw [primitive_copy_run] at run
   have equal := Except.ok.inj run
-  have resultEq : result = .list [.site site 0] element certificate' := (congrArg Prod.fst equal).symm
+  have resultEq : result = .list [.site site 0] element ⟨false, false⟩ := by
+    have h := (congrArg Prod.fst equal).symm
+    rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+      defaultConfig, default_has] at h
+    exact h
+  have resultRep : entryAbstract declarations (.list t) result =
+      .list [.site site 0] (entryAbstract declarations t element) ⟨false, false⟩ := by
+    rw [resultEq]; rfl
   have nextState : next = {before with facts := {before.facts with
       reads := union before.facts.reads (roots.filter external)}} := (congrArg Prod.snd equal).symm
   have nextEscapes : next.facts.escapes = before.facts.escapes := by
     subst nextState; rfl
-  have resultFlat : FlatAbstract (.list .int) result := by
-    rw [resultEq]
-    rcases elementFlat with rfl | rfl
-    · exact .listBottom _ _
-    · exact .listScalar _ _
   have valueAtoms : [receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.list (valueInts integers)] := except_mapM_cons valueReceiver rfl
+      .ok [.list os] := except_mapM_cons valueReceiver rfl
   have heapAtoms : [receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root] := except_mapM_cons heapReceiver rfl
-  refine ⟨rfl, nextEscapes, resultFlat, ?_, ?_⟩
+  refine ⟨.list t elemT, nextEscapes, by rw [resultEq]; exact .list _ _ _ _ (by simp) elemShape0, ?_, ?_⟩
   · intro value vs' run
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
@@ -2670,22 +3655,51 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
       · obtain ⟨valueRun, heapRun⟩ := copy_runtime_success inv valueReceiver heapReceiver lookup noDepth noFuel
         rw [valueRun] at run
         cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv integers site
-        have heapEq : (heapObserved (heapAllocated hs integers) vs.kept.toList).heap =
-            hs.heap.push (heapInts integers) := by
+        have heapEq : (heapObserved (heapAllocatedValues hs ys) vs.kept.toList).heap = hs.heap.push ys := by
           rw [heapObserved_heap]; rfl
-        have lookupNew : (heapObserved (heapAllocated hs integers) vs.kept.toList).heap[hs.heap.size]? =
-            some (heapInts integers) := by
-          rw [heapEq]; simp
-        refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs integers) vs.kept.toList, gamma',
-          heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, ?_, ?_,
-          by rw [resultEq]; exact .listInt _ _ _ _, .listInt _ _⟩
+        have agree : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) → (hs.heap.push ys)[c]? = hs.heap[c]? := by
+          intro y member c reach
+          have bound := allocated_reach_bound (elemsShaped y member) reach
+          simp [Array.getElem?_push, Nat.ne_of_lt bound]
+        obtain ⟨kinds', state', newTyped⟩ := alloc_kinds_of inv (t := .list t) heapEq
+          (by rw [heapObserved_links]; rfl) (fun kinds state => by
+            obtain ⟨c, same, rootTyped⟩ :=
+              kinded_list_inv (kinded_atom inv state receiverTyped covered heapReceiver)
+            cases same
+            exact .list t ys (state.list_contents rootTyped lookup))
+        obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv ys site heapEq
+          (by rw [heapObserved_links]; rfl)
+          (by rw [heapObserved_kept]; rfl)
+          (by rw [valueObserved_kept]; rfl) (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
+          (observed_external (valueTicked vs) (heapAllocatedValues hs ys) inv.keptSize inv.external)
+          (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocatedValues, inv.fuel])
+          ⟨kinds', state'⟩
+        have lookupNew : (hs.heap.push ys)[hs.heap.size]? = some ys := by simp
+        have shapedNew : AllocatedFlatValue (hs.heap.push ys) (.ref hs.heap.size) (.list (entryType t)) :=
+          .list _ ys (entryType t) lookupNew (fun y member => allocated_of_agree (elemsShaped y member) (agree y member))
+        have rootNamed : named gamma' [.site site 0] hs.heap.size := ⟨.site site 0, by simp, fresh⟩
+        have deepNew : ∀ roots cert, TagsDeep (hs.heap.push ys) (.list (entryType t))
+            (.list roots (entryAbstract declarations t element) cert) (.ref hs.heap.size) := by
+          intro roots cert
+          exact tagsDeep_list lookupNew (fun y member => elementTags_of_agree (elemTags y member) (agree y member))
+        refine ⟨.ref hs.heap.size, heapObserved (heapAllocatedValues hs ys) vs.kept.toList, gamma',
+          heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, obsTyped_list_of_elements elemsTyped, ?_,
+          by rw [heapEq]; exact shapedNew, by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _,
+          by rw [heapEq, resultRep]; exact deepNew _ _, ⟨kinds', state', .list t _ newTyped⟩⟩
         · rw [heapEq]; simp
-        · exact corresponds_integer_ref lookupNew
-        · rw [resultEq]
-          exact allocated_list_described lookupNew ⟨.site site 0, by simp, fresh⟩
-        · exact integer_list_observation_typed declarations integers
-        · exact allocated_integer_list_typed declarations lookupNew
+        · rw [heapEq]
+          exact corresponds_list_of_elements lookupNew lenO
+            (fun i o y os_i ys_i => corresponds_of_agree (agree y (List.mem_of_getElem? ys_i)) (pointwise i o y os_i ys_i))
+        · rw [heapEq, resultRep]
+          refine list_described_of_elements rootNamed (by simp) lookupNew shapedNew ?_
+            (fun h => by simp at h) (fun h => by simp at h)
+          intro y member
+          exact describes_of_agree (agree y member) (describes_naming_same (elemsShaped y member) old
+            (fun c reach => allocated_reach_bound (elemsShaped y member) reach) (elemsDescribed y member))
+        · rw [heapEq]
+          refine valueTyped_of_corresponds ?_ (obsTyped_list_of_elements elemsTyped)
+          exact corresponds_list_of_elements lookupNew lenO
+            (fun i o y os_i ys_i => corresponds_of_agree (agree y (List.mem_of_getElem? ys_i)) (pointwise i o y os_i ys_i))
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -2702,126 +3716,116 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
 
 /-! ### The prepend -/
 
-theorem integer_list_shallow (integers : List Int) :
-    ¬ (Observation.list (valueInts integers)).depth > observationDepth := by
-  rw [integer_list_depth]
-  split <;> decide
+/-- The checker's prepend result under the default configuration: a fresh root
+with the old roots, the item joined into the element, and the certificate of
+the store tests. -/
+theorem primitive_prepend_run_values (ctx : Context) (defaultConfig : ctx.config = {}) (site : List Nat)
+    (item : Abstract) (roots : List Origin) (element : Abstract) (certificate : Certificate)
+    (later : List Origin) (before : St) :
+    (primitive ctx site .prepend [item, .list roots element certificate] later).run before =
+      .ok (.list (union [.site site 0] roots) (item.join element)
+        ⟨certificate.deep && storeExclusive ctx [item] later element.cells,
+         certificate.spine && storeSpines ctx [item] later element.cells &&
+           (containers element).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩,
+        {before with facts := {before.facts with reads := union before.facts.reads (roots.filter external)}}) := by
+  unfold primitive
+  simp only [defaultConfig, default_has, Bool.false_or]
+  rfl
 
-theorem snapshot_integer_ref {heap : Heap} {root : Nat} {integers : List Int}
-    (lookup : heap[root]? = some (heapInts integers)) :
-    snapshot heap observationDepth (.ref root) = .ok (.list (valueInts integers)) := by
-  apply corresponds_integer_ref lookup observationDepth
-  have := integer_list_shallow integers
-  omega
+def valuePrependedValues (vs : ValueSemantics.State) (os : List Observation) : ValueSemantics.State :=
+  { vs with fuel := vs.fuel - 1, reads := vs.reads.push (.list os) }
 
-def valuePrepended (vs : ValueSemantics.State) (integers : List Int) : ValueSemantics.State :=
-  { vs with
-    fuel := vs.fuel - 1
-    reads := vs.reads.push (Observation.list (valueInts integers)) }
+def heapPrependedValues (hs : State) (ys : List Value) (os : List Observation) (item : Value) : State :=
+  { hs with fuel := hs.fuel - 1, reads := hs.reads.push (.list os), heap := hs.heap.push (item :: ys) }
 
-def heapPrepended (hs : State) (integers : List Int) (item : Int) : State :=
-  { hs with
-    fuel := hs.fuel - 1
-    reads := hs.reads.push (Observation.list (valueInts integers))
-    heap := hs.heap.push (heapInts (item :: integers)) }
-
-theorem value_prepend_run (s : ValueSemantics.State) (item : Int) (integers : List Int) :
-    (ValueSemantics.prim .prepend [.int item, .list (valueInts integers)]).run s =
-      .ok (.list (valueInts (item :: integers)), {s with reads := s.reads.push (.list (valueInts integers))}) := by
-  have shallow : ¬ observationDepth < (Observation.list (valueInts integers)).depth :=
-    integer_list_shallow integers
-  have cons : valueInts (item :: integers) = .int item :: valueInts integers := rfl
-  simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, shallow, cons, StateT.run,
+theorem value_prepend_run_values (s : ValueSemantics.State) (o : Observation) (os : List Observation)
+    (shallow : ¬ (Observation.list os).depth > observationDepth) :
+    (ValueSemantics.prim .prepend [o, .list os]).run s =
+      .ok (.list (o :: os), {s with reads := s.reads.push (.list os)}) := by
+  simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, shallow, StateT.run,
     StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind,
     pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
     modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
 
-theorem heap_prepend_prim_run (hs : State) (item : Int) (integers : List Int)
-    (lookup : hs.heap[root]? = some (heapInts integers)) :
-    (prim .prepend [.int item, .ref root]).run (heapTicked hs) =
-      .ok (.ref hs.heap.size, heapPrepended hs integers item) := by
-  have snap : snapshot hs.heap observationDepth (.ref root) = .ok (.list (valueInts integers)) :=
-    snapshot_integer_ref lookup
-  have cons : heapInts (item :: integers) = .int item :: heapInts integers := rfl
-  simp [prim, array, alloc, InPlaceSemantics.read, lookup, snap, heapTicked, heapPrepended, cons,
+theorem value_prepend_run_deep (s : ValueSemantics.State) (o : Observation) (os : List Observation)
+    (deep : (Observation.list os).depth > observationDepth) :
+    (ValueSemantics.prim .prepend [o, .list os]).run s = .error "snapshot exhausted depth" := by
+  simp [ValueSemantics.prim, ValueSemantics.read, ValueSemantics.observable, deep, StateT.run,
+    StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind,
+    pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
+    modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, throw, throwThe, MonadExceptOf.throw, Except.error]
+
+theorem heap_prepend_run_values (hs : State) (w : Value) (ys : List Value) {os : List Observation}
+    (lookup : hs.heap[root]? = some ys)
+    (snap : snapshot hs.heap observationDepth (.ref root) = .ok (.list os)) :
+    (prim .prepend [w, .ref root]).run (heapTicked hs) =
+      .ok (.ref hs.heap.size, heapPrependedValues hs ys os w) := by
+  simp [prim, array, alloc, InPlaceSemantics.read, lookup, snap, heapTicked, heapPrependedValues,
     Option.toExcept, StateT.run, StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind,
     Except.pure, StateT.pure, bind, pure, get, getThe, set, MonadStateOf.get, MonadStateOf.set, liftM,
     monadLift, MonadLift.monadLift, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
 
-theorem prepend_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {escapes : List Origin} {item receiver : Atom} {n : Int} {integers : List Int} {root : Nat}
+theorem heap_prepend_run_deep (hs : State) (w : Value) (ys : List Value) {e : String}
+    (lookup : hs.heap[root]? = some ys)
+    (snap : snapshot hs.heap observationDepth (.ref root) = .error e) :
+    (prim .prepend [w, .ref root]).run (heapTicked hs) = .error e := by
+  simp [prim, array, InPlaceSemantics.read, lookup, snap, heapTicked, Option.toExcept, StateT.run,
+    StateT.bind, StateT.map, StateT.get, StateT.set, StateT.lift, Except.bind, Except.pure, StateT.pure, bind,
+    pure, get, getThe, set, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, modify,
+    modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
+
+theorem prepend_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {item receiver : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok (.int n))
-    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok (.int n))
-    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list (valueInts integers)))
+    (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
+    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
+    (valueReceiver : ValueSemantics.atom (valueEnv env) receiver = .ok (.list os))
     (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
-    (lookup : hs.heap[root]? = some (heapInts integers))
+    (lookup : hs.heap[root]? = some ys)
+    (snap : snapshot hs.heap observationDepth (.ref root) = .ok (.list os))
+    (shallow : ¬ (Observation.list os).depth > observationDepth)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
     (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .prepend [item, receiver])).run vs =
-      .ok (.list (valueInts (n :: integers)), valueObserved (valuePrepended vs integers)) ∧
+      .ok (.list (o :: os), valueObserved (valuePrependedValues vs os)) ∧
     (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .prepend [item, receiver])).run hs =
-      .ok (.ref hs.heap.size, heapObserved (heapPrepended hs integers n) vs.kept.toList) := by
+      .ok (.ref hs.heap.size, heapObserved (heapPrependedValues hs ys os w) vs.kept.toList) := by
   obtain ⟨footprint, represented⟩ := inv.observers
-  have valueObservedRun := value_observeKept_run (valuePrepended vs integers) represented
-  simp only [valuePrepended] at valueObservedRun
-  have heapObservedRun := heap_observeKept_run (heapPrepended hs integers n)
-    (representsMany_after_alloc (xs := heapInts (n :: integers)) represented)
+  have valueObservedRun := value_observeKept_run (valuePrependedValues vs os) represented
+  simp only [valuePrependedValues] at valueObservedRun
+  have heapObservedRun := heap_observeKept_run (heapPrependedValues hs ys os w)
+    (representsMany_after_alloc (xs := w :: ys) represented)
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [item, receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.int n, .list (valueInts integers)] := except_mapM_cons valueItem (except_mapM_cons valueReceiver rfl)
+      .ok [o, .list os] := except_mapM_cons valueItem (except_mapM_cons valueReceiver rfl)
   have heapAtoms : [item, receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.int n, .ref root] := except_mapM_cons heapItem (except_mapM_cons heapReceiver rfl)
+      .ok [w, .ref root] := except_mapM_cons heapItem (except_mapM_cons heapReceiver rfl)
   constructor
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
-    simp [hasDepth, hasFuel, valueTicked, value_prepend_run, valueObservedRun, valuePrepended,
-      Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, hasFuel, valueTicked, value_prepend_run_values (valueTicked vs) o os shallow,
+      value_prepend_run_values {vs with fuel := vs.fuel - 1} o os shallow, valueObservedRun,
+      valuePrependedValues, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, heap_prepend_prim_run hs n integers lookup, heapObservedRun,
+    simp [hasDepth, heapFuel, heap_prepend_run_values hs w ys lookup snap, heapObservedRun,
       Except.bind, Except.pure, bind, pure]
 
-/-- The relation after a prepend: a fresh allocation at the real address, as
-for a literal, and one read of the base recorded on both sides. -/
-theorem prepend_post_invariant {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin}
+theorem prepend_runtime_deep {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {item receiver : Atom} {os : List Observation} {ys : List Value} {w : Value} {root : Nat} {depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (integers : List Int) (item : Int) (site : List Nat) :
-    ∃ gamma',
-      FlatInvariant declarations (valueObserved (valuePrepended vs integers))
-        (heapObserved (heapPrepended hs integers item) vs.kept.toList) env live aenv tenv escapes gamma' ∧
-      hs.heap.size ∈ gamma' (.site site 0) ∧
-      (∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin)) := by
-  obtain ⟨gamma', extension, bounded, separating, old⟩ :=
-    literal_allocation_naming (gamma := gamma) (heapSize := hs.heap.size)
-      (fun origin address member => inv.namingBound origin address member) inv.separating site
-  obtain ⟨footprint, represented⟩ := inv.observers
-  refine ⟨gamma', ?_, (extension (.site site 0) hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old⟩
-  have heapEq : (heapObserved (heapPrepended hs integers item) vs.kept.toList).heap =
-      hs.heap.push (heapInts (item :: integers)) := by
-    rw [heapObserved_heap]; rfl
-  refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) ?_ ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
-    (fun _ escaped => escaped)
-  · rw [heapEq]; exact flatHeap_after_allocation inv.heapInts (item :: integers)
-  · rw [heapEq]; simp
-  · rw [heapObserved_links]; exact inv.links
-  · intro c _ different
-    rw [heapEq]
-    simp [Array.getElem?_push, different]
-  · intro x p _ o w w' binding projected q c located
-    have := live_path_below inv x p o w w' binding projected q c located
-    omega
-  · intro member
-    have bound := representsMany_bound represented _ member
-    omega
-  · rw [heapObserved_kept]; rfl
-  · rw [valueObserved_kept]; rfl
-  · rw [heapEq]
-    simp only [Array.size_push]
-    intro origin address member
-    exact bounded origin address member
-  · rw [valueObserved_reads, heapObserved_reads]; simp [valuePrepended, heapPrepended, inv.reads]
-  · exact observed_external (valuePrepended vs integers) (heapPrepended hs integers item) inv.keptSize inv.external
-  · rw [valueObserved_fuel, heapObserved_fuel]; simp [valuePrepended, heapPrepended, inv.fuel]
+    (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
+    (heapReceiver : InPlaceSemantics.atom (heapEnv env) receiver = .ok (.ref root))
+    (lookup : hs.heap[root]? = some ys)
+    (paired : Corresponds hs.heap (.list os) (.ref root))
+    (deep : (Observation.list os).depth > observationDepth)
+    (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
+    ∃ e, (InPlaceSemantics.eval depth declarations none (heapEnv env)
+      (.prim .prepend [item, receiver])).run hs = .error e := by
+  have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
+  have heapAtoms : [item, receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
+      .ok [w, .ref root] := except_mapM_cons heapItem (except_mapM_cons heapReceiver rfl)
+  obtain ⟨e, snapErr⟩ := Ownership.FlatFragment.Shared.snapshot_deep_error paired deep
+  refine ⟨e, ?_⟩
+  rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
+  simp [hasDepth, heapFuel, heap_prepend_run_deep hs w ys lookup snapErr, Except.bind, bind]
 
-theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {item receiver : Atom} {self : Decl} {type : Ty}
+theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {item receiver : Atom} {type : Ty} {self : Decl} {ctx : Context} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel depth : Nat}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim .prepend [item, receiver]) = .ok type)
     (coveredI : ∀ use ∈ atomUses item, use ∈ live)
@@ -2829,7 +3833,7 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
     (defaultConfig : ctx.config = {})
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim .prepend [item, receiver]) after site).run before =
       .ok (result, next)) :
-    type = .list .int ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .prepend [item, receiver])).run vs = .ok (value, vs') →
@@ -2838,43 +3842,59 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
           (.prim .prepend [item, receiver])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .prepend [item, receiver])).run vs = .error message →
       ∃ actualMessage,
         (InPlaceSemantics.eval depth declarations none (heapEnv env)
           (.prim .prepend [item, receiver])).run hs = .error actualMessage) := by
-  obtain ⟨itemTyped, receiverTyped, listType⟩ :=
+  obtain ⟨t, itemTyped, receiverTyped, listType⟩ :=
     exprType_prepend_success (fun _ _ h => flat_atom_type inv h) typed
   subst listType
-  obtain ⟨n, valueItem, heapItem, abstractItem⟩ := flat_atom_integer inv itemTyped coveredI
-  obtain ⟨root, integers, roots, element, certificate, lookup, _, elementFlat,
+  obtain ⟨o, w, aN0, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN0,
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_entry inv itemTyped coveredI
+  obtain ⟨root, ys, os, roots, element0, certificate, lookup, receiverNamed, noUnk, elemT, elemTags, elemShape0,
+    elemsShaped, elemsDescribed, lenO, elemsTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
   have abstractAtoms : [item, receiver].mapM (m := Except String) (abstractAtom aenv) =
-      .ok [.scalar, .list roots element certificate] :=
+      .ok [aN0, .list roots element0 certificate] :=
     except_mapM_cons abstractItem (except_mapM_cons abstractReceiver rfl)
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
-  obtain ⟨certificate', prependRun⟩ := primitive_prepend_run
-    {ctx with escaped := union ctx.escaped before.facts.escapes} site .scalar roots element certificate
-    (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
-  rw [prependRun] at run
-  have equal := Except.ok.inj run
-  have joined : Abstract.scalar.join element = .scalar := by
-    rcases elementFlat with rfl | rfl <;> simp [Abstract.join]
-  have resultEq : result = .list (union [.site site 0] roots) .scalar certificate' := by
-    rw [← joined]; exact (congrArg Prod.fst equal).symm
-  have nextState : next = {before with facts := {before.facts with
-      reads := union before.facts.reads (roots.filter external)}} := (congrArg Prod.snd equal).symm
+  rw [primitive_prepend_run_values _ (show ({ctx with escaped := union ctx.escaped before.facts.escapes} :
+    Context).config = {} from defaultConfig)] at run
+  obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+  have resultEq := first.symm
+  have resultRep := entryAbstract_stored (ds := declarations) elemShape0 shapeN0
+    (entryAbstract_join shapeN0 elemShape0) resultEq
+  -- From here the element and the item are read at their representation (#1840):
+  -- the names `element` and `aN` denote `entryAbstract declarations t element0` and
+  -- `entryAbstract declarations t aN0`, and `element0` and `aN0` are the checker's abstracts.
+  have elemShape := flatAbstract_entry (ds := declarations) elemShape0
+  have shapeN := flatAbstract_entry (ds := declarations) shapeN0
+  obtain ⟨element, elementDef⟩ : ∃ x, x = entryAbstract declarations t element0 := ⟨_, rfl⟩
+  obtain ⟨aN, aNDef⟩ : ∃ x, x = entryAbstract declarations t aN0 := ⟨_, rfl⟩
+  simp only [← elementDef, ← aNDef] at elemTags elemsDescribed described describedN tagsN chainsN deepN elemShape shapeN resultRep
   have nextEscapes : next.facts.escapes = before.facts.escapes := by
-    subst nextState; rfl
+    rw [← second]
   have valueAtoms : [item, receiver].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
-      .ok [.int n, .list (valueInts integers)] := except_mapM_cons valueItem (except_mapM_cons valueReceiver rfl)
+      .ok [o, .list os] := except_mapM_cons valueItem (except_mapM_cons valueReceiver rfl)
   have heapAtoms : [item, receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
-      .ok [.int n, .ref root] := except_mapM_cons heapItem (except_mapM_cons heapReceiver rfl)
-  refine ⟨rfl, nextEscapes, by rw [resultEq]; exact .listScalar _ _, ?_, ?_⟩
+      .ok [w, .ref root] := except_mapM_cons heapItem (except_mapM_cons heapReceiver rfl)
+  have noUnkNew : Origin.unknown ∉ union [.site site 0] roots := by
+    intro member
+    rcases mem_union_cases _ _ _ member with fresh | old
+    · simp at fresh
+    · exact noUnk old
+  refine ⟨.list t elemT, nextEscapes,
+    by rw [resultEq]; exact .list _ _ _ _ noUnkNew (flatAbstract_join shapeN0 elemShape0), ?_, ?_⟩
   · intro value vs' run
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
@@ -2882,27 +3902,176 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
     · by_cases noFuel : vs.fuel = 0
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
         simp [noDepth, noFuel] at run
-      · obtain ⟨valueRun, heapRun⟩ :=
-          prepend_runtime_success inv valueItem heapItem valueReceiver heapReceiver lookup noDepth noFuel
-        rw [valueRun] at run
-        cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := prepend_post_invariant inv integers n site
-        have heapEq : (heapObserved (heapPrepended hs integers n) vs.kept.toList).heap =
-            hs.heap.push (heapInts (n :: integers)) := by
-          rw [heapObserved_heap]; rfl
-        have lookupNew : (heapObserved (heapPrepended hs integers n) vs.kept.toList).heap[hs.heap.size]? =
-            some (heapInts (n :: integers)) := by
-          rw [heapEq]; simp
-        refine ⟨.ref hs.heap.size, heapObserved (heapPrepended hs integers n) vs.kept.toList, gamma',
-          heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, ?_, ?_,
-          by rw [resultEq]; exact .listInt _ _ _ _, .listInt _ _⟩
-        · rw [heapEq]; simp
-        · exact corresponds_integer_ref lookupNew
-        · rw [resultEq]
-          exact allocated_list_described lookupNew
+      · by_cases deep : (Observation.list os).depth > observationDepth
+        · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
+          simp [noDepth, noFuel, valueTicked, value_prepend_run_deep (valueTicked vs) o os deep,
+            value_prepend_run_deep {vs with fuel := vs.fuel - 1} o os deep, Except.bind, bind] at run
+        · have snap : snapshot hs.heap observationDepth (.ref root) = .ok (.list os) :=
+            pairedList observationDepth (by omega)
+          obtain ⟨valueRun, heapRun⟩ :=
+            prepend_runtime_success inv valueItem heapItem valueReceiver heapReceiver lookup snap deep noDepth noFuel
+          rw [valueRun] at run
+          cases run
+          have heapEq : (heapObserved (heapPrependedValues hs ys os w) vs.kept.toList).heap =
+              hs.heap.push (w :: ys) := by
+            rw [heapObserved_heap]; rfl
+          have lookupNew : (hs.heap.push (w :: ys))[hs.heap.size]? = some (w :: ys) := by simp
+          have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) → (hs.heap.push (w :: ys))[c]? = hs.heap[c]? := by
+            intro y member c reach
+            have bound := allocated_reach_bound (elemsShaped y member) reach
+            simp [Array.getElem?_push, Nat.ne_of_lt bound]
+          have agreeItem : ∀ c, Reaches hs.heap w (.ref c) → (hs.heap.push (w :: ys))[c]? = hs.heap[c]? := by
+            intro c reach
+            have bound := allocated_reach_bound allocatedN reach
+            simp [Array.getElem?_push, Nat.ne_of_lt bound]
+          have shapedZ : ∀ z ∈ w :: ys, AllocatedFlatValue (hs.heap.push (w :: ys)) z (entryType t) := by
+            intro z member
+            rcases List.mem_cons.mp member with new | old
+            · rw [new]; exact allocated_of_agree allocatedN agreeItem
+            · exact allocated_of_agree (elemsShaped z old) (agreeOld z old)
+          have shapedNew : AllocatedFlatValue (hs.heap.push (w :: ys)) (.ref hs.heap.size) (.list (entryType t)) :=
+            .list _ _ (entryType t) lookupNew shapedZ
+          obtain ⟨kinds', state', newTyped⟩ := alloc_kinds_of inv (t := .list t) heapEq
+            (by rw [heapObserved_links]; rfl) (fun kinds state => by
+              obtain ⟨c, same, rootTyped⟩ :=
+                kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+              cases same
+              refine .list t (w :: ys) fun z member => ?_
+              rcases List.mem_cons.mp member with rfl | old
+              · exact kinded_atom inv state itemTyped coveredI heapItem
+              · exact state.list_contents rootTyped lookup z old)
+          obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv (w :: ys) site heapEq
+            (by rw [heapObserved_links]; rfl)
+            (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl)
+            (by rw [valueObserved_reads, heapObserved_reads]; simp [valuePrependedValues, heapPrependedValues, inv.reads])
+            (observed_external (valuePrependedValues vs os) (heapPrependedValues hs ys os w) inv.keptSize inv.external)
+            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valuePrependedValues, heapPrependedValues, inv.fuel])
+            ⟨kinds', state'⟩
+          have rootNamed' : named gamma' (union [.site site 0] roots) hs.heap.size :=
             ⟨.site site 0, mem_union _ _ _ (Or.inl (by simp)), fresh⟩
-        · exact integer_list_observation_typed declarations (n :: integers)
-        · exact allocated_integer_list_typed declarations lookupNew
+          have rootApart : ∀ z ∈ w :: ys, ¬ Reaches (hs.heap.push (w :: ys)) z (.ref hs.heap.size) := by
+            intro z member reach
+            have bound := allocated_reach_bound (shapedZ z member) reach
+            rcases List.mem_cons.mp member with new | old
+            · rw [new] at reach
+              have := allocated_reach_bound allocatedN (reaches_of_agree_rev agreeItem reach)
+              omega
+            · have := allocated_reach_bound (elemsShaped z old) (reaches_of_agree_rev (agreeOld z old) reach)
+              omega
+          have belowSize : ∀ z ∈ w :: ys, ∀ c, Reaches hs.heap z (.ref c) → c < hs.heap.size := by
+            intro z member c reach
+            rcases List.mem_cons.mp member with new | old
+            · rw [new] at reach; exact allocated_reach_bound allocatedN reach
+            · exact allocated_reach_bound (elemsShaped z old) reach
+          have describedOld' : ∀ z ∈ ys, Describes gamma' hs.heap element z := fun z member =>
+            describes_naming_same (elemsShaped z member) old (fun c reach => allocated_reach_bound (elemsShaped z member) reach)
+              (elemsDescribed z member)
+          have describedN' : Describes gamma' hs.heap aN w :=
+            describes_naming_same allocatedN old (fun c reach => allocated_reach_bound allocatedN reach) describedN
+          have elementsDescribed' : ∀ z ∈ w :: ys,
+              Describes gamma' (hs.heap.push (w :: ys)) (aN.join element) z := by
+            intro z member
+            rcases List.mem_cons.mp member with new | old'
+            · rw [new]
+              exact describes_join (allocated_of_agree allocatedN agreeItem) shapeN elemShape
+                (Or.inl (describes_of_agree agreeItem describedN'))
+            · exact describes_join (allocated_of_agree (elemsShaped z old') (agreeOld z old')) shapeN elemShape
+                (Or.inr (describes_of_agree (agreeOld z old') (describedOld' z old')))
+          obtain ⟨cs0, represented0⟩ := represents_of_snapshot _ _ _ (pairedList _ (Nat.le_refl _))
+          have lookup' : hs.heap[root]? = some ([] ++ [] ++ ys) := by simpa using lookup
+          have lookupNew' : (hs.heap.push (w :: ys))[hs.heap.size]? = some ([] ++ w :: ys) := by
+            simpa using lookupNew
+          have agreeOld' : ∀ y ∈ [] ++ [] ++ ys, ∀ c, Reaches hs.heap y (.ref c) →
+              (hs.heap.push (w :: ys))[c]? = hs.heap[c]? :=
+            fun y member => agreeOld y (by simpa using member)
+          have rootApart' : ∀ z ∈ [] ++ w :: ys, ¬ Reaches (hs.heap.push (w :: ys)) z (.ref hs.heap.size) :=
+            fun z member => rootApart z (by simpa using member)
+          have oldCert := described.1.2 [] roots element certificate (.ref root) rfl (.here _)
+          have describedNew : Describes gamma' (hs.heap.push (w :: ys)) (entryAbstract declarations (.list t) result)
+              (.ref hs.heap.size) := by
+            rw [resultRep]
+            refine list_described_of_elements rootNamed' noUnkNew lookupNew shapedNew elementsDescribed' ?_ ?_
+            · intro d
+              obtain ⟨oldDeep, exclusive⟩ := Bool.and_eq_true_iff.mp d
+              obtain ⟨deepI, sepI, overlapI⟩ := storeExclusive_facts exclusive
+              exact inserted_footprint_nodup lookup' lookupNew' represented0 agreeOld' agreeItem rootApart'
+                (fun n o' fp rep => (oldCert n o' fp rep).1 oldDeep)
+                (nodup_of_deepExclusive allocatedN shapeN describedN deepI
+                  (pathsApart_of_separated inv.separating sepI))
+                (fun y member c reachI reachY => reach_apart_of_covers inv.separating shapeN elemShape
+                  describedN.1.1 (elemsDescribed y (by simpa using member)).1.1
+                  (cellOverlap_union_right_false overlapI).2 c reachI reachY)
+            · intro sp
+              have h := Bool.and_eq_true_iff.mp sp
+              obtain ⟨oldSpine, spines⟩ := Bool.and_eq_true_iff.mp h.1
+              have containersOk := h.2
+              exact inserted_footprint_once lookup' lookupNew' represented0 agreeOld' agreeItem rootApart'
+                (fun n o' fp rep => (oldCert n o' fp rep).2 oldSpine)
+                (once_of_storeSpines inv.separating shapeN allocatedN describedN.1.1 spines)
+                (fun p c container located reachI => by
+                  cases located with
+                  | element lookup'' yMember inner =>
+                    rw [lookup] at lookup''
+                    cases lookup''
+                    obtain ⟨o', m', a'⟩ := (elemsDescribed _ yMember).1.1 p c inner
+                    obtain ⟨cs, entry, inCs⟩ :=
+                      mem_namesAt_of_arrayAt elemShape (elemsShaped _ yMember) p c o' inner m'
+                    exact cell_apart_of_covers inv.separating shapeN describedN.1.1 ⟨o', inCs, a'⟩
+                      (containers_all_facts containersOk (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)) reachI)
+                (fun p c container located y yMember reachY => by
+                  obtain ⟨o', m', a'⟩ := describedN.1.1 p c located
+                  obtain ⟨cs, entry, inCs⟩ := mem_namesAt_of_arrayAt shapeN allocatedN p c o' located m'
+                  have disjoint :=
+                    ((storeSpines_facts spines).2 (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)).1
+                  exact cell_apart_of_covers inv.separating elemShape
+                    (elemsDescribed y (by simpa using yMember)).1.1 ⟨o', inCs, a'⟩
+                    (cellOverlap_union_right_false disjoint).2 reachY)
+          have deepNew : ∀ roots cert, TagsDeep (hs.heap.push (w :: ys)) (.list (entryType t))
+              (.list roots (aN.join element) cert) (.ref hs.heap.size) := by
+            intro roots cert
+            apply tagsDeep_list lookupNew
+            intro z member
+            rcases List.mem_cons.mp member with new | old
+            · rw [new]
+              exact elementTags_of_agree
+                (elementTags_join (elementTags_of_corresponds pairedN tagsN chainsN deepN) shapeN elemShape) agreeItem
+            · exact elementTags_of_agree (elementTags_join_right (elemTags z old) shapeN elemShape) (agreeOld z old)
+          refine ⟨.ref hs.heap.size, heapObserved (heapPrependedValues hs ys os w) vs.kept.toList, gamma',
+            heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, ?_, ?_, ?_,
+            by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
+            ⟨kinds', state', .list t _ newTyped⟩⟩
+          · rw [heapEq]; simp
+          · rw [heapEq]
+            exact corresponds_list_of_elements lookupNew (by simp [lenO]) (fun i o' y os_i ys_i => by
+              cases i with
+              | zero =>
+                simp at os_i ys_i
+                subst os_i; subst ys_i
+                exact corresponds_of_agree agreeItem pairedN
+              | succ k =>
+                simp at os_i ys_i
+                exact corresponds_of_agree (agreeOld y (List.mem_of_getElem? ys_i)) (pointwise k o' y os_i ys_i))
+          · rw [heapEq]; exact describedNew
+          · exact obsTyped_list_of_elements (fun o' member => by
+              rcases List.mem_cons.mp member with new | old'
+              · rw [new]; exact observedN
+              · exact elemsTyped o' old')
+          · rw [heapEq]
+            refine valueTyped_of_corresponds (o := .list (o :: os)) ?_ ?_
+            · exact corresponds_list_of_elements lookupNew (by simp [lenO]) (fun i o' y os_i ys_i => by
+                cases i with
+                | zero =>
+                  simp at os_i ys_i
+                  subst os_i; subst ys_i
+                  exact corresponds_of_agree agreeItem pairedN
+                | succ k =>
+                  simp at os_i ys_i
+                  exact corresponds_of_agree (agreeOld y (List.mem_of_getElem? ys_i)) (pointwise k o' y os_i ys_i))
+            · exact obsTyped_list_of_elements (fun o' member => by
+                rcases List.mem_cons.mp member with new | old'
+                · rw [new]; exact observedN
+                · exact elemsTyped o' old')
+          · rw [heapEq]; exact shapedNew
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -2913,9 +4082,13 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
         exact ⟨"in-place execution exhausted fuel", by
           rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
           simp [noDepth, heapFuel]⟩
-      · have success :=
-          (prepend_runtime_success inv valueItem heapItem valueReceiver heapReceiver lookup noDepth noFuel).1
-        rw [success] at failed
-        contradiction
+      · by_cases deep : (Observation.list os).depth > observationDepth
+        · exact prepend_runtime_deep inv heapItem heapReceiver lookup pairedList deep noDepth noFuel
+        · have snap : snapshot hs.heap observationDepth (.ref root) = .ok (.list os) :=
+            pairedList observationDepth (by omega)
+          have success := (prepend_runtime_success inv valueItem heapItem valueReceiver heapReceiver lookup
+            snap deep noDepth noFuel).1
+          rw [success] at failed
+          contradiction
 
 end Ownership.FlatFragment.ListPrimitives

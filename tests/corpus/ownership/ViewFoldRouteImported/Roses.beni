@@ -1,0 +1,34 @@
+-- ownership (project): see Main.beni. `incAll` and `incList` push onto
+-- every kids list of a `Rose`; `deep` and `deeper` put a kids list one and
+-- two levels down; `ident` answers its argument.
+pub type Rose
+    = Rose (List Rose)
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+pub incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub ident : Rose → Rose
+ident r = r
+
+
+pub deep : List Rose → Rose
+deep ks = Rose [ Rose ks ]
+
+
+pub deeper : List Rose → Rose
+deeper ks = Rose [ Rose [ Rose ks ] ]

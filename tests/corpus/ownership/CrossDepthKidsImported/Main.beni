@@ -1,0 +1,88 @@
+-- ownership (project): `CrossDepthKids` with the recursive writers and the
+-- builders in another module (ownership-v2.md Appendix B, C×F, the S3b
+-- half with a group writer; R-4.7.5, R-3.1; #1125, #1128). A call of an
+-- imported member applies the class its block publishes, so the verdicts
+-- are the same-module fixture's: one kids list at two depths is refused
+-- through each builder and at gaps of one, two and six levels, and across
+-- the mutual pair; separate kids lists are accepted.
+import Roses exposing (A, B, Rose)
+
+
+pub minimal : ⊤ → Rose
+minimal ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.minimalOf k)
+
+
+pub kidsPush : ⊤ → Rose
+kidsPush ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.kidsPushOf k)
+
+
+pub kidsSpread : ⊤ → Rose
+kidsSpread ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.kidsSpreadOf k)
+
+
+pub onePush : ⊤ → Rose
+onePush ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.onePushOf k)
+
+
+pub plainPush : ⊤ → Rose
+plainPush ⊤ =
+    a = Rose [ Rose [] ]
+    b = Rose [ a, Rose [] ]
+    c = Rose [ b, Rose [] ]
+    Roses.incAll (Rose (List.push [ c ] (Rose [ Rose [] ])))
+
+
+pub gap1 : ⊤ → Rose
+gap1 ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Rose [ Rose k, Roses.nest (Rose k) ])
+
+
+pub gap2 : ⊤ → Rose
+gap2 ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Rose [ Rose k, Roses.nest (Roses.nest (Rose k)) ])
+
+
+pub gap6 : ⊤ → Rose
+gap6 ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll
+        (Rose
+            [ Rose k
+            , Roses.nest (Roses.nest (Roses.nest (Roses.nest (Roses.nest (Roses.nest (Rose k))))))
+            ]
+        )
+
+
+pub gap6Apart : ⊤ → Rose
+gap6Apart ⊤ =
+    k1 = [ Rose [] ]
+    k2 = [ Rose [] ]
+    Roses.incAll
+        (Rose
+            [ Rose k1
+            , Roses.nest (Roses.nest (Roses.nest (Roses.nest (Roses.nest (Roses.nest (Rose k2))))))
+            ]
+        )
+
+
+pub mutualShared : ⊤ → A
+mutualShared ⊤ =
+    k = [ A [] ]
+    Roses.incA (A [ B k, B [ A [ B k ] ] ])
+
+
+pub mutualApart : ⊤ → A
+mutualApart ⊤ =
+    k1 = [ A [] ]
+    k2 = [ A [] ]
+    Roses.incA (A [ B k1, B [ A [ B k2 ] ] ])

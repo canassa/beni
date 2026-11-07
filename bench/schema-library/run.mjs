@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// `core/Schema`'s library engine (`schema.md` §16, S3) and a declaration's
-// specialised `parse` and `print` (S4), measured: the size
+// Runtime worker composition and declaration-generated workers, measured:
+// the size
 // of a program that uses a small schema, and decode and encode timings of
 // report 34's `flat` and `list` workloads, each through both paths.
 //

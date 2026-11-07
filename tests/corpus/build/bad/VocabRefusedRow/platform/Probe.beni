@@ -1,0 +1,58 @@
+--! A vocabulary with six rows the checker refuses (checker-v2.md §25.2):
+--! an element with a fact written twice, an event whose `via` names
+--! nothing, an attribute and a pattern whose value type no lowering writes,
+--! a second `label` that ties with the first, and an event `title` that
+--! ties with the attribute `title`. Each refusal is this module's
+--! diagnostic, and the only one a use of the name meets.
+
+import Html exposing (Html)
+
+
+pub foreign type Event
+
+
+pub markup text : String → Html msg
+
+
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "main"
+
+
+pub element "button"
+
+
+pub element "p"
+
+
+pub element "dialog" void void
+
+
+pub attribute "*" : String
+
+
+pub event "onProbe" name "probe" via missing : String
+
+
+pub attribute "count" : List Int
+
+
+pub attribute "data-*" : List Int
+
+
+pub attribute "label" : String
+
+
+pub attribute "label" : Int
+
+
+pub attribute "title" : String
+
+
+pub event "title" name "title" : Event
+
+
+--| This module's own markup, against its own refused row.
+pub badge : Html msg
+badge = <p count={1}>badge</p>

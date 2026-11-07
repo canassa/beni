@@ -1,0 +1,47 @@
+-- A lambda that calls a function its callee hands it, on lists nothing else
+-- holds (`ownership-v2.md` §2.11.3, *a function value goes where a value
+-- goes*): the lambda's label of `g` is the label of the parameter its callee
+-- hands it, passed on with the outer label's count, so a writer handed there
+-- is judged at the caller and accepted in place.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apply2 : a, a, (a → b) → b × b
+apply2 x y f = ( f x, f y )
+
+
+app1 : a, (a → b) → b
+app1 x g = g x
+
+
+pick : (List Int → List Int), Int → (List Int → List Int)
+pick f _ = f
+
+
+each : List Int, (List Int → List Int) → List Int
+each v f = app1 f λg → g v
+
+
+mp : List Int, List Int, (List Int → List Int) → List Int × List Int
+mp x y f = apply2 x y λv → app1 f λg → g v
+
+
+mpPicked : List Int, List Int, (List Int → List Int) → List Int × List Int
+mpPicked x y f = apply2 x y (pick f 0)
+
+
+main : Program
+main =
+    a = each [ 1 ] λv → List.push v 5
+    k = [ 2 ]
+    b = each k λv → List.copy v
+    k2 = List.push k 6
+    ( c1, c2 ) = mp [ 3 ] [ 4 ] λv → List.push v 7
+    ( d1, d2 ) = mpPicked [ 5 ] [ 6 ] λv → List.push v 8
+    Node.printLines [ show a, show b, show k2, show c1, show c2, show d1, show d2 ]

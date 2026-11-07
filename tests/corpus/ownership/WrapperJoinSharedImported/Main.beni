@@ -1,0 +1,24 @@
+-- ownership (project): `WrapperJoinShared` with the join and its wrappers in
+-- another module (#1459's review): the write into one level's kids while the
+-- other is read is refused through each wrapper.
+import Joins
+
+
+pub viaWrap : Bool → Int
+viaWrap c =
+    case Joins.wrap c (Joins.Rose []) of
+        Joins.Rose [ Joins.Rose kids, other ] →
+            List.length (List.push kids (Joins.Rose [])) + Joins.size other
+
+        _ →
+            0
+
+
+pub viaWrap2 : Bool → Int
+viaWrap2 c =
+    case Joins.wrap2 c (Joins.Rose []) of
+        Joins.Rose [ Joins.Rose kids, other ] →
+            List.length (List.push kids (Joins.Rose [])) + Joins.size other
+
+        _ →
+            0

@@ -1,0 +1,93 @@
+-- A runtime catch for a list pattern's element stored back into its list
+-- inside a lambda or a local function (#1956). The list is a capture there,
+-- and so is an alias of it. Each list holds its head twice, so an edit of
+-- one position changes the other. Accepted, the sanitised run traps.
+import List
+import Node exposing (Program)
+import String
+
+
+inLambda : List (List Int) → List (List Int)
+inLambda l =
+    h =
+        λ⊤ →
+            case l of
+                [ p, …_ ] →
+                    List.push l p
+
+                _ →
+                    []
+    h ⊤
+
+
+inLocal : List (List Int) → List (List Int)
+inLocal l =
+    h ⊤ =
+        case l of
+            [ p, …_ ] →
+                [ …l, p ]
+
+            _ →
+                []
+    h ⊤
+
+
+throughAlias : List (List Int) → List (List Int)
+throughAlias l =
+    m = l
+    h =
+        λ⊤ →
+            case l of
+                [ p, …_ ] →
+                    List.push m p
+
+                _ →
+                    []
+    h ⊤
+
+
+throughLaterAlias : List (List Int) → List (List Int)
+throughLaterAlias l =
+    m = l
+    h ⊤ =
+        case l of
+            [ p, …_ ] →
+                List.push m p
+
+            _ →
+                []
+    h ⊤
+
+
+editLambda : ⊤ → List (List Int)
+editLambda ⊤ = List.update (inLambda [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+editLocal : ⊤ → List (List Int)
+editLocal ⊤ = List.update (inLocal [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+editAlias : ⊤ → List (List Int)
+editAlias ⊤ = List.update (throughAlias [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+editLaterAlias : ⊤ → List (List Int)
+editLaterAlias ⊤ = List.update (throughLaterAlias [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls ints) ";"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (editLambda ⊤)
+        , show (editLocal ⊤)
+        , show (editAlias ⊤)
+        , show (editLaterAlias ⊤)
+        ]

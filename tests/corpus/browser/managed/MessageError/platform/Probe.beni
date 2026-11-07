@@ -1,0 +1,4 @@
+import Browser.Worker as Worker
+
+
+pub foreign impure fail : Worker.Handle protocol → ⊤

@@ -1,0 +1,42 @@
+-- A runtime module without markup under `"exports": "program"`
+-- (boundary.md §5.2, amended 2026-11-04; §9.12 (c)): the entry file imports
+-- `run` from this module, holds its result, exports its `default` and each
+-- listed name as the answer of `exports(name)`, called once at load in the
+-- list's order. Each call prints, so the transcript is the contract.
+import Js
+
+
+pub type Program
+    = Program String
+
+
+pub program : String → Program
+program text = Program text
+
+
+pub run : Program → Js.Value
+run p =
+    case p of
+        Program text →
+            write "run: ${text}\n"
+            Js.object
+                [ ( "default", Js.object [ ( "text", Js.from text ) ] )
+                , ( "exports", Js.from exported )
+                ]
+
+
+exported : Js.Value → Js.Value
+exported name =
+    s = str name
+    write "export ${s}\n"
+    Js.object [ ( "name", name ) ]
+
+
+str : Js.Value → String
+str v = Js.to v
+
+
+write : String → ⊤
+write s =
+    _ = Js.call (Js.get (Js.global "process") "stdout") "write" [ Js.from s ]
+    ⊤

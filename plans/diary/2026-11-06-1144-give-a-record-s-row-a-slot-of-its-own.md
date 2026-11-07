@@ -1,0 +1,7 @@
+## 2026-11-06 11:44 CET — give a record's row a slot of its own
+
+**What I did.** Specified and built #2057 (lane s4r). A record place with an open row has one more step, `…`, at a `var` place, whose payload is the set of field names it excludes. A contract's `…` read at a caller is each field those names leave, and the caller's own row; a caller's `.b` read from a callee's `…` is the argument's `.b`. An update keeps `…` as a kid of its record, so a write of `.a` asks `π1{.a,…*~}`. A template substitutes its row. Blocks are version 27. Row code went into small files (`RowSets`, `StepWord`, `Replay`, `RecordRow`, `StepsTo`, `BlockStep`) to stay inside §5's targets. Fixtures `run/SanitiserRow`, `SanitiserRowApart`, `SanitiserRowAcrossModules`.
+
+**Measured.** Ledger against master by root name: a2r 0, r2a 0, onlyA 0. Oracle: 46 TRAP→REFUSED; with #2117 on top no row probe is left. One SAME→REFUSED, `P11updThenClosure`, refused as its closed twin is on master: the closure holds the copy whole. Sweeps and the cost table unchanged.
+
+**What I learned.** A row needs no reader of its own for most of the checker: as an ordinary slot at a `var` place, `below`, selections, read-off and the block carried it. What needed work was the seam between two records of different names, where one callee step is several caller paths and a caller's step meets no kid. Parametricity is what keeps that precise: a row's `.b` can only be the argument's `.b`. An excluded read must end there; it fell into `FoldRead`, which read the whole row at `.b`.

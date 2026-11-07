@@ -1,0 +1,25 @@
+import Holder
+-- A non-tail invocation through a nominal holder keeps its continuation.
+import Io
+import Node exposing (Program)
+import Ref
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make "before yield"
+    Holder.invoke
+        (Holder.make λ⊤ →
+            Ref.set seen "pure callback"
+            "ready"
+        )
+    first = Ref.get seen
+    Ref.set seen "before yield"
+    Holder.invoke
+        (Holder.make λ⊤ →
+            Task.yieldNow ⊤
+            Ref.set seen "after yield"
+            "ready"
+        )
+    Node.printLines [ first, Ref.get seen ]

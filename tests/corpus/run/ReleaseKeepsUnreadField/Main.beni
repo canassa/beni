@@ -1,0 +1,51 @@
+-- run: a `--release` build evaluates every field of a record, also a field
+-- that nothing reads, in the order the fields are written (`language.md`
+-- §6, *Evaluation order* and *What an optimiser may assume*; `backend.md`
+-- §9 item 1).
+--
+-- Each record below writes `z` before `a`, and both values are calls. The
+-- printer sorts the keys (`backend.md` §4), so lowering pins each value in
+-- a `const $t$<n>` where it is written (`Lower.orderedExprs`). Until #1227
+-- it did not list these temporaries in `effect_keep`. `Spec.dropKeys` then
+-- dropped the unread key `z`, because its value was a name, and `Opt`
+-- dropped the unread temporary. The release build printed none of the
+-- `z` lines below:
+--
+--   - `logs`: two `Log.info`s, and nothing reads the record;
+--   - `debugs`: two `Debug.log`s, and only `a` is read;
+--   - `says`: two calls of the platform's `foreign impure` `Fx.say`;
+--   - `pair`: the constructor of the record alias `Pair`, whose keys sort
+--     the same way;
+--   - `Fx.viaCall`: two `Js.call`s in a platform module;
+--   - `Fx.viaGet`: two `Js.get`s of getters in a platform module.
+--
+-- `Fx.viaGetBoth` reads both getters. The release build folded the two
+-- unlisted temporaries back into the sorted keys, and ran getter `a`
+-- before getter `z`.
+--
+-- Both builds print the same lines.
+import Fx
+import Log
+import Node exposing (Program)
+import String
+
+
+type alias Pair =
+    z : Int
+    a : Int
+
+
+main : Program
+main =
+    logs = { z = Log.info "log z ran", a = Log.info "log a ran" }
+    debugs = { z = Debug.log "debug z ran" 26, a = Debug.log "debug a ran" 1 }
+    says = { z = Fx.say "say z ran", a = Fx.say "say a ran" }
+    pair = Pair (Fx.say "pair z ran") (Fx.say "pair a ran")
+    Node.printLines
+        [ String.fromInt debugs.a
+        , String.fromInt says.a
+        , String.fromInt pair.a
+        , String.fromInt (Fx.viaCall ⊤)
+        , String.fromInt (Fx.viaGet ⊤)
+        , String.fromInt (Fx.viaGetBoth ⊤)
+        ]

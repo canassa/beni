@@ -1,0 +1,56 @@
+-- ownership (project): `ApartPaths` with the callees in another module
+-- (ownership-v2.md §2.11 item 3, rule (c), as amended for #1383). A call of
+-- an imported declaration applies the class its block publishes, so a call
+-- over an actual holding one value at two unrelated paths of the
+-- parameter that the callee found apart is refused, as v1 refuses it: `g`,
+-- `gDeep`, `callerT`, `b8`, `twoRoutes`. The distinct twins are accepted.
+import Parts exposing (Box, Br, Leaf, Pair, Tree)
+
+
+pub g : Box → Int × Int
+g b =
+    case Parts.rightLeftBox (Pair b b) of
+        ( ys, l ) →
+            ( List.length ys, Parts.sizeBox l )
+
+
+pub gDistinct : ⊤ → Int × Int
+gDistinct ⊤ =
+    case Parts.rightLeftBox (Pair (Box [ 1 ]) (Box [ 2 ])) of
+        ( ys, l ) →
+            ( List.length ys, Parts.sizeBox l )
+
+
+pub gDeep : Box → List Int × Bool
+gDeep b = Parts.readDeep (Pair b b)
+
+
+pub callerT : Tree → List Int × Int
+callerT t =
+    case t of
+        Br _ ys _ →
+            Parts.rootVsSub (Br t ys Leaf)
+
+        Leaf →
+            ( [], 0 )
+
+
+pub b8 : Tree → Int × Int
+b8 t =
+    case Parts.rightLeft (Br t [] t) of
+        ( ys, l ) →
+            ( List.length ys, Parts.size l )
+
+
+pub twoRoutes : Tree → Int × Int
+twoRoutes t =
+    case Parts.rightLeft (Br (Br t [] Leaf) [] t) of
+        ( ys, l ) →
+            ( List.length ys, Parts.size l )
+
+
+pub distinctTree : ⊤ → Int × Int
+distinctTree ⊤ =
+    case Parts.rightLeft (Br (Br Leaf [ 1 ] Leaf) [] (Br Leaf [ 2 ] Leaf)) of
+        ( ys, l ) →
+            ( List.length ys, Parts.size l )

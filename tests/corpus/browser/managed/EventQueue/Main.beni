@@ -1,0 +1,200 @@
+-- Events from init, start and handlers; bounded queue, byte limit, one reader.
+-- The default limits hold in a release build too (#2203).
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Html exposing (Html)
+import List
+import String
+import Task
+
+
+type Call
+    = Burst Int
+    | Ping
+    | BigEvent Int
+
+
+type Ev
+    = Init String
+    | Started
+    | Num Int
+    | Big (List Int)
+
+
+type alias Protocol =
+    Worker.Protocol Call String ⊥ String Ev ⊥
+
+
+emitError : Result Worker.EmitError ⊤ → String
+emitError result =
+    case result of
+        Ok _ →
+            "ok"
+        Err Worker.EventQueueFull →
+            "full"
+        Err Worker.EventChannelClosed →
+            "closed"
+        Err Worker.EventTargetRequired →
+            "target"
+        Err (Worker.EventCloneRejected _) →
+            "clone"
+        Err Worker.EventCanvasTransferInvalidState →
+            "canvas"
+
+
+burst : Worker.Context Ev, Int, Int, Int, Int → String
+burst context at n ok full =
+    if at > n then
+        "ok=" ++ String.fromInt ok ++ " full=" ++ String.fromInt full
+    else
+        case emitError (Worker.emit context (Num at)) of
+            "ok" →
+                burst context (at + 1) n (ok + 1) full
+            "full" →
+                burst context (at + 1) n ok (full + 1)
+            other →
+                other
+
+
+worker : Worker.Program String ⊤ Protocol
+worker =
+    Worker.program
+        { init =
+            λcontext config →
+                _ = Worker.emit context (Init config)
+                Ok ⊤
+        , start =
+            λcontext _ →
+                _ = Worker.emit context Started
+                ⊤
+        , handle =
+            λcontext _ request →
+                case request of
+                    Burst n →
+                        Ok (burst context 1 n 0 0)
+                    Ping →
+                        _ = Worker.emit context (Num 999)
+                        Ok "pong"
+                    BigEvent n →
+                        Ok (emitError (Worker.emit context (Big (List.range 1 n))))
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+show : Result (Events.ReadError Worker.TransportError) (Events.Step Ev) → String
+show step =
+    case step of
+        Ok (Events.Item chunk) →
+            case Events.value chunk of
+                Init text →
+                    "init:" ++ text
+                Started →
+                    "started"
+                Num n →
+                    "num:" ++ String.fromInt n
+                Big xs →
+                    "big:" ++ String.fromInt (List.length xs) ++ ":" ++ String.fromInt (List.sum xs)
+        Ok Events.End →
+            "end"
+        Err (Events.Failed _) →
+            "failed"
+        Err Events.StreamClosed →
+            "streamclosed"
+        Err Events.StreamUnresponsive →
+            "unresponsive"
+
+
+drain : Events.Stream Worker.TransportError Ev, Int, Int → Int
+drain stream count total =
+    if count == 0 then
+        total
+    else
+        case Events.next stream of
+            Ok (Events.Item chunk) →
+                case Events.take chunk of
+                    Num n →
+                        drain stream (count - 1) (total + n)
+                    _ →
+                        -1
+            _ →
+                -2
+
+
+callText : Result (Worker.CallError String) String → String
+callText result =
+    case result of
+        Ok value →
+            value
+        Err _ →
+            "callerr"
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    case Worker.open owner worker "cfg" Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            first = Worker.events handle
+            second = Worker.events handle
+            a = show (Events.next first)
+            b = show (Events.next second)
+            ping = callText (Worker.call handle Ping)
+            c = show (Events.next second)
+            bursted = callText (Worker.call handle (Burst 70))
+            drained = drain first 64 0
+            again = callText (Worker.call handle (Burst 3))
+            drained2 = drain first 3 0
+            huge = callText (Worker.call handle (BigEvent 200000))
+            small = callText (Worker.call handle (BigEvent 1000))
+            d = show (Events.next first)
+            reader = Task.spawn λ⊤ → show (Events.next first)
+            Task.yieldNow ⊤
+            busy = show (Events.next first)
+            _ = Worker.call handle Ping
+            joined = Task.join reader
+            cleanup = Worker.close handle
+            afterClose = show (Events.next first)
+            String.join
+                [ a
+                , b
+                , ping
+                , c
+                , bursted
+                , String.fromInt drained
+                , again
+                , String.fromInt drained2
+                , huge
+                , small
+                , d
+                , busy
+                , joined
+                , if cleanup == Worker.Confirmed then "confirmed" else "unconfirmed"
+                , afterClose
+                ]
+                " "
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

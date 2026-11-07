@@ -1,0 +1,13 @@
+module Key
+  9:29 List.push l: accepted param
+  19:26 List.push l: accepted param
+  summary compare: π1 R, π1#Key.0 RW[storage]
+  summary eq: π1 R, π1#Key.0 RW[storage]
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  8:33 value Key.compare: pending: it is passed as evidence, whose calls the checker does not see
+  12:33 value Key.eq: pending: it is passed as evidence, whose calls the checker does not see
+  summary viaListLt: π1 RA; res .1 π1
+  summary viaListEq: π1 RA; res .1 π1
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0

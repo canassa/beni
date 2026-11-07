@@ -1,0 +1,14 @@
+module SharedHolderRoutesCall
+  22:13 List.push xs: accepted param
+  38:7 call SharedHolderRoutesCall.pushIt xs: rejected alias: t.a.items holds it and is read at 38:18 (SharedHolderRoutesCall.pushIt writes π1)
+  46:7 call SharedHolderRoutesCall.pushIt xs: rejected alias: v.b.items holds it and is read at 46:18 (SharedHolderRoutesCall.pushIt writes π1)
+  54:7 call SharedHolderRoutesCall.pushIt xs: accepted fresh (SharedHolderRoutesCall.pushIt writes π1)
+  summary pushIt: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary readA: π1.a.items R
+  summary readB: π1.b.items R
+  summary viaA: res .0 fresh1
+  summary viaB: res .0 fresh1
+  summary apart: res .0 fresh1
+  demands 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 2

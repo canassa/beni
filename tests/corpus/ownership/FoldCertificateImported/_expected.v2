@@ -1,0 +1,1 @@
+v2 reads the fold certificate across a block (ownership-v2.md §8 slice 4, *Publication*, C4): the producers are imported, and each witness has the same-module fixture's verdict; its verdicts are v2's own.

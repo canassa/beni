@@ -20,35 +20,10 @@ module Browser
   value hosted : { init : Host msg → model, settle : Host msg, model → model, update : Host msg, msg, model → model, view : model → Html msg } → Program  -- impure
   value installRendered : Value → ⊤  -- impure
   value mountAt : Program, String → Program  -- impure
-  value onRendered : Resume ⊤ → (⊤ → ⊤)  -- impure
+  value onRendered : Resume ⊤ → ⊤ → ⊤  -- impure
   value prerender : Program, List String → Program
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
-module Browser.Canvas
-  type BitmapRenderer
-  alias Canvas
-  type Error
-    Unsupported
-    NotFound
-    WrongElement
-    InvalidDimension
-    AlreadyControlled
-    NoContextOrDetached
-    ContextUnavailable
-    ClosedBitmap
-  alias OffscreenCanvas
-  value bitmapRenderer : Canvas → Result Error BitmapRenderer  -- impure
-  value byId : String → Result Error Canvas  -- impure
-  value create : Int, Int → Result Error Canvas  -- impure
-  value offscreen : Int, Int → Result Error OffscreenCanvas  -- impure
-  value offscreenBitmapRenderer : OffscreenCanvas → Result Error BitmapRenderer  -- impure
-  value offscreenSize : OffscreenCanvas → { height : Int, width : Int }  -- impure
-  value present : BitmapRenderer, Bitmap → Result Error ⊤  -- impure
-  value resize : Canvas, Int, Int → Result Error ⊤  -- impure
-  value resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤  -- impure
-  value size : Canvas → { height : Int, width : Int }  -- impure
-  value snapshot : OffscreenCanvas → Result Error Bitmap  -- impure
-  value transfer : Canvas → Result Error OffscreenCanvas  -- impure
 module Browser.Events
   alias Size
     Size
@@ -71,64 +46,6 @@ module Browser.Events
   value onVisibilityChange : (Visibility → msg) → Sub msg  -- impure
   value size : ⊤ → Size  -- impure
   value visibility : ⊤ → Visibility  -- impure
-module Browser.Image
-  type Alpha
-    DefaultAlpha
-    Straight
-    Premultiplied
-  alias Bitmap
-  alias BitmapOptions
-    BitmapOptions
-  type ColorSpace
-    Srgb
-    DisplayP3
-  type Conversion
-    DefaultConversion
-    NoConversion
-  alias Crop
-    Crop
-  type CrossOrigin
-    SameOrigin
-    Anonymous
-    Credentials
-  alias Data
-  alias Element
-  type Error
-    Unsupported
-    NotFound
-    WrongElement
-    InvalidDimension
-    InvalidCrop
-    WrongPixelView
-    InconsistentPixels
-    SharedPixels
-    BinaryError
-    AllocationFailed
-    DecodeFailed
-    InvalidSource
-  type Orientation
-    FromImage
-    FlipY
-  type PixelFormat
-    Rgba8
-    Rgba16Float
-  type Quality
-    Pixelated
-    Low
-    Medium
-    High
-  alias Settings
-    Settings
-  value bitmap : Input, Maybe Crop, BitmapOptions → Result Error Bitmap  -- suspends
-  value bitmapOptions : BitmapOptions
-  value byId : String → Result Error Element  -- impure
-  value close : Bitmap → ⊤  -- impure
-  value data : Int, Int, Settings → Result Error Data  -- impure
-  value dataFromView : View, Int, Maybe Int, Settings → Result Error Data  -- impure
-  value decode : Element → Result Error ⊤  -- suspends
-  value load : String, CrossOrigin → Result Error Element  -- suspends
-  value pixels : Data → Result Error View  -- impure
-  value settings : Settings
 module Browser.Navigation
   type Error
     BadUrl
@@ -153,93 +70,140 @@ module Browser.Navigation
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
-module Browser.Source
-  type Attachment
-    Bytes
-    SharedBytes
-    BitmapAttachment
-    FrameAttachment
-    CanvasAttachment
-    PixelsAttachment
-  type Bitmap
-  type CanvasElement
-  type Endpoint
-  type ImageElement
-  alias Info
-    Info
-  type Input
-    FromImage
-    FromBitmap
-    FromPixels
-    FromVideo
-    FromFrame
-    FromCanvas
-    FromOffscreen
-  type MessageEvent
-  type OffscreenCanvas
-  alias Outgoing
-    Outgoing
-  alias Packet
-    Packet
-  type Pixels
-  type State
-    Ready
-    Loading
-    Broken
-    Closed
-    Empty
-    ContextValidationRequired
-  type TransferError
-    BinaryTransferError
-    DuplicateTransfer
-    CannotMove
-    CannotCopy
-    ClosedAttachment
-    DataCloneRejected
+module Browser.Worker
+  type CallError a
+    Application
+    PreparationFailed
+    Transport
+  type Cleanup
+    Confirmed
+    Unconfirmed
+    Abandoned
+  type CloneFailure
+    DetachedBuffer
+    ViewOutOfBounds
+    ClosedResource
+    StreamLocked
     CanvasHasContext
-    InvalidMessage
-    CloneUnsupported
-  type Transit
-    Copy
-    Move
-  type VideoElement
-  type VideoFrame
-  value clone : Outgoing → Result TransferError Packet  -- impure
-  value info : Input → Info  -- impure
-  value receive : MessageEvent → Result TransferError Packet  -- impure
-  value same : Input, Input → Bool
-  value send : Endpoint, Outgoing → Result TransferError ⊤  -- impure
-module Browser.Video
-  type Alpha
-    Keep
-    Discard
-  alias Element
-  type Error
-    Unsupported
-    NotFound
-    WrongElement
-    WrongSource
-    InvalidSource
-    Security
-    MissingTimestamp
-    InvalidTimestamp
+    TargetRealmUnavailable
+    SameAgentClusterRequired
+    SendingPortTransferred
+    PortBusy
+    DataChannelNotTransferable
+    MediaSourceAlreadyAttached
+    TrackDetached
+    TrackHandleNotTransferable
+    NativeCloneRejected
+  type ConfigError
+    NonPositiveLimit
     InvalidDuration
-    InvalidDimensions
-    InvalidRectangle
-    InvalidRotation
-    Closed
-  alias Frame
-  alias FrameOptions
-    FrameOptions
-  alias Rect
-    Rect
-  value byId : String → Result Error Element  -- impure
-  value clone : Frame → Result Error Frame  -- impure
-  value close : Frame → ⊤  -- impure
-  value closed : Frame → Bool  -- impure
-  value frame : Input, FrameOptions → Result Error Frame  -- impure
-  value frameOptions : FrameOptions
-  value info : Frame → { closed : Bool, codedHeight : Int, codedWidth : Int, displayHeight : Int, displayWidth : Int, duration : Maybe Int, flip : Bool, rotation : Float, timestamp : Int }  -- impure
+    InvalidPoolBounds
+    InvalidUtilization
+  type ConnectionId
+  type Context a
+  type Credentials
+    Omit
+    SameOrigin
+    Include
+  alias Definition a b c d e f
+    Definition
+  type EmitError
+    EventQueueFull
+    EventChannelClosed
+    EventTargetRequired
+    EventCloneRejected
+    EventCanvasTransferInvalidState
+  type Handle a
+  type Loss
+    ReadyExpired
+    LeaseExpired
+    ConnectionLost
+  alias OpenError a
+    OpenError
+  type OpenReason a
+    UnsupportedWorkerKind
+    InvalidScriptUrl
+    WorkerSecurityDenied
+    ScriptPolicy
+    TrustedScriptUrlRejected
+    WorkerLoadFailed
+    ReadyDeadlineExceeded
+    ClosedBeforeReady
+    InvalidOptions
+    InitializationFailed
+    HandshakeFailed
+  alias Options
+    Options
+  type Policy
+  type PolicyError
+    TrustedTypesUnavailable
+    TrustedPolicyDenied
+    PolicyRefused
+    InvalidPolicyName
+  type PolicyName
+  type PrepareError
+    InvalidMessage
+    InvalidResource
+    PreparationClosed
+  type Prepared a
+  type Program a b c
+  alias Protocol a b c d e f
+    Protocol
+  type SendError
+    WorkerCloneRejected
+    CanvasTransferInvalidState
+    ChannelClosed
+    QueueFull
+    PreparedForAnotherEndpoint
+  type Ticket a b
+  type TransportError
+    SendFailed
+    MessageDeserializationFailed
+    ProtocolVersionMismatch
+    ProtocolRejected
+    PeerUnresponsive
+    PeerClosed
+    CleanupAbandoned
+  value abort : Handle protocol → Cleanup  -- impure
+  value await : Ticket error reply → Result (CallError error) reply  -- suspends
+  value call : Handle (Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply  -- suspends
+  value cancel : Ticket error reply → Cleanup  -- suspends
+  value close : Handle protocol → Cleanup  -- suspends
+  value connection : Context event → Maybe ConnectionId  -- impure
+  value discard : Prepared a → ⊤  -- impure
+  value emit : Context event, event → Result EmitError ⊤  -- impure
+  value events : Handle (Protocol call reply streamRequest error event chunk) → Stream TransportError event  -- impure
+  value open : Scope, Program config state (Protocol call reply streamRequest error event chunk), config, Options → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))  -- suspends
+  value options : Options
+  value policy : PolicyName → Result PolicyError Policy  -- impure
+  value policyName : String → Result PolicyError PolicyName
+  value prepare : a → Result PrepareError (Prepared a)
+  value program : Definition config state call reply error event → Program config state (Protocol call reply streamRequest error event chunk)
+  value run : Program config state protocol → ⊤  -- impure
+  value scope : Context event → Scope  -- impure
+  value send : Handle (Protocol call reply streamRequest error event chunk), Prepared call → Result SendError (Ticket error reply)  -- impure
+module Browser.WorkerRuntime
+  value run : Program config state protocol → ⊤  -- impure
+module Browser.WorkerStream
+  type Chunk a
+  type ReadError a
+    Failed
+    StreamClosed
+    StreamUnresponsive
+  type Step a
+    Item
+    End
+  type Stream a b
+  value end : Stream error a → ⊤  -- impure
+  value fail : Stream error a, error → ⊤  -- impure
+  value make : Int → Stream error a  -- impure
+  value next : Stream error a → Result (ReadError error) (Step a)  -- suspends
+  value offer : Stream error a, a → Bool  -- impure
+  value release : Chunk a → ⊤
+  value take : Chunk a → a
+  value value : Chunk a → a
+module Browser.WorkerWire
+  value normalize : V, Int, String, V → V  -- impure
 module Cmd
   type Cmd a
     Cmd
@@ -270,6 +234,13 @@ module Cmd
   value perform : (Send msg → ⊤) → Cmd msg  -- impure
   value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
 module Dom
+  type Align
+    Start
+    Center
+    End
+    Nearest
+  alias Alignment
+    Alignment
   alias Box
     Box
   type Error
@@ -279,6 +250,9 @@ module Dom
     Unsupported
     NotActivated
     Refused
+  type SelectError
+    NoField
+    NotText
   alias Viewport
     Viewport
   value blur : String → Result Error ⊤  -- impure
@@ -291,7 +265,9 @@ module Dom
   value rendered : ⊤ → ⊤  -- suspends
   value requestFullscreen : String → Result FullscreenError ⊤  -- suspends
   value scrollIntoView : String → Result Error ⊤  -- impure
+  value scrollIntoViewWith : String, Alignment → Result Error ⊤  -- impure
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
+  value select : String, Selection → Result SelectError ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure
 module Hosted
   type Job a
@@ -313,7 +289,7 @@ module Hosted
   value eq : Key, Key → Bool
   value fibered : ⊤ → Bool  -- impure
   value hear : Relay msg → ⊤  -- impure
-  value hook : ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Tap msg  -- impure
+  value hook : ((a → ⊤) → ⊤ → ⊤), (a → msg) → Tap msg  -- impure
   value job : (Send msg → ⊤) → Job msg  -- impure
   value key : k → Key where k.compare : k, k → Order
   value later : (Send msg → ⊤) → Later msg  -- impure
@@ -363,7 +339,7 @@ module Http
     GoodStatus_
   value emptyBody : Body
   value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure
-  value expectSchema : Schema e a → Expect Error a  -- impure
+  value expectSchema : Schema e a → Expect Error a
   value expectString : Expect Error String
   value expectStringResponse : (Response String → Result x a) → Expect x a
   value expectWhatever : Expect Error ⊤
@@ -382,13 +358,13 @@ module Http
   value stringPart : String, String → Part
   value track : String, (Progress → msg) → Sub msg  -- impure
 module Listen
-  value each : ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤  -- suspends
-  value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
-  value on2 : String, String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value each : ((a → ⊤) → ⊤ → ⊤), (a → ⊤) → ⊤  -- suspends
+  value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
+  value on2 : String, String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
 module Random
   alias Generator a
   alias Seed
-  value andThen : (Generator a), (a → Generator b) → Generator b
+  value andThen : Generator a, (a → Generator b) → Generator b
   value constant : a → Generator a
   value float : Float, Float → Generator Float
   value generate : Generator a, (a → msg) → Cmd msg  -- impure
@@ -396,20 +372,21 @@ module Random
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
   value lazy : (⊤ → Generator a) → Generator a
-  value list : (Generator a), Int → Generator (List a)
-  value map : (Generator a), (a → b) → Generator b
-  value map2 : (Generator a), (Generator b), (a, b → c) → Generator c
-  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → Generator d
+  value list : Generator a, Int → Generator (List a)
+  value map : Generator a, (a → b) → Generator b
+  value map2 : Generator a, Generator b, (a, b → c) → Generator c
+  value map3 : Generator a, Generator b, Generator c, (a, b, c → d) → Generator d
   value maxInt : Int
   value minInt : Int
-  value pair : (Generator a), (Generator b) → Generator (a × b)
-  value step : (Generator a), Seed → a × Seed
+  value pair : Generator a, Generator b → Generator (a × b)
+  value step : Generator a, Seed → a × Seed
   value uniform : a, List a → Generator a
-  value value : (Generator a) → a  -- impure
+  value value : Generator a → a  -- impure
   value weighted : Float × a, List (Float × a) → Generator a
 module Rt
   value attr : V, V, V → ⊤  -- impure
   value attrNS : V, V, V, V → ⊤  -- impure
+  value built : V, Int → ⊤ → V  -- impure
   value childHtml : V, V → ⊤  -- impure
   value childList : V, V → ⊤  -- impure
   value childMaybe : V, V → ⊤  -- impure
@@ -467,12 +444,11 @@ module Sub
   value listen : k, (Send a → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
   value map : Sub a, (a → msg) → Sub msg  -- impure
   value none : Sub msg
-  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
+  value on : k, ((a → ⊤) → ⊤ → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
   value taps : Sub msg → List (Key × Kind × Tap msg)
 module Time
   alias Duration
-  type Posix
-    Posix
+  alias Posix
   value every : Duration, (Posix → msg) → Sub msg  -- impure
   value fromMillis : Int → Posix
   value inMillis : Duration → Int

@@ -1,0 +1,5 @@
+-- Dispatch before run, while the compiler's staging bootstrap holds messages.
+pub foreign impure inject : String → String
+
+
+pub foreign impure observed : ⊤ → String

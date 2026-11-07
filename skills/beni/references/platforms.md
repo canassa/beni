@@ -1,12 +1,12 @@
 # Platforms
 
-A program is built for one platform. The platform owns `Program`, the type of `main`, and supplies
-the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or with
-`--platform=<name>`. Six ship in the compiler.
+A program is built for one platform. It owns `Program`, the type of `main`, and supplies the host modules.
+A type of your own with the same name is not the platform's Program. Name the platform in
+`beni.json` (`"build": { "platform": "…" }`) or with `--platform=<name>`. Six ship in the compiler.
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
-| `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
+| `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
@@ -26,7 +26,7 @@ WebSocket on a server and in a page.
 - `Http.Server.listen { host, port } handler` starts a server; the handler is `Request → Response`
   and runs once per request, in a fiber of its own. `Server.text status body` is a response;
   `Server.wait server` waits until it closes; `Server.close server` stops it.
-- `Ssr.render markup` renders an `Html msg` to a `String`.
+- `Ssr.render markup` renders an `Html msg` to a `String`. `ChildProcess.run` starts a program (`child-process.md`).
 - `Log` lines go to standard error, one `logfmt` line each.
 - Run the output with `node out/_main.mjs`.
 
@@ -73,13 +73,13 @@ handle request =
 - Build with `beni build --platform=cloudflare --out=out Main.beni` and point `wrangler.jsonc`'s
   `main` at `out/_worker.mjs`. The entry file exports the Durable Object classes the app's
   `beni.json` lists under `"exports"`.
-- A Durable Object is `Worker.Object.define name schema restore handlers`, listed in `objects`
-  and in `beni.json`'s `"exports"`. `schema` is the object's protocol, the type of the messages
-  it receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler
-  of `Handlers` takes the state and returns the next one; `Object.none` has a handler for each
-  kind that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the
-  Worker), `received` (a message), `alarm`, `tick`/`ticked` (a timer the state names; `tick`
-  must not wait), and the WebSocket handlers.
+- A Durable Object is `Worker.Object.define name schema restore handlers`, listed in `objects` and
+  in `beni.json`'s `"exports"`. `schema` is the object's protocol, the type of the messages it
+  receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler of
+  `Handlers` takes the state and returns the next one; `Object.none` has a handler for each kind
+  that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the Worker),
+  `received` (a message), `alarm` (only at the time `Object.alarmAt` or `alarmIn` set),
+  `tick`/`ticked` (a timer the state names; `tick` must not wait), and the WebSocket handlers.
 - Reach an object with `Worker.objects (Worker.env ctx) "NAME" schema`, then `Worker.byName`,
   `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
   ref message` sends a message and waits for nothing. `Object.ask ref schema (λreply → message)`
@@ -209,8 +209,8 @@ Tick`, `Browser.Events.onKeyDown`, `onKeyUp`, `onResize`, `onAnimationFrame`, `S
 
 - `Http.get { url, expect = Http.expectString }` waits and returns `Result Http.Error String`; `Http.post`,
   `Http.request`; `Http.expectJson` for a type with a `codec`. Call them inside a command's body.
-- `Dom.focus id`, `Dom.blur id`: `Result Dom.Error ⊤`, at once; after a render, inside
-  `Cmd.afterRender`.
+- `Dom.focus id`, `Dom.blur id`, `Dom.scrollIntoViewWith id { block = Dom.Nearest, inline = Dom.Nearest }` (`Start`,
+  `Center`, `End`, `Nearest`): `Result Dom.Error ⊤`, at once; after a render, inside `Cmd.afterRender`.
 - `Dom.requestFullscreen id : Result Dom.FullscreenError ⊤` waits. Call it in a body from a click's message: it needs
   that user activation. A refusal is `NoElement id`, `Unsupported` (an iPhone), `NotActivated` or `Refused reason`.
   `Dom.exitFullscreen ⊤` leaves; the subscription `Dom.onFullscreenChange Changed` sends each change, Escape too.
@@ -293,7 +293,7 @@ errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `rou
 The vocabulary the page platforms and `Ssr` share: every element, attribute and event, with the
 payload each event carries (`onInput` gives the input's value as a `String`; `onClick` gives the
 `Event`; the pointer events give an `Html.Pointer`, read with `Html.localX` and `Html.localY`).
-`Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this platform;
-the others include it.
+`Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`, `Html.targetSelection` (a text field's selection, in code
+points; `Dom.select id selection` sets one). A program never names this platform; the others include it.
 
-Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12; `platforms/*/beni.json`; the modules' doc comments.
+Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12, §9.14; `platforms/*/beni.json`; the modules' doc comments.

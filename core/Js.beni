@@ -63,6 +63,26 @@ pub foreign pure isUndefined : unused Value → fresh bool
 pub foreign pure isNullish : unused Value → fresh bool
 
 
+--| `a < b`: JavaScript's comparison, written in place. Two numbers compare
+--| by value and two strings by their UTF-16 code units. Hand it nothing
+--| else: two objects compare as their text (`le` and `ge` are both true of
+--| two records), and a null-prototype object or a `Symbol` throws
+--| `TypeError` (`boundary.md` §4.2, *The comparisons*).
+pub foreign pure lt : unused a, unused a → fresh bool
+
+
+--| `a > b`.
+pub foreign pure gt : unused a, unused a → fresh bool
+
+
+--| `a <= b`.
+pub foreign pure le : unused a, unused a → fresh bool
+
+
+--| `a >= b`.
+pub foreign pure ge : unused a, unused a → fresh bool
+
+
 --| `a & b`.
 pub foreign pure bitAnd : int, int → int
 
@@ -120,6 +140,15 @@ pub foreign pure regExp : pattern, flags → Value
 pub foreign impure global : name → Value
 
 
+--| `import * as m from "node:path"`: the namespace object of a host
+--| built-in, written as a static import at the top of the module that
+--| calls it, once per specifier. The specifier is a string literal naming
+--| a `node:` or `cloudflare:` built-in; `Js.get (Js.module "node:path")
+--| "basename"` is `m.basename`. Written with its literal or not at all:
+--| passed as a value, it is a defect.
+pub foreign impure module : specifier → Value
+
+
 --| `o.name`, or `o[name]` when the name is not a literal identifier.
 pub foreign impure get : Value, name → Value
 
@@ -156,10 +185,12 @@ pub foreign impure array : aliased elements → fresh Value
 pub foreign pure object : aliased fields → fresh Value
 
 
---| `function () { const self = this; … }`: a function JavaScript calls as
---| a method, `o.m()`, its receiver handed to the lambda. Written with a
---| lambda, `Js.method λself → …`, the lambda's body is the function's and
---| no arrow is made. `sync`: JavaScript calls it and waits for nothing.
+--| `function (a, b) { const self = this; … }`: a function JavaScript calls
+--| as a method, `o.m(x, y)`, its receiver handed to the lambda as `self`
+--| and its arguments as the parameters after it. Written with a lambda,
+--| `Js.method λself a b → …`, the lambda's body is the function's and no
+--| arrow is made; the lambda is typed by its own count, each parameter a
+--| `Value`. `sync`: JavaScript calls it and waits for nothing.
 pub foreign pure method : sync (Value → a) → Value
 
 
@@ -248,6 +279,11 @@ pub foreign pure pure : once returned sync (⊤ → a) → a
 --| of `⊤` because a `foreign` value that is not one may not be
 --| polymorphic, and this module names no `Bool`.
 pub foreign pure development : ⊤ → bool
+
+
+--| Private entry realm selector. Written as a Boolean literal in entry
+--| builds; only library output writes a runtime fallback.
+pub foreign pure entryWindow : ⊤ → fresh bool
 
 
 --| `True` under the hidden build flag `--test-hooks` and `False` otherwise,

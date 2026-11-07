@@ -1,0 +1,55 @@
+-- ownership: a list that holds one element twice, handed to a writer of
+-- every element's lists (§2.9 *The repeating split*, #1478; found by the
+-- review of #1500). `List.push bs x` with `x` taken from `bs` holds `x` at
+-- two positions, so `g` writes `x`'s lists twice in place where value
+-- semantics write each copy once: refused, and so is the rest of a
+-- pattern over that list. v1 and master before §2.9 rule 3 accept both
+-- (a known entry).
+type B
+    = B (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+g : List B → B
+g ys = incAll (B ys [])
+
+
+pub pushedTwice : List B → B
+pushedTwice bs =
+    case bs of
+        [ x, …_ ] →
+            g (List.push bs x)
+
+        _ →
+            B [] []
+
+
+pub pushedRest : List B → B
+pushedRest bs =
+    case bs of
+        [ x, …_ ] →
+            case List.push bs x of
+                [ _, …rest ] →
+                    g rest
+
+                [] →
+                    B [] []
+
+        _ →
+            B [] []

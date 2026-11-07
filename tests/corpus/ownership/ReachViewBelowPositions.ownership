@@ -1,0 +1,15 @@
+module ReachViewBelowPositions
+  32:5 List.push l: accepted fresh
+  38:5 List.push l: accepted fresh
+  44:5 List.push l: accepted fresh
+  50:7 List.push l: accepted fresh
+  56:5 List.push l: accepted fresh
+  summary rest: π1 RA; res fresh1 π1
+  summary swap: π2 RA, π3 RA; res ~π3 π2
+  summary lit: π1 RA; res [*] fresh2 ~condition(fresh1) ~fresh1 ~π1, fresh3{excl π1}
+  summary deep: π1 RA; res [*] fresh2 ~condition(fresh1) ~fresh1 ~π1, fresh3{excl π1}
+  summary last: π1 RA; res [*] fresh1 ~condition(fresh2) ~fresh2 ~π1, fresh3{excl π1}
+  summary kept: π1 RA; res .0 fresh3{excl π1}, .0[*] fresh2 ~condition(fresh1) ~fresh1 ~π1, .1 ~condition(fresh5) π1, condition(fresh4){lost}
+  summary swapped: π2 RA, π3 RA; res [*] fresh1 ~condition(fresh3) ~fresh3 ~π2 ~π3, fresh2{excl π2, excl π3}
+  demands 5: accepted 5 (fresh 5, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 5: accepted 5 (fresh 5, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,0 +1,101 @@
+-- run: `ChildProcess.run` answers each failure Node documents that a
+-- program can arrange with its own constructor of `ChildProcess.RunError`
+-- (boundary.md §9.14 (e), CLAUDE.md rule 9). Node reports some of them as
+-- the child's `error` event (a missing program, one that may not run) and
+-- throws the others from `spawn` itself (a `cwd` that is a file, arguments
+-- too long, a name too long, a NUL character); both routes answer the
+-- same way. The program runs in its project directory, which holds this
+-- file and nothing that is executable.
+--
+-- Output over `maxOutput` is `OutputTooLarge`, and output of exactly
+-- `maxOutput` bytes is not. A child that writes forever is stopped: the
+-- case ends.
+import ChildProcess exposing (Command, Output, RunError)
+import Io
+import Node exposing (Program)
+
+
+describe : RunError → String
+describe error =
+    case error of
+        ChildProcess.NotFound →
+            "not found"
+
+        ChildProcess.PermissionDenied →
+            "permission denied"
+
+        ChildProcess.NotADirectory →
+            "not a directory"
+
+        ChildProcess.ArgumentsTooLong →
+            "arguments too long"
+
+        ChildProcess.NameTooLong →
+            "name too long"
+
+        ChildProcess.SymlinkLoop →
+            "symlink loop"
+
+        ChildProcess.FileBusy →
+            "file busy"
+
+        ChildProcess.BadExecutable →
+            "bad executable"
+
+        ChildProcess.TooManyOpenFiles →
+            "too many open files"
+
+        ChildProcess.TooManyProcesses →
+            "too many processes"
+
+        ChildProcess.OutOfMemory →
+            "out of memory"
+
+        ChildProcess.InvalidArgument →
+            "invalid argument"
+
+        ChildProcess.OutputTooLarge →
+            "output too large"
+
+
+attempt : String, Command → String
+attempt label cmd =
+    case ChildProcess.run cmd of
+        Ok output →
+            label ++ ": ran, stdout " ++ output.stdout
+
+        Err error →
+            label ++ ": " ++ describe error
+
+
+sh : String → Command
+sh script = ChildProcess.command "/bin/sh" [ "-c", script ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ attempt "missing" (ChildProcess.command "/nonexistent/program" [])
+        , attempt "missing on PATH" (ChildProcess.command "no-such-program-beni" [])
+        , attempt "missing cwd" { sh "true" | cwd = Just "no such directory" }
+        , attempt "not executable" (ChildProcess.command "./ChildProcessErrors.beni" [])
+        , attempt "directory" (ChildProcess.command "." [])
+        , attempt "cwd is a file" { sh "true" | cwd = Just "ChildProcessErrors.beni" }
+        , attempt "through a file" (ChildProcess.command "./ChildProcessErrors.beni/inside" [])
+        , attempt "long argument"
+            (ChildProcess.command "/bin/sh" [ "-c", "true", String.repeat "x" 3000000 ])
+        , attempt "long name" (ChildProcess.command ("/" ++ String.repeat "a" 5000) [])
+        , attempt "empty program" (ChildProcess.command "" [])
+        , attempt "nul in program" (ChildProcess.command "/bin/s\u{0}h" [])
+        , attempt "nul in argument" (ChildProcess.command "/bin/sh" [ "-c", "a\u{0}b" ])
+        , attempt "nul in cwd" { sh "true" | cwd = Just "a\u{0}b" }
+        , attempt "nul in a value"
+            { sh "true" | env = ChildProcess.Extend [ ( "BENI_A", "a\u{0}b" ) ] }
+        , attempt "nul in a name" { sh "true" | env = ChildProcess.Only [ ( "BENI\u{0}A", "x" ) ] }
+        , attempt "= in a name" { sh "true" | env = ChildProcess.Extend [ ( "BENI=A", "x" ) ] }
+        , attempt "empty name" { sh "true" | env = ChildProcess.Only [ ( "", "x" ) ] }
+        , attempt "stdout over the limit" { sh "printf 0123456789A" | maxOutput = 10 }
+        , attempt "stderr over the limit" { sh "printf 0123456789A >&2" | maxOutput = 10 }
+        , attempt "at the limit" { sh "printf 0123456789" | maxOutput = 10 }
+        , attempt "writes forever" { sh "while :; do echo x; done" | maxOutput = 1000 }
+        ]

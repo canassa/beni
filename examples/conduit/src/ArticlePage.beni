@@ -7,6 +7,7 @@ import Article exposing (Article)
 import Author exposing (Author)
 import Cmd exposing (Cmd)
 import Comment exposing (Comment)
+import Date
 import Html exposing (Html)
 import Page
 import Route
@@ -262,7 +263,7 @@ viewMeta model article =
         <a href={Route.href (Route.Profile name)}>{Author.avatar profile.image ""}</a>
         <div class="info">
             {Author.link article.author}
-            {Article.timestamp article.createdAt}
+            {Article.timestamp (Session.zone model.session) article.createdAt}
         </div>
         {case Session.cred model.session of
             Just cred →
@@ -321,7 +322,7 @@ viewComments model slug =
             <>
                 {viewAddComment model.session slug commentText}
                 <For each={comments} keyed={.id}>
-                    {viewComment (Session.cred model.session) slug _}
+                    {viewComment (Session.cred model.session) (Session.zone model.session) slug _}
                 </For>
             </>
 
@@ -377,8 +378,8 @@ viewAddComment session slug commentText =
             </p>
 
 
-viewComment : Maybe Cred, String, Comment → Html Msg
-viewComment maybeCred slug comment =
+viewComment : Maybe Cred, Date.Zone, String, Comment → Html Msg
+viewComment maybeCred zone slug comment =
     profile = Author.profile comment.author
     <div class="card">
         <div class="card-block"><p class="card-text">{comment.body}</p></div>
@@ -390,7 +391,7 @@ viewComment maybeCred slug comment =
             <a class="comment-author" href={Route.href (Route.Profile profile.username)}>
                 {profile.username}
             </a>
-            {Article.timestamp comment.createdAt}
+            {Article.timestamp zone comment.createdAt}
             {case ( comment.author, maybeCred ) of
                 ( Author.IsViewer _, Just cred ) →
                     <span class="mod-options">

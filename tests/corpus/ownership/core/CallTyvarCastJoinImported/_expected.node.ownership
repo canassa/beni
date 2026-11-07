@@ -1,0 +1,20 @@
+module Casts
+  summary mix: π2 RA, π3 RA; res π2 π3
+  summary mix2: π2 RA; res π2
+  summary mix3: π2 RA; res fresh2 π2, ⟨as 1:List::List(33:1:List::List(16:var(0:Casts:2:1)))⟩[*] fresh1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  17:9 List.push xs: rejected alias: g.x.c holds it and is read at 18:5
+  28:9 List.push xs: rejected alias: g.x.c holds it and is read at 29:5
+  34:5 List.push v.c: accepted param
+  41:9 call Main.w g.x.c: rejected call: xs holds it and is read at 42:5; the callee writes it only through an approximate step (Main.w writes π1.x.c) (approx)
+  summary n: π1.x R, π2 R
+  summary viaMix: π1 RW[storage], π1[*] R, π2 R
+  summary n2: π1.x R
+  summary viaCast: π1 RW[storage], π1[*] R
+  summary w: π1.x R, π1.x.c RAw[storage], π1.x.c[*] A; res [*] ~fresh3 ~π1.x.c[*], [*]⋆ ~fresh1, ~fresh2 ~π1.x.c, ⋆ ~fresh1
+  summary viaWrite: π1 Rw[storage], π1[*] R
+  demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause alias 2
+cause call 1

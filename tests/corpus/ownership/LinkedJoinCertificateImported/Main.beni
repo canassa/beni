@@ -1,0 +1,89 @@
+-- ownership (project): `LinkedJoinCertificate` with the writer and the
+-- builders in another module (ownership-v2.md Appendix B, L×J, the S3b
+-- half; R-4.6.2, R-4.6.4). The verdicts are the same-module fixture's:
+-- `[ x ]` joined with itself, with a parameter leaf, with an empty list or
+-- in `chooseOne` is accepted, and so are two distinct fresh members; every
+-- join that holds `[ x, x ]` is refused.
+import Lists
+
+
+pub sameSingle : Bool, List Int → List (List Int)
+sameSingle c x =
+    Lists.pushAll
+        (if c then
+            Lists.one x
+         else
+            Lists.one x
+        )
+
+
+pub singleOrTwin : Bool, List Int → List (List Int)
+singleOrTwin c x =
+    Lists.pushAll
+        (if c then
+            Lists.one x
+         else
+            Lists.two x
+        )
+
+
+pub twin : List Int → List (List Int)
+twin x = Lists.pushAll (Lists.two x)
+
+
+pub freshMembers : Bool → List (List Int)
+freshMembers c =
+    Lists.pushAll
+        (if c then
+            Lists.one [ 1 ]
+         else
+            [ [ 2 ], [ 3 ] ]
+        )
+
+
+pub leafOrOne : Bool, List (List Int), List Int → List (List Int)
+leafOrOne c xss x =
+    Lists.pushAll
+        (if c then
+            xss
+         else
+            Lists.one x
+        )
+
+
+pub leafOrTwin : Bool, List (List Int), List Int → List (List Int)
+leafOrTwin c xss x =
+    Lists.pushAll
+        (if c then
+            xss
+         else
+            Lists.two x
+        )
+
+
+pub emptyOrOne : Bool, List Int → List (List Int)
+emptyOrOne c x =
+    Lists.pushAll
+        (if c then
+            []
+         else
+            Lists.one x
+        )
+
+
+pub emptyOrTwin : Bool, List Int → List (List Int)
+emptyOrTwin c x =
+    Lists.pushAll
+        (if c then
+            []
+         else
+            Lists.two x
+        )
+
+
+pub chosenOne : Bool, List Int → List (List Int)
+chosenOne c x = Lists.pushAll (Lists.chooseOne c x)
+
+
+pub chosenTwin : Bool, List Int → List (List Int)
+chosenTwin c x = Lists.pushAll (Lists.choose c x)

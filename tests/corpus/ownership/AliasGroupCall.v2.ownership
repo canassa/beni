@@ -1,0 +1,20 @@
+module AliasGroupCall
+  13:9 AliasGroupCall.pushOdd <call List.push>: accepted param
+  13:26 List.push xs: accepted param
+  21:9 AliasGroupCall.pushN <call List.push>: accepted param
+  21:24 List.push xs: accepted param
+  29:13 AliasGroupCall.pushN xs: rejected later-use: xs is read again at 29:11
+  33:12 AliasGroupCall.pushN xs: accepted param
+  account pushN: source 31, baseline 3192, growth 0 of 65536, total 3192, continuation 3017 of 31744, demands 170, walks 4, direct_data lanes 4, liveness_index lanes 10, direct_demand_query lanes 3, call_view lanes 8, transfer_settlement lanes 68
+  crossing: reads 8, redone 0, base moves 6
+  summary pushN: π2 RAW, π2[*] RA; res [*] π2[*]{excl π2[*]}, π2 π2
+  account pushOdd: source 31, baseline 2836, growth 0 of 65536, total 2836, continuation 2680 of 31744, demands 170, walks 4, direct_data lanes 4, liveness_index lanes 8, direct_demand_query lanes 3, call_view lanes 8, transfer_settlement lanes 68
+  summary pushOdd: π2 RAW, π2[*] RA; res [*] π2[*]{excl π2[*]}, π2 π2
+  account kept: source 18, baseline 252, growth 0 of 65536, total 252, continuation 234 of 18432, demands 26, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 19
+  summary kept: π1 RAW, π1[*] RA; res .0 π1 π1, .0[*] π1[*]{excl π1[*]}, .1 π1
+  account owned: source 12, baseline 206, growth 0 of 65536, total 206, continuation 199 of 12288, demands 22, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 13
+  summary owned: π1 RAW, π1[*] RA; res [*] π1[*]{excl π1[*]}, π1 π1
+  block: 880 bytes, hash b833d82b1b0f570f
+  demands 6: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 6: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1

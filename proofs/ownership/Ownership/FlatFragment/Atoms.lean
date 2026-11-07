@@ -54,20 +54,6 @@ theorem variable_runtime_success {declarations : List Decl} {vs : ValueSemantics
   · rw [heap_atom_eval_equation hs (heapEnv env) heapAtom]
     simp [hasDepth, heapFuel, heapObservedRun, heapAtomPost, Except.bind, Except.pure]
 
-theorem variable_post_correspondence {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {key : Var} {observation : Observation} {actual : Value} {abstract : Abstract}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (use : (key, []) ∈ live)
-    (binding : env.lookup key = some (observation, actual))
-    (abstractBinding : aenv.lookup key = some abstract) :
-    Corresponds (heapAtomPost hs vs.kept.toList).heap observation actual ∧
-      Describes gamma (heapAtomPost hs vs.kept.toList).heap abstract actual := by
-  have facts := live_variable_result inv use binding abstractBinding
-  have heapSame : (heapAtomPost hs vs.kept.toList).heap = hs.heap := by
-    unfold heapAtomPost heapObserved heapTicked
-    split <;> rfl
-  rw [heapSame]
-  exact ⟨facts.1, facts.2.1⟩
-
 end Ownership.FlatFragment.VariableRuntime
 
 /-! integer-atom preservation case.
@@ -115,24 +101,31 @@ theorem flatInvariant_state_frame
       kept := by simpa only [valueKept, heapKept, heapSame] using inv.kept
       keptEscaped := by simpa only [heapKept, heapSame] using inv.keptEscaped
       bindings := by simpa only [heapSame] using inv.bindings
-      described := by simpa only [heapSame] using inv.described
+      described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (linksSame.trans inv.links)
+      linksValid := Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid heapSame linksSame
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed (by rw [linksSame]; exact inv.linkClosed)
     }
-    heapInts := by simpa only [heapSame] using inv.heapInts
-    links := linksSame.trans inv.links
+    linkClosed := by rw [linksSame]; exact inv.linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    deepTags := by simpa only [heapSame] using inv.deepTags
+    bindingsBounded := by simpa only [heapSame] using inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
     liveTyped := inv.liveTyped
     namingBound := by simpa only [heapSame] using inv.namingBound
     observers := by simpa only [heapSame, valueKept, heapKept] using inv.observers
+    heapKinds := by
+      obtain ⟨kinds, state⟩ := inv.heapKinds
+      exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame]) linksSame⟩
+    observationsTyped := inv.observationsTyped
+    objectsCertified := by simpa only [heapSame] using inv.objectsCertified
+    liveTags := by simpa only [heapSame] using inv.liveTags
   }
 
 /-- The computed atom post-states change only fuel and external observer
@@ -379,47 +372,5 @@ theorem variable_atom_failure {declarations : List Decl} {vs : ValueSemantics.St
     · have success := (variable_runtime_success inv binding noDepth noFuel).1
       rw [success] at failed
       contradiction
-
-theorem variable_atom_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {key : Var} {before : St} {next : St} {ctx : Context} {after : Live} {site : List Nat} {result : Abstract}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
-    (use : (key, []) ∈ live)
-    (defaultConfig : ctx.config = {})
-    (accepted : (inferExpr inferenceFuel ctx aenv (.atom (.var key)) after site).run before =
-      .ok (result, next)) :
-    next.facts = before.facts ∧
-    (∀ value vs',
-      (ValueSemantics.eval depth declarations none (valueEnv env)
-        (.atom (.var key))).run vs = .ok (value, vs') →
-      ∃ actual hs',
-        (InPlaceSemantics.eval depth declarations none (heapEnv env)
-          (.atom (.var key))).run hs = .ok (actual, hs') ∧
-        FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma hs'.heap result actual) ∧
-    (∀ message,
-      (ValueSemantics.eval depth declarations none (valueEnv env)
-        (.atom (.var key))).run vs = .error message →
-      ∃ actualMessage,
-        (InPlaceSemantics.eval depth declarations none (heapEnv env)
-          (.atom (.var key))).run hs = .error actualMessage) := by
-  obtain ⟨abstractBinding, checkerState⟩ := infer_variable_lookup defaultConfig accepted
-  obtain ⟨observation, actual, binding⟩ := runtime_binding_of_abstract inv abstractBinding
-  obtain ⟨valueAtom, _⟩ := variable_atoms_run binding
-  refine ⟨congrArg St.facts checkerState, ?_, ?_⟩
-  · intro value vs' run
-    by_cases noDepth : depth = 0
-    · rw [value_atom_eval_equation vs (valueEnv env) valueAtom] at run
-      simp [noDepth] at run
-    · by_cases noFuel : vs.fuel = 0
-      · rw [value_atom_eval_equation vs (valueEnv env) valueAtom] at run
-        simp [noDepth, noFuel] at run
-      · obtain ⟨valueRun, heapRun, postInvariant⟩ :=
-          variable_runtime_success inv binding noDepth noFuel
-        rw [valueRun] at run
-        cases run
-        have correct := variable_post_correspondence inv use binding abstractBinding
-        refine ⟨actual, heapAtomPost hs vs.kept.toList, heapRun, ?_, correct.1, correct.2⟩
-        simpa only [checkerState] using postInvariant
-  · intro message failed
-    exact variable_atom_failure inv binding failed
 
 end Ownership.FlatFragment.VariablePreservation

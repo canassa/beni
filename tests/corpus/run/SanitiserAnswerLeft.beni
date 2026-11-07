@@ -1,0 +1,41 @@
+-- A label's answer that leaves (`ownership-v2.md` §2.11.3, #2059): `hold` spawns on
+-- what `c` answers, so `hold`'s contract says nothing of `c` and no write of it,
+-- only that its answer left. A caller's closure answers `y`, so `y` escapes at the
+-- call and the edit is refused; asked nothing, the task reads it stale. `runs`
+-- answers a function and runs it: the same fact, one call further.
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+hold : (⊤ → List Int) → Int
+hold c =
+    a = c ⊤
+    f = Task.spawnDetached λ⊤ → show a
+    0
+
+
+runs : (⊤ → (⊤ → List Int)) → Int
+runs c =
+    g = c ⊤
+    a = g ⊤
+    f = Task.spawnDetached λ⊤ → show a
+    0
+
+
+main : Program
+main = Io.run λ⊤ →
+    y = [ 1 ]
+    a = hold λ⊤ → y
+    z = List.push y 2
+    w = [ 1 ]
+    b = runs λ⊤ → λ⊤ → w
+    u = List.push w 2
+    Task.yieldNow ⊤
+    Node.print (String.fromInt a ++ show z ++ String.fromInt b ++ show u)

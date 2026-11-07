@@ -1,0 +1,21 @@
+module LevelReadSummary
+  21:19 LevelReadSummary.incList <call List.push>[*]#Rose.0: accepted param
+  21:19 LevelReadSummary.incList <call List.push>[*]#Rose.0⟨Rose⟩: accepted param
+  21:28 List.push kids: accepted param
+  31:15 LevelReadSummary.incAll s#Rose.0: accepted param
+  31:15 LevelReadSummary.incAll s#Rose.0[*]#Rose.0: accepted param
+  31:15 LevelReadSummary.incAll s#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  31:26 LevelReadSummary.incList rest[*]#Rose.0: accepted param
+  31:26 LevelReadSummary.incList rest[*]#Rose.0⟨Rose⟩: accepted param
+  72:7 LevelReadSummary.incAll v#Rose.0: rejected alias: w#Rose.0 holds it and is read at 72:17
+  72:7 LevelReadSummary.incAll v#Rose.0[*]#Rose.0: rejected alias: w#Rose.0 holds it and is read at 72:17
+  72:7 LevelReadSummary.incAll v#Rose.0[*]⟨Rose⟩#Rose.0: rejected alias: w#Rose.0 holds it and is read at 72:17 (approx)
+  87:7 LevelReadSummary.incAll u#Rose.0: accepted fresh
+  87:7 LevelReadSummary.incAll u#Rose.0[*]#Rose.0: accepted fresh
+  87:7 LevelReadSummary.incAll u#Rose.0[*]⟨Rose⟩#Rose.0: rejected alias: w#Rose.0 holds it and is read at 87:17 (approx)
+  102:7 LevelReadSummary.incAll u#Rose.0: accepted fresh
+  102:7 LevelReadSummary.incAll u#Rose.0[*]#Rose.0: accepted fresh
+  102:7 LevelReadSummary.incAll u#Rose.0[*]⟨Rose⟩#Rose.0: rejected alias: w#Rose.0 holds it and is read at 102:17 (approx)
+  demands 17: accepted 12 (fresh 4, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 17: accepted 12 (fresh 4, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 5

@@ -1,0 +1,28 @@
+module RecursiveGroupsSharedRead
+  13:13 call RecursiveGroupsSharedRead.f a: rejected later-use: a is read again at 13:21 (RecursiveGroupsSharedRead.f writes π1)
+  13:13 call RecursiveGroupsSharedRead.f b: rejected later-use: b is read again at 13:21 (RecursiveGroupsSharedRead.f writes π2)
+  13:21 call RecursiveGroupsSharedRead.g a: rejected later-use: a is read again at 14:9 (RecursiveGroupsSharedRead.g writes π1)
+  13:21 call RecursiveGroupsSharedRead.g b: rejected later-use: b is read again at 16:9 (RecursiveGroupsSharedRead.g writes π2)
+  16:9 call RecursiveGroupsSharedRead.h a: accepted param (RecursiveGroupsSharedRead.h writes π2)
+  16:9 call RecursiveGroupsSharedRead.h b: accepted param (RecursiveGroupsSharedRead.h writes π1)
+  20:22 call RecursiveGroupsSharedRead.h a: accepted param (RecursiveGroupsSharedRead.h writes π1)
+  20:22 call RecursiveGroupsSharedRead.h b: accepted param (RecursiveGroupsSharedRead.h writes π2)
+  28:22 List.push <call RecursiveGroupsSharedRead.h>: rejected call: b may hold it through the call at 28:33, and is read at 28:53 (approx)
+  28:33 call RecursiveGroupsSharedRead.h a: accepted param (RecursiveGroupsSharedRead.h writes π1)
+  28:33 call RecursiveGroupsSharedRead.h b: rejected later-use: b is read again at 28:53 (RecursiveGroupsSharedRead.h writes π2)
+  35:13 call RecursiveGroupsSharedRead.fSame a: rejected later-use: a is read again at 35:25 (RecursiveGroupsSharedRead.fSame writes π1)
+  35:25 call RecursiveGroupsSharedRead.gSame a: rejected later-use: a is read again at 36:9 (RecursiveGroupsSharedRead.gSame writes π1)
+  38:9 call RecursiveGroupsSharedRead.hSame a: accepted param (RecursiveGroupsSharedRead.hSame writes π1)
+  42:26 call RecursiveGroupsSharedRead.hSame a: accepted param (RecursiveGroupsSharedRead.hSame writes π1)
+  50:22 List.push <call RecursiveGroupsSharedRead.hSame>: accepted param
+  50:33 call RecursiveGroupsSharedRead.hSame a: accepted param (RecursiveGroupsSharedRead.hSame writes π1)
+  summary h: π1 RAW[storage], π2 RAW[storage]; res ~π2 π1
+  summary f: π1 RW[storage], π2 RW[storage]
+  summary g: π1 RW[storage], π2 RW[storage]
+  summary hSame: π1 RAW[storage], π2 R; res π1
+  summary fSame: π1 RW[storage], π2 R
+  summary gSame: π1 RW[storage], π2 R
+  demands 17: accepted 9 (fresh 0, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 17: accepted 9 (fresh 0, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause later-use 7
+cause call 1

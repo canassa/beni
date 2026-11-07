@@ -1,0 +1,57 @@
+-- A runtime catch for a callback that a recursive function calls and also
+-- hands to itself (`ownership-v2.md` §2.11.3): `myMap` calls `f` once per
+-- activation and passes it to the next one, so `f` runs once per element.
+-- v2 joined the two sources of the label's calls, once with once, and read
+-- the label as called once; so did `List.map`'s and `List.initialize`'s,
+-- whose helpers recurse the same way. A closure that writes its capture
+-- `xs` was accepted under each of them, and the sanitised run trapped on
+-- the stale read of `xs` by the closure's second call. The sources now add
+-- up, and two calls are many.
+import List
+import Node exposing (Program)
+import String
+
+
+myMap : List Int, (Int → List Int) → List (List Int)
+myMap xs f =
+    case xs of
+        [] →
+            []
+
+        [ x, …rest ] →
+            [ f x, …myMap rest f ]
+
+
+viaMyMap : List Int, List Int → List (List Int)
+viaMyMap xs ys = myMap ys λy → [ …xs, y ]
+
+
+viaMap : List Int, List Int → List (List Int)
+viaMap xs ys = List.map ys λy → [ …xs, y ]
+
+
+viaInitialize : List Int → List (List Int)
+viaInitialize xs = List.initialize 3 λi → List.push xs i
+
+
+viaMaybe : List Int, Maybe Int → Maybe (List Int)
+viaMaybe xs m = Maybe.map m λx → [ …xs, x ]
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows rs =
+    sep = "|"
+    String.join (List.map rs show) sep
+
+
+main : Program
+main =
+    a = shows (viaMyMap [ 1 ] [ 2, 3 ])
+    b = shows (viaMap [ 4 ] [ 5, 6 ])
+    c = shows (viaInitialize [ 7 ])
+    d = show (Maybe.withDefault (viaMaybe [ 8 ] (Just 9)) [])
+    Node.print "${a} ${b} ${c} ${d}"

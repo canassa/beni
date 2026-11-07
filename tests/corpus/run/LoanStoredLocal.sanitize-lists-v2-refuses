@@ -1,0 +1,2 @@
+# v2 refuses the edit of a cell while a value built from its loan outlives the loan's region (§2.13.7).
+47:5 list_still_used Ref.update

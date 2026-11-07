@@ -9,7 +9,7 @@
 //! (§2.13.2) and the `withDefault (map m f) d` shapes (§2.13.12).
 //!
 //! **No name is compared to text here.** The `withDefault`/`map` targets
-//! arrive resolved in `Input.joins` — the caller (L10) resolves them once
+//! arrive resolved in `Input.joins` — the caller (L13) resolves them once
 //! through the interner and the interfaces, which is §5's one allowlisted
 //! name comparison — and are matched by instruction tag and payload. A
 //! type's method is told by its symbol against the interner's fixed
@@ -31,6 +31,7 @@ const Dispatch = @import("../check/Dispatch.zig");
 const Edges = @import("../check/Edges.zig");
 const Scc = @import("../check/Scc.zig");
 const InternPool = @import("../InternPool.zig");
+const Interface = @import("../resolve/Interface.zig");
 
 pub const none: u32 = Ids.none_int;
 
@@ -292,6 +293,85 @@ fn join(gpa: Allocator, bir: *const Bir, targets: []const JoinTargets, inst: Bir
         try out.append(gpa, .{ .outer = inst.int(), .inner = inner.int(), .m = iargs[0].int(), .f = iargs[1].int(), .d = args[1].int() });
         return;
     }
+}
+
+// ---- aliases of functions (R-5.5.6) ----
+
+/// A value with no parameters and no words whose body is a bare name of
+/// another top-level value, of its module or another: an alias, when its
+/// type is a function's (the caller knows; a called name always is one).
+pub fn isAliasShape(bir: *const Bir, d: Bir.Decl) bool {
+    if (d.kind != .value or d.params != 0 or bir.ownSlotsV2(d).len != 0) return false;
+    const b = d.body.unwrap() orelse return false;
+    return switch (bir.instTag(b)) {
+        .top, .ext_value => true,
+        else => false,
+    };
+}
+
+/// The function a called declaration `(module, decl)` names through
+/// top-level aliases (R-5.5.6, ownership-v2.md §8 S3b slice 5e): while it
+/// is an alias shape, the value it names, through any number of names and
+/// across modules (`birs` and `provenance` are the session's, by module).
+/// Only a callee is resolved so: a called value is of a function type, so
+/// each name on the way is an alias of a function, never data (S7's). A
+/// cycle of values is the checker's error; the bound of every declaration
+/// of the session stops one all the same, on a name of it.
+pub fn aliasTarget(birs: []const *const Bir, provenance: []const Interface.Provenance, t0: [2]u32) [2]u32 {
+    var t = t0;
+    var budget: usize = 0;
+    for (birs) |b| budget += b.decls.len;
+    while (budget > 0) : (budget -= 1) t = aliasStep(birs, provenance, t) orelse return t;
+    return t;
+}
+
+/// One name of an alias chain: the value `t` names, or null when `t` is no
+/// alias shape (the chain's end).
+pub fn aliasStep(birs: []const *const Bir, provenance: []const Interface.Provenance, t: [2]u32) ?[2]u32 {
+    if (t[0] >= birs.len) return null;
+    const owner = birs[t[0]];
+    if (t[1] >= owner.decls.len or !isAliasShape(owner, owner.decls[t[1]])) return null;
+    const b = owner.decls[t[1]].body.unwrap().?;
+    const data = owner.instData(b);
+    return switch (owner.instTag(b)) {
+        .top => .{ t[0], data.lhs },
+        .ext_value => .{ data.lhs, if (data.lhs < provenance.len) (provenance[data.lhs].valueDecl(data.rhs) orelse return null).int() else return null },
+        else => null,
+    };
+}
+
+/// The field names of the state protocol, resolved by the caller (L13).
+pub const EntryNames = struct { update: ?InternPool.Symbol, settle: ?InternPool.Symbol };
+
+/// Whether parameter `k` of worded declaration `d`, written `entry`, has the
+/// update/settle state protocol (ownership-v2.md §2.13.4 item 4, R-5.8.1):
+/// a record type written out with an `update` of two parameters, or of
+/// three beside a `settle` of two whose `update` answers its third
+/// parameter's type. Anything else is an unsupported shape.
+pub fn entryProtocol(bir: *const Bir, d: Bir.Decl, k: usize, names: EntryNames) bool {
+    const ann = d.annotation.unwrap() orelse return false;
+    if (bir.instTag(ann) != .type_fn) return false;
+    const ps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Bir.Inst.Index);
+    if (k >= ps.len or bir.instTag(ps[k]) != .type_record) return false;
+    var update: ?Bir.Inst.Index = null;
+    var settle: ?Bir.Inst.Index = null;
+    for (bir.extraSlice(Bir.inlineRange(bir.instData(ps[k])), Bir.Field)) |f| {
+        const s = bir.symbol(f.name);
+        if (s == names.update) update = f.value;
+        if (s == names.settle) settle = f.value;
+    }
+    const up = fnParams(bir, update orelse return false) orelse return false;
+    const st = settle orelse return up.len == 2;
+    if (up.len != 3 or (fnParams(bir, st) orelse return false).len != 2) return false;
+    // `whole`: the update answers its state parameter's type, a variable.
+    const result = @as(Bir.Inst.Index, @fromBackingInt(bir.instData(update.?).rhs));
+    if (bir.instTag(result) != .type_var or bir.instTag(up[2]) != .type_var) return false;
+    return bir.symbol(@fromBackingInt(bir.instData(result).lhs)) == bir.symbol(@fromBackingInt(bir.instData(up[2]).lhs));
+}
+
+fn fnParams(bir: *const Bir, t: Bir.Inst.Index) ?[]const Bir.Inst.Index {
+    if (bir.instTag(t) != .type_fn) return null;
+    return bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(t).lhs)), Bir.Inst.Index);
 }
 
 // ---------------------------------------------------------------------------

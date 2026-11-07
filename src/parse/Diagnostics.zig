@@ -158,9 +158,6 @@ pub const Construct = enum {
     argument_after_lambda,
     /// `×` in an expression: a type token only (language.md §12.7).
     times_in_expression,
-    /// `*` between two types, where a tuple type's `×` goes (language.md
-    /// §12.7, *Lookalikes*).
-    star_in_type,
     /// `⊥` in an expression or a pattern: a type with no values
     /// (language.md §12.10).
     bottom_outside_type,
@@ -232,7 +229,6 @@ fn constructText(c: Construct) []const u8 {
         .spread_operand => "a name or `_`",
         .binding_head, .block_in_tuple, .argument_after_lambda => "something else",
         .times_in_expression => "an operator",
-        .star_in_type => "`×`",
         .bottom_outside_type => "a value",
     };
 }
@@ -426,13 +422,6 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\Code that holds a value of type `⊥` is in a branch that cannot happen, and
                     \\`never` turns that value into whatever the branch needs: `never v`.
-                );
-            } else if (item.construct == .star_in_type) {
-                try w.writeAll(
-                    \\I found `*` between two types. A tuple type joins its element types with `×`
-                    \\(U+00D7 MULTIPLICATION SIGN): `Int × String` is the type of `( 1, "a" )`.
-                    \\
-                    \\Write `×` instead. I read this one as `×` and went on.
                 );
             } else if (item.construct == .block_in_tuple) {
                 try w.writeAll(
@@ -842,53 +831,6 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\and `[ x, …xs ]` is the same list written in brackets.
         ),
-        .backslash_lambda_removed => if (item.head_end > item.head_start) {
-            try w.writeAll(
-                \\A lambda begins with `λ` now, not `\`. Write this one as:
-                \\
-                \\    λ
-            );
-            // The head from its first parameter to its `->`, on one line.
-            var space = false;
-            for (std.mem.trim(u8, head, " \t\r\n")) |c| {
-                if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
-                    space = true;
-                    continue;
-                }
-                if (space) try w.writeByte(' ');
-                space = false;
-                try w.writeByte(c);
-            }
-            try w.writeAll(
-                \\
-                \\
-                \\`beni fmt --migrate-lambda <file>` writes every lambda of a file this way.
-            );
-        } else try w.writeAll(
-            \\A lambda begins with `λ` now, not `\`: write `λ` where the `\` is.
-        ),
-        .ascii_symbol_removed => {
-            const symbol = Token.lexeme(item.expected).?;
-            try w.print(
-                \\`{s}` is written `{s}` now ({s}).
-                \\
-                \\`beni fmt --migrate-unicode <file>` writes every one of a file this way, and an
-                \\editor with beni support turns `{s}` into `{s}` as it is typed.
-            , .{ text, symbol, Token.symbolName(item.expected), text, symbol });
-            if (item.expected == .arrow_left) try w.writeAll(
-                \\
-                \\
-                \\If you meant less than a negative number, write `x < -1`, with a space.
-            );
-        },
-        .unit_spelling_removed => try w.writeAll(
-            \\`()` is written `⊤` now (U+22A4 DOWN TACK), as the unit type and as its one
-            \\value: `log : String → ⊤`, `else ⊤`, `λ⊤ → e`. I read this one as `⊤` and
-            \\went on.
-            \\
-            \\`beni fmt --migrate-top <file>` writes every one of a file this way, and an
-            \\editor with beni support turns `()` into `⊤` as it is typed.
-        ),
         .tuple_type_removed => {
             try w.writeAll(
                 \\A tuple type is written with `×` now (U+00D7 MULTIPLICATION SIGN). Write this
@@ -901,7 +843,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             try w.writeAll(
                 \\
                 \\
-                \\`beni fmt --migrate-unicode <file>` writes every one of a file this way.
+                \\Write product types with `×` or `*`; tuple values still use commas.
             );
         },
         .let_removed => if (item.required_col > item.head_start and item.required_col < item.head_end) {
@@ -937,6 +879,27 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),
     }
+    const ascii_arrow = (item.code == .unexpected_token or item.code == .expected_token) and std.mem.eql(u8, text, "<-") and numberFollows(source, item.end);
+    const numeric_bind = item.code == .bind_rhs_not_application and text.len != 0 and
+        std.ascii.isDigit(text[0]) and
+        std.mem.endsWith(u8, std.mem.trimEnd(u8, source[0..item.start], " \t\r\n"), "<-");
+    if (ascii_arrow or numeric_bind) {
+        try w.writeAll("\n\nIf you meant less than a negative number, write `x < -1`, with a space.");
+    }
+}
+
+/// The next significant token after an ASCII arrow must start a number.
+/// Comments are line comments and numeric literals begin with an ASCII digit.
+fn numberFollows(source: []const u8, end: u32) bool {
+    var at: usize = end;
+    while (at < source.len) {
+        if (std.ascii.isWhitespace(source[at])) {
+            at += 1;
+        } else if (std.mem.startsWith(u8, source[at..], "--")) {
+            at = if (std.mem.findScalarPos(u8, source, at, '\n')) |newline| newline + 1 else source.len;
+        } else return std.ascii.isDigit(source[at]);
+    }
+    return false;
 }
 
 /// `let_removed`'s fix-it: the lines of `source[from..to]`, its leading and

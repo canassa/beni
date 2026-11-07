@@ -1,0 +1,30 @@
+-- ownership (v2; R-5.13.1, ownership-v2.md §2.13.13 item 13): a type's
+-- `eq` and `compare` may only read their arguments. `eq` pushes onto the
+-- list it is handed: `comparison_changes_value` at the push. `compare`, not
+-- `pub` but still what `<` calls on `T` inside this module, calls `grow`,
+-- which writes its argument: the error is at the call. `grow` is no
+-- comparison, so its push is accepted `param`; `less`'s `<` is accepted as
+-- any call of a writing function is, the error being the comparison's own. v1
+-- has no such code and accepts every write.
+pub type T
+    = T (List Int)
+
+
+pub eq : T, T → Bool
+eq (T a) (T b) = List.length (List.push a 0) == List.length b
+
+
+grow : List Int → List Int
+grow xs = List.push xs 1
+
+
+compare : T, T → Order
+compare (T a) (T b) =
+    if List.length (grow a) < List.length b then
+        LT
+    else
+        GT
+
+
+pub less : T, T → Bool
+less x y = x < y

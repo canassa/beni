@@ -1,0 +1,109 @@
+-- The owning extraction from a cell (`ownership-v2.md` §2.13.7, #1977):
+-- `Ref.modify slot λold → ( old, Nothing )` hands back the old contents and
+-- leaves the slot holding `Nothing`, so the caller owns them and edits them
+-- in place. Through a helper and inline; a list cell emptied; the payload
+-- moved into another cell and edited there; a helper that takes and edits
+-- with no loan live; and a loan of another cell live across the take. Each
+-- line prints the edited payload, then what the cell holds afterwards.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+slotText : Ref (Maybe (List Int)) → String
+slotText slot =
+    case Ref.get slot of
+        Just ys →
+            ints ys
+        Nothing →
+            "empty"
+
+
+take : Ref (Maybe (List Int)) → Maybe (List Int)
+take slot = Ref.modify slot λold → ( old, Nothing )
+
+
+helper : ⊤ → String
+helper ⊤ =
+    slot = Ref.make (Just [ 1, 2 ])
+    got =
+        case take slot of
+            Just xs →
+                List.push xs 3
+            Nothing →
+                []
+    "helper ${ints got} ${slotText slot}"
+
+
+inline : ⊤ → String
+inline ⊤ =
+    slot = Ref.make (Just [ 1, 2 ])
+    got =
+        case Ref.modify slot λold → ( old, Nothing ) of
+            Just xs →
+                List.push xs 3
+            Nothing →
+                []
+    "inline ${ints got} ${slotText slot}"
+
+
+emptied : ⊤ → String
+emptied ⊤ =
+    r = Ref.make [ 1 ]
+    xs = Ref.modify r λold → ( old, [] )
+    ys = List.push xs 2
+    "emptied ${ints ys} ${ints (Ref.get r)}"
+
+
+moved : ⊤ → String
+moved ⊤ =
+    slot = Ref.make (Just [ 1, 2 ])
+    other = Ref.make []
+    case take slot of
+        Just xs →
+            Ref.set other xs
+        Nothing →
+            ⊤
+    Ref.update other λys → List.push ys 3
+    "moved ${ints (Ref.get other)} ${slotText slot}"
+
+
+grow : Ref (List Int) → List Int
+grow r = List.push (Ref.modify r λold → ( old, [] )) 9
+
+
+grown : ⊤ → String
+grown ⊤ =
+    r = Ref.make [ 1 ]
+    g = grow r
+    "grown ${ints g} ${ints (Ref.get r)}"
+
+
+otherLoan : ⊤ → String
+otherLoan ⊤ =
+    a = Ref.make [ 1 ]
+    b = Ref.make [ 5 ]
+    v = Ref.get b
+    t = Ref.modify a λold → ( old, [] )
+    u = List.push t 2
+    "otherLoan ${ints u} ${ints v} ${ints (Ref.get a)}"
+
+
+pairTake : ⊤ → String
+pairTake ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.modify r λo → ( o, ( [], [] ) ) of
+        ( a, b ) →
+            "pairTake ${ints (List.push a 8)} ${ints b}"
+
+
+main : Program
+main = Node.printLines [ helper ⊤, inline ⊤, emptied ⊤, moved ⊤, grown ⊤, otherLoan ⊤, pairTake ⊤ ]

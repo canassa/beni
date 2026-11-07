@@ -30,11 +30,8 @@
 //! search by point and a ≤64-step search of the max tree. Every candidate
 //! returned is compatible, so a nested `case` makes no intervals and no
 //! rejected candidate; `rank₂(p)` is one charged region read, and every
-//! step of the queried path is a record before it is read. `Ancestry` is
-//! the fixed-word form for one PAIR of points (what `Demands` asks of a
-//! holder's use): binary lifting over the region tree, LCA in O(log depth)
-//! with no allocation per query (§4.1's at-most-64-step ancestry), its
-//! slots in the region atom's source-settlement lane.
+//! step of the queried path is a record before it is read. `Ancestry`
+//! (L6, beside it) is the fixed-word form for one PAIR of points.
 //!
 //! **Kinds** (§2.7): the index returns uses; a `call` use counts only when
 //! the callee's use node is non-empty at the remainder of the queried path,
@@ -53,7 +50,6 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Regions = @import("Regions.zig");
-const Shape = @import("Shape.zig");
 const stamped = @import("../stamped.zig");
 
 pub const Use = Facts.Use;
@@ -70,6 +66,9 @@ pub const none: u32 = Ids.none_int;
 pub const Filter = struct {
     ctx: *anyopaque,
     accept: *const fn (ctx: *anyopaque, use: Use, id: UseId) Error!bool,
+    /// The filter accepts every use strictly below a subtree query's path:
+    /// that part of the range is one `firstAfter`, never a group at a time.
+    below_all: bool = false,
 
     /// Every use counts.
     pub const all: Filter = .{ .ctx = undefined, .accept = yes };
@@ -78,12 +77,19 @@ pub const Filter = struct {
     }
 };
 
+/// A use's group within its path (§2.8, #1214): its kind, and a `call`
+/// use's callee use node, the only things a filter judges.
+fn groupOf(u: Use) u32 {
+    return if (u.kind == .call and u.use_node != .none) u.use_node.int() + 3 else @backingInt(u.kind);
+}
+
 pub const Index = struct {
-    uses: std.MultiArrayList(Use) = .empty,
+    uses: Ids.Columns(Use) = .empty,
     /// Per local: its run of `uses`.
     by_local: []Ids.Range = &.{},
-    /// Per local: its last point of use, or `none`.
+    /// Per local: its last point of use, or `none`; its deepest use's depth.
     last: []u32 = &.{},
+    deepest: []u32 = &.{},
     /// The merge-sort tree: `size` leaves (a power of two), node `i`'s
     /// pairs at `pairs[off[i]..off[i + 1]]`, sorted by point, and its max
     /// tree over their `rank₂` at `maxes[mt_off[i]..mt_off[i + 1]]` (leaves
@@ -103,6 +109,7 @@ pub const Index = struct {
         x.uses.deinit(gpa);
         gpa.free(x.by_local);
         gpa.free(x.last);
+        gpa.free(x.deepest);
         gpa.free(x.off);
         gpa.free(x.pairs);
         gpa.free(x.mt_off);
@@ -112,11 +119,16 @@ pub const Index = struct {
     }
 
     pub fn count(x: *const Index) u32 {
-        return @intCast(x.uses.len);
+        return @intCast(x.uses.len());
     }
 
     pub fn get(x: *const Index, id: UseId) Use {
         return x.uses.get(id.int());
+    }
+
+    /// The depth of `local`'s deepest use's path (0 when it has none).
+    pub fn deepestOf(x: *const Index, local: u32) u32 {
+        return if (local < x.deepest.len) x.deepest[local] else 0;
     }
 
     /// The last point `local` is used at, or `none` (§2.8's holder expiry).
@@ -174,7 +186,10 @@ pub const Index = struct {
                 try x.runs.put(gpa, node, .{ .start = start, .len = @intCast(x.steps.items.len - start) });
             }
         }
-        // Sorted by (local, path, point).
+        // Sorted by (local, path, group, point, atom): a path's `call` uses of
+        // one callee use node are one contiguous group (`groupKey`), whose
+        // acceptance is decided once (§2.8, #1214), and the atom makes the
+        // order total (§2.8 *Verdicts*: a tie is never broken by discovery).
         const order = try gpa.alloc(u32, n);
         defer gpa.free(order);
         for (order, 0..) |*o, i| o.* = @intCast(i);
@@ -186,8 +201,9 @@ pub const Index = struct {
                 if (ua.local != ub.local) return ua.local < ub.local;
                 const o = c.x.comparePaths(c.places, ua.path, ub.path);
                 if (o != .eq) return o == .lt;
+                if (groupOf(ua) != groupOf(ub)) return groupOf(ua) < groupOf(ub);
                 if (ua.point != ub.point) return ua.point < ub.point;
-                return @backingInt(ua.kind) < @backingInt(ub.kind);
+                return ua.atom < ub.atom;
             }
         }.lessThan);
         var max_local: u32 = 0;
@@ -198,8 +214,11 @@ pub const Index = struct {
         @memset(x.by_local, .empty);
         x.last = try gpa.alloc(u32, max_local);
         @memset(x.last, none);
-        const locals = x.uses.items(.local);
-        const points = x.uses.items(.point);
+        x.deepest = try gpa.alloc(u32, max_local);
+        @memset(x.deepest, 0);
+        for (uses) |u| x.deepest[u.local] = @max(x.deepest[u.local], places.pathDepth(u.path));
+        const locals = x.uses.col.local;
+        const points = x.uses.col.point;
         var i: u32 = 0;
         while (i < n) {
             var j = i;
@@ -242,7 +261,7 @@ pub const Index = struct {
                     const take_a = ib == b.len or (ia < a.len and a[ia].point <= b[ib].point);
                     out[o] = if (take_a) a[ia] else b[ib];
                     if (take_a) ia += 1 else ib += 1;
-                    const charge: Charge = .in(account, .{ .atom = x.uses.items(.atom)[out[o].use], .role = .liveness_index, .phase = phase });
+                    const charge: Charge = .in(account, .{ .atom = x.uses.col.atom[out[o].use], .role = .liveness_index, .phase = phase });
                     try charge.reserve(gpa, .use, 1);
                 }
             }
@@ -353,7 +372,7 @@ pub const Index = struct {
     fn range(x: *const Index, places: *const Place.Table, h: u32, q_steps: []const Place.Step, subtree: bool) Ids.Range {
         if (h >= x.by_local.len) return .empty;
         const run = x.by_local[h];
-        const paths = x.uses.items(.path);
+        const paths = x.uses.col.path;
         // lo: the first use whose path is not below `q` in the order.
         var lo = run.start;
         var hi = run.start + run.len;
@@ -444,14 +463,102 @@ pub const Index = struct {
     /// (`rank₂ > t`) that the filter accepts; every candidate visited is one
     /// record.
     fn earliest(x: *const Index, gpa: Allocator, charge: Charge, r: Ids.Range, p: u32, t: u32, filter: Filter) Error!?UseId {
-        var from: Pair = .{ .point = p + 1, .use = 0, .rank2 = 0 };
-        while (true) {
-            const c = (try x.firstCompatible(gpa, charge, r, from, t)) orelse return null;
+        if (filter.accept == Filter.all.accept) return x.firstAfter(gpa, charge, r, p, t);
+        // A filter judges a use by its kind, callee use node and path, which
+        // one group shares: once per group, never per use (§2.8, #1214).
+        var best: ?UseId = null;
+        var at = r.start;
+        while (at < r.start + r.len) {
+            const end = x.groupEnd(at, r.start + r.len);
             try charge.reserve(gpa, .inspection, 1);
-            if (try filter.accept(filter.ctx, x.uses.get(c.use), .from(c.use))) return .from(c.use);
-            if (c.use == std.math.maxInt(u32)) return null;
-            from = .{ .point = c.point, .use = c.use + 1, .rank2 = 0 };
+            // The filter judges only a group with an earlier use after `p`.
+            if (try x.firstAfter(gpa, charge, .{ .start = at, .len = end - at }, p, t)) |u| {
+                if ((best == null or pairLess(x.pairOf(u), x.pairOf(best.?))) and try filter.accept(filter.ctx, x.uses.get(at), .from(at))) best = u;
+            }
+            at = end;
         }
+        return best;
+    }
+
+    fn pairOf(x: *const Index, u: UseId) Pair {
+        return .{ .point = x.uses.col.point[u.int()], .use = u.int(), .rank2 = 0 };
+    }
+
+    /// The earliest use of index range `r` after `p` with `rank₂ > t`.
+    pub fn firstAfter(x: *const Index, gpa: Allocator, charge: Charge, r: Ids.Range, p: u32, t: u32) Error!?UseId {
+        const c = (try x.firstCompatible(gpa, charge, r, .{ .point = p + 1, .use = 0, .rank2 = 0 }, t)) orelse return null;
+        return .from(c.use);
+    }
+
+    /// Whether use `i` is a `call` use whose callee's use shape decides
+    /// what it reads (§2.7).
+    pub fn filtered(x: *const Index, i: u32) bool {
+        return x.groupKey(i) >= 3;
+    }
+
+    /// Use `i`'s group: its kind, and a `call` use's callee use node.
+    pub fn groupKey(x: *const Index, i: u32) u32 {
+        return groupOf(x.uses.get(i));
+    }
+
+    /// The end of use `at`'s group within `[at, end)`: the uses of one path
+    /// and group are contiguous, so a binary search.
+    pub fn groupEnd(x: *const Index, at: u32, end: u32) u32 {
+        const paths = x.uses.col.path;
+        const g = x.groupKey(at);
+        var lo = at + 1;
+        var hi = end;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (paths[mid] == paths[at] and x.groupKey(mid) == g) lo = mid + 1 else hi = mid;
+        }
+        return lo;
+    }
+
+    /// `range` for a caller outside: local `h`'s uses at the path of steps
+    /// `q_steps` below its root, and below it when `subtree`.
+    pub fn rangeOf(x: *const Index, places: *const Place.Table, h: u32, q_steps: []const Place.Step, subtree: bool) Ids.Range {
+        return x.range(places, h, q_steps, subtree);
+    }
+
+    /// Within `r`, a subtree range of a path of `depth` steps: the uses at
+    /// that path itself (they come first), or those below it whose next step
+    /// is `s`. Two binary searches on the one step at `depth`, never the
+    /// whole path: a descent pays O(log U) a level, not O(depth · log U).
+    pub fn childRange(x: *const Index, places: *const Place.Table, r: Ids.Range, depth: u32, s: Place.Step) Ids.Range {
+        const Ctx = struct { x: *const Index, places: *const Place.Table, depth: u32, s: Place.Step };
+        const c: Ctx = .{ .x = x, .places = places, .depth = depth, .s = s };
+        const items = x.uses.col.path[r.start..][0..r.len];
+        const lo = std.sort.partitionPoint(PathId, items, c, struct {
+            fn f(k: Ctx, p: PathId) bool {
+                const st = k.x.stepAt(p, k.depth) orelse return true;
+                return k.places.stepLess(st, k.s);
+            }
+        }.f);
+        const hi = std.sort.partitionPoint(PathId, items, c, struct {
+            fn f(k: Ctx, p: PathId) bool {
+                const st = k.x.stepAt(p, k.depth) orelse return true;
+                return !k.places.stepLess(k.s, st);
+            }
+        }.f);
+        return .{ .start = r.start + @as(u32, @intCast(lo)), .len = @intCast(hi - lo) };
+    }
+
+    /// The end of the uses at the path of `depth` steps itself within its
+    /// subtree range `r`: they come first.
+    pub fn exactEnd(x: *const Index, r: Ids.Range, depth: u32) u32 {
+        const items = x.uses.col.path[r.start..][0..r.len];
+        return r.start + @as(u32, @intCast(std.sort.partitionPoint(PathId, items, .{ x, depth }, struct {
+            fn f(k: struct { *const Index, u32 }, p: PathId) bool {
+                return k[0].stepAt(p, k[1]) == null;
+            }
+        }.f)));
+    }
+
+    /// Step `depth` of a use's path from its root, or null when it is shorter.
+    fn stepAt(x: *const Index, p: PathId, depth: u32) ?Place.Step {
+        const run = x.runs.get(p) orelse unreachable;
+        return if (depth < run.len) x.steps.items[run.start + depth] else null;
     }
 
     /// `rank₂(p)`, one charged region read (§2.7's rank lookup).
@@ -480,9 +587,13 @@ pub const Index = struct {
         const t = try threshold(gpa, charge, regions, p);
         var steps: std.ArrayList(Place.Step) = .empty;
         defer steps.deinit(gpa);
-        try stepsOf(gpa, charge, places, q, &steps, lanes);
+        // A prefix deeper than every use of `h` holds none: the queries start
+        // at the deepest one's depth, reached by `q`'s jump pointers.
+        const top = places.ancestorAt(q, @min(places.pathDepth(q), x.deepestOf(h)));
+        try charge.reserve(gpa, .path, top[1]);
+        try stepsOf(gpa, charge, places, top[0], &steps, lanes);
         // `prefix`: the path of the query's depth, walked up with it.
-        var prefix = q;
+        var prefix = top[0];
         var best: ?UseId = null;
         var depth = steps.items.len + 1;
         while (depth > 0) : (depth -= 1) {
@@ -491,7 +602,7 @@ pub const Index = struct {
             try at.reserve(gpa, .inspection, 1);
             const r = x.range(places, h, steps.items[0 .. depth - 1], false);
             if (try x.earliest(gpa, at, r, p, t, filter)) |u| {
-                if (best == null or x.uses.items(.point)[u.int()] < x.uses.items(.point)[best.?.int()]) best = u;
+                if (best == null or x.uses.col.point[u.int()] < x.uses.col.point[best.?.int()]) best = u;
             }
         }
         return best;
@@ -506,6 +617,8 @@ pub const Index = struct {
 
     /// `useUnder`, its steps and its one range query on step lanes (#1225).
     pub fn useUnderIn(x: *const Index, gpa: Allocator, charge: Charge, places: *const Place.Table, regions: *const Regions.Tree, h: u32, q: PathId, p: u32, filter: Filter, lanes: ?StepLanes) Error!?UseId {
+        // No use of `h` is as deep as `q`: none is at or below it.
+        if (x.deepestOf(h) < places.pathDepth(q)) return null;
         const t = try threshold(gpa, charge, regions, p);
         var steps: std.ArrayList(Place.Step) = .empty;
         defer steps.deinit(gpa);
@@ -513,7 +626,16 @@ pub const Index = struct {
         const at = stepCharge(charge, places, lanes, q);
         try at.reserve(gpa, .inspection, 1);
         const r = x.range(places, h, steps.items, true);
-        return x.earliest(gpa, at, r, p, t, filter);
+        if (!filter.below_all or r.len == 0) return x.earliest(gpa, at, r, p, t, filter);
+        // The uses at `q` itself come first and are filtered; those below it
+        // all count.
+        try at.reserve(gpa, .inspection, std.math.log2_int_ceil(u32, r.len + 1) + 1);
+        const end = x.exactEnd(r, @intCast(steps.items.len));
+        var best = try x.earliest(gpa, at, .{ .start = r.start, .len = end - r.start }, p, t, filter);
+        if (try x.firstAfter(gpa, at, .{ .start = end, .len = r.start + r.len - end }, p, t)) |u| {
+            if (best == null or pairLess(x.pairOf(u), x.pairOf(best.?))) best = u;
+        }
+        return best;
     }
 
     /// The charge of step `path` on `lanes`, or `charge` at a root, with
@@ -524,103 +646,6 @@ pub const Index = struct {
         if (path == .none or places.pathParent(path) == .none) return charge;
         if (charge.lane == null and charge.account.inGrowth()) return charge;
         return .in(charge.account, .{ .atom = l.atom, .role = l.role, .step = l.step | places.pathDepth(path) });
-    }
-};
-
-/// Binary lifting over a region tree: `compatible` for one pair of points
-/// in O(log depth) fixed-word steps and no allocation (§4.1's ancestry
-/// query). Built once per frame, `levels · regions` words.
-pub const Ancestry = struct {
-    up: []RegionId = &.{},
-    depth: []u32 = &.{},
-    levels: u32 = 0,
-
-    pub fn deinit(a: *Ancestry, gpa: Allocator) void {
-        gpa.free(a.up);
-        gpa.free(a.depth);
-    }
-
-    /// `levels = ⌈log₂(max depth + 2)⌉` slots per region, each one record
-    /// in the region's source-settlement lane (§4.1: "precompute 32
-    /// binary-lifting ancestor slots per region … charging them to its
-    /// source settlement lane"), keyed by the region id, unique in the
-    /// declaration whose tree this is, and `phase`.
-    pub fn build(gpa: Allocator, account: *Ids.Account, phase: Ids.Phase, regions: *const Regions.Tree) Error!Ancestry {
-        const n = regions.count();
-        var a: Ancestry = .{};
-        errdefer a.deinit(gpa);
-        a.depth = try gpa.alloc(u32, n);
-        var max_depth: u32 = 0;
-        for (0..n) |i| {
-            a.depth[i] = regions.get(.from(@intCast(i))).depth;
-            max_depth = @max(max_depth, a.depth[i]);
-        }
-        a.levels = std.math.log2_int_ceil(u32, max_depth + 2);
-        a.up = try gpa.alloc(RegionId, n * a.levels);
-        for (0..n) |i| {
-            const charge: Charge = .in(account, .{ .atom = Ids.atom_region_bit | @as(u32, @intCast(i)), .role = .transfer_settlement, .phase = phase });
-            try charge.reserve(gpa, .region, a.levels);
-            a.up[i * a.levels] = regions.get(.from(@intCast(i))).parent;
-        }
-        var k: u32 = 1;
-        while (k < a.levels) : (k += 1) {
-            for (0..n) |i| {
-                const mid = a.up[i * a.levels + k - 1];
-                a.up[i * a.levels + k] = if (mid == .none) .none else a.up[mid.int() * a.levels + k - 1];
-            }
-        }
-        return a;
-    }
-
-    fn lift(a: *const Ancestry, r: RegionId, by: u32) RegionId {
-        var at = r;
-        var rest = by;
-        var k: u32 = 0;
-        while (rest > 0 and at != .none) : (k += 1) {
-            if (rest & 1 == 1) at = a.up[at.int() * a.levels + k];
-            rest >>= 1;
-        }
-        return at;
-    }
-
-    /// The children of the LCA on the way to `ra` and `rb` (`.none` when
-    /// one is the ancestor of the other), §2.5's test: incompatible exactly
-    /// when both are arms of one case and differ.
-    pub fn compatible(a: *const Ancestry, regions: *const Regions.Tree, ra: RegionId, rb: RegionId) bool {
-        var x = ra;
-        var y = rb;
-        if (a.depth[x.int()] > a.depth[y.int()]) {
-            x = a.lift(x, a.depth[x.int()] - a.depth[y.int()] - 1);
-            if (a.up[x.int() * a.levels] == y) return true;
-            x = a.up[x.int() * a.levels];
-        } else if (a.depth[y.int()] > a.depth[x.int()]) {
-            y = a.lift(y, a.depth[y.int()] - a.depth[x.int()] - 1);
-            if (a.up[y.int() * a.levels] == x) return true;
-            y = a.up[y.int() * a.levels];
-        }
-        if (x == y) return true;
-        // Same depth, distinct: lift both while their ancestors differ.
-        var k = a.levels;
-        while (k > 0) {
-            k -= 1;
-            const ux = a.up[x.int() * a.levels + k];
-            const uy = a.up[y.int() * a.levels + k];
-            if (ux != uy) {
-                x = ux;
-                y = uy;
-            }
-        }
-        // `x` and `y` are the children below the LCA.
-        const kx = regions.get(x).kind;
-        const ky = regions.get(y).kind;
-        if (!(kx == .arm or kx == .virtual_arm) or !(ky == .arm or ky == .virtual_arm)) return true;
-        const rx = regions.get(x);
-        const ry = regions.get(y);
-        return !(rx.case_inst == ry.case_inst and rx.arm != ry.arm);
-    }
-
-    pub fn compatiblePoints(a: *const Ancestry, regions: *const Regions.Tree, p: u32, q: u32) bool {
-        return a.compatible(regions, regions.regionOf(p), regions.regionOf(q));
     }
 };
 
@@ -979,31 +1004,6 @@ test "compatibility is a rank₂ threshold: a query from an arm skips the siblin
     var dummy: u8 = 0;
     const skipped = (try x.useAfter(gpa, charge, &f.places, &tree, 1, r, in0 - 1, .{ .ctx = &dummy, .accept = Reject.accept })).?;
     try testing.expectEqual(outer, x.get(skipped).point);
-}
-
-test "ancestry: binary lifting agrees with the region tree's climb on a lowered module, in the region's lane" {
-    const gpa = testing.allocator;
-    var lowered = try Prepass.lowerSource(case_module_text);
-    defer lowered.deinit();
-    const bir = &lowered.bir;
-    const d = bir.decls[lowered.declNamed("g")];
-    var account: Ids.Account = .{};
-    defer account.deinit(gpa);
-    var tree = try Regions.build(gpa, &account, .inference, bir, d, null);
-    defer tree.deinit(gpa);
-    var anc = try Ancestry.build(gpa, &account, .inference, &tree);
-    defer anc.deinit(gpa);
-    try testing.expect(tree.count() >= 5);
-    // The region's source-settlement lane: `base₂` and the ancestor slots.
-    try testing.expectEqual(anc.levels + 1, account.laneUsed(.{ .atom = Ids.atom_region_bit, .role = .transfer_settlement }));
-    try testing.expectEqual(@as(u32, 0), account.laneUsed(.{ .atom = 0, .role = .direct_demand_query }));
-    var p = d.inst_start.int();
-    while (p < d.inst_end.int()) : (p += 1) {
-        var q = d.inst_start.int();
-        while (q < d.inst_end.int()) : (q += 1) {
-            try testing.expectEqual(tree.compatible(p, q), anc.compatiblePoints(&tree, p, q));
-        }
-    }
 }
 
 test "fault injection: a refused build or query leaves no index and no state behind" {

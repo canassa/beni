@@ -1,0 +1,21 @@
+-- ownership (project): `RecursiveSummaryGeneration` with the mutual group
+-- in another module (ownership-v2.md Appendix B, C×G; §8 S3b slice 4). The
+-- block publishes `swap`'s final class, in which the first answer may be
+-- either argument, so the verdicts are the same-module fixture's: `unsafe`
+-- pushes onto the first answer and reads `ys` after, refused; `fresh`
+-- hands a fresh list in `ys`'s place and reads nothing after, accepted.
+import Swaps
+
+
+pub unsafe : List Int, List Int → List Int × Int
+unsafe xs ys =
+    case Swaps.swap xs ys 3 of
+        ( p, _ ) →
+            ( List.push p 1, List.length ys )
+
+
+pub fresh : List Int → List Int × Int
+fresh xs =
+    case Swaps.swap xs [] 3 of
+        ( p, _ ) →
+            ( List.push p 1, 0 )

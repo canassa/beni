@@ -1,0 +1,117 @@
+-- load
+console.log: parse: "# Training\n\nIt takes a **Jacobian**."
+<body>
+  <main>
+    <div class="article-content">
+      <h1>
+        "Training"
+        <!---->
+      </h1>
+      <p>
+        "It takes a "
+        <strong>
+          "Jacobian"
+          <!---->
+        </strong>
+        "."
+        <!---->
+      </p>
+      <!---->
+    </div>
+    <textarea id="comment" .value=""></textarea>
+    <button id="next">"next"</button>
+  </main>
+</body>
+-- input #comment "a"
+<body>
+  <main>
+    <div class="article-content">
+      <h1>
+        "Training"
+        <!---->
+      </h1>
+      <p>
+        "It takes a "
+        <strong>
+          "Jacobian"
+          <!---->
+        </strong>
+        "."
+        <!---->
+      </p>
+      <!---->
+    </div>
+    <textarea id="comment" .value="a"></textarea>
+    <button id="next">"next"</button>
+  </main>
+</body>
+-- input #comment "ab"
+<body>
+  <main>
+    <div class="article-content">
+      <h1>
+        "Training"
+        <!---->
+      </h1>
+      <p>
+        "It takes a "
+        <strong>
+          "Jacobian"
+          <!---->
+        </strong>
+        "."
+        <!---->
+      </p>
+      <!---->
+    </div>
+    <textarea id="comment" .value="ab"></textarea>
+    <button id="next">"next"</button>
+  </main>
+</body>
+-- click #next
+console.log: parse: "## Next\n\nA *new* body."
+<body>
+  <main>
+    <div class="article-content">
+      <h2>
+        "Next"
+        <!---->
+      </h2>
+      <p>
+        "A "
+        <em>
+          "new"
+          <!---->
+        </em>
+        " body."
+        <!---->
+      </p>
+      <!---->
+    </div>
+    <textarea id="comment" .value="ab"></textarea>
+    <button id="next">"next"</button>
+  </main>
+</body>
+-- input #comment "abc"
+<body>
+  <main>
+    <div class="article-content">
+      <h2>
+        "Next"
+        <!---->
+      </h2>
+      <p>
+        "A "
+        <em>
+          "new"
+          <!---->
+        </em>
+        " body."
+        <!---->
+      </p>
+      <!---->
+    </div>
+    <textarea id="comment" .value="abc"></textarea>
+    <button id="next">"next"</button>
+  </main>
+</body>

@@ -1,0 +1,21 @@
+module TakenTree
+  16:10 List.set b: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  22:5 List.set b: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  26:14 List.set b: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  26:36 List.push a: accepted param
+  30:17 List.set b: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  37:13 List.set b: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  44:18 List.set b: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  44:41 construction xs: accepted param
+  48:18 List.set b: accepted param
+  summary takeAt: π1 RE, π2 RE; res ⊤{lost}r{lost}
+  summary cyc4: π1 RAEW[storage], π1[*] A; res [*] ~condition(fresh1) ~π1[*] ~⊤{lost}r{lost}, π1{lost}r{lost}
+  summary letBound: π1 RAEW[storage], π1[*] A; res [*] ~condition(fresh1) ~π1[*] ~⊤{lost}r{lost}, π1{lost}r{lost}
+  summary pushed: π1 REW[storage], π1[*] E, π2 RAEW[storage], π2[*] A; res [*] ~condition(fresh1) ~π2[*] ~⊤{lost}r{lost}, π2{lost}r{lost}
+  summary choice: π2 RE, π3 RAEW[storage], π3[*] A; res [*] ~condition(fresh1) ~π3[*] ~⊤{lost}r{lost}, π3{lost}r{lost}
+  summary viewed: π1 RAEW[storage], π1[*] A; res [*] ~condition(fresh1) ~π1[*] ~⊤{lost}r{lost}, π1{lost}r{lost}
+  summary spreadSet: π1 REW, π2 RAEW[storage], π2[*] A; res [*] ~condition(fresh1) ~π2[*] ~⊤{lost}r{lost}, π2{lost}r{lost}
+  summary apartNode: π1 RE, π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1) ~π2[*] ~⊤{lost}r{lost}, π2{lost}r{lost}
+  demands 9: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 9: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause escaped 6

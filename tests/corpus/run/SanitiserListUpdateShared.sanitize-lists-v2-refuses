@@ -1,0 +1,4 @@
+# v2 refuses each callback edit of a list that another element of the row also holds (§2.13.6, taken).
+24:13 list_may_be_shared List.update
+26:14 list_may_be_shared SanitiserListUpdateShared.upd
+28:13 list_may_be_shared List.update

@@ -84,6 +84,8 @@ const Var = TypeStore.Var;
 
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
+    entry_constructors: []const []const u8 = &.{},
+    entry_kinds: []const @import("../js/Manifest.zig").EntryKind = &.{},
     gpa: Allocator,
     scratch: *Arena,
     patterns: *Arena,
@@ -176,7 +178,9 @@ pub fn check(in: Input) Error!Check.Counters {
     schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
     defer too_deep.deinit(scratch);
+    var wire_readings: std.ArrayList(Context.WireReading) = .empty;
     var cx: Context = .{
+        .wire_readings = if (in.entry_kinds.len != 0) &wire_readings else null,
         .gpa = gpa,
         .scratch = scratch,
         .store = store,
@@ -221,6 +225,7 @@ pub fn check(in: Input) Error!Check.Counters {
     for (schemas.errors.items) |e| try report.emitText(e.code, e.region, null, e.message);
     try reportMarkup(&report, bir, in.graph);
     try reportJsObjects(&report, &cx);
+    try reportJsModules(&report, &cx);
 
     // P2: every annotated value's scheme, before any body is checked.
     var syncs: std.ArrayList(Types.Builder.SyncMark) = .empty;
@@ -348,6 +353,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try @import("Nullary.zig").checked(gpa, bir, &solver.evidence);
     // Every group, nested check and derived context has recorded its
     // edges: the summaries now (§14.4), before P6 and P8 read them.
+    try @import("Realms.zig").seed(&effects, &cx, decl_scheme, &report);
     const effects_token = if (in.profile) |p| p.begin() else null;
     const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
     // What the lowering reads of the bits (transparent-effects-proposal.md
@@ -451,13 +457,44 @@ pub fn check(in: Input) Error!Check.Counters {
         .schemas = &schemas,
         .dispatch = in.dispatch,
         .keyed = keyed,
+        .report = &report,
     }) else null;
     if (type_keys) |t| {
         in.type_keys.deinit(gpa);
         in.type_keys.* = t.artifact;
     }
 
-    // Declaration termination needs the elaborated callees and the solved
+    var wire_quantifiers: []const bool = &.{};
+    var wire_paths: []const @import("Wire.zig").Requirement = &.{};
+    if (!quiet and report.errors == 0 and (in.entry_kinds.len != 0 or solver.instantiate.wire.items.len != 0)) {
+        const wire = try @import("Wire.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .local_type = local_type,
+            .inst_type = inst_type,
+            .decl_scheme = decl_scheme,
+            .decl_display = decl_display,
+            .casts = &.{},
+            .uses = &.{},
+            .copies = solver.instantiate.copies.items,
+            .schemas = &schemas,
+            .dispatch = in.dispatch,
+            .keyed = false,
+        }, solver.instantiate.wire.items, in.entry_kinds, report.staging().items);
+        in.type_keys.wire = wire.artifact;
+        wire_quantifiers = wire.quantifiers;
+        wire_paths = wire.paths;
+
+        try report.flush();
+    }
+
+    // Declaration termination needs
+    // the elaborated callees and the solved
     // effect rungs. Publish only a closed, acyclic pure call graph.
     if (!quiet) try @import("Totality.zig").run(&effects, .{
         .scratch = scratch,
@@ -485,6 +522,8 @@ pub fn check(in: Input) Error!Check.Counters {
         .contexts = &solver.contexts,
         .dispatch = in.dispatch,
         .crossing = if (type_keys) |t| t.crossing else &.{},
+        .wire = wire_quantifiers,
+        .wire_paths = wire_paths,
     });
     try reportKeyErrors(&report, key_errors.items, &reported_keys);
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
@@ -495,7 +534,8 @@ pub fn check(in: Input) Error!Check.Counters {
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (in.roundtrip_dispatch) try roundtripKeys(in, &report);
     if (!quiet) {
-        try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
+        const deferred = try @import("../entry/Static.zig").definitions(scratch, bir, in.module, in.graph, in.interfaces, in.interner, in.entry_constructors);
+        try Cycles.runDeferred(scratch, bir, in.dispatch, in.interner, report.staging(), deferred);
         try report.flush();
         // Last, so every error the module has gates it.
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6);
@@ -663,6 +703,41 @@ fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
         };
         report.at(null);
         try report.emitText(.invalid_js_object, fault.at, null, text);
+    }
+}
+
+/// Every call of core's `Js.module` whose specifier is not a string literal
+/// naming a `node:` or `cloudflare:` built-in (`boundary.md` §4.2):
+/// `invalid_js_module`, at the argument. The backend writes the specifier
+/// as a static import's, so nothing else could be written, and any other
+/// module could run anything when evaluated.
+fn reportJsModules(report: *Report, cx: *const Context) Error!void {
+    const bir = cx.bir;
+    const tags = bir.insts.items(.tag);
+    for (tags, 0..) |tag, i| {
+        if (tag != .call) continue;
+        const d = bir.instData(@fromBackingInt(@intCast(i)));
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        if (callee.int() >= tags.len or tags[callee.int()] != .ext_value) continue;
+        if (JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner) != .module) continue;
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+        if (args.len != 1) continue;
+        const at = JsIntrinsic.moduleFault(bir, args[0]) orelse continue;
+        const text: []const u8 = if (bir.instTag(at) != .string)
+            \\`Js.module` writes its specifier as a static import's, so it must be a string
+            \\literal written in place: `Js.module "node:path"`.
+            \\
+            \\This argument is not a string literal.
+        else
+            \\`Js.module` imports a host built-in, a `node:` or `cloudflare:` module, whose
+            \\evaluation the program cannot observe (`docs/design/backend.md` §9, *Host
+            \\imports*).
+            \\
+            \\This specifier names something else. A package could run anything when it is
+            \\evaluated, and a path would name a file the output tree does not hold.
+        ;
+        report.at(null);
+        try report.emitText(.invalid_js_module, at, null, text);
     }
 }
 

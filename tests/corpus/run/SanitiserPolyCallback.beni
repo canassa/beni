@@ -1,0 +1,68 @@
+-- A runtime catch for a polymorphic callback under `--ownership=v2` and the
+-- list stale-read sanitiser (`ownership-v2.md` §2.11.3, §7.3). `apply`
+-- hands its record to the callback it is given, and `idv : a → a` answers
+-- with it, so `row.values` is `xs`, which each caller returns beside the
+-- push. The callback's own type has a type variable's place, which no step
+-- below it can name: v2 read the answer at `.values` as the whole answer
+-- (a fresh record) and accepted the push, and the sanitised build's read of
+-- `xs` trapped. The answer is read at the call's own function type
+-- (`viaApply`), or, for a callback inside a constructor (`viaReader`, also
+-- as a local function, `viaLocal`), at the type the label's own call `f
+-- value` has its callee at.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    values : List Int
+
+
+type Reader
+    = Reader (R → R)
+
+
+apply : (R → R), R → R
+apply f value = f value
+
+
+read : Reader, R → R
+read reader value =
+    case reader of
+        Reader f →
+            f value
+
+
+idv : a → a
+idv value = value
+
+
+viaApply : List Int → List Int × List Int
+viaApply xs =
+    row = apply idv { values = xs }
+    ( List.push row.values 1, xs )
+
+
+viaReader : List Int → List Int × List Int
+viaReader xs =
+    row = read (Reader idv) { values = xs }
+    ( List.push row.values 2, xs )
+
+
+viaLocal : List Int → List Int × List Int
+viaLocal xs =
+    same : a → a
+    same v = v
+    row = read (Reader same) { values = xs }
+    ( List.push row.values 3, xs )
+
+
+show : List Int × List Int → String
+show ( a, b ) =
+    String.join (List.map a String.fromInt) ","
+        ++ " "
+        ++ String.join (List.map b String.fromInt) ","
+
+
+main : Program
+main = Node.printLines [ show (viaApply [ 5 ]), show (viaReader [ 6 ]), show (viaLocal [ 7 ]) ]

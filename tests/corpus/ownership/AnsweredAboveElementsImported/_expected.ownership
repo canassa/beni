@@ -1,0 +1,24 @@
+module Main
+  11:27 call Rows.bumpHead <literal>[*]: accepted fresh (Rows.bumpHead writes π1[*])
+  15:27 call Rows.bumpHead <literal>[*]: accepted param (Rows.bumpHead writes π1[*])
+  21:18 call Rows.bumpHead rows[*]: accepted fresh (Rows.bumpHead writes π1[*])
+  25:28 call Rows.bumpHead xs[*]: accepted param (Rows.bumpHead writes π1[*])
+  31:18 call Rows.bumpHead <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Rows.bumpHead writes π1[*])
+  37:18 call Rows.bumpHead rows[*]: rejected later-use: rows[*] is read again at 37:40 (Rows.bumpHead writes π1[*])
+  44:18 call Rows.bumpHead <literal>[*]: accepted fresh (Rows.bumpHead writes π1[*])
+  summary literals: unused
+  summary params: π1 RW, π2 RW; xreq excl π1, excl π2, sep π1 π2
+  summary bound: unused
+  summary passedOn: π1 R, π1[*] RW; xreq excl π1
+  summary repeated: unused
+  summary readAfter: unused
+  summary named: unused
+  demands 7: accepted 5 (fresh 3, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+module Rows
+  9:17 construction r: accepted param
+  summary bumpHead: π1 RA, π1[*] RAW; res [*] ~condition(fresh2) π1[*]{excl π1}, fresh1{excl π1} ~π1; xreq excl π1
+  summary firstLength: π1 R, π1[*] R
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 8: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 1
+cause exclusive 1

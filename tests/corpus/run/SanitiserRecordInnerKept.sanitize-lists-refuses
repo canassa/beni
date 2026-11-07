@@ -1,0 +1,7 @@
+# v1 refuses a record below one handed to a function, and a read after a callback writes it (#1001).
+86:33 record_may_be_shared `Box`
+87:34 record_may_be_shared `Box`
+88:39 record_may_be_shared `Box`
+89:35 record_may_be_shared `Box`
+90:27 record_still_used `writerThenRead`
+91:27 record_still_used `writerBelowHeld`

@@ -250,6 +250,7 @@ pub const CoreEntry = struct { name: []const u8, iface_hash: [16]u8, digest: Dig
 /// Everything `collect` reads. All of it is read-only and all of it exists by
 /// the time a module has been checked or its entry installed.
 pub const Session = struct {
+    wire: bool = false,
     graph: *const Graph,
     artifacts: *const Artifacts,
     types: *const Types,
@@ -295,7 +296,18 @@ pub fn collect(
     while (at < ids.items.items.len) : (at += 1) {
         const id = ids.items.items[at];
         const e = s.types.entry(id);
+        if (s.wire and e.kind == .adt and !e.schema_endpoint) {
+            const bir = s.artifacts.bir(s.graph.moduleFile(e.module));
+            const d = bir.decl(e.decl);
+            for (bir.declCtors(d)) |ctor| for (bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index)) |arg| {
+                local.clearRetainingCapacity();
+                try type_body.collectLocal(scratch, &local, bodyContext(s, e, bir, d), arg);
+                for (local.items) |found| try push(scratch, &ids, found);
+            };
+            continue;
+        }
         if (e.kind != .alias) continue;
+
         if (e.schema_endpoint) {
             if (m.int() >= s.plans.len) continue;
             const plan = &s.plans[m.int()];
@@ -340,8 +352,26 @@ pub fn collect(
                 }
             }
         }
+        // Wire representations include opaque constructor payloads and any
+        // private types they name. Their layout is a cross-entry ABI even
+        // when ordinary clients cannot destructure the value.
+        if (s.wire and e.kind == .adt and !e.schema_endpoint) {
+            const bir = s.artifacts.bir(s.graph.moduleFile(e.module));
+            const d = bir.decl(e.decl);
+            var bytes: std.ArrayList(u8) = .empty;
+            const ctors = bir.declCtors(d);
+            try appendInt(scratch, &bytes, u32, @intCast(ctors.len));
+            for (ctors) |ctor| {
+                try appendText(scratch, &bytes, s.interner.slice(bir.symbol(ctor.name)));
+                const args = bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index);
+                try appendInt(scratch, &bytes, u32, @intCast(args.len));
+                for (args) |arg| try type_body.write(scratch, &bytes, bodyContext(s, e, bir, d), arg);
+            }
+            body = bytes.items;
+        }
         row.* = .{
             .name = name,
+
             .arity = e.arity,
             .kind = e.kind,
             .is_opaque = isOpaque(iface, s.interner, e.name),

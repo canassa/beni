@@ -88,6 +88,7 @@ const Enforce = @import("own/Enforce.zig");
 const Enforce2 = @import("own2/Enforce.zig");
 const Own2Report = @import("own2/Report.zig");
 const stamped = @import("stamped.zig");
+const EntryPlan = @import("entry/Plan.zig");
 
 const Session = @This();
 
@@ -95,6 +96,8 @@ gpa: Allocator,
 io: Io,
 options: Options,
 store: SourceStore = .{},
+/// Core paths are queued once; resident runs reuse their numbered store rows.
+core_enumerated: bool = false,
 /// Per-file phase outputs, sized by `run` before the workers start.
 artifacts: Artifacts = .{},
 interner: InternPool.Global,
@@ -115,6 +118,8 @@ resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
 /// included the check step.
 checked: Check = .empty,
+/// Resolved entry facts refer only to the current checked store.
+entry_plan: EntryPlan = .{},
 /// One persistent-cache key per module (`fast-compiler.md` §8), computed
 /// serially between resolution and the check. Empty unless the phases
 /// included the check step.
@@ -160,7 +165,7 @@ compare_keys: []Key.Key = &.{},
 /// bytes, and hashing that string 634 times would be 634 times too many.
 build_id_bytes: [16]u8 = @splat(0),
 /// Every diagnostic of the last run, in emission order after `run`.
-/// Messages are gpa-owned; file paths point into `store`.
+/// Messages are borrowed from workers; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
 /// Set for the duration of ONE `renderLate` call: the files a late
 /// diagnostic points at that the store does not hold, or must not be asked
@@ -194,7 +199,8 @@ pack: CorePack.Pack = .empty,
 /// that lowered the file, so the slots need no lock and their order is the
 /// file order whatever `--jobs` was.
 pack_frontend: []?[]u8 = &.{},
-/// `Options.ownership` on a chain that edits lists in place
+/// `Options.ownership` with `--ownership-everywhere`, records in place, or a chain
+/// that edits lists in place, the chain optional
 /// (`ownership-checker.md` §28.3): this run enforces.
 enforce_ownership: bool = false,
 /// Owned. Per module, the summary block its cache entry carries
@@ -235,16 +241,9 @@ pub const Options = struct {
     /// `beni fmt --migrate-cons` (hidden): write each file's `::` chains in
     /// the list syntax and touch nothing else (`Format.migrateCons`).
     migrate_cons: bool = false,
-    /// `beni fmt --migrate-lambda` (hidden): write the `\` that begins
-    /// every lambda as `λ` and touch nothing else (`Format.migrateLambda`).
-    migrate_lambda: bool = false,
-    /// `beni fmt --migrate-unicode` (hidden): write every old ASCII
-    /// spelling as its symbol and every comma tuple type with `×`, and
-    /// touch nothing else (`Format.migrateUnicode`).
-    migrate_unicode: bool = false,
-    /// `beni fmt --migrate-top` (hidden): write `()` as `⊤`, the prelude's
-    /// `Never` as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
-    /// `top_discards` names (`Format.migrateTop`, frontend.md §11.9).
+    /// Convert accepted ASCII notation to Unicode while formatting.
+    to_unicode: bool = false,
+    /// Drop redundant unit else branches and the unit discards named by `--discards`.
     migrate_top: bool = false,
     /// `beni fmt --migrate-init` (hidden): write the `init = e` of every
     /// program record `init = λ⊤ → e` (`Format.migrateInit`, frontend.md
@@ -403,7 +402,7 @@ pub const Options = struct {
     /// checker v2 formats what the dump prints and keeps each module's report
     /// (`ownership2_reports`), so the dump does not run it again (#1193).
     /// `summaries` false for `--ownership-totals`.
-    ownership_v2_dump: ?struct { summaries: bool } = null,
+    ownership_v2_dump: ?struct { summaries: bool, below: bool = false } = null,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and
@@ -614,9 +613,10 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     if (options.ownership_v2) session.options.cache = null;
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
-    if (options.ownership) if (options.chain) |c| {
-        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or c.inPlace();
-    };
+    if (options.ownership) {
+        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or
+            (if (options.chain) |c| c.inPlace() else false);
+    }
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
@@ -654,6 +654,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.compare_keys);
     session.freeOwnershipBlocks();
     session.keys.deinit(gpa);
+    session.entry_plan.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
     session.graph.deinit(gpa);
@@ -680,6 +681,11 @@ pub const RunError = error{
 /// Enumerate `paths`, run `phases.per_file` over every file on
 /// `options.jobs` workers, merge, sort, and render diagnostics to `stderr`.
 pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr: *Io.Writer) RunError!Summary {
+    // Even an early input failure must not leave facts from an older store.
+    session.entry_plan.reset();
+    // Drop borrowed messages before releasing the previous worker wave.
+    session.diagnostics.clearRetainingCapacity();
+    for (session.workers) |*worker| worker.truncateDiagnostics(session.gpa, 0);
     const gpa = session.gpa;
 
     // 1. Enumerate — serial, sorted, numbered.
@@ -913,14 +919,28 @@ fn isLazy(session: *const Session, file: SourceStore.Index) bool {
 
 /// Whether a manifest of the chain names the platform module `name`, so the
 /// compiler reaches it with no import: the module of `"program"`'s type,
-/// `"markup"`'s runtime `"module"`, its `"vocabulary"`, and the module of
-/// its `"type"` (`boundary.md` §5, §9.2). With no chain, every platform
-/// module is a root.
+/// `"markup"`'s runtime `"module"`, the top-level `"module"` (a runtime
+/// module without markup, §5.2, 2026-11-04), its `"vocabulary"`, and the
+/// module of its `"type"` (`boundary.md` §5, §9.2). With no chain, every
+/// platform module is a root.
 fn isPlatformRoot(session: *const Session, name: []const u8) bool {
     const chain = session.options.chain orelse return true;
     for (chain.layers) |layer| {
         const m = layer.manifest;
+        for (m.entryKinds) |kind| {
+            if (m.program) |program| if (std.mem.eql(u8, program, kind.programType) and
+                (std.mem.eql(u8, kind.runtime, name) or std.mem.eql(u8, moduleOf(kind.programType), name))) return true;
+            if (std.mem.eql(u8, kind.runtime, name)) {
+                // nextWave reached the runtime together with an imported
+                // Program module; retain that implicit edge in Graph's prune.
+                for (session.lowered, 0..) |lowered, fi| {
+                    const file: SourceStore.Index = @fromBackingInt(@intCast(fi));
+                    if (lowered and session.store.package(file) == .platform and std.mem.eql(u8, session.store.moduleName(file), moduleOf(kind.programType))) return true;
+                }
+            }
+        }
         if (m.program) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
+        if (m.module) |module| if (std.mem.eql(u8, module, name)) return true;
         if (m.markup.type) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
         if (m.markup.module) |module| if (std.mem.eql(u8, module, name)) return true;
         if (m.markup.vocabulary) |module| if (std.mem.eql(u8, module, name)) return true;
@@ -968,6 +988,14 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
                 !referencesModule(bir, bir.symbol(imp.module)))) continue;
             try session.lowerNext(waiting.items, local.slice(bir.symbol(imp.module)), out);
         }
+        // An imported worker Program reaches its entry runtime. Merely
+        // declaring a worker kind in the platform must not load that runtime
+        // (or perturb an ordinary build's module order and short names).
+        if (session.options.chain) |chain| for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+            if (session.store.package(file) == .platform and std.mem.eql(u8, session.store.moduleName(file), moduleOf(kind.programType))) {
+                try session.lowerNext(waiting.items, kind.runtime, out);
+            }
+        };
         // A minted type is an edge with no import (`Graph.mintedNames`).
         var buffer: [Graph.minted_count]InternPool.WellKnown = undefined;
         for (Graph.mintedNames(bir, &buffer)) |w| try session.lowerNext(waiting.items, @tagName(w), out);
@@ -1124,7 +1152,7 @@ fn readAppManifest(session: *Session) RunError!void {
 }
 
 fn enumerateCore(session: *Session) RunError!void {
-    if (!session.options.core_package) return;
+    if (!session.options.core_package or session.core_enumerated) return;
     const gpa = session.gpa;
     if (session.options.core_root) |dir| {
         session.store.addPath(gpa, session.io, dir, dir, .core) catch |err| switch (err) {
@@ -1134,6 +1162,7 @@ fn enumerateCore(session: *Session) RunError!void {
                 return error.InputPath;
             },
         };
+        session.core_enumerated = true;
         return;
     }
     var buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -1141,6 +1170,7 @@ fn enumerateCore(session: *Session) RunError!void {
         const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ core_package.dir, f.rel }) catch return error.OutOfMemory;
         try session.store.addEmbedded(gpa, p, core_package.dir.len + 1, .core, f.source);
     }
+    session.core_enumerated = true;
 }
 
 /// Whether `file` may write `equatable` (checker.md Appendix A): it is in
@@ -1285,10 +1315,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     for (tree.errors) |item| {
         // `fmt --migrate-cons` is the fix for these: it rewrites them.
         if (session.options.migrate_cons and item.code == .cons_removed) continue;
-        if (session.options.migrate_lambda and item.code == .backslash_lambda_removed) continue;
-        if (session.options.migrate_unicode and (item.code == .ascii_symbol_removed or item.code == .tuple_type_removed)) continue;
         if (session.options.migrate_let and item.code == .let_removed) continue;
-        if (session.options.migrate_top and item.code == .unit_spelling_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1829,9 +1856,6 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
     const tree = session.artifacts.ast(file);
     if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree)) and
-        !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree)) and
-        !(session.options.migrate_unicode and Format.onlyUnicodeRemoved(tree)) and
-        !(session.options.migrate_top and Format.onlyUnitRemoved(tree)) and
         !(session.options.migrate_let and Format.onlyLetRemoved(tree))) return;
 
     const gpa = session.gpa;
@@ -1934,15 +1958,8 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             try worker.report(session, file, found.code, at, at, message.written());
             return;
         }
-    } else if (session.options.migrate_unicode) {
-        const problem = Format.migrateUnicode(
-            worker.arena.allocator(),
-            tree,
-            session.artifacts.tokens(file),
-            session.artifacts.comments(file),
-            text,
-            &out.writer,
-        ) catch |err| switch (err) {
+    } else if (session.options.to_unicode) {
+        const problem = Format.toUnicode(worker.arena.allocator(), tree, session.artifacts.tokens(file), session.artifacts.comments(file), text, session.store.lineStarts(file), &out.writer) catch |err| switch (err) {
             error.SyntaxErrors => {
                 out.deinit();
                 return;
@@ -1951,47 +1968,11 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             else => |e| return e,
         };
         if (problem) |found| {
-            // frontend.md §11.8: the file is left alone and named.
             out.deinit();
-            const line_starts = session.store.lineStarts(file);
-            const at = diagnostic.position(line_starts, text, found.start);
+            const at = diagnostic.position(session.store.lineStarts(file), text, found.start);
             var message: Io.Writer.Allocating = .init(gpa);
             defer message.deinit();
-            if (found.code) |code| {
-                try message.writer.print(
-                    "`beni fmt --migrate-unicode` left this file alone: with its symbols written in Unicode it does not parse ({t} here). Rewrite it by hand.",
-                    .{code},
-                );
-                try worker.report(session, file, code, at, at, message.written());
-            } else {
-                try message.writer.writeAll(
-                    "`beni fmt --migrate-unicode` left this file alone: this tuple type holds a comment, which joining its elements with `×` would have to move. Write it with `×` by hand, placing the comment yourself.",
-                );
-                try worker.report(session, file, .unexpected_token, at, at, message.written());
-            }
-            return;
-        }
-    } else if (session.options.migrate_lambda) {
-        const problem = Format.migrateLambda(worker.arena.allocator(), tree, session.artifacts.tokens(file), text, &out.writer) catch |err| switch (err) {
-            error.SyntaxErrors => {
-                out.deinit();
-                return;
-            },
-            error.WriteFailed => return error.OutOfMemory,
-            else => |e| return e,
-        };
-        if (problem) |found| {
-            // The rewrite does not parse (frontend.md §11.4): the file is
-            // left alone and named, with where the re-parse stopped.
-            out.deinit();
-            const line_starts = session.store.lineStarts(file);
-            const at = diagnostic.position(line_starts, text, found.start);
-            var message: Io.Writer.Allocating = .init(gpa);
-            defer message.deinit();
-            try message.writer.print(
-                "`beni fmt --migrate-lambda` left this file alone: with its lambdas written `λ` it does not parse ({t} here). Rewrite its lambdas by hand.",
-                .{found.code},
-            );
+            try message.writer.print("`beni fmt --to-unicode` left this file alone: the rewritten text does not parse ({t}). Convert it by hand.", .{found.code});
             try worker.report(session, file, found.code, at, at, message.written());
             return;
         }
@@ -2513,6 +2494,9 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         &session.interner,
         .{
             .build_id = session.build_id_bytes,
+            .entry_constructors = try session.entryConstructors(worker.arena.allocator()),
+            .entry_roles = try session.entryWireKey(worker.arena.allocator()),
+
             .informational = session.options.informational,
             .explain = session.options.explain,
             .pattern_budget = session.options.pattern_budget,
@@ -2563,6 +2547,68 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 /// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
 pub const check_stack_size = Check.stack_size;
 
+/// Raw constructor selectors are only an early cycle-analysis input. Their
+/// checked identities and signatures are validated by Emit's entry contract.
+/// Metadata roots alone do not activate Wire. An application's dependency
+/// graph must actually reach a kind's Program module before any module runs
+/// the Wire pass or hashes its additional representation ABI.
+fn wireKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifest.zig").EntryKind) Allocator.Error!bool {
+    if (kind.launches.len == 0) return false;
+    const has_wire = for (kind.parameters) |role| {
+        if (std.mem.eql(u8, role.role, "wire")) break true;
+    } else false;
+    if (!has_wire) return false;
+    return session.entryKindUsed(a, kind);
+}
+
+fn entryKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifest.zig").EntryKind) Allocator.Error!bool {
+    if (kind.launches.len == 0) return false;
+    const dot = std.mem.lastIndexOfScalar(u8, kind.programType, '.') orelse return false;
+    const name = session.interner.find(kind.programType[0..dot]) orelse return false;
+    const target = session.graph.lookup(.platform, name) orelse return false;
+    const seen = try a.alloc(bool, session.graph.count());
+    defer a.free(seen);
+    @memset(seen, false);
+    var queue: std.ArrayList(Graph.Index) = .empty;
+    defer queue.deinit(a);
+    for (0..session.graph.count()) |mi| {
+        const module: Graph.Index = @fromBackingInt(@intCast(mi));
+        if (session.graph.modulePackage(module) == .app) {
+            seen[mi] = true;
+            try queue.append(a, module);
+        }
+    }
+    while (queue.pop()) |module| {
+        if (module == target) return true;
+        for (session.graph.dependencies(module)) |dependency| {
+            if (seen[dependency.int()] or session.graph.modulePackage(dependency) == .core) continue;
+            seen[dependency.int()] = true;
+            try queue.append(a, dependency);
+        }
+    }
+    return false;
+}
+
+fn entryWireKey(session: *const Session, a: Allocator) Allocator.Error![]const u8 {
+    const chain = session.options.chain orelse return "";
+    var kinds: std.ArrayList(@import("js/Manifest.zig").EntryKind) = .empty;
+    for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (try session.wireKindUsed(a, kind)) try kinds.append(a, kind);
+    };
+    if (kinds.items.len == 0) return "";
+    return std.json.Stringify.valueAlloc(a, kinds.items, .{});
+}
+
+fn entryConstructors(session: *const Session, a: Allocator) Allocator.Error![]const []const u8 {
+    const chain = session.options.chain orelse return &.{};
+    var out: std.ArrayList([]const u8) = .empty;
+    for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (!try session.entryKindUsed(a, kind)) continue;
+        for (kind.constructors) |c| try out.append(a, c.name);
+    };
+    return out.toOwnedSlice(a);
+}
+
 fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded, cutoff: *Check.Cutoff) RunError!Check {
     var ins = try Enforce.inputs(session.gpa, session, cached);
     defer ins.deinit(session.gpa);
@@ -2589,6 +2635,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         cutoff: *Check.Cutoff,
         ownership: *const Enforce.Context,
         ownership2: *const Enforce2.Context,
+        entry_constructors: []const []const u8,
+        entry_kinds: []const @import("js/Manifest.zig").EntryKind,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -2605,6 +2653,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .ownership = if (r.session.options.ownership_v2) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
+                    .entry_constructors = r.entry_constructors,
+                    .entry_kinds = r.entry_kinds,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,
@@ -2621,7 +2671,19 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    const entry_constructors = try session.entryConstructors(session.gpa);
+    defer session.gpa.free(entry_constructors);
+    var kinds: std.ArrayList(@import("js/Manifest.zig").EntryKind) = .empty;
+    defer kinds.deinit(session.gpa);
+    if (session.options.chain) |chain| for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (try session.wireKindUsed(session.gpa, kind)) {
+            for (kind.parameters) |role| for (role.path) |field| {
+                _ = try session.interner.getOrPut(session.gpa, field);
+            };
+            try kinds.append(session.gpa, kind);
+        }
+    };
+    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {
@@ -3268,7 +3330,7 @@ fn lookupSource(context: *const anyopaque, d: *const diagnostic.Diagnostic) ?[]c
     }
     // An ownership message holds its own places (`ownership-checker.md` §28.6).
     switch (d.code) {
-        .list_still_used, .top_level_list_changed, .view_changes_model, .list_may_be_shared, .record_still_used, .top_level_record_changed, .record_may_be_shared => return null,
+        .list_still_used, .top_level_list_changed, .view_changes_model, .list_may_be_shared, .record_still_used, .top_level_record_changed, .record_may_be_shared, .comparison_changes_value => return null,
         else => {},
     }
     const index = session.store.find(d.span.file) orelse return null;

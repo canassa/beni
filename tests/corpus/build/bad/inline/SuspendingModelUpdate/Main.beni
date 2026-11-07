@@ -1,0 +1,41 @@
+-- Calling the callback stored in the model must keep update's calling form.
+import Html exposing (Html)
+import Task
+import Tea
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    n : Int
+    next : Int → Int
+
+
+update : Msg, Model → Model
+update Add model = { model | n = model.next model.n }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Add}>add</button>
+        <p>{model.n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { n = 0
+                , next =
+                    λn →
+                        Task.yieldNow ⊤
+                        n + 1
+                }
+        , update = update
+        , view = view
+        }

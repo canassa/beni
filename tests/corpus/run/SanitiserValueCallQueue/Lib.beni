@@ -1,0 +1,43 @@
+import Queue
+
+
+flag : Bool
+flag = True
+
+
+q : Queue.Queue (List Int)
+q = Queue.unbounded ⊤
+
+
+off : List Int → ⊤
+off l =
+    _ = Queue.offer q l
+    ⊤
+
+
+pub offv : List Int → ⊤
+offv = if flag then off else off
+
+
+offOf : ⊤ → (List Int → ⊤)
+offOf _ = off
+
+
+pub offc : List Int → ⊤
+offc = offOf ⊤
+
+
+pl : ⊤ → List Int
+pl _ = Maybe.withDefault (Queue.poll q) []
+
+
+pub plv : ⊤ → List Int
+plv = if flag then pl else pl
+
+
+plOf : ⊤ → (⊤ → List Int)
+plOf _ = pl
+
+
+pub plc : ⊤ → List Int
+plc = plOf ⊤

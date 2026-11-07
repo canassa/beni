@@ -24,7 +24,8 @@
 //!
 //! **Every node carries a source position from the start** (§9.6), a byte
 //! offset into the module's source or `Node.no_pos` for a node the lowering
-//! invented. It is what a development build's source map is made of
+//! invented — or, for a node `--release` copied in from another module, a
+//! row of `far` (backend.md §11.2, amended 2026-11-04). It is what a development build's source map is made of
 //! (backend.md §11.1, `js/SourceMap.zig`), and it was here before the maps
 //! were: Elm never threaded positions through codegen and consequently
 //! has no source maps at all, and retrofitting one means touching every
@@ -67,6 +68,17 @@ node_keys: []const KeyedNode = &.{},
 /// local it names (`Lower.localName`), `RepKey.wild` for every other name.
 /// A name past its end is wild.
 name_key: []const RepKey = &.{},
+/// Owned, `--release` only (`backend.md` §11.2, *Deferred* item 2, amended
+/// 2026-11-04): the positions in other modules' sources of the nodes that
+/// whole-program specialisation copied in from them. A node whose `pos`
+/// has `Node.far_bit` set has the position of row `pos & ~far_bit` here.
+/// Empty in a module nothing was copied into, which pays nothing more.
+far: []const FarPos = &.{},
+
+/// A position in another module's source (`far`): the module, by the
+/// caller's id of it (`Emit` gives its graph index), and a byte offset into
+/// its source.
+pub const FarPos = struct { module: u32, offset: u32 };
 
 /// One row of `node_keys`.
 pub const KeyedNode = struct { node: Node.Index, key: RepKey };
@@ -88,12 +100,19 @@ pub const NodeList = std.MultiArrayList(Node);
 
 pub const Node = struct {
     tag: Tag,
-    /// Byte offset into the module's source, or `no_pos`. Only the
-    /// printer's source-map marks read it (`backend.md` §11): no pass
-    /// decides anything by it, so a moved position changes a map and no
-    /// emitted byte.
+    /// Byte offset into the module's source, `no_pos`, or a row of
+    /// `JsIr.far` (`far_bit`). Only the printer's source-map marks read it
+    /// (`backend.md` §11): no pass decides anything by it, so a moved
+    /// position changes a map and no emitted byte.
     pos: u32,
     data: Data,
+    /// `call` only: lowered from a `Js.apply`, whose callee is a `Js.Value`
+    /// — a host function by type, which may read `arguments` or `this`.
+    /// §9 item 6 leaves a lambda whose call is one as written
+    /// (`backend.md`, *The name's value must be an emitted function too*).
+    /// Printed the same; a copy of the node keeps it (`Spec`, and
+    /// `Suspend`'s loop-mode copy of a tail-call loop's rest).
+    host: bool = false,
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
     pub const Data = struct {
@@ -108,6 +127,17 @@ pub const Node = struct {
     /// wrapper around a constructor used as a value. Printed the same; a
     /// source map skips it.
     pub const no_pos: u32 = std.math.maxInt(u32);
+
+    /// On a `pos` other than `no_pos`: the rest is a row of `JsIr.far`, a
+    /// position in another module's source. A position of the module's own
+    /// source is below it: the builder gives a node 2 GiB or more into its
+    /// source no position (`Builder.addParts`).
+    pub const far_bit: u32 = 1 << 31;
+
+    /// Whether `at`, a `pos`, names a row of `JsIr.far`.
+    pub inline fn isFar(at: u32) bool {
+        return at != no_pos and at & far_bit != 0;
+    }
 
     /// `arrow`'s `rhs`: an ordinary arrow, or one whose last parameter
     /// defaults to `0`.
@@ -251,6 +281,11 @@ pub const Node = struct {
         /// `globalThis`, which only the `Js.global` intrinsic writes (research
         /// 47). A literal and not an `ident`, so no pass renames it.
         global_this,
+        // Compiler-produced descriptor URLs resolve against this module.
+        import_meta_url,
+        // Worker target relative to the output root (string_bytes payload).
+        // Resolved only when Print knows the final referring artifact.
+        worker_path,
         /// `this`: the receiver of an `arrow_method` (`Js.method`, `backend.md`
         /// §4, *`Js.method` is a `function`*).
         this_lit,
@@ -430,12 +465,15 @@ pub const UnaryOp = enum(u8) {
     /// assignment, so the printer brackets it everywhere but a `const`'s
     /// value, a `return` and an argument (`Print.precedence`).
     yield,
+    /// `typeof` only for the compiler-emitted worker metadata guard.
+    /// Separate from source `typeof`: allocation facts may refine this site.
+    worker_definition_type,
 
     pub fn text(op: UnaryOp) []const u8 {
         return switch (op) {
             .neg => "-",
             .not => "!",
-            .type_of => "typeof ",
+            .type_of, .worker_definition_type => "typeof ",
             .yield => "yield ",
         };
     }
@@ -444,7 +482,7 @@ pub const UnaryOp = enum(u8) {
     /// the adjacency guard puts back only where the next token needs it.
     pub fn compactText(op: UnaryOp) []const u8 {
         return switch (op) {
-            .type_of => "typeof",
+            .type_of, .worker_definition_type => "typeof",
             .yield => "yield",
             else => op.text(),
         };
@@ -520,13 +558,24 @@ pub const SubRange = struct {
     }
 };
 
-/// Payload of `func_decl` and `arrow`: the parameter names and the body
-/// statements, both ranges into `extra`.
+/// Payload of `func_decl` and `arrow`: the parameter names, the body
+/// statements, and each parameter's position, all ranges into `extra`.
+/// The body is two words in, so a pass that rewrites a body in place
+/// writes at the record's index + 2.
 pub const Func = struct {
     params_start: ExtraIndex,
     params_end: ExtraIndex,
     body_start: ExtraIndex,
     body_end: ExtraIndex,
+    /// One `pos` for each of `params`, in its order and of its length: the
+    /// place in the source where the parameter is written, `Node.no_pos`,
+    /// or a row of `JsIr.far`, as a node's `pos` is (`backend.md` §11.2,
+    /// *Deferred* item 3, amended 2026-11-05). Only a map reads it. A
+    /// function the compiler invents has `no_pos` for each
+    /// (`Builder.addFunc`); `Lower` gives a parameter the source writes
+    /// its place (`Builder.addFuncAt`).
+    param_pos_start: ExtraIndex,
+    param_pos_end: ExtraIndex,
 
     pub fn params(f: Func) SubRange {
         return .{ .start = f.params_start, .end = f.params_end };
@@ -534,6 +583,10 @@ pub const Func = struct {
 
     pub fn body(f: Func) SubRange {
         return .{ .start = f.body_start, .end = f.body_end };
+    }
+
+    pub fn paramPos(f: Func) SubRange {
+        return .{ .start = f.param_pos_start, .end = f.param_pos_end };
     }
 };
 
@@ -637,7 +690,9 @@ pub const Import = struct {
 /// sibling JavaScript file exports a foreign value under its BARE name
 /// (`add`, boundary.md §4) while the emitted module refers to it by its
 /// module-qualified one (`Basics$add`). When the two are equal the printer
-/// writes the name once.
+/// writes the name once. An `imported` of `none` is a namespace import,
+/// `import * as local from "…"` (`Js.module`, boundary.md §4.2), one per
+/// statement.
 pub const Specifier = struct {
     imported: NameIndex,
     local: NameIndex,
@@ -661,6 +716,7 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
     gpa.free(ir.names);
     gpa.free(ir.node_keys);
     gpa.free(ir.name_key);
+    gpa.free(ir.far);
     ir.* = undefined;
 }
 
@@ -686,6 +742,11 @@ pub inline fn data(ir: *const JsIr, node: Node.Index) Node.Data {
 
 pub inline fn pos(ir: *const JsIr, node: Node.Index) u32 {
     return ir.nodes.items(.pos)[node.int()];
+}
+
+/// Whether `node` is a `call` lowered from a `Js.apply` (`Node.host`).
+pub inline fn host(ir: *const JsIr, node: Node.Index) bool {
+    return ir.nodes.items(.host)[node.int()];
 }
 
 pub inline fn name(ir: *const JsIr, index: NameIndex) Name {
@@ -834,7 +895,7 @@ pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayLis
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
-        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .arrow => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => {},
     }
 }
@@ -981,7 +1042,12 @@ fn verifySpecs(ir: *const JsIr, range: SubRange) VerifyError!void {
     if (@backingInt(range.start) > @backingInt(range.end)) return error.OutOfBounds;
     if (@backingInt(range.end) > ir.extra.len) return error.OutOfBounds;
     if (range.len() % Specifier.words != 0) return error.OutOfBounds;
-    for (ir.extraSlice(range, NameIndex)) |n| try ir.verifyName(n, false);
+    // A namespace import, `import * as local`, has no `imported` half
+    // (`Js.module`, boundary.md §4.2).
+    for (ir.extraSlice(range, Specifier)) |spec| {
+        if (spec.imported != .none) try ir.verifyName(spec.imported, false);
+        try ir.verifyName(spec.local, false);
+    }
 }
 
 fn verifyNames(ir: *const JsIr, range: SubRange) VerifyError!void {
@@ -1028,6 +1094,9 @@ fn verifyFunc(ir: *const JsIr, index: ExtraIndex) VerifyError!void {
     const f = try ir.verifyExtra(index, Func);
     try ir.verifyNames(f.params());
     try ir.verifyRange(f.body(), .statement);
+    const at = f.paramPos();
+    if (@backingInt(at.start) > @backingInt(at.end) or @backingInt(at.end) > ir.extra.len) return error.OutOfBounds;
+    if (at.len() != f.params().len()) return error.OutOfBounds;
 }
 
 fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
@@ -1101,7 +1170,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         },
 
         .ident, .field_name => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false),
-        .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
+        .number, .string, .worker_path, .template_chunk, .regex => try ir.verifyBytes(d),
         .template => {
             const parts = inlineRange(d);
             if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
@@ -1109,7 +1178,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             }
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
-        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => {},
         .call, .new_call => {
             try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
             try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .expression);
@@ -1259,6 +1328,14 @@ pub const nesting = struct {
 /// sparse key (a pair of interner indices), exactly the case the rule
 /// exempts. Deduplicating matters because the release renamer wants one row per
 /// distinct identifier, and because a reference is then an integer compare.
+/// `at` as a position of the module's own source: an offset that would
+/// read as a row of `far` has none, so a source map skips what has it and
+/// never names another module (`Node.far_bit`). Inline: `addParts` asks it
+/// of every node.
+inline fn ownPos(at: u32) u32 {
+    return if (at & Node.far_bit != 0) Node.no_pos else at;
+}
+
 pub const Builder = struct {
     gpa: Allocator,
     nodes: NodeList = .empty,
@@ -1335,11 +1412,19 @@ pub const Builder = struct {
 
     /// Hand the finished module over. The builder is empty afterwards.
     pub fn toOwned(b: *Builder, body: SubRange) Allocator.Error!JsIr {
+        // Each detached column needs an owner until every transfer succeeds.
+        var nodes = b.nodes.toOwnedSlice();
+        errdefer nodes.deinit(b.gpa);
+        const extra = try b.extra.toOwnedSlice(b.gpa);
+        errdefer b.gpa.free(extra);
+        const string_bytes = try b.string_bytes.toOwnedSlice(b.gpa);
+        errdefer b.gpa.free(string_bytes);
+        const names = try b.names.toOwnedSlice(b.gpa);
         const ir: JsIr = .{
-            .nodes = b.nodes.toOwnedSlice(),
-            .extra = try b.extra.toOwnedSlice(b.gpa),
-            .string_bytes = try b.string_bytes.toOwnedSlice(b.gpa),
-            .names = try b.names.toOwnedSlice(b.gpa),
+            .nodes = nodes,
+            .extra = extra,
+            .string_bytes = string_bytes,
+            .names = names,
             .body = body,
         };
         b.name_index.clearRetainingCapacity();
@@ -1367,7 +1452,16 @@ pub const Builder = struct {
     }
 
     pub fn addNode(b: *Builder, node: Node) Allocator.Error!Node.Index {
-        return b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
+        const index = try b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
+        if (node.host) b.markHost(index);
+        return index;
+    }
+
+    /// Mark a `call` as lowered from a `Js.apply` (`Node.host`).
+    pub fn markHost(b: *Builder, node: Node.Index) void {
+        std.debug.assert(b.tagOf(node) == .call);
+        const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
+        hosts[node.int()] = true;
     }
 
     /// `addNode` from the node's fields, with no `Node` built on the way.
@@ -1382,9 +1476,11 @@ pub const Builder = struct {
         const tags: [*]Node.Tag = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.tag)]);
         const positions: [*]u32 = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.pos)]));
         const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.data)]));
+        const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
         tags[index] = node_tag;
-        positions[index] = node_pos;
+        positions[index] = ownPos(node_pos);
         datas[index] = .{ .lhs = lhs, .rhs = rhs };
+        hosts[index] = false;
         return @fromBackingInt(@intCast(index));
     }
 
@@ -1473,6 +1569,39 @@ pub const Builder = struct {
         return b.addExtra(@ptrCast(items));
     }
 
+    /// The `Func` record of a function the compiler invents: each of its
+    /// parameters has no position (`Func.param_pos_start`).
+    pub fn addFunc(b: *Builder, params: SubRange, body: SubRange) Allocator.Error!ExtraIndex {
+        const start: u32 = @intCast(b.extra.items.len);
+        try b.extra.appendNTimes(b.gpa, Node.no_pos, params.len());
+        return b.addRecord(Func{
+            .params_start = params.start,
+            .params_end = params.end,
+            .body_start = body.start,
+            .body_end = body.end,
+            .param_pos_start = @fromBackingInt(@intCast(start)),
+            .param_pos_end = @fromBackingInt(@intCast(start + params.len())),
+        });
+    }
+
+    /// The `Func` record of a function the source writes: `positions` has
+    /// the place of each of `params`, `Node.no_pos` for one the lowering
+    /// added (an evidence parameter). `Lower` is its one caller.
+    pub fn addFuncAt(b: *Builder, params: SubRange, positions: []const u32, body: SubRange) Allocator.Error!ExtraIndex {
+        std.debug.assert(positions.len == params.len());
+        const start: u32 = @intCast(b.extra.items.len);
+        try b.extra.ensureUnusedCapacity(b.gpa, positions.len);
+        for (positions) |at| b.extra.appendAssumeCapacity(ownPos(at));
+        return b.addRecord(Func{
+            .params_start = params.start,
+            .params_end = params.end,
+            .body_start = body.start,
+            .body_end = body.end,
+            .param_pos_start = @fromBackingInt(@intCast(start)),
+            .param_pos_end = @fromBackingInt(@intCast(start + positions.len)),
+        });
+    }
+
     /// Append a record field by field and return its `ExtraIndex`.
     pub fn addRecord(b: *Builder, value: anytype) Allocator.Error!ExtraIndex {
         const index: u32 = @intCast(b.extra.items.len);
@@ -1523,7 +1652,7 @@ pub const Builder = struct {
                 }
             };
             switch (tags[at.node]) {
-                .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+                .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
                 .assign_stmt => {
@@ -1638,7 +1767,7 @@ pub const Builder = struct {
                 .ident => if (read != .none and d.lhs == read.int()) {
                     out.reads = true;
                 },
-                .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+                .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
@@ -1777,11 +1906,11 @@ const testing = std.testing;
 
 test "extraData reads records positionally and extraLen agrees" {
     try testing.expectEqual(@as(u32, 2), extraLen(SubRange));
-    try testing.expectEqual(@as(u32, 4), extraLen(Func));
+    try testing.expectEqual(@as(u32, 6), extraLen(Func));
     try testing.expectEqual(@as(u32, 4), extraLen(Import));
     try testing.expectEqual(@as(u32, 2), extraLen(Specifier));
 
-    const words = [_]u32{ 3, 4, 7, 9, 11, 12 };
+    const words = [_]u32{ 3, 4, 7, 9, 10, 11, 11, 12 };
     var ir: JsIr = empty;
     ir.extra = &words;
     const f = ir.extraData(@fromBackingInt(@intCast(0)), Func);
@@ -1789,7 +1918,8 @@ test "extraData reads records positionally and extraLen agrees" {
     try testing.expectEqual(@as(u32, 9), @backingInt(f.body_end));
     try testing.expectEqual(@as(u32, 1), f.params().len());
     try testing.expectEqual(@as(u32, 2), f.body().len());
-    const c = ir.extraData(@fromBackingInt(@intCast(4)), Cond);
+    try testing.expectEqual(@as(u32, 1), f.paramPos().len());
+    const c = ir.extraData(@fromBackingInt(@intCast(6)), Cond);
     try testing.expectEqual(@as(u32, 11), c.consequent.int());
     try testing.expectEqual(@as(u32, 12), c.alternate.int());
 }
@@ -1841,6 +1971,37 @@ test "verify accepts a well-formed module and finds every kind of dangling index
     try testing.expectError(error.OutOfBounds, ir.verify());
     ir.nodes.items(.data)[one.int()].rhs = one_len;
     try ir.verify();
+}
+
+test "a function's parameters each have a place: none when invented, the source's when written" {
+    // `backend.md` §11.2, *Parameters* (amended 2026-11-05).
+    const gpa = testing.allocator;
+    var b: Builder = .init(gpa);
+    defer b.deinit();
+
+    const x = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const y = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const params = try b.addNames(&.{ x, y });
+    const invented = try b.addFunc(params, .empty);
+    // A place 2 GiB or more into the source would read as a row of `far`,
+    // so it is no place, as a node's is.
+    const written = try b.addFuncAt(params, &.{ 7, Node.far_bit | 3 }, .empty);
+    const first = try b.addNode(.{ .tag = .arrow, .pos = 0, .data = .{ .lhs = @backingInt(invented), .rhs = Node.arrow_plain } });
+    const second = try b.addNode(.{ .tag = .arrow, .pos = 0, .data = .{ .lhs = @backingInt(written), .rhs = Node.arrow_plain } });
+    const one = try b.addNode(.{ .tag = .const_decl, .pos = 0, .data = .{ .lhs = @backingInt(x), .rhs = first.int() } });
+    const two = try b.addNode(.{ .tag = .const_decl, .pos = 0, .data = .{ .lhs = @backingInt(y), .rhs = second.int() } });
+    const body = try b.addRange(&.{ one, two });
+
+    var ir = try b.toOwned(body);
+    defer ir.deinit(gpa);
+    try ir.verify();
+    try testing.expectEqualSlices(u32, &.{ Node.no_pos, Node.no_pos }, ir.extraSlice(ir.extraData(invented, Func).paramPos(), u32));
+    try testing.expectEqualSlices(u32, &.{ 7, Node.no_pos }, ir.extraSlice(ir.extraData(written, Func).paramPos(), u32));
+
+    // A range of places that is not one for each parameter.
+    const end_at = @backingInt(written) + 5;
+    @constCast(ir.extra)[end_at] -= 1;
+    try testing.expectError(error.OutOfBounds, ir.verify());
 }
 
 test "verify refuses a statement where an expression belongs" {
@@ -1928,7 +2089,7 @@ test "measure: a path costs what its constructs cost, a function and declaring b
     const ret = try b.addNode(.{ .tag = .return_stmt, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = 0 } });
     const params = try b.addNames(&.{x});
     const body = try b.addRange(&.{ decl, ret });
-    const func = try b.addRecord(Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try b.addNode(.{ .tag = .arrow, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(func), .rhs = 0 } });
     const top = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = arrow.int() } });
     try testing.expectEqual(Height{
@@ -1956,4 +2117,23 @@ test "measure: `a && b && c` built to the left is flat, `a && (b && c)` is not" 
     // chain so far, which prints without parentheses and nests nothing.
     try testing.expectEqual(nesting.operand, (try b.measure(gpa, &.{left})).whole);
     try testing.expectEqual(10 * nesting.operand, (try b.measure(gpa, &.{right})).whole);
+}
+
+test "Builder.toOwned frees detached columns on every allocation failure" {
+    // Force fresh allocations when columns shrink so every transfer is tested.
+    var no_resize: testing.FailingAllocator = .init(testing.allocator, .{ .resize_fail_index = 0 });
+    try testing.checkAllAllocationFailures(no_resize.allocator(), struct {
+        fn run(gpa: Allocator) !void {
+            var b: Builder = .init(gpa);
+            defer b.deinit();
+            const binding = try b.intern(.local(@fromBackingInt(0)));
+            const offset, const len = try b.addString("value");
+            const value = try b.addParts(.string, Node.no_pos, offset, len);
+            const decl = try b.addParts(.const_decl, Node.no_pos, @backingInt(binding), value.int());
+            const body = try b.addRange(&.{decl});
+            var ir = try b.toOwned(body);
+            defer ir.deinit(gpa);
+            try ir.verify();
+        }
+    }.run, .{});
 }

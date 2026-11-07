@@ -1,0 +1,4 @@
+pub value : Int
+value =
+    _ = ⊤
+    1

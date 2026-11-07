@@ -1,0 +1,792 @@
+                    Syntax and Semantics of Quantitative Type Theory
+                                                                                     Robert Atkey
+                                                                               University of Strathclyde
+                                                                              robert.atkey@strath.ac.uk
+
+Abstract                                                                                        then this can easily lead to a runtime representation of vectors that
+We present Quantitative Type Theory, a Type Theory that records                                 consumes memory space quadratic in the length of the list!
+usage information for each variable in a judgement, based on a                                     Related to the problem of distinguishing between type formation
+previous system by McBride. The usage information is used to give                               and computational use of data is distinguishing between different
+a realizability semantics using a variant of Linear Combinatory                                 kinds of computational use of data. Such information can be used
+Algebras, refining the usual realizability semantics of Type Theory                             to generate more efficient code, or to ensure that programs only use
+by accurately tracking resource behaviour. We define the semantics                              computational resources in restricted ways (allowing, for example,
+in terms of Quantitative Categories with Families, a novel extension                            in place update of memory). Linear Logic [14] initiated a body of
+of Categories with Families for modelling resource sensitive type                               research into such systems. Initially, this recorded zero, single, or
+theories.                                                                                       multiple uses (made explicit by Mogensen [28]), but recent work
+                                                                                                in coeffects and quantitative types by Petricek et al. [29], Brunel
+CCS Concepts • Theory of computation → Linear logic; Type                                       et al.[8], and Ghica and Smith [13] refined this to track usage via
+theory;                                                                                         semirings. However, extending these systems to dependent Type
+Keywords Type Theory, Linear Logic                                                              Theory is not straightforward due to the conflict between type
+                                                                                                formation and computational uses.
+ACM Reference Format:                                                                              McBride [25] has recently proposed a resolution to this conflict
+Robert Atkey. 2018. Syntax and Semantics of Quantitative Type Theory. In                        by combining the work on erasability and quantitative types. His
+LICS ’18: 33rd Annual ACM/IEEE Symposium on Logic in Computer Science,
+                                                                                                insight is to use the 0 of the semiring to represent information
+July 9–12, 2018, Oxford, United Kingdom. ACM, New York, NY, USA, 10 pages.
+https://doi.org/10.1145/3209108.3209189
+                                                                                                that is erased at runtime, but is still available for use in types (i.e.,
+                                                                                                extensionally). McBride presented a syntax and typing rules for the
+                                                                                                system, as well as an erasure property that exploits the difference
+1     Introduction
+                                                                                                between “not used” and “used”, but does not do anything with the
+Dependent Type Theory promises to combine “programming” and                                     finer usage information available. In this paper, we fix and extend
+“verification” by combining both in a single system. The implementa-                            McBride’s system, and present semantic interpretations that fully
+tions Agda [34] and Idris [7] advertise themselves as a “dependently                            exploit the usage information.
+typed functional programming language” and a “general purpose
+pure functional programming language with dependent types”, re-                                 Contributions
+spectively. Coq [24] is primarily intended as a proof assistant, but                                  1. Section 2 reformulates McBride’s system as Quantitative
+also provides a program extraction facility.                                                             Type Theory (QTT) to add dependent tensor products and
+   However, when trying to actually use Type Theory as a general                                         booleans, and to fix a bug in the original system that caused
+purpose programming language, type dependency appears to ac-                                             substitution to be inadmissible.
+tively encourage inefficient code. This is caused by Type Theory’s                                    2. Section 3 presents Quantitative Categories with Families, a
+use of variables for two purposes: as information to be used in                                          novel class of categorical models for interpreting QTT.
+the formation of types, for example, the type Fin(n) of naturals                                      3. Section 4 presents several concrete realisability models of
+bounded by n depends on the natural number n when type check-                                            QTT as instances of QCwFs. These demonstrate that QTT
+ing, but not a runtime; and as computational information that is                                         allows resource sensitive interpretation of terms. Read con-
+manipulated by programs at runtime. An example is illustrated by                                         structively, these interpretations yield an efficient extraction
+the type of the cons operation for length indexed vectors of Ss:                                         mechanism with precise control over resource usage.
+            cons : (n : nat) → S → vec n S → vec (succ n) S
+                                                                                                2     Quantitative Type Theory
+A naive implementation of length indexed vectors will store, for
+                                                                                                Combining dependency with linearity is not straightforward. We
+every element: a value s; a tail v; and a natural number n recording
+                                                                                                motivate McBride’s solution and our formulation of it.
+the length of v. If a unary representation of natural numbers is used,
+
+Permission to make digital or hard copies of all or part of this work for personal or           2.1    Dependency and Accountancy
+classroom use is granted without fee provided that copies are not made or distributed           In Martin-Löf Type Theory, the term judgement has the form:
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than the
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+                                                                                                                  x 1 : S 1 , x 2 : S 2 , . . . , xn : Sn ⊢ M : T
+republish, to post on servers or to redistribute to lists, requires prior specific permission
+and/or a fee. Request permissions from permissions@acm.org.                                     From Type Theory’s mixed computational/logical point of view,
+LICS ’18, July 9–12, 2018, Oxford, United Kingdom                                               the context x 1 : S 1 , x 2 : S 2 , . . . , x n : Sn has two uses. It describes
+© 2018 Copyright held by the owner/author(s). Publication rights licensed to Associa-           the names used for resources which may be used by M to construct
+                                                                                                a resource of type T . It also describes the names used to refer to
+tion for Computing Machinery.
+ACM ISBN 978-1-4503-5583-4/18/07. . . $15.00
+https://doi.org/10.1145/3209108.3209189                                                         the extensional meanings represented by those resources used to
+LICS ’18, July 9–12, 2018, Oxford, United Kingdom                                                                                             Robert Atkey
+
+
+form the types S 2 , . . . , Sn and T . This dual usage is illustrated in            called “discharged assumptions” by Terui [33]). In all these systems,
+the judgement:                                                                       information about how variables are used is recorded using a semir-
+                     n : Nat, x : Fin(n) ⊢ x : Fin(n)                          (1)   ing. Semirings are a natural structure to use: addition is used to
+                                                                                     sum up multiple uses of a variable, and multiplication is used to
+where Nat is the type of natural numbers, and Fin(n) is the type                     account for nested use. In the notation we will use in this paper, a
+of numbers less than n. The variables n and x play two different                     judgement in these systems looks like:
+roles: x is used as a reference to a resource that is transferred from                                     ρ1              ρn
+the input to the output; and n is used to define the type of x. The                                     x 1 : S 1 , . . . , xn : Sn ⊢ M : T              (2)
+fact that n is not used in the computation being described is not
+                                                                                     where the ρ 1 , . . . , ρ n are elements of the semiring indicating how
+explicitly recorded.
+                                                                                     the corresponding variable is used. In these systems, the zero of
+    Linear Logic [14] uses presence or absence in a context to explic-
+                                                                                     the semiring is used to indicate that a variable is not used at all:
+itly record used resources. A linear typing judgement,                                 0
+                                                                                     x : S is a complicated way of stating that x may as well be absent.
+                      x 1 : X 1 , . . . , xn : X n ⊢ M : Z                               However, when we move to dependent types, 0 usage variables
+indicates that the term M uses the resources named by the x i each                   have a useful meaning. McBride [25] reads the usage annotations
+precisely once.                                                                      ρ i as indications of computational usage, so a variable with usage
+   Linear Logic’s resource accounting via presence conflicts with                    0 indicates that it has no “run-time” presence, but may still be used
+type dependency. If a variable’s referenced resources are not used                   in the formation of types. The properties of semirings means that 0
+computationally, it must not appear in the context and so is not                     usage is ideal for tracking use in types: we always have 0 + ρ = ρ,
+available for use in type formation. Judgement 1 is thus not linear:                 so combining a computational use with a use in a type retains the
+both because n is not used in the term, and because it is used twice                 original usage; and 0ρ = 0, so nesting an apparently computational
+in types.                                                                            use within a type treats the whole usage as noncomputational. Thus
+   To resolve this conflict, several authors have used formulations of               McBride’s system incorporates both erasure (see also Miquel [26]
+Linear Logic that distinguish between unrestricted (“intuitionistic”)                and Mishra-Linger and Sheard [27]) with linearity.
+variables and restricted (“linear”) variables. For simple types, this                    Term typing judgements now have the form:
+originates in Barber’ work [5], where judgements have two contexts                                         ρ1             ρn           σ
+separated by a vertical bar:                                                                           x 1 : S 1 , . . . , xn : Sn ⊢ M : T               (3)
+
+        x 1 : S 1 , . . . , x m : Sm | y 1 : X 1 , . . . , y n : X n ⊢ M : Y         where the difference from Judgement 2 is that the output is anno-
+                                                                                     tated with a usage σ , where σ is restricted to either be the 0 or the 1
+The variables x i may be used without restriction, zero, one, or                     of the semiring. This annotation means that we can construct terms
+many times. The variables yi must be used exactly once. Thus,                        that are only to be used in the formation of types. McBride allowed
+the judgement tracks information about the two different kinds of                    arbitrary usages ρ on the final colon. However, this yields a system
+usage. Cervesato and Pfenning [9], and later Krishnaswami et al.                     that does not admit substitution as we show in Section 2.3.
+[18] and Vákár [35] adapted this to dependent types. Exploiting                         We now introduce our formulation of McBride’s system, extend-
+the fact that variables in the unrestricted context act as they do                   ing it with a data type of booleans, and dependent tensor product
+in normal Type Theory, there is no problem in allowing types to                      types. McBride presented a bidirectional system suited for imple-
+depend on the variables x i . If we wish to treat elements of Fin(n)                 mentation, and did not distinguish between proper types and terms
+as non-duplicable resources, Judgement 1 can be reformulated as:                     representing types. We are interested in a semantical investigation
+                     n : Nat | x : Fin(n) ⊢ x : Fin(n)                               of the theory and so switch to a system with an explicit separa-
+The variables in the unrestricted context now inherit the ambigu-                    tion of types and representations of types, and with a “declarative”
+ous status of variables from standard Type Theory. They can be                       presentation of the rules.
+used purely contemplatively in types and they can be used for com-
+                                                                                     2.1.1   Semirings for Usage Accounting
+putation. The difference is not recorded in the typing judgement. A
+further restriction is that types cannot depend on linear variables.                 A semiring R is a structure consisting of a carrier set R, binary
+There is no way that we can contemplate the extensional content                      operations (+) : R × R → R, (·) : R × R → R and constants 1, 0 ∈ R,
+of a linear resource for the purposes of typing, for example:                        such that (R, +, 0) is a commutative monoid, (R, ·, 1) is a monoid,
+                                                                                     (+) and (·) distribute, and 0ρ = ρ0 = 0, for all ρ ∈ R. We also
+     n : Nat | x : Fin(n) ⊢ (x, refl(x )) : (y : Fin(n)) × (x ≡ y)                   require that the semiring R is positive, meaning that ρ + π = 0
+where we are trying to state that the value we return has the same                   implies ρ = 0 and π = 0, and has the zero-product property: ρπ = 0
+extensional content as the input by pairing the computational rep-                   implies ρ = 0 or π = 0. These latter two properties are required for
+resentation of the value with proof of equality.                                     the admissibility of substitution.
+   Systems that rely on split contexts still adhere to Linear Logic’s                   Suitable semirings include the zero-one-many semiring {0, 1, ω},
+discipline of using presence or absence in a context to track how a                  where ρ + ω = ω and ω · ω = ω; the natural numbers with addition
+variable is used. This restricts what kinds of “use” we can express:                 and multiplication; and the boolean semiring {0, 1}, which we can
+either a variable is used or it is not. To lift this latter restriction,             read as “erased” and “present”.
+systems that annotate variables of the context with information
+about how they are used have been proposed by Brunel et al. [8],                     2.1.2   Presyntax
+Ghica and Smith [13], and Petricek et al. [29] (the general idea of                  Quantitative Type Theory (QTT) is defined over the syntactic cate-
+marking variable bindings rather than their types was originally                     gories of usages, ρ, π , precontexts Γ, pretypes S,T , R, and preterms
+Syntax and Semantics of Quantitative Type Theory                                                       LICS ’18, July 9–12, 2018, Oxford, United Kingdom
+
+
+M, N , O:                                                                              The rules for variables and type conversion are:
+  ρ, π      ∈ R                                                                                    σ                                   σ
+                         ρ                                                                ⊢ 0Γ, x : S, 0Γ ′                    Γ⊢M : S          0Γ ⊢ S ≡ T
+  Γ        ::= ⋄ | Γ, x : S                                                                  σ         ′     σ       Var                        σ                Conv
+                   π              π                                                    0Γ, x : S, 0Γ ⊢ x : S                           Γ⊢M : T
+  S,T , U ::= (x : S ) → T | (x : S ) ⊗ T | I | Bool | El(M ) | Set
+                      π
+  M, N , O ::= x | λx : S.M T | App (x π: S )T (M, N )                              The variable rule, Var, selects an individual variable from the con-
+               | (M, N )x π: S .T | ∗ | fstx π: S .T (M ) | sndx π: S .T (M )       text. In keeping with our intuition for usage annotations, all vari-
+               | letx π: S .T (x, y) = M in N | letI ∗ = M in N                     ables that are not selected are marked with 0 usage, and the selected
+               | true | false | ElimBool (z )T (Mt , M f , N )                      variable is marked with the result usage σ . The conversion rule,
+                               π                                                    Conv, is almost identical to that in standard MLTT, except that the
+               | Bool | (x : M ) → N
+                                                                                    type equality judgement 0Γ ⊢ S ≡ T explicitly stipulates that types
+The rules that identify the contexts, types, and terms from the pre-                are always judged equal in a context with no resources.
+contexts, pretypes, and preterms are described below. The symbol                                                                                     π
+⋄ denotes the empty precontext, which we omit when writing pre-                     Dependent Function Types Function types (x : S ) → T record
+contexts with more than zero elements. Preterms contain more                        how the function will use its argument via the π annotation. The
+type information than is usually necessary (e.g., the result type T                 formation rule is:
+in a λ-abstraction). This will be used when we interpret the syntax                                                                0
+in our categorical models in Section 3.                                                                     0Γ ⊢ S         0Γ, x : S ⊢ T
+                                                                                                                           π                   Pi
+   Precontexts contain usage annotations, ρ, on each of the con-                                                 0Γ ⊢ (x : S ) → T
+stituent variables. Scaling, π Γ, is defined by:
+                                             ρ                  πρ                  The usage annotation π is not used when judging that T is a type.
+            π (⋄) = ⋄              π (Γ, x : S ) = π Γ, x : S                       As for all type well formedness judgements in QTT, it is judged
+                                                                                    in a context of 0 usage. The usage annotation π is used in the
+Scaling is shallow in the sense that usage annotations in pretypes
+                                                                                    introduction and elimination rules of this type to track how the
+S, if any, are not affected. By the semiring laws, context zero-ing,
+                                                                                    abstracted variable x is used, and how to multiply the resources
+0Γ, sets all the annotations to 0.
+                                                                                    required for the argument, respectively.
+   Precontext addition Γ1 + Γ2 is only defined when 0Γ1 = 0Γ2 :
+                             ρ1              ρ2                      ρ 1 +ρ 2                                        σπ            σ
+  ⋄+⋄=⋄            (Γ1 , x : S ) + (Γ2 , x : S ) = (Γ1 + Γ2 ), x        :       S                             Γ, x : S ⊢ M : T
+                                                                                                                 π         σ       π            Lam
+                                                                                                        Γ ⊢ λx : S.M T : (x : S ) → T
+These cases are exhaustive by the requirement that 0Γ1 = 0Γ2 .
+                                                                                                                      σ        π
+2.1.3    Contexts, Types, Terms                                                                             Γ1 ⊢ M : (x : S ) → T
+                                                                                              σ′
+Contexts are identified within the precontexts by the judgement                       Γ2 ⊢ N : S           0Γ1 = 0Γ2           σ ′ = 0 ⇔ (π = 0 ∨ σ = 0)
+Γ ⊢, defined by the following rules:                                                                                                       σ                      App
+                                                                                                 Γ1 + π Γ2 ⊢ App (x π: S )T (M, N ) : T [N /x]
+                                       Γ⊢             0Γ ⊢ S
+                   Emp                            ρ            Ext                  Forgetting the resource annotations, these are the standard intro-
+              ⋄⊢                            Γ, x : S ⊢                              duction and elimination rules for dependent function types (re-
+where the judgement 0Γ ⊢ S indicates that S is well formed as a                     membering that the side condition 0Γ1 = 0Γ2 means that Γ1 and
+type in the context 0Γ. We will see the type formation rules for                    Γ2 have the same variables with the same types). In the introduc-
+each type former below. The rule Emp builds the empty context.                      tion rule, we require that the abstracted variable x has usage σ π
+The rule Ext extends a context Γ with a extra variable x of type S,                 – multiplication by σ is used to enforce the zero-needs-nothing
+with usage annotation ρ. The annotation ρ indicates building of a                   property of the system. In the elimination rule, we sum up the
+context representing environments that provide for ρ-many uses                      usage requirements of the function and its argument, scaling the
+of x.                                                                               argument’s requirements by the amount required by the function
+   As we shall see below, all type formation rules yield judgements                 itself. By the last premise, the function argument N may be judged
+where all the usage annotations in Γ are equal to 0. Thus type                      in the 0-use fragment of the system in the case when either we are
+formation requires no computational resources.                                      already in that fragement, or the function will not use the argument
+   Term judgements in QTT have the form:                                            (π = 0). It is this condition on usages that requires us to stipulate
+                                        σ
+                                                                                    that the usage accounting semiring we use is positive and has the
+                                  Γ⊢M : S                                           zero-product property.
+where σ ∈ {0, 1}. The binary choice of σ effectively splits the                     Dependent Tensor Product Types We extend McBride’s system
+theory into two halves. When σ = 0, we are indicating that we are                                                           π
+                                                                                    with a dependent tensor product type (x : S ) ⊗ T , where the π
+constructing a term with no need for computational content. By
+                                                                                    annotation records how many times the first argument may be
+Lemma 2.3 (below) when σ = 0 we will necessarily have that all
+                                                                                    used, and a unit type I :
+the usage annotations in the context are 0 too. When σ = 1, we
+are indicating we are constructing computationally relevant data.                                                     0
+                                                                                                 0Γ ⊢ A       0Γ, x : S ⊢ T                         0Γ ⊢
+The two halves are similar to Pfenning’s “:” and “÷” judgements
+                                                                                                              π                    ⊗                         I
+for terms and irrelevant proofs respectively [30].                                                  0Γ ⊢ (x : S ) ⊗ T                               0Γ ⊢ I
+LICS ’18, July 9–12, 2018, Oxford, United Kingdom                                                                                                                            Robert Atkey
+
+
+As for the dependent function type, type formation does not require                                      annotation σ is unrestricted, indicating that we are free to choose
+any intensional resources. The introduction rules:                                                       whether this is a boolean value that is erased or present.
+                                   σ′                                                                      The elimination rule for booleans is:
+           Γ1 ⊢ M : S      0Γ1 = 0Γ2                                                                                        0                             σ
+           σ                                                                                                         0Γ1, z : Bool ⊢ T          Γ1 ⊢ M t : T [true/z]
+Γ2 ⊢ N : T [M/x]     σ ′ = 0 ⇔ (π = 0 ∨ σ = 0)                                                  0Γ ⊢                    σ
+                                                                                                               Γ1 ⊢ M f : T [false/z]
+                                                                                                                                                      σ
+                                                                                                                                               Γ2 ⊢ N : Bool      0Γ1 = 0Γ2
+                                                 σ       π                                          σ                                                                           B-Elim
+      π Γ1 + Γ2 ⊢ (M, N )x π: S .T : (x : S ) ⊗ T                                           0Γ ⊢ ∗ : I                                                             σ
+                                                                                                                   Γ1 + Γ2 ⊢ ElimBool (z )T (M t , M f , N ) : T [N /z]
+Resource-wise, building a pair is similar to the App rule above. To                                      We ensure that the result type T is wellformed, with 0 usage. Then
+build an element of the unit type requires no resources. When                                            the two branches Mt and M f for the true and false case respectively
+we are in the extensional portion of the theory (σ = 0), there are                                       must be typed with the same usage annotations Γ1 . This follows
+effectively no restrictions, and these are the normal introduction                                       the same style as for the “additive” connectives in Linear Logic.
+rules for dependent product and unit types.                                                              The actual boolean to be eliminated must be constructed from
+   The elimination rules are interesting because there are two sets,                                     other resources Γ2 , but this must have the same typing content
+depending on whether we are in the erased (σ = 0) or present                                             (0Γ1 = 0Γ2 ).
+(σ = 1) part of the theory. Under erasure, we are free to use the
+                                                                                                         Universe: The Type of Small Types The type of small types, Set,
+normal first and second projection operators:
+                                                                                                         is an example of a type whose elements occupy no resource, but
+               0       π                                                0           π
+   Γ ⊢ M : (x : S ) ⊗ T                                      Γ ⊢ M : (x : S ) ⊗ T                        do have a role in forming types. The type formation rule for Set is
+                                   0                                                    0                similar to the one for Bool:
+   Γ ⊢ fstx π: S .T (M ) : A                      Γ ⊢ sndx π: S .T (M ) : T [fst(M )/x]                                               0Γ ⊢
+                                                                                                                                                         Set
+We also assume the usual βη equality rules in the erased fragment.                                                                            0Γ ⊢ Set
+There is no erased eliminator for the I type; in the absence of
+                                                                                                         The introduction rules for Set are only available in the σ = 0
+intensional information, the I type acts like the “unit” type in a
+                                                                                                         fragment; we can never construct a Set value with runtime presence.
+normal type theory, and so has no eliminator. We have an η-rule
+                                                                                                         For instance, the terms representing dependent function types:
+for I in the σ = 0 fragment stating that ∗ is the only inhabitant.
+                                                                                                                                0                  0                   0
+   When we take into account the resource content of objects,                                                       0Γ ⊢ M : Set              0Γ, x : El(M ) ⊢ N : Set
+we are more restricted in how we can eliminate objects of tensor                                                                                                            Set-Pi
+                                                                                                                                          π              0
+product and unit type. Just as for elimination of ⊗ in intuitionistic                                                           0Γ ⊢ (x : M ) → N : Set
+linear types theories, we must use a pattern matching construct to                                       The other introduction rules are similar, but are omitted for space.
+ensure that both parts of the product are used. Likewise, we must                                          Elements of Set become proper types via the “decoder” El(−):
+explicitly eliminate elements of the unit type:                                                                                                     0
+                       0       π                                        σ               π
+                                                                                                                                          0Γ ⊢ M : Set
+           0Γ1 , z : (x : S ) ⊗ T ⊢ U   Γ1 ⊢ M : (x : S ) ⊗ T                                                                                                 El
+                  σπ      σ         σ                                                                                                     0Γ ⊢ El(M )
+           Γ2 , x : S, y : T ⊢ N : U [(x, y)/z]    0Γ1 = 0Γ2
+                                                                            σ                            This rules indicates that the use of a code for a type in a type does
+               Γ1 + Γ2 ⊢ letx π: S .T (x, y) = M in N : U [M/z]                                          not require any computational information.
+                                                                                                           Using Set with our other type formers, we can construct addi-
+       0                                    σ                       σ
+0Γ1 , x : I ⊢ U                Γ1 ⊢ M : I                Γ2 ⊢ N : U [∗/x]                    0Γ1 = 0Γ2
+                                                                                                                                                                                1
+                                                                                                         tive product and sum types. For example, S × T = (b : Bool) →
+                                                                σ                                        ElimBool (_)Set (S,T , b).
+                       Γ1 + Γ2 ⊢ letI ∗ = M in N : U [M/x]
+                                                                                                            This concludes our presentation of the context, type and term
+These constructs are subject to the usual βη and commuting con-
+                                                                                                         formation rules of QTT. The remaining rules of QTT concern the
+version rules [5]. These constructs are permitted in the σ = 0 and                                                                                                    σ
+σ = 1 fragments, but in the σ = 0 fragment they are shorthand for                                        type and term equality judgements Γ ⊢ S ≡ T and Γ ⊢ M ≡ N : S,
+fst and snd:                                                                                             but are omitted for space.
+                                             0       π
+                                        0Γ, z : (x : S ) ⊗ T ⊢ U                                         2.2   Syntactic Properties of QTT
+                   0       π                             0      0                   0
+     0Γ ⊢ M : (x : S ) ⊗ T                       0Γ, x : S, y : T ⊢ N : U [(x, y )/z]                    Usage annotation manipulation The following shows how us-
+                                                                                            0
+ 0Γ ⊢ letx π: S .T (x, y ) = M in N ≡ N [fst(M )/x, snd(M )/y] : U [M /z]                                age annotations and the judgements of QTT interact.
+
+By combining ⊗ and I , we can derive an exponential type !ρ A for                                        Lemma 2.1. Usage annotations do not affect context well formedness:
+                               ρ                                                                         Γ1 ⊢ and 0Γ1 = 0Γ2 implies Γ2 ⊢.
+QTT as !ρ A = (x : A) ⊗ I .
+                                                                                                         Lemma 2.2. The following 0-ing rules are admissible:
+Boolean Type The type Bool is an example of a type of data that
+                                                                                                                       σ                                               ρ
+can be available at runtime.                                                                                   Γ⊢M : S                                 Γ⊢M ≡N : S
+                                                                                                                                Tm-Zero                                    Tm-Eq-Zero
+               0Γ ⊢                                             0Γ ⊢                                                    0                                              0
+                                                                                            B-T,F              0Γ ⊢ M : S                           0Γ ⊢ M ≡ N : S
+                           Bool                                                 σ
+       0Γ ⊢ Bool                                     0Γ ⊢ true, false : Bool
+                                                                                                            These rules state that we can take any term and produce its
+The introduction rules indicate two pieces of information. First, the                                    “resource free” counterpart in the σ = 0 fragment. Semantically,
+0 usage on the context Γ indicates that no resources are required                                        this will be modelled by the U functor/functions in our QCwFs in
+to construct the constants true and false. Second, the result usage                                      Definition 3.2. Note that it is not possible to go the other way: there
+Syntax and Semantics of Quantitative Type Theory                                                                          LICS ’18, July 9–12, 2018, Oxford, United Kingdom
+
+
+is no way to reconstruct the resource usage, and some constructs                                        The following derivation gives a context into which substitution
+such as fst and snd only live in the σ = 0 fragment.                                                 of Judgement 4 fails. Let D 1 and D 2 stand for uses of the Var rule
+                                                                                                                     0          1     ω                        1           ω
+                                                                            0                        to derive y : A, д : (x : A) → A ⊢ д : (x : A) → A and
+Lemma 2.3 (Zero needs nothing). If Γ ⊢ M : S, then 0Γ = Γ.                                               ω      0     ω                   ω
+                                                                                                     y : A, д : (x : A) → A ⊢ y : A.
+  Note that the “other direction” of this lemma does not hold. If we
+             σ                                                                                                                      ω    ω            ω    ω
+have 0Γ ⊢ M : S, then it is not necessarily the case that σ = 0. For
+                                                                                                                             0
+                                                                                                                           y : A, д : (x : A) → A ⊢ д : (x : A) → A            D2
+                                                                                                                                     ω      ω    ω                ω
+example, the Tm-Bool-True rule produces judgements of arbitrary                                                     D1             y : A, д : (x : A) → A ⊢ дy : A
+                                                                                                                                 ω      ω    ω                  1
+usage from no resources.                                                                                                       y : A, д : (x : A) → A ⊢ д (дy ) : A
+                                                                                                                                              ω
+Weakening Weakening allows the insertion of variables into con-                                      If we attempt to substitute λx : A.f x for д, then to push the term
+texts, provided they are 0 usage.                                                                    into the two halves of the top level application, we need to split
+                                                                                                     Judgement 4 according to the equation ω = 1 + ω. We already have
+Lemma 2.4. Weakening is admissible:                                                                  a version of usage ω, but the following judgement is not derivable:
+                        Γ, Γ ′ ⊢ J                 0Γ ⊢ U                                                            1      1                     ω        1       ω
+                                                                Weaken                                              f : (x : A) → A ⊬ λx : A.f x : (x : A) → A
+                                      0        ′
+                             Γ, x : U , Γ ⊢ J                                                                                                          ω               ω        1
+                                                                                                     Indeed, it is not possible to derive y : A, f : (x : A) → A ⊢
+                                                        σ                              σ                      ω
+where J is “is context”, S, S ≡ T , M : S, or M ≡ N : S.                                             f ( f y) : A due to the mismatch between y’s ω annotation, and
+                                                                                               ρ     f ’s 1 requirement. The implicit weakening in Judgement 4 is not
+Substitution Substitution (Lemma 2.5) allows for a variable x : S                                    accessible without an intervening λ-abstraction. This problem is
+to be replaced by a term of type S, as long as, in the case of the                                   fixed by only allowing 0 or 1 usage on terms, which prohibits this
+term judgements, we add the resources it requires multiplied by ρ                                    kind of implicit “subusaging”. An alternative solution would be to
+to the resources already present.                                                                    allow subusaging. This is something we plan to investigate.
+Lemma 2.5. The following substitution rules are admissible:
+                                  ρ                                      0
+                                                                                                     3       Quantitative Categories with Families
+                        Γ, x : S, Γ ′ ⊢                 0Γ ⊢ N : S
+                                                                                                     Giving a model for dependent Type Theory is a delicate affair due
+                                          Γ, Γ ′ [N /x] ⊢                                            to the complex mutual definition of contexts, types and terms. We
+                                                                                                     build on the existing notion of Categories with Families (CwFs)
+                   0                                        0
+           0Γ1 , x : S, 0Γ ′ ⊢ T                   Γ2 ⊢ N : S                    0Γ1 = 0Γ2           [11, 15] to define Quantitative Categories with Families (QCwFs)
+                                                                                                     suitable for modelling QTT. Every QCwF contains a CwF, so we
+                             0Γ1 , 0Γ ′ [N /x] ⊢ T [N /x]
+                                                                                                     first recall their definition.
+               0
+       0Γ1 , x : S, 0Γ ′ ⊢ T ≡ T ′                     Γ2 ⊢ N : S
+                                                                    0
+                                                                                   0Γ1 = 0Γ2         Definition 3.1. A Category with Families (CwF) is a six-tuple
+                              ′                                         ′
+                                                                                                     (C, Ty, Tm, ⊤, −.−, ⟨−, −⟩), where:
+                   0Γ1 , 0Γ [N /x] ⊢ T [N /x] ≡ T [N /x]
+                                                                                                         1. C is a category with a chosen terminal object ⊤;
+                                           ρ                σ                                            2. For ∆ ∈ ObC, a collection Ty(∆) of semantic types;
+                               Γ1 , x : S, Γ ′ ⊢ M : T                                                   3. For ∆ ∈ ObC and S ∈ Ty(∆), a collection Tm(∆, S ) of seman-
+                       σ′
+           Γ2 ⊢ N : S                     0Γ1 = 0Γ2             σ′ = 0 ⇔ ρ = 0                              tic terms;
+                                                                        σ                                4. For every f : ∆ → ∆ ′ in C, a function −{ f } : Ty(∆ ′ ) →
+              (Γ1 + ρΓ2 ), Γ ′ [N /x] ⊢ M[N /x] : T [N /x]                                                  Ty(∆), and for S ∈ Ty(∆ ′ ) a function −{ f } : Tm(∆ ′, S ) →
+                                      ρ                              σ
+                                                                                                            Tm(∆, S { f }), such that both assignments preserve identities
+                            Γ1 , x : S, Γ ′ ⊢ M ≡ M ′ : T                                                   and composition.
+                       σ′                                                                                5. For each object ∆ in C and S ∈ Ty(∆) an object ∆.S (called
+           Γ2 ⊢ N : S                     0Γ1 = 0Γ2             σ′ = 0 ⇔ ρ = 0
+                                                                                   σ                        the comprehension of S) such that there is a bijection natural
+      (Γ1 + ρΓ2 ), Γ ′ [N /x] ⊢ M[N /x] ≡ M ′ [N /x] : T [N /x]                                             in ∆ ′ :
+2.3   Inadmissibility of Substitution in McBride’s system                                                    C(∆ ′, ∆.S )  {( f , M ) | f : ∆ ′ → ∆, M ∈ Tm(∆ ′, S { f })}
+McBride’s original system allowed for term judgements of the form                                             Given f : ∆ ′ → ∆ and M ∈ Tm(∆ ′, S { f }), we write ⟨f , M⟩
+       ρ
+Γ ⊢ M : T where ρ is an arbitrary element of the semiring. We now                                             for the associated morphism ∆ ′ → ∆.S in C. Conversely,
+show that such a formulation with the semiring {0, 1, ω} yields a                                             given a morphism f : ∆ ′ → ∆.S in C, we write f #1 : ∆ ′ → ∆
+system that is not closed under substitution. A proof attempt to                                              and f #2 ∈ Tm(∆ ′, S { f #1 }) for the associated morphism and
+show that substitution is admissible fails on App because we need                                             semantic term.
+                        ρ 1 +ρ 2
+to take the term Γ ⊢ O : U that is being substituted in, and                                            The following definitions derive projection and weakening from
+                                  ρ1                            ρ2
+split it into some Γ1 ⊢ O : U and Γ2 ⊢ O : U such that Γ1 + Γ2 = Γ.                                  Definition 3.1, and also define the semantic counterpart of a sub-
+This is not possible in general. We illustrate the problem with:                                     stitution of a term for a variable. We will require usage annotated
+               ω        1                          ω            ω            ω                       counterparts of these below.
+             f : (x : A) → A ⊢ λx : A.f x : (x : A) → A                                        (4)        1. For ∆ ∈ ObC and S ∈ Ty(∆), the first projection morphism
+This term coerces some function f from a type that states it uses its                                        p∆.S : ∆.S → ∆ is defined as p∆.S = id#1∆.S .
+argument once to a type where it uses its argument multiple times.                                        2. For ∆ ∈ C and S ∈ Ty(∆), the second projection v∆.S ∈
+This is despite McBride’s system not explicitly allowing subusaging.                                         Tm(∆.S, S {p∆.S }) is defined as v∆.S = id#2
+                                                                                                                                                       ∆.S .
+LICS ’18, July 9–12, 2018, Oxford, United Kingdom                                                                                   Robert Atkey
+
+
+    3. For any ∆, ∆ ′ in C, S ∈ Ty(∆) and morphism f : ∆ ′ → ∆, the          In Section 4 we present non-trivial models that use realisability
+       weakening of f by S, wk( f , S ) : ∆ ′ .S { f } → ∆.S is defined as   information to model the refinements brought about by the usage
+       wk( f , S ) = ⟨f ◦ p∆′ .S {f } , v∆′ .S {f } ⟩.                       annotations.
+    4. For any ∆ in C, S ∈ Ty(∆) and M ∈ Tm(∆, S ), we define the
+                                                                             Proposition 3.3 (Trivial QCwFs). Let R be any usage semiring.
+       morphism M : ∆ → ∆.S as M = ⟨id∆ , M⟩.
+                                                                             Every Category with Families (C, Ty, Tm, 1, −.−, ⟨−, −⟩) yields an
+   The definition of a Quantitative Category with Families incorpo-          R-QCwF with L = C and RTm = Tm.
+rates a CwF, and layers over it facilities for representing contexts,
+simultaneous substitutions and terms, all with usage information.               As would be expected, the syntax of QTT also forms a model in
+                                                                             the sense of R-QCwFs:
+Definition 3.2. For a usage semiring R, an R-Quantitative Category
+                                                                             Proposition 3.4 (Syntactic Model). The syntax of QTT forms a
+with Families (R-QCwF) consists of the data:
+                                                                             QCwF, where the underlying CwF is built from (equivalence classes
+    1. A CwF (Definition 3.1) (C, Ty, Tm, 1, −.−, ⟨−, −⟩);                   of) 0-usage annotated contexts, simultaneous substitutions, types, and
+    2. A category L, whose objects will be used to interpret con-            terms in the σ = 0 fragment. Objects of L are equivalence classes
+       texts with resource annotations and whose morphisms will              of usage annotated contexts, and RTm(Γ, S ) consists of equivalence
+       interpret simultaneous substitutions, together with a faithful        classes of terms in the σ = 1 fragment.
+       functor U : L → C;
+                                                                       U     Type Formers Definition 3.2 only defines enough structure to
+    3. (Addition structure) Let L × C L be the pullback of L −→
+           U                                                                 interpret the construction of contexts and the Var and Conv rules.
+       C ←− L. We require a functor (+) : L × C L → L such that              We must stipulate the existence of further structure if we wish
+       U (Γ1 + Γ2 ) = U Γ1 (= U Γ2 ). Also, there is an object ⋄ ∈ L         to interpret the function, tensor product, boolean, and universe
+       such that U ⋄ = ⊤.                                                    types. Each of these follows the same pattern as the definition of
+    4. (Scaling structure) For ρ ∈ R, there is a functor ρ (−) : L → L       QCwFs. We first require the standard structure on the CwF for the
+       such that U (ρ (−)) = U (−).                                          type former without resource restrictions, and then we define a
+    5. (Resourced Terms) For Γ in L and S ∈ Ty(U Γ), there is                corresponding refined structure for resourced semantic terms that
+       a collection of semantic resourced terms RTm(Γ, S ), with             maps back to the unresourced version via U . To conserve space, we
+       injective functions U Γ.S : RTm(Γ, S ) → Tm(U Γ, S ). For             only do the case for dependent function types in detail.
+       morphisms f : Γ ′ → Γ, and types S ∈ Ty(U Γ), there is
+       a function −{ f } : RTm(Γ, S ) → RTm(Γ ′, S { f }) such that          Definition 3.5. A CwF C supports dependent products with usage
+       U (M { f }) = (U M ){U f }.                                           information if for all ∆ ∈ ObC, S ∈ Ty(∆), T ∈ Ty(∆.A), and
+    6. (Resourced context extension) For Γ in L, ρ ∈ R and S ∈               π ∈ R, there exists a semantic type ΠπST ∈ Ty(∆) with a bijection
+       Ty(U Γ), there is an object Γ.ρS in L such that U (Γ.ρS ) =           Λ : Tm(∆.S,T )  Tm(∆, ΠπST ), all natural in ∆.
+       U Γ.S and there exist natural transformations                           For ∆, S and T as in Definition 3.5, and M ∈ Tm(∆, ΠπST )
+        empπ      :   ⋄ → π⋄                                                 and N ∈ Tm(∆, S ), we define App00
+                                                                                                             ∆,S,T (M, N ) ∈ Tm(∆,T {N }) as
+                      ⋄→⋄+⋄
+                                                                                 ∆,S,T = (Λ (M )){N }. This is used to interpret application in
+        emp+      :                                                          App00          −1
+        extπ      :   π Γ.(π ρ)S → π (Γ.ρS )                                 the σ = 0 fragment of QTT, the superscript indicating that both the
+        ext+      :   (Γ1 + Γ2 ).(ρ 1 + ρ 2 )S → Γ1 .ρ 1S + Γ2 .ρ 2S         function and argument are in this fragment. To interpret abstraction
+       such that U (empπ ) = U (emp+ ) = id : ⊤ → ⊤, U (extπ ) =             and application when σ = 1, we need a further definition:
+       id, and U (ext+ ) = id.                                               Definition 3.6. A QCwF (L, C, . . .) supports dependent products
+    7. Resourced counterparts of the projection, weakening, and              with usage information if the CwF C supports dependent products
+       term substitution of the underlying CwF:                              with usage information (Definition 3.5), and there is an bijection
+       a. For Γ and S ∈ Ty(U Γ), there is a morphism pΓ.S : Γ.0S →           Λ L : RTm(Γ.πS,T )  RTm(Γ, ΠπST ), natural in Γ such that U ◦
+          Γ such that U (pΓ.S ) = pU Γ.S ;                                   Λ L = Λ ◦ U and U ◦ Λ−1    = Λ−1 ◦ U .
+       b. For Γ and S ∈ Ty(U Γ) there exists an element vΓ.S ∈                                      L
+          RTm(0Γ.1S, S {pU Γ.S }) such that U (vΓ.S ) = vU Γ.S ;                To interpret application in the σ = 1 fragment, we need two
+       c. For f : Γ → Γ ′ , ρ ∈ R, and S ∈ Ty(U Γ ′ ) there is               derived operations. When both premises are in the σ = 1 fragment,
+          a morphism wk( f , ρS ) : Γ.ρS {U f } → Γ ′ .ρS such that          we will have M ∈ RTm(Γ1 , ΠπST ) and N ∈ RTm(Γ2 , S ), such that
+          U (wk( f , ρS )) = wk(U f , S );                                   U Γ1 = U Γ2 , and we define
+      d. For M ∈ RTm(Γ2 , S ) and Γ1 such that U Γ1 = U Γ2 , there is a
+                                                                                         Γ1, Γ2, π,S,T (M, N ) =
+                                                                                      App11
+          morphism ρM : Γ1 + ρΓ2 → Γ1 .ρS such that U (ρM ) = U M.                      Λ−1
+                                                                                         Γ , π,S,T (M ){π N } ∈ RTm(Γ1 + π Γ2 ,T {U N })
+       e. For M ∈ Tm(U Γ, S ) there is a morphism M : Γ → Γ.0S                             1
+
+          such that U (M ) = M.                                              When the argument is erased we have π = 0, M ∈ RTm(Γ1 , Π0ST )
+                                                                             and N ∈ Tm(U Γ, S ), and we define
+   Note that 7d does not imply 7e in this definition. As noted after                                   −1
+Lemma 2.2, it is not possible to go from unresourced terms to                         Γ,S,T (M, N ) = Λ Γ,0,S,T (M ){N } ∈ RTm(Γ,T {U N })
+                                                                                   App10
+resourced terms.                                                             We have U (App1x (M, N )) = App00 (U M, U N ), for x ∈ {0, 1}, part
+   The following proposition highlights the fact that the usage              of the semantic counterpart of Lemma 2.2.
+information present in QTT/QCwFs is a refinement of the usual                   The required structure for the remaining type formers is sim-
+structure of Type Theory. It is possible to completely ignore this           ilar, albeit for the Set type, where we do not require any usage
+refinement and interpret the system in any model of Type Theory.             annotation refined counterpart.
+Syntax and Semantics of Quantitative Type Theory                                          LICS ’18, July 9–12, 2018, Oxford, United Kingdom
+
+
+Interpretation of QTT in a QCwF We follow Hofmann [15]’s                in the next section with realisability models of QTT. We suspect
+presentation of the interpretation of Type Theory in CwF by first       that QCwFs are more specific in that every QCwF (augmented with
+defining a partial interpretation of the presyntax, and then showing    a ⊗-product type former) forms one of Vákár’s indexed symmetric
+that this interpretation is well defined on well typed presyntax.       monoidal categories.
+For contexts with all annotations 0, types, and terms in the σ = 0
+fragment, the interpretation is as it is for unannotated Type Theory.   4    Realisability Models of QTT
+This fragment is self contained by Lemma 2.3.                           In our informal descriptions of QTT and QCwFs, we have distin-
+   To interpret contexts with resource annotations, and terms in        guished between the erased and present, or resourced and unre-
+the σ = 1 fragment, we use the additional structure. We interpret       sourced fragments of the system. We make this distinction formal
+precontexts with resource annotations, Γ as objects JΓK of L and        by constructing realisability models of QTT. Resource sensitive
+simultaneously partially define two families of morphisms for split-    computational content will be represented in the model by realisers
+ting and distributing resource annotations, using the emp and ext       from a R-Linear Combinatory Algebras, a refinement of Abramsky,
+morphisms of the QCwF.                                                  Haghverdi and Scott’s Linear Combinatory Algebras [3].
+                 sΓ1, Γ2   :   JΓ1 + Γ2 K → JΓ1 K + JΓ2 K
+                                                                        4.1 R-Linear Combinatory Algebras
+                 dπ, Γ     :   Jπ ΓK → π JΓK
+                                                                        R-Linear Combinatory Algebras (R-LCAs) are extensions of BCI -
+These morphisms “rearrange” the interpretations of contexts to          algebras:
+allow the use of the categorical combinators that interpret terms.
+In the realisability semantics in Section 4, they will be directly      Definition 4.1. A BCI-algebra (A, (·), B, C, I ) comprises a set A,
+interpreted as rearrangement of resources.                              a binary operation (·) (called “application”, and written left asso-
+   Preterms in the σ = 1 fragment are partially assigned interpre-      ciatively), and B, C, I ∈ A, such that B · x · y · z = x · (y · z),
+tations with respect to some type assignment ∆ (i.e. a precontext       C · x · y · z = x · z · y, and I · x = x.
+without usage annotations). The interpretation J∆; MK yields a pair        BCI -algebras are the untyped counterpart of a Hilbert style ax-
+(Γ, t ) of a precontext with usage annotations matching the vari-       iomatisation of the ⊸ fragment of Linear Logic, analogous to the S
+ables and types in ∆, and a resourced semantic term t. We write         and K combinators for minimal implicational logic. We think of the
+J⌊Γ⌋; MK for the partial assignment of resourced semantic terms         elements of A as “computational widgets” that can be connected
+to preterms such that the usage annotations returned by the in-         to one another via application. The B, C, I combinators are a basis
+terpretation match the precontext Γ. The actual interpretation of       for linear implication, ⊸, allowing composition (B), exchange (C),
+preterms is defined by induction over their structure, using vΓ.S       and identity (I ).
+and wk( f , ρS ) to interpret variables and the appropriate structure      BCI -algebras are combinatorily complete: given an expression
+for each type’s introduction and elimination rules.                     M with variables and the combinators that contains a variable x
+   Soundness of the interpretation is stated as the following the-      exactly once, there is an expression λ∗x .M that does not contain
+orem, similar to [15]. The challenge in proving this theorem is in      x, such that (λ∗x .M ) · N = M[N /x]. Using this fact, we define an
+showing that weakening and substitution are soundly interpreted         n-ary tupling operation:
+in the σ = 1 fragment. This is accomplished by showing that their
+                                                                        Definition 4.2. Let p1 , . . . , pn be elements of a BCI -algebra. De-
+interpretations are tracked by the interpretations of weakening and
+                                                                        fine their tupling [p1 , . . . , pn ] = λ∗q. q p1 . . . pn . We use the no-
+substitution in the underlying CwF.
+                                                                        tation let [x 1 , . . . , x n ] = p in q for p (λ∗x 1 . . . . λ∗x n .q) to represent
+Theorem 3.7.         1. If Γ ⊢, then JΓK is an object of L;             pattern matching decomposition of tuples.
+   2. If Γ ⊢ S, then JΓ; SK is an element of Ty(U JΓK);                 Example 4.3 (Graph Models). Let D be a set isomorphic to N +
+   3. If Γ ⊢ S ≡ T , then JΓ; SK = JΓ;T K;                              D × D (for example, finite binary trees with natural numbers at the
+                0
+    4. If Γ ⊢ M : S, then JΓ; MK is an element of Tm(U JΓK, JΓ; SK);    leaves). We elide the injections into D and just write n for a natural
+                       0
+    5. If Γ ⊢ M ≡ N : S, then JΓ; MK = JΓ; N K.                         number in D and ⟨a, b⟩ for an element of D made from a pair of
+                1                                                       elements of D. The powerset of D, P (D), can be endowed with the
+    6. If Γ ⊢ M : S, then J⌊Γ⌋; MK is an element of RTm(JΓK, JΓ; SK);
+                       1
+                                                                        structure of a BCI -algebra with booleans. Define application to be:
+    7. If Γ ⊢ M ≡ N : S, then J⌊Γ⌋; MK = J⌊Γ⌋; N K.
+                                                                                             α · β = {b | ∃a. ⟨a, b⟩ ∈ α, a ∈ β }
+Comparing R-QCwFs to other models Vákár [35] gives a cat-               Application interprets α as a set of pairs describing the graph of a
+egorical semantics for linear dependent Type Theory with split          function. Each pair in the graph can make a single observation of
+contexts as we described in Section 2.1. His models consist of in-      β to produce a single output observation. This is linear application;
+dexed symmetric monoidal closed categories H : C op → SMCCat            compare to Scott’s P (ω) model that allows a finite but arbitrary
+with a comprehension structure. In contrast to QCwFs, Vákár’s           number of observations of the input [31]. The B, C, and I combina-
+models permit more freedom in choosing how to interpret linear          tors are defined by the appropriate graphs:
+types and linearity; there is no requirement that every construct in
+the linear portion erases to a non-linear representative, as QCwFs                    B    =     {⟨⟨b, c⟩, ⟨⟨a, b⟩, ⟨a, c⟩⟩⟩ | a, b, c ∈ D}
+require via the U functor. QCwFs are intended to model a situation                    C    =     {⟨⟨b, ⟨a, c⟩⟩, ⟨a, ⟨b, c⟩⟩⟩ | a, b, c ∈ D}
+like QTT where we wish to remain with normal Type Theory for                          I    =     {⟨a, a⟩ | a ∈ D}
+the purposes of reasoning at the type level, and allow unrestricted     Example 4.4 (Geometry of Interaction). Abramsky et al.’s Geom-
+appearance of terms in types, but we also wish to be able to give       etry of Interaction (GoI) situations supply a large range of BCI -
+resource-aware realisations of programs. We substantiate this claim     algebras. For concreteness, we explain the partial functions GoI
+LICS ’18, July 9–12, 2018, Oxford, United Kingdom                                                                                                    Robert Atkey
+
+
+situation in detail. Let D be as in Example 4.3. The set of partial func-       where n ++ a is undefined for n , 0. We similarly define a list
+tions D ⇀ D can be endowed with the structure of a BCI -algebra.                membership predicate a ∈ b. Now we define
+We think of elements of this algebra as memoryless computational
+                                                                                                 !p = {[a 1 , · · · , an ] | a 1 , . . . , an ∈ p}
+devices that input and (possibly) output messages represented as
+elements of D. Define application to be:                                        and
+                                                    ∗
+                  p · q = p00 ∪ (p01 ; q; (p11 ; q) ; p10 )                        K     =    {⟨a, ⟨[], a⟩⟩ | a ∈ A}
+                                                                                   W     =    {⟨⟨a 1 , ⟨a 2 , b⟩⟩, ⟨a 1 ++ a 2 , b⟩⟩ | a 1 , a 2 , b ∈ A}
+where we treat partial functions as subsets of D × D, pi j = {(a, b) |             D     =    {⟨[a], a⟩ | a ∈ A}
+(⟨i, a⟩, ⟨j, b⟩) ∈ p}, and we use the standard combinators for re-                 δ     =    {⟨a 1 ++ · · · ++ an , [a 1 , . . . , an ]⟩ | a 1 , . . . , an ∈ A}
+lations. Conceptually, we are thinking of p as having two ports,                   F     =    {⟨f , ⟨a, [b1 , . . . , bn ]⟩⟩ | ∀bi .∃c. c ∈ a ∧ ⟨c, bi ⟩ ∈ f }
+0 and 1, that are connected to the environment and to q, respec-
+tively. Messages come in the 0 port and are either responded to                 Example 4.8. Following Abramsky et al., exponentials in the par-
+(p00 ) or are forwarded to q via p01 , which may result in a dia-               tial functions GoI model are given by !p = {(⟨n, x⟩, ⟨n, y⟩ | (x, y) ∈
+logue, (p11 ; q) ∗ , before being forwarded back to the environment             p}. Thinking of partial functions D ⇀ D as having I/O ports, ex-
+by p10 . We exploit the fact that we can tag messages in D with 0               ponentiation multiplexes N-many ports through a single port by
+or 1 to encode the multiplexing of p’s messages. The combinator                 tagging messages with a port number. The K,W , D, δ, F combina-
+I = {(⟨0, x⟩, ⟨1, x⟩) | x ∈ D} ∪ {(⟨1, x⟩, ⟨0, x⟩) | x ∈ D} – it forwards       tors are all defined by manipulating the port numbers to perform
+messages from the environment to its argument, and from its ar-                 the required routing. See Abramsky et al. for details [3].
+gument to the environment. The B and C combinators do similar,                     Another source of R-LCAs for the natural number semiring
+if more involved, routing. Abramsky notes [2] that the relations                is given by taking a BCI -algebra and representing duplicated re-
+involved for the BCI combinators are always symmetric, yielding                 sources by tupling:
+a model of reversible computation. However, we will see below in
+Example 4.12 that the structure required for the boolean type will              Proposition 4.9. Every BCI -algebra (A, (·), B, C, I ) can be given
+break this reversibility.                                                       the structure of an (N, +, ×, 0, 1)-LCA, where !n is defined by dupli-
+   Another GoI situation that is suitable for modelling QTT is the              cation: !n x = [x, . . . , x ], using tupling (Definition 4.2).
+                                                                                                | {z }
+resumptions model presented by Abramsky et al. [3]. In this model,                                  n
+the combinators are no longer necessarily memoryless, and can                      We also require structure to model the datatype of booleans:
+update their behaviour based on previous inputs. Abramsky has
+drawn attention to the relationship between this model and con-                 Definition 4.10. An BCI -algebra A0 ⊆ A has booleans if there
+currency models [1]. Hoshino et al. [17] have used the “memoryful”              are elements T , F ∈ A and a function E : A × A → A such that
+aspect of this situation to further allow for effectful computations.           E (p, q) · T = p and E (p, q) · F = q.
+An exciting avenue of future research will be to examine the impli-
+                                                                                Example 4.11. In the Graph Model of Example 4.3, booleans are
+cations of this model for an effectful QTT.
+                                                                                represented by T = {1} and F = {0} and
+Definition 4.5 (R-Linear Combinatory Algebra). Let R be a us-                                E (α, β ) = {⟨1, x⟩ | x ∈ α } ∪ {⟨0, x⟩ | x ∈ β }
+age semiring. An R-Linear Combinatory Algebra (R-LCA) is a BCI-
+algebra (A, (·), B, C, I ) with a function !ρ : A → A, for all ρ ∈ R            Example 4.12. Booleans are represented in the partial functions
+and elements K,Wπ ρ , D, δ π ρ , F ρ ∈ A, such that:                            GoI situation algebra (Example 4.4) by T (x ) = ⟨1, x⟩, F (x ) = ⟨0, x⟩,
+                                                                                and:
+    K · x · !0y        =x                                                                         E (p, q)⟨0, x⟩      = ⟨1, x⟩
+                                            δ π ρ · !π ρ x = !π ! ρ x
+    Wπ ρ · x · !π +ρ y = x · !π y · !ρ y                                                          E (p, q)⟨1, ⟨1, x⟩⟩ = ⟨0, p(x )⟩
+                                            F ρ · !ρ x · !ρ y = !ρ (x · y)
+    D · !1 x           =x                                                                         E (p, q)⟨1, ⟨0, x⟩⟩ = ⟨0, q(x )⟩
+We also require that, for all x, y ∈ A, !0x = !0y.                              That is, E (p, q) forwards its input to its argument, which tags it
+                                                                                with 1 or 0 depending on whether it is true or false. On its return to
+   The condition that !0x = !0y ensures that we have a canonical
+                                                                                E (p, q), the appropriate one of p or q is applied before forwarding
+representation of erased data in our models. Abramsky et al.’s
+                                                                                to the environment. Note that the relations described by E (p, q)
+original LCAs correspond to R-LCAs for the trivial one-element
+                                                                                are not symmetric, indicating the irreversible nature of following a
+semiring, without this condition. Given an LCA, we can build an
+                                                                                conditional—there is no general way of working out whether the
+R-LCA for the R = {0, 1, ω} semiring:
+                                                                                conditional was true or false given the final output. An interesting
+Proposition 4.6. Let (A, (·), B, C, I , !, K,W , D, δ, F ) be an LCA. We        avenue for future work is to formulate a version of QTT with a type
+can construct a {0, 1, ω}-LCA over (A, (·), B, C, I ) with !0x = I , !1x =      of reversible booleans, yielding a calculus of dependently typed
+x and !ω x = !x.                                                                reversible computation.
+
+Example 4.7. In the graph model of Example 4.3, let us write                    4.2 R-QCwFs from R-LCAs
+[a 1 , · · · , an ] to stand for a representation of lists as right-nested      We now fix an R-LCA with booleans and describe how to use it to
+tuples: ⟨a 1 , · · · ⟨an , 0⟩ · · · ⟩. We (partially) define the appending of   give a realisability model of QTT that makes use of the resource
+two elements of D as:                                                           information from the types. Hoshino [16] has already investigated
+                   ⟨a, a ′ ⟩ ++ a ′′   =   ⟨a, a ′ ++ a ′′ ⟩                    assemblies over BCI -algebras and LCAs in the simply typed setting.
+                          0 ++ a ′′    =   a ′′                                 Here, we extend this analysis to dependent types.
+Syntax and Semantics of Quantitative Type Theory                                                           LICS ’18, July 9–12, 2018, Oxford, United Kingdom
+
+
+Interpreting Contexts as Assemblies For the category L for                               consist of functions that are tracked by some realiser in A:
+interpreting contexts and simultaneous substitutions between them,
+we use the standard notion of the category of Assemblies (see, e.g.,                      RTm(Γ, S ) = { f : ∀γ ∈ |Γ|. |S (γ )| |
+Longley and Normann [22], §3.3.6). An assembly Γ is a pair1 of a                                        ∃x .∀γ ∈ |Γ|, y ∈ A. y |=Γ γ ⇒ x · y |=S (γ ) f (γ )}
+set |Γ| of extensional meanings, and a binary relation |=Γ ⊆ A × |Γ|
+                                                                                         Part (7) of Definition 3.2 is now fulfilled by giving R-LCA “pro-
+such that for all γ ∈ Γ, there is at least one a ∈ A such that
+                                                                                         grams” that realise the necessary resource rearrangement for each
+a |=Γ γ . The idea is that the relation a |=Γ γ indicates that a is an
+                                                                                         combinator. For example, variables vΓ.S ∈ RTm(0Γ.1S, S {pU Γ.S })
+implementation of the extensional meaning γ . A morphism between
+                                                                                         are realised by using K to discard the context, and D to “derelict”
+assemblies (|Γ|, |=Γ ) and (|Γ ′ |, |=Γ′ ) is a function f : |Γ| → |Γ ′ | that
+                                                                                         away the !1 application.
+is realisable: there exists an a f ∈ A such that for all γ ∈ |Γ| and
+aγ , if aγ |=Γ γ , then a f · aγ |=Γ′ f (γ ). These definitions yield                    Dependent Function Types Finally, we must give realisability in-
+a category, using the combinator I to realise identities, and B to                       terpretations for the type formers. For space, we only treat the case
+realise composition. We use the usual category of sets and functions                     of function types. For a set ∆, the underlying sets of the function
+for our CwF C. The functor U : L → C projects out the underlying                         space family of assemblies consists of the realisable functions:
+sets and functions.
+    Scaling of an assembly Γ = (|Γ|, |=Γ ) yields an assembly with                           |ΠπST (δ )| = { f : ∀s ∈ |S (δ )|. |T (δ, s)| |
+|π Γ| = |Γ| , and the realisability relation is defined by: x |=π Γ γ                                          ∃x .∀s, y. y |=S (δ ) s ⇒ x · !π y |=T (δ,s ) f (s)}
+iff ∃y.x = !π y ∧ y |=Γ γ . Addition of assemblies Γ1 = (|Γ|, |=Γ1 )
+                                                                                         Note the use of !π to model the fact that the function’s realiser is
+and Γ2 = (|Γ|, |=Γ2 ) (note that they have the same underlying set)
+                                                                                         given π -many copies of the input. The bijection Λ is realised using
+is defined as Γ1 + Γ2 = (|Γ|, |=Γ1 +Γ2 ), where x |=Γ1 +Γ2 γ iff there
+                                                                                         currying and uncurrying in the BCI -algebra. See Hoshino [16].
+exist y, z such that x = [y, z] and y |=Γ1 γ and z |=Γ2 γ . Scaling
+                                                                                            For the remaining type formers: booleans are realised using
+and addition of intensional interpretations of contexts does not
+                                                                                         the structure we stipulated in Definition 4.10. Dependent tensor
+affect the underlying meaning but does affect the computational
+                                                                                         product types are realised using tuples and !π . The universe of small
+resources available. The empty context ⋄ is interpreted using the
+                                                                                         types is interpreted as the (large) set of families of small assemblies.
+assembly ⋄ = ({∗}, |=⋄ ), where x |=⋄ ∗ iff x = I . The morphisms
+emp+ : ⋄ → ⋄ + ⋄ and empπ : ⋄ → π⋄ are the identity as functions,
+and are realised by elimination of the I combinator by treating it                       5     Related Work
+as a zero-element tuple.                                                                 In our introductory section we have already described the main
+                                                                                         predecessors of this work. In the split context tradition, where
+Intepreting Types as Families of Assemblies The formation                                intuitionistic and linear types are kept separate, the original work
+of types has no computational content, hence no realisers, but                           is Cervesato and Pfenning’s [9] Linear Logical Framework, which
+types do describe how their own extensional inhabitants are re-                          Vákár [35] provided a categorical semantics for; Krishnaswami et
+alised. Thus we interpret types as families of assemblies indexed                        al. [18] also investigated a variant of the split context system, also
+over a set, not an assembly. Given a set ∆, the collection Ty(∆)                         based on Benton’s Linear Non-Linear Logic [6].
+of semantic types consists of ∆-indexed collections of assemblies:                           Another approach to linear dependent type theory has recently
+{(|S (δ )|, |=S (δ ) )}δ ∈∆ .                                                            been proposed by Luo [23], where linear and intuitionistic variables
+                                                                                         are mixed within the same context, and specialised context merg-
+Unresourced Semantic Terms For a set ∆ and a family of assem-
+                                                                                         ing operations are used to distinguish between extensional and
+blies S ∈ Ty(∆), the semantic terms Tm(∆, S ) comprise functions
+                                                                                         intensional uses. We have not yet closely examined the relationship
+of type ∀δ ∈ ∆. |S (δ )|, ignoring the realisability information in S.
+                                                                                         between their system and QTT.
+The rest of the CwF structure on C is now standard [15].
+                                                                                             QTT is a kind of modal dependent type theory, particularly with
+Resourced Context Extension Given an assembly (|Γ|, |=Γ ), a                             the graded exponential modality we derived from our tensor prod-
+family of assemblies S ∈ Ty(|Γ|) and a usage ρ ∈ R, the set-theoretic                    uct type. Syntax and semantics for modal dependent type theories
+part of context extension is defined as |Γ.ρS | = {(γ , s) | γ ∈ |Γ|, s ∈                have been studied by de Paiva and Ritter [10]. Licata, Shulman and
+|S (γ )|}. The realisability relation |=Γ.ρS is:                                         Riley [21] have studied a general form of substructual and modal
+                                                                                         simple type theories with an eye towards extending them to de-
+   x |=Γ.ρS (γ , s)      iff   ∃y, z. x = [y, !ρ z] ∧ y |=Γ γ ∧ z |=S (γ ) s             pendent types. Modal type theories are particularly interesting in
+                                                                                         the context of Homotopy Type Theory, where they can be used to
+Note the use of !ρ to ensure that there are enough computational                         represent the presence or absence of topological structure on types,
+resources provided to satisfy the promise made. The natural trans-                       as shown by Shulman [32].
+formations ext+ : (Γ1 + Γ2 ).(ρ 1 + ρ 2 )S → Γ1 .ρ 1S + Γ2 .ρ 2S and                         McBride’s system [25], of which Quantitative Type Theory is
+extπ : π Γ.π ρS → π (Γ.ρS ) are both the identity as functions, and                      a variant, crucially uses usage annotations on types. Such annota-
+are realised by rearrangement of tupling.                                                tions have already appeared in the work of Petricek et al. [29] and
+                                                                                         Brunel et al. [8] on coeffects, where they are used to track informa-
+Resourced Semantic Terms For an assembly Γ and a family of                               tion about the context in which a computation occurs. It would be
+assemblies S ∈ Ty(U Γ), the resource semantic terms from Γ to S                          interesting to compare the concrete models they give (in particular,
+                                                                                         Brunel et al. use a realisability model) to ours. Ghica and Smith [13]
+1 We use capital Greek letters to stand for assemblies as well as the precontexts they   particularly emphasises the quantitative nature of the annotations,
+interpret.                                                                               and presents an application to timing information.
+LICS ’18, July 9–12, 2018, Oxford, United Kingdom                                                                                                                 Robert Atkey
+
+
+   We have used Abramsky et al.’s [3] notion of Linear Combinatory                          [12] Dan R. Ghica. 2007. Geometry of synthesis: a structured approach to VLSI design.
+Algebra as our notion of intensional computational information                                   In POPL. ACM, 363–375.
+                                                                                            [13] Dan R. Ghica and Alex I. Smith. 2014. Bounded Linear Types in a Resource
+to be associated with terms. Their Geometry of Interaction situa-                                Semiring. In Programming Languages and Systems - 23rd European Symposium on
+tions provide a large supply of LCAs, however not all of them have                               Programming, ESOP 2014. 331–350. https://doi.org/10.1007/978-3-642-54833-8_18
+                                                                                            [14] Jean-Yves Girard. 1987. Linear Logic. Theor. Comp. Sci. 50 (1987), 1–101.
+the necessary structure to interpret the kind of boolean type that                          [15] Martin Hofmann. 1997. Syntax and Semantics of Dependent Types. In Semantics
+we have included in our calculus, as we saw in Example 4.4. This                                 and Logics of Computation. Cambridge University Press, 79–130.
+appears to be related to the problem of interpretating the additive                         [16] Naohiko Hoshino. 2007. Linear Realizability. In Computer Science Logic, 21st
+                                                                                                 International Workshop, CSL 2007, 16th Annual Conference of the EACSL, Lausanne,
+connectives of Linear Logic in their axiomatic approach. Neverthe-                               Switzerland, September 11-15, 2007, Proceedings. 420–434. https://doi.org/10.1007/
+less, the connection with Geometry of Interaction style models is                                978-3-540-74915-8_32
+intriguing, and may help develop the theory of QTT into areas such                          [17] Naohiko Hoshino, Koko Muroya, and Ichiro Hasuo. 2014. Memoryful geometry
+                                                                                                 of interaction: from coalgebraic components to algebraic effects. In Joint Meeting
+as reversible computation, as described by Abramsky [2], hardware                                of the Twenty-Third EACSL Annual Conference on Computer Science Logic (CSL)
+synthesis, as described by Ghica [12], and effectful computation, as                             and the Twenty-Ninth Annual ACM/IEEE Symposium on Logic in Computer Science
+                                                                                                 (LICS), CSL-LICS ’14, Vienna, Austria, July 14 - 18, 2014, Thomas A. Henzinger and
+described by Hoshino et al [17].                                                                 Dale Miller (Eds.). ACM, 52:1–52:10. https://doi.org/10.1145/2603088.2603124
+                                                                                            [18] Neelakantan R. Krishnaswami, Pierre Pradic, and Nick Benton. 2015. Integrating
+                                                                                                 Linear and Dependent Types. In Proceedings of the 42nd Annual ACM SIGPLAN-
+6     Conclusions and Future Work                                                                SIGACT Symposium on Principles of Programming Languages, POPL 2015, Mumbai,
+Quantitative Type Theory (QTT) reformulates McBride’s combi-                                     India, January 15-17, 2015. 17–30. https://doi.org/10.1145/2676726.2676969
+                                                                                            [19] Ugo Dal Lago. 2011. A Short Introduction to Implicit Computational Complexity.
+nation of linear and dependent types to fix the inadmissibility of                               In Lectures on Logic and Computation - ESSLLI 2010 Copenhagen, Denmark, August
+substitution. We defined a class of categorical models, Quantita-                                2010, ESSLLI 2011, Ljubljana, Slovenia, August 2011, Selected Lecture Notes (Lecture
+                                                                                                 Notes in Computer Science), Nick Bezhanishvili and Valentin Goranko (Eds.),
+tive Categories with Families, and given instances that interpret the                            Vol. 7388. Springer, 89–109. https://doi.org/10.1007/978-3-642-31485-8_3
+precise intensional usage information non trivially, using R-Linear                         [20] Ugo Dal Lago and Martin Hofmann. 2011. Realizability models and implicit
+Combinatory Algebras. In addition to reversible and effectful vari-                              complexity. Theor. Comput. Sci. 412, 20 (2011), 2029–2047. https://doi.org/10.1016/
+                                                                                                 j.tcs.2010.12.025
+ants arising from the GoI models, we plan future on applying QTT                            [21] Daniel R. Licata, Michael Shulman, and Mitchell Riley. 2017. A Fibrational
+to implicit computational complexity in the style of Dal Lago and                                Framework for Substructural and Modal Logics. In 2nd International Conference
+Hofmann [19, 20] and to low-level imperative computation in the                                  on Formal Structures for Computation and Deduction, FSCD 2017, September 3-9,
+                                                                                                 2017, Oxford, UK. 25:1–25:22. https://doi.org/10.4230/LIPIcs.FSCD.2017.25
+style of Ahmed et al. [4].                                                                  [22] John Longley and Dag Normann. 2015. Higher-Order Computability. Springer.
+                                                                                                 https://doi.org/10.1007/978-3-662-47992-6
+                                                                                            [23] Z. Luo and Y. Zhang. 2016. A Linear Dependent Type Theory. In TYPES 2016.
+Acknowledgments                                                                             [24] The Coq development team. 2017. The Coq proof assistant reference manual. Log-
+                                                                                                 iCal Project. http://coq.inria.fr Version 8.6.
+Thanks to Conor McBride, Edwin Brady and James Wood for dis-                                [25] Conor McBride. 2016. I Got Plenty o’ Nuttin’. In A List of Successes That Can
+cussions relating to this paper. This work is dedicated to Orwell the                            Change the World - Essays Dedicated to Philip Wadler on the Occasion of His 60th
+dog. Orwell was a good dog and knew well the difference between                                  Birthday. 207–233. https://doi.org/10.1007/978-3-319-30936-1_12
+                                                                                            [26] Alexandre Miquel. 2001. The Implicit Calculus of Constructions. In TLCA. 344–
+zero, one, and many.                                                                             359. https://doi.org/10.1007/3-540-45413-6_27
+                                                                                            [27] Nathan Mishra-Linger and Tim Sheard. 2008. Erasure and Polymorphism in Pure
+                                                                                                 Type Systems. In Foundations of Software Science and Computational Structures,
+References                                                                                       11th International Conference, FOSSACS 2008 (Lecture Notes in Computer Science),
+ [1] Samson Abramsky. 1996. Retracing Some Paths in Process Algebra. In CONCUR                   Roberto M. Amadio (Ed.), Vol. 4962. Springer, 350–364. https://doi.org/10.1007/
+     ’96, Concurrency Theory, 7th International Conference, Pisa, Italy, August 26-29,           978-3-540-78499-9_25
+     1996, Proceedings. 1–17. https://doi.org/10.1007/3-540-61604-7_44                      [28] Torben Æ. Mogensen. 1997. Types for 0, 1 or Many Uses. In Implementation of
+ [2] Samson Abramsky. 2005. A structural approach to reversible computation. Theor.              Functional Languages, 9th International Workshop, IFL’97, St. Andrews, Scotland,
+     Comput. Sci. 347, 3 (2005), 441–464. https://doi.org/10.1016/j.tcs.2005.07.002              UK, September 10-12, 1997, Selected Papers (Lecture Notes in Computer Science),
+ [3] Samson Abramsky, Esfandiar Haghverdi, and Philip J. Scott. 2002. Geometry of In-            Chris Clack, Kevin Hammond, and Antony J. T. Davie (Eds.), Vol. 1467. Springer,
+     teraction and Linear Combinatory Algebras. Mathematical Structures in Computer              112–122. https://doi.org/10.1007/BFb0055427
+     Science 12, 5 (2002), 625–665. https://doi.org/10.1017/S0960129502003730               [29] Tomas Petricek, Dominic A. Orchard, and Alan Mycroft. 2014. Coeffects: a calcu-
+                                                                                                 lus of context-dependent computation. In Proceedings of the 19th ACM SIGPLAN
+ [4] Amal Ahmed, Matthew Fluet, and Greg Morrisett. 2007. L3 : A Linear Language
+                                                                                                 International Conference on Functional Programming, Gothenburg, Sweden, Septem-
+     with Locations. Fundam. Inform. 77, 4 (2007), 397–449. http://content.iospress.
+                                                                                                 ber 1-3, 2014, Johan Jeuring and Manuel M. T. Chakravarty (Eds.). ACM, 123–135.
+     com/articles/fundamenta-informaticae/fi77-4-06
+                                                                                                 https://doi.org/10.1145/2628136.2628160
+ [5] Andrew Barber. 1996. Dual Intuitionistic Linear Logic. Technical Report ECS-
+                                                                                            [30] Frank Pfenning. 2001. Intensionality, Extensionality, and Proof Irrelevance in
+     LFCS-96-347. LFCS, University of Edinburgh.
+                                                                                                 Modal Type Theory. In 16th Annual IEEE Symposium on Logic in Computer Science,
+ [6] P. N. Benton. 1994. A Mixed Linear and Non-Linear Logic: Proofs, Terms and
+                                                                                                 Boston, Massachusetts, USA, June 16-19, 2001, Proceedings. IEEE Computer Society,
+     Models (Extended Abstract). In Computer Science Logic, 8th International Work-
+                                                                                                 221–230. https://doi.org/10.1109/LICS.2001.932499
+     shop, CSL ’94, Kazimierz, Poland, September 25-30, 1994, Selected Papers (Lecture
+                                                                                            [31] Dana S. Scott. 1976. Data Types as Lattices. SIAM J. Comput. 5, 3 (1976), 522–587.
+     Notes in Computer Science), Leszek Pacholski and Jerzy Tiuryn (Eds.), Vol. 933.
+                                                                                                 https://doi.org/10.1137/0205037
+     Springer, 121–135. https://doi.org/10.1007/BFb0022251
+                                                                                            [32] Michael Shulman. 2017. Brouwer’s fixed-point theorem in real-cohesive ho-
+ [7] Edwin Brady. 2013. Idris, a general-purpose dependently typed programming
+                                                                                                 motopy type theory. CoRR abs:1509.07584v3 (2017). https://arxiv.org/abs/1509.
+     language: Design and implementation. J. Funct. Program. 23, 5 (2013), 552–593.
+                                                                                                 07584v3
+     https://doi.org/10.1017/S095679681300018X
+                                                                                            [33] Kazushige Terui. 2001. Light Affine Calculus and Polytime Strong Normal-
+ [8] Aloïs Brunel, Marco Gaboardi, Damiano Mazza, and Steve Zdancewic. 2014. A
+                                                                                                 ization. In 16th Annual IEEE Symposium on Logic in Computer Science, Boston,
+     Core Quantitative Coeffect Calculus. In Programming Languages and Systems -
+                                                                                                 Massachusetts, USA, June 16-19, 2001, Proceedings. 209–220. https://doi.org/10.
+     23rd European Symposium on Programming, ESOP 2014. 351–370. https://doi.org/
+                                                                                                 1109/LICS.2001.932498
+     10.1007/978-3-642-54833-8_19
+                                                                                            [34] The Agda Team. 2018. (2018). http://wiki.portal.chalmers.se/agda.
+ [9] Iliano Cervesato and Frank Pfenning. 2002. A Linear Logical Framework. Inf.
+                                                                                            [35] Matthijs Vákár. 2015. A Categorical Semantics for Linear Logical Frameworks. In
+     Comput. 179, 1 (2002), 19–75. https://doi.org/10.1006/inco.2001.2951
+                                                                                                 Foundations of Software Science and Computation Structures - 18th International
+[10] Valeria de Paiva and Eike Ritter. 2016. Fibrational Modal Type Theory. Electr. Notes
+                                                                                                 Conference, FoSSaCS 2015 (Lecture Notes in Computer Science), Andrew M. Pitts
+     Theor. Comput. Sci. 323 (2016), 143–161. https://doi.org/10.1016/j.entcs.2016.06.010
+                                                                                                 (Ed.), Vol. 9034. Springer, 102–116. https://doi.org/10.1007/978-3-662-46678-0_7
+[11] Peter Dybjer. 1996. Internal Type Theory. In Types for Proofs and Programs,
+     International Workshop TYPES’95, Torino, Italy, June 5-8, 1995, Selected Papers
+     (Lecture Notes in Computer Science), Stefano Berardi and Mario Coppo (Eds.),
+     Vol. 1158. Springer, 120–134.
+

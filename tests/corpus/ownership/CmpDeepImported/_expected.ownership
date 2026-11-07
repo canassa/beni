@@ -1,0 +1,31 @@
+module Inner
+  9:26 List.push l: accepted param
+  summary eq: π1 R, π1#Inner.0 RW[storage]
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  13:16 value Outer2.eq: pending: it is passed as evidence, whose calls the checker does not see
+  43:17 value Outer3.eq: pending: it is passed as evidence, whose calls the checker does not see
+  summary listOf: π1 R
+  summary callerList: π1 RA; res .1 π1
+  summary nestedLeft: π1 RA; res .1 π1
+  summary nestedRight: π1 RA; res .1 π1
+  summary nestedParam: π1 RA; res .1 π1
+  summary viaFn2: π1 R
+  summary callerViaFn2: π1 RA; res .1 π1
+  summary listOf3: π1 R
+  summary callerList3: π1 RA; res .1 π1
+  summary nested3: π1 RA; res .1 π1
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0
+module Mid
+  14:23 call Inner.eq x#Inner.0: accepted param (Inner.eq writes π1#Inner.0)
+  summary eq: π1 R, π1#Mid.1 R, π1#Mid.1#Inner.0 RW[storage], π2 R
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Outer2
+  14:23 call Inner.eq x#Inner.0: accepted param (Inner.eq writes π1#Inner.0)
+  summary eq: π1 R, π1#Outer2.1 R, π1#Outer2.1#Inner.0 RW[storage], π2 R
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Outer3
+  14:23 call Mid.eq x#Mid.1#Inner.0: accepted param (Mid.eq writes π1#Mid.1#Inner.0)
+  summary eq: π1 R, π1#Outer3.1 R, π1#Outer3.1#Mid.1 R, π1#Outer3.1#Mid.1#Inner.0 RW[storage], π2 R, π2#Outer3.1 R
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0

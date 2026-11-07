@@ -1,0 +1,56 @@
+-- ownership (v2; §2.3, the review of #1514): a list literal of four items
+-- or more is a `positions` node over lazy `positions` nodes, and an item
+-- that is a call's result is a view. A view's reach is its template's
+-- image, which does not hold the call's own `result` cell, and a lazy
+-- node's reach is its sides' alone. So the root's own cells are not in its
+-- sides' reaches, and `reach` must add them: `lit` (the view one level
+-- below the root), `deep` and `last` (two levels below, at either end) and
+-- `kept` (the same list in a tuple) each panicked in `reach`. `swapped`'s
+-- view has a leaf image that is a raw union of two parameters' views,
+-- whose cells its image holds: accepted, as before.
+rest : List a → List a
+rest xs =
+    case xs of
+        [ _, …r ] →
+            r
+
+        _ →
+            []
+
+
+swap : Int, List a, List a → List a
+swap n x y =
+    if n ≤ 0 then
+        x
+    else
+        swap (n - 1) y x
+
+
+pub lit : List Int → List (List Int)
+lit a =
+    l = [ rest a, [ 2 ], [ 3 ], [ 4 ] ]
+    List.push l [ 1 ]
+
+
+pub deep : List Int → List (List Int)
+deep a =
+    l = [ rest a, [ 2 ], [ 3 ], [ 4 ], [ 5 ], [ 6 ], [ 7 ], [ 8 ] ]
+    List.push l [ 1 ]
+
+
+pub last : List Int → List (List Int)
+last a =
+    l = [ [ 2 ], [ 3 ], [ 4 ], [ 5 ], [ 6 ], [ 7 ], [ 8 ], rest a ]
+    List.push l [ 1 ]
+
+
+pub kept : List Int → List (List Int) × List Int
+kept a =
+    l = [ rest a, [ 2 ], [ 3 ], [ 4 ] ]
+    ( List.push l [ 1 ], a )
+
+
+pub swapped : Int, List Int, List Int → List (List Int)
+swapped n x y =
+    l = [ swap n x y, [ 2 ], [ 3 ], [ 4 ] ]
+    List.push l [ 1 ]

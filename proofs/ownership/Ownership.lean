@@ -20,10 +20,14 @@ import Ownership.LinkClauses
 import Ownership.FlatFragment.Trace
 import Ownership.DictPrograms
 import Ownership.DictProbes
+import Ownership.RecordPrograms
+import Ownership.RecordProbes
 import Ownership.CallDerivation
 import Ownership.LinkedWriteStep
 import Ownership.StatementChecks.LinkedCallControl
 import Ownership.StatementChecks.CallDerivationInstance
 import Ownership.StatementChecks.LinkedWriteInstance
 import Ownership.LinkedWriteValid
+import Ownership.LinkedWriteRun
 import Ownership.StatementChecks.LinkedWriteValidInstance
+import Ownership.StatementChecks.DictEntryPaths

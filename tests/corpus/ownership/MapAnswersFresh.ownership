@@ -1,0 +1,21 @@
+module MapAnswersFresh
+  13:5 call List.map ys[*]: accepted call (<lambda> writes what List.map supplies it)
+  13:22 List.push l: accepted callback-param (List.map supplies it owned)
+  19:5 call List.map zs[*][*]: accepted call (<lambda> writes what List.map supplies it)
+  19:26 call List.map inner[*]: rejected exclusive: it needs what List.map supplies it not to share, and it may
+  19:46 List.push l: accepted callback-param (List.map supplies it owned)
+  25:5 call List.map ys[*][*]: accepted call (<lambda> writes what List.map supplies it)
+  25:25 call List.map pair[*]: rejected exclusive: it needs what List.map supplies it not to share, and it may
+  25:44 List.push l: accepted callback-param (List.map supplies it owned)
+  31:5 call List.map ys[*]: accepted param (<lambda> writes what List.map supplies it)
+  31:22 List.push l: accepted callback-param (List.map supplies it owned)
+  37:5 call List.map a[*]: accepted param (<lambda> writes what List.map supplies it)
+  37:21 List.push l: accepted callback-param (List.map supplies it owned)
+  summary fresh: π1 R; res [*] ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh2) ~fresh2, fresh3
+  summary nested: π1 R, π2 R; res [*] ~condition(fresh3) ~fresh3, [*][*] ~condition(fresh1) ~fresh1, [*][*][*] ~condition(fresh2) ~fresh2, fresh4
+  summary linked: π1 R; res [*] ~condition(fresh3) ~fresh3, [*][*] ~condition(fresh1) ~fresh1, [*][*][*] ~condition(fresh2) ~fresh2, fresh4
+  summary identity: π1 R, π1[*] RAw[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*], [*][*] ~condition(fresh2) ~fresh2{excl π1} ~π1[*][*], fresh3{excl π1}; xreq excl π1
+  summary joined: π2 R, π2[*] RAw[storage], π2[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π2} ~π2[*], [*][*] ~condition(fresh2) ~fresh2{excl π2} ~π2[*][*], fresh3{excl π2}; xreq excl π2
+  demands 12: accepted 10 (fresh 0, call 3, param 2, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 12: accepted 10 (fresh 0, call 3, param 2, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2

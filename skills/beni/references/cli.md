@@ -84,11 +84,17 @@ A repeated complete type folds deeper paths and uses the `⁺` marker.
 Inside a recursive group, a later growing call can fold a growing type argument
 to `⋆`; the surrounding type stays complete and the first crossing stays exact.
 
+## Notation conversion
+
+`beni fmt --to-unicode <file>` converts ASCII code spellings to Unicode and formats.
+Plain `fmt` preserves spelling. `fmt --check --to-unicode` checks both.
+If conversion produces invalid syntax, the file stays unchanged and gets a diagnostic.
+The command continues to format the other files.
+
 ## Migration flags that a diagnostic names
 
 `beni help` does not list these. A diagnostic about an old spelling names the one that rewrites a
-file in place: `beni fmt --migrate-cons <file>` for `::`, `--migrate-unicode` for the ASCII
-symbols, `--migrate-top` for `()` and `Never`, `--migrate-lambda` for `\x ->`, `--migrate-let` for
+file in place: `beni fmt --migrate-cons <file>` for `::`, `--migrate-top` for structural unit rewrites, `--migrate-let` for
 `let … in`, `--migrate-names` for `modBy`, `remainderBy` and `logBase`, `--migrate-init` for an
 `init` that is a value. Each rewrites one thing; all but `--migrate-let` keep the file's layout, and
 `--migrate-let` reformats the whole file. Run one at a time.

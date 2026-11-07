@@ -1,0 +1,72 @@
+-- A traversal's callback edits what an `entry` function is handed
+-- (`ownership-v2.md` §2.11.3, *a taken supply*; S7). v2 makes no demand at an
+-- `entry` argument yet, so no caller judges a write of `update`'s model, and a
+-- list reached from one stays held: `Tea.sandbox` is refused here, for `update`
+-- and for `view`, directly, through a helper and through a closure's captures. `init` builds one list twice,
+-- which the first click would push twice; `view` needs no sharing to be wrong.
+import Browser
+import Html exposing (Html)
+import List
+import String
+import Tea
+
+
+type Msg
+    = Grow
+
+
+bump : List (List Int) → List (List Int)
+bump rows = List.map rows λl → List.push l 1
+
+
+update : Msg, List (List Int) → List (List Int)
+update msg m = List.map m λl → List.push l 1
+
+
+viaHelper : Msg, List (List Int) → List (List Int)
+viaHelper msg m = bump m
+
+
+view : List (List Int) → Html Msg
+view m =
+    <button onClick={Grow}>{String.fromInt (List.length (List.map m λl → List.push l 1))}</button>
+
+
+plain : List (List Int) → Html Msg
+plain m = <button onClick={Grow}>{String.fromInt (List.length m)}</button>
+
+
+pub direct : ⊤ → Browser.Program
+direct ⊤ =
+    a = [ 1 ]
+    Tea.sandbox { init = λ⊤ → [ a, a ], update = update, view = plain }
+
+
+pub helper : ⊤ → Browser.Program
+helper ⊤ =
+    a = [ 1 ]
+    Tea.sandbox { init = λ⊤ → [ a, a ], update = viaHelper, view = plain }
+
+
+pub inView : ⊤ → Browser.Program
+inView ⊤ = Tea.sandbox { init = λ⊤ → [ [ 1 ] ], update = λmsg m → m, view = view }
+
+
+pub captured : (List (List Int) → Html Msg) → Browser.Program
+captured f = Tea.sandbox { init = λ⊤ → [ [ 1 ] ], update = λmsg m → m, view = λm → f m }
+
+
+pub viaCapture : ⊤ → Browser.Program
+viaCapture ⊤ = captured view
+
+
+pub inList : ⊤ → Browser.Program
+inList ⊤ =
+    a = [ 1 ]
+    fs = [ update ]
+    Tea.sandbox
+        { init = λ⊤ → [ a, a ], update = λx y → List.foldl fs y λf acc → f x acc, view = plain }
+
+
+main : Browser.Program
+main = direct ⊤

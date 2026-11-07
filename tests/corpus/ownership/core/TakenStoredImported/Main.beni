@@ -1,0 +1,26 @@
+-- ownership (core project): `TakenStored` with the callees in another
+-- module (ownership-v2.md §2.11 item 6, §2.13.6, #1393). The callees'
+-- writes are accepted in their own module, and their callers read the
+-- published summaries: one list passed as both is refused `disjoint`,
+-- distinct and fresh lists are accepted.
+import Taken exposing (copyInto, copyOne)
+
+
+pub shared : List (List Int) → List (List Int)
+shared xs = copyOne xs 0 xs
+
+
+pub distinct : List (List Int), List (List Int) → List (List Int)
+distinct xs ys = copyOne xs 0 ys
+
+
+pub fresh : ⊤ → List (List Int)
+fresh ⊤ = copyOne [ [ 1 ] ] 0 [ [ 2 ] ]
+
+
+pub pushShared : List (List Int) → List (List Int)
+pushShared xs = copyInto xs 0 xs
+
+
+pub pushDistinct : List (List Int), List (List Int) → List (List Int)
+pushDistinct xs ys = copyInto xs 0 ys

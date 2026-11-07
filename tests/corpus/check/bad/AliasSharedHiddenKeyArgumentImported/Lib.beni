@@ -1,0 +1,14 @@
+-- See Main.beni.
+import Dict exposing (Dict)
+
+
+type alias Y z =
+    Int
+
+
+pub type alias X a =
+    Y (Dict a Int)
+
+
+pub ok : X Int
+ok = 1

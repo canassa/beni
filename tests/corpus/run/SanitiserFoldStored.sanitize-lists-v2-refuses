@@ -1,0 +1,5 @@
+# v2 refuses a fold whose first value is read after, whose run writes the accumulator's elements, or whose answer is an element or a capture written next (§2.11.3, a fold's storage).
+22:13 list_still_used List.foldl
+23:16 list_may_be_shared List.foldl
+25:15 list_may_be_shared List.foldl
+28:16 list_may_be_shared List.foldl

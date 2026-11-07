@@ -1,0 +1,37 @@
+-- ownership (v2): a comparison's component write reaches a fresh value
+-- holding a parameter (ownership-v2.md §2.13.13). `Inner.eq` writes the list
+-- inside `Inner`, so `( Inner xs, ys ) == …` writes `xs` as `Inner xs ==
+-- Inner []` does, and each caller that keeps `xs` beside the call is refused.
+type Inner
+    = Inner (List Int)
+
+
+pub eq : Inner, Inner → Bool
+eq a b =
+    case a of
+        Inner l →
+            List.length (List.push l 1) > 0
+
+
+pub viaTuple : List Int, List Int → Bool
+viaTuple xs ys = ( Inner xs, ys ) == ( Inner [], [] )
+
+
+pub callerTuple : List Int → Bool × List Int
+callerTuple xs = ( viaTuple xs [], xs )
+
+
+pub viaList : List Int → Bool
+viaList xs = [ Inner xs ] == []
+
+
+pub callerList : List Int → Bool × List Int
+callerList xs = ( viaList xs, xs )
+
+
+pub viaRecord : List Int → Bool
+viaRecord xs = { left = Inner xs, other = [] } == { left = Inner [], other = [] }
+
+
+pub callerRecord : List Int → Bool × List Int
+callerRecord xs = ( viaRecord xs, xs )

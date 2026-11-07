@@ -1,0 +1,53 @@
+-- An impure order reached through evidence (docs/design/prerender.md §3.1,
+-- amended for #1247): `<` on `Box Stamp` calls this module's `compare`,
+-- which the build follows. Its `a < b` calls the evidence the call passes,
+-- `Stamp.compare`, which reads the clock. Evidence is a parameter, and the
+-- build does not follow a call of one: it names that call, in `compare`.
+import Browser
+import Html exposing (Html)
+import Stamp exposing (Stamp)
+import Tea
+
+
+type Box a
+    = Box a
+
+
+pub compare : Box a, Box a → Order
+    where a.compare : a, a → Order
+compare (Box a) (Box b) = if a < b then LT else if b < a then GT else EQ
+
+
+type alias Model =
+    at : Int
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            { model | at = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>
+            {if Box (Stamp.Stamp model.at) < Box (Stamp.Stamp 5) then "older" else "newer"}
+        </output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { at = 0 }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

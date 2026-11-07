@@ -1,0 +1,94 @@
+-- ownership (project): `FoldCertificate` with its producers in another
+-- module (ownership-v2.md §8 slice 4, *The fold certificate, specified*,
+-- *Publication* and C4; #1485). A call of an imported producer applies
+-- the class its block publishes, and the block carries the certified
+-- mark, so each witness reads the certificate as it does in one module:
+-- one view of `t` is accepted, two views of one tree are refused, and a
+-- producer that puts one list at two positions is refused. The verdicts
+-- are the same-module fixture's, line for line.
+import Lib exposing (Leaf, Node, Tree)
+
+
+type P
+    = P Tree Tree
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+incRoot : Tree → Tree
+incRoot t =
+    case t of
+        Node l xs r →
+            Node l (List.push xs 1) r
+
+        Leaf →
+            Leaf
+
+
+incP : P → P
+incP p =
+    case p of
+        P a b →
+            P (incAll a) (incAll b)
+
+
+pub twoViews : Tree → P
+twoViews t = incP (P (Lib.same t) (Lib.same t))
+
+
+pub twoTrees : Tree, Tree → P
+twoTrees t t2 = incP (P (Lib.same t) (Lib.same t2))
+
+
+pub oneView : Tree → Tree
+oneView t = incAll (Lib.same t)
+
+
+pub rootOfView : Tree → Tree
+rootOfView t = incRoot (Lib.same t)
+
+
+pub rootOfUnroll : Tree → Tree
+rootOfUnroll t = incRoot (Lib.unroll t)
+
+
+pub unrolled : Tree → Tree
+unrolled t = incAll (Lib.unroll t)
+
+
+pub viewTwice : Tree → P
+viewTwice t =
+    w = Lib.same t
+    incP (P w w)
+
+
+pub row1 : Tree → Tree
+row1 t = incAll (Lib.swap t)
+
+
+pub row2 : Tree → Tree
+row2 t = incAll (Lib.dupL t)
+
+
+pub row3 : Tree → Tree
+row3 t = incAll (Lib.shareL t)
+
+
+pub row4 : Tree → Tree
+row4 t = incAll (Lib.deeper t)
+
+
+pub row5 : Tree, List Int → Tree
+row5 t xs = incAll (Node (Lib.same t) xs (Lib.same t))
+
+
+pub row6 : Tree, Tree, List Int → Tree
+row6 t t2 xs = incAll (Node (Lib.same t) xs (Lib.same t2))

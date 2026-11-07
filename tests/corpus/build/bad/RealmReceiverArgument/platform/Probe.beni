@@ -1,0 +1,8 @@
+-- Kept receiver use must be proved without following aliases (#2120).
+import Js
+
+
+read root = Js.to (Js.get (Js.get root "document") "title")
+
+
+pub run _ = read (Js.global "self")

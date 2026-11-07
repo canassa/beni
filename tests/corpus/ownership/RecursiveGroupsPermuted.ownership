@@ -1,0 +1,45 @@
+module RecursiveGroupsPermuted
+  8:22 List.push a: accepted param
+  10:13 call RecursiveGroupsPermuted.rotDead a: accepted param (RecursiveGroupsPermuted.rotDead writes π2)
+  10:13 call RecursiveGroupsPermuted.rotDead b: accepted param (RecursiveGroupsPermuted.rotDead writes π1)
+  17:22 List.push a: accepted param
+  19:13 call RecursiveGroupsPermuted.rot a: accepted param (RecursiveGroupsPermuted.rot writes π2)
+  19:13 call RecursiveGroupsPermuted.rot b: rejected later-use: b is read again at 20:13 (RecursiveGroupsPermuted.rot writes π1)
+  28:9 call RecursiveGroupsPermuted.localA acc: accepted param (RecursiveGroupsPermuted.localA writes π1)
+  34:5 call RecursiveGroupsPermuted.localB <call List.push>: accepted param (RecursiveGroupsPermuted.localB writes π1)
+  34:13 List.push acc: accepted param
+  42:19 call RecursiveGroupsPermuted.ring1 xs: accepted param (RecursiveGroupsPermuted.ring1 writes π1)
+  46:18 call RecursiveGroupsPermuted.ring1 xs: rejected later-use: xs is read again at 46:31 (RecursiveGroupsPermuted.ring1 writes π1)
+  50:15 call RecursiveGroupsPermuted.ring1 <call List.push>: accepted param (RecursiveGroupsPermuted.ring1 writes π1)
+  50:22 List.push acc: accepted param
+  54:15 call RecursiveGroupsPermuted.ring3 acc: accepted param (RecursiveGroupsPermuted.ring3 writes π1)
+  62:9 call RecursiveGroupsPermuted.ring2 acc: accepted param (RecursiveGroupsPermuted.ring2 writes π1)
+  66:32 call RecursiveGroupsPermuted.oddPush xs: accepted param (RecursiveGroupsPermuted.oddPush writes π1)
+  70:31 call RecursiveGroupsPermuted.oddPush xs: rejected later-use: xs is read again at 70:47 (RecursiveGroupsPermuted.oddPush writes π1)
+  78:9 call RecursiveGroupsPermuted.evenPush acc: accepted param (RecursiveGroupsPermuted.evenPush writes π1)
+  86:9 call RecursiveGroupsPermuted.oddPush <call List.push>: accepted param (RecursiveGroupsPermuted.oddPush writes π1)
+  86:18 List.push acc: accepted param
+  90:32 call RecursiveGroupsPermuted.pushAll xs: accepted param (RecursiveGroupsPermuted.pushAll writes π1)
+  94:31 call RecursiveGroupsPermuted.pushAll xs: rejected later-use: xs is read again at 94:47 (RecursiveGroupsPermuted.pushAll writes π1)
+  102:9 call RecursiveGroupsPermuted.pushAll <call List.push>: accepted param (RecursiveGroupsPermuted.pushAll writes π1)
+  102:18 List.push acc: accepted param
+  summary rotDead: π1 RW[storage], π2 RW[storage]
+  summary rot: π1 RW[storage], π2 RW[storage]
+  summary localB: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  summary localA: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary forever: unused
+  summary ringAccepted: π1 RW[storage]
+  summary ringRefused: π1 RW[storage]
+  summary ring3: π1 RW[storage]
+  summary ring2: π1 RW[storage]
+  summary ring1: π1 RW[storage]
+  summary pairAccepted: π1 RW[storage], π1[*] R
+  summary pairRefused: π1 RW[storage], π1[*] R
+  summary oddPush: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  summary evenPush: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary selfAccepted: π1 RW[storage], π1[*] R
+  summary selfRefused: π1 RW[storage], π1[*] R
+  summary pushAll: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 24: accepted 20 (fresh 0, call 0, param 20, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 24: accepted 20 (fresh 0, call 0, param 20, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause later-use 4

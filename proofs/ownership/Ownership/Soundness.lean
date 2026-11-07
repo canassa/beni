@@ -29,8 +29,13 @@ Proved **conditionally** on `invariant_preserved`: `accepted_traces_agree`, the
 main theorem; it adds only bookkeeping to that lemma.
 
 Unproved (`sorry`): `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as
-repaired), `map_summary_sound` (map's derived row), `invariant_preserved`
-(the step case of the prefix induction). -/
+repaired, and since 2026-11-05 the fields clause of `W{F}`, #1872),
+`map_summary_sound` (map's derived row), `invariant_preserved` (the step case
+of the prefix induction).
+
+Every clause that reads an abstract on the heap reads it through the value's
+type (`entryPath`, `entryAbstract`; #1796): a dictionary's value is field 1 of
+its entry record. -/
 
 namespace Ownership.Soundness
 
@@ -246,6 +251,118 @@ def ClosuresDescribed (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : P
 def Describes (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
   DescribesShallow γ heap a v ∧ ClosuresDescribed γ heap a v
 
+/-! ## Dictionary entries: the relation through the type (#1796)
+
+The checker describes a dictionary of `t` as a list whose element is the
+abstract of a value (`Checker.lean`, `dictGet` and `dictInsert`). Both
+interpreters store each entry as a record `[key, value]` (`Semantics.lean`,
+`dictPut`). So an abstract element step of a dictionary is the concrete
+element step and then field 1 (the owner's decision on #1796, 2026-11-03).
+The abstract alone cannot tell a dictionary from a list of pairs, so the
+relation reads the abstract through the value's type.
+
+* `entryPath t q`: the concrete path of the abstract path `q` of a value of
+  type `t`. The summary clauses read a canonical input path with it.
+* `entryAbstract ds t a`: the abstract of the concrete representation of a
+  value of type `t`. At a dictionary type, the element becomes the abstract of
+  an entry, `.record [.scalar, value]`. A known closure's captures are typed
+  by its declaration (`ds`), which `Ty.fn` does not name.
+
+`Covers`, `CertifiedExclusive` and `Describes` keep their definitions. Every
+clause that reads an abstract on the heap reads `entryAbstract ds t a`, so
+coverage stays path by path at every concrete path: an array at a path that
+no abstract path maps to (an entry record, a key) is named by nothing. The
+checker and both interpreters do not change. Where the type and the capture
+types of its closures have no dictionary, `entryAbstract` is the identity on
+the abstracts of that type. -/
+
+/-- The type of slot `i` of a result record `[tag, error, success]`. The tag
+    and a slot that does not exist have type `Int`, which holds no array. -/
+def resultSlot (error success : Ty) : Nat → Ty
+  | 1 => error
+  | 2 => success
+  | _ => .int
+
+/-- The types of the captures of declaration `id`. -/
+def captureTypes (ds : List Decl) (id : Nat) : List Ty :=
+  ((ds[id]?).map (·.captures)).getD []
+
+/-- The concrete path of the abstract path `q` of a value of type `t`: a
+    dictionary's element step is the element step and then field 1, the
+    entry's value. List elements, record fields and result slots follow the
+    type. Every other step is the same step. The clauses apply it only to a
+    canonical path (`canonicalPath`), which has no capture step:
+    `canonicalInput` makes a function input symbolic, with the paths `[]` and
+    `[.env]`, and refuses a function below an input path. -/
+def entryPath : Ty → Path → Path
+  | .dict t, .element :: rest => .element :: .field 1 :: entryPath t rest
+  | .list t, .element :: rest => .element :: entryPath t rest
+  | .chain t, .element :: rest => .element :: entryPath t rest
+  | .builder t, .element :: rest => .element :: entryPath t rest
+  | .record ts, .field i :: rest => .field i :: entryPath (ts[i]?.getD .int) rest
+  | .result e s, .field i :: rest => .field i :: entryPath (resultSlot e s i) rest
+  | .object ts, .element :: rest => .element :: entryPath (.record ts) rest
+  | _, q => q
+
+mutual
+/-- The abstract of the concrete representation of a value of type `t` that
+    `a` describes: a dictionary's element becomes the entry `[key, value]`,
+    `.record [.scalar, value]`. Lists, records, result slots and the
+    captures of known closures are read through their types. Any other
+    abstract stays as it is. -/
+def entryAbstract (ds : List Decl) : Ty → Abstract → Abstract
+  | .dict t, .list cs x ex => .list cs (.record [.scalar, entryAbstract ds t x]) ex
+  | .list t, .list cs x ex => .list cs (entryAbstract ds t x) ex
+  | .chain t, .list cs x ex => .list cs (entryAbstract ds t x) ex
+  | .builder t, .list cs x ex => .list cs (entryAbstract ds t x) ex
+  | .record ts, .record xs => .record (entryFields ds ts xs)
+  | .result e s, .record xs => .record (entryFields ds [.int, e, s] xs)
+  | .object ts, .list cs x ex => .list cs (entryAbstract ds (.record ts) x) ex
+  | _, .function cs alts => .function cs (entryAlternatives ds alts)
+  | _, .bottom => .bottom
+  | _, .scalar => .scalar
+  | _, .list cs x ex => .list cs x ex
+  | _, .record xs => .record xs
+  | _, .symbolic slot ty cs es => .symbolic slot ty cs es
+/-- Fields read through their types; a field with no type is read as `Int`. -/
+def entryFields (ds : List Decl) : List Ty → List Abstract → List Abstract
+  | _, [] => []
+  | t :: ts, x :: xs => entryAbstract ds t x :: entryFields ds ts xs
+  | [], x :: xs => entryAbstract ds .int x :: entryFields ds [] xs
+/-- A known closure's captures, read through its declaration's capture types. -/
+def entryAlternatives (ds : List Decl) : List (Nat × List Abstract) → List (Nat × List Abstract)
+  | [] => []
+  | (id, caps) :: alts => (id, entryFields ds (captureTypes ds id) caps) :: entryAlternatives ds alts
+end
+
+/-- The type at a field path (a live use's path): record fields and result
+    slots. A path that leaves the type has type `Int`. -/
+def fieldType : Ty → Path → Ty
+  | t, [] => t
+  | .record ts, .field i :: rest => fieldType (ts[i]?.getD .int) rest
+  | .result e s, .field i :: rest => fieldType (resultSlot e s i) rest
+  | .object ts, .element :: rest => fieldType (.record ts) rest
+  | _, _ :: _ => .int
+
+theorem entryPath_nil (t : Ty) : entryPath t [] = [] := by
+  cases t <;> rfl
+
+theorem fieldType_nil (t : Ty) : fieldType t [] = t := by
+  cases t <;> rfl
+
+/-- The types of a declaration's inputs, its parameters and then its
+    captures, as `inputOrigin` numbers them. An unknown declaration has no
+    input types; the theorems use it only at an entry of the published
+    summary, whose `argsLength` and `capsLength` tie `e.decl` to a
+    declaration and its inputs. -/
+def inputTypes (ds : List Decl) (id : Nat) : List Ty :=
+  ((ds[id]?).map fun d => d.parameters ++ d.captures).getD []
+
+/-- The result type of a declaration; `Int` for an unknown declaration,
+    which the theorems do not meet (`inputTypes`). -/
+def resultType (ds : List Decl) (id : Nat) : Ty :=
+  ((ds[id]?).map (·.result)).getD .int
+
 theorem represents_empty_ref (h : Represents heap n (.ref c) o cs)
     (lookup : heap[c]? = some []) : cs = [c] := by
   cases h with
@@ -320,30 +437,56 @@ def keptReaches (s : State) (c : Nat) : Prop := ∃ k ∈ s.kept.toList, Reaches
     creates elsewhere are either garbage, or reachable only through an input
     array the call writes, which the caller's Dead check has made
     unobservable (a live holder of an array above a written path has the
-    written cells among its own). -/
-structure CallSound (s : Summary) (ins : List Abstract) (inputs : List Value) (nargs : Nat)
-    (pre post : State) (r : Value) : Prop where
+    written cells among its own).
+
+    The inputs have the types `tys` and the result has the type `rty`. A
+    canonical path is an abstract path, so the clauses read it on the heap
+    through `entryPath`, and the result's abstract through `entryAbstract`
+    (#1796): a dictionary's value is field 1 of its entry. `tys` has one type
+    per input: a missing type reads as `Int`, whose path and abstract are the
+    identity, so a caller must pass every type. `summary_sound` and
+    `map_summary_sound` pass `inputTypes`, one type per parameter and capture
+    of the declaration. -/
+structure CallSound (ds : List Decl) (s : Summary) (ins : List Abstract) (tys : List Ty) (rty : Ty)
+    (inputs : List Value) (nargs : Nat) (pre post : State) (r : Value) : Prop where
   /-- 1. An input array changed by the call is at a `W` path, or is in the
       environment of a function input the call calls (`calls` row): a once
       callback writes its own captures, which the summary does not see and
       the caller demands dead where it hands the callback over
       (`once-through-call`). -/
-  writes : ∀ i q c, canonicalPath ins i q → ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q c →
+  writes : ∀ i q c, canonicalPath ins i q →
+    ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) q) c →
     post.heap[c]? ≠ pre.heap[c]? → rowHas (s.writes ++ s.consumes) (inputOrigin nargs i q) = true ∨
       (q == [.env] && (s.calls.lookup i).getD 0 ≥ 1) = true
   /-- 2 (repaired). A permanent observer reaches an input array after the
       call only if it did before, or the path escapes (`E`). -/
-  noNewHolders : ∀ i q c, canonicalPath ins i q → ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q c →
+  noNewHolders : ∀ i q c, canonicalPath ins i q →
+    ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) q) c →
     rowHas s.escapes (inputOrigin nargs i q) = false → keptReaches post c → keptReaches pre c
   /-- 3. An array at path `q` of the result is fresh (allocated during the
       call), an input array at a path that `res(q)` names, or `res(q)` admits
       a shared or unknown cell. -/
   result : ∀ q c, ArrayAt post.heap r q c → c ≥ pre.heap.size ∨
-    (∃ i p, canonicalPath ins i p ∧ ArrayAt pre.heap (inputs[i]?.getD (.int 0)) p c ∧
-      (namesAt s.result q).any (·.base == inputOrigin nargs i p) = true) ∨
-    (namesAt s.result q).any (fun o => o == .shared || o == .unknown) = true
-  -- Clause 4 (calls, supply, xres, xreq) is not stated: the interpreters do
-  -- not record callback invocations, so there is nothing to state it over.
+    (∃ i p, canonicalPath ins i p ∧
+      ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) p) c ∧
+      (namesAt (entryAbstract ds rty s.result) q).any (·.base == inputOrigin nargs i p) = true) ∨
+    (namesAt (entryAbstract ds rty s.result) q).any (fun o => o == .shared || o == .unknown) = true
+  /-- 4 (fields; Jayson, 2026-11-05, `own-record-bridge-q1`, #1872; not one of
+      Lemma 6.7's clauses, whose own clause 4 is the unstated one below). A record
+      object at a `W{F}` path keeps every field outside `F`: where the input's
+      array at `q` holds one record before the call and the summary's row for
+      that path has the field set `F` (`fieldRow`), the array holds one record
+      after the call, as long, whose fields outside `F` hold the same values.
+      The caller's Dead test reads its later uses of the object per field
+      (`rowDemand`, §31.7), which is sound only because of this clause. -/
+  fields : ∀ i q c (fs : List Nat) (xs : List Value), canonicalPath ins i q →
+    ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) q) c →
+    fieldRow s (inputOrigin nargs i q) = some fs → pre.heap[c]? = some [.record xs] →
+    ∃ ys, post.heap[c]? = some [.record ys] ∧ ys.length = xs.length ∧
+      ∀ g, g ∉ fs → ys[g]? = xs[g]?
+  -- Lemma 6.7's clause 4 (calls, supply, xres, xreq) is not stated: the
+  -- interpreters do not record callback invocations, so there is nothing to
+  -- state it over.
 
 /-- The concrete call of declaration `id` with closure captures `caps`. -/
 def callResult (ds : List Decl) (id : Nat) (args caps : List Value) (fuel : Nat) (pre : State) :
@@ -419,13 +562,17 @@ def WritePermitted (s : Summary) (nargs i : Nat) (q : Path) : Prop :=
     operand path, and `Invariant.linkNamed` makes linked protected arrays
     share origins. Storage no input reaches is
     unconstrained, so a read-only split such as `readBoth(rest, xs)` stays
-    inside the theorem. -/
-def LinkedWritesCovered (s : Summary) (ins : List Abstract) (inputs : List Value) (nargs : Nat)
-    (pre : State) : Prop :=
-  ∀ i q c, canonicalPath ins i q → ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q c →
+    inside the theorem. The canonical paths are read on the heap through the
+    inputs' types `tys` (`entryPath`, #1796), one type per input, as in
+    `CallSound`. -/
+def LinkedWritesCovered (s : Summary) (ins : List Abstract) (tys : List Ty) (inputs : List Value)
+    (nargs : Nat) (pre : State) : Prop :=
+  ∀ i q c, canonicalPath ins i q →
+    ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) q) c →
     WritePermitted s nargs i q →
     ∀ d, LinkedWriteFrame.LinkConnected pre.links c d →
-      ∀ j p, canonicalPath ins j p → ArrayAt pre.heap (inputs[j]?.getD (.int 0)) p d →
+      ∀ j p, canonicalPath ins j p →
+        ArrayAt pre.heap (inputs[j]?.getD (.int 0)) (entryPath (tys[j]?.getD .int) p) d →
         WritePermitted s nargs j p
 
 /-- **Summary soundness** (Lemma 6.7). For every program accepted by the
@@ -441,22 +588,30 @@ def LinkedWritesCovered (s : Summary) (ins : List Abstract) (inputs : List Value
     Because the naming separates distinct canonical origins, a call that
     passes one array at two input paths is outside this statement (it is
     vacuous there); the caller's Disjoint test is what makes such a call safe
-    when one of the paths is written. Unproved: it needs the configuration
-    invariant for the callee's own frame and the induction over earlier
-    calls in the prefix. -/
+    when one of the paths is written. The inputs, the function values and
+    the result are read through the declaration's types (`inputTypes`,
+    `resultType`, `entryAbstract`; #1796). Unproved: it needs the
+    configuration invariant for the callee's own frame and the induction over
+    earlier calls in the prefix. -/
 theorem summary_sound (p : Program) (a : Accepted) (ok : check p = .ok a)
     (e : CacheEntry) (he : e ∈ a.cache.toList) (args caps : List Value) (pre post : State)
     (r : Value) (fuel : Nat) (γ : Naming) (hγ : Separating γ)
     (argsLength : args.length = ((p.declarations[e.decl]?).map fun d => d.parameters.length).getD 0)
     (capsLength : caps.length = ((p.declarations[e.decl]?).map fun d => d.captures.length).getD 0)
     (inputsLength : e.inputs.length = args.length + caps.length)
-    (described : ∀ i : Nat, Describes γ pre.heap (e.inputs[i]?.getD .bottom) ((args ++ caps)[i]?.getD (.int 0)))
+    (described : ∀ i : Nat, Describes γ pre.heap
+      (entryAbstract p.declarations ((inputTypes p.declarations e.decl)[i]?.getD .int) (e.inputs[i]?.getD .bottom))
+      ((args ++ caps)[i]?.getD (.int 0)))
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
-      ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap f ((args ++ caps)[j]?.getD (.int 0)))
-    (linked : LinkedWritesCovered e.summary e.inputs (args ++ caps) args.length pre)
+      ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap
+        (entryAbstract p.declarations ((inputTypes p.declarations e.decl)[j]?.getD .int) f)
+        ((args ++ caps)[j]?.getD (.int 0)))
+    (linked : LinkedWritesCovered e.summary e.inputs (inputTypes p.declarations e.decl) (args ++ caps)
+      args.length pre)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
-    CallSound e.summary e.inputs (args ++ caps) args.length pre post r := by
+    CallSound p.declarations e.summary e.inputs (inputTypes p.declarations e.decl)
+      (resultType p.declarations e.decl) (args ++ caps) args.length pre post r := by
   sorry
 
 /-- **Map's derived summary is sound.** `Library.map` is an ordinary
@@ -472,14 +627,21 @@ theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check 
     (argsLength : args.length = ((p.declarations[e.decl]?).map fun d => d.parameters.length).getD 0)
     (capsLength : caps.length = ((p.declarations[e.decl]?).map fun d => d.captures.length).getD 0)
     (inputsLength : e.inputs.length = args.length + caps.length)
-    (described : ∀ i : Nat, Describes γ pre.heap (e.inputs[i]?.getD .bottom) ((args ++ caps)[i]?.getD (.int 0)))
+    (described : ∀ i : Nat, Describes γ pre.heap
+      (entryAbstract p.declarations ((inputTypes p.declarations e.decl)[i]?.getD .int) (e.inputs[i]?.getD .bottom))
+      ((args ++ caps)[i]?.getD (.int 0)))
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
-      ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap f ((args ++ caps)[j]?.getD (.int 0)))
-    (linked : LinkedWritesCovered e.summary e.inputs (args ++ caps) args.length pre)
+      ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap
+        (entryAbstract p.declarations ((inputTypes p.declarations e.decl)[j]?.getD .int) f)
+        ((args ++ caps)[j]?.getD (.int 0)))
+    (linked : LinkedWritesCovered e.summary e.inputs (inputTypes p.declarations e.decl) (args ++ caps)
+      args.length pre)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
-    CallSound e.summary e.inputs (args ++ caps) args.length pre post r ∧
-      CertifiedExclusive post.heap e.summary.result r := by
+    CallSound p.declarations e.summary e.inputs (inputTypes p.declarations e.decl)
+      (resultType p.declarations e.decl) (args ++ caps) args.length pre post r ∧
+      CertifiedExclusive post.heap
+        (entryAbstract p.declarations (resultType p.declarations e.decl) e.summary.result) r := by
   sorry
 
 /-! ## The main theorem, over execution prefixes -/
@@ -492,19 +654,41 @@ theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check 
 def Corresponds (heap : Heap) (v : Observation) (w : Value) : Prop :=
   ∀ n, v.depth ≤ n → snapshot heap n w = .ok v
 
-/-- Field projections of a live use (`atomUses` paths are field paths). -/
+/-- Projections of a live use: record fields (`atomUses` paths are field
+    paths), and the one slot of a record object, `.list [.record xs]` on the
+    observation side (`fieldUses`: a field read of an object is its element
+    step and then the field, #316). The element step reads only a one-slot
+    list whose slot is a record, never any other list element (the owner,
+    2026-11-04, `own-record-flat-q1`). -/
 def projectObs : Observation → Path → Option Observation
   | o, [] => some o
   | .record xs, .field i :: rest => match xs[i]? with
     | some x => projectObs x rest
     | none => none
+  | .list [.record xs], .element :: rest => projectObs (.record xs) rest
   | _, _ => none
 
-def projectVal : Value → Path → Option Value
+/-- The value at a live use's path: record fields, and the one slot of a
+    record object, read in the current heap (#316). A record object is a
+    one-slot array whose slot is a record; the element step reads no other
+    array (the owner, 2026-11-04, `own-record-flat-q1`). A path of record
+    fields reads no heap.
+
+    The heap cannot tell a list of one record from a record object. The
+    typing keeps a list element out of a live path: `uses` gives an
+    `.element` step only through `fieldUses` (`get` and an update's base),
+    always with a `.field` step after it, and typing gives those a record
+    object only (`FlatFragment.Fields.tyAt` takes `.element` only at
+    `Ty.object`). A new producer of `.element` steps in `uses` must keep both
+    conditions, or this projection reads the head of a list. -/
+def projectHeap (heap : Heap) : Value → Path → Option Value
   | w, [] => some w
   | .record xs, .field i :: rest => match xs[i]? with
-    | some x => projectVal x rest
+    | some x => projectHeap heap x rest
     | none => none
+  | .ref c, .element :: rest => match heap[c]? with
+    | some [.record xs] => projectHeap heap (.record xs) rest
+    | _ => none
   | _, _ => none
 
 /-- An origin that may name an array a program-lifetime observer reaches:
@@ -561,7 +745,7 @@ structure LinksValid (hs : InPlaceSemantics.State) : Prop where
     path projects to reaches it, or a registered observer does. -/
 def Protected (hs : InPlaceSemantics.State) (env : List (Var × Observation × Value))
     (live : Live) (c : Nat) : Prop :=
-  (∃ x p o w w', (x, p) ∈ live ∧ env.lookup x = some (o, w) ∧ projectVal w p = some w' ∧
+  (∃ x p o w w', (x, p) ∈ live ∧ env.lookup x = some (o, w) ∧ projectHeap hs.heap w p = some w' ∧
     Reaches hs.heap w' (.ref c)) ∨
   (∃ k ∈ hs.kept.toList, Reaches hs.heap k (.ref c))
 
@@ -605,7 +789,11 @@ theorem linkNamed_of_empty (hs : InPlaceSemantics.State) (env : List (Var × Obs
       origins the checker considers escaped (`keptEscaped`), so no demand the
       checker passes can write one;
     * every live use (variable and field path) corresponds and is described
-      by its abstract value, path by path, with its certificates;
+      by its abstract value, path by path, with its certificates; the
+      abstract is read through the binding's type in `tenv` (`entryAbstract`
+      with the declarations `ds`, #1796), since a dictionary's value is field
+      1 of its entry; a field read of a record object projects through the
+      object's one slot in the current heap (`projectHeap`, #316);
     * every binding, live or dead, keeps its arrays at immutable paths
       (fields, captures, the root) named by its abstract value: a dead binding
       may hold an array since written in place, and its value copy then
@@ -615,8 +803,8 @@ theorem linkNamed_of_empty (hs : InPlaceSemantics.State) (env : List (Var × Obs
     * every stored link is valid (`linksValid`), and linked storage a live
       path or an observer protects is named as one array (`linkNamed`), so a
       demand on a view or its source tests the whole protected component. -/
-structure Invariant (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
-    (env : List (Var × Observation × Value)) (live : Live) (aenv : Env Abstract)
+structure Invariant (ds : List Decl) (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
+    (env : List (Var × Observation × Value)) (live : Live) (aenv : Env Abstract) (tenv : Env Ty)
     (escapes : List Origin) (γ : Naming) : Prop where
   reads : vs.reads = hs.reads
   external : vs.externalReads = hs.externalReads
@@ -625,22 +813,24 @@ structure Invariant (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
   kept : ∀ (i : Nat) o w, vs.kept[i]? = some o → hs.kept[i]? = some w → Corresponds hs.heap o w
   keptEscaped : ∀ k ∈ hs.kept.toList, ∀ c, Reaches hs.heap k (.ref c) → ∀ g, c ∈ γ g → Escaped escapes g
   bindings : ∀ x p, (x, p) ∈ live → ∀ o w, env.lookup x = some (o, w) →
-    ∃ o' w', projectObs o p = some o' ∧ projectVal w p = some w' ∧ Corresponds hs.heap o' w'
-  described : ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) → aenv.lookup x = some a →
-    projectVal w p = some w' → Describes γ hs.heap (a.atPath p) w'
+    ∃ o' w', projectObs o p = some o' ∧ projectHeap hs.heap w p = some w' ∧ Corresponds hs.heap o' w'
+  described : ∀ x p, (x, p) ∈ live → ∀ o w a t w', env.lookup x = some (o, w) → aenv.lookup x = some a →
+    tenv.lookup x = some t → projectHeap hs.heap w p = some w' →
+      Describes γ hs.heap (entryAbstract ds (fieldType t p) (a.atPath p)) w'
   named : ∀ x o w a, env.lookup x = some (o, w) → aenv.lookup x = some a →
     ∀ q c, immutablePath q = true → ArrayAt hs.heap w q c → named γ (a.cellsAt q) c
   separating : Separating γ
   linksValid : LinksValid hs
   linkNamed : LinkNamed hs env live γ
 
-theorem invariant_initial (fuel : Nat) (live : Live) (escapes : List Origin) (γ : Naming)
-    (hγ : Separating γ) : Invariant { fuel } { fuel } [] live [] escapes γ :=
+theorem invariant_initial (ds : List Decl) (fuel : Nat) (live : Live) (tenv : Env Ty)
+    (escapes : List Origin) (γ : Naming)
+    (hγ : Separating γ) : Invariant ds { fuel } { fuel } [] live [] tenv escapes γ :=
   { reads := rfl, external := rfl, fuel := rfl, keptSize := rfl
     kept := by intro i o w h; simp at h
     keptEscaped := by intro k hk; simp at hk
     bindings := by intro x p _ o w h; simp at h
-    described := by intro x p _ o w a w' h; simp at h
+    described := by intro x p _ o w a t w' h; simp at h
     named := by intro x o w a h; simp at h
     separating := hγ
     linksValid := linksValid_of_empty _ rfl
@@ -648,7 +838,7 @@ theorem invariant_initial (fuel : Nat) (live : Live) (escapes : List Origin) (γ
 
 /-- What the invariant buys at the end: the two traces' observation streams
     so far are the same. -/
-theorem invariant_observations (h : Invariant vs hs env live aenv escapes γ) :
+theorem invariant_observations (h : Invariant ds vs hs env live aenv tenv escapes γ) :
     vs.reads.toList = hs.reads.toList ∧ vs.externalReads.toList = hs.externalReads.toList :=
   ⟨by rw [h.reads], by rw [h.external]⟩
 
@@ -693,6 +883,8 @@ def obsTyped (ds : List Decl) (o : Observation) (t : Ty) : Bool :=
     if tag == 0 then obsTyped ds e err else tag == 1 && obsTyped ds a ok
   | .list os, .chain t | .list os, .list t | .list os, .builder t => os.attach.all fun o => obsTyped ds o.val t
   | .list os, .dict t => os.attach.all fun o => obsTyped ds o.val (.record [.int, t])
+  -- A record object is a one-slot array holding the record (`Ty.object`).
+  | .list os, .object ts => os.length == 1 && os.attach.all fun o => obsTyped ds o.val (.record ts)
   | .closure id caps, .fn ps r =>
     match ds[id]? with
     | some d => d.parameters == ps && d.result == r && caps.length == d.captures.length &&
@@ -718,10 +910,15 @@ def ValueTyped (ds : List Decl) (heap : Heap) (w : Value) (u : Ty) : Prop :=
 /-- Both observations and actual heap values have the environment's types.
     Live correspondence alone is insufficient because `close` reads its
     source without making it live. -/
-def WellTyped (ds : List Decl) (heap : Heap) (env : List (Var × Observation × Value)) (e : Expr) : Prop :=
-  ∃ tenv t, exprType ds (mainDecl e) tenv e = .ok t ∧
+def WellTypedAt (ds : List Decl) (heap : Heap) (env : List (Var × Observation × Value)) (tenv : Env Ty)
+    (e : Expr) (t : Ty) : Prop :=
+  exprType ds (mainDecl e) tenv e = .ok t ∧
     ∀ x o w u, env.lookup x = some (o, w) → tenv.lookup x = some u →
       obsTyped ds o u = true ∧ ValueTyped ds heap w u
+
+/-- `WellTypedAt` for some type environment and some result type. -/
+def WellTyped (ds : List Decl) (heap : Heap) (env : List (Var × Observation × Value)) (e : Expr) : Prop :=
+  ∃ tenv t, WellTypedAt ds heap env tenv e t
 
 theorem typesOf_of_typecheck (p : Program) (h : typecheck p = .ok t) : typesOf p = .ok t := by
   unfold typecheck at h
@@ -769,22 +966,25 @@ def MainContext (p : Program) (a : Accepted) (ctx : Context) (st : St) : Prop :=
     covered by this statement; there `summary_sound` is the claim. It is the
     simultaneous preservation the thesis says it has not written (§6.3).
     Both interpreters spend fuel identically, so calls that never return
-    exhaust the same fuel in both. Unproved. -/
+    exhaust the same fuel in both. The bindings have the types `tenv` and the
+    expression the type `t`; the relation reads every abstract through its
+    type (#1796). Unproved. -/
 theorem invariant_preserved (p : Program) (a : Accepted) (ok : check p = .ok a)
-    (ctx : Context) (aenv : Env Abstract) (e : Expr)
+    (ctx : Context) (aenv : Env Abstract) (tenv : Env Ty) (t : Ty) (e : Expr)
     (after : Live) (site : List Nat) (st st' : St) (r : Abstract) (main : MainContext p a ctx st)
     (accepts : (inferExpr ctx.config.inferenceFuel ctx aenv e after site).run st = .ok (r, st'))
     (fuel : Nat) (env : List (Var × Observation × Value)) (γ : Naming)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
-    (h : Invariant vs hs env (union (uses e) after) aenv st.facts.escapes γ)
+    (h : Invariant p.declarations vs hs env (union (uses e) after) aenv tenv st.facts.escapes γ)
     (honest : ∀ x a, aenv.lookup x = some a → HonestClosures p.declarations a)
-    (typed : WellTyped p.declarations hs.heap env e)
+    (typed : WellTypedAt p.declarations hs.heap env tenv e t)
     (covered : ∀ x q, (x, q) ∈ union (uses e) after → ∀ o w, env.lookup x = some (o, w) →
-      (aenv.lookup x).isSome = true) :
+      (aenv.lookup x).isSome = true ∧ (tenv.lookup x).isSome = true) :
     (∀ v vs', (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .ok (v, vs') →
       ∃ w hs' γ', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .ok (w, hs') ∧
-        Invariant vs' hs' env after aenv st'.facts.escapes γ' ∧ Corresponds hs'.heap v w ∧
-        Describes γ' hs'.heap r w ∧ HonestClosures p.declarations r) ∧
+        Invariant p.declarations vs' hs' env after aenv tenv st'.facts.escapes γ' ∧
+        Corresponds hs'.heap v w ∧
+        Describes γ' hs'.heap (entryAbstract p.declarations t r) w ∧ HonestClosures p.declarations r) ∧
     (∀ msg, (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .error msg →
       ∃ msg', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .error msg') := by
   sorry
@@ -808,12 +1008,12 @@ theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
       exact ⟨r, st', hrun, by rw [← ok]⟩
 
 theorem check_typed (p : Program) (a : Accepted) (ok : check p = .ok a) (heap : Heap := #[]) :
-    WellTyped p.declarations heap [] p.main := by
+    ∃ t, WellTypedAt p.declarations heap [] [] p.main t := by
   unfold check at ok
   simp only [default_no_shape, default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
   cases ht : typecheck p with
   | error msg => simp [ht, bind, Except.bind] at ok
-  | ok t => exact ⟨[], t, typecheck_main p ht, by intro x o w u h; simp at h⟩
+  | ok t => exact ⟨t, typecheck_main p ht, by intro x o w u h; simp at h⟩
 
 /-- **Main theorem** (Theorem 6.1 for this core). For every program the
     corrected checker accepts and every fuel bound — every execution prefix,
@@ -829,11 +1029,12 @@ theorem accepted_traces_agree (p : Program) (a : Accepted) (ok : check p = .ok a
   obtain ⟨r, st', accepts, cache⟩ := check_accepts_main p a ok
   have main : MainContext p a { declarations := p.declarations, config := {} } {} :=
     ⟨rfl, corrected_default, by simp⟩
-  have inv : Invariant { fuel } { fuel } [] (union (uses p.main) []) [] ({} : St).facts.escapes
-      (fun _ => []) :=
-    invariant_initial fuel _ _ (fun _ => []) (by intro _ _ _ _ h; simp at h)
-  have step := (invariant_preserved p a ok _ [] p.main [] [] {} st' r main accepts fuel
-    [] (fun _ => []) { fuel } { fuel } inv (by intro x a h; simp at h) (check_typed p a ok)
+  have inv : Invariant p.declarations { fuel } { fuel } [] (union (uses p.main) []) [] []
+      ({} : St).facts.escapes (fun _ => []) :=
+    invariant_initial p.declarations fuel _ [] _ (fun _ => []) (by intro _ _ _ _ h; simp at h)
+  obtain ⟨tmain, typed⟩ := check_typed p a ok
+  have step := (invariant_preserved p a ok _ [] [] tmain p.main [] [] {} st' r main accepts fuel
+    [] (fun _ => []) { fuel } { fuel } inv (by intro x a h; simp at h) typed
     (by intro x q _ o w h; simp at h)).1
   unfold ValueSemantics.run at ht
   cases hv : (ValueSemantics.eval fuel p.declarations none [] p.main).run { fuel } with
@@ -897,9 +1098,9 @@ def externalAfter : Option (List (List Observation) × List (List Observation)) 
   | none => false
 
 /-- The restated invariant excludes it: the observers differ in number. -/
-theorem old_invariant_counterexample (env : List (Var × Observation × Value)) (live : Live)
-    (aenv : Env Abstract) (escapes : List Origin) (γ : Naming) :
-    ¬ Invariant valueState heapState env live aenv escapes γ := by
+theorem old_invariant_counterexample (ds : List Decl) (env : List (Var × Observation × Value))
+    (live : Live) (aenv : Env Abstract) (tenv : Env Ty) (escapes : List Origin) (γ : Naming) :
+    ¬ Invariant ds valueState heapState env live aenv tenv escapes γ := by
   intro h
   have := h.keptSize
   simp [valueState, heapState] at this

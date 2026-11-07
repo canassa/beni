@@ -1,0 +1,55 @@
+-- ownership: a callee that writes one position at a folded path, through a
+-- type that recurses by plain constructor fields (#1253's review). `writeLL`
+-- writes the list of its argument's left grandchild's left child, which is
+-- `π1#Node.0⟲#Node.1`, a path that stands for every level below `l`, and it
+-- owes no `excl` there: it writes one of those positions. A call whose
+-- actual puts one list at two positions of that path is therefore not
+-- covered by any `excl` and must be refused by the call's other paths:
+-- one subtree twice (`same`), a parameter's list in that subtree
+-- (`param`), two equal subtrees holding one parameter list (`twoNodes`),
+-- and a list projected from a literal beside the literal (`projected`).
+-- `apart` hands it distinct lists: accepted.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+writeLL : Tree → Tree
+writeLL t =
+    case t of
+        Node (Node (Node a xs b) ys c) zs d →
+            Node (Node (Node a (List.push xs 1) b) ys c) zs d
+
+        _ →
+            t
+
+
+pub same : Tree
+same =
+    s = Node Leaf [ 1 ] Leaf
+    writeLL (Node (Node s [ 2 ] s) [] Leaf)
+
+
+pub param : List Int → Tree
+param q =
+    s = Node Leaf q Leaf
+    writeLL (Node (Node s [ 2 ] s) [] Leaf)
+
+
+pub twoNodes : List Int → Tree
+twoNodes q = writeLL (Node (Node (Node Leaf q Leaf) [ 2 ] (Node Leaf q Leaf)) [] Leaf)
+
+
+pub projected : Tree
+projected =
+    l = Node Leaf [ 3 ] Leaf
+    case l of
+        Node _ ys _ →
+            writeLL (Node (Node (Node Leaf ys Leaf) [ 2 ] l) [] Leaf)
+
+        Leaf →
+            Leaf
+
+
+pub apart : Tree
+apart = writeLL (Node (Node (Node Leaf [ 1 ] Leaf) [ 2 ] (Node Leaf [ 3 ] Leaf)) [] Leaf)

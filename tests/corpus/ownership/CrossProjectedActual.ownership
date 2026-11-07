@@ -1,0 +1,11 @@
+module CrossProjectedActual
+  9:15 ++ a: accepted param
+  17:18 call CrossProjectedActual.merge p: accepted fresh (CrossProjectedActual.merge writes π1)
+  19:34 List.push a: accepted fresh
+  33:18 call CrossProjectedActual.merge p: accepted fresh (CrossProjectedActual.merge writes π1)
+  35:34 List.push a: accepted fresh
+  summary merge: π1 RAW, π2 R, π2[*] A; res [*] condition(fresh1) π2[*], π1{lost}r{excl π2[*], sep π1[*] π2[*]}
+  summary repeated: unused
+  summary distinct: unused
+  demands 5: accepted 5 (fresh 4, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 5: accepted 5 (fresh 4, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

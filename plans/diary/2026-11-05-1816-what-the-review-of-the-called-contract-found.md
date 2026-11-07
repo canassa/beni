@@ -1,0 +1,5 @@
+## 2026-11-05 18:16 CET — What the review of the called contract found
+
+**What I did.** The adversarial review of #2045 found three programs the first version accepted and the sanitiser trapped, and its second pass one more. Fixed all four, with fixtures: a creation's label and the last call's are two labels; a created object is never apart from `own`; a value of the frame that may hold a function is used whole at any call (#2048, which traps on master too). The ledger's three accepted → refused are #2048's programs.
+
+**What I learned.** My sound argument named the arrivals and not the conditions: `Made` covered what reaches a contract, and `Distinct`'s "a site is apart from any parameter" rests on the parameter being there first, which `own` is not. Sweeps of 1 820 shapes never made an answer come back as an argument; a reviewer did. Two routes to #2048 failed before the third: a read in a row's contract, or in a code's, is an operand at every pass and refuses `taken` rows that share a key. A use of the local is not.

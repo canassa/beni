@@ -1,0 +1,23 @@
+-- A doubling DAG type's derived `==` evidence is built once per DISTINCT
+-- term. `w4 1` has a tuple type 8 levels deep whose every level shares one
+-- node, so the evidence is 8 `$t$` bindings, each used twice by the next,
+-- never 2^8 inlined calls. `run/EvidenceDagBuildDepth32` builds the same
+-- program at depth 32 and prints its answer; this golden pins the sharing
+-- itself, in output a tree walk changes at once.
+import Node exposing (Program)
+
+
+w1 x = ( x, x )
+
+
+w2 x = w1 (w1 x)
+
+
+w3 x = w2 (w2 x)
+
+
+w4 x = w3 (w3 x)
+
+
+main : Program
+main = Node.printLines [ if w4 1 == w4 2 then "T" else "F" ]

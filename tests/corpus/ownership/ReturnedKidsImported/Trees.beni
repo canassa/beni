@@ -1,0 +1,16 @@
+-- ownership: ReturnedKids' recursive writer, in its own module: the class
+-- `incAll` publishes in the block keeps the root's `xs` apart from each
+-- subtree's.
+pub type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+pub incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf

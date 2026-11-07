@@ -1,0 +1,32 @@
+-- SplitSingletonRest (Appendix B, S4): SplitSingletonRoot's green twin. The
+-- singleton links the rest `others` and the written `x`: they are disjoint
+-- cells of one split, so the write is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → Int
+build xs =
+    case xs of
+        [ x, …others ] →
+            y = List.push x 1
+            held = [ ( others, y ) ]
+            List.length held
+
+        [] →
+            0
+
+
+main : Program
+main = Node.print (String.fromInt (build [ [ 1 ], [ 2 ] ]))

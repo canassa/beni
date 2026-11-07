@@ -1,0 +1,7 @@
+--! A test platform's one capability: make every later `child_process.spawn`
+--! report an `error` event whose `code` is `toString`, a name every object
+--! inherits and no failure Node documents.
+
+--| From now on, every `child_process.spawn` gives a child whose `error`
+--| event has code `toString`.
+pub foreign impure breakSpawns : ⊤ → ⊤

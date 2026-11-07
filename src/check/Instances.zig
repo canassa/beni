@@ -182,6 +182,10 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
         try s.report.internal(w.origin, "a method's declaring module has no interface");
         return Resolve.reject(s, id, true);
     } else {
+        const privacy = @import("../resolve/CorePrivate.zig");
+        if (entry.package == .platform and privacy.access(cx.interner.slice(entry.module_name), cx.interner.slice(w.method), true) == .worker and
+            !privacy.workerCaller(cx.graph.modulePackage(cx.module) == .platform, cx.interner.slice(cx.graph.moduleName(cx.module))))
+            return refusePrivate(s, id, a.type, w.method);
         const iface = cx.iface(entry.module);
         if (iface.findValue(cx.interner, w.method)) |value| return importedMethod(s, id, root, a.type, entry, value);
         if (privateIn(s, entry.module, w.method)) return refusePrivate(s, id, a.type, w.method);

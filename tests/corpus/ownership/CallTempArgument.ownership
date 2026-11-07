@@ -1,0 +1,33 @@
+module CallTempArgument
+  22:9 List.push xs: rejected alias: g.x.c holds it and is read at 23:5
+  34:9 List.push xs: accepted param
+  48:9 List.push xs: rejected alias: g.x.c holds it and is read at 49:5
+  68:9 List.push xs: rejected alias: g.x.c holds it and is read at 69:5
+  86:9 List.push xs: rejected alias: g.x.c holds it and is read at 87:5
+  99:9 List.push xs: rejected alias: g.x.c holds it and is read at 100:5
+  110:9 List.push xs: rejected alias: g.x.c holds it and is read at 111:5
+  123:9 List.push xs: rejected alias: g.x.c holds it and is read at 124:5
+  summary rbc: π1.b.c R
+  summary wrapRec: π1.x R
+  summary recordArg: π1 RW[storage], π1[*] R
+  summary otherRec: π1.y R
+  summary otherField: π1 RW[storage], π1[*] R
+  summary tb: π1.1.c R
+  summary wrapTuple: π1.x R
+  summary tupleArg: π1 RW[storage], π1[*] R
+  summary just: π1 R, π1#Just.0.c R
+  summary wrapCtor: π1.x R
+  summary ctorArg: π1 RW[storage], π1[*] R
+  summary pick: π1 RA; res π1
+  summary rbx: π1.c R
+  summary n1: π1.x R
+  summary inlineCall: π1 RW[storage], π1[*] R
+  summary bound: π1.x R, π1.x.c R
+  summary boundCall: π1 RW[storage], π1[*] R
+  summary n2: π1.x R
+  summary inlineField: π1 RW[storage], π1[*] R
+  summary viaLocal: π1.x R, π1.x.c R
+  summary localRec: π1 RW[storage], π1[*] R
+  demands 8: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 8: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause alias 7

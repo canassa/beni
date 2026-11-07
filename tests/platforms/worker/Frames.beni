@@ -1,0 +1,8 @@
+-- DedicatedWorkerGlobalScope includes the animation-frame provider (#2120).
+import Js
+
+
+pub run : ⊤ → ⊤
+run _ =
+    token = Js.apply (Js.global "requestAnimationFrame") [ Js.from λ_ → ⊤ ]
+    Js.to (Js.apply (Js.global "cancelAnimationFrame") [ token ])

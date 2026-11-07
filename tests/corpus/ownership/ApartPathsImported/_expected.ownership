@@ -1,0 +1,34 @@
+module Main
+  12:10 call Parts.rightLeftBox <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (Parts.rightLeftBox writes π1#Pair.1#Box.0)
+  19:10 call Parts.rightLeftBox <Pair …>#Pair.1#Box.0: accepted fresh (Parts.rightLeftBox writes π1#Pair.1#Box.0)
+  25:11 call Parts.readDeep <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (Parts.readDeep writes π1#Pair.1#Box.0)
+  32:13 call Parts.rootVsSub <Br …>#Br.1: rejected disjoint: another operand of the same operation reaches it (Parts.rootVsSub writes π1#Br.1)
+  40:10 call Parts.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (Parts.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  47:10 call Parts.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (Parts.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  54:10 call Parts.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: accepted fresh (Parts.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  summary g: π1 R, π1#Box.0 RW[storage], π1#Box.0[*] R
+  summary gDistinct: unused
+  summary gDeep: π1 R, π1#Box.0 AW[storage], π1#Box.0[*] A; res .0 condition(fresh1) π1#Box.0, .0[*] ~condition(fresh2) ~π1#Box.0[*]
+  summary callerT: π1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res .0 fresh3 ~condition(fresh1) ~fresh1 ~π1#Br.1, .0[*] ~condition(fresh2) ~π1#Br.1[*]
+  summary b8: π1 R, π1⟨Tree⟩#Br.1 RW[storage], π1⟨Tree⟩#Br.1[*] R; xreq excl π1
+  summary twoRoutes: π1 R, π1⟨Tree⟩#Br.1 RW[storage], π1⟨Tree⟩#Br.1[*] R; xreq excl π1
+  summary distinctTree: unused
+  demands 7: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+module Parts
+  20:13 List.push xs: accepted param
+  34:15 call Parts.kidsBox r#Box.0: accepted param (Parts.kidsBox writes π1#Box.0)
+  41:15 call Parts.kidsBox r#Box.0: accepted param (Parts.kidsBox writes π1#Box.0)
+  48:13 List.push xs: accepted param
+  68:15 call Parts.kids r#Br.1: accepted param (Parts.kids writes π1#Br.1)
+  78:15 List.push xs: accepted param
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary rightLeftBox: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary readDeep: π1 R, π1#Pair.0 R, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 π1#Pair.1#Box.0, .0[*] ~π1#Pair.1#Box.0[*]
+  summary kids: π1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res [*] ~π1#Br.1[*], fresh1 π1#Br.1
+  summary size: π1 R, π1#Br.1 R
+  summary rightLeft: π1 R, π1#Br.0 RA, π1#Br.2 R, π1#Br.2⟨Tree⟩#Br.1 RAW[storage], π1#Br.2⟨Tree⟩#Br.1[*] RA; res .0 fresh5 ~condition(fresh1) ~fresh1 ~π1#Br.2⟨Tree⟩#Br.1, .0[*] ~condition(fresh3) ~π1#Br.2⟨Tree⟩#Br.1[*], .1 ~condition(fresh4) π1#Br.0, condition(fresh2){sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1, sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1[*]}r{sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1, sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1[*]}
+  summary rootVsSub: π1 R, π1#Br.0 R, π1#Br.0⟨Tree⟩#Br.1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res .0 fresh1 π1#Br.1, .0[*] ~π1#Br.1[*]
+  demands 6: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 13: accepted 8 (fresh 2, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 5

@@ -1,0 +1,6 @@
+-- A JavaScript runtime reads the Program wrapper: release must preserve the Program fields the platform runtime reads.
+import Test
+
+
+main : Test.Program
+main = Test.program λ⊤ → "single-field program: ok"

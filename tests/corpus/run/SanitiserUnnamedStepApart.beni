@@ -1,0 +1,40 @@
+-- The twin of `SanitiserUnnamedStep` (`ownership-v2.md` §2.1): the same steps
+-- read and not written. v2 accepts them; the sanitised run prints what the
+-- plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+schema U =
+    tags : List Int
+    name : String
+
+
+type B
+    = B U.Type
+
+
+type Q r
+    = Q { r | a : List Int }
+
+
+size : B → Int
+size b =
+    case b of
+        B u →
+            List.length u.tags
+
+
+rowSize : Q { b : List Int } → Int
+rowSize q =
+    case q of
+        Q rec →
+            List.length rec.b
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = size (B { tags = k, name = "n" }) + rowSize (Q { a = [], b = k })
+    Node.print (String.fromInt n)

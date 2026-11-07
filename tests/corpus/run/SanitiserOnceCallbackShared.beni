@@ -1,0 +1,123 @@
+-- A runtime catch for a list that holds one object twice, handed to a callback
+-- (`ownership-v2.md` §2.11.3, *a taken supply*): a callee calls its callback
+-- once, and that callback edits each element. A label's `sep` is derived from
+-- what the callee supplies. A literal behind `app`, `Maybe.map`, `Result.map`,
+-- a user's holder, a tuple, two levels of `app`, a named function, `filterMap`,
+-- `foldl` and `List.update` each hold one list twice, and so do a list the
+-- callee builds, a capture, and a lambda that passes the label on, also inside
+-- another callback, where the write must reach the outer call. Each edit is
+-- refused; asked nothing, the sanitised runs trap on a stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+type Box a
+    = Box a
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+bumpAll : List (List Int) → List (List Int)
+bumpAll rows = List.map rows push1
+
+
+app : a, (a → b) → b
+app v f = f v
+
+
+unbox : Box a, (a → b) → b
+unbox (Box v) f = f v
+
+
+second : Int × a, (a → b) → b
+second ( _, v ) f = f v
+
+
+wrap : a, (List a → b) → b
+wrap v f = f [ v, v ]
+
+
+wrapLocal : a, (List a → b) → b
+wrapLocal v f =
+    w = [ v, v ]
+    f w
+
+
+opt : Maybe a, (a → b) → Maybe b
+opt m f = Maybe.map m λz → f z
+
+
+go : a, (a → b) → b
+go v f = app v λz → f z
+
+
+main : Program
+main =
+    a = [ 1 ]
+    viaApp = app [ a, a ] λl → List.map l push1
+    b = [ 1 ]
+    viaMaybe = Maybe.withDefault (Maybe.map (Just [ b, b ]) λl → List.map l push1) []
+    c = [ 1 ]
+    viaResult = Result.withDefault (Result.map (Ok [ c, c ]) λl → List.map l push1) []
+    d = [ 1 ]
+    viaBox = unbox (Box [ d, d ]) λl → List.map l push1
+    p = [ 1 ]
+    viaTuple = second ( 0, [ p, p ] ) λl → List.map l push1
+    f = [ 1 ]
+    twoLevels = app [ f, f ] λl → app l λm → List.map m push1
+    g = [ 1 ]
+    named = app [ g, g ] bumpAll
+    h = [ 1 ]
+    filtered = app [ h, h ] λl → List.filterMap l λx → Just (push1 x)
+    i = [ 1 ]
+    folded = app [ i, i ] λl → List.foldl l 0 λx n → n + List.length (push1 x)
+    j = [ 1 ]
+    updated = app [ j, j ] λl → List.update l 0 push1
+    k = [ 1 ]
+    built = wrap k λl → List.map l push1
+    n1 = [ 1 ]
+    local = wrapLocal n1 λl → List.map l push1
+    n2 = [ 1 ]
+    capture = λrun → run [ n2, n2 ]
+    captured = capture λl → List.map l push1
+    o = [ 1 ]
+    viaOpt = Maybe.withDefault (opt (Just [ o, o ]) λl → List.map l push1) []
+    q = [ 1 ]
+    viaGo = go [ q, q ] λl → List.map l push1
+    s = [ 1 ]
+    builtUpdate = wrap s λl → List.update l 0 push1
+    t = [ 1 ]
+    insideOuter = app [ t, t ] λr → go r λl → List.map l push1
+    u = [ 1 ]
+    insideMap = List.map [ [ u, u ] ] λr → go r λl → List.map l push1
+    Node.printLines
+        [ shows viaApp
+        , shows viaMaybe
+        , shows viaResult
+        , shows viaBox
+        , shows viaTuple
+        , shows twoLevels
+        , shows named
+        , shows filtered
+        , String.fromInt folded
+        , shows updated
+        , shows built
+        , shows local
+        , shows captured
+        , shows viaOpt
+        , shows viaGo
+        , shows builtUpdate
+        , shows insideOuter
+        , String.join (List.map insideMap shows) "#"
+        ]

@@ -1,0 +1,19 @@
+-- The v2 twin of `ListSanitiserHiddenHolder`: a write v2 accepts, of a list
+-- a platform kept behind its back (`Keeper.keep`), whose old version the
+-- platform then reads. The plain build prints nothing. Under
+-- `--ownership=v2` and the list stale-read sanitiser (`ownership-v2.md`
+-- §7.3), v2's lowering channel names the write, the sanitiser poisons the
+-- list it wrote, and the platform's read traps: the oracle follows v2's
+-- verdicts, not v1's. The write is in a declaration of its own because v2
+-- does not build `main` yet.
+import Keeper
+import List
+import Node
+
+
+pushed : List Int → List Int
+pushed xs = List.push (Keeper.keep xs) 4
+
+
+main : Node.Program
+main = Node.printLines (Keeper.audit (pushed [ 1, 2, 3 ]))

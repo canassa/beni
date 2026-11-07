@@ -1,0 +1,18 @@
+module RecordSplitInClosure
+  17:21 List.push l: accepted once
+  30:21 List.push r: accepted once
+  38:10 List.update <call RecordSplitInClosure.dup>: accepted call
+  38:23 call RecordSplitInClosure.dup <literal>: accepted fresh (RecordSplitInClosure.dup writes π1)
+  38:49 update v: rejected exclusive: List.update hands its parameter 1 a position of a list that may hold one record at two positions (approx) [copy]
+  42:17 List.update <call RecordSplitInClosure.rotated>: accepted call
+  42:17 update <call RecordSplitInClosure.rotated>[*]: accepted call (List.update writes it)
+  42:30 call RecordSplitInClosure.rotated <literal>: accepted fresh (RecordSplitInClosure.rotated writes π1)
+  42:71 update v: accepted callback-param (List.update supplies it owned)
+  summary dup: π1 RAW[storage]; res [*] ~π1[*], ~fresh1 ~π1{lost}r{lost}
+  summary rotated: π1 RAW[storage]; res [*] ~π1[*], ~fresh1 ~π1
+  summary edit: res [*] ~fresh501◦ ~fresh502◦, ~fresh1{lost}r{lost}
+  summary editRotated: res [*] ~fresh501◦ ~fresh502◦ ~fresh503◦, ~fresh1
+  demands 6: accepted 6 (fresh 2, call 2, param 0, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 0
+  records 3: accepted 2, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 6: accepted 6 (fresh 2, call 2, param 0, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 0
+records 3: accepted 2, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

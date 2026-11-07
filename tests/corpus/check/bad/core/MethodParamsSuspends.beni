@@ -1,0 +1,10 @@
+-- check/bad (core): `Js.method`'s lambda is `sync` whatever its count
+-- (`boundary.md` §4.2, amended 2026-11-04): a lambda with parameters after
+-- its receiver is typed by its own count and held `sync` as the declared
+-- callback is, so a body that may suspend is `sync_boundary`, at the lambda.
+import Js
+import Task
+
+
+withArgs : Js.Value
+withArgs = Js.method λself a b → Task.yieldNow ⊤

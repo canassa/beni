@@ -1,0 +1,102 @@
+-- ownership: RecursiveGroups with its declarations in reverse order
+-- (ownership-v2.md §8 S3b slice 4, §3.8): the same verdicts, for the
+-- same demands, as the file in text order.
+
+rotDead : List Int, List Int, Int → Int
+rotDead a b n =
+    if n == 0 then
+        List.length (List.push a 0)
+    else
+        r = rotDead b a (n - 1)
+        r + 1
+
+
+rot : List Int, List Int, Int → Int
+rot a b n =
+    if n == 0 then
+        List.length (List.push a 0)
+    else
+        r = rot b a (n - 1)
+        r + List.length b
+
+
+localB : List Int, Int → List Int
+localB acc n =
+    if n == 0 then
+        acc
+    else
+        localA acc (n - 1)
+
+
+localA : List Int, Int → List Int
+localA acc n =
+    step x = x + 1
+    localB (List.push acc (step n)) n
+
+
+forever : List Int → List Int
+forever xs = forever xs
+
+
+ringAccepted : List Int → Int
+ringAccepted xs = ring1 xs 2
+
+
+ringRefused : List Int → Int
+ringRefused xs = ring1 xs 2 + List.length xs
+
+
+ring3 : List Int, Int → Int
+ring3 acc n = ring1 (List.push acc n) n
+
+
+ring2 : List Int, Int → Int
+ring2 acc n = ring3 acc n
+
+
+ring1 : List Int, Int → Int
+ring1 acc n =
+    if n == 0 then
+        List.length acc
+    else
+        ring2 acc (n - 1)
+
+
+pairAccepted : List Int → Int
+pairAccepted xs = List.length (oddPush xs 4)
+
+
+pairRefused : List Int → Int
+pairRefused xs = List.length (oddPush xs 4) + List.length xs
+
+
+oddPush : List Int, Int → List Int
+oddPush acc n =
+    if n == 0 then
+        acc
+    else
+        evenPush acc (n - 1)
+
+
+evenPush : List Int, Int → List Int
+evenPush acc n =
+    if n == 0 then
+        acc
+    else
+        oddPush (List.push acc n) (n - 1)
+
+
+selfAccepted : List Int → Int
+selfAccepted xs = List.length (pushAll xs 3)
+
+
+selfRefused : List Int → Int
+selfRefused xs = List.length (pushAll xs 3) + List.length xs
+
+
+pushAll : List Int, Int → List Int
+pushAll acc n =
+    if n == 0 then
+        acc
+    else
+        pushAll (List.push acc n) (n - 1)

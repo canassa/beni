@@ -199,7 +199,7 @@ pub const compiled_values = [_][]const u8{
     "compiledParse",   "compiledPrint",       "compiledFail",    "compiledForward",   "compiledBackward",
     "belowBackward",   "readSlot",            "writeSlot",       "pathAt",            "printableWithin",
     "declared",        "decodeSlot",          "encodeSlot",      "readValueSlot",     "writeValueSlot",
-    "box",             "describedOf",         "describedList",   "describedNullable", "describedConverted",
+    "compiledClaim",   "describedOf",         "describedList",   "describedNullable", "describedConverted",
     "describedRecord", "describedField",      "describedTagged", "describedVariant",  "describedRecursive",
     "compiledDeep",    "compiledMissing",     "badString",       "badInt",            "badBool",
     "badFloat",        "badFinite",
@@ -225,17 +225,15 @@ pub fn isCompiledValue(text: []const u8) bool {
 
 /// The `core/Schema` values member `member` of `r` calls, by name: the
 /// builders its description uses, the helpers its worker calls, or —
-/// under `--schema-library` — the library runner and the options.
 /// `SchemaLower` writes calls of exactly these, and `Reach` keeps them.
-pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, library: bool, out: *std.ArrayList([]const u8)) Allocator.Error!void {
+pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, out: *std.ArrayList([]const u8)) Allocator.Error!void {
     const d = g.definition(r.module, r.decl) orelse return;
     const plan = g.planOf(r.module);
     var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
     try subtree(plan, scratch, d.root, &nodes);
     const params = d.params_end - d.params_start;
     switch (member) {
-        // Under `--schema-library` the root is its description, boxed.
-        .root => try out.append(scratch, if (library) "box" else "declared"),
+        .root => try out.append(scratch, "declared"),
         .description => {
             // `describedOf` makes a primitive's node, and a generic root's
             // description of each argument's node.
@@ -263,7 +261,6 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
         },
         // The readers the shape names, one per kind of node it holds.
         .shape => {
-            if (library) return;
             for (nodes.items) |n| if (shapeReader(plan, n)) |name| try out.append(scratch, name);
             var refs: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
             for (nodes.items) |n| switch (tag(plan, n)) {
@@ -284,19 +281,10 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
         // The root wrappers: `S.parse`/`S.parseWith`, `S.print`/`S.printWith`.
         .parse, .print => {
             try out.append(scratch, "defaultOptions");
-            if (library) {
-                try out.append(scratch, if (member == .parse) "parseWith" else "printWith");
-                return;
-            }
             try out.append(scratch, if (member == .parse) "compiledParse" else "compiledPrint");
             if (params != 0) try out.append(scratch, if (member == .parse) "readSlot" else "writeSlot");
         },
         .read, .write, .decode, .encode, .read_value, .write_value, .read_valid => {
-            // Under `--schema-library` no worker is written.
-            if (library) return;
-            // A derived codec's `decode` and `encode` are its `read` and
-            // `write` workers on a context whose Encoded end is a host value
-            // (`hostWorker`, schema.md §12.10): no worker set of their own.
             if (g.hostAliased(r, member)) |_| {
                 try out.append(scratch, "hostWorker");
                 return;
@@ -457,18 +445,16 @@ pub fn isMaybeField(plan: *const SchemaPlan, f: SchemaPlan.Field) bool {
 
 /// The schema members member `member` of `r` reaches directly: a root
 /// wrapper its own worker set, and a worker set or the description the same
-/// member of every definition its value references. Under
-/// `--schema-library` a root wrapper reaches the root, the boxed description, and a
-/// worker set nothing, since none is written.
-pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, library: bool, out: *std.ArrayList(struct { Ref, Member })) Allocator.Error!void {
+/// member of every definition its value references.
+pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, out: *std.ArrayList(struct { Ref, Member })) Allocator.Error!void {
     switch (member) {
         .root => return,
         .parse, .print => {
-            try out.append(scratch, .{ r, if (library) .root else if (member == .parse) .read else .write });
+            try out.append(scratch, .{ r, if (member == .parse) .read else .write });
             return;
         },
         .description => {},
-        .read, .write, .decode, .encode, .read_value, .write_value, .read_valid, .shape => if (library) return,
+        .read, .write, .decode, .encode, .read_value, .write_value, .read_valid, .shape => {},
     }
     if (g.hostAliased(r, member)) |aliased| {
         try out.append(scratch, .{ r, aliased });

@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"waiting"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "number,number,number,number,number,number"
+<body>
+  <output>"number,number,number,number,number,number"</output>
+  <button>"launch"</button>
+</body>

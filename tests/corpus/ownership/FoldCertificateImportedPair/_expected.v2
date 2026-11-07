@@ -1,0 +1,1 @@
+v2 reads each imported producer's own certificate (ownership-v2.md §8 slice 4, C4, #1570): `same` is accepted on every line where v1 refuses exclusive (approx); its verdicts are v2's own.

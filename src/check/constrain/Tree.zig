@@ -160,6 +160,13 @@ pub const MarkupFault = struct {
         event_escape,
         /// A quoted `srcdoc`, in any case: a document the page runs.
         srcdoc_escape,
+        /// A typed `srcdoc` on an element with no `sandbox`; with a
+        /// `sandbox` whose value is not a constant; or with a constant
+        /// `sandbox` that holds `allow-same-origin` (language.md §11.5).
+        /// `token` is the `srcdoc` name, `name` the element.
+        srcdoc_no_sandbox,
+        srcdoc_sandbox_dynamic,
+        srcdoc_sandbox_same_origin,
         /// A quoted value for a row whose type no quoted value is.
         quoted_value,
         /// A bare attribute for a row that is not `Bool`.

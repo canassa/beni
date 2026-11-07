@@ -23,22 +23,20 @@
 //!                         <text>, in `test-blackbox` and `test-pending`
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
 //! `gates` refuses filters and deliberate ownership mutations. Every test
-//! has a 120-second hang guard (`tests/hang_guard.zig`).
+//! has a 120-second hang guard (`tests/hang_guard.zig`). An emitted program
+//! a test runs goes under Node only when the run-hash cache holds no
+//! verified digest for it (`tests/blackbox/run_hash.zig`): the directory
+//! `BENI_RUN_HASH_DIR` names, else
+//! `${XDG_CACHE_HOME:-$HOME/.cache}/beni-run-hashes`; empty, no cache.
 //!
 //! And three that are NOT gates — the first two because their fixtures are red
 //! by design, the third because a timing claim is not a gate (rule 4):
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
 //!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
 //!                                 (plans/checker-rewrite.md §2)
+//!   zig build test-own2-mutations each rule of ownership v2 broken: which fixture fails
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf)
-//! And the run hashes, not a gate either:
-//!   zig build test-run-hashes     run every tests/corpus/run/ program and
-//!                                 every program a black-box scenario runs
-//!                                 under Node, and record a hash of each
-//!                                 that did what its test expects
-//!                                 (`tests/blackbox/run_hash.zig`); takes
-//!                                 -Dtest-filter, -Dcorpus and -Dllvm
 //! And where the test time goes, not a gate either:
 //!   zig build test-time-report    run the steps of `gates` (or
 //!                                 `-Dtime-step=<step>`) with every test
@@ -63,11 +61,15 @@
 //!   zig build playground          write the static site, with the compiler
 //!                                 as ReleaseSmall WebAssembly, into
 //!                                 zig-out/playground/
-//!   zig build test-playground     run that compiler under Node on every
-//!                                 run/, browser/tea/ and browser/inline/ program and on
-//!                                 TodoMVC, against the native compiler,
-//!                                 byte for byte
+//!   zig build test-playground     run that compiler under Node on a
+//!                                 hand-picked set of programs, against
+//!                                 the native compiler, byte for byte
 //!   zig build test-playground-page  drive the site in a headless Chrome
+//!                                 (`nix develop .#browser`)
+//! And the examples' site (examples/build-pages.mjs), not a gate either:
+//!   zig build test-pages          build it into zig-out/pages/ and load its
+//!                                 pages and deep paths in a headless Chrome
+//!                                 with GitHub Pages' 404 rule
 //!                                 (`nix develop .#browser`)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
@@ -162,10 +164,11 @@ const fuzz_sweep_seeds = blk: {
 };
 
 /// The black-box test files `test-blackbox` runs besides the corpus walker,
-/// each with the number of processes it is split into. `test-run-hashes`
-/// records them and `coverage` measures them.
+/// each with the number of processes it is split into. `coverage` measures
+/// them.
 const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/blackbox_test.zig", 6 },
+    .{ "tests/blackbox/session_api_test.zig", 1 },
     .{ "tests/blackbox/abuse_test.zig", 3 },
     .{ "tests/blackbox/abuse_wide_test.zig", 3 },
     .{ "tests/blackbox/build_test.zig", 3 },
@@ -221,11 +224,14 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const llvm = b.option(bool, "llvm", "Build the ReleaseSafe compiler the black-box suites spawn with LLVM, the code users get, instead of Zig's self-hosted backend: about a minute's compile instead of seconds") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
+    const no_v2_parity = b.option(bool, "no-v2-parity", "Run the corpus without the v1/v2 parity net, for `test-own2-mutations`; `gates` refuses it") orelse false;
+    const corpus_except = b.option([]const u8, "corpus-except", "Leave out the corpus fixtures whose path holds one of these comma-separated texts; unlike -Dcorpus the net still runs. `gates` refuses it") orelse "";
     const corpus_only = b.option([]const u8, "corpus", "Run only the corpus fixtures whose repo-relative path contains this text; `gates` refuses it") orelse "";
     // The ownership checker's own cross-check of an indexed spine condition
     // against the pairwise one runs in safety builds for values of eight
     // entries or fewer; this runs it for every value, at a cost in time.
     stable_generated = b.option(bool, "stable-generated", "Copy the build id and the checked core to fixed paths under .zig-cache/stable/, so `--watch -fincremental` sees their new contents instead of keeping the first build's") orelse false;
+    harness_prefix = b.option([]const u8, "harness-prefix", "The tests find the binaries this build installs here, not under zig-out: the same absolute path as --prefix");
     const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (safety builds; slow)") orelse false;
     const own_opts = b.addOptions();
     own_opts.addOption(bool, "full_cross_check", own_full_check);
@@ -235,6 +241,25 @@ pub fn build(b: *std.Build) void {
     // given to the gates.
     const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist, wrong-placement); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
+    // The v2 checker with one rule broken on purpose (`src/own2/Mutate.zig`),
+    // which `test-own2-mutations` runs against the fixtures. Hidden; never given
+    // to the gates.
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break one rule of the v2 checker, a member of `src/own2/Mutate.zig`'s `Name`; `gates` refuses it") orelse "none";
+    own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
+    // The v2 checker's order reversed on purpose, to show that a verdict does
+    // not depend on it (ownership-v2.md §2.9 rule 4 (a′), §2.11 item 3 (d)):
+    // `otherPaths-spine-first`, `cert-params-reversed`, comma-separated.
+    // Hidden; never given to the gates.
+    const own2_switch = b.option([]const u8, "ownership-v2-switch", "Test-only: reverse an order of the v2 checker (otherPaths-spine-first, cert-params-reversed; comma-separated); `gates` refuses it") orelse "none";
+    own_opts.addOption([]const u8, "v2_switch", own2_switch);
+    // The v2 checker's data-oriented measurement (`src/own2/Counters.zig`): what its
+    // dictionaries, columns and pools are asked, and a census of its sets, maps and
+    // nodes, appended to a module's dump. Off, it is compiled away. Hidden; never given
+    // to the gates.
+    const own2_counters = b.option(bool, "ownership-v2-counters", "Count the v2 checker's container operations and census its data, in its dump (off: compiled away); `gates` refuses it") orelse false;
+    own_opts.addOption(bool, "counters", own2_counters);
+    const own2_trace = b.option([]const u8, "ownership-v2-trace", "With -Downership-v2-counters: a directory the dump writes every table dictionary's operation trace to, for bench/own2-dict") orelse "";
+    own_opts.addOption([]const u8, "trace_dir", own2_trace);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the
     // narrower runtime roots leaves every answer its lowering read as it
@@ -244,6 +269,12 @@ pub fn build(b: *std.Build) void {
     const emit_opts = b.addOptions();
     emit_opts.addOption(bool, "lower_reuse_cross_check", lower_reuse_check);
     emit_options = emit_opts.createModule();
+    // The owner, 2026-11-01: the safety allocator is off unless a memory
+    // problem is being debugged. It costs 15-20% of CPU (#1586).
+    const safe_allocator = b.option(bool, "safe-allocator", "Run every beni this build makes on the safety allocator, which catches leaks, double frees and use-after-free (default off; costs 15-20% CPU)") orelse false;
+    const alloc_opts = b.addOptions();
+    alloc_opts.addOption(bool, "safe_allocator", safe_allocator);
+    alloc_options = alloc_opts.createModule();
     // `diagnostic` is a NAMED module because two roots need the same schema:
     // the compiler renders it and the black-box suite parses it back. A field
     // added or renamed in production then fails the tests at compile time
@@ -323,6 +354,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "beni", .module = exe_beni },
                 .{ .name = "diagnostic", .module = diagnostic_mod },
+                .{ .name = "alloc_options", .module = alloc_options.? },
             },
         }),
     });
@@ -346,6 +378,59 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     run_cmd.addPassthruArgs();
     run_step.dependOn(&run_cmd.step);
+
+    // Native binding catalogue generation: workers-native-bindings.md.
+    // An explicit command consumes the pinned archive and writes ordinary
+    // nominal types plus source-indexed metadata; it exposes no operations.
+    const native_module = b.createModule(.{
+        .root_source_file = b.path("src/native/Generate.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const native_tool_module = b.createModule(.{
+        .root_source_file = b.path("tests/native_bindings.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    native_tool_module.addImport("native_bindings", native_module);
+    native_tool_module.addAnonymousImport("webref_idl", .{
+        .root_source_file = b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"),
+    });
+    native_tool_module.addAnonymousImport("webref_receipt", .{
+        .root_source_file = b.path("docs/design/research/workers/sources.json"),
+    });
+    const native_tool = b.addExecutable(.{ .name = "beni-native-bindings", .root_module = native_tool_module });
+    const native_step = b.step("native-bindings", "Generate the pinned native type and binding metadata catalogue");
+    const native_run = b.addRunArtifact(native_tool);
+    native_run.addPassthruArgs();
+    native_step.dependOn(&native_run.step);
+    const native_tests = b.addTest(.{
+        .name = "native_bindings_test",
+        .root_module = native_tool_module,
+        .test_runner = testRunner(b),
+        .filters = test_filters,
+    });
+    const native_unit_tests = b.addTest(.{
+        .name = "native_idl_test",
+        .root_module = native_module,
+        .test_runner = testRunner(b),
+        .filters = test_filters,
+    });
+    const native_test_step = b.step("test-native-bindings", "Test pinned native type and metadata generation");
+    const native_test_run = runTests(b, native_tests);
+    native_test_step.dependOn(&native_test_run.step);
+    const native_unit_run = runTests(b, native_unit_tests);
+    native_test_step.dependOn(&native_unit_run.step);
+    // Compile every generated nominal type with the real development compiler.
+    // These files are output of the command, not hand-written stand-ins.
+    const native_generated = b.addRunArtifact(native_tool);
+    native_generated.addFileArg(b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"));
+    const native_directory = native_generated.addOutputDirectoryArg("native-bindings");
+    const native_check = b.addRunArtifact(exe);
+    native_check.addArgs(&.{ "check", "--core", "--no-cache" });
+    native_check.addPrefixedDirectoryArg("--root=", native_directory);
+    native_check.addDirectoryArg(native_directory);
+    native_test_step.dependOn(&native_check.step);
 
     // ---- Hermetic suite. ----
     // `src/beni.zig` references every internal module from its test block;
@@ -489,6 +574,20 @@ pub fn build(b: *std.Build) void {
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
     const safe = compiler(b, target, .safe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
+    // The public resident API uses the same checked library and backend as
+    // the black-box compiler. Its heap checker remains active in ReleaseSafe.
+    const session_driver = b.addExecutable(.{
+        .name = "beni-session-driver",
+        .use_llvm = safe.exe.use_llvm,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/session_driver.zig"),
+            .target = target,
+            .optimize = .safe,
+            .strip = safe.exe.root_module.strip,
+            .imports = &.{.{ .name = "beni", .module = safe.beni }},
+        }),
+    });
+    const session_driver_install = b.addInstallArtifact(session_driver, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
     // The same compiler with `tests/platforms/toy` compiled in, exactly as
     // `-Dplatform=tests/platforms/toy` would compile it
     // (`docs/design/boundary.md` §9.5), at `zig-out/toy/bin/beni`: the
@@ -535,8 +634,7 @@ pub fn build(b: *std.Build) void {
     // suite it touches.
     const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the ReleaseSafe compiler)");
     // The run-hash tool (`tests/run_hash_summary.zig`): it prints what the
-    // processes did with their run hashes, merges a recording into the
-    // index, and asks Node its version.
+    // processes did with their run hashes, and asks Node its version.
     const summary_exe = b.addExecutable(.{
         .name = "run-hash-summary",
         .root_module = b.createModule(.{
@@ -552,13 +650,17 @@ pub fn build(b: *std.Build) void {
     node_probe.addArg("node-version");
     node_probe.has_side_effects = true;
     const bb: Blackbox = .{
+        .session_driver_install = &session_driver_install.step,
         .node_version = node_probe.captureStdOut(.{}),
+        .run_hash_dir = runHashDir(b),
         .b = b,
         .target = target,
         .optimize = optimize,
         .diagnostic = diagnostic_mod,
         .filters = test_filters,
         .corpus_only = corpus_only,
+        .corpus_except = corpus_except,
+        .no_v2_parity = no_v2_parity,
         .safe_dir = safe_dir,
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
@@ -570,9 +672,10 @@ pub fn build(b: *std.Build) void {
         .chrome = b.option([]const u8, "chrome", "The Chrome or Chromium `test-browser` runs pages in (default: the first of chromium, google-chrome-stable and google-chrome on PATH)") orelse "",
         .miniflare = b.option([]const u8, "miniflare", "Miniflare's entry file, which `test-workers` runs Workers under (default: BENI_MINIFLARE, set by `nix develop .#workers`)") orelse "",
     };
-    // A process that runs an emitted program skips Node when the run's
-    // hash is recorded (`tests/blackbox/run_hash.zig`); every process of the
-    // step writes its counts into a directory of this build's own, and
+    // A process that runs an emitted program skips Node when the run-hash
+    // cache holds the run's digest, and puts it there after a run that
+    // matched (`tests/blackbox/run_hash.zig`); every process of the step
+    // writes its counts into a directory of this build's own, and
     // `run-hash-summary` prints them as one line once every process is
     // done — straight to the terminal, because a passing test that writes
     // to stderr reads as a failed command. The `test-blackbox-<file>` steps
@@ -582,9 +685,9 @@ pub fn build(b: *std.Build) void {
     b.graph.poisonCache();
     const counts_dir = installPath(b, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
     const gate_counts_dir = b.fmt("{s}-all", .{counts_dir});
-    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, &.{});
+    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, bb.run_hash_dir);
     blackbox_step.dependOn(&gate_summary.step);
-    // The suites `test-run-hashes` records, with their process counts.
+    // The suites, with their process counts.
     const suites = blackbox_suites;
     var suite_tests: [suites.len]*std.Build.Step.Compile = undefined;
     for (suites, &suite_tests) |suite, *t| {
@@ -602,11 +705,11 @@ pub fn build(b: *std.Build) void {
     // process. The one knob the build line sets is `BENI_CORPUS_ONLY`, from
     // `-Dcorpus`, which `gates` refuses.
     //
-    // `run/` skips Node for a build whose output tree carries a recorded run
-    // hash, and its parts report into the same directory.
+    // `run/` skips Node for a build whose digest the cache holds, and its
+    // parts report into the same directory.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
-    const corpus_summary = runHashSummary(b, summary_exe, counts_dir, &.{});
+    const corpus_summary = runHashSummary(b, summary_exe, counts_dir, bb.run_hash_dir);
     for (std.enums.values(corpus_parts.Part)) |part| {
         // `workers/` needs Miniflare, which only `nix develop .#workers`
         // has: `test-workers` runs it, below, and the gates do not.
@@ -633,31 +736,6 @@ pub fn build(b: *std.Build) void {
     bb.runSharded(bb.fileStep(wasm_file), wasm_test, .{ .root = "tests/corpus", .wasm = .gate }, wasm_shards);
     bb.runSharded(&gate_summary.step, wasm_test, .{ .root = "tests/corpus", .wasm = .gate, .report_dir = gate_counts_dir }, wasm_shards);
 
-    // Record the run hashes: every `run/` program and every program a
-    // black-box scenario runs goes under Node. Each fixture's `.run-hash` is
-    // rewritten with the builds that matched their golden (one process for
-    // both builds of a fixture, so one worker writes each record), and
-    // `tests/blackbox/run-hashes.txt` with the scenario runs that did what
-    // their test expects. `-Dtest-filter` narrows the scenarios, and the
-    // index keeps every other test's lines; `-Dcorpus` alone records only
-    // the corpus. Takes `-Dllvm`; not a gate. The index is merged after the
-    // last process, so a recording whose tests fail changes no line of it.
-    const record_dir = b.fmt("{s}-record", .{counts_dir});
-    const records_scenarios = test_filters.len != 0 or corpus_only.len == 0;
-    const record_summary = runHashSummary(b, summary_exe, record_dir, if (!records_scenarios)
-        &.{}
-    else if (test_filters.len == 0)
-        &.{ "--index=tests/blackbox/run-hashes.txt", "--whole" }
-    else
-        &.{"--index=tests/blackbox/run-hashes.txt"});
-    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }).step);
-    if (records_scenarios) for (suites, suite_tests) |suite, t| {
-        bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }, suite[1]);
-    };
-    if (records_scenarios) bb.runSharded(&record_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .run_hashes = "record", .report_dir = record_dir }, 1);
-    if (records_scenarios) bb.runSharded(&record_summary.step, build_id_test, .{ .root = "tests/corpus", .variant = true, .run_hashes = "record", .report_dir = record_dir }, 1);
-    b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
-
     // The `browser/` corpus in a real browser: every fixture's pages run in
     // one headless Chrome instead of happy-dom, against the same goldens
     // (`tests/blackbox/browser.zig`), so a difference between the two DOMs
@@ -670,25 +748,24 @@ pub fn build(b: *std.Build) void {
     // `workers/`: the `cloudflare` platform's fixtures, each build run under
     // Miniflare (docs/design/boundary.md §9.12 (k); tests/blackbox/workers.zig).
     // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
-    // `-Dminiflare=`; with neither the step fails and says so. Not a gate
-    // (no CI job runs it yet, #697); a case starts Miniflare once
-    // (§9.12 (k)). Takes `-Dcorpus`. Its run hashes are recorded by
-    // `test-run-hashes` only in the same shell.
+    // `-Dminiflare=`; with neither the step fails and says so. Not a gate:
+    // CI's `workers` job runs it (.github/workflows/ci.yml); a case starts Miniflare once
+    // (§9.12 (k)). Takes `-Dcorpus`. Its digests go to the same run-hash
+    // cache as the gates'.
     const workers_step = b.step("test-workers", "Run the workers/ corpus under Miniflare (nix develop .#workers)");
     workers_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "workers" }).step);
 
     // The page fuzzer's long sweep (docs/design/browser-direct.md §8.3):
     // every fuzzed `browser/` fixture with fifty seeds of sixty steps, where
-    // the gates run one of thirty. Part of `fuzz`: no record covers a sweep
+    // the gates run one of thirty. Part of `fuzz`: no digest covers a sweep
     // and every case has a hang guard. Takes `-Dcorpus`.
     fuzz_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .fuzz_seeds = fuzz_sweep_seeds, .fuzz_steps = "60" }).step);
 
-    // The run hashes' own scenarios drive the corpus walker, a test binary
-    // that runs one scenario program (`run_hash_probe.zig`, compiled without
-    // `-Dtest-filter` so a filter never empties it) and the summary tool as
-    // programs, on an index and a corpus of their own, so they need all
-    // three installed. The test-time report's smoke test times the walker
-    // too.
+    // The run hashes' own scenarios drive the corpus walker and a test
+    // binary that runs one scenario program (`run_hash_probe.zig`, compiled
+    // without `-Dtest-filter` so a filter never empties it) as programs, on
+    // a cache and a corpus of their own, so they need both installed. The
+    // test-time report's smoke test times the walker too.
     const tools = std.Build.Step.InstallArtifact.Options{ .dest_dir = .{ .override = .{ .custom = "tools" } } };
     const corpus_tool_install = b.addInstallArtifact(corpus_test, tools);
     {
@@ -707,10 +784,8 @@ pub fn build(b: *std.Build) void {
         const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
         run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", installPath(b, "tools/corpus_test"));
         run.setEnvironmentVariable("BENI_RUN_HASH_PROBE_EXE", installPath(b, "tools/run_hash_probe"));
-        run.setEnvironmentVariable("BENI_RUN_HASH_SUMMARY_EXE", installPath(b, "tools/run-hash-summary"));
         run.step.dependOn(&corpus_tool_install.step);
         run.step.dependOn(&b.addInstallArtifact(probe, tools).step);
-        run.step.dependOn(&b.addInstallArtifact(summary_exe, tools).step);
         step.dependOn(&run.step);
         blackbox_step.dependOn(step);
     }
@@ -752,6 +827,16 @@ pub fn build(b: *std.Build) void {
     // §31.12's mutation controls: each breaks the record demand one way and
     // must fail at least one `ownership/Record*` fixture. Not a gate: each
     // builds the compiler again with its mutation, so it runs child builds.
+    // Each rule of the v2 checker broken on purpose (`src/own2/Mutate.zig`,
+    // `docs/design/ownership-v2.md` §7 item 7): a child build of the compiler per
+    // mutation, and which fixtures fail. It writes its table; it reports, and
+    // fails only when a mutant cannot be built or the control is not green.
+    const own2_mutations_step = b.step("test-own2-mutations", "Build beni with each rule of the v2 checker broken and say which fixtures catch it (`-- --help`); not a gate");
+    const own2_mutations = b.addSystemCommand(&.{ "node", "tests/own2-mutations.mjs", b.graph.zig_exe });
+    own2_mutations.has_side_effects = true;
+    own2_mutations.stdio = .inherit;
+    own2_mutations.addPassthruArgs();
+    own2_mutations_step.dependOn(&own2_mutations.step);
     const mutations_step = b.step("test-record-mutations", "Build beni with each record-demand mutation (ownership-checker.md §31.12) and check that the record fixtures catch it; not a gate");
     const mutations = b.addSystemCommand(&.{ "node", "tests/record-mutations.mjs", b.graph.zig_exe });
     mutations.has_side_effects = true;
@@ -787,6 +872,13 @@ pub fn build(b: *std.Build) void {
     const lists_step = b.step("test-lists-in-place", "Build every run/ program and browser/inline/ page under the list stale-read sanitiser, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
     lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "lists" }).step);
     lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "lists" }).step);
+    // The same under `--ownership=v2`: its channel (`src/own2/Hoists.zig`,
+    // ownership-v2.md §3.7) names the writes the sanitiser wraps, so a v2
+    // accept the program contradicts traps. Not a gate; the gates run the
+    // `.sanitize-lists-v2` fixtures.
+    const lists_v2_step = b.step("test-lists-in-place-v2", "Build every run/ program and browser/inline/ page under --ownership=v2 and the list stale-read sanitiser, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
+    lists_v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "lists-v2" }).step);
+    lists_v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "lists-v2" }).step);
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast }).step);
@@ -834,6 +926,16 @@ pub fn build(b: *std.Build) void {
     // the site.
     playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path(playground_dir), .install_dir = .prefix, .install_subdir = playground_dir, .exclude_extensions = &.{".sh"} }).step);
     playground_step.dependOn(&shipped_wasm_install.step);
+    // The page's own beni (§10.8): a development `--library` build of
+    // `playground/src/`, which the page's remaining JavaScript imports from
+    // `beni/`. It runs on every `playground`, so an edit under
+    // `playground/src/` is never served stale; the build takes milliseconds.
+    const page_beni = b.addRunArtifact(safe.exe);
+    page_beni.addArgs(&.{ "build", "--library", "--platform=browser-tea", "--no-source-maps", "--no-cache" });
+    const page_beni_out = page_beni.addPrefixedOutputDirectoryArg("--out=", "beni");
+    page_beni.addDirectoryArg(b.path(playground_dir ++ "/src"));
+    page_beni.has_side_effects = true;
+    playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = page_beni_out, .install_dir = .prefix, .install_subdir = playground_dir ++ "/beni", .exclude_extensions = &.{".txt"} }).step);
     // TodoMVC is a sample (§4.3), kept once, where its benchmark keeps it.
     playground_step.dependOn(&b.addInstallFileWithDir(
         b.path("bench/todomvc/apps/beni/Sandbox.beni"),
@@ -847,11 +949,11 @@ pub fn build(b: *std.Build) void {
         .install_subdir = playground_dir ++ "/samples/browser-tea/BallMachine",
         .include_extensions = &.{".beni"},
     }).step);
-    // That compiler against the native one, on every `run/` and
-    // `browser/tea/` and `browser/inline/` program and on TodoMVC (§6). Not a gate: the LLVM
+    // That compiler against the native one, on the hand-picked programs of
+    // `playground_test.zig` (§6). Not a gate: the LLVM
     // compile of the `.wasm` is about a minute and a half on one thread.
     // Takes `-Dcorpus`, as for `test-browser`.
-    const test_playground_step = b.step("test-playground", "Run the playground's WebAssembly compiler under Node on every run/, browser/tea/ and browser/inline/ program and on TodoMVC, against the native compiler, byte for byte");
+    const test_playground_step = b.step("test-playground", "Run the playground's WebAssembly compiler under Node on a hand-picked set of programs, against the native compiler, byte for byte");
     bb.runSharded(test_playground_step, bb.artifact("tests/blackbox/playground_test.zig"), .{ .root = "tests/corpus", .wasm = .shipped }, playground_shards);
     // The page in a headless Chrome (§6): the samples, the frame, the
     // diagnostics, the tabs and the link. Not a gate: it needs a Chrome
@@ -866,6 +968,30 @@ pub fn build(b: *std.Build) void {
     page_run.has_side_effects = true;
     page_run.step.dependOn(playground_step);
     page_step.dependOn(&page_run.step);
+
+    // The examples' site as GitHub Pages serves it (issue #244): built by
+    // `examples/build-pages.mjs` with the tests' compiler under the base
+    // /beni/, without the playground, into zig-out/pages/, then loaded in a
+    // headless Chrome, where 404.html must stand in for each routed
+    // program's shell at a deep path. Not a gate: it needs a Chrome
+    // (`-Dchrome`, else `nix develop .#browser`'s on PATH), and no network.
+    const pages_step = b.step("test-pages", "Build the examples' site and load its pages and deep paths in a headless Chrome, as GitHub Pages serves them (nix develop .#browser)");
+    const pages_build = b.addSystemCommand(&.{ "node", "examples/build-pages.mjs" });
+    pages_build.addArg(installPath(b, b.fmt("{s}/beni", .{safe_dir})));
+    pages_build.addArg(installPath(b, "pages"));
+    pages_build.addArg("/beni/");
+    pages_build.setCwd(b.path("."));
+    pages_build.has_side_effects = true;
+    pages_build.step.dependOn(&safe_install.step);
+    const pages_run = b.addSystemCommand(&.{ "node", "tests/browser/pages.mjs" });
+    pages_run.addArg(installPath(b, "pages"));
+    pages_run.addArg("/beni/");
+    pages_run.setCwd(b.path("."));
+    pages_run.setEnvironmentVariable("BENI_CHROME", bb.chrome);
+    pages_run.setEnvironmentVariable("BENI_CHROME_PROFILE_DIR", installPath(b, "tmp"));
+    pages_run.has_side_effects = true;
+    pages_run.step.dependOn(&pages_build.step);
+    pages_step.dependOn(&pages_run.step);
 
     // ---- Cross-language benchmark (docs/design/compare-bench.md §3, §12). ----
     // The generator is its own target: it imports nothing from `src/`. It
@@ -1060,6 +1186,7 @@ pub fn build(b: *std.Build) void {
                         .imports = &.{
                             .{ .name = "beni", .module = measured.beni },
                             .{ .name = "diagnostic", .module = measured.diagnostic },
+                            .{ .name = "alloc_options", .module = alloc_options.? },
                         },
                     }) },
                     .{ .name = "coverage_options", .module = runtime_options.createModule() },
@@ -1216,16 +1343,30 @@ pub fn build(b: *std.Build) void {
     gates_step.dependOn(beni_fmt_step);
 }
 
-/// `run-hash-summary <dir> <args>` in the repo root, printing to the
-/// terminal.
-fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, args: []const []const u8) *std.Build.Step.Run {
+/// `run-hash-summary <dir>` in the repo root, printing to the terminal.
+fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, cache_dir: []const u8) *std.Build.Step.Run {
     const run = b.addRunArtifact(exe);
     run.addArg(dir);
-    run.addArgs(args);
+    // Empty for no cache: the line then says that nothing was recorded.
+    run.addArg(cache_dir);
     run.setCwd(b.path("."));
     run.stdio = .inherit;
     run.has_side_effects = true;
     return run;
+}
+
+/// The run-hash cache's directory (`tests/blackbox/run_hash.zig`), handed
+/// to every test process as `BENI_RUN_HASH_DIR`: this build's own
+/// environment's value when it is set — empty for no cache — else
+/// `$XDG_CACHE_HOME/beni-run-hashes`, else `$HOME/.cache/beni-run-hashes`,
+/// the path the dev shells export (`flake.nix`, `runHashCache`), and no
+/// cache when neither is set either.
+fn runHashDir(b: *std.Build) []const u8 {
+    const env = b.graph.environ_map;
+    if (env.get("BENI_RUN_HASH_DIR")) |given| return given;
+    if (env.get("XDG_CACHE_HOME")) |xdg| if (xdg.len != 0) return b.pathJoin(&.{ xdg, "beni-run-hashes" });
+    if (env.get("HOME")) |home| if (home.len != 0) return b.pathJoin(&.{ home, ".cache", "beni-run-hashes" });
+    return "";
 }
 
 /// The options of this build that a child `zig build` needs to build and run
@@ -1251,7 +1392,14 @@ const gate_steps = [_][]const u8{ "test", "test-blackbox", "fmt-check", "beni-fm
 /// A gate runs every test with the intended checker.
 fn gatesRefusal(b: *std.Build, filtered: bool) ?[]const u8 {
     if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to a test step";
+    if (b.user_input_options.contains("harness-prefix")) return "`gates` tests the binary it builds: drop -Dharness-prefix";
+    if (b.user_input_options.contains("corpus-except")) return "`gates` runs every test: drop -Dcorpus-except";
+    if (b.user_input_options.contains("no-v2-parity")) return "`gates` requires the v1/v2 parity net: drop -Dno-v2-parity";
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` requires the intended checker: drop -Downership-record-mutation, which breaks it on purpose; use test-record-mutations";
+    if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose; use test-own2-mutations";
+    if (b.user_input_options.contains("ownership-v2-switch")) return "`gates` requires the intended checker: drop -Downership-v2-switch, which reverses one of its orders on purpose";
+    if (b.user_input_options.contains("ownership-v2-counters")) return "`gates` requires the intended checker: drop -Downership-v2-counters, which adds counters to its dump";
+    if (b.user_input_options.contains("ownership-v2-trace")) return "`gates` requires the intended checker: drop -Downership-v2-trace";
     return null;
 }
 
@@ -1345,6 +1493,7 @@ fn compiler(
             .imports = &.{
                 .{ .name = "beni", .module = beni },
                 .{ .name = "diagnostic", .module = diagnostic },
+                .{ .name = "alloc_options", .module = alloc_options.? },
             },
         }),
     });
@@ -1719,7 +1868,7 @@ fn sourcePath(b: *std.Build, rel: []const u8) []const u8 {
 }
 
 fn installPath(b: *std.Build, rel: []const u8) []const u8 {
-    return sourcePath(b, b.pathJoin(&.{ "zig-out", rel }));
+    return if (harness_prefix) |p| b.pathJoin(&.{ p, rel }) else sourcePath(b, b.pathJoin(&.{ "zig-out", rel }));
 }
 
 /// Every file under `<root>/<prefix>`, recursively, as paths relative to
@@ -1948,6 +2097,11 @@ fn entityTable(b: *std.Build) *std.Build.Module {
 
 var entity_table_module: ?*std.Build.Module = null;
 
+/// `-Dharness-prefix`: where the tests of this build find what it installed. The
+/// configure step cannot read `--prefix`, so a build that gives one and spawns a
+/// binary it installed gives this too.
+var harness_prefix: ?[]const u8 = null;
+
 /// `-Downership-full-cross-check`, as the module `ownership_options` every
 /// build of the compiler imports (`src/own/Ownership.zig`).
 var ownership_options: ?*std.Build.Module = null;
@@ -1955,6 +2109,10 @@ var ownership_options: ?*std.Build.Module = null;
 /// `-Demit-lower-reuse-cross-check`, as the module `emit_options` every
 /// build of the compiler imports (`src/js/Emit.zig`).
 var emit_options: ?*std.Build.Module = null;
+
+/// `-Dsafe-allocator`, as the module `alloc_options` every `src/main.zig`
+/// root imports.
+var alloc_options: ?*std.Build.Module = null;
 
 /// One platform package compiled into beni (`docs/design/boundary.md`
 /// §9.5): a directory under `platforms/`, or one `-Dplatform=<dir>` adds.
@@ -2312,9 +2470,7 @@ const HarnessEnvironment = struct {
     /// (`wasm_test.zig`), or the playground's shipped `.wasm` alone
     /// (`playground_test.zig`).
     wasm: enum { none, gate, shipped } = .none,
-    /// The corpus walker's `BENI_RUN_HASHES` (`record`) and
-    /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
-    run_hashes: []const u8 = "",
+    /// `BENI_RUN_HASH_REPORT`: where the process's run counts go.
     report_dir: []const u8 = "",
     /// The corpus walker's `BENI_BROWSER`: `chrome` runs the `browser/`
     /// pages in Chrome instead of happy-dom.
@@ -2332,10 +2488,14 @@ const HarnessEnvironment = struct {
 /// The black-box test roots, compiled against the build's target and
 /// optimize mode and run from the repo root.
 const Blackbox = struct {
+    session_driver_install: *std.Build.Step,
     b: *std.Build,
     /// What `node --version` printed, asked once per build; every process
     /// gets it as `--node-version=` (`tests/test_runner.zig`).
     node_version: std.Build.LazyPath,
+    /// The run-hash cache (`runHashDir`), pinned as `BENI_RUN_HASH_DIR` on
+    /// every run; empty for none.
+    run_hash_dir: []const u8,
     target: std.Build.ResolvedTarget,
     optimize: std.lang.Optimize,
     diagnostic: *std.Build.Module,
@@ -2343,6 +2503,10 @@ const Blackbox = struct {
     filters: []const []const u8,
     /// `-Dcorpus`, pinned as `BENI_CORPUS_ONLY` on every run.
     corpus_only: []const u8,
+    /// `-Dcorpus-except`, pinned as `BENI_CORPUS_EXCEPT` on every run.
+    corpus_except: []const u8,
+    /// `-Dno-v2-parity`, pinned as `BENI_NO_V2_PARITY` on every run.
+    no_v2_parity: bool,
     /// Where the ReleaseSafe compiler is installed under the prefix:
     /// `safe_bin_dir`, or `safe_llvm_bin_dir` under `-Dllvm`.
     safe_dir: []const u8,
@@ -2404,6 +2568,10 @@ const Blackbox = struct {
     /// BENI_CORPUS_MODE=pending` would silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = runTests(bb.b, t);
+        if (std.mem.eql(u8, t.name, "session_api_test")) {
+            r.step.dependOn(bb.session_driver_install);
+            r.setEnvironmentVariable("BENI_SESSION_DRIVER", installPath(bb.b, "tools/beni-session-driver"));
+        }
         r.addPrefixedFileContentArg("--node-version=", bb.node_version);
         r.step.dependOn(switch (env.exe) {
             .safe => bb.safe_install,
@@ -2432,10 +2600,12 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_CORPUS_ONLY", bb.corpus_only);
+        r.setEnvironmentVariable("BENI_CORPUS_EXCEPT", bb.corpus_except);
+        r.setEnvironmentVariable("BENI_NO_V2_PARITY", if (bb.no_v2_parity) "1" else "");
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
-        r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
+        r.setEnvironmentVariable("BENI_RUN_HASH_DIR", bb.run_hash_dir);
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
         r.setEnvironmentVariable("BENI_BROWSER", env.browser);
         r.setEnvironmentVariable("BENI_CHROME", bb.chrome);

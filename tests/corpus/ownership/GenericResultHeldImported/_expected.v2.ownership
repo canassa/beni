@@ -1,0 +1,12 @@
+module Helpers
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  13:10 List.push l0: rejected later-use: l0 is read again at 14:5
+  20:12 construction l0: rejected later-use: l0 is read again at 21:5
+  27:10 List.push l0: rejected later-use: l0 is read again at 28:5
+  34:10 List.push l0: rejected later-use: l0 is read again at 35:5
+  41:10 List.push l0: rejected later-use: l0 is read again at 47:13
+  53:5 List.push l0: accepted fresh
+  demands 6: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 6: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause later-use 5

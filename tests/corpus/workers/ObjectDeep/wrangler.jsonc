@@ -1,0 +1,7 @@
+{
+  "name": "object-deep",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": { "bindings": [{ "name": "DEEPS", "class_name": "Deep" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Deep"] }],
+}

@@ -1,0 +1,73 @@
+-- A runtime catch for a callback's supply that its callee also keeps
+-- (`ownership-v2.md` §2.11.3): handed on through a lambda to `apply`
+-- (`keepVia`), as a user fold's accumulator (`keepFold`), and mixed with
+-- another callback's answer (`keepMixed`). The callee returns the list it
+-- supplies, so a callback that pushes onto it in place changes what the
+-- caller reads next. v2 found the supply apart: through the forwarding
+-- lambda it judged nothing, and a supply that is partly a callback's answer
+-- was `unknown` whole, so its known part was never kept. The sanitised run
+-- trapped on the read of the returned list. Each call is refused `call`.
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l =
+    case l of
+        [] →
+            "."
+
+        [ x, …rest ] →
+            String.fromInt x ++ "," ++ show rest
+
+
+apply : a, (a → b) → b
+apply x f = f x
+
+
+fold : List a, b, (a, b → b) → b
+fold l acc f =
+    case l of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            fold rest (f x acc) f
+
+
+choose : Bool, a, a → a
+choose c a b = if c then a else b
+
+
+keepVia : a, (a → b) → b × a
+keepVia x f = ( apply x λz → f z, x )
+
+
+keepFold : b, (b → b) → b × b
+keepFold acc g = ( fold [ 1, 2 ] acc λ_ a → g a, acc )
+
+
+keepMixed : a, (⊤ → a), (a → b) → b × a
+keepMixed x g f = ( f (choose True x (g ⊤)), x )
+
+
+viaApply : Int → String
+viaApply n =
+    ( a, b ) = keepVia [ n ] λl → List.push l 1
+    "${show a} ${show b}"
+
+
+viaFold : Int → String
+viaFold n =
+    ( a, b ) = keepFold [ n ] λl → List.push l 2
+    "${show a} ${show b}"
+
+
+viaMixed : Int → String
+viaMixed n =
+    ( a, b ) = keepMixed [ n ] (λ⊤ → [ 9 ]) λl → List.push l 3
+    "${show a} ${show b}"
+
+
+main : Program
+main = Node.print "${viaApply 5} ${viaFold 6} ${viaMixed 7}"

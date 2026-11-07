@@ -1,0 +1,13 @@
+module Key
+  9:29 List.push l: accepted param
+  19:26 List.push l: accepted param
+  summary compare: π1 R, π1#Key.0 RW[storage]
+  summary eq: π1 R, π1#Key.0 RW[storage]
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  summary derivedLt: π1 RA; res .1 π1
+  summary derivedEq: π1 RA; res .1 π1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Wrap
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

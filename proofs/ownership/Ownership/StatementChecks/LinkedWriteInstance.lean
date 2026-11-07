@@ -82,6 +82,7 @@ def env : List (Var × Observation × Value) :=
   [(3, .list [.int 4], .ref 3), (2, .list [.int 3, .int 4], .ref 2),
    (1, .list [.int 2], .ref 1), (0, .list [.int 1, .int 2], .ref 0)]
 def aenv : Env Abstract := [(3, tlAbs), (2, ysAbs), (1, restAbs), (0, xsAbs)]
+def tenv : Env Ty := [(3, .list .int), (2, .list .int), (1, .list .int), (0, .list .int)]
 def after : Live := removeVars [4] (union (uses pairRest) [])
 def live : Live := union (uses (.prim .push [.var 1, .int 9])) after
 
@@ -102,7 +103,7 @@ theorem checker_env :
 theorem after_eq : after = [(3, []), (2, [])] := by cbv
 theorem live_eq : live = [(1, []), (3, []), (2, [])] := by cbv
 
-theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming := by
+theorem invariant : Invariant [] vs hs env live aenv tenv ({} : St).facts.escapes naming := by
   refine
     { reads := rfl, external := rfl, fuel := rfl, keptSize := rfl
       kept := ?_, keptEscaped := ?_, bindings := ?_, described := ?_, named := ?_
@@ -139,7 +140,7 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       · simp [Observation.depth] at hn
       · simp [Observation.depth] at hn
       · rfl
-  · intro x p hl o w a w' he ha hp
+  · intro x p hl o w a t w' he ha ht hp
     rw [live_eq] at hl
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hl
     rcases hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -147,6 +148,8 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       cases he
       change some restAbs = some a at ha
       cases ha
+      change some (Ty.list .int) = some t at ht
+      cases ht
       change some (Value.ref 1) = some w' at hp
       cases hp
       exact allocated_list_described (integers := [2]) rfl ⟨s0, by simp, by simp [naming_s0]⟩
@@ -154,6 +157,8 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       cases he
       change some tlAbs = some a at ha
       cases ha
+      change some (Ty.list .int) = some t at ht
+      cases ht
       change some (Value.ref 3) = some w' at hp
       cases hp
       exact allocated_list_described (integers := [4]) rfl ⟨s2, by simp, by simp [naming_s2]⟩
@@ -161,6 +166,8 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       cases he
       change some ysAbs = some a at ha
       cases ha
+      change some (Ty.list .int) = some t at ht
+      cases ht
       change some (Value.ref 2) = some w' at hp
       cases hp
       exact allocated_list_described (integers := [3, 4]) rfl ⟨s2, by simp, by simp [naming_s2]⟩
@@ -246,7 +253,12 @@ theorem after_named : LinkNamed hsAfter env after naming := by
       intro y p hy o w he
       rw [after_eq] at hy
       simp at hy
-      rcases hy with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> rfl)
+      rcases hy with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact ⟨rfl, rfl⟩)
+    (by
+      intro y p q rest hy route
+      rw [after_eq] at hy
+      simp at hy
+      rcases hy with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp at route)
     write_run
 
 /-- The conclusion is not vacuous: after the write, the live `ys` protects

@@ -113,4 +113,18 @@ finish : List String → ⊤
 finish lines = writeRecords (String.join (List.map lines λl → "${l}\n") "")
 
 
-foreign impure writeRecords : String → ⊤
+-- A data program's records (`prerender.md` §8.3), in one write: to the
+-- file the first argument names, which the build reads, or to standard
+-- output when there is none. A failure to write is not caught: an
+-- unknown failure crashes (`CLAUDE.md` rule 9).
+writeRecords : String → ⊤
+writeRecords text =
+    process = Js.global "process"
+    file = Js.at (Js.get process "argv") 2
+    if Js.isUndefined file then
+        _ = Js.call (Js.get process "stdout") "write" [ Js.from text ]
+        ⊤
+    else
+        fs = Js.call process "getBuiltinModule" [ Js.from "node:fs" ]
+        _ = Js.call fs "writeFileSync" [ file, Js.from text ]
+        ⊤

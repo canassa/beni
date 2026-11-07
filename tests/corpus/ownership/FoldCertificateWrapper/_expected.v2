@@ -1,0 +1,1 @@
+v2 reads a certified producer through a wrapper (ownership-v2.md §8 slice 4, *As built, part 3*): the wrapper publishes no certificate, and a refusal by cells inside its knot is approximate; its verdicts are v2's own.

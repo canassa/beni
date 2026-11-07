@@ -1,0 +1,1 @@
+#1582: the corpus's v2 dump (`--ownership-rewalk-check`) walks each builder again at its fixpoint and compares the read-off with its last walk's; a map that leaves a knot's entry behind on a stable-image move reads off another class and panics.

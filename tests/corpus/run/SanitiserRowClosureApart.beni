@@ -1,0 +1,26 @@
+-- The twin of `SanitiserRowClosure` (`ownership-v2.md` §2.1): the closure holds
+-- another list. v2 accepts it; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+main : Program
+main =
+    k = [ 1 ]
+    j = [ 3 ]
+    r = idr { a = [], go = λ⊤ → j }
+    n = List.push k 2
+    Node.print (show n ++ "|" ++ show (r.go ⊤))

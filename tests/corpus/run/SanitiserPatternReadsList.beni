@@ -1,0 +1,33 @@
+-- A runtime catch for #1530 under `--ownership=v2` and the list stale-read
+-- sanitiser (`ownership-v2.md` §7.3). `nested` only tests the shape of the
+-- list inside its argument, and a pattern's test reads the list it tests,
+-- so v2 refuses the push of `inner` while `xs` still holds it for
+-- `nested`. When v2 did not count the test as a read (#1530), it accepted
+-- the push, and the sanitised build gave the poisoned `inner` the length
+-- an in-place push leaves: `nested` answered 7, not 0.
+import List
+import Node exposing (Program)
+import String
+
+
+nested : List (List Int) → Int
+nested xss =
+    case xss of
+        [ [ _, …_ ] ] →
+            7
+
+        _ →
+            0
+
+
+pushInner : Int → List Int × Int
+pushInner k =
+    inner = []
+    xs = [ inner ]
+    ( List.push inner k, nested xs )
+
+
+main : Program
+main =
+    ( pushed, n ) = pushInner 1
+    Node.printLines [ String.fromInt (List.length pushed), String.fromInt n ]

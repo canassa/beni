@@ -1,0 +1,62 @@
+module Group
+  5:11 call Group.p a: accepted param (Group.p writes π1)
+  5:11 call Group.p b: accepted param (Group.p writes π2)
+  13:13 call Group.q a: rejected later-use: a is read again at 17:13 (Group.q writes π1)
+  13:13 call Group.q b: rejected later-use: b is read again at 17:13 (Group.q writes π2)
+  15:15 construction r: accepted param
+  17:13 call Group.q a: accepted param (Group.q writes π2)
+  17:13 call Group.q b: accepted param (Group.q writes π1)
+  21:12 call Group.pp a: accepted param (Group.pp writes π1)
+  21:12 call Group.pp b: accepted param (Group.pp writes π2)
+  29:13 call Group.qq a: rejected later-use: a is read again at 33:13 (Group.qq writes π1)
+  29:13 call Group.qq b: rejected later-use: b is read again at 33:13 (Group.qq writes π2)
+  31:15 construction r: accepted param
+  33:13 call Group.qq a: accepted param (Group.qq writes π2)
+  33:13 call Group.qq b: accepted param (Group.qq writes π1)
+  summary q: π1 RAW, π2 RAW; res ~π1 ~π2
+  summary p: π1 RAW, π2 RAW; res ~π2 π1
+  summary qq: π1 RAW, π2 RAW; res [*] fresh1, ~π1 ~π2
+  summary pp: π1 RAW, π2 RAW; res [*] fresh1, ~π2 π1
+  demands 14: accepted 10 (fresh 0, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+module Main
+  14:20 List.push <call Group.q>: rejected call: xs may hold it through the call at 14:31, and is read at 14:18 (approx)
+  14:31 call Group.q <literal>: accepted fresh (Group.q writes π2)
+  14:31 call Group.q xs: rejected later-use: xs is read again at 14:18 (Group.q writes π1)
+  18:12 List.push <call Group.q>: accepted param
+  18:23 call Group.q <literal>: accepted fresh (Group.q writes π2)
+  18:23 call Group.q xs: accepted param (Group.q writes π1)
+  23:10 call Group.qq <literal>: accepted fresh (Group.qq writes π2)
+  23:10 call Group.qq xs: rejected later-use: xs is read again at 25:13 (Group.qq writes π1)
+  25:15 List.push a: rejected call: xs[*] may hold it through the call at 23:10, and is read at 25:13 (approx)
+  33:10 call Group.qq <literal>: accepted fresh (Group.qq writes π1)
+  33:10 call Group.qq xs: rejected later-use: xs is read again at 35:13 (Group.qq writes π2)
+  35:15 List.push a: rejected call: xs[*] may hold it through the call at 33:10, and is read at 35:13 (approx)
+  43:10 call Group.qq <literal>: accepted fresh (Group.qq writes π2)
+  43:10 call Group.qq xs: accepted param (Group.qq writes π1)
+  45:13 List.push a: accepted param
+  53:9 call Group.qq <literal>: accepted fresh (Group.qq writes π2)
+  53:9 call Group.qq xs: rejected later-use: xs is read again at 54:7 (Group.qq writes π1)
+  54:7 List.push xs: rejected call: r may hold it through the call at 53:9, and is read at 54:5 (approx)
+  61:22 List.push a: rejected alias: xs[*] holds it and is read at 62:65
+  62:65 call Group.qq <literal>: accepted fresh (Group.qq writes π2)
+  62:65 call Group.qq xs: accepted param (Group.qq writes π1)
+  70:10 call Group.pp <literal>: accepted fresh (Group.pp writes π2)
+  70:10 call Group.pp xs: rejected later-use: xs is read again at 72:13 (Group.pp writes π1)
+  72:15 List.push a: rejected call: xs[*] may hold it through the call at 70:10, and is read at 72:13 (approx)
+  79:24 List.push <call Group.p>: rejected call: xs may hold it through the call at 79:35, and is read at 79:22 (approx)
+  79:35 call Group.p <literal>: accepted fresh (Group.p writes π2)
+  79:35 call Group.p xs: rejected later-use: xs is read again at 79:22 (Group.p writes π1)
+  summary writeAnswer: π1 RAW, π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh2){lost}
+  summary owned: π1 RAW, π1[*] A; res [*] ~π1[*], ~fresh1 ~π1
+  summary writeElem: π1 RAW, π1[*] RAw[storage], π1[*][*] A; res .0 condition(fresh3) fresh3 fresh{excl π1} ~π1[*]{excl π1}, .0[*] ~condition(fresh1) ~fresh{excl π1} ~π1[*][*]{excl π1}, .1 ~condition(fresh4) π1, condition(fresh2){lost}; xreq excl π1
+  summary writeElemSecond: π1 RAW, π1[*] RAw[storage], π1[*][*] A; res .0 condition(fresh3) fresh3 fresh{excl π1} ~π1[*]{excl π1}, .0[*] ~condition(fresh1) ~fresh{excl π1} ~π1[*][*]{excl π1}, .1 ~condition(fresh4) π1, condition(fresh2){lost}; xreq excl π1
+  summary ownedElem: π1 RW, π1[*] RAw[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh{excl π1} ~π1[*][*]{excl π1}, fresh2 fresh{excl π1} ~π1[*]{excl π1}; xreq excl π1
+  summary writeInput: π1 RAW, π1[*] A; res .0 ~condition(fresh5) π1, .0[*] ~condition(fresh3) ~fresh3 ~π1[*], .1 ~condition(fresh1) ~fresh1 ~π1, .1[*] fresh2, condition(fresh4){lost}
+  summary readAfter: π1 RW, π1[*] RW[storage], π1[*][*] R; xreq excl π1
+  summary writeElemViaP: π1 RAW, π1[*] RAw[storage], π1[*][*] A; res .0 condition(fresh3) fresh3 fresh{excl π1} ~π1[*]{excl π1}, .0[*] ~condition(fresh1) ~fresh{excl π1} ~π1[*][*]{excl π1}, .1 ~condition(fresh4) π1, condition(fresh2){lost}; xreq excl π1
+  summary writeAnswerViaP: π1 RAW, π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh2){lost}
+  demands 27: accepted 14 (fresh 9, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13
+total 41: accepted 24 (fresh 9, call 0, param 15, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 17
+cause later-use 10
+cause alias 1
+cause call 6

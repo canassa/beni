@@ -1,0 +1,52 @@
+module TwoCallsApart
+  19:15 List.push l: accepted param
+  29:15 call TwoCallsApart.inner a[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  29:24 call TwoCallsApart.inner b[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  36:21 call TwoCallsApart.bumpAll <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.bumpAll writes π1[*][*])
+  40:8 call TwoCallsApart.r3 <literal>[*]: accepted fresh (TwoCallsApart.r3 writes π1[*])
+  46:18 call TwoCallsApart.bumpAll <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.bumpAll writes π1[*][*])
+  50:21 call TwoCallsApart.bumpAll <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.bumpAll writes π1[*][*])
+  54:23 call TwoCallsApart.bumpAll <literal>[*][*]: accepted param (TwoCallsApart.bumpAll writes π1[*][*])
+  58:22 call TwoCallsApart.bumpAll <literal>[*][*]: accepted fresh (TwoCallsApart.bumpAll writes π1[*][*])
+  65:15 call TwoCallsApart.inner a[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  65:24 call TwoCallsApart.inner b[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  65:33 call TwoCallsApart.inner c[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  72:21 call TwoCallsApart.bump3 <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.bump3 writes π1[*][*])
+  76:22 call TwoCallsApart.bump3 <literal>[*][*]: accepted fresh (TwoCallsApart.bump3 writes π1[*][*])
+  83:17 call TwoCallsApart.inner a[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  84:17 call TwoCallsApart.inner b[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  92:21 call TwoCallsApart.bumpLet <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.bumpLet writes π1[*][*])
+  96:22 call TwoCallsApart.bumpLet <literal>[*][*]: accepted fresh (TwoCallsApart.bumpLet writes π1[*][*])
+  105:23 call TwoCallsApart.inner a[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  105:34 List.push l: accepted param
+  115:21 call TwoCallsApart.bumpMix <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.bumpMix writes π1[*][*])
+  119:22 call TwoCallsApart.bumpMix <literal>[*][*]: accepted fresh (TwoCallsApart.bumpMix writes π1[*][*])
+  126:15 call TwoCallsApart.inner ys[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  136:15 call TwoCallsApart.inner ys[*]: accepted param (TwoCallsApart.inner writes π1[*])
+  136:26 call TwoCallsApart.bumpOne rest[*][*]: accepted param (TwoCallsApart.bumpOne writes π1[*][*])
+  143:21 call TwoCallsApart.headTail <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (TwoCallsApart.headTail writes π1[*][*])
+  147:22 call TwoCallsApart.headTail <literal>[*][*]: accepted fresh (TwoCallsApart.headTail writes π1[*][*])
+  summary inner: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] π1[*]{excl π1}, [*][*] ~π1[*][*]{excl π1}, fresh1{excl π1}; xreq excl π1
+  summary bumpAll: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{excl π1, sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}r{sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}; xreq excl π1
+  summary r3: π1 R, π1[*] W[storage]
+  summary r6: unused
+  summary rf: unused
+  summary rs: π1 RW[storage]
+  summary rd: π1 R, π1[*] W[storage], π2 R, π2[*] W[storage]; xreq excl π1, excl π2, sep π1 π2
+  summary rdf: unused
+  summary bump3: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{excl π1, sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}r{sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}; xreq excl π1
+  summary t3: π1 R, π1[*] W[storage]
+  summary t3d: unused
+  summary bumpLet: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{excl π1, sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}r{sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}; xreq excl π1
+  summary tl: π1 R, π1[*] W[storage]
+  summary tld: unused
+  summary bumpMix: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{excl π1, sep π1[*][*] π1[*][*], sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}r{sep π1[*][*] π1[*][*][*], sep π1[*][*][*] π1[*][*][*]}; xreq excl π1
+  summary tm: π1 R, π1[*] W[storage]
+  summary tmd: unused
+  summary bumpOne: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] π1[*][*]{excl π1}, [*][*][*] ~π1[*][*][*]{excl π1}, fresh2{excl π1}; xreq excl π1
+  summary headTail: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{lost}r{lost}; xreq excl π1
+  summary th: π1 R, π1[*] W[storage]
+  summary thd: unused
+  demands 27: accepted 20 (fresh 6, call 0, param 14, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 27: accepted 20 (fresh 6, call 0, param 14, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause exclusive 7

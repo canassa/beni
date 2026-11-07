@@ -1,0 +1,62 @@
+-- ownership (project): `LocalElementContents` with the callees in another
+-- module (#1492). A written position's own contents are not beside the
+-- write, so a list bound to a name and passed alone (`local`,
+-- `elemsBound`) is accepted, as v1 accepts it. One list at two
+-- positions, a list held inside another element and a list read after
+-- the call are refused.
+import Rows
+
+
+pub local : ⊤ → Int
+local ⊤ =
+    a = [ 1 ]
+    List.length (Rows.k [ a ])
+
+
+pub twice : ⊤ → Int
+twice ⊤ =
+    a = [ 1 ]
+    List.length (Rows.k [ a, a ])
+
+
+pub readAgain : ⊤ → Int
+readAgain ⊤ =
+    a = [ 1 ]
+    List.length (Rows.k [ a ]) + List.length a
+
+
+pub elemsBound : ⊤ → Int
+elemsBound ⊤ =
+    ee = [ [ 1 ] ]
+    ( l, _ ) = Rows.elems [ ee, [ [ 2 ] ] ]
+    List.length l
+
+
+pub elemsShared : ⊤ → Int
+elemsShared ⊤ =
+    em = []
+    ( l, _ ) = Rows.elems [ em, [ em ] ]
+    List.length l
+
+
+pub elemsTwice : ⊤ → Int
+elemsTwice ⊤ =
+    ee = [ [ 1 ] ]
+    ( l, _ ) = Rows.elems [ ee, ee ]
+    List.length l
+
+
+pub heldInside : ⊤ → Int
+heldInside ⊤ =
+    m = [ Rows.T [] 1 ]
+    n = [ Rows.T m 2 ]
+    ( l, _ ) = Rows.kT [ m, n ]
+    List.length l
+
+
+pub heldApart : ⊤ → Int
+heldApart ⊤ =
+    m = [ Rows.T [] 1 ]
+    n = [ Rows.T [ Rows.T [] 3 ] 2 ]
+    ( l, _ ) = Rows.kT [ m, n ]
+    List.length l

@@ -25,10 +25,15 @@ anyone tries to prove it.
   accepted programs of a generated campaign, against every published summary
   of the called declaration whose hypotheses the call meets under the
   canonical naming (each canonical input origin names the arrays at its
-  path), with clauses 1–3 (and, for map, the certificate) checked.
+  path), with clauses 1–4 (and, for map, the certificate) checked; clause 4
+  (fields, #1872) on a generator v7 campaign, whose programs hold record
+  objects.
 
 Everything here is executable code over the definitions of `Soundness.lean`
-and is not part of any proof. -/
+and is not part of any proof. The configurations and the generated programs
+hold no dictionary, so `entryAbstract` and `entryPath` (#1796) are the
+identity on what the readings below see, and the readings test the typed
+clauses as they are. -/
 
 namespace Ownership.Falsify
 
@@ -184,8 +189,10 @@ def typedB (ds : List Decl) (heap : Heap) (env : Bindings) (types : Env Ty) (e :
     | some u => obsTyped ds o u && (snapshot heap depthFuel w).toOption.any (fun actual => obsTyped ds actual u)
     | none => true
 
-def projections (o : Observation) (w : Value) (p : Path) : Option (Observation × Value) := do
-  pure (← projectObs o p, ← projectVal w p)
+/-- A live use's two projections; a field read of a record object projects
+    through the object's slot in the current heap (#316). -/
+def projections (heap : Heap) (o : Observation) (w : Value) (p : Path) : Option (Observation × Value) := do
+  pure (← projectObs o p, ← projectHeap heap w p)
 
 /-- `LinksValid` as a test: `none` when every stored link is valid. -/
 def linksValidB (hs : InPlaceSemantics.State) : Option String := Id.run do
@@ -214,7 +221,7 @@ def linkComponent (links : List (Nat × Nat × Bool)) (c : Nat) : List Nat := Id
 /-- The arrays a live path or a permanent observer reaches. -/
 def protectedArrays (hs : InPlaceSemantics.State) (env : Bindings) (live : Live) : List Nat :=
   live.flatMap (fun (x, p) => match env.lookup x with
-    | some (_, w) => match projectVal w p with
+    | some (_, w) => match projectHeap hs.heap w p with
       | some w' => reachArrays hs.heap depthFuel w'
       | none => []
     | none => []) ++ hs.kept.toList.flatMap (reachArrays hs.heap depthFuel)
@@ -252,7 +259,7 @@ def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : 
     match env.lookup x with
     | none => pure ()
     | some (o, w) =>
-      match projections o w p with
+      match projections hs.heap o w p with
       | none => return some s!"live use {x}.{repr p} does not project"
       | some (o', w') =>
         if !correspondsB hs.heap o' w' then return some s!"live use {x}.{repr p} does not correspond"
@@ -669,7 +676,7 @@ def sample : Generator.Gen Sampled := do
   -- generator must not share the check's definition, or a wrong one passes.
   let live := union (uses e) after2
   let liveCells := cfg.env.flatMap fun (x, _, w) =>
-    (live.filter (·.1 == x)).flatMap fun (_, p) => match projectVal w p with
+    (live.filter (·.1 == x)).flatMap fun (_, p) => match projectHeap cfg.heap w p with
       | some w' => reachArrays cfg.heap depthFuel w'
       | none => []
   let observedCells := cfg.kept.flatMap (reachArrays cfg.heap depthFuel)
@@ -736,6 +743,7 @@ def mentionsDecl (ids : List Nat) : Expr → Bool
 def writeOps : Expr → Bool
   | .prim .push _ | .prim .set _ | .focus .. => true
   | .prim .dictInsert _ | .prim .dictRemove _ | .dictFocus .. => true
+  | .assign .. => true
   | .resultCase _ _ _ a b | .chainCase _ _ _ a b | .entry a _ _ b
   | .letE _ a b | .branch _ a b => writeOps a || writeOps b
   | .traverse _ _ _ _ _ _ body => writeOps body
@@ -804,7 +812,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
         return ({ t with naming := t.naming + 1 }, some "the result describes a closure as not once that the checker would create once")
       -- Naming part: construct γ'.
       let liveReqs := after.flatMap fun (x, p) => match cfg.env.lookup x, cfg.aenv.lookup x with
-        | some (_, w0), some a => match projectVal w0 p with
+        | some (_, w0), some a => match projectHeap hs'.heap w0 p with
           | some w' => requirements hs'.heap (a.atPath p) w' false
           | none => []
         | _, _ => []
@@ -895,6 +903,8 @@ structure CallTally where
   vacuousUnique : Nat := 0
   vacuousLinked : Nat := 0
   vacuousOther : Nat := 0
+  /-- Input paths of checked calls where clause 4 (fields, #1872) applied. -/
+  fieldsChecked : Nat := 0
   deriving Repr
 
 def holders (s : InPlaceSemantics.State) (c : Nat) : List Holder :=
@@ -917,6 +927,31 @@ def linkedWritesCoveredB (s : Summary) (ins : List Abstract) (inputs : List Valu
     !writePermittedB s nargs i q ||
       (linkComponent links c).all fun d =>
         canonicalArrays.all fun (j, p, d') => d' != d || writePermittedB s nargs j p
+
+/-- `CallSound.fields` (clause 4, #1872) at one input path, as a test: an
+    object that holds one record before the call, at a path whose summary row
+    has a field set, holds one record after it, as long, with the same values
+    outside the set. `none` if it holds or does not apply. -/
+def fieldsClause (s : Summary) (nargs i : Nat) (q : Path) (c : Nat) (pre post : Heap) : Option String :=
+  match fieldRow s (inputOrigin nargs i q), pre[c]? with
+  | some fs, some [.record xs] =>
+    match post[c]? with
+    | some [.record ys] =>
+      if ys.length == xs.length && (List.range xs.length).all (fun g => fs.contains g || ys[g]? == xs[g]?) then none
+      else some s!"clause 4: input {i} object {c} at {repr q} changed a field outside {fs}"
+    | _ => some s!"clause 4: input {i} object {c} at {repr q} no longer holds one record"
+  | _, _ => none
+
+/-- The input paths of one call where clause 4 applies (a `W{F}` row over an
+    object that holds one record before the call). -/
+def fieldsApplicable (decls : List Decl) (cr : CallRecord) (e : CacheEntry) : Nat :=
+  let inputs := cr.args ++ cr.caps
+  if (decls[e.decl]?).isNone then 0 else
+  inputs.zipIdx.foldl (fun n (w, i) =>
+    let a := e.inputs[i]?.getD .bottom
+    n + ((pathsOf cr.preHeap depthFuel w []).filter fun (q, c) =>
+      (a.paths.map Prod.fst).contains q && (fieldRow e.summary (inputOrigin cr.args.length i q)).isSome &&
+        (match cr.preHeap[c]? with | some [.record _] => true | _ => false)).length) 0
 
 /-- Check one call against one cache entry: `none` if fine or vacuous. -/
 def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) (enforceArity := true) : Option String × Bool × Bool × String := Id.run do
@@ -960,6 +995,10 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) (enforceAri
           let before := cr.preKept.toList.any fun k => (reachArrays heap depthFuel k).contains c
           if after && !before then
             return (some s!"clause 2: input {i} array {c} at {repr q} newly observed, no E row", true, false, "")
+        -- Clause 4 (fields, #1872): an object at a `W{F}` path keeps every
+        -- field outside `F`.
+        if let some why := fieldsClause e.summary nargs i q c heap cr.postHeap then
+          return (some why, true, false, "")
   -- Clause 3.
   for (q, c) in pathsOf cr.postHeap depthFuel cr.result [] do
     if c < heap.size then
@@ -979,13 +1018,14 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) (enforceAri
 
 /-- Every call of every accepted program of a campaign, against every summary
     of its declaration in the program's cache. -/
-def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.Config := {}) : IO CallTally := do
+def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.Config := {})
+    (version : Nat := 5) : IO CallTally := do
   let mut state := seed
   let mut t : CallTally := {}
   let mut shown := 0
   let mut shownVacuous := 0
   for index in List.range count do
-    let ((family, p), next) := (Oracle.generateVersion 5).run state
+    let ((family, p), next) := (Oracle.generateVersion version).run state
     state := next
     let .ok acc := check p checker | continue
     t := { t with resultsChecked := t.resultsChecked + 1 }
@@ -1021,7 +1061,7 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
         if differ then t := { t with guardsDiffer := t.guardsDiffer + 1 }
         if checked then
           anyChecked := true
-          t := { t with checked := t.checked + 1,
+          t := { t with checked := t.checked + 1, fieldsChecked := t.fieldsChecked + fieldsApplicable p.declarations cr e,
                         mapChecked := t.mapChecked + (if (p.declarations[e.decl]?.map (·.name)) == some "map" then 1 else 0) }
         else if reason == "no summary" || reason == "guards" then reason := why
         if let some why := bad then

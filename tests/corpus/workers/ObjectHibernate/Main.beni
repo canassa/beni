@@ -1,0 +1,162 @@
+-- workers: hibernation and the live-fiber hold (boundary.md §9.12 (e.5),
+-- (g), (k); #593). Two rooms of one class, each with one hibernatable
+-- socket whose attachment holds a seat, each counting its requests in
+-- memory. `plain` has no live fiber: after 16 s with no event its next
+-- request is a new instance — `restore` ran again with the socket the
+-- host kept, the count started again — and the attachment is read back.
+-- `held` has a fiber parked on a gate, so the platform holds its timer:
+-- after the same idle it is the same instance, its count continued.
+import Deferred exposing (Deferred)
+import Schema exposing (Schema)
+import String
+import Task
+import WebSocket exposing (Socket)
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+type alias State =
+    served : Int
+    gate : Deferred ⊤
+
+
+room : Worker.Definition
+room =
+    Object.define "Room" Schema.string restore
+        { Object.none | request = serve, message = input, closed = left }
+
+
+who : Object.Context String → String
+who ctx = Maybe.withDefault (Object.name ctx) "?"
+
+
+restore : Object.Context String → State
+restore ctx =
+    -- At the instance's start: once, or again after a hibernation, with the
+    -- sockets the host kept.
+    Debug.log
+        "restore of ${who ctx}: ${String.fromInt (List.length (Object.sockets ctx))} sockets"
+        ⊤
+    { served = 0, gate = Deferred.make ⊤ }
+
+
+serve : Object.Context String, State, Request → State × Response
+serve ctx state request =
+    served = state.served + 1
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "ws", …rest ] →
+            -- With the offered subprotocol when there is one.
+            accepted =
+                case Worker.header request "sec-websocket-protocol" of
+                    Just _ →
+                        Object.acceptWith ctx request { protocol = Just "v1", tags = [ who ctx ] }
+
+                    Nothing →
+                        Object.accept ctx request [ who ctx ]
+            case accepted of
+                Ok ( _, response ) →
+                    ( { state | served = served }, response )
+
+                Err Object.NotAnUpgrade →
+                    ( state, Worker.text 426 "upgrade to a WebSocket" )
+
+                Err _ →
+                    ( state, Worker.text 503 "no room" )
+
+        [ "park", …rest ] →
+            -- A fiber parked on the gate, with no host timer of its own:
+            -- the platform's hold alone keeps the object in memory.
+            _ = Task.spawn λ⊤ → Deferred.wait state.gate
+            ( { state | served = served }, Worker.text 200 "parked in ${who ctx}" )
+
+        [ "finish", …rest ] →
+            _ = Deferred.complete state.gate ⊤
+            ( { state | served = served }, Worker.text 200 "finished in ${who ctx}" )
+
+        [ "count", …rest ] →
+            ( { state | served = served }
+            , Worker.text 200 "${who ctx} served ${String.fromInt served}"
+            )
+
+        _ →
+            ( state, Worker.text 404 "no such page" )
+
+
+input : Object.Context String, State, Socket, String → State
+input ctx state socket text =
+    _ =
+        case String.split text ":" of
+            [ "attach", value ] →
+                case WebSocket.attach socket Schema.string value of
+                    Ok ⊤ →
+                        WebSocket.write socket "attached"
+
+                    Err _ →
+                        WebSocket.write socket "not attached"
+
+            [ "attach-id" ] →
+                -- The socket's own id, kept to compare after the wake.
+                case WebSocket.attach socket Schema.string (WebSocket.id socket) of
+                    Ok ⊤ →
+                        WebSocket.write socket "attached the id"
+
+                    Err _ →
+                        WebSocket.write socket "not attached"
+
+            [ "id?" ] →
+                -- The id is the platform's uuid: compared, not printed.
+                kept =
+                    case WebSocket.attachment socket Schema.string of
+                        Ok (Just before) →
+                            if before == WebSocket.id socket then "id kept" else "id changed"
+
+                        _ →
+                            "no id attached"
+                WebSocket.write socket "${kept}, protocol ${WebSocket.protocol socket}"
+
+            _ →
+                WebSocket.write socket
+                    (case WebSocket.attachment socket Schema.string of
+                        Ok (Just seat) →
+                            "${who ctx} served ${String.fromInt state.served}, attachment ${seat}"
+
+                        Ok Nothing →
+                            "${who ctx} served ${String.fromInt state.served}, no attachment"
+
+                        Err _ →
+                            "an attachment that does not parse"
+                    )
+    state
+
+
+left : Object.Context String, State, Socket, WebSocket.Close → State
+left _ state socket why =
+    tagsText = String.join (WebSocket.tags socket) ","
+    Debug.log "closed ${tagsText} ${String.fromInt why.code} ${why.reason}" ⊤
+    state
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "ROOMS" Schema.string
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just rooms, [ "", "room", name, …rest ] ) →
+            case Worker.forward (Worker.byName rooms name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the room is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no ROOMS binding"
+
+        _ →
+            Worker.text 404 "no such page"

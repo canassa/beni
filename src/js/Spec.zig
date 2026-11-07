@@ -254,6 +254,9 @@ pub const Module = struct {
     /// The module's own name, the qualifier of a top-level binding slice 5
     /// makes here.
     self: JsIr.Symbol.Optional = .none,
+    /// The caller's id of the module, which a row of another module's
+    /// `JsIr.far` names it by (`Copy.posOf`).
+    id: u32 = none,
 };
 
 /// `Lower.Result`'s `effect_keep`, `pure_discards`, `unobserved` and
@@ -278,6 +281,9 @@ pub const Tables = struct {
 };
 
 pub const Input = struct {
+    // Refine only the compiler-emitted worker_definition_type guard.
+    // Source typeof expressions never consult allocation-site types here.
+    fold_worker_metadata: bool = false,
     modules: []const Module,
     /// How many whole-program ids `Module.global` uses.
     globals: u32,
@@ -890,6 +896,11 @@ const Mod = struct {
     name_key: std.ArrayList(JsIr.RepKey),
     tables: ?*Tables,
     self: JsIr.Symbol.Optional,
+    /// `Module.id`.
+    id: u32,
+    /// `JsIr.far`, as a list a copy from another module extends
+    /// (`Copy.posOf`).
+    far: std.ArrayList(JsIr.FarPos),
     /// The next disambiguator no name of the module has (slice 5).
     next_tag: u32 = 0,
     /// Per node: the value the evaluating walk computed.
@@ -1033,7 +1044,15 @@ const Mod = struct {
         m.changed();
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
+        m.ir.nodes.items(.host)[node.int()] = false;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
+    }
+
+    /// Mark `node`, a `call`, as one lowered from a `Js.apply`
+    /// (`JsIr.Node.host`): what a copy of such a call keeps.
+    fn setHost(m: *Mod, node: Index) void {
+        std.debug.assert(m.ir.tag(node) == .call);
+        m.ir.nodes.items(.host)[node.int()] = true;
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -1074,6 +1093,7 @@ const Mod = struct {
             else => .wild,
         };
         m.setNode(node, tag, d.lhs, d.rhs);
+        if (m.ir.host(from)) m.setHost(node);
         if (key == .wild) return;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| {
             m.node_keys.items[at].key = key;
@@ -1088,8 +1108,7 @@ const Mod = struct {
     /// `copyNode` for a fold: `node`, a decided `cond`, `&&` or `||`, is
     /// the operand `from` it keeps, position included. The kept code is
     /// what runs, so a map names where it was written and not the test
-    /// that decided it; a call kept this way is also the site a copy into
-    /// it takes (`Copy.site`; `backend.md` §11.2, item 6).
+    /// that decided it (`backend.md` §11.2, item 6).
     fn foldTo(m: *Mod, gpa: Allocator, node: Index, from: Index) Allocator.Error!void {
         try m.copyNode(gpa, node, from);
         m.ir.nodes.items(.pos)[node.int()] = m.ir.pos(from);
@@ -1119,6 +1138,17 @@ const Mod = struct {
         try list.append(gpa, .{ .tag = tag, .pos = pos, .data = .{ .lhs = lhs, .rhs = rhs } });
         m.ir.nodes = list.slice();
         return @fromBackingInt(@intCast(@as(u32, @intCast(list.len - 1))));
+    }
+
+    /// A position in another module's source, as a `pos` of this module: a
+    /// new row of `far` (`backend.md` §11.2, *Deferred* item 2, amended
+    /// 2026-11-04). No position once the rows would reach `no_pos`.
+    fn farPos(m: *Mod, gpa: Allocator, where: JsIr.FarPos) Allocator.Error!u32 {
+        const row: u32 = @intCast(m.far.items.len);
+        if (row >= Node.far_bit - 1) return Node.no_pos;
+        try m.far.append(gpa, where);
+        m.ir.far = m.far.items;
+        return Node.far_bit | row;
     }
 
     /// Append a name, keeping the IR's view of the column current. The name
@@ -1501,6 +1531,8 @@ const Spec = struct {
                 .name_key = .{ .items = @constCast(ir.name_key), .capacity = ir.name_key.len, .pointer_stability = .{} },
                 .tables = src.tables,
                 .self = src.self,
+                .id = src.id,
+                .far = .{ .items = @constCast(ir.far), .capacity = ir.far.len, .pointer_stability = .{} },
                 .memo = try arena.alloc(Lat, ir.nodes.len),
                 .lit_of = try arena.alloc(u32, ir.nodes.len),
                 .stamp = try arena.alloc(u32, ir.names.len),
@@ -1665,6 +1697,7 @@ const Spec = struct {
             // A development build's columns are empty and own nothing.
             if (m.node_keys.capacity != 0) m.ir.node_keys = try m.node_keys.toOwnedSlice(s.gpa);
             if (m.name_key.capacity != 0) m.ir.name_key = try m.name_key.toOwnedSlice(s.gpa);
+            if (m.far.capacity != 0) m.ir.far = try m.far.toOwnedSlice(s.gpa);
         }
     }
 
@@ -2978,6 +3011,9 @@ const Spec = struct {
             // that is neither `null` nor `undefined`.
             .unary => blk: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
+                if (op == .worker_definition_type and s.in.fold_worker_metadata) {
+                    if (try s.objectTypeOf(m, @fromBackingInt(@intCast(d.lhs)))) |value| break :blk value;
+                }
                 const v = try s.unary(op, m.memo[d.lhs]);
                 break :blk if (op != .yield and v.state == .top) .{ .state = .nonnull, .truth = v.truth } else v;
             },
@@ -3531,13 +3567,36 @@ const Spec = struct {
         return if (nonzero) .yes else .no;
     }
 
+    /// Inspect only a name: replacing a call, getter, or object initializer
+    /// by its typeof could discard work. Unknown/native allocation sites
+    /// and mixed object/function sets keep the original test.
+    fn objectTypeOf(s: *Spec, m: *Mod, operand: Index) Allocator.Error!?Lat {
+        if (!s.pts.ok or m.ir.tag(operand) != .ident or operand.int() >= s.pts.vals[m.index].len) return null;
+        const value = s.pts.vals[m.index][operand.int()];
+        if (value.top or value.prim or value.undef or value.sites.len == 0) return null;
+        var functions: ?bool = null;
+        for (value.sites) |site_id| {
+            const site = s.pts.sites.items[site_id];
+            if (site.module >= s.mods.len or site.node.int() >= s.mods[site.module].ir.nodes.len) return null;
+            const is_function = switch (s.mods[site.module].ir.tag(site.node)) {
+                .object, .array => false,
+                .arrow, .func_decl, .gen_decl => true,
+                else => return null,
+            };
+            if (value.nul and is_function) return null;
+            if (functions) |previous| if (previous != is_function) return null;
+            functions = is_function;
+        }
+        return .of(try s.intern(.{ .kind = .string, .bytes = if (functions.?) "function" else "object" }));
+    }
+
     fn unary(s: *Spec, op: JsIr.UnaryOp, a: Lat) Allocator.Error!Lat {
         if (a.state == .bot) return .bot;
         if (a.state != .lit) return switch (op) {
             // A boolean, `true` exactly when its operand is falsy.
             .not => .{ .state = .nonnull, .truth = s.truthOf(a).not() },
             // The name of a type: a string that is never empty.
-            .type_of => .{ .state = .nonnull, .truth = .yes },
+            .type_of, .worker_definition_type => .{ .state = .nonnull, .truth = .yes },
             .neg => .nonnull,
             // What the generator is resumed with, not what it yields.
             .yield => .top,
@@ -3555,7 +3614,7 @@ const Spec = struct {
                 if (x == 0) return .top; // -0
                 return s.number(-x);
             },
-            .type_of => {
+            .type_of, .worker_definition_type => {
                 const text: []const u8 = switch (lit.kind) {
                     .number => "number",
                     .string => "string",
@@ -3853,6 +3912,9 @@ const Spec = struct {
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
             var kept: std.ArrayList(u32) = .empty;
             for (m.ir.extraSlice(f.params(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
+            // And the places of the kept, in the same order.
+            for (m.ir.extraSlice(f.paramPos(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
+            const kept_n: u32 = @intCast(kept.items.len / 2);
             const start = try m.append(s.gpa, kept.items);
             const at = @backingInt(decl.func.?);
             const fact3 = m.fact3;
@@ -3861,7 +3923,9 @@ const Spec = struct {
             try s.leave(m);
             if (kept_drop[g]) m.fact3 = fact3;
             m.extra.items[at] = start;
-            m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
+            m.extra.items[at + 1] = start + kept_n;
+            m.extra.items[at + 4] = start + kept_n;
+            m.extra.items[at + 5] = start + 2 * kept_n;
             any = true;
         }
         if (!any) return false;
@@ -4442,7 +4506,7 @@ const Spec = struct {
         const d = ir.data(node);
         switch (ir.tag(node)) {
             .unary => return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                .not, .type_of => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+                .not, .type_of, .worker_definition_type => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .neg => s.primitive(m, @fromBackingInt(@intCast(d.lhs))) and try s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .yield => false,
             },
@@ -4726,7 +4790,7 @@ const Spec = struct {
         // Then this one.
         var changed = false;
         for (items) |raw| {
-            if (try s.decided(m, @fromBackingInt(@intCast(raw))) != null or try s.deadWrite(m, @fromBackingInt(@intCast(raw))) or literalStmt(m.ir, @fromBackingInt(@intCast(raw)))) changed = true;
+            if (try s.decided(m, @fromBackingInt(@intCast(raw))) != null or try s.deadWrite(m, @fromBackingInt(@intCast(raw))) or literalStmt(m.ir, @fromBackingInt(@intCast(raw))) or bareTry(m.ir, @fromBackingInt(@intCast(raw))) != null) changed = true;
         }
         if (!changed) {
             // What follows a statement that cannot complete, when it may go.
@@ -4743,6 +4807,21 @@ const Spec = struct {
             // of a value folded where nothing reads it (a function written
             // in whose last `return` folded to `null`).
             if (literalStmt(m.ir, stmt)) continue;
+            // A `try` with no `catch` whose cleanup folded away is its
+            // guarded statements: a `finally` that does nothing changes
+            // nothing of how they end. They join the list as a kept arm
+            // does, or stay a block of their own.
+            if (bareTry(m.ir, stmt)) |guarded| {
+                if (guarded.len() == 0) continue;
+                if (s.spliceable(m, guarded)) {
+                    try out.appendSlice(s.arena, m.ir.extraSlice(guarded, u32));
+                    continue;
+                }
+                const at = try m.append(s.gpa, &.{ @backingInt(guarded.start), @backingInt(guarded.end) });
+                m.setNode(stmt, .block_stmt, @backingInt(NameIndex.none), at);
+                try out.append(s.arena, raw);
+                continue;
+            }
             // Fact 3: a write of a property no reachable read reaches is not
             // written, nor one of a variable nothing reads; its value is
             // still evaluated when it may do something.
@@ -5318,7 +5397,7 @@ const Spec = struct {
                 } else false;
                 if (!exposes) return false;
                 var stmts: std.ArrayList(u32) = .empty;
-                const e = try s.bodyAt(m, top, small, args, &stmts, ir.pos(v)) orelse return false;
+                const e = try s.bodyAt(m, top, small, args, &stmts) orelse return false;
                 const ret = try m.addNode(s.gpa, .return_stmt, ir.pos(stmt), e.int(), 0);
                 try stmts.append(s.arena, ret.int());
                 try work.replaceRange(s.arena, i, 1, stmts.items);
@@ -5364,7 +5443,7 @@ const Spec = struct {
                         const args = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(v).rhs))), Index));
                         if (args.len != small.params.len) return false;
                         var stmts: std.ArrayList(u32) = .empty;
-                        const e = try s.bodyAt(m, top, small, args, &stmts, ir.pos(v)) orelse return false;
+                        const e = try s.bodyAt(m, top, small, args, &stmts) orelse return false;
                         m.setData(stmt, d.lhs, e.int());
                         try stmts.append(s.arena, stmt.int());
                         try work.replaceRange(s.arena, i, 1, stmts.items);
@@ -5496,8 +5575,7 @@ const Spec = struct {
         } else s.copied_modules[module] = true;
     }
 
-    /// `site` is the call's position (`Copy.site`).
-    fn bodyAt(s: *Spec, m: *Mod, top: Index, small: Small, args: []const Index, stmts: *std.ArrayList(u32), site: u32) Allocator.Error!?Index {
+    fn bodyAt(s: *Spec, m: *Mod, top: Index, small: Small, args: []const Index, stmts: *std.ArrayList(u32)) Allocator.Error!?Index {
         s.noteCopy(small.module, small.owner);
         const fm = &s.mods[small.module];
         const cross = small.module != m.index;
@@ -5506,7 +5584,6 @@ const Spec = struct {
             .src = fm,
             .dst = m,
             .cross = cross,
-            .site = site,
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -6492,7 +6569,6 @@ const Spec = struct {
             .src = fm,
             .dst = m,
             .cross = cross,
-            .site = m.ir.pos(call),
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -6729,7 +6805,13 @@ const Spec = struct {
                     }
                 }
             }
+            // A lowering may use one generated call in several places.
+            // Writing it changes them all, including when it stays a call:
+            // its old Small must not be applied to the replacement.
+            var visited: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
             for (calls.items) |c| {
+                if (visited.isSet(c.call.int())) continue;
+                visited.set(c.call.int());
                 if (m.ir.tag(c.call) != .call) continue;
                 // Every change is to the call's statement.
                 within(m, c.top);
@@ -6908,7 +6990,6 @@ const Spec = struct {
             .src = fm,
             .dst = m,
             .cross = cross,
-            .site = m.ir.pos(call),
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -7660,20 +7741,27 @@ const Spec = struct {
         // A call the statement no longer reaches — `inlineSmallPass` lists
         // a statement's calls before it writes any, and a body written in
         // may have dropped one — changes nothing a walk of it meets.
-        if (!countedCall(m.ir, scan, call)) return null;
+        const copies = countedCalls(m.ir, scan, call);
+        if (copies == 0) return null;
         if (!opaqueChild(m.ir, e) and std.mem.indexOfScalar(Index, scan.sensitive.items, call) != null) return null;
-        return s.retract(m, top, &.{call.int()});
+        const r = (try s.retract(m, top, &.{call.int()})).?;
+        if (copies > 1) {
+            const nodes = try s.walkFrom(m, &.{call.int()});
+            for (1..copies) |_| try s.countNames(m, r.scan, nodes, .take);
+        }
+        return .{ .scan = r.scan, .copies = copies };
     }
 
-    /// Whether `scan` counts `call`, by its callee's name listing it. A call
-    /// of anything else is not known to be counted: a copy of a call's root
+    /// How many occurrences of `call` the scan counts, by its callee's
+    /// name listing it. Rewriting a shared node changes every occurrence.
+    /// A call of anything else is not known to be counted: a copy of a call's root
     /// (`Copy.atom`) shares the call's callee, so the callee alone cannot
     /// say the call itself is still met.
-    fn countedCall(ir: *const JsIr, scan: *NameScan, call: Index) bool {
+    fn countedCalls(ir: *const JsIr, scan: *NameScan, call: Index) u32 {
         const callee: Index = @fromBackingInt(@intCast(ir.data(call).lhs));
-        if (ir.tag(callee) != .ident) return false;
-        const u = findUse(scan, ir.data(callee).lhs) orelse return false;
-        return std.mem.indexOfScalar(Index, u.calls.items, call) != null;
+        if (ir.tag(callee) != .ident) return 0;
+        const u = findUse(scan, ir.data(callee).lhs) orelse return 0;
+        return @intCast(std.mem.countScalar(Index, u.calls.items, call));
     }
 
     /// The name `obj` is, when it is an `ident`.
@@ -7752,7 +7840,11 @@ const Spec = struct {
 
     /// What `retract` kept of a statement before a change replaces subtrees
     /// of it: its scan, the subtrees' part taken out.
-    const Retracted = struct { scan: *NameScan };
+    const Retracted = struct {
+        scan: *NameScan,
+        /// A call rewritten in place changes all of its structural uses.
+        copies: u32 = 1,
+    };
 
     /// Before a change inside top-level statement `top` that replaces the
     /// subtrees at `roots` (each a node the walk of `top` meets, once for
@@ -7770,7 +7862,8 @@ const Spec = struct {
     /// `retract` was given stood: what was kept of `top`, with the new
     /// subtrees' part, kept again as of now.
     fn extend(s: *Spec, m: *Mod, top: Index, r: Retracted, roots: []const u32) Allocator.Error!void {
-        try s.countNames(m, r.scan, try s.walkFrom(m, roots), .add);
+        const nodes = try s.walkFrom(m, roots);
+        for (0..r.copies) |_| try s.countNames(m, r.scan, nodes, .add);
         r.scan.epoch = m.epoch;
         // A safety build checks the update at once: the statement may change
         // again before anything asks for it.
@@ -8121,7 +8214,7 @@ const Spec = struct {
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try s.scanNode(fm, t, params, out, depth + 1, own);
                 try s.scanList(fm, ir.subRange(@fromBackingInt(@intCast(d.rhs))), params, out, depth, own);
             },
-            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
             .expr_stmt, .throw_stmt => try s.scanNode(fm, @fromBackingInt(@intCast(d.lhs)), params, out, depth + 1, own),
             // A `return` in either block is the callee's own: written where
             // the call stood, it leaves the caller from inside the same
@@ -8859,7 +8952,6 @@ const Spec = struct {
             .src = fm,
             .dst = cm,
             .cross = cross,
-            .site = cm.ir.pos(site.call),
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -9100,7 +9192,7 @@ const Spec = struct {
             h.update(std.mem.asBytes(&tag));
             switch (tag) {
                 .ident => if (m.globalOf(@fromBackingInt(@intCast(d.lhs)))) |g| h.update(std.mem.asBytes(&g)),
-                .number, .string, .template_chunk => h.update(ir.bytes(node)),
+                .number, .string, .worker_path, .template_chunk => h.update(ir.bytes(node)),
                 .member, .property => h.update(std.mem.asBytes(&ir.name(@fromBackingInt(@intCast(if (tag == .member) d.rhs else d.lhs))).base)),
                 .binary, .unary, .arrow => h.update(std.mem.asBytes(&d.rhs)),
                 .true_lit, .false_lit, .null_lit, .undefined_lit, .cond, .call, .new_call, .return_stmt, .expr_stmt, .throw_stmt, .if_stmt, .object, .array, .template, .const_decl, .let_decl, .index_get, .assign, .assign_stmt, .sequence => {},
@@ -9241,7 +9333,7 @@ const Spec = struct {
                         if (gx == null or gy == null or gx.? != gy.?) return false;
                     } else if (!pair.names(fwd, back, dx.lhs, dy.lhs)) return false;
                 },
-                .number, .string, .template_chunk => if (!std.mem.eql(u8, ia.bytes(nx), ib.bytes(ny))) return false,
+                .number, .string, .worker_path, .template_chunk => if (!std.mem.eql(u8, ia.bytes(nx), ib.bytes(ny))) return false,
                 .member => if (!ia.name(@fromBackingInt(@intCast(dx.rhs))).eql(ib.name(@fromBackingInt(@intCast(dy.rhs))))) return false,
                 .property => if (!ia.name(@fromBackingInt(@intCast(dx.lhs))).eql(ib.name(@fromBackingInt(@intCast(dy.lhs))))) return false,
                 .binary, .unary => if (dx.rhs != dy.rhs) return false,
@@ -9494,7 +9586,6 @@ const Spec = struct {
                 .src = fm,
                 .dst = cm,
                 .cross = decl.module != fit.site.module,
-                .site = cm.ir.pos(fit.site.call),
                 .renamed = try s.arena.alloc(u32, fm.ir.names.len),
                 .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
                 .cont = &cont,
@@ -10048,12 +10139,6 @@ const Spec = struct {
         src: *Mod,
         dst: *Mod,
         cross: bool,
-        /// Across modules, the position of the call the copy replaces, in
-        /// the destination's source: a position is an offset into ONE
-        /// module's source, so the copy's nodes cannot keep theirs, and
-        /// a release map sends them to the call (`backend.md` §11.2, item
-        /// 2). Only a map reads a position.
-        site: u32 = Node.no_pos,
         /// A declared name of the source, and its new name.
         renamed: []u32,
         /// A parameter of the source, and the argument (a node of the
@@ -10211,7 +10296,7 @@ const Spec = struct {
                     var e = try c.dupDst(v);
                     while (len > 0) {
                         len -= 1;
-                        e = try c.dst.addNode(c.gpa(), .member, ir.pos(from), e.int(), keys[len].int());
+                        e = try c.dst.addNode(c.gpa(), .member, try c.posOf(from), e.int(), keys[len].int());
                     }
                     return e;
                 },
@@ -10234,7 +10319,7 @@ const Spec = struct {
                             else
                                 null;
                             const eq = same orelse return null;
-                            return try c.dst.addNode(c.gpa(), if (eq == (op == .strict_eq)) .true_lit else .false_lit, ir.pos(from), 0, 0);
+                            return try c.dst.addNode(c.gpa(), if (eq == (op == .strict_eq)) .true_lit else .false_lit, try c.posOf(from), 0, 0);
                         },
                         .logical_and, .logical_or => {
                             const l = try c.expr(b.left, depth + 1);
@@ -10315,15 +10400,34 @@ const Spec = struct {
             return c.dst.addName(c.gpa(), name);
         }
 
+        /// `from`'s position as a `pos` of the destination (`backend.md`
+        /// §11.2, *Deferred* item 2, amended 2026-11-04). In one module, its
+        /// own. Across two, the position in the module it was written in:
+        /// a row of the destination's `far`, or an offset of its own when
+        /// the body came back to the module it was written in. Only a map
+        /// reads a position.
+        fn posOf(c: *Copy, from: Index) Allocator.Error!u32 {
+            return c.posAt(c.src.ir.pos(from));
+        }
+
+        /// `posOf` for a `pos` of the source, a parameter's included.
+        fn posAt(c: *Copy, at: u32) Allocator.Error!u32 {
+            if (!c.cross or at == Node.no_pos) return at;
+            const where: JsIr.FarPos = if (Node.isFar(at)) c.src.far.items[at & ~Node.far_bit] else .{ .module = c.src.id, .offset = at };
+            if (where.module == c.dst.id) return where.offset;
+            return c.dst.farPos(c.gpa(), where);
+        }
+
         fn node(c: *Copy, from: Index, tag: Node.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
-            const pos: u32 = if (c.cross) c.site else c.src.ir.pos(from);
-            const to = try c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
-            // An allocation copied as itself is still one of its type.
+            const to = try c.dst.addNode(c.gpa(), tag, try c.posOf(from), lhs, rhs);
+            // An allocation copied as itself is still one of its type, and
+            // a host call copied as itself is still one.
             if (tag == c.src.ir.tag(from)) switch (tag) {
                 .object, .array, .arrow => {
                     const k = c.src.ir.nodeKey(from);
                     if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
                 },
+                .call => if (c.src.ir.host(from)) c.dst.setHost(to),
                 else => {},
             };
             return to;
@@ -10360,14 +10464,24 @@ const Spec = struct {
             return .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(start + @as(u32, @intCast(out.items.len)))) };
         }
 
+        /// A `Func` record, in `JsIr.Func`'s field order. Each parameter
+        /// keeps its place, as a node does (`posAt`). In one module the
+        /// copy shares the source's range of places, which no pass writes.
         fn func(c: *Copy, record_at: ExtraIndex, depth: u32) Allocator.Error!u32 {
             const f = c.src.ir.extraData(record_at, JsIr.Func);
             var params: std.ArrayList(u32) = .empty;
             for (try c.s.arena.dupe(NameIndex, c.src.ir.extraSlice(f.params(), NameIndex))) |p| try params.append(c.s.arena, (try c.binding(p)).int());
             const pstart = try c.dst.append(c.gpa(), params.items);
             const pend = pstart + @as(u32, @intCast(params.items.len));
+            var places = f.paramPos();
+            if (c.cross) {
+                var positions: std.ArrayList(u32) = .empty;
+                for (try c.s.arena.dupe(u32, c.src.ir.extraSlice(places, u32))) |at| try positions.append(c.s.arena, try c.posAt(at));
+                const at_start = try c.dst.append(c.gpa(), positions.items);
+                places = .{ .start = @fromBackingInt(at_start), .end = @fromBackingInt(at_start + @as(u32, @intCast(positions.items.len))) };
+            }
             const body = try c.list(f.body(), depth);
-            return c.dst.append(c.gpa(), &.{ pstart, pend, @backingInt(body.start), @backingInt(body.end) });
+            return c.dst.append(c.gpa(), &.{ pstart, pend, @backingInt(body.start), @backingInt(body.end), @backingInt(places.start), @backingInt(places.end) });
         }
 
         fn listed(c: *Copy, from: Index, to: Index, which: enum { keep, discards, unobserved }) Allocator.Error!void {
@@ -10392,8 +10506,8 @@ const Spec = struct {
                     return c.node(from, .ident, (try c.binding(@fromBackingInt(@intCast(d.lhs)))).int(), 0);
                 },
                 .field_name => return c.node(from, tag, (try c.property(@fromBackingInt(@intCast(d.lhs)))).int(), 0),
-                .number, .string, .template_chunk, .regex => return c.node(from, tag, try c.bytesOf(from), d.rhs),
-                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return c.node(from, tag, 0, 0),
+                .number, .string, .worker_path, .template_chunk, .regex => return c.node(from, tag, try c.bytesOf(from), d.rhs),
+                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => return c.node(from, tag, 0, 0),
                 .template, .object, .array => {
                     const r = try c.exprs(ir.extraSlice(JsIr.inlineRange(d), Index), depth);
                     return c.node(from, tag, @backingInt(r.start), @backingInt(r.end));
@@ -10593,12 +10707,12 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .ident => return if (d.lhs == p.int()) .found else .clean,
-        .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => return .clean,
+        .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .import_meta_url, .worker_path, .this_lit => return .clean,
         .member => return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, true),
         .index_get => return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true),
         .unary => {
             const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
-            return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, op != .not and op != .type_of);
+            return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, op != .not and op != .type_of and op != .worker_definition_type);
         },
         .binary => {
             const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
@@ -10814,17 +10928,17 @@ const mark_node: u32 = mark_exit - 1;
 
 /// The leaves the evaluating walks (`Spec.eval`, `Pts.expr`) take without
 /// their stack.
-const value_leaves = TagSet(&.{ .field_name, .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
+const value_leaves = TagSet(&.{ .field_name, .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .template_chunk });
 
 inline fn isValueLeaf(t: Node.Tag) bool {
     return value_leaves[@backingInt(t)];
 }
 
 /// The leaves `Spec.patchStmt` has nothing to patch in.
-const patch_leaves = TagSet(&.{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
+const patch_leaves = TagSet(&.{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .import_meta_url, .worker_path, .this_lit });
 
 /// The leaves `Spec.countExpr` has nothing to count in: none is a name.
-const count_leaves = TagSet(&.{ .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
+const count_leaves = TagSet(&.{ .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit });
 
 /// Whether a node of `tag` is a literal, as `Spec.literalValue` reads one.
 fn isLiteralTag(tag: Node.Tag) bool {
@@ -12058,6 +12172,9 @@ const Solver = struct {
             .effect => s.demote(sv.lat[sv.cellOf(mi, a)]),
             .unary => un: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
+                if (op == .worker_definition_type and s.in.fold_worker_metadata) {
+                    if (try s.objectTypeOf(m, @fromBackingInt(@intCast(ir.data(node).lhs)))) |value| break :un value;
+                }
                 const u = try s.unary(op, sv.lat[sv.cellOf(mi, a)]);
                 break :un if (op != .yield and u.state == .top) .{ .state = .nonnull, .truth = u.truth } else u;
             },
@@ -12721,7 +12838,7 @@ fn constantVal(ir: *const JsIr, node: Index) Pts.Val {
 /// (`Pts.literal_vals`, `Pts.combineNow` of a `constantValue` node).
 fn constantTop(ir: *const JsIr, node: Index) bool {
     return switch (ir.tag(node)) {
-        .global_this, .this_lit => true,
+        .global_this, .import_meta_url, .worker_path, .this_lit => true,
         .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(ir.data(node).rhs))) == .yield,
         else => false,
     };
@@ -16509,7 +16626,7 @@ const Pts = struct {
             .number, .string, .template, .template_chunk, .true_lit, .false_lit => Val.prim_val,
             .null_lit => Val.nul_val,
             .undefined_lit => Val.undef_val,
-            .global_this, .this_lit => Val.top_val,
+            .global_this, .import_meta_url, .worker_path, .this_lit => Val.top_val,
             .ident => try p.narrowed(mi, node, try p.view(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))))),
             .member => blk: {
                 const obj = vals[d.lhs];
@@ -16988,7 +17105,7 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
         // million times over a page, and one exhaustive `switch` is one
         // jump where an `else` prong first checks the tag in Zig's own
         // backend, and a second call checks it again.
-        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
         .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
         .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.rhs))),
@@ -17319,6 +17436,18 @@ fn literalStmt(ir: *const JsIr, stmt: Index) bool {
     };
 }
 
+/// The guarded statements of `stmt` when it is a `try` with no `catch` and
+/// an empty `finally`: what is left of a `Js.finally` whose cleanup folded
+/// to nothing, as `Rt.beni`'s `send` leaves one in a build in which nothing
+/// sets a slot (`boundary.md` §9.8.16 (b), amended 2026-11-06). Null for
+/// any other statement.
+fn bareTry(ir: *const JsIr, stmt: Index) ?JsIr.SubRange {
+    if (ir.tag(stmt) != .try_stmt) return null;
+    const t = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).rhs)), JsIr.Try);
+    if (t.catches() or t.finalBody().len() != 0) return null;
+    return t.body();
+}
+
 /// How deep `pureCall` follows a call that is an argument of a call.
 const max_pure_depth = 8;
 
@@ -17351,7 +17480,7 @@ fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
     return switch (ir.tag(node)) {
         .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-            .not, .type_of => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+            .not, .type_of, .worker_definition_type => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => false,
         },
         .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
@@ -17399,7 +17528,7 @@ fn inertOf(ir: *const JsIr, root: Index, comptime field_reads: bool) bool {
         budget -= 1;
         const d = ir.data(node);
         switch (ir.tag(node)) {
-            .arrow, .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+            .arrow, .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @fromBackingInt(@intCast(d.rhs));
@@ -17953,7 +18082,7 @@ fn casedCase(gpa: Allocator, case: CasedCase) !bool {
             };
             const fbody = try b.addRange(&.{try specTestNode(&b, .return_stmt, inner.int(), 0)});
             const params = try b.addNames(&.{});
-            const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = fbody.start, .body_end = fbody.end });
+            const func = try b.addFunc(params, fbody);
             break :blk try specTestNode(&b, .arrow, @backingInt(func), Node.arrow_plain);
         },
     };
@@ -18300,7 +18429,7 @@ fn freshCase(gpa: Allocator, case: FreshCase) !bool {
     try stmts.append(gpa, try specTestNode(&b, .return_stmt, obj.int(), 0));
     const params = try b.addNames(if (case == .param) &.{p} else &.{});
     const body = try b.addRange(stmts.items);
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try specTestNode(&b, .arrow, @backingInt(func), Node.arrow_plain);
     var ir = try b.toOwned(try b.addRange(&.{}));
     defer ir.deinit(gpa);
@@ -19872,7 +20001,7 @@ test "a const copy is an alias only when it is its name's one declaration" {
     const decl_d = try b.addParts(.const_decl, Node.no_pos, name_d.int(), read_a2.int());
     const params = try b.addNames(&.{name_d});
     const fbody = try b.addRange(&.{decl_d});
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = fbody.start, .body_end = fbody.end });
+    const func = try b.addFunc(params, fbody);
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const stmt = try b.addParts(.expr_stmt, Node.no_pos, arrow.int(), 0);
     var ir = try b.toOwned(try b.addRange(&.{ decl_a, decl_b, decl_c, decl_c2, stmt }));
@@ -19941,7 +20070,7 @@ test "returnExpr reads its body after a nested conditional moved extra" {
     const outer_if = try b.addParts(.if_stmt, Node.no_pos, outer_test.int(), @backingInt(outer_rec));
     const params = try b.addNames(&.{name_a});
     const body = try b.addRange(&.{ outer_if, rets[2] });
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
     var ir = try b.toOwned(try b.addRange(&.{decl_f}));
@@ -19980,7 +20109,7 @@ fn dropProgram(b: *JsIr.Builder, read_param: bool, object_arg: bool) !DropProgra
     const ret = try b.addParts(.return_stmt, Node.no_pos, value.int(), 0);
     const params = try b.addNames(&.{name_a});
     const body = try b.addRange(&.{ret});
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
     const callee = try b.addParts(.ident, Node.no_pos, name_f.int(), 0);

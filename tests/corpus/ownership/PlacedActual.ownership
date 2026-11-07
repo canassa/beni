@@ -1,0 +1,8 @@
+module PlacedActual
+  10:10 List.push <literal>: accepted fresh
+  11:7 List.push zs: accepted fresh
+  18:7 List.push a: accepted call
+  summary h: π1 R; res .0 fresh1
+  summary k: res .0 fresh2, .0[*] ~fresh3, .1 fresh1
+  demands 3: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

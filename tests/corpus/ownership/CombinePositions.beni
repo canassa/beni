@@ -1,0 +1,88 @@
+-- ownership: two positions of one list whose parts land on one class cell
+-- owe that cell's `excl`, not a repeat (ownership-v2.md §2.9 *Two positions
+-- of one image*, #1472). `combineHelp` pushes each `Ok` payload of its first
+-- list onto its second, so its answer's elements are `π1[*]#Ok.0` and
+-- `π2[*]`, apart under `excl π1[*]#Ok.0` and `excl π2[*]`. `bump` edits the
+-- first element of the answer in place: accepted, relying on its list's
+-- payloads being apart. Refused: payloads shared through the list
+-- (`aliased`), the second list holding a payload of the first (`mixed`),
+-- one element twice (`twice`), a payload also held outside (`held`), and two
+-- matches of one rest, which may take one position (`twoMatches`).
+combine : List (Result String (List Int)) → Result String (List (List Int))
+combine results = combineHelp results []
+
+
+combineHelp : List (Result String (List Int)), List (List Int) → Result String (List (List Int))
+combineHelp results values =
+    case results of
+        [] →
+            Ok values
+
+        [ first, …rest ] →
+            case first of
+                Ok value →
+                    combineHelp rest (List.push values value)
+
+                Err x →
+                    Err x
+
+
+pub bump : List (Result String (List Int)) → Result String (List (List Int))
+bump rs =
+    case combine rs of
+        Ok lists →
+            case lists of
+                [ first, …rest ] →
+                    Ok [ List.push first 1, …rest ]
+
+                [] →
+                    Ok []
+
+        Err why →
+            Err why
+
+
+pub distinct : List Int, List Int → Result String (List (List Int))
+distinct x y = bump [ Ok x, Ok y ]
+
+
+pub aliased : List Int → Result String (List (List Int))
+aliased b = bump [ Ok b, Ok b ]
+
+
+pub mixed : List Int → Result String (List (List Int))
+mixed b =
+    case combineHelp [ Ok b ] [ b ] of
+        Ok lists →
+            case lists of
+                [ first, …rest ] →
+                    Ok [ List.push first 1, …rest ]
+
+                [] →
+                    Ok []
+
+        Err why →
+            Err why
+
+
+pub twice : Result String (List Int) → Result String (List (List Int))
+twice r = bump [ r, r ]
+
+
+pub held : List Int → Result String (List (List Int)) × List Int
+held b = ( bump [ Ok b ], b )
+
+
+pub twoMatches : List (Result String (List Int)) → List (List Int)
+twoMatches rs =
+    case rs of
+        [ _, …rest ] →
+            case ( rest, rest ) of
+                ( [ Ok a, …_ ], [ Ok c, …_ ] ) →
+                    [ List.push a 1, c ]
+
+                _ →
+                    []
+
+        [] →
+            []

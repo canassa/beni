@@ -1,0 +1,48 @@
+module Main
+  22:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 22:30 (Pairs.touch0 writes π1)
+  29:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 29:30 (Pairs.touch0 writes π1)
+  36:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 36:30 (Pairs.touch0 writes π1)
+  43:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 43:30 (Pairs.touch0 writes π1)
+  47:13 call Pairs.tl <call Pairs.w1>.0[*]: rejected alias: xs holds it and is read at 47:42 (Pairs.tl writes π1.0[*])
+  54:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 54:30 (Pairs.touch0 writes π1)
+  61:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 61:30 (Pairs.touch0 writes π1)
+  65:16 call Pairs.t2 <call Pairs.w2>.0.0: rejected disjoint: another operand of the same operation reaches it (Pairs.t2 writes π1.0.0)
+  65:16 call Pairs.t2 <call Pairs.w2>.0.1: rejected disjoint: another operand of the same operation reaches it (Pairs.t2 writes π1.0.1)
+  65:16 call Pairs.t2 <call Pairs.w2>.1.0: rejected disjoint: another operand of the same operation reaches it (Pairs.t2 writes π1.1.0)
+  65:16 call Pairs.t2 <call Pairs.w2>.1.1: rejected disjoint: another operand of the same operation reaches it (Pairs.t2 writes π1.1.1)
+  69:15 call Pairs.inner xs: accepted param (Pairs.inner writes π1)
+  76:13 call Pairs.touch0 a: accepted param (Pairs.touch0 writes π1)
+  summary w2: π1 RA; res .0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0 condition(fresh2) condition(fresh6) π1, .0.1 condition(fresh3) condition(fresh7) π1, .1 condition(fresh1){shared}r{shared} condition(fresh8), .1.0 condition(fresh2) condition(fresh9) π1, .1.1 condition(fresh10) condition(fresh3) π1, condition(fresh4){shared}r{shared}
+  summary twice: π1 RW[storage]
+  summary thrice: π1 RW[storage]
+  summary local: π1 RW[storage]
+  summary idPair: π1 RW[storage]
+  summary inList: π1 RW[storage]; xreq excl π1
+  summary mixed: π1 RW[storage]
+  summary swapped: π1 RW[storage]
+  summary allLeaves: π1 RW[storage]
+  summary viaInner: π1 RW[storage]
+  summary alone: π1 RW[storage]
+  demands 13: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 11
+module Pairs
+  5:26 List.push xs: accepted param
+  33:13 call Pairs.touch0 a: accepted param (Pairs.touch0 writes π1)
+  43:13 call Pairs.touch0 a: accepted param (Pairs.touch0 writes π1)
+  43:24 call Pairs.touch0 b: accepted param (Pairs.touch0 writes π1)
+  43:35 call Pairs.touch0 c: accepted param (Pairs.touch0 writes π1)
+  43:46 call Pairs.touch0 d: accepted param (Pairs.touch0 writes π1)
+  50:13 call Pairs.touch0 a: rejected alias: xs holds it and is read at 50:24 (Pairs.touch0 writes π1)
+  summary touch0: π1 RW[storage]
+  summary w1: π1 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}r{shared}
+  summary w2: π1 RA; res .0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0 condition(fresh2) condition(fresh6) π1, .0.1 condition(fresh3) condition(fresh7) π1, .1 condition(fresh1){shared}r{shared} condition(fresh8), .1.0 condition(fresh2) condition(fresh9) π1, .1.1 condition(fresh10) condition(fresh3) π1, condition(fresh4){shared}r{shared}
+  summary w3: π1 RA; res .0 condition(fresh12) condition(fresh4){shared}r{shared}, .0.0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0.0 condition(fresh13) condition(fresh2) condition(fresh6) π1, .0.0.1 condition(fresh14) condition(fresh3) condition(fresh7) π1, .0.1 condition(fresh1){shared}r{shared} condition(fresh8), .0.1.0 condition(fresh15) condition(fresh2) condition(fresh9) π1, .0.1.1 condition(fresh10) condition(fresh16) condition(fresh3) π1, .1 condition(fresh17) condition(fresh4){shared}r{shared}, .1.0 condition(fresh1){shared}r{shared} condition(fresh5), .1.0.0 condition(fresh18) condition(fresh2) condition(fresh6) π1, .1.0.1 condition(fresh19) condition(fresh3) condition(fresh7) π1, .1.1 condition(fresh1){shared}r{shared} condition(fresh8), .1.1.0 condition(fresh2) condition(fresh20) condition(fresh9) π1, .1.1.1 condition(fresh10) condition(fresh21) condition(fresh3) π1, condition(fresh11){shared}r{shared}
+  summary idn: π1 RA; res π1
+  summary pair: π1 RA, π2 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π2, condition(fresh1){sep π1 π2}r{sep π1 π2}
+  summary sw: π1 R, π1.0 RA, π1.1 RA; res .0 condition(fresh2) π1.1, .1 condition(fresh3) π1.0, condition(fresh1){sep π1.0 π1.1}r{sep π1.0 π1.1}
+  summary tl: π1 R, π1.0[*] RW[storage]; xreq excl π1.0
+  summary t2: π1 R, π1.0.0 RW[storage], π1.0.1 RW[storage], π1.1.0 RW[storage], π1.1.1 RW[storage]
+  summary inner: π1 RW[storage]
+  demands 7: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 20: accepted 8 (fresh 0, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 12
+cause disjoint 4
+cause alias 8

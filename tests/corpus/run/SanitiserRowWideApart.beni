@@ -1,0 +1,28 @@
+-- The twin of `SanitiserRowWide` (`ownership-v2.md` §2.1): the fields apart. v2
+-- accepts each; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+up : { r | a : L } → { r | a : L }
+up rec = { rec | a = List.push rec.a 9 }
+
+
+mid3 : { a : L, b : L, c : L } → { a : L, b : L, c : L }
+mid3 rec = up rec
+
+
+main : Program
+main =
+    k = [ 1 ]
+    r = mid3 { a = [ 2 ], b = [], c = k }
+    Node.print (show r.a ++ show r.c ++ show k)

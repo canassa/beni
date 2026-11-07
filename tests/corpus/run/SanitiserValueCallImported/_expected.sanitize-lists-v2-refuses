@@ -1,0 +1,16 @@
+# v2 refuses each edit of a list a called value of another module holds or writes (§2.11.1, #2132).
+32:9 list_still_used List.push
+40:9 list_still_used List.push
+48:9 list_still_used List.push
+56:9 list_still_used List.push
+64:9 list_still_used List.push
+72:9 list_still_used List.push
+80:9 list_still_used List.push
+88:9 list_still_used List.push
+96:9 list_still_used List.push
+105:9 list_still_used List.push
+113:9 list_still_used List.push
+121:9 list_still_used List.push
+129:9 list_still_used List.push
+136:9 list_still_used Main.apply1
+143:9 list_may_be_shared Main.grown

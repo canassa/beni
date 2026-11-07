@@ -1,0 +1,1 @@
+v2 reads a deep demand as a write of everything its base reaches (ownership-v2.md §2.8); v1 does not.

@@ -1,0 +1,40 @@
+-- A runtime catch for a callback handed on through another callee's label
+-- (`ownership-v2.md` §2.11.3): `wrap` builds a record of its two lists and
+-- hands it, with its own callback parameter, to `apply`, whose label takes
+-- its argument at a type variable's slot. v2 took that supply as one
+-- arrival at the record's root slot, so the callback's push of `x.f0`
+-- found nothing to check: it accepted `wrap` given one list twice, and
+-- `wrap` given a list its caller reads again, and the sanitised run
+-- trapped on the stale reads. Each part of the record now arrives at its
+-- own field and is judged as a direct label's argument is.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Pair =
+    f0 : List Int
+    f1 : List Int
+
+
+apply : (a → b), a → b
+apply f x = f x
+
+
+wrap : (Pair → List Int), List Int, List Int → List Int × List Int
+wrap f a0 a1 = ( apply f { f0 = a0, f1 = a1 }, a1 )
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 5 ]
+    ( a, b ) = wrap (λx → List.push x.f0 1) xs xs
+    ys = [ 6 ]
+    ( c, d ) = wrap (λx → List.push x.f0 2) ys [ 7 ]
+    zs = [ 8 ]
+    ( p, q ) = wrap (λx → List.push x.f0 3) zs [ 9 ]
+    Node.print "${show a} ${show b} ${show c} ${show d} ${show ys} ${show p} ${show q}"

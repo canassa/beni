@@ -1,0 +1,20 @@
+-- ownership (project): what an importer reads of a block besides a class's
+-- paths (ownership-v2.md §3.6, §8 S3b slice 3). `getSeed`'s result is
+-- `shared(seed)`, a top-level value the block names by `Lib.seed`: pushing
+-- onto it is refused, onto a copy of it accepted. `mapped`'s walk is not
+-- built, so its block says an importer may not apply its class: the call
+-- leaves `viaMapped` unchecked (`.v2.unchecked`), never checked against a
+-- class the callee did not earn.
+import Lib
+
+
+pub bump : ⊤ → List Int
+bump ⊤ = List.push (Lib.getSeed ⊤) 2
+
+
+pub bumpCopy : ⊤ → List Int
+bumpCopy ⊤ = List.push (List.copy (Lib.getSeed ⊤)) 2
+
+
+pub viaMapped : List (List Int) → List (List Int)
+viaMapped xs = Lib.mapped xs

@@ -1,0 +1,119 @@
+-- ownership: the holder index (ownership-v2.md §2.8 *The holder index*,
+-- #1214) answers every demand of a frame offline, and its answer is the
+-- first failing holder in the canonical order. Astra's counterexamples to
+-- earlier designs of it, each with the verdict the order gives:
+-- `sameSpot` keeps a holder at the base's own position of its split
+-- (refused, `x` read again); `earlyLate` puts an exact hold before an
+-- earlier approximate one (`late.list`); `withinOne` takes the exact path
+-- inside one whole use (`holder.z`); `joinAlt`'s base has two cells, so its
+-- refusal is approximate; `activation` accepts the first edit and refuses
+-- the second, held since; `inherited` reads its holders through containers
+-- (`a1.item`, `a2.item`); `readTag`'s helper reads only `tag`, so both
+-- edits pass. `witness` is a DAG of depth 8 with 256 paths to `xs`: it names
+-- the least one, `t8.0.0.0.0.0.0.0.0.0`, never one a walk met first (the
+-- live index named `t8.1.1.1.1.1.1.1.1.0`). A depth of 12, which the live
+-- index refused as a limit, is `build_test.zig`'s: v1 cannot check it.
+-- `pendingApprox`'s base has two cells and the pending `[ x ]` holds one:
+-- refused `held-operand`, approximately (a crash once, naming the pending
+-- operand's instruction as a local).
+pub sameSpot : ⊤ → List Int × List Int
+sameSpot ⊤ =
+    case [ [ 0 ] ] of
+        [ x ] →
+            ( [ …x, 1 ], x )
+
+        _ →
+            ( [], [] )
+
+
+pub earlyLate : List Int → List Int × List (List Int) × { list : List Int }
+earlyLate xs =
+    early = [ xs ]
+    late = { list = xs }
+    edited = [ …xs, 1 ]
+    ( edited, early, late )
+
+
+pub withinOne : List Int → List Int × { a : List (List Int), z : List Int }
+withinOne xs =
+    holder = { a = [ xs ], z = xs }
+    edited = [ …xs, 1 ]
+    ( edited, holder )
+
+
+pub joinAlt : Bool, Bool, List Int, List Int, List Int → List Int × List Int
+joinAlt a b x y z =
+    base = if a then x else y
+    holder = if b then base else z
+    edited = [ …base, 3 ]
+    ( edited, holder )
+
+
+pub activation : List Int → { list : List Int } × List Int
+activation xs =
+    first = [ …xs, 1 ]
+    holder = { list = first }
+    second = [ …first, 2 ]
+    ( holder, second )
+
+
+pub inherited : ⊤ → Int
+inherited ⊤ =
+    x1 = [ 1 ]
+    x2 = [ 2 ]
+    a1 = { item = x1 }
+    a2 = { item = x2 }
+    b1 = { item = x1 }
+    b2 = { item = x2 }
+    left = ( a1, a2 )
+    right = ( b1, b2 )
+    y1 = List.push x1 9
+    y2 = List.push x2 9
+    List.length y1
+        + List.length y2
+        + count a1
+        + count a2
+        + count b1
+        + count b2
+        + both left right
+        + both left right
+
+
+count : { item : List Int } → Int
+count r = List.length r.item
+
+
+both : { item : List Int } × { item : List Int }, { item : List Int } × { item : List Int } → Int
+both l r = 0
+
+
+pub readTag : List Int, List Int → Int
+readTag xs ys =
+    r = { tag = 1, f1 = xs, f2 = ys }
+    p1 = List.push xs 1
+    p2 = List.push ys 2
+    tagOf r + tagOf r + tagOf r + List.length p1 + List.length p2
+
+
+tagOf : { tag : Int, f1 : List Int, f2 : List Int } → Int
+tagOf r = r.tag
+
+
+pub witness xs =
+    t0 = ( xs, 0 )
+    t1 = ( t0, t0 )
+    t2 = ( t1, t1 )
+    t3 = ( t2, t2 )
+    t4 = ( t3, t3 )
+    t5 = ( t4, t4 )
+    t6 = ( t5, t5 )
+    t7 = ( t6, t6 )
+    t8 = ( t7, t7 )
+    ys = List.push xs 1
+    List.length ys + String.length (Debug.toString t8)
+
+
+pub pendingApprox : Bool, List Int, List Int → List (List Int) × List Int
+pendingApprox b x y =
+    base = if b then x else y
+    ( [ x ], List.push base 1 )

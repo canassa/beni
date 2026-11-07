@@ -1,0 +1,28 @@
+-- CallbackTakenTwoAt (Appendix B, S4; R-4.6.9): `twoAt` reads two positions of
+-- `[ x, x ]`. Distinct positions do not make distinct objects, so the inner
+-- write of its answer is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+twoAt : List (List Int), Int, Int → List (List Int)
+twoAt xs i j = [ Maybe.withDefault (List.get xs i) [], Maybe.withDefault (List.get xs j) [] ]
+
+
+main : Program
+main =
+    x = [ 1 ]
+    ys = twoAt [ x, x ] 0 1
+    zs = List.map ys λl → List.push l 9
+    Node.print (show zs)

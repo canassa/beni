@@ -1,0 +1,11 @@
+-- ownership (project): see Main.beni. Generic helpers in another module.
+pub wrap : a → List a
+wrap x = [ x ]
+
+
+pub idt : a → a
+idt x = x
+
+
+pub two : a, a → List a
+two x y = [ x, y ]

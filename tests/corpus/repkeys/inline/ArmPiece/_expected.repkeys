@@ -1,7 +1,7 @@
 key #0 Counter.Msg
 key #1 Basics.Int
 key #2 { count : #1 }
-key #3 ⊤ wild
+key #3 ⊤
 key #4 #3 → #2
 key #5 #0, #2 → #2
 key #6 Main.Msg is #0

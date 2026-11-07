@@ -1,0 +1,133 @@
+-- A runtime catch for a closure in a list (`ownership-v2.md` §2.11.3, *a
+-- function value goes where a value goes*): `List.map [ a, b ] λq → q ⊤` runs
+-- each element as unknown code, so what a closure's code runs in turn is run
+-- by unknown code too. Its captured function escapes, and a writer handed to
+-- `chain` is refused; judged by nobody, the sanitised runs trap on a stale read.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+held : List Int, (List Int → List Int) → List (List Int) × List Int
+held y g = ( List.map [ (λ⊤ → g y), (λ⊤ → []) ] λq → q ⊤, y )
+
+
+twice : List Int, (List Int → List Int) → List (List Int)
+twice y g =
+    h = λ⊤ → g y
+    List.map [ h, h ] λq → q ⊤
+
+
+nested : List Int, (List Int → List Int) → List (List Int)
+nested y g =
+    h = λ⊤ → g y
+    List.map [ (λ⊤ → h ⊤), (λ⊤ → []) ] λq → q ⊤
+
+
+nestedChain : List Int, (List Int → List Int) → List (List Int) × List Int
+nestedChain y g = ( List.map [ (λ⊤ → g y), (λ⊤ → []) ] λq → run1 q, y )
+
+
+run1 : (⊤ → a) → a
+run1 q = q ⊤
+
+
+inner : List Int, (List Int → List Int) → List (List Int)
+inner y g = List.map [ (λ⊤ → g y), (λ⊤ → []) ] λq → q ⊤
+
+
+throughInner : List Int, (List Int → List Int) → List (List (List Int)) × List Int
+throughInner y g = ( List.map [ (λ⊤ → inner y g), (λ⊤ → []) ] λq → q ⊤, y )
+
+
+save : Ref (List a), a → Int
+save r q =
+    Ref.update r λl → [ q, …List.copy l ]
+    0
+
+
+stored : List Int, (List Int → List Int), Ref (List (⊤ → List Int)) → List (List Int) × List Int
+stored y g r =
+    h = λ⊤ → g y
+    w = λ⊤ → h ⊤
+    _ = List.map [ w, (λ⊤ → []) ] λq → save r q
+    ( List.map (Ref.get r) λq → q ⊤, y )
+
+
+storedWriter : List Int, Ref (List (List Int → List Int)) → List (List Int) × List Int
+storedWriter y r =
+    _ = List.map [ (λl → List.push l 1), (λl → l) ] λq → save r q
+    ( List.map (Ref.get r) λq → q y, y )
+
+
+type alias W =
+    w : List Int → List Int
+
+
+pick : Int, a, a → a
+pick n a b =
+    if n == 0 then
+        a
+    else
+        b
+
+
+k1 : W, List Int → List Int
+k1 r v = r.w v
+
+
+deepEscape : List Int, (List Int → List Int), (W, List Int → List Int) → List (List Int) × List Int
+deepEscape y g k =
+    r = { w = g }
+    ( List.map [ (λ⊤ → (pick 0 k k1) r y), (λ⊤ → []) ] λq → q ⊤, y )
+
+
+keeps : List Int, Ref (List (List Int)) → List Int
+keeps y r =
+    List.map
+        [ (λ⊤ →
+              Ref.update r λl → [ y, …List.copy l ]
+              0
+          )
+        , (λ⊤ → 0)
+        ]
+        λq → q ⊤
+
+
+main : Program
+main =
+    ( a, b ) = held [ 1 ] push1
+    ( c, d ) = nestedChain [ 1 ] push1
+    ( t, u ) = throughInner [ 1 ] push1
+    r9 = Ref.make []
+    y9 = [ 1 ]
+    a9 = keeps y9 r9
+    z9 = List.push y9 2
+    ( s1, s2 ) = stored [ 1 ] push1 (Ref.make [])
+    ( w1, w2 ) = storedWriter [ 1 ] (Ref.make [])
+    ( d1, d2 ) = deepEscape [ 1 ] push1 k1
+    lines =
+        [ shows a ++ "|" ++ show b
+        , shows (twice [ 1 ] push1)
+        , shows (nested [ 1 ] push1)
+        , shows c ++ "|" ++ show d
+        , String.fromInt (List.length t) ++ "|" ++ show u
+        , show a9 ++ "|" ++ show z9 ++ "|" ++ shows (Ref.get r9)
+        , shows s1 ++ "|" ++ show s2
+        , shows w1 ++ "|" ++ show w2
+        , shows d1 ++ "|" ++ show d2
+        ]
+    Node.print (String.join lines "\n")

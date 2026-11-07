@@ -12,9 +12,11 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
-const Cell = @import("Cell.zig");
-const Demands = @import("Demands.zig");
 const Walk = @import("Walk.zig");
+const Resolve = @import("Resolve.zig");
+const LoanNote = @import("LoanNote.zig");
+const Groups = @import("Groups.zig");
+const CallGraft = @import("CallGraft.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 
@@ -48,12 +50,16 @@ pub const Frame = struct {
     module: u32,
     decl: Bir.Decl,
     places: *const Place.Table,
-    cells: *const Cell.Table,
-    /// `shared` index → `(module, decl)`.
-    shared: []const [2]u32,
     /// The `(module, decl)` a value reference names.
     ctx: *anyopaque,
     decl_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
+    /// The `(module, constructor index)` a constructor reference names.
+    ctor_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
+    /// Whether a call is `++` on lists, which v1 names `<++>`.
+    is_append: ?*const fn (ctx: *anyopaque, inst: u32) bool = null,
+    /// The `(module, decl)` a callee reference runs, top-level aliases
+    /// followed (R-5.5.6): a call names the function the names reach.
+    callee_of: ?*const fn (ctx: *anyopaque, inst: u32) ?[2]u32 = null,
 };
 
 fn birOf(f: Frame) *const Bir {
@@ -76,6 +82,21 @@ fn data(f: Frame, i: u32) Bir.Inst.Data {
 }
 
 /// A value reference's `M.v`.
+/// A callee reference's `M.f`: the function it runs, through aliases.
+pub fn calleeName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
+    const of = f.callee_of orelse return refName(f, a, i);
+    const md = of(f.ctx, i) orelse return null;
+    return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
+}
+
+/// A call's operation as written: its callee's `M.f`, or the local a
+/// function value is called through (`push 3`), or `call`.
+pub fn opName(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
+    if (try calleeName(f, a, i)) |n| return n;
+    if (tag(f, i) == .local) return localName(f, data(f, i).lhs);
+    return "call";
+}
+
 pub fn refName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     const md = f.decl_of(f.ctx, i) orelse return null;
     return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
@@ -105,15 +126,39 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
     return text;
 }
 
+/// The base as written, and below it the path a writer call writes.
+fn writtenText(f: Frame, a: Allocator, d: Walk.Demand) Allocator.Error![]const u8 {
+    const base = if (d.base_local != none) localName(f, d.base_local) else try baseText(f, a, d.base_inst);
+    const mod: *Groups.Module = @ptrCast(@alignCast(f.ctx));
+    var buf: std.Io.Writer.Allocating = .init(a);
+    for (0..d.also.len + 1) |i| {
+        const at = try CallGraft.textPath(&mod.places, &mod.slots, mod.gpa, d.write_path, if (i == 0) d.write_rel else d.also[i - 1]);
+        if (i == 0 and at == .none) return base;
+        buf.writer.print("{s}{s}", .{ if (i == 0) "" else ", ", base }) catch return error.OutOfMemory;
+        pathText(f, a, &buf.writer, at) catch return error.OutOfMemory;
+    }
+    return buf.written();
+}
+fn isAppend(f: Frame, i: u32) bool {
+    return if (f.is_append) |p| p(f.ctx, i) else false;
+}
+
+fn spreadRoot(f: Frame, i: u32) bool {
+    for (birOf(f).spreads(f.decl)) |s| if (s.root == i) return true;
+    return false;
+}
+
 fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
     const d = data(f, i);
     return switch (tag(f, i)) {
         .local => localName(f, d.lhs),
         .field_access, .tuple_index => unreachable,
         .list => "<literal>",
+        .lambda => "<lambda>",
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
-        .call => if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
+        // A spread literal's outermost call is the literal, as v1 names it.
+        .call => if (spreadRoot(f, i)) "<construction>" else if (isAppend(f, i)) "<++>" else if (f.ctor_of(f.ctx, d.lhs)) |c| try std.fmt.allocPrint(a, "<{s} …>", .{f.names.interner.slice(f.names.birs[c[0]].symbol(f.names.birs[c[0]].ctors[c[1]].name))}) else if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         .method_call => if (try refName(f, a, i)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         else => "<expression>",
     };
@@ -122,8 +167,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
 /// A path under a local's root, in source terms: `.field`, `.0`, `[*]`,
 /// `#Ctor.i`, `⟨Type⟩` for the levels below a recursive value, `◆`.
 fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Allocator.Error || std.Io.Writer.Error)!void {
-    // The way up, then printed down: a path is as long as the source is
-    // deep, so an explicit list, never a native frame per step (#1138).
+    // The way up, then printed down: a path is as long as the source is deep, so an explicit list, never a native frame per step (#1138).
     const places = f.places;
     var way: std.ArrayList(Ids.PathId) = .empty;
     defer way.deinit(a);
@@ -134,6 +178,21 @@ fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Alloca
         i -= 1;
         try stepText(f, w, way.items[i]);
     }
+}
+
+/// The nominal head a `⟲` is of: the type whose levels it folds. The level
+/// stays at the place it follows, which may be a record or a list inside the
+/// constructor (`#Tree.0⟨Tree⟩`), and such a place has no type of its
+/// own to name, so it is the nearest constructor place above on the same
+/// cycle (#1371).
+fn levelHead(places: *const Place.Table, p: Ids.PathId) u32 {
+    const here = places.pathPlace(p);
+    var at = p;
+    while (at != .none) : (at = places.pathParent(at)) {
+        const q = places.pathPlace(at);
+        if (places.kind(q) == .ctor and (q == here or places.sameCycle(q, here))) return places.head(q);
+    }
+    return places.head(here);
 }
 
 fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void {
@@ -148,20 +207,23 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
             const pair = places.ctorArgOf(s);
             try w.print("#{s}.{d}", .{ f.names.ctor(f.names.ctx, places.head(places.pathPlace(parent)), pair[0]), pair[1] });
         },
-        .level => try w.print("⟨{s}⟩", .{f.names.type_name(f.names.ctx, places.head(places.pathPlace(p)))}),
+        .level => try w.print("⟨{s}⟩", .{f.names.type_name(f.names.ctx, levelHead(places, p))}),
         .contents => try w.writeAll("◆"),
-        .env => try w.writeAll("◇"),
+        .env, .row => try w.writeAll(if (s.kind == .row) ".…" else "◇"),
         .slot => try w.print("⟨{d}⟩", .{s.payload}),
     }
 }
 
 /// The line of one resolved demand.
-pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator.Error!Facts.Line {
+pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Allocator.Error!Facts.Line {
     const d = l.demand;
     const o = l.outcome;
     const op: []const u8 = switch (d.kind) {
         .construction => "construction",
         .append => "++",
+        .once => "once",
+        // A closure's cell operation on a capture, at its creation.
+        .writer => if (d.cell and d.call == none) "cell" else op_name,
         else => op_name,
     };
     var detail: []const u8 = "";
@@ -173,29 +235,33 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .later_use, .alias, .element => blk: {
                 const h = l.holder.?;
                 w.writeAll(localName(f, h.who)) catch return error.OutOfMemory;
-                // A hold at some level below the holder (a path ending in `⟲`)
-                // names the holder: it holds every level (v1's text).
+                // A hold at some level below the holder (a path that ends
+                // in a return to a place of the holder: `⟲`, or the first
+                // return, #1253) names the holder: it holds every level
+                // (v1's text).
                 var hp = o.holder_path;
-                if (hp != .none and f.places.pathParent(hp) != .none and f.places.pathStep(hp).kind == .level) hp = f.places.pathParent(hp);
+                while (hp != .none and f.places.isReturn(hp)) hp = f.places.returnedTo(hp);
                 if (o.cause != .later_use) pathText(f, a, w, hp) catch return error.OutOfMemory;
                 break :blk if (o.cause == .later_use)
                     w.print(" is read again at {d}:{d}", .{ up.line, up.col })
                 else
                     w.print(" holds it and is read at {d}:{d}", .{ up.line, up.col });
             },
+            .captured => w.print("{s}, a closure holding it, is used at {d}:{d}", .{ localName(f, l.holder.?.who), up.line, up.col }),
+            .once => w.writeAll("it is written by a closure that may run more than once"),
+            .call => w.print("{s} still holds it when it runs the function", .{op_name}),
             .held_operand => blk: {
                 const pp = f.names.position(f.names.ctx, f.module, l.holder.?.token);
                 break :blk w.print("the value at {d}:{d}, evaluated before it, holds it until its consumer runs", .{ pp.line, pp.col });
             },
-            .disjoint => w.writeAll("another operand of the same operation reaches it"),
+            .disjoint => w.writeAll(if (o.other_paths) "another path of the same argument reaches it" else "another operand of the same operation reaches it"),
             // A demand relies only on its splits' κ (a callee's `xreq` is the frame's).
             .exclusive => w.writeAll("the elements of the list it was taken from may share one list"),
             .escaped => w.writeAll("it was given to JavaScript, or kept by a callee"),
             .unknown => w.writeAll("it came from a call of a function the checker cannot identify, which may return a list something else holds"),
-            .top_level => blk: {
-                const md = sharedOf(f, o.cell);
-                break :blk if (md) |x| w.print("{s}.{s} is a top-level value", .{ f.names.module_names[x[0]], f.names.declName(x[0], x[1]) }) else w.writeAll("it is a top-level value");
-            },
+            .comparison => w.writeAll("a type's `eq` and `compare` may only read the values they are handed"),
+            .loan => LoanNote.write(w, try opName(f, a, o.loan[0]), if (o.loan[1] != none) try baseText(f, a, o.loan[1]) else "", LoanNote.depth(f.places, d.write_path)),
+            .top_level => if (o.shared[0] != none) w.print("{s}.{s} is a top-level value", .{ f.names.module_names[o.shared[0]], f.names.declName(o.shared[0], o.shared[1]) }) else w.writeAll("it is a top-level value"),
             else => {},
         }) catch return error.OutOfMemory;
         detail = buf.written();
@@ -204,17 +270,11 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
         .position = f.names.position(f.names.ctx, f.module, d.token),
         .token = d.token,
         .op = op,
-        .base = try baseText(f, a, d.base_inst),
+        .base = try writtenText(f, a, d),
         .refused = o.verdict == .refused,
         .accepted = o.accepted,
         .cause = o.cause,
         .approx = o.verdict == .refused and o.exactness == .approximate,
         .detail = detail,
     };
-}
-
-fn sharedOf(f: Frame, c: Ids.CellId) ?[2]u32 {
-    if (c == .none) return null;
-    const idx = f.cells.get(c).a;
-    return if (idx < f.shared.len) f.shared[idx] else null;
 }

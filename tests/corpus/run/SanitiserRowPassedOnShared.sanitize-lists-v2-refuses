@@ -1,0 +1,2 @@
+# v2 refuses a call whose callback writes a list a row holds twice (§2.1, The row of a record).
+27:11 list_may_be_shared SanitiserRowPassedOnShared.app

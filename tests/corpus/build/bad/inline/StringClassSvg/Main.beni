@@ -1,0 +1,11 @@
+-- String-class support does not lift the existing SVG namespace limit.
+import Html exposing (Html)
+import Tea
+
+
+view : ⊤ → Html ⊤
+view _ = <svg class="scalar"><g /></svg>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → ⊤, update = λ_ model → model, view = view }

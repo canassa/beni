@@ -1,0 +1,31 @@
+-- ownership (project): see Main.beni. `leftmost` is a recursive group that
+-- answers its argument's subtree by reference; `pushRoot` writes the root's
+-- list.
+pub type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub leftmost : Tree → Tree
+leftmost t =
+    case t of
+        Node l _ _ →
+            case l of
+                Leaf →
+                    t
+
+                _ →
+                    leftmost l
+
+        Leaf →
+            t
+
+
+pub pushRoot : Tree → List Int
+pushRoot t =
+    case t of
+        Node _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []

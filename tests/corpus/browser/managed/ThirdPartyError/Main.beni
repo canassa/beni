@@ -1,0 +1,55 @@
+-- A foreign timer's uncaught exception does not stop the beni program merely
+-- because it has opened a worker. Its next message still updates the page.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ request → Ok request
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        if model == "idle" then
+                            outlet = Hosted.outlet owner
+                            Task.start
+                                (λ⊤ →
+                                    Task.scope λscope →
+                                        case Worker.open scope worker ⊤ Worker.options of
+                                            Ok _ →
+                                                Hosted.emit outlet (Finished "ready")
+                                                Probe.thirdParty ⊤
+                                                Task.never ⊤
+                                            Err _ →
+                                                Hosted.emit outlet (Finished "failed")
+                                )
+                                λ_ → ⊤
+                            model
+                        else
+                            "still running"
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

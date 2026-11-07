@@ -1,0 +1,18 @@
+-- ownership (project): `PatternPositionsStored` with the callees in another
+-- module (ownership-v2.md §2.13.3, #1390's review): a head stored beside a
+-- rest is a position no split of the rest stands for, so each `go a c` in
+-- `Stored` is refused there and publishes nothing; `headRest` publishes
+-- its reliance, refused here over two positions sharing one box.
+import Stored exposing (Box, W)
+
+
+pub relay : ⊤ → Int × Int
+relay ⊤ = Stored.joinLit False [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub headRestShared : ⊤ → Int
+headRestShared ⊤ =
+    b = Box [ 0 ]
+    case Stored.headRest [ W b 0, W b 1 ] of
+        ( ys, r ) →
+            List.length ys + List.length r

@@ -1,0 +1,31 @@
+-- A value of another module that keeps what it is handed past the call, in a
+-- fiber (`ownership-v2.md` §2.11.1, §2.14.5 H6, #2132). Its caller holds nothing
+-- after the call, so only the escape stops the edit of `k`: on a block that
+-- says nothing of the call, the program looks like one that keeps nothing.
+import Io
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main = Io.run λ⊤ →
+    k = [ 1 ]
+    x = (Lib.mk [] k).a
+    s = show x
+    n = List.push k 2
+    Io.sleep 20
+    j = [ 5 ]
+    y = (Lib.made [] j).a
+    t = show y
+    m = List.push j 6
+    d = [ 7 ]
+    Lib.held [ d ]
+    g = List.push d 8
+    Io.sleep 20
+    Node.print (show n ++ "/" ++ s ++ "/" ++ show m ++ "/" ++ t ++ "/" ++ show g)

@@ -275,15 +275,15 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`{s}` needs another word beside it, and that word is missing.
                 \\
                 \\These words name the roles of several parameters together: `cellnew` needs a
-                \\`consumed` first parameter, `cellempty` an `unused` one, `lent` and
+                \\`consumed` first parameter, `cellempty` an `unused` or `escaped` one, `lent` and
                 \\`lentoptional` a `cellread` one; `cellwrite` needs a second parameter that is
                 \\`cellstored`, `cellupdate` or `cellmodify`, and `cellcomplete` one that is
                 \\`cellstored`; `cellstored` is `consumed` and follows `cellwrite` or
                 \\`cellcomplete`; `builderdone` needs a `written returned` first parameter and a
                 \\second, its length, at most `borrowed`; `concatenated` a `written` first
                 \\parameter and exactly one more; a `taken` result or function parameter a
-                \\container before it that is not `unused`. Write the missing word, or remove
-                \\this one.
+                \\container before it that is not `unused`. Write the missing word, or remove this
+                \\one.
             , .{text}),
             .own_conflict => try w.print(
                 \\The ownership word `{s}` cannot hold together with another word written here.
@@ -430,12 +430,6 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         // language.md §12.4: an unqualified `modBy`, `remainderBy` or
         // `logBase`.
         .name_removed => try prelude.writeRemoved(w, prelude.removedName(text) orelse unreachable),
-        .never_spelling_removed => try w.writeAll(
-            \\The type with no values is written `⊥` now (U+22A5 UP TACK): `never : ⊥ → a`.
-            \\I read this `Never` as `⊥` and went on.
-            \\
-            \\`beni fmt --migrate-top <file>` writes every one of a file this way.
-        ),
         .unbound_variable => try w.print(
             \\I cannot find a `{s}` variable.
             \\

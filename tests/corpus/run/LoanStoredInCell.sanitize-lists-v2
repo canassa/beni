@@ -1,0 +1,2 @@
+Appendix B's LoanStoredInCell (ownership-v2.md §2.13.7), built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each
+edit the rule names; were one accepted, the sanitised run would read the edited list.

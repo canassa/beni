@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <p>"idle"</p>
+  </main>
+</body>
+-- click-wait button output "done"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"done"</output>
+    <p>"present"</p>
+  </main>
+</body>

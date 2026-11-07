@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <p id="stage">"waiting"</p>
+  </main>
+</body>
+-- throws click-wait button #stage "both holds removed"
+(threw: Error: import rejected)
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <p id="stage">"both holds removed"</p>
+  </main>
+</body>

@@ -1,0 +1,114 @@
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+type alias Protocol =
+    Worker.Protocol Probe.Packet Probe.Packet ⊥ String Probe.Packet ⊥
+
+
+packet : Probe.Packet
+packet =
+    { worker = "Ready"
+    , entry = "Request"
+    , generation = 41
+    , requestId = 42
+    , kind = Probe.Transport
+    , payload = { phase = "Closed", native = "Event", eventCount = 43 }
+    , fingerprint = "Defect"
+    }
+
+
+worker : Worker.Program Probe.Packet Probe.Packet Protocol
+worker =
+    Worker.program
+        { init = λ_ config → if Probe.inspect config then Ok config else Err "config fields changed"
+        , start =
+            λcontext state →
+                _ = Worker.emit context state
+                ⊤
+        , handle =
+            λ_ _ request →
+                if Probe.inspect request then Ok request else Err "request fields changed"
+        }
+
+
+scalar : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+scalar =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state request → Ok (state ++ request)
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    Probe.arm ⊤
+    case Worker.open owned worker packet { Worker.options | name = "Ready" } of
+        Err _ →
+            "open failed"
+        Ok handle →
+            eventGood =
+                case Events.next (Worker.events handle) of
+                    Ok (Events.Item chunk) →
+                        Probe.inspect (Events.take chunk)
+                    _ →
+                        False
+            replyGood =
+                case Worker.call handle packet of
+                    Ok reply →
+                        Probe.inspect reply
+                    Err _ →
+                        False
+            closed = Worker.close handle
+            scalarGood =
+                case Worker.open owned scalar "Ready" { Worker.options | name = "Ready" } of
+                    Err _ →
+                        False
+                    Ok scalarHandle →
+                        result = Worker.call scalarHandle "Request"
+                        _ = Worker.close scalarHandle
+                        case result of
+                            Ok text →
+                                text == "ReadyRequest"
+                            Err _ →
+                                False
+            if
+                eventGood
+                    && replyGood
+                    && scalarGood
+                    && Probe.nativePassed ⊤
+                    && closed == Worker.Confirmed
+            then
+                "boundaries passed"
+            else
+                "boundaries failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

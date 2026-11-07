@@ -1415,7 +1415,9 @@ site_count × { class, root, step_count, step_count × step }
 - A **rung** is `0` pure, `1` impure, `2` suspends. A class's **deps** are classes of the same
   block, ascending.
 - A **site** is one function type or nominal application of the scheme that belongs to a class
-  worth writing — one with a rung, a dependency or a dependant. Every store variable of such a
+  worth writing — one with a rung, a dependency, a dependant, or multiple scheme
+  variables joined to the same class. Pure shared classes retain their joins across
+  module boundaries. Every store variable of such a
   class gets a site, so a class split across two variables (§14.3 rule 4, §14.5) arrives joined.
 - A site is found by a **path**: `root` is `0` for the scheme's body and `k + 1` for its `k`th
   `where`-clause type (quantifiers in scheme order, each quantifier's constraints in the order the
@@ -1444,7 +1446,11 @@ diagnostics never do, so no message's text moves:
   and a pure class nothing depends on prints nothing;
 - names are `e1`, `e2`, … in order of first print, one namer per declaration shared by its locals;
   a function-typed result is parenthesised when its own arrow prints a class, so
-  `Int -> (Int -> Int !e1) !impure` cannot be misread;
+  `Int -> (Int -> Int !e1) !impure` cannot be misread. An effect-bearing named
+  result is always parenthesised: `Int → (Cmd msg !impure)` constructs data
+  purely; `Int → (Cmd msg !impure) !impure` also performs impure work while
+  constructing it;
+
 - `dump --stage=types` prints a top-level value's evaluation class, when it is not pure, as
   `  -- evaluates: impure` after its scheme.
 - A class the printed type does not show — a function field inside a record alias, which prints
@@ -1852,6 +1858,11 @@ const Main$fetchSum = (a$1, b$2) =>
   parameter list. The continuation reads the iteration's `const`s, never a slot (§8's rule), since
   a slot is only read by the prologue. A join inside a loop is written into each leaf, not
   closed over, so the fast path never calls back into the function.
+  *Effect-retention correction, 2026-11-05 (#1951):* substituting a join leaf
+  must preserve evaluation of its value, including an impure unit-valued call
+  whose result the rest ignores. The generated binding carries the release
+  optimiser's keep mark when the value may do work; cloned bindings retain
+  that mark. Literal values and function creation need no effect mark.
 - **Tail recursion modulo cons** (`backend.md` §8) is **not applied** in a suspendable body: its
   destination is two locals a resumption would have to carry into a second entry of the loop, which
   the spike does not build. A `::` step there is an ordinary call, and its recursion is a real
@@ -1987,7 +1998,10 @@ pub type FileError
 The names are what a reader of the program would say, not the errno (Rust's `io::ErrorKind` names
 the same set the same way). The `AbortError` of the primitive's own `AbortSignal` is not an answer:
 the fiber was cancelled and the rejection is dropped. **Any other rejection is re-thrown** from the
-handler, so it is a defect, below.
+handler, so it is a defect, below. *As built 2026-10-29:* the read's start, its rejection handler
+and `Io.run`'s `finish` are beni over `Js` (`plans/runtime-in-beni.md` step 10), and `Io.js` is
+gone. *As built 2026-11-03:* so is `readDir`'s start, `startReadDir` (step 14): its rejection handler
+has the same three outcomes, with no abort, since `fs.promises.readdir` takes no signal.
 
 *Amended 2026-10-29: `Io.readDir`* (#1210; `CLAUDE.md` rules 7 and 9). `Io` lists a directory in the
 shape of `readFile`: a suspending read on the calling fiber, one constructor per failure Node
@@ -2017,6 +2031,27 @@ so on). `IsADirectory` and `TooLarge` are never the answer, because `readdir` ca
   cannot decode as UTF-8 reaches the program with U+FFFD in place of each bad byte.
 - Cancelling the fiber drops the answer; `fs.promises.readdir` takes no `AbortSignal`, so the
   listing finishes in the background and its result is ignored.
+
+*Amended 2026-11-05: `ChildProcess.run`* (#2015; `boundary.md` §9.14; `CLAUDE.md` rules 7 and 9).
+The `node` platform starts a program in a module of its own, `ChildProcess`, with the shape of
+`readFile`: one suspending call on the calling fiber, `run : Command → Result RunError Output`,
+one constructor per failure Node documents for `child_process.spawn`, any other error thrown
+again. It is the first primitive whose host operation **outlives its canceller**: a timer stops
+when it is cleared and a read when it is aborted, but a child process stops only when it exits,
+some time after it is signalled. So `run` is a `bracket` (§16.5's `Task.bracket`) and not a bare
+`callback`:
+
+- **acquire** (uninterruptible) calls `spawn`, which starts the child inside the call or fails;
+- **use** parks on `callback` until the child's `close` event; its canceller sends `SIGTERM` and
+  arms a host timer of the command's `killAfter` that sends `SIGKILL` (the owner's kill policy,
+  `node-process-spawn-q3`; `boundary.md` §9.14 (i));
+- **release**, told `Cancelled`, sends the signals too when the canceller has not (an interrupt
+  latched before the wait unwinds `callback` without calling its function, so there is no
+  canceller), parks again until the child's `exit` event and then closes the pipes. A cleanup may wait (§9.8.14 (f) of `boundary.md`), so `Task.cancel`, a lost `race` and a
+  `timeout` return only after the child is gone (§17.1 item 2's rule, held for a process as for a
+  fiber). Past the teardown's deadline that wait is cut short, and the host timer, which is no
+  fiber's, still sends `SIGKILL`: Node's handle on the child keeps the process alive until the
+  child has exited.
 
 **A defect on Node.** Nothing in `core/Task.js` or a Node primitive catches: a `foreign` that
 throws inside a fiber throws out of the scheduler's drain, a microtask, and a primitive's handler that
@@ -2143,7 +2178,10 @@ No new `foreign` and no new sibling is introduced by this section.
 2. **A combinator returns only after the fibers it started have finished their cleanup** (A10).
    Every child a combinator starts lives in a `Task.scope` the combinator opens, so the scope's end
    cancels and awaits whatever is left, and a cancellation of the calling fiber reaches the
-   children first (A11).
+   children first (A11). *Amended 2026-11-05:* a platform primitive that starts a host resource
+   which outlives its canceller — a child process (`boundary.md` §9.14 (d)) — holds the same
+   rule: its release waits until the resource is gone, so a combinator that cancels it returns
+   after that, not after the signal.
 3. **One fiber runs at a time, and the runtime switches only at a suspension point** (§16.4). This
    is the fact `Ref.update`'s atomicity, every waiter list here and every "in order" below rest on:
    `Task.resume`, `Deferred.complete`, `Queue.offer` and the rest **queue** a woken fiber, never run
@@ -2416,7 +2454,7 @@ and the outside-any-fiber record the same four:
 
 | Slot | Holds | Default | Read by |
 |---|---|---|---|
-| **clock** | the real clock, or a `Clock.Virtual` (§17.6) | the real clock | `Task.sleep`, `Clock.now`, `Log`'s time and spans, `Trace`'s times, `retry`/`repeat`'s elapsed time, `Time.now` |
+| **clock** | the real clock, or a `Clock.Virtual` (§17.6) | the real clock | `Task.sleep`, `Clock.now`, `Clock.elapsed` (§17.6's amendment of 2026-11-05), `Log`'s time and spans, `Trace`'s times, `retry`/`repeat`'s elapsed time, `Time.now` |
 | **scheduler** | the scheduler the fiber's resumptions are queued on | the one scheduler of §16.4 | the kernel. **No API in this section writes it**: it exists so that a deterministic scheduler for tests can be installed per subtree later without adding a field to every fiber (report 21 §8.4: retrofitting one means threading it through every primitive) |
 | **log context** | the annotations, the log spans, the minimum level and a sink override (§17.11), and the current trace span | none, none, `Info`, none, none | `Log`, `Trace` |
 | **random seed** | `Maybe` a seed of core's `Random.Pcg` | `Nothing` | `retry`/`repeat`'s jitter (§17.8); `Random.withSeed` and the platforms' `Random.value` (P9) |
@@ -2448,6 +2486,12 @@ the teardown with the context that it was put on in, as an `onExit` finaliser wo
 `annotate` around a body does not reach the `update` of a message that the body sends, or that
 `update`'s commands. The other slots are the caller's. `boundary.md` §9.8.16 (b), amended the
 same day, has the details.
+
+*Amended 2026-11-06 (#1153):* `send` now puts the caller's slots back after every `update`, also
+when the caller has no log context of its own, through `Task.beginUpdate` and `Task.endUpdate`,
+which replace `withoutLogContext`. A body that goes on after a throw that the DOM reports thus
+has its own context, also when it has none. `boundary.md` §9.8.16 (b), amended the same day, has
+the details.
 
 **Changing a slot** is only ever **scoped to a function**: `Clock.run`, `Log.annotate`, `Log.span`,
 `Log.minimum`, `Log.withSink`, `Trace.span`, `Trace.withExporter` and (P9) `Random.withSeed` set
@@ -2751,6 +2795,49 @@ parameters or results are `Js.Value` — `currentClock`, `withClock`, `virtualCl
 (`Debug.logAs`'s precedent). A virtual clock is a record of its reading and its sleepers, kept in
 wake-time order and, among equal times, in the order they began to sleep. Setting the clock slot is
 the first slot write, so it is what turns on `fork`'s copy of the slots (§17.5's amendment).
+
+*Amended 2026-11-05 (the owner, Cesar, 2026-11-04, `playground-beni-q9`; #1889).* **`Clock.elapsed`
+is the monotonic clock.** The playground's own JavaScript measures time with `performance.now()`
+(`playground/wasi.js`'s monotonic clock, `playground/worker.js`'s compile time), and beni had no
+reading that never goes back: `Clock.now` reads `Date.now()`, which follows the wall clock.
+
+```elm
+-- core/Clock.beni
+pub elapsed : ⊤ → Float                  -- impure: milliseconds since a start the host chooses, through the clock slot
+```
+
+- **The reading** is milliseconds, with a fraction, since a start that the host chooses. The start
+  is not the epoch, so a program compares a reading only with another reading of the same clock in
+  the same program, and the difference of two readings is how long the work between them took. The
+  owner chose milliseconds as a `Float`, which is what `performance.now()` gives, over nanoseconds
+  as a 64-bit word. A `Clock.nanos` on `Binary`'s 64-bit word (#1278) can come later; it is not
+  part of this amendment.
+- **On the real clock** it is the host's `performance.now()`, through `Js.global`, which every host
+  beni targets has. In a page and a Web Worker it is the HR-Time monotonic clock, which does not go
+  back. On Node it counts from the start of the process (Node's `perf_hooks` documentation). On
+  Cloudflare's workerd it is exactly `Date.now()` (`src/workerd/api/performance.c++`,
+  `Performance::now`: "due to Spectre concerns it returns exactly what Date.now() returns"),
+  `performance.timeOrigin` is 0, and the time moves only after I/O. workerd's default path puts a
+  floor at the last time it gave (`src/workerd/io/io-context.c++`, `IoContext::observeTime`), but
+  its precise-timers path reads the system calendar clock with no floor, so there the host's
+  reading can go back.
+- **It never goes back, on every host.** `core/Clock` keeps the highest reading that `elapsed` gave
+  on the real clock, in a `Js.Ref` of the module, and `elapsed` gives the higher of that and the
+  host's reading. A host clock that goes back therefore holds `elapsed` at its highest reading
+  until the host passes it again; a duration is never negative. The cell belongs to one JavaScript
+  realm, as the host's clock does: a page, each Web Worker and each workerd isolate has its own.
+- **On a virtual clock**, inside `Clock.run`, it is the virtual clock's own reading: the number
+  that `Clock.now` gives, as a `Float`. It moves only with `adjust`, so it does not go back, and a
+  fiber that sleeps on the clock reads the time it woke at.
+- **Nothing is `foreign`**: `elapsed` is beni over `Js` and `Task.currentClock`, as `now` is. The
+  host's `performance` object is not changed. The browser driver's virtual clock pins `Date.now`
+  and not `performance.now` (`tests/corpus/README.md`), so on the driver a page that reads
+  `elapsed` outside `Clock.run` reads the host's real clock; #1930 pins it.
+- **Fixtures.** `run/VirtualClockElapsed`: the reading of `Clock.virtual 1500`, of a sleeper that
+  wakes 40 ms later, and of the clock after an `adjust` of 250 ms, the last equal to `Clock.now`;
+  two real readings in a row do not go back. `run/ClockElapsedNeverBack`: a test platform makes
+  the host's `performance.now()` answer 5.5, 10.25, 7 and 12, and `elapsed` answers 5.5, 10.25,
+  10.25 and 12.
 
 ### 17.7 Structured combinators (P3)
 
@@ -3221,8 +3308,10 @@ another), `run/SemaphoreHandoffCancelled` (point 3), `run/SemaphoreReleaseUnmatc
 `run/SemaphoreOversizeThenResize` (an oversize holder counts `n`, so a `resize` and its `release`
 leave the true free count), `run/SemaphoreTryNegativeSize` (a try on a semaphore made or resized
 below 0 answers `Nothing`), `run/SemaphoreMiddleCancelled` (a waiter cancelled in the middle of
-the queue leaves it, and those on either side are served in order) and `run/SemaphoreTryCancelled`
-(a holder cancelled inside `tryWithPermits` gives its permits back).
+the queue leaves it, and those on either side are served in order), `run/SemaphoreTryCancelled`
+(a holder cancelled inside `tryWithPermits` gives its permits back) and
+`run/SemaphoreHandoffStoppedScheduler` (point 3 under a scheduler's stop: §17.9 point 7's
+amendment of 2026-11-05).
 
 *Amended 2026-10-26 (#1040): `Queue` and `Latch` as built.* Both modules are beni over
 `Task.callback` and `Task.resume`, with no `foreign`. A queue keeps its takers and its parked
@@ -3281,12 +3370,30 @@ The text above left eight points open. They are settled as follows.
    ended queue does not answer `Nothing` or `[]`: a take that would get that waits, and so does a
    parked taker. When the count drops to 0 — the handed taker runs, or gives its values back — the
    waiting takers are served, in order, with what is held then. So a value given back after the
-   `end` goes to the next taker, and no taker sees the end while a value can still return. A
-   taker resumed through a scheduler that has stopped for good is cancelled by the kernel without
-   its canceller (§17.5's amendment, *a stopped scheduler is a dead end*), so its values are lost
-   and its hand-off is never settled. The stop cancels, and so runs the canceller of, every taker
-   it can interrupt. Only a taker parked where it cannot be interrupted, in a release or an
-   `uninterruptible` region, and left there when the stop's deadline passed, can be resumed so.
+   `end` goes to the next taker, and no taker sees the end while a value can still return.
+   *Amended 2026-11-05 (#1051). This withdraws the text of 2026-10-26, which said that a taker
+   on a stopped scheduler, parked where the stop cannot interrupt it, loses the values handed to
+   it. The text was written from the code with no fixture. A fixture shows that this does not
+   happen:* **a scheduler's stop never loses a hand-off.**
+   - The stop cancels every taker that it can interrupt, and so runs each canceller (point 2).
+   - At the deadline, a taker parked inside a finaliser has its wait cancelled, and its canceller
+     runs too (`boundary.md` §9.8.14 (f)). So the values go to the next taker.
+   - The deadline does not cut a taker in an `uninterruptible` region, or in a `bracket` release
+     that runs after its use returned. That taker keeps its scheduler from stopping for good,
+     because a scheduler stops for good only when every fiber of it has ended (§17.5's
+     amendment). Its scheduler's queue still drains while the scheduler tears down. So a
+     hand-off from another scheduler resumes the taker through that queue, and the taker runs
+     with the values. The stop's `done` waits for it, as for any uninterruptible region
+     (`boundary.md` §9.8.14 (a)).
+   - A release that waits inside `withScheduler` of another scheduler is not cut by the
+     deadline of its own scheduler (#2093). The stop then waits for that release too, but no
+     value is lost.
+
+   So no parked taker reaches §17.5's dead end. Only a fiber that the scheduler does not count,
+   such as one started after the scheduler stopped for good, is resumed through it. And even
+   there, a fiber that is masked or unwinding goes on with its value. `Semaphore`'s hand-off is
+   the same, for permits. `run/QueueHandoffStoppedScheduler` and
+   `run/SemaphoreHandoffStoppedScheduler` pin each case.
 8. **`Latch`'s waiters are released in the order they began to wait.** A waiter cancelled while
    it waits is taken off the list. `open` and `release` take the whole list at once and start a
    new one. So a fiber that begins to wait at a latch closed again in the same turn waits for the
@@ -3295,8 +3402,9 @@ The text above left eight points open. They are settled as follows.
 Fixtures, besides the eight the text above lists: `run/QueueHandoffCancelled` (point 2),
 `run/QueueOfferAcceptedCancelled` (point 3), `run/QueueTakeNoJump` (point 1),
 `run/QueueTakeUnderTimeout` (point 2, under `timeout` on a virtual clock and under `race`),
-`run/QueueEndAfterHandoffCancelled` (points 2 and 7 together) and `run/CancelManyWaitersQueue`
-(400 000 takers cancelled at once).
+`run/QueueEndAfterHandoffCancelled` (points 2 and 7 together), `run/CancelManyWaitersQueue`
+(400 000 takers cancelled at once) and `run/QueueHandoffStoppedScheduler` (point 7's amendment of
+2026-11-05).
 `run/QueueTakeAllTakeN` carries point 5, and `run/QueueEndWakesOfferers` carries point 4's
 `end`. The retained-heap check of `bench/fiber` that the text above names is not part of this
 work (the owner, 2026-10-26, #1040).

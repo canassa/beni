@@ -1,0 +1,10 @@
+module RefSetThenWrite
+  summary poke: π1#Ref.0 RE
+  summary setThen: π1#Ref.0 RE
+  summary setSet: π1#Ref.0 RE
+  summary pokeTwice: π1#Ref.0 RE
+  summary aliasSet: π1 R, π1#Ref.0 RE
+  summary pokeList: π1#Ref.0 RE
+  summary storedReadAfter: π1#Ref.0 RE, π2 RE
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,0 +1,23 @@
+-- ownership (v2; R-5.13.1): values named `eq` and `compare` that are no
+-- comparison of a type. The private `compare` takes one `T`, and the
+-- private `eq` returns a list: neither has the well-known signature, so
+-- `==` and `<` never call them, and their pushes onto what they are
+-- handed are accepted `param`, as in any function.
+pub type T
+    = T (List Int)
+
+
+compare : T → List Int
+compare (T a) = List.push a 1
+
+
+eq : T, T → List Int
+eq (T a) (T b) = List.push a (List.length b)
+
+
+pub use : T → List Int
+use t = compare t
+
+
+pub both : T, T → List Int
+both s t = eq s t

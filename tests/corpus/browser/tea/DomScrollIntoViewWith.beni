@@ -1,0 +1,107 @@
+-- `Dom.scrollIntoViewWith` (boundary.md §9.8.6, amended 2026-11-04 for
+-- #1896): where a node scrolls to. A row of tabs that scrolls sideways is in
+-- view near the top of a page that can scroll down. `Nearest` both ways
+-- brings an unseen tab into the row and leaves the page where it is; `Start`
+-- across the lines also moves the page, until the row is at its top. A node
+-- that is not in the page is `Err (NotFound id)`. happy-dom lays nothing
+-- out, so there nothing moves; `test-browser` shows the moves in Chrome.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Scroll String Dom.Alignment
+
+
+-- Where the tab and the page are before and after the scroll, as what
+-- moved: no number of pixels, which a browser may round.
+run : String, Dom.Alignment, Cmd.Send Msg → ⊤
+run name alignment _ =
+    tabBefore = tabX ⊤
+    pageBefore = (Dom.viewport ⊤).y
+    case Dom.scrollIntoViewWith "tab-8" alignment of
+        Ok ⊤ →
+            _ = Debug.log "${name}: tab moved" (tabX ⊤ ≠ tabBefore)
+            _ = Debug.log "${name}: page moved" ((Dom.viewport ⊤).y ≠ pageBefore)
+            ⊤
+
+        Err (Dom.NotFound id) →
+            _ = Debug.log "${name}: not found" id
+            ⊤
+
+
+tabX : ⊤ → Float
+tabX _ =
+    case Dom.box "tab-8" of
+        Ok box →
+            box.x
+
+        Err _ →
+            -1
+
+
+missing : Cmd.Send Msg → ⊤
+missing _ =
+    case Dom.scrollIntoViewWith "nowhere" { block = Dom.Nearest, inline = Dom.Nearest } of
+        Ok ⊤ →
+            Debug.log "missing: ok" ⊤
+
+        Err (Dom.NotFound id) →
+            _ = Debug.log "missing: not found" id
+            ⊤
+
+
+update : Msg, Bool → Bool × Cmd Msg
+update (Scroll name alignment) _ =
+    if name == "missing" then
+        ( True, Cmd.perform missing )
+    else
+        ( True, Cmd.perform (run name alignment _) )
+
+
+view : Bool → Html Msg
+view _ =
+    <main>
+        <button
+            id="nearest"
+            onClick={Scroll "nearest" { block = Dom.Nearest, inline = Dom.Nearest }}
+        >
+            nearest
+        </button>
+        <button id="start" onClick={Scroll "start" { block = Dom.Start, inline = Dom.Nearest }}>
+            start
+        </button>
+        <button
+            id="missing"
+            onClick={Scroll "missing" { block = Dom.Nearest, inline = Dom.Nearest }}
+        >
+            missing
+        </button>
+        <div
+            id="tabs"
+            style="margin-top:100px;width:200px;height:40px;overflow-x:auto;white-space:nowrap"
+        >
+            <span id="tab-1" style="display:inline-block;width:100px;height:30px">1</span>
+            <span id="tab-2" style="display:inline-block;width:100px;height:30px">2</span>
+            <span id="tab-3" style="display:inline-block;width:100px;height:30px">3</span>
+            <span id="tab-4" style="display:inline-block;width:100px;height:30px">4</span>
+            <span id="tab-5" style="display:inline-block;width:100px;height:30px">5</span>
+            <span id="tab-6" style="display:inline-block;width:100px;height:30px">6</span>
+            <span id="tab-7" style="display:inline-block;width:100px;height:30px">7</span>
+            <span id="tab-8" style="display:inline-block;width:100px;height:30px">8</span>
+        </div>
+        <div style="height:3000px" />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( False, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

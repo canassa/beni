@@ -1,0 +1,2 @@
+The same shapes with a reading function, and a list a closure makes (ownership-v2.md §2.11.3): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 accepts them, and the run prints what the plain run prints.

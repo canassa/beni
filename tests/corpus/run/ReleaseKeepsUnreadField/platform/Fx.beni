@@ -1,0 +1,40 @@
+--! A test platform whose calls and getters write a line when they run, so
+--! that a program can see which of them a build evaluates, and in which
+--! order.
+
+import Js
+
+
+--| Write `text` and a newline, now, and answer its length.
+pub foreign impure say : String → Int
+
+
+--| An object with two methods, `zz` and `aa`, and two getters, `z` and
+--| `a`. Each writes a line when it runs.
+foreign pure target : ⊤ → Js.Value
+
+
+--| Two `Js.call`s in a record's fields, written out of sorted order. Only
+--| `a` is read.
+pub viaCall : ⊤ → Int
+viaCall ⊤ =
+    o = target ⊤
+    r = { z = Js.call o "zz" [], a = Js.call o "aa" [] }
+    Js.to r.a
+
+
+--| Two `Js.get`s of getters in a record's fields, written out of sorted
+--| order. Only `a` is read.
+pub viaGet : ⊤ → Int
+viaGet ⊤ =
+    o = target ⊤
+    r = { z = Js.get o "z", a = Js.get o "a" }
+    Js.to r.a
+
+
+--| The same two getters, both read: they run in the order written.
+pub viaGetBoth : ⊤ → Int
+viaGetBoth ⊤ =
+    o = target ⊤
+    r = { z = Js.get o "z", a = Js.get o "a" }
+    Js.to r.a + Js.to r.z

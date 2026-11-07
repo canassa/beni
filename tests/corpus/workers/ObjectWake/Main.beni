@@ -1,0 +1,115 @@
+-- workers: the wake and the program's alarm (boundary.md §9.12 (e.5), (k);
+-- #864). While a fiber lives, the platform keeps the host alarm at most
+-- 60 s ahead, so the host does not evict the object under the fiber. The
+-- program's alarm shares that one host alarm: the `alarm` handler runs
+-- only when the program's own time comes, a firing that is only the wake
+-- runs nothing, and the program's time is durable, so the wake of an
+-- instance that hibernated gives the host alarm back to it. The host
+-- alarm is driven by the `/__beni/host-alarm` hook and read by
+-- `/__beni/alarms`.
+import Deferred exposing (Deferred)
+import Duration
+import Schema exposing (Schema)
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+type alias State =
+    served : Int
+    alarms : Int
+    again : Bool
+    gate : Deferred ⊤
+
+
+room : Worker.Definition
+room =
+    Object.define "Room" Schema.string restore
+        { Object.none | request = serve, alarm = rang }
+
+
+who : Object.Context String → String
+who ctx = Maybe.withDefault (Object.name ctx) "?"
+
+
+restore : Object.Context String → State
+restore ctx =
+    Debug.log "restore of ${who ctx}" ⊤
+    { served = 0, alarms = 0, again = False, gate = Deferred.make ⊤ }
+
+
+-- The program's alarm: counted, and set again an hour ahead when the
+-- state asks for it.
+rang : Object.Context String, State → State
+rang ctx state =
+    Debug.log "alarm ran in ${who ctx}" ⊤
+    if state.again then Object.alarmIn ctx (Duration.hours 1)
+    { state | alarms = state.alarms + 1, again = False }
+
+
+serve : Object.Context String, State, Request → State × Response
+serve ctx state request =
+    next = { state | served = state.served + 1 }
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "later", …rest ] →
+            Object.alarmIn ctx (Duration.hours 1)
+            ( next, Worker.text 200 "alarm in an hour" )
+
+        [ "due", …rest ] →
+            -- A time that has come: the next firing runs the alarm.
+            Object.alarmAt ctx 0
+            ( next, Worker.text 200 "alarm due" )
+
+        [ "again", …rest ] →
+            Object.alarmAt ctx 0
+            ( { next | again = True }, Worker.text 200 "alarm due, then again in an hour" )
+
+        [ "cancel", …rest ] →
+            Object.cancelAlarm ctx
+            ( next, Worker.text 200 "alarm cancelled" )
+
+        [ "park", …rest ] →
+            -- A fiber parked on a gate that no host timer backs.
+            _ = Task.spawn λ⊤ → Deferred.wait state.gate
+            ( next, Worker.text 200 "parked in ${who ctx}" )
+
+        [ "finish", …rest ] →
+            _ = Deferred.complete state.gate ⊤
+            ( next, Worker.text 200 "finished in ${who ctx}" )
+
+        [ "count", …rest ] →
+            ( next
+            , Worker.text
+                200
+                "${who ctx} served ${String.fromInt next.served}, alarms ${String.fromInt next.alarms}"
+            )
+
+        _ →
+            ( state, Worker.text 404 "no such page" )
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "ROOMS" Schema.string
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just rooms, [ "", "room", name, …rest ] ) →
+            case Worker.forward (Worker.byName rooms name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the room is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no ROOMS binding"
+
+        _ →
+            Worker.text 404 "no such page"

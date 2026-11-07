@@ -1,0 +1,158 @@
+-- ownership: a call's view at a type variable's place stands at the place
+-- the call instantiates it to, in every reader that compares places or
+-- steps through one (ownership-v2.md §2.11 *Re-rooting at a parameter*,
+-- #1350). `t3`: a list of a recursive type holding a view, written
+-- through `⟲` by `wfirst`, is refused (the write was lost); the same
+-- with a plain element beside the view (`t3Two`) and with the view bound
+-- first (`t3Bound`). The join of two record literals, one field a view,
+-- reads `g.x.c` in either order (`joinViewFirst`, `joinViewSecond`), with
+-- both fields views and with an extra field: the join's place no longer
+-- depends on which side is first. `knotView` and `knotViewDeep` read a
+-- field through the widened result of `deep3`, whose `Rose` folds.
+type Tree
+    = Node { c : List Int, kids : List Tree }
+
+
+type Rose a
+    = Rose a (List (Rose a))
+
+
+ans r = r.b
+
+
+wfirst t =
+    case t of
+        Node r →
+            case r.kids of
+                [ Node q, …_ ] →
+                    List.push q.c 1
+
+                _ →
+                    []
+
+
+pub t3 : List Int → Int
+t3 xs =
+    leaf = Node { c = xs, kids = [] }
+    t = Node { c = [ 2 ], kids = [ ans { b = leaf } ] }
+    p = wfirst t
+    List.length xs + List.length p
+
+
+pub t3Two : List Int → Int
+t3Two xs =
+    leaf = Node { c = xs, kids = [] }
+    t = Node { c = [ 2 ], kids = [ ans { b = leaf }, leaf ] }
+    p = wfirst t
+    List.length xs + List.length p
+
+
+pub t3Bound : List Int → Int
+t3Bound xs =
+    leaf = Node { c = xs, kids = [] }
+    v = ans { b = leaf }
+    t = Node { c = [ 2 ], kids = [ v ] }
+    p = wfirst t
+    List.length xs + List.length p
+
+
+j1 b g =
+    v =
+        if b then
+            { b = ans { b = g.x } }
+        else
+            { b = g.y }
+    List.length v.b.c
+
+
+pub joinViewFirst : List Int → Int
+joinViewFirst xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j1 True g + List.length p
+
+
+j2 b g =
+    v =
+        if b then
+            { b = g.y }
+        else
+            { b = ans { b = g.x } }
+    List.length v.b.c
+
+
+pub joinViewSecond : List Int → Int
+joinViewSecond xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j2 True g + List.length p
+
+
+j3 b g =
+    v =
+        if b then
+            { b = ans { b = g.x } }
+        else
+            { b = ans { b = g.y } }
+    List.length v.b.c
+
+
+pub joinBothViews : List Int → Int
+joinBothViews xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j3 True g + List.length p
+
+
+j4 b g =
+    v =
+        if b then
+            { b = ans { b = g.x }, e = 0 }
+        else
+            { b = g.y, e = 1 }
+    List.length v.b.c
+
+
+pub joinExtraField : List Int → Int
+joinExtraField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j4 True g + List.length p
+
+
+deep3 x = Rose x [ Rose x [ Rose x [] ] ]
+
+
+k1 g =
+    case deep3 g.x of
+        Rose r _ →
+            List.length r.c
+
+
+pub knotView : List Int → Int
+knotView xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    k1 g + List.length p
+
+
+k2 g =
+    case deep3 g.x of
+        Rose _ [ Rose _ [ Rose r _, …_ ], …_ ] →
+            List.length r.c
+
+        _ →
+            0
+
+
+pub knotViewDeep : List Int → Int
+knotViewDeep xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    k2 g + List.length p

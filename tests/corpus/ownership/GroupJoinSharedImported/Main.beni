@@ -1,0 +1,15 @@
+-- ownership (project): `GroupJoinShared` with the recursive builder in
+-- another module (#1399, #1408): the block keeps `h3`'s `shared` below its
+-- choice, and `r3`'s push of `p` while `q` may be the same list is refused.
+import Builds
+
+
+pub r3 : Int → Int
+r3 k =
+    xs = [ k ]
+    case Builds.h3 xs 3 of
+        [ p, q, …_ ] →
+            List.length (List.push p 1) + List.length q
+
+        _ →
+            0

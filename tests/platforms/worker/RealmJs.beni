@@ -1,0 +1,222 @@
+-- Raw `Js` reads for the worker realm allow-list fixtures (#2206, #2207,
+-- #2211; `workers.md` §4). Each function is one probe; a fixture keeps one.
+import Js
+
+
+pub foreign impure siblingDocument : ⊤ → String
+
+
+pub foreign impure siblingFunction : ⊤ → String
+
+
+pub foreign impure siblingTemplate : ⊤ → String
+
+
+pub foreign impure siblingImportScripts : ⊤ → String
+
+
+pub foreign impure siblingSafe : ⊤ → String
+
+
+pub foreign impure siblingShadowed : ⊤ → String
+
+
+pub foreign impure siblingTimerString : ⊤ → String
+
+
+pub foreign impure siblingTimerParam : ⊤ → String
+
+
+pub foreign impure siblingScopedSafe : ⊤ → String
+
+
+str : Js.Value → String
+str value = Js.to (Js.apply (Js.global "String") [ value ])
+
+
+pub alert : ⊤ → String
+alert _ = str (Js.apply (Js.global "alert") [ Js.from "x" ])
+
+
+pub computedStyle : ⊤ → String
+computedStyle _ = str (Js.apply (Js.global "getComputedStyle") [ Js.null ])
+
+
+pub customElements : ⊤ → String
+customElements _ = str (Js.call (Js.global "customElements") "get" [ Js.from "x-y" ])
+
+
+pub domParser : ⊤ → String
+domParser _ = str (Js.construct (Js.global "DOMParser") [])
+
+
+pub evalDocument : ⊤ → String
+evalDocument _ =
+    str (Js.apply (Js.apply (Js.global "Function") [ Js.from "return document.title" ]) [])
+
+
+pub evalCall : ⊤ → String
+evalCall _ = str (Js.apply (Js.global "eval") [ Js.from "document.title" ])
+
+
+pub htmlElement : ⊤ → String
+htmlElement _ = str (Js.get (Js.get (Js.global "HTMLElement") "prototype") "click")
+
+
+pub idle : ⊤ → String
+idle _ = str (Js.apply (Js.global "requestIdleCallback") [ Js.from λ_ → ⊤ ])
+
+
+pub importScripts : ⊤ → String
+importScripts _ = str (Js.apply (Js.global "importScripts") [ Js.from "/x.js" ])
+
+
+pub selfImportScripts : ⊤ → String
+selfImportScripts _ = str (Js.call (Js.global "self") "importScripts" [ Js.from "/x.js" ])
+
+
+pub matchMedia : ⊤ → String
+matchMedia _ =
+    str (Js.get (Js.apply (Js.global "matchMedia") [ Js.from "(min-width: 1px)" ]) "matches")
+
+
+pub mutationObserver : ⊤ → String
+mutationObserver _ = str (Js.construct (Js.global "MutationObserver") [ Js.from λ_ → ⊤ ])
+
+
+pub parentHref : ⊤ → String
+parentHref _ = str (Js.get (Js.get (Js.global "parent") "location") "href")
+
+
+pub screenWidth : ⊤ → String
+screenWidth _ = str (Js.get (Js.global "screen") "width")
+
+
+pub selfFrames : ⊤ → String
+selfFrames _ = str (Js.get (Js.get (Js.global "self") "frames") "length")
+
+
+pub selfIdle : ⊤ → String
+selfIdle _ = str (Js.call (Js.global "self") "requestIdleCallback" [ Js.from λ_ → ⊤ ])
+
+
+pub selfParent : ⊤ → String
+selfParent _ = str (Js.get (Js.get (Js.global "self") "parent") "location")
+
+
+pub topFrame : ⊤ → String
+topFrame _ = str (Js.get (Js.global "top") "length")
+
+
+pub visualViewport : ⊤ → String
+visualViewport _ = str (Js.get (Js.global "visualViewport") "width")
+
+
+--| A local bound to an absent global, read outside the arm its probe
+--| proves: not an existence probe.
+pub probeEscape : ⊤ → String
+probeEscape _ =
+    open = Js.global "alert"
+    if Js.typeIs open "function" then
+        "alert"
+    else
+        str (Js.apply open [ Js.from "x" ])
+
+
+--| `Js.isUndefined` of an absent global: a runtime probe, and in a release
+--| build `globalThis.document`, never a bare `document`.
+pub probeDocument : ⊤ → String
+probeDocument _ =
+    if Js.isUndefined (Js.global "document") then
+        "no document"
+    else
+        "document"
+
+
+pub probeStorage : ⊤ → String
+probeStorage _ =
+    if Js.isUndefined (Js.global "localStorage") then
+        "no storage"
+    else
+        "storage"
+
+
+--| A local bound to an absent global, read only where its probe proves it
+--| present.
+pub probeIdle : ⊤ → String
+probeIdle _ =
+    request = Js.global "requestIdleCallback"
+    if Js.typeIs request "function" then
+        str (Js.apply request [ Js.from λ_ → ⊤ ])
+    else
+        "no idle"
+
+
+--| Worker-global reads every dedicated worker has.
+pub available : ⊤ → String
+available _ =
+    href = Js.to (Js.get (Js.global "location") "href")
+    agent = Js.to (Js.get (Js.global "navigator") "userAgent")
+    text = Js.to (Js.call (Js.global "location") "toString" [])
+    frame = str (Js.typeOf (Js.global "requestAnimationFrame"))
+    selfFrame = str (Js.typeOf (Js.get (Js.global "self") "requestAnimationFrame"))
+    String.join
+        [ if String.startsWith href "http" then "href" else "no href"
+        , if String.isEmpty agent then "no agent" else "agent"
+        , if text == href then "string" else "no string"
+        , frame
+        , selfFrame
+        ]
+        ","
+
+
+--| `setTimeout` handed a string of code: dynamic code (#2211).
+pub timerString : ⊤ → String
+timerString _ = str (Js.apply (Js.global "setTimeout") [ Js.from "postMessage(1)" ])
+
+
+--| `self.setInterval` handed a string of code.
+pub timerSelf : ⊤ → String
+timerSelf _ =
+    str (Js.call (Js.global "self") "setInterval" [ Js.from "postMessage(1)", Js.from 1000 ])
+
+
+--| A timer handed a parameter, which is not provably a function.
+pub timerParam : ⊤ → String
+timerParam _ = later (Js.from "postMessage(1)")
+
+
+later : Js.Value → String
+later handler = str (Js.apply (Js.global "setTimeout") [ handler, Js.from 0 ])
+
+
+--| A timer bound to a local is not called at once where it is read.
+pub timerAlias : ⊤ → String
+timerAlias _ =
+    timer = Js.global "setTimeout"
+    str (Js.apply timer [ Js.from λ⊤ → ⊤, Js.from 0 ])
+
+
+tick : ⊤ → ⊤
+tick _ = ⊤
+
+
+hand : a → Js.Value
+hand value = Js.from value
+
+
+--| Every accepted timer form: a lambda, a declared function, a `let`
+--| function, a declared function through a `Js.from` wrapper, `Js.method`,
+--| and a lambda handed to `self.setTimeout`.
+pub timerSafe : ⊤ → String
+timerSafe _ =
+    local _ = ⊤
+    String.join
+        [ str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → ⊤, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.from tick, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.from local, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ hand tick, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.method λself → self, Js.from 0 ]))
+        , str (Js.typeOf (Js.call (Js.global "self") "setTimeout" [ Js.from λ⊤ → ⊤, Js.from 0 ]))
+        ]
+        ","

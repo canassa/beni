@@ -1,5 +1,5 @@
 -- The workloads of `bench/schema-library/run.mjs`: report 34's `flat`
--- user and a list of them, through `core/Schema`'s library engine (S3),
+-- user and a list of them, through `core/Schema`'s compiled workers (S3),
 -- to compare with the specialised `parse` and `print` S4 generates. Built
 -- with `--library`, so every `pub` is a root; JavaScript holds the beni
 -- values it is handed and passes them back without reading them.

@@ -1,0 +1,24 @@
+-- ownership: R-4.7.4 (#395, CK-279), moved from tests/pending by S3b slice
+-- 5c. With `A (List Int) B` and `B (List Int) (Maybe A)`, `ab2` pushes the
+-- inner `A`'s list while returning the outer `B`'s list `ys`. A `List
+-- Int` field reaches no other type, so `ys` cannot hold it: v2 accepts it
+-- (`param`). v1 refuses it `element` ("`ys⋆` holds it", approx), because
+-- a below marker's expansion may begin with any step: a known entry.
+type A
+    = A (List Int) B
+
+
+type B
+    = B (List Int) (Maybe A)
+
+
+pub ab2 : A → List Int × List Int
+ab2 a =
+    case a of
+        A _ (B ys m) →
+            case m of
+                Just (A zs _) →
+                    ( List.push zs 1, ys )
+
+                Nothing →
+                    ( [], ys )

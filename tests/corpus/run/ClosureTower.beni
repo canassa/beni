@@ -1,0 +1,52 @@
+-- ClosureTower (Appendix B, S4; R-7.2 to R-7.4, R-7.12), k = 3: every `wk` returns
+-- a closure over two closures of the level below, all of them reaching the
+-- one list `xs` of `w0`. The type stays `⊤ → (Bool → List Int)` and there is
+-- no callback parameter. The push of the tower's answer is refused while the
+-- other answer is read: written in place it would print 0,1 twice.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+w0 : ⊤ → (Bool → List Int)
+w0 ⊤ =
+    xs = [ 0 ]
+    λ_ → xs
+
+
+w1 : ⊤ → (Bool → List Int)
+w1 ⊤ =
+    a = w0 ⊤
+    b = w0 ⊤
+    λflag → if flag then a flag else b flag
+
+
+w2 : ⊤ → (Bool → List Int)
+w2 ⊤ =
+    a = w1 ⊤
+    b = w1 ⊤
+    λflag → if flag then a flag else b flag
+
+
+w3 : ⊤ → (Bool → List Int)
+w3 ⊤ =
+    a = w2 ⊤
+    b = w2 ⊤
+    λflag → if flag then a flag else b flag
+
+
+main : Program
+main =
+    f = w3 ⊤
+    x = List.push (f True) 1
+    Node.print "${ints x} ${ints (f False)}"

@@ -1,0 +1,6 @@
+(Box { inner = { x = 0 }, y = 2 },{ x = 1 })
+(Box { inner = { x = 0 }, y = 2 },{ x = 1 })
+(Box { o = { inner = { x = 0 }, y = 2 } },{ x = 1 })
+(Box { inner = { x = 0 }, y = 2 },{ x = 1 })
+({ x = 1 },0)
+({ inner = { x = 1 }, y = 2 },0)

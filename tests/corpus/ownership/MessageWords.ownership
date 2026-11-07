@@ -1,0 +1,18 @@
+module MessageWords
+  31:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 32:44
+  36:21 List.push r.x: accepted param
+  42:5 call MessageWords.wx <record>.x: rejected disjoint: another operand of the same operation reaches it (MessageWords.wx writes π1.x)
+  56:31 List.push s.kept: accepted param
+  60:27 call MessageWords.g3 <call MessageWords.g3>.kept: rejected call: another operand may be it, through the call at 60:33 (MessageWords.g3 writes π2.kept) (approx)
+  60:33 call MessageWords.g3 <record>.kept: rejected disjoint: another operand of the same operation reaches it (MessageWords.g3 writes π2.kept)
+  summary idl: π1 RA; res π1
+  summary onTree: unused
+  summary wx: π1.x RW[storage], π1.y R
+  summary onePath: unused
+  summary g3: π2 RA, π2.kept RAW[storage], π2.kept[*] A, π2.top RA; res .extra fresh2, .kept condition(fresh5) π2.kept{excl π2.top, sep π2.top π2.kept[*]}, .kept[*] ~condition(fresh1) ~π2.kept[*] ~π2.top, .top ~condition(fresh4) π2.top, condition(fresh3){lost} fresh501◦ π2
+  summary chainedTwice: π2 RA, π3 RAW[storage], π3[*] A; res .extra fresh7 ~condition(fresh5) ~fresh5 ~π3{lost}, .kept condition(fresh3){lost} π3{lost}, .kept[*] ~condition(fresh2) ~condition(fresh4) ~condition(fresh6) ~π2 ~π3[*], .top condition(fresh2) ~condition(fresh6) ~condition(fresh8) π2, fresh503◦ ~condition(fresh1){shared} ~fresh501◦ ~fresh502◦
+  demands 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause disjoint 2
+cause alias 1
+cause call 1

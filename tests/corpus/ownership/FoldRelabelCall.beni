@@ -1,0 +1,100 @@
+-- ownership: a fold relabelled through a call keeps the steps it saw
+-- (#1016's comment of 2026-10-28, #1129/#1133; ownership-v2.md §2.9, the
+-- `Shape.map` paragraph). A fold's steps are its sparse frontier, the
+-- routes by which a deep read finds what is stored below it. `shared`
+-- publishes a tree whose leaves share one list below its fold, and
+-- `incAll` writes every label. It is refused called directly (`direct`),
+-- through the identity (`viaIdent`), through a wrapper that rebuilds the
+-- root (`viaWrap`) and through both (`viaTwo`): each relabelling keeps the
+-- condition stored below the fold. The same tree built at the call,
+-- through both calls, accepts with distinct leaves (`literalViaIdent`,
+-- `literalViaTwo`) and is refused with one shared list
+-- (`literalSharedViaTwo`). v1 accepts the `…Apart` twins, a tree returned
+-- by `apart` whose levels below the first return v2 folds onto one class
+-- (#1495): known entries.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose l ks →
+            Rose (List.push l 1) (incKids ks)
+
+
+incKids : List Rose → List Rose
+incKids ks =
+    case ks of
+        [ k, …rest ] →
+            [ incAll k, …incKids rest ]
+
+        [] →
+            []
+
+
+ident : Rose → Rose
+ident r = r
+
+
+rewrap : Rose → Rose
+rewrap r =
+    case r of
+        Rose l ks →
+            Rose l ks
+
+
+shared : ⊤ → Rose
+shared ⊤ =
+    l = [ 1 ]
+    Rose [] [ Rose [] [ Rose l [], Rose l [] ] ]
+
+
+apart : ⊤ → Rose
+apart ⊤ = Rose [] [ Rose [] [ Rose [ 1 ] [], Rose [ 2 ] [] ] ]
+
+
+pub direct : ⊤ → Rose
+direct ⊤ = incAll (shared ⊤)
+
+
+pub directApart : ⊤ → Rose
+directApart ⊤ = incAll (apart ⊤)
+
+
+pub viaIdent : ⊤ → Rose
+viaIdent ⊤ = incAll (ident (shared ⊤))
+
+
+pub viaIdentApart : ⊤ → Rose
+viaIdentApart ⊤ = incAll (ident (apart ⊤))
+
+
+pub viaWrap : ⊤ → Rose
+viaWrap ⊤ = incAll (rewrap (shared ⊤))
+
+
+pub viaWrapApart : ⊤ → Rose
+viaWrapApart ⊤ = incAll (rewrap (apart ⊤))
+
+
+pub viaTwo : ⊤ → Rose
+viaTwo ⊤ = incAll (ident (rewrap (shared ⊤)))
+
+
+pub viaTwoApart : ⊤ → Rose
+viaTwoApart ⊤ = incAll (ident (rewrap (apart ⊤)))
+
+
+pub literalViaIdent : ⊤ → Rose
+literalViaIdent ⊤ = incAll (ident (Rose [] [ Rose [] [ Rose [ 1 ] [], Rose [ 2 ] [] ] ]))
+
+
+pub literalViaTwo : ⊤ → Rose
+literalViaTwo ⊤ = incAll (ident (rewrap (Rose [] [ Rose [] [ Rose [ 1 ] [], Rose [ 2 ] [] ] ])))
+
+
+pub literalSharedViaTwo : ⊤ → Rose
+literalSharedViaTwo ⊤ =
+    l = [ 1 ]
+    incAll (ident (rewrap (Rose [] [ Rose [] [ Rose l [], Rose l [] ] ])))

@@ -79,15 +79,16 @@ test "a program computes something and prints the right answer" {
     // └─────────────────────────────────────────┘
     // One `.mjs` per source module, mirroring the source tree, packages in
     // directories of their own, plus each sibling next to its module and the
-    // platform's runtime (backend.md §5, boundary.md §5.2).
+    // platform's runtime (backend.md §5, boundary.md §5.2). `Node` has no
+    // sibling since 2026-10-23 (#877): its values are beni over `Js`, and
+    // since 2026-11-03 the runtime is the module `Rt`, not a copied file.
     for ([_][]const u8{
         "out/Main.mjs",
         "out/_main.mjs",
         "out/_core/Basics.mjs",
         "out/_core/List.mjs",
         "out/_platform/Node.mjs",
-        "out/_platform/Node.foreign.mjs",
-        "out/_platform/runtime.foreign.mjs",
+        "out/_platform/Rt.mjs",
     }) |path| {
         if (!w.exists(path)) {
             std.debug.print("expected {s} to exist\n", .{path});
@@ -529,8 +530,9 @@ test "a markup program builds byte-identical at every --jobs, and runs" {
     // └─────────────────────────────────────────┘
     try expectSameTree(&w, "one", "many");
     try expectSameTree(&w, "one-rel", "many-rel");
-    // The markup runtime is copied because a module imports it.
-    try testing.expect(w.exists("one/_platform/markup.foreign.mjs"));
+    // The markup runtime is the module `Rt`, written because a module
+    // imports it (and the entry file its `run`).
+    try testing.expect(w.exists("one/_platform/Rt.mjs"));
 }
 
 test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps string tags and unbuilt arms in release" {
@@ -2635,9 +2637,8 @@ test "a --library --release build keeps every core/Schema value it exports, even
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `core/Schema` exports each core-private value the specialised path
-    // calls from other modules (`schema.md` §6) when it survives. Under
-    // `--schema-library` no worker calls them, and inside `core/Schema` one
-    // of them may be called from one place: a compiled maker's worker calls
+    // calls from other modules (`schema.md` §6) when it survives. Inside
+    // `core/Schema` one may be called once: a composed maker's worker calls
     // `belowBackward` once. A release build writes a function called from
     // one place where it is called (`backend.md` §9), and it did that to
     // such a value too, so no declaration was left. A `--library` build,
@@ -2673,7 +2674,7 @@ test "a --library --release build keeps every core/Schema value it exports, even
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--schema-library", "--out=out", "Lib.beni" });
+    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--out=out", "Lib.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -3520,9 +3521,12 @@ test "a release application is one file with no import or export; --library keep
     try testing.expectEqualStrings("_main.mjs", tree[0]);
     try testing.expectEqualStrings("_manifest.txt", tree[1]);
     const one = try w.read("out/_main.mjs");
-    try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";"));
+    // No import at all since the `node` runtime is beni (2026-11-03): the
+    // hand-written runtime imported `node:process`, the module reads the
+    // global.
+    try testing.expect(std.mem.startsWith(u8, one, "const ") or std.mem.startsWith(u8, one, "let "));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "\n"));
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "import"));
+    try testing.expectEqual(@as(usize, 0), std.mem.count(u8, one, "import"));
     try testing.expect(std.mem.indexOf(u8, one, "export") == null);
     try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), ";export{e,c};\n"));
 
@@ -3895,9 +3899,12 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     // Every page guards `run` and `flush` with a `try … finally` that stops
     // it on a defect (`boundary.md` §9.8.10 (c)); the hosted loop adds its
     // own three latches, the dispatcher's, the render's and the
-    // after-render phase's.
+    // after-render phase's. The last two only clear `busy`, which nothing
+    // of this page reads: their cleanup folds away, and a `try` whose
+    // `finally` is empty is its guarded statements (`backend.md` §9,
+    // amended 2026-11-06). So the dispatcher's is the one the loop adds.
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, plain_js, "finally"));
-    try testing.expectEqual(@as(usize, 5), std.mem.count(u8, hosted_js, "finally"));
+    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, hosted_js, "finally"));
 }
 
 test "a page with no delegated event calls no start and ships no listener" {
@@ -4731,7 +4738,7 @@ const check_release_map_script =
     \\
     \\if (run === "run") {
     \\  const r = spawnSync(process.execPath, ["--enable-source-maps", modulePath], { encoding: "utf8" });
-    \\  for (const frame of r.stderr.matchAll(/^\s+at (\S+) \((?:.*\/)?([^\/]+\.beni:\d+:\d+)\)$/gm)) {
+    \\  for (const frame of r.stderr.matchAll(/^\s+at (\S+) \((?:.*\/)?([^\/]+\.(?:beni|js):\d+:\d+)\)$/gm)) {
     \\    console.log(`frame ${frame[1]} ${frame[2]}`);
     \\  }
     \\  console.log(`exit ${r.status}`);
@@ -4748,18 +4755,20 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     // is one rule of *What the marks survive*: `spread`'s `doubled` is a
     // renamed local, `total`'s `rest` an initialiser the optimiser writes
     // at its one use, every top-level function's first byte carries its beni
-    // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
-    // so it maps to the call. `report` is written with `countDown` in it, a loop
+    // name and maps to its parameter, which is that byte (*Parameters*,
+    // amended 2026-11-05), and `Debug.todo` is a body copied from `core/Debug` to its call,
+    // so its `throw` maps to the line of `Debug.beni` it came from
+    // (*Deferred* item 2, amended 2026-11-04), and `Debug.beni` is a source
+    // of the map after `Main.beni`, where its first mark is. `report` is
+    // written with `countDown` in it, a loop
     // whose variable the printer declares in a `for` head (item 4). The
     // runtime's `process.stdout` is hand-written and the entry's
     // `run(main)` the link step's: both unmapped, under Node's own reader
     // too, for which the map's last segment must end with its line. So is
     // the runtime's `import` at the top, before the first stretch, which is
-    // where a file §9 declines to hoist is imported too. A module with no
-    // mark (`core/Debug`, whose `todo` is copied to its call) is no source
-    // of the map. Under
-    // Node's `--enable-source-maps`, the crash names `describe` at the call,
-    // as the development build does (§11.1). `--allow-debug` is the hidden
+    // where a file §9 declines to hoist is imported too. Under Node's
+    // `--enable-source-maps`, the crash is in `describe`, at the line of
+    // `Debug.beni` that throws. `--allow-debug` is the hidden
     // flag that lets a release build reach `Debug`, for the crash.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -4832,24 +4841,27 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         "check-release-map.mjs",
         "out/_main.mjs",
         "run",
-        "p=|a=>{",
+        "q=|a=>{",
         "let b=a*7919",
         "let |b=a*7919",
         "b=|a*7919",
         "b+b*3",
-        "q=|b=>{if",
-        "return a(p(",
+        "r=|a=>{if",
+        "return b(q(",
         "throw new Error",
-        "r=|a=>a.length",
-        "r(n(a))",
-        "r(|n(a))",
-        "s=|b=>{let d=0",
-        "for(let c=b",
-        "for(let |c=b",
+        "s=|a=>a.length",
+        "s(o(a))",
+        "s(|o(a))",
+        "t=|a=>{let d=0",
+        "for(let c=a",
+        "for(let |c=a",
         "let |d=0",
-        "import process",
+        // The runtime is the module `Rt` since 2026-11-03 (#1810): its
+        // `run` is beni, mapped to `Rt.beni`, and the entry's call of it
+        // is the one unmapped text.
+        "globalThis.process",
         "process.stdout",
-        "u(t)",
+        "a(u)",
     });
 
     // ┌─────────────────────────────────────────┐
@@ -4858,28 +4870,31 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     try testing.expectEqualStrings("", checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/List.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
-        \\p=|a=>{ -> Main.beni:24:13 spread
+        \\source beni:///core/Debug.beni: embedded
+        \\q=|a=>{ -> Main.beni:21:8 spread
         \\let b=a*7919 -> Main.beni:22:5
         \\let |b=a*7919 -> Main.beni:22:5 doubled
         \\b=|a*7919 -> Main.beni:23:9
         \\b+b*3 -> Main.beni:24:5
-        \\q=|b=>{if -> Main.beni:12:5 describe
-        \\return a(p( -> Main.beni:14:13
-        \\throw new Error -> Main.beni:17:13
-        \\r=|a=>a.length -> Main.beni:29:5 total
-        \\r(n(a)) -> Main.beni:34:17
-        \\r(|n(a)) -> Main.beni:33:14
-        \\s=|b=>{let d=0 -> Main.beni:50:5 report
-        \\for(let c=b -> Main.beni:49:9
-        \\for(let |c=b -> Main.beni:49:9 i
+        \\r=|a=>{if -> Main.beni:11:10 describe
+        \\return b(q( -> Main.beni:14:13
+        \\throw new Error -> Debug.beni:43:5
+        \\s=|a=>a.length -> Main.beni:28:7 total
+        \\s(o(a)) -> Main.beni:34:17
+        \\s(|o(a)) -> Main.beni:33:14
+        \\t=|a=>{let d=0 -> Main.beni:47:8 report
+        \\for(let c=a -> Main.beni:49:9
+        \\for(let |c=a -> Main.beni:49:9 i
         \\let |d=0 -> Main.beni:49:9 acc
-        \\import process -> unmapped
-        \\process.stdout -> unmapped
-        \\u(t) -> unmapped
-        \\frame describe Main.beni:17:13
+        \\globalThis.process -> Rt.beni:22:30
+        \\process.stdout -> Rt.beni:22:30 (11 before)
+        \\a(u) -> unmapped
+        \\frame describe Debug.beni:43:15
         \\frame <anonymous> Main.beni:55:114
         \\exit 1
         \\
@@ -4897,17 +4912,16 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `backend.md` §11.2, item 6. `crash 500` takes its `then` branch, and
-    // whole-program specialisation writes the call it keeps in place of
-    // the `if`. That call maps to its own line, 14:9, as the development
-    // build's `crash` frame does, and not to the test's `>` at 13:10. The
-    // call to `Aid.twice` is a body copied from another module, so it maps
-    // to its call, in UTF-16 columns after `é😀`. `Aid` keeps no mark of
-    // its own, so it is no source of the map. `and/` is the same for `&&`:
-    // `check 500` keeps `Aid.bad n`, which maps to 8:16 and not to the
-    // `&&` at 8:13. It is a program of its own because a second
-    // `Debug.todo` call would stop `todo` being copied to either call, and
-    // only a copy shows the position a fold leaves.
+    // `backend.md` §11.2, item 6, and *Deferred* item 2 (amended
+    // 2026-11-04). `crash 500` takes its `then` branch, and whole-program
+    // specialisation writes the call it keeps, `Aid.boom n`, in place of the
+    // `if`. That call is a body copied from `Aid`, so it maps to the line of
+    // `Aid.beni` it came from, 8:5, and so does the crash frame: `Aid` is a
+    // source of the map. `Aid.twice n` is a copy too: its `n` is `Main`'s
+    // argument, in UTF-16 columns after `é😀`, and its `2` is `Aid.beni`'s.
+    // `and/` holds item 6 with no copy: `Aid.bad` has two calls, so it is
+    // not copied, and `check 500` keeps the call `Aid.bad n`, which maps to
+    // 8:16 and not to the `&&` at 8:13.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Aid.beni",
@@ -4976,6 +4990,11 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\
         \\          else
         \\            "n"
+        \\        , if Aid.bad 7 then
+        \\            "a"
+        \\
+        \\          else
+        \\            "b"
         \\        ]
         \\
     );
@@ -4986,10 +5005,10 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "a(|b())", "a(|b*2)" });
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "b(|c())", "b(|a*2)", "a*|2)" });
     const and_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=and-out", "and" }, .{ .raw_diagnostics = true });
     try expectBuilt(and_built);
-    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "a()?\"y\"" });
+    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "b()?\"y\"" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4997,13 +5016,17 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings("", checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/Debug.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
-        \\a(|b()) -> Main.beni:14:9
-        \\a(|b*2) -> Main.beni:8:41
+        \\source ../src/Aid.beni: its text
+        \\b(|c()) -> Aid.beni:8:5
+        \\b(|a*2) -> Main.beni:8:41
+        \\a*|2) -> Aid.beni:3:9
         \\frame todo Debug.beni:43:15
-        \\frame <anonymous> Main.beni:14:9
+        \\frame <anonymous> Aid.beni:8:5
         \\exit 1
         \\
     , checked.stdout);
@@ -5011,9 +5034,13 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings("", and_checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
+        \\source ../and/Aid.beni: its text
         \\source beni:///core/Debug.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///core/String.beni: embedded
         \\source ../and/Main.beni: its text
-        \\a()?"y" -> Main.beni:8:16
+        \\b()?"y" -> Main.beni:8:16
         \\
     , and_checked.stdout);
 }
@@ -5024,9 +5051,11 @@ test "a release library build writes a map beside every module" {
     // └─────────────────────────────────────────┘
     // `backend.md` §11.2: a `--library` release build is one file per
     // module (§9), and each module lowered from beni gets its own map, as
-    // in development. The platform's runtime is hand-written, compacted
-    // and unmapped. In `Lib.mjs`: two exported functions carry their beni
-    // names at their first byte, a renamed local its own, and two calls in
+    // in development, and so does each compacted hand-written file
+    // (*Hand-written JavaScript*, amended 2026-11-04). In `Lib.mjs`: two
+    // exported functions carry their beni
+    // names at their first byte, which is their parameter and maps to it
+    // (*Parameters*, amended 2026-11-05), a renamed local its own, and two calls in
     // `label` map to their first tokens. The `export` is covered by the
     // last segment, which has no name: Node's own reader takes the name
     // before it unless the map ends the line (§11.2, *The join*).
@@ -5064,10 +5093,10 @@ test "a release library build writes a map beside every module" {
     try testing.expectEqualStrings(
         \\version 3, file Lib.mjs
         \\source ../Lib.beni: its text
-        \\d=|a=> -> Lib.beni:8:13 spread
+        \\d=|a=> -> Lib.beni:5:8 spread
         \\let |b -> Lib.beni:6:5 doubled
         \\b+b*3 -> Lib.beni:8:5
-        \\e=|f=> -> Lib.beni:13:5 label
+        \\e=|f=> -> Lib.beni:12:7 label
         \\a(|c(f -> Lib.beni:13:18
         \\b(d(f)) -> Lib.beni:13:36
         \\export{ -> Lib.beni:13:59 (6 before)
@@ -5078,11 +5107,12 @@ test "a release library build writes a map beside every module" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // A map beside every module lowered from beni, core's included, and
-    // none beside the hand-written runtime.
+    // beside every compacted hand-written file; none beside the
+    // derived-comparison engine, which no person wrote.
     const files = try w.listFiles("lib");
     var maps: usize = 0;
     for (files) |path| {
-        const is_module = std.mem.endsWith(u8, path, ".mjs") and !std.mem.endsWith(u8, path, ".foreign.mjs") and !std.mem.endsWith(u8, path, "_derived.mjs");
+        const is_module = std.mem.endsWith(u8, path, ".mjs") and !std.mem.endsWith(u8, path, "_derived.mjs");
         const map = try std.fmt.allocPrint(w.arena.allocator(), "{s}.map", .{path});
         var has_map = false;
         for (files) |other| has_map = has_map or std.mem.eql(u8, other, map);
@@ -5090,9 +5120,567 @@ test "a release library build writes a map beside every module" {
         maps += @intFromBool(has_map);
     }
     try testing.expect(maps >= 2);
-    try testing.expect(w.exists("lib/_platform/runtime.foreign.mjs"));
+    try testing.expect(w.exists("lib/_platform/Rt.mjs"));
+    try testing.expect(w.exists("lib/_platform/Rt.mjs.map"));
     const core_map = try w.read("lib/_core/List.mjs.map");
     try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"List.mjs\",\"sources\":[\"beni:///core/List.beni\"],\"sourcesContent\":[\""));
+}
+
+/// The `hand` platform of the hand-written map tests (`backend.md` §11.2,
+/// *Hand-written JavaScript*, amended 2026-11-04): a sibling with a
+/// function declaration that throws, an arrow that calls it, and a second
+/// export of one binding, which the link step aliases; a runtime that
+/// writes the program's one line.
+fn writeMappedHandPlatform(w: *World) !void {
+    try w.write("hand/beni.json",
+        \\{ "platform": true, "name": "hand", "program": "Hand.Program", "runtime": "run.js" }
+    );
+    try w.write("hand/Hand.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign pure say : String → Program
+        \\
+        \\
+        \\pub foreign pure shout : String → Program
+        \\
+        \\
+        \\pub foreign pure crash : Program, Program → Program
+        \\
+    );
+    try w.write("hand/Hand.js",
+        \\// The sibling of `Hand.beni`.
+        \\
+        \\const spaces = / +/g;
+        \\
+        \\/* Named only inside a substitution below. */
+        \\const upper = (s) => s.toUpperCase();
+        \\
+        \\export const say = (line) => ({
+        \\  text: `[${ upper(line.replace(spaces, " ")) }]`,
+        \\});
+        \\
+        \\function explode(reason) {
+        \\  throw new Error(reason);
+        \\}
+        \\
+        \\export const crash = (first, second) => ({
+        \\  text: [first, second].map((part) => explode(part.text)).join(""),
+        \\});
+        \\
+        \\export { say as shout };
+        \\
+    );
+    try w.write("hand/run.js",
+        \\import process from "node:process";
+        \\
+        \\// Writes the program's one line.
+        \\export const run = (program) => {
+        \\  process.stdout.write(program.text + "\n");
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Hand exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Hand.crash (Hand.say "a  b") (Hand.shout "c")
+        \\
+    );
+}
+
+test "a release build maps hand-written JavaScript back to the file it is written in" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04.
+    // In the one hoisted file, each hand-written piece is a stretch of its
+    // own, and its `.js` file a source, by its path from the map. Each token
+    // maps to its token as written: `f`, `g` and `h` carry the names they
+    // are written with, `h`'s `function` too, and each arrow's first token
+    // the name of the function it begins — `run`'s `a` carries `run`, not
+    // `program`, and `crash`'s `(` carries `crash`. The callback's `k`
+    // begins an arrow with no name, so it carries none: Node would name
+    // the frame `part`. Its other `k` carries `part`. The `import` at the top,
+    // the alias `shout` takes (`const b=a`) and the entry's `e(d)` are the
+    // link step's, and unmapped. Under `--enable-source-maps` the crash
+    // names `explode`, the callback and `crash` at their lines in
+    // `Hand.js`. A second
+    // program reaches `core/Record.js`, which is embedded: `beni:///` and
+    // its path.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeMappedHandPlatform(&w);
+    try w.write("rec/Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\type alias Point =
+        \\    x : Int
+        \\    y : Int
+        \\
+        \\
+        \\moved : Point → Point
+        \\moved p = { Record.copy p | x = p.x + 10 }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    p = moved { x = 1, y = 2 }
+        \\    Node.print (String.fromInt p.x)
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=hand", "--release", "--source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_main.mjs",
+        "run",
+        "import process",
+        "e=|a=>{",
+        "process.stdout",
+        "const |f=/ +/g",
+        "g=|b=>b.toUpperCase",
+        "function h(e)",
+        "function |h(e)",
+        "h(|e){throw",
+        "throw new Error",
+        "c=|(i,j)=>",
+        "(|i,j)=>",
+        "map(|k=>",
+        "h(|k.text)",
+        "const |b=a;",
+        "c(a(\"a  b\")",
+        "e(d);",
+    });
+    const rec_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--source-maps", "--out=rec-out", "rec" }, .{ .raw_diagnostics = true });
+    try expectBuilt(rec_built);
+    const rec_checked = try w.runNode(&.{ "check-release-map.mjs", "rec-out/_main.mjs", "no", "b=|a=>({...a})", "({...|a})" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source ../hand/run.js: its text
+        \\source ../hand/Hand.js: its text
+        \\source ../Main.beni: its text
+        \\import process -> unmapped
+        \\e=|a=>{ -> run.js:4:21 run
+        \\process.stdout -> run.js:5:3
+        \\const |f=/ +/g -> Hand.js:3:7 spaces
+        \\g=|b=>b.toUpperCase -> Hand.js:6:16 upper
+        \\function h(e) -> Hand.js:12:1 explode
+        \\function |h(e) -> Hand.js:12:10 explode
+        \\h(|e){throw -> Hand.js:12:18 reason
+        \\throw new Error -> Hand.js:13:3
+        \\c=|(i,j)=> -> Hand.js:16:22 crash
+        \\(|i,j)=> -> Hand.js:16:23 first
+        \\map(|k=> -> Hand.js:17:30
+        \\h(|k.text) -> Hand.js:17:47 part
+        \\const |b=a; -> unmapped (6 before)
+        \\c(a("a  b") -> Main.beni:6:5
+        \\e(d); -> unmapped
+        \\frame explode Hand.js:13:9
+        \\frame <anonymous> Hand.js:17:39
+        \\frame crash Hand.js:17:25
+        \\frame <anonymous> Main.beni:6:5
+        \\exit 1
+        \\
+    , checked.stdout);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqualStrings("", rec_checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
+        \\source beni:///core/Record.js: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///core/String.beni: embedded
+        \\source ../rec/Main.beni: its text
+        \\b=|a=>({...a}) -> Record.js:6:22 copy
+        \\({...|a}) -> Record.js:6:34 r
+        \\
+    , rec_checked.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "_main.mjs", "_main.mjs.map", "_manifest.txt" }), try w.listFiles("out"));
+}
+
+test "a release library build maps each compacted hand-written file, and not one it copies" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04: in
+    // the multi-file layout, a compacted hand-written file gets a map of its
+    // own beside it, one source, and its comment line; nothing else of the
+    // file changes. `say` and `crash` are exported and keep their names,
+    // and their first tokens carry them. The runtime has a `/` after `++`,
+    // which `Minify` cannot read, so it is copied as written: it IS its
+    // source, and it has no map.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeMappedHandPlatform(&w);
+    const runtime =
+        \\import process from "node:process";
+        \\
+        \\// Writes the program's one line.
+        \\export const run = (program) => {
+        \\  let n = 0;
+        \\  n++ / 2;
+        \\  process.stdout.write(program.text + "\n");
+        \\};
+        \\
+    ;
+    try w.write("hand/run.js", runtime);
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=hand", "--release", "--library", "--out=plain", "Main.beni" }, .{ .raw_diagnostics = true });
+    const built = try w.runWith(&.{ "build", "--platform=hand", "--release", "--library", "--source-maps", "--out=lib", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(plain);
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "lib/_platform/Hand.foreign.mjs",
+        "no",
+        "const |a=/ +/g",
+        "say=|d=>",
+        "function |e(f)",
+        "crash=|(g,h)",
+        "export{say as shout}",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Hand.foreign.mjs
+        \\source ../../hand/Hand.js: its text
+        \\const |a=/ +/g -> Hand.js:3:7 spaces
+        \\say=|d=> -> Hand.js:8:21 say
+        \\function |e(f) -> Hand.js:12:10 explode
+        \\crash=|(g,h) -> Hand.js:16:22 crash
+        \\export{say as shout} -> Hand.js:20:1
+        \\
+    , checked.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The sibling and the two modules have maps; the runtime is the file.
+    try testing.expectEqual(@as(usize, 3), try expectMappedTree(&w, "plain", "lib"));
+    try testing.expect(w.exists("lib/_platform/Hand.foreign.mjs.map"));
+    try testing.expect(!w.exists("lib/_platform/run.foreign.mjs.map"));
+    try testing.expectEqualStrings(runtime, try w.read("lib/_platform/run.foreign.mjs"));
+}
+
+test "a markup runtime the build rewrites maps back to the file as written" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04.
+    // The platform `views` names `ssr` with a runtime split between
+    // `markup.js` and the module `Views` (`boundary.md` §9.2). Its top-level
+    // assignment is a statement the one file cannot hoist, so the
+    // application keeps the multi-file layout, where the build rewrites the
+    // file's three-line `import` of `beni:Views` to one line before
+    // `Minify` reads it. The marks move back: each token of the rewritten
+    // `import` maps to the statement's first byte, line 4, so the map has
+    // one segment for all of it, and what follows maps to its line as
+    // written, two lines further down than in the text `Minify` read.
+    // Under `--enable-source-maps`, `run`'s crash names `run` at line 20.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("views/beni.json",
+        \\{ "platform": true, "name": "views", "platforms": ["node"], "reexports": ["Node"], "runtime": "markup.js", "markup": { "lowering": "ssr", "runtime": "markup.js", "module": "Views" } }
+    );
+    try w.write("views/Views.beni",
+        \\pub escape : String → String
+        \\escape text = text
+        \\
+        \\
+        \\pub list : String, String, String → String
+        \\list items row empty = items
+        \\
+    );
+    try w.write("views/markup.js",
+        \\// The `ssr` runtime's hand-written half: everything but `escape` and
+        \\// `list`, which the module `Views` supplies.
+        \\import process from "node:process";
+        \\import {
+        \\  escape,
+        \\} from "beni:Views";
+        \\
+        \\// A top-level statement that is not a declaration: the one file declines it.
+        \\globalThis.viewsLoaded = true;
+        \\
+        \\export const escapeAttr = (value) => escape(value);
+        \\export const safeUrl = (url) => url;
+        \\export const classes = (entries) => "";
+        \\export const styles = (entries) => "";
+        \\export const rawText = (text, tag) => text;
+        \\export const text = (s) => ({ t: s });
+        \\export const map = (html, f) => html;
+        \\export const run = (program) => {
+        \\  process.stdout.write(escape(program.$o));
+        \\  throw new Error("done");
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "hello"
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=views", "--release", "--source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_platform/markup.foreign.mjs",
+        "no",
+        "import{",
+        "escape}from",
+        "globalThis.viewsLoaded",
+        "export const escapeAttr",
+        "run=|",
+        "throw new Error",
+    });
+    const ran = try w.runNode(&.{ "--enable-source-maps", "out/_main.mjs" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file markup.foreign.mjs
+        \\source ../../views/markup.js: its text
+        \\import{ -> markup.js:4:1
+        \\escape}from -> markup.js:4:1 (12 before)
+        \\globalThis.viewsLoaded -> markup.js:9:1
+        \\export const escapeAttr -> markup.js:11:1
+        \\run=| -> markup.js:18:21 run
+        \\throw new Error -> markup.js:20:3
+        \\
+    , checked.stdout);
+    try testing.expectEqualStrings("hello\n", ran.stdout);
+    try testing.expect(std.mem.indexOf(u8, ran.stderr, "    at run (") != null);
+    try testing.expect(std.mem.indexOf(u8, ran.stderr, "views/markup.js:20:9)\n") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The multi-file layout: the entry file, which no person wrote, has no
+    // map.
+    try testing.expect(w.exists("out/_platform/markup.foreign.mjs.map"));
+    try testing.expect(!w.exists("out/_main.mjs.map"));
+}
+
+test "a release library map names the module a copied body came from" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Deferred* item 2 (amended 2026-11-04), in the
+    // multi-file layout: whole-program specialisation writes `Aid.twice`'s
+    // body in place of `label`'s call of it. So `Lib.mjs.map` has a second
+    // source, `Aid.beni`: the copy's `2` maps there, and its `n`, `label`'s
+    // own argument, to `Lib.beni`. `Aid.mjs.map` has its own source only.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Aid.beni",
+        \\pub twice : Int → Int
+        \\twice n =
+        \\    n * 2
+        \\
+    );
+    try w.write("Lib.beni",
+        \\import Aid
+        \\import String
+        \\
+        \\
+        \\pub label : Int → String
+        \\label n =
+        \\    "n = " ++ String.fromInt (Aid.twice n)
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib", "Lib.beni", "Aid.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "b(|a*2)", "a*|2)" });
+    const aid = try w.runNode(&.{ "check-release-map.mjs", "lib/Aid.mjs", "no" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Lib.mjs
+        \\source ../Lib.beni: its text
+        \\source ../Aid.beni: its text
+        \\b(|a*2) -> Lib.beni:7:41
+        \\a*|2) -> Aid.beni:3:9
+        \\
+    , checked.stdout);
+    try testing.expectEqualStrings(
+        \\version 3, file Aid.mjs
+        \\source ../Aid.beni: its text
+        \\
+    , aid.stdout);
+}
+
+test "a release map gives each parameter the place where it is written and its beni name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Parameters* (amended 2026-11-05). `before` and
+    // `after` each have a parameter `x`, at another place. `JsIr` holds one
+    // `NameIndex` for the two, because the tag of a local's name starts
+    // again in each declaration, so a table keyed by the name could not tell
+    // them apart. Each `x` maps to its own place, with `x` in `names` (one
+    // entry for the two), and so does each `y`. `twice`'s one parameter is
+    // its arrow's first token, `a=>`: its mark keeps the function's name,
+    // `twice`, and not `x`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Lib.beni",
+        \\pub before : Int, Int → Int
+        \\before x y =
+        \\    x - y
+        \\
+        \\
+        \\pub after : Int, Int → Int
+        \\after x y =
+        \\    y - x
+        \\
+        \\
+        \\pub twice : Int → Int
+        \\twice x =
+        \\    x * 2
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib", "Lib.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "a=(|b,c)=>b-c", "a=(b,|c)=>b-c", "b=(|a,c)=>c-a", "b=(a,|c)=>c-a", "c=|a=>a*2" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Lib.mjs
+        \\source ../Lib.beni: its text
+        \\a=(|b,c)=>b-c -> Lib.beni:2:8 x
+        \\a=(b,|c)=>b-c -> Lib.beni:2:10 y
+        \\b=(|a,c)=>c-a -> Lib.beni:7:7 x
+        \\b=(a,|c)=>c-a -> Lib.beni:7:9 y
+        \\c=|a=>a*2 -> Lib.beni:12:7 twice
+        \\
+    , checked.stdout);
+    // One `names` entry for the two `x`, and one for the two `y`.
+    try testing.expect(std.mem.indexOf(u8, try w.read("lib/Lib.mjs.map"), "\"names\":[\"before\",\"x\",\"y\",\"after\",\"twice\"]") != null);
+}
+
+test "a release map gives a copied lambda's parameters their places in the module they came from" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Parameters* (amended 2026-11-05), with *Copied
+    // bodies*: whole-program specialisation writes `Aid.bumpAll`'s body in
+    // `main`, and the lambda in it with it. `List.indexedMap` has a second
+    // call, so it stays one function, and the body is small enough to copy.
+    // The copy's parameters `i` and `v` map to the place in `Aid.beni` where
+    // they are written; `main`'s own lambda's to `Main.beni`, with their
+    // names. A copy gives each local a fresh `$i` name, which has no `names`
+    // entry (item 5), so the copy's parameters have none (#1962).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Aid.beni",
+        \\pub bumpAll : List Int, Int → List Int
+        \\bumpAll xs n =
+        \\    List.indexedMap xs (λi v → v + i * n)
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Aid
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.indexedMap (Aid.bumpAll [ 1, 2, 3 ] 3) (λi v → String.fromInt (i + v)))
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_main.mjs",
+        "no",
+        "[1,2,3],|(a,d)=>d+a*3",
+        "[1,2,3],(|a,d)=>d+a*3",
+        "[1,2,3],(a,|d)=>d+a*3",
+        "(a,d)=>|d+a*3",
+        ",(|a,d)=>b(a+d)",
+        ",(a,|d)=>b(a+d)",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
+        \\source beni:///core/String.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///core/List.beni: embedded
+        \\source ../src/Main.beni: its text
+        \\source ../src/Aid.beni: its text
+        \\[1,2,3],|(a,d)=>d+a*3 -> Aid.beni:3:25
+        \\[1,2,3],(|a,d)=>d+a*3 -> Aid.beni:3:26
+        \\[1,2,3],(a,|d)=>d+a*3 -> Aid.beni:3:28
+        \\(a,d)=>|d+a*3 -> Aid.beni:3:32
+        \\,(|a,d)=>b(a+d) -> Main.beni:8:68 i
+        \\,(a,|d)=>b(a+d) -> Main.beni:8:70 v
+        \\
+    , checked.stdout);
 }
 
 test "--no-source-maps writes no map and no comment, and contradicting it is refused" {
@@ -6492,7 +7080,7 @@ test "a program builds the same with the edge lists the binary carries as with l
     // └─────────────────────────────────────────┘
     // A build reads the edge lists of the modules the binary carries from
     // the checked core, keyed by the module key and `--release` and
-    // `--schema-library` (`fast-compiler.md` §8, *The checked core,
+    // (`fast-compiler.md` §8, *The checked core,
     // embedded*, amended 2026-10-15). A core read through `--core-root`
     // installs nothing from it, so the same program then builds every
     // module's lists. The two trees must be the same, in development and
@@ -6954,8 +7542,10 @@ test "the release specialiser writes every independent function called once in o
     // └─────────────────────────────────────────┘
     // And `total`, called once, and since slice 6 (#676) core `List`'s
     // length setter, written into the loop that calls it once the liveness
-    // read-off has left that loop's body small.
-    try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
+    // read-off has left that loop's body small; and since 2026-10-23 (#877)
+    // the two single-call functions the `node` platform's beni `printLines`
+    // reaches, `String.join` and the list reader it calls.
+    try testing.expectEqual(@as(u64, n + 4), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
     // Since #781 the 260 are written before the first solve. The length
@@ -7050,8 +7640,11 @@ test "the release specialiser leaves a function whose call a write just copied f
     try testing.expectEqual(@as(u64, 1), c.spec_passes);
     // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
     // slice 6 (#676) core `List`'s length setter, written into the loop
-    // that calls it (647 → 631 bytes).
-    try testing.expectEqual(@as(u64, 5), c.spec_inlined);
+    // that calls it (647 → 631 bytes). Since 2026-10-23 (#877) the `node`
+    // platform's `printLines` is beni over `Js`, and the two single-call
+    // functions it reaches — `String.join` and the list reader it calls —
+    // are written into it: 5 → 7.
+    try testing.expectEqual(@as(u64, 7), c.spec_inlined);
 }
 
 test "the release specialiser does not ask a declined call again while neither module changed" {
@@ -7972,7 +8565,7 @@ test "the ownership checker v2 runs behind --ownership=v2 in check, build and du
     try testing.expectEqual(@as(u8, 1), v1.exit_code);
     try testing.expect(std.mem.indexOf(u8, v1.stderr, "LIST CHANGED WHILE STILL IN USE") != null);
     try testing.expectEqual(@as(u8, 0), build.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  5:17 List.push xs: rejected later-use: xs is read again at 5:11\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  5:17 List.push xs: rejected held-operand: the value at 5:13, evaluated before it, holds it until its consumer runs\n") != null);
 }
 
 test "dump --ownership-both prints v1's report, a marker line, then v2's, from one check" {
@@ -8006,6 +8599,32 @@ test "dump --ownership-both prints v1's report, a marker line, then v2's, from o
     try testing.expectEqualStrings(want, both.stdout);
     try testing.expect(std.mem.indexOf(u8, v1.stdout, "List.push xs: rejected") != null);
     try testing.expectEqual(@as(u8, 2), refused.exit_code);
+}
+
+test "dump --ownership-both gives v2 the report --ownership=v2 gives, calls across modules included" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The interface carries one ownership block, v1's under
+    // `--ownership-both`, so v2's importers once read none and every
+    // declaration calling another project module was `unchecked`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/ownership/ElementsApartImported", "_expected.");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const both = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", "--platform=node", "--root=.", "." });
+    const v1 = try w.run(&.{ "dump", "--stage=ownership", "--ownership-everywhere", "--platform=node", "--root=.", "." });
+    const v2 = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-everywhere", "--platform=node", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const want = try std.mem.concat(w.arena.allocator(), u8, &.{ v1.stdout, "== ownership v2\n", v2.stdout });
+    try testing.expectEqualStrings(want, both.stdout);
+    try testing.expect(std.mem.indexOf(u8, v2.stdout, "not built") == null);
 }
 
 test "an ownership dump stops when its verdicts are not the module check's" {
@@ -8228,6 +8847,49 @@ test "the checker v2's work grows linearly with a declaration's statements and i
     try testing.expect(lives[1] * 10 <= lives[0] * 25);
 }
 
+test "the checker v2's work on a K-wide recursive type grows linearly with K, plain and through a Maybe" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.1, as amended for #1253: the first return to a
+    // recursive place stays a plain path, so `T = N (List Int) T … T` has K
+    // first returns, each with K recursive steps. A deep read (`t == t`)
+    // beside a write of the root's list asks the type-path walks of §2.7
+    // (`Place.hits`, `levelsOf`), which take a sealed first return whole:
+    // twice K costs about twice the records, not four times. Walking each
+    // first return's steps one by one cost 1 476 / 3 084 / 8 988 records
+    // at K = 8 / 16 / 32, and 2 164 / 5 740 / 19 420 through a `Maybe`.
+    const a = testing.allocator;
+    for ([_]bool{ false, true }) |via_maybe| {
+        var totals: [3]u64 = undefined;
+        for ([_]u32{ 8, 16, 32 }, 0..) |k, run| {
+            var w = try World.init(a, testing.io);
+            defer w.deinit();
+            var src: std.ArrayList(u8) = .empty;
+            defer src.deinit(a);
+            try src.appendSlice(a, "type T\n    = Leaf\n    | N (List Int)");
+            for (0..k) |_| try src.appendSlice(a, if (via_maybe) " (Maybe T)" else " T");
+            try src.appendSlice(a, "\n\n\npub f : T → List Int × Bool\nf t =\n    case t of\n        N xs");
+            for (0..k) |_| try src.appendSlice(a, " _");
+            try src.appendSlice(a, " →\n            ( List.push xs 1, t == t )\n\n        Leaf →\n            ( [], False )\n");
+            try w.write("Main.beni", src.items);
+
+            // ┌─────────────────────────────────────────┐
+            // │ EXECUTE                                 │
+            // └─────────────────────────────────────────┘
+            const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+            // ┌─────────────────────────────────────────┐
+            // │ VERIFY OUTPUT                           │
+            // └─────────────────────────────────────────┘
+            totals[run] = try accountTotal(dump.stdout, "f");
+        }
+        // Each doubling adds at most a little over what the last one added.
+        try testing.expect(totals[2] - totals[1] <= 3 * (totals[1] - totals[0]));
+        try testing.expect(totals[2] * 10 <= totals[1] * 25);
+    }
+}
+
 test "the checker v2's published blocks are the same bytes at one job and at eight" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -8337,9 +8999,12 @@ test "the checker v2 reads a pattern element's write off at its canonical positi
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary first: π1 R, π1[*] RAW, π1[*][*] A;") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary siblings: π1 R, π1[*] RAW, π1[*][*] A;") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "; xreq excl π1[*]\n") != null);
+    // The write is the elements' slot, never the outer list's; `first`
+    // relies on nothing, `siblings` on its elements being apart.
+    const first = try summaryLine(dump.stdout, "first");
+    const siblings = try summaryLine(dump.stdout, "siblings");
+    try testing.expect(std.mem.indexOf(u8, first, "; writes π1[*]; req yes") != null);
+    try testing.expect(std.mem.indexOf(u8, siblings, "; writes π1[*]; req ⇐ sel π1{[*]}") != null);
 }
 
 test "the checker v2's dump names a shared value, a method call, and gives lists' == and < their derived class" {
@@ -8395,11 +9060,854 @@ test "the checker v2's dump names a shared value, a method call, and gives lists
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "shared(helper)") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "shared(other)") == null);
+    // The slot domain prints a top-level value's arrival as `shared`
+    // (§2.10): `writeTop` answers it, `other` is never written.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary writeTop: res ε… shared; nondup yes\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  13:5 List.push Main.helper: rejected top-level: Main.helper is a top-level value\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.other") == null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, " List.push xs: rejected later-use: xs is read again at ") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary same: π1 R, π2 R\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary less: π1 R, π2 R\n") != null);
+    // Read-only: reads, no writes, no escapes, never the pessimistic contract.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary same: res crossing; nondup yes; reads π1ε* π2ε*\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary less: res crossing; nondup yes; reads π1ε* π2ε*\n") != null);
+}
+
+test "the checker v2 reads a schema run's issues as host objects where the run hands its context to JavaScript" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.10, *host objects*: `core/Schema`'s compiled
+    // run hands its context to JavaScript and answers the issues the
+    // context collects, so they arrive `host` beside `fresh`. A call
+    // whose arguments are the caller's parameters whole is read off by
+    // its callee's arrivals renamed (`CallGraft`), and that read must say
+    // `host` too: without it `Schema.read`'s issues were `fresh` only.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Schema
+        \\
+        \\
+        \\schema Box =
+        \\    keep : Int
+        \\
+        \\
+        \\pub taken : Schema.Value → Result (List Schema.Issue) Int
+        \\taken v =
+        \\    b = (Schema.read (Box.schema ⊤) v)?
+        \\    Ok b.keep
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary taken: res #1.0 fresh host, #1.0[*] fresh host,") != null);
+}
+
+/// A family of the holder index's (`ownership-v2.md` §2.8 *The holder
+/// index*, §4.1), `n` wide: its source and the declaration it measures.
+fn holderFamily(a: std.mem.Allocator, family: []const u8, n: u32) !struct { []const u8, []const u8 } {
+    var src: std.ArrayList(u8) = .empty;
+    if (std.mem.eql(u8, family, "sites")) {
+        // One value spread at n sites, every site's result read at the end.
+        try src.appendSlice(a, "pub spread : List Int → List (List (List Int))\nspread ys =\n    v = [ [ 0 ] ]\n");
+        for (1..n + 1) |i| try src.print(a, "    a{d} = [ …v, ys ]\n", .{i});
+        try src.appendSlice(a, "    [ ");
+        for (1..n + 1) |i| try src.print(a, "{s}a{d}", .{ if (i == 1) "" else ", ", i });
+        try src.appendSlice(a, " ]\n");
+        return .{ src.items, "spread" };
+    }
+    if (std.mem.eql(u8, family, "pending")) {
+        // n pending operands of one literal, each a spread of one value.
+        try src.appendSlice(a, "pub ops : List Int → List (List Int)\nops xs =\n    [ ");
+        for (1..n + 1) |i| try src.print(a, "{s}[ …xs, {d} ]", .{ if (i == 1) "" else ", ", i });
+        try src.appendSlice(a, " ]\n");
+        return .{ src.items, "ops" };
+    }
+    // A helper reading one field, called after an edit of each of n others.
+    try src.appendSlice(a, "type alias R =\n    tag : Int\n");
+    for (1..n + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+    try src.appendSlice(a, "\n\ntagOf : R → Int\ntagOf r =\n    r.tag\n\n\npub edits : R → Int\nedits r =\n");
+    for (1..n + 1) |i| try src.print(a, "    p{d} = List.push r.f{d} {d}\n", .{ i, i, i });
+    try src.appendSlice(a, "    0");
+    for (1..n + 1) |i| try src.print(a, " + tagOf r + List.length p{d}", .{i});
+    try src.appendSlice(a, "\n");
+    return .{ src.items, "edits" };
+}
+
+test "the checker v2 reads two positions of one image through a chain of n choices in records linear in n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 3: at `incAll x`, condition (b) walks the
+    // actual at the split, a union or choice DAG of leaves, each node once.
+    // `xᵢ` names `xᵢ₋₁` in two arms, so without a visited set the walk
+    // would be a tree of 2ⁿ routes. The rule must fire (`f` is accepted, as
+    // in v1) and each doubling of n add at most a little over what the last
+    // one added. Measured (self-hosted Debug): 7 381 / 8 529 / 10 916
+    // records at n = 8 / 16 / 32.
+    const a = testing.allocator;
+    var totals: [3]u64 = undefined;
+    for ([_]u32{ 8, 16, 32 }, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a,
+            \\type B
+            \\    = B (List B) (List B)
+            \\
+            \\
+            \\incAll : B → B
+            \\incAll b =
+            \\    case b of
+            \\        B xs ys →
+            \\            B (incList (List.push xs (B [] []))) (incList ys)
+            \\
+            \\
+            \\incList : List B → List B
+            \\incList bs =
+            \\    case bs of
+            \\        [ b, …rest ] →
+            \\            [ incAll b, …incList rest ]
+            \\
+            \\        [] →
+            \\            []
+            \\
+            \\
+            \\pub f : Int, List B → B
+            \\f n bs =
+            \\    case bs of
+            \\        [ b1, b2, …_ ] →
+            \\            x0 = b1
+            \\
+        );
+        for (1..n + 1) |i| try src.print(a, "            x{d} = if n == {d} then x{d} else if n == {d} then b2 else x{d}\n", .{ i, i, i - 1, i + 100, i - 1 });
+        try src.print(a, "            incAll x{d}\n\n        _ →\n            B [] []\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, ": rejected ") == null);
+        totals[run] = try accountTotal(dump.stdout, "f");
+    }
+    try testing.expect(totals[2] - totals[1] <= 3 * (totals[1] - totals[0]));
+}
+
+test "the checker v2 reads two positions of one image over k list fields, its cost the class's" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 3 over k sides: `type B = B (List B) …`
+    // with k list fields publishes `apart` groups of k level paths, and
+    // `incList`'s own `incAll b` images them to shared cells. The rule
+    // takes the group as one set of distinct positions, so the call is
+    // accepted at every k, as in v1. Its own work is linear in the sides'
+    // cells; the class it reads holds about k² paths, so the account grows
+    // with that, as on master (master 65 068 / 175 023 / 649 017 records at
+    // k = 2 / 4 / 8, refused; here 100 452 / 283 156 / 1 109 590, self-hosted
+    // Debug). The allowance is raised for the class, not for the rule.
+    const a = testing.allocator;
+    var totals: [3]u64 = undefined;
+    for ([_]u32{ 2, 4, 8 }, 0..) |k, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 16777216)\n\ntype B\n    = B");
+        for (0..k) |_| try src.appendSlice(a, " (List B)");
+        try src.appendSlice(a, "\n\n\nincAll : B → B\nincAll b =\n    case b of\n        B");
+        for (1..k + 1) |i| try src.print(a, " x{d}", .{i});
+        try src.appendSlice(a, " →\n            B (incList (List.push x1 (B");
+        for (0..k) |_| try src.appendSlice(a, " []");
+        try src.appendSlice(a, ")))");
+        for (2..k + 1) |i| try src.print(a, " (incList x{d})", .{i});
+        try src.appendSlice(a, "\n\n\nincList : List B → List B\nincList bs =\n    case bs of\n        [ b, …rest ] →\n            [ incAll b, …incList rest ]\n\n        [] →\n            []\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, ": rejected ") == null);
+        totals[run] = try accountTotal(dump.stdout, "incAll") + try accountTotal(dump.stdout, "incList");
+    }
+    // Each doubling of k at most quadruples the work: the class's k².
+    try testing.expect(totals[1] * 2 <= totals[0] * 9);
+    try testing.expect(totals[2] * 2 <= totals[1] * 9);
+}
+
+test "the checker v2's rule 3 atoms cross a block unchanged" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 3: `incList`'s contract owes the
+    // distinctness of the cells its own `incAll b` writes, `[*]#0.0⟲`
+    // among them. A caller that forwards to it reads that contract from the
+    // block when `incList` is imported, and from the module's tables when it
+    // is not: the forwarder's `req` is the same text both ways.
+    const group =
+        \\pub type B
+        \\    = B (List B) (List B)
+        \\
+        \\
+        \\pub incAll : B → B
+        \\incAll b =
+        \\    case b of
+        \\        B xs ys →
+        \\            B (incList (List.push xs (B [] []))) (incList ys)
+        \\
+        \\
+        \\pub incList : List B → List B
+        \\incList bs =
+        \\    case bs of
+        \\        [ b, …rest ] →
+        \\            [ incAll b, …incList rest ]
+        \\
+        \\        [] →
+        \\            []
+        \\
+    ;
+    var one = try World.init(testing.allocator, testing.io);
+    defer one.deinit();
+    try one.write("Main.beni", group ++ "\n\npub via : List B → List B\nvia bs = incList bs\n");
+    var two = try World.init(testing.allocator, testing.io);
+    defer two.deinit();
+    try two.write("Walk.beni", group);
+    try two.write("Main.beni", "import Walk exposing (B)\n\n\npub via : List B → List B\nvia bs = Walk.incList bs\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const same = try one.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const imported = try two.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const a = try viaXreq(same.stdout);
+    const b = try viaXreq(imported.stdout);
+    try testing.expect(std.mem.indexOf(u8, a, "req ⇐ sel π1{") != null);
+    try testing.expect(std.mem.indexOf(u8, a, ",[*]#0.0⟲,") != null);
+    try testing.expectEqualStrings(a, b);
+}
+
+/// The `req` of `via`'s summary line.
+fn viaXreq(dump: []const u8) ![]const u8 {
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "summary via:")) continue;
+        const at = std.mem.indexOf(u8, t, "; req ") orelse return error.NoXreq;
+        return t[at..];
+    }
+    return error.NoSummary;
+}
+
+/// The lines of `dump` that hold `needle`, trimmed, a verdict line's
+/// `line:column ` left out.
+fn dumpLines(a: std.mem.Allocator, dump: []const u8, needle: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        var t = std.mem.trim(u8, l, " ");
+        if (std.mem.indexOf(u8, t, needle) == null) continue;
+        if (t.len > 0 and std.ascii.isDigit(t[0])) if (std.mem.indexOfScalar(u8, t, ' ')) |sp| {
+            t = t[sp + 1 ..];
+        };
+        try out.appendSlice(a, t);
+        try out.append(a, '\n');
+    }
+    return out.toOwnedSlice(a);
+}
+
+const fold_tree_src =
+    \\type Tree
+    \\    = Node Tree (List Int) Tree
+    \\    | Leaf
+    \\
+    \\
+    \\incAll : Tree → Tree
+    \\incAll t =
+    \\    case t of
+    \\        Node l xs r →
+    \\            Node (incAll l) (List.push xs 1) (incAll r)
+    \\
+    \\        Leaf →
+    \\            Leaf
+    \\
+    \\
+    \\same : Tree → Tree
+    \\same t =
+    \\    case t of
+    \\        Leaf →
+    \\            Leaf
+    \\
+    \\        Node l xs r →
+    \\            Node (same l) xs (same r)
+    \\
+    \\
+    \\
+;
+
+/// The records of each size's declaration of a counted family, all in one
+/// module so the module's own groups (`incAll`, `same`) are solved once.
+fn familyTotals(comptime sizes: []const u32, decl: fn (a: std.mem.Allocator, src: *std.ArrayList(u8), n: u32) anyerror!void, prefix: []const u8) ![sizes.len]u64 {
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, fold_tree_src);
+    for (sizes) |n| try decl(a, &src, n);
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+    var totals: [sizes.len]u64 = undefined;
+    for (sizes, &totals) |n, *t| {
+        var name: [16]u8 = undefined;
+        t.* = try accountTotal(dump.stdout, try std.fmt.bufPrint(&name, "{s}{d}", .{ prefix, n }));
+    }
+    return totals;
+}
+
+test "the checker v2 reads a fold certificate over N alternatives in records linear in N" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 4, *Cost*, and §8 slice 4 (#1485):
+    // `same`'s certificate, five keys, at `same (if n == 1 then t1 else …
+    // tN)` makes M = 5N images, one group, and its read is O(W + M log M):
+    // twice N may cost twice the records, plus at most a sixteenth of the
+    // cost at N = 6 (the radix sets' log factor; the records are
+    // deterministic). Measured (self-hosted ReleaseSafe): 40 254 and 78 591
+    // at N = 6 / 12, 1 917 under twice. Testing the group's keys by pairs
+    // (O(M²)) gives 42 683 / 89 812, 4 446 over; reading the holders' reach
+    // once per parameter cell of the base (`holdsCanonical` before `Canon`)
+    // 43 134 / 91 551, 5 283 over. Both fail here.
+    const totals = try familyTotals(&.{ 6, 12 }, struct {
+        fn decl(a: std.mem.Allocator, src: *std.ArrayList(u8), n: u32) !void {
+            try src.print(a, "pub c{d} : Int", .{n});
+            for (0..n) |_| try src.appendSlice(a, ", Tree");
+            try src.print(a, " → Tree\nc{d} n", .{n});
+            for (1..n + 1) |i| try src.print(a, " t{d}", .{i});
+            try src.appendSlice(a, " =\n    incAll (same (if n == 1 then t1");
+            for (2..n) |i| try src.print(a, " else if n == {d} then t{d}", .{ i, i });
+            try src.print(a, " else t{d}))\n\n\n", .{n});
+        }
+    }.decl, "c");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > 2 * totals[0] + totals[0] / 16) {
+        std.debug.print("certificate over N alternatives at N = 6 / 12: {d} / {d} records\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 reads a fold certificate through a shared DAG of built nodes in records linear in its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 4, *Cost*: W is the walk of the actual
+    // along each key, and a projection is memoised per (node, step). Here
+    // the actual is `x{N}`, where `x{i} = if n == i then Node x{i-1} []
+    // Leaf else x{i-1}`: each choice names the last one twice, so without
+    // `Shape.proj`'s memo a projection walks 2^N routes. (The line is
+    // refused: `same` over a built node reads its root `lost`, near-miss
+    // row 14; the cost is what this pins.) Twice the depth may cost at most
+    // twice the records. Measured (self-hosted ReleaseSafe): 25 487 / 45 443
+    // at N = 4 / 8; with the memo's hits ignored 54 322 / 194 401, and 2^12
+    // routes exhaust the declaration's allowance.
+    const totals = try familyTotals(&.{ 4, 8 }, struct {
+        fn decl(a: std.mem.Allocator, src: *std.ArrayList(u8), n: u32) !void {
+            try src.print(a, "pub d{d} : Int, Tree → Tree\nd{d} n t =\n    x0 = t\n", .{ n, n });
+            for (1..n + 1) |i| try src.print(a, "    x{d} = if n == {d} then Node x{d} [] Leaf else x{d}\n", .{ i, i, i - 1, i - 1 });
+            try src.print(a, "    incAll (same x{d})\n\n\n", .{n});
+        }
+    }.decl, "d");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > 2 * totals[0]) {
+        std.debug.print("certificate through a DAG of depth 4 / 8: {d} / {d} records\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 reads row 19's certificate the same in either order of its parameters" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §8 slice 4, near-miss row 19 (#1485): `g2` holds
+    // two parameters of type `Tree`, and the order of its parameters
+    // changes nothing. The slot domain (#1685) has no certificate memo to
+    // reverse, so the program is written twice, `g2`'s parameters in each
+    // order, and both give one set of lines. `h2` calls `same` on a built
+    // node (near-miss row 14), so every path of `g2`'s answer is refused,
+    // as v1 refuses the call (`FoldCertificate`'s `row19`).
+    const a = testing.allocator;
+    for ([_]bool{ false, true }) |swapped| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        const src = fold_tree_src ++
+            \\h2 : Int, Tree → Tree
+            \\h2 n t =
+            \\    if n == 0 then
+            \\        case t of
+            \\            Node l _ _ →
+            \\                case l of
+            \\                    Node _ ys _ →
+            \\                        Node (same (Node t [] Leaf)) ys Leaf
+            \\
+            \\                    Leaf →
+            \\                        Leaf
+            \\
+            \\            Leaf →
+            \\                Leaf
+            \\    else
+            \\        h2 (n - 1) t
+            \\
+            \\
+            \\g2 : Int, Tree, Tree → Tree
+            \\g2 n a b =
+            \\    if n == 0 then
+            \\        Node (same a) [] (h2 0 b)
+            \\    else
+            \\        g2 (n - 1) a b
+            \\
+            \\
+            \\pub row19 : Int, Tree, Tree → Tree
+            \\row19 n s t =
+            \\    case t of
+            \\        Node l _ _ →
+            \\            incAll (g2 n s l)
+            \\
+            \\        Leaf →
+            \\            Leaf
+            \\
+        ;
+        const w_arena = w.arena.allocator();
+        const swap = try std.mem.replaceOwned(u8, w_arena, try std.mem.replaceOwned(u8, w_arena, src, "g2 n a b =", "g2 n b a ="), "incAll (g2 n s l)", "incAll (g2 n l s)");
+        const swap2 = try std.mem.replaceOwned(u8, w_arena, swap, "g2 (n - 1) a b", "g2 (n - 1) b a");
+        try w.write("Main.beni", if (swapped) swap2 else src);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        const lines = try dumpLines(w_arena, dump.stdout, "Main.incAll <call Main.g2>");
+        try testing.expectEqualStrings(
+            \\Main.incAll <call Main.g2>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+            \\Main.incAll <call Main.g2>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+            \\Main.incAll <call Main.g2>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+            \\Main.incAll <call Main.g2>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+            \\Main.incAll <call Main.g2>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+            \\
+        , lines);
+    }
+}
+
+/// Near-miss rows 15 and 17 (`ownership-v2.md` §8 slice 4), in the form
+/// that reaches §2.11 item 3 (d): `same` rebuilds the list's wrappers, so
+/// its class has a class at the list and the write's rest lies in it. `w`
+/// is one view of that class, and `incP (P w w)` writes one tree's lists
+/// twice, so every line is refused `disjoint` (#1532).
+///
+/// In every build, the walk's order and the order that meets the spine
+/// first (`-Downership-v2-switch=otherPaths-spine-first`), with the tag and
+/// without it (`-Downership-v2-mutation=cert-untagged`). Without the tag,
+/// items of the second occurrence do merge into items inside `V` under the
+/// spine-first order, but only below the wrapper, where both routes have
+/// lost their path, and each of those items' ancestors outside `V` has
+/// already kept the whole reach by its own key, whose path no item inside
+/// `V` shares. So the verdict cannot change, and the tag, which costs
+/// nothing, is kept (§8 slice 4, *As built, part B*).
+fn expectTagRow(src: []const u8, line: []const u8, writes: []const []const u8) !void {
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const got = try dumpLines(a, dump.stdout, line);
+    defer a.free(got);
+    // Each side of `P` is a path of the other's argument (§2.11 item 3):
+    // every written path below `#P.0` and `#P.1` is refused, and no other
+    // line is made.
+    var lines: usize = 0;
+    var it = std.mem.splitScalar(u8, got, '\n');
+    while (it.next()) |l| if (l.len > 0) {
+        lines += 1;
+    };
+    try testing.expectEqual(2 * writes.len, lines);
+    for ([_][]const u8{ "#P.0", "#P.1" }) |side| for (writes) |p| {
+        const want = try std.fmt.allocPrint(a, "{s}{s}{s}: rejected disjoint: another path of the same argument reaches it", .{ line, side, p });
+        defer a.free(want);
+        try testing.expect(std.mem.indexOf(u8, got, want) != null);
+    };
+    // The single view, by contrast, is accepted: the line reaches (d).
+    const one = try dumpLines(a, dump.stdout, "Main.incAll <call Main.same>");
+    defer a.free(one);
+    try testing.expect(one.len > 0 and std.mem.indexOf(u8, one, "rejected") == null);
+}
+
+const box_src =
+    \\type Box
+    \\    = Box (List Int)
+    \\
+    \\
+;
+
+const tag_tail =
+    \\type P
+    \\    = P Tree Tree
+    \\
+    \\
+    \\incP : P → P
+    \\incP p =
+    \\    case p of
+    \\        P a b →
+    \\            P (incAll a) (incAll b)
+    \\
+    \\
+    \\pub one : Tree → Tree
+    \\one t = incAll (same t)
+    \\
+    \\
+    \\pub twice : Tree → P
+    \\twice t =
+    \\    w = same t
+    \\    incP (P w w)
+    \\
+;
+
+test "the checker v2 refuses one view written twice through a wrapper, the tag or none, in either walk order (row 15)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE / EXECUTE / VERIFY              │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3 (d), near-miss row 15 (#1485, #1532):
+    // `Box` is on no cycle.
+    try expectTagRow(box_src ++
+        \\type Tree
+        \\    = Node Tree Box Tree
+        \\    | Leaf
+        \\
+        \\
+        \\incAll : Tree → Tree
+        \\incAll t =
+        \\    case t of
+        \\        Node l (Box xs) r →
+        \\            Node (incAll l) (Box (List.push xs 1)) (incAll r)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\
+        \\same : Tree → Tree
+        \\same t =
+        \\    case t of
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\        Node l (Box xs) r →
+        \\            Node (same l) (Box xs) (same r)
+        \\
+        \\
+    ++ tag_tail, "Main.incP <P …>", &.{ "#Node.2⟨Tree⟩#Node.1#Box.0", "#Node.2#Node.1#Box.0", "#Node.1#Box.0", "#Node.0⟨Tree⟩#Node.1#Box.0", "#Node.0#Node.1#Box.0" });
+}
+
+test "the checker v2 refuses one tree handed twice to a callee whose separation is deep" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9.3: one object at two places is two entries.
+    // `idd`'s separation is `π1{ε*}`, projected deep over `P t t`: the
+    // leaf set of `P t t` holds `t`'s leaf once, marked `many`, and its
+    // second copy took the first's route, so the check read the two as one
+    // and `firstOnly` wrote `a` while `b` is the same tree. The second copy
+    // now has a route of its own and the write is refused.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\type Tree
+        \\    = Node Tree (List Int) Tree
+        \\    | Leaf
+        \\
+        \\
+        \\type P
+        \\    = P Tree Tree
+        \\
+        \\
+        \\idd : a → a
+        \\idd x =
+        \\    x
+        \\
+        \\
+        \\incAll : Tree → Tree
+        \\incAll t =
+        \\    case t of
+        \\        Node l xs r →
+        \\            Node (incAll l) (List.push xs 1) (incAll r)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\
+        \\firstOnly : P → P
+        \\firstOnly p =
+        \\    case idd p of
+        \\        P a b →
+        \\            P (incAll a) b
+        \\
+        \\
+        \\dup : Tree → P
+        \\dup t =
+        \\    firstOnly (P t t)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.firstOnly <P …>#P.0#Node.1: rejected disjoint") != null);
+}
+
+test "the checker v2 refuses one view written twice through two wrappers, the tag or none, in either walk order (row 17)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE / EXECUTE / VERIFY              │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3 (d), near-miss row 17 (#1485, #1532):
+    // the tag in the read map. `Wrap` and `Box` are on no cycle.
+    try expectTagRow(box_src ++
+        \\type Wrap
+        \\    = Wrap Box
+        \\
+        \\
+        \\type Tree
+        \\    = Node Tree Wrap Tree
+        \\    | Leaf
+        \\
+        \\
+        \\incAll : Tree → Tree
+        \\incAll t =
+        \\    case t of
+        \\        Node l (Wrap (Box xs)) r →
+        \\            Node (incAll l) (Wrap (Box (List.push xs 1))) (incAll r)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\
+        \\same : Tree → Tree
+        \\same t =
+        \\    case t of
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\        Node l (Wrap (Box xs)) r →
+        \\            Node (same l) (Wrap (Box xs)) (same r)
+        \\
+        \\
+    ++ tag_tail, "Main.incP <P …>", &.{ "#Node.2⟨Tree⟩#Node.1#Wrap.0#Box.0", "#Node.2#Node.1#Wrap.0#Box.0", "#Node.1#Wrap.0#Box.0", "#Node.0⟨Tree⟩#Node.1#Wrap.0#Box.0", "#Node.0#Node.1#Wrap.0#Box.0" });
+}
+
+test "the checker v2's holder index answers a frame's demands in records linear in its holders and uses" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8 *The holder index*, §4.1 (#1214): one value
+    // spread at n sites, n pending operands of one literal, and a helper
+    // that reads one field called after an edit of each of n others. The
+    // live index read every holder (and every rejected `call` use) per
+    // demand: n × n, a lane past its ceiling for the helper at 100. The
+    // sweep's records for Demands grow with n, at most 4.4 times from 25
+    // to 100.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    for ([_][]const u8{ "sites", "pending", "fields" }) |family| {
+        var cost: [2]u64 = undefined;
+        for ([_]u32{ 25, 100 }, 0..) |n, run| {
+            const f = try holderFamily(a, family, n);
+            try w.write("Main.beni", f[0]);
+
+            // ┌─────────────────────────────────────────┐
+            // │ EXECUTE                                 │
+            // └─────────────────────────────────────────┘
+            const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+            // ┌─────────────────────────────────────────┐
+            // │ VERIFY OUTPUT                           │
+            // └─────────────────────────────────────────┘
+            try testing.expectEqual(@as(u8, 0), dump.exit_code);
+            try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+            try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, f[1], "growth"));
+            cost[run] = try accountField(dump.stdout, f[1], "demands");
+        }
+        if (cost[1] * 10 > cost[0] * 44) {
+            std.debug.print("{s}: {d} records at 25, {d} at 100\n", .{ family, cost[0], cost[1] });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "the checker v2 pairs k opaque holders with k edits in records linear in k" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8's inversion (#1214): k `Js.Value`s built from
+    // lists, then k pushes, every value read again. A `⊤` holder is paired
+    // only through a cell it holds that may be the base; the live index
+    // asked every opaque holder at every push (k²). From 25 to 100 the
+    // sweep's records grow at most 4.4 times. `core/TopHoldersMany` pins the
+    // verdicts.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var cost: [2]u64 = undefined;
+    for ([_]u32{ 25, 100 }, 0..) |k, run| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import Js\n\n\nmany zs xs =\n");
+        for (1..k + 1) |i| try src.print(a, "    o{d} = Js.array [ Js.from (List.push zs {d}) ]\n", .{ i, i });
+        for (1..k + 1) |i| try src.print(a, "    y{d} = List.push xs {d}\n", .{ i, i });
+        try src.appendSlice(a, "    Js.array [ ");
+        for (1..k + 1) |i| try src.print(a, "{s}o{d}, Js.from y{d}", .{ if (i == 1) "" else ", ", i, i });
+        try src.appendSlice(a, " ]\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+        cost[run] = try accountField(dump.stdout, "many", "demands");
+    }
+    if (cost[1] * 10 > cost[0] * 44) {
+        std.debug.print("opaque holders: {d} records at 25, {d} at 100\n", .{ cost[0], cost[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 charges a deep witness path a record a step, and nothing else grows" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8 step 3, §4.1 (#1214): `mk = ( lk, mk-1 )` to n,
+    // then a push of every `lk` while `mn` is read: `mn` holds `lk` at a path
+    // of n - k steps, so the n witnesses are n²/2 steps, inherent and each a
+    // record. The work of a step is constant: a child's uses are found inside
+    // its parent's range by its one step, and no step allocates (a review
+    // measured 8.4 s at n = 400 where master took 3.2 s, the same records).
+    // From 40 to 80 the records grow at most 4.4 times.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var cost: [2]u64 = undefined;
+    for ([_]u32{ 40, 80 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "pub deep u =\n");
+        for (1..n + 1) |k| try src.print(a, "    l{d} = [ {d} ]\n", .{ k, k });
+        try src.appendSlice(a, "    m0 = ( [], 0 )\n");
+        for (1..n + 1) |k| try src.print(a, "    m{d} = ( l{d}, m{d} )\n", .{ k, k, k - 1 });
+        for (1..n + 1) |k| try src.print(a, "    p{d} = List.push l{d} 9\n", .{ k, k });
+        try src.print(a, "    String.length (Debug.toString m{d})", .{n});
+        for (1..n + 1) |k| try src.print(a, " + List.length p{d}", .{k});
+        try src.appendSlice(a, "\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "deep", "growth"));
+        cost[run] = try accountField(dump.stdout, "deep", "demands");
+    }
+    if (cost[1] * 10 > cost[0] * 44) {
+        std.debug.print("deep witnesses: {d} records at 40, {d} at 80\n", .{ cost[0], cost[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 finds the best hold of a doubling DAG of depth 12 without listing its paths" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8 step 3 (#1214): `t0 = ( xs, xs )`,
+    // `tk = ( tk-1, tk-1 )` to depth d, 2^d paths to `xs`, then a push of
+    // `xs` while `td` is read. Listing the hold paths reached
+    // `ownership_summary_size` at 12; the best-hold descent names the least
+    // path a step a level: from depth 8 to 12 its records grow at most by
+    // half, and no cover falls back to listing (a stale read of a child
+    // once did, silently, and grew 16 times). v1 cannot check it, so it is
+    // no corpus fixture.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var cost: [2]u64 = undefined;
+    for ([_]u32{ 8, 12 }, 0..) |depth, run| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "pub doubling : List Int → Int\ndoubling xs =\n    t0 = ( xs, xs )\n");
+        for (1..depth + 1) |k| try src.print(a, "    t{d} = ( t{d}, t{d} )\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + String.length (Debug.toString t{d})\n", .{depth});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "hold listings") == null);
+        if (depth == 12) try testing.expect(std.mem.indexOf(u8, dump.stdout, " List.push xs: rejected alias: t12.0.0.0.0.0.0.0.0.0.0.0.0.0 holds it and is read at ") != null);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "doubling", "growth"));
+        cost[run] = try accountField(dump.stdout, "doubling", "demands");
+    }
+    if (cost[1] * 2 > cost[0] * 3) {
+        std.debug.print("doubling DAG: {d} records at depth 8, {d} at 12\n", .{ cost[0], cost[1] });
+        return error.TestUnexpectedResult;
+    }
 }
 
 test "the checker v2's work over live sibling positions is flat per position" {
@@ -8459,21 +9967,1535 @@ fn accountField(dump: []const u8, owner: []const u8, field: []const u8) !u64 {
     return error.NoAccount;
 }
 
+/// `owner`'s `summary` line, after `summary <owner>: `.
+fn summaryLine(dump: []const u8, owner: []const u8) ![]const u8 {
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "summary ")) continue;
+        const rest = t["summary ".len..];
+        if (rest.len > owner.len + 1 and std.mem.startsWith(u8, rest, owner) and rest[owner.len] == ':') return rest[owner.len + 2 ..];
+    }
+    return error.NoSummary;
+}
+
+test "the checker v2's cold run applies no class the warm run stopped at a limit" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1261's review: the warm run stops `w12` at its limit, so `w13` and
+    // `main` are not built at their calls. The dump's cold run walked the
+    // callees again with no limit and applied `w12`'s class: `w13`'s and
+    // `main`'s cold accounts spent the whole allowance. They are walked as
+    // the warm run walks them. `w12` is a record product, 128 copies of a
+    // 128-field record that differ in one field each, so no sharing makes
+    // its walk cheap (as `recordProduct`). It was the doubling chain
+    // `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )` until result
+    // trees made that cheap: `w12`'s growth 18 536, past no limit (#1714).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const m = 128;
+    try recordType(a, &src, m);
+    try src.appendSlice(a, "\n\nw12 : R → List R\nw12 r =\n    [ { r | f0 = [] }");
+    for (1..m) |i| try src.print(a, "\n    , {{ r | f{d} = [] }}", .{i});
+    try src.appendSlice(a, "\n    ]\n\n\nw13 : R → List R\nw13 r = w12 r\n\n\npub main : R → Int\nmain r =\n    t = w13 r\n    List.length r.f0\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w12: ownership_summary_size") != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "w13", "growth"));
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "main", "growth"));
+}
+
+test "the checker v2 reads an imported eq whose walk a limit stopped as the pessimistic contract" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13: `Lib.eq` is written in beni, so `==` on
+    // `Key` is not a derived, read-only comparison. `eq` makes a
+    // `recordProduct` of its key's 128-field record, whose walk the allowance
+    // stops, so `eq` publishes no contract and an importer reads the
+    // pessimistic one (§2.10, §3.6): `bad`'s `xs` escapes at `==`, never
+    // kept as only read beside it. (It called a doubling `w12` until result
+    // trees made that cheap, #1714.)
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const m = 128;
+    try src.appendSlice(a, "pub type Key =\n    Key (List Int) R\n\n\npub ");
+    try recordType(a, &src, m);
+    try src.appendSlice(a, "\n\npub empty : R\nempty =\n    { f0 = []");
+    for (1..m) |i| try src.print(a, ", f{d} = []", .{i});
+    try src.appendSlice(a, " }\n\n\npub eq : Key, Key → Bool\neq a b =\n    case a of\n        Key l r →\n            t =\n                [ { r | f0 = [] }");
+    for (1..m) |i| try src.print(a, "\n                , {{ r | f{d} = [] }}", .{i});
+    try src.appendSlice(a, "\n                ]\n\n            List.length l > 0\n");
+    try w.write("Lib.beni", src.items);
+    try w.write("Main.beni", "import Lib\n\n\npub bad : List Int → Bool × List Int\nbad xs = ( Lib.Key xs Lib.empty == Lib.Key [] Lib.empty, xs )\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit eq: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary bad: res .1 π1ε; nondup yes; reads π1ε*; escapes π1ε*\n") != null);
+}
+
+/// The continuation `owner`'s walk spent, from `dump`, for a source of `n`
+/// statements: the cost-per-call guards below compare it at n and 4n.
+fn continuationFor(w: *World, src: []const u8, owner: []const u8) !u64 {
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, owner, "growth"));
+    return accountField(dump.stdout, owner, "continuation");
+}
+
+test "the checker v2's call cost is flat in its argument's width" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `wrap r = [ r ]` applied to a literal record of w lists: the call's own
+    // records (`one`'s continuation less `zero`'s, which builds the same
+    // literal) must not grow with w. A call view by reference
+    // (`ownership-v2.md` §2.11 *Representation of a view*) costs the callee's
+    // size; grafting the callee's class over the argument cost ~5.5 records a
+    // field.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var cost: [2]i64 = undefined;
+    for ([_]u32{ 25, 100 }, 0..) |width, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias R =\n");
+        for (1..width + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\nwrap : R → List R\nwrap r = [ r ]\n\n\npub zero : ⊤ → R\nzero ⊤ =\n    { ");
+        for (1..width + 1) |i| try src.print(a, "{s}f{d} = [ {d} ]", .{ if (i == 1) "" else ", ", i, i });
+        try src.appendSlice(a, " }\n\n\npub one : ⊤ → List R\none ⊤ =\n    wrap { ");
+        for (1..width + 1) |i| try src.print(a, "{s}f{d} = [ {d} ]", .{ if (i == 1) "" else ", ", i, i });
+        try src.appendSlice(a, " }\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const one: i64 = @intCast(try accountField(dump.stdout, "one", "continuation"));
+        const zero: i64 = @intCast(try accountField(dump.stdout, "zero", "continuation"));
+        cost[run] = one - zero;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(cost[1] <= cost[0] + 64);
+}
+
+test "the checker v2's call costs are flat per call through chains of calls and linear in a result's depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 *Representation of a view*, the review's
+    // points 3–4, pinned before calls answer views so slice 2b keeps them:
+    // `y_k = id y_{k-1}` (an identity tower) and a push through a depth-d
+    // path. At n and 4n calls the caller's continuation is at most 4n's share
+    // plus a tenth; at depths d and 2d at most twice d's plus a tenth. Point
+    // 2, the chain of joins `y_k = pick c y_{k-1} (List.push z k)`, is flat
+    // too since #1214's holder index: each holder's join chain is walked once
+    // for the frame, its `apply`, read-off and publish share flat
+    // (`CallChainShare`).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var cost: [2][3]u64 = undefined;
+    for ([_]u32{ 50, 200 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pick : Bool, List Int, List Int → List Int\npick c a b =\n    if c then a else b\n\n\npub chain : Bool, List Int → Int\nchain c z =\n    y0 = [ 0 ]\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = pick c y{d} (List.push z {d})\n", .{ k, k - 1, k });
+        try src.print(a, "    List.length y{d}\n", .{n});
+        cost[run][0] = try continuationFor(&w, src.items, "chain");
+        src.clearRetainingCapacity();
+        try src.appendSlice(a, "id : List Int → List Int\nid x = x\n\n\npub tower : List Int → List Int\ntower y0 =\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = id y{d}\n", .{ k, k - 1 });
+        try src.print(a, "    List.push y{d} 1\n", .{n});
+        cost[run][1] = try continuationFor(&w, src.items, "tower");
+    }
+    for ([_]u32{ 32, 64 }, 0..) |d, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.print(a, "type alias R{d} =\n    x : List Int\n", .{d});
+        var k = d - 1;
+        while (k >= 1) : (k -= 1) try src.print(a, "\n\ntype alias R{d} =\n    a : R{d}\n", .{ k, k + 1 });
+        try src.appendSlice(a, "\n\ndeepPush : R1 → List Int\ndeepPush r = List.push r");
+        for (1..d) |_| try src.appendSlice(a, ".a");
+        try src.appendSlice(a, ".x 1\n\n\npub caller : R1 → List Int\ncaller r = deepPush r\n");
+        cost[run][2] = try continuationFor(&w, src.items, "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (0..3) |i| {
+        if (cost[1][i] * 10 > cost[0][i] * 44) {
+            std.debug.print("guard {d}: {d} at the first size, {d} at the second\n", .{ i, cost[0][i], cost[1][i] });
+            return error.TestUnexpectedResult;
+        }
+    }
+    try testing.expect(cost[1][2] * 10 <= cost[0][2] * 22);
+}
+
+test "the checker v2 solves each pair once through a chain of diamonds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9.2, *The fixed point of the pairs*: each level
+    // reaches the one below by two calls, so the relation of `x_n` and `p`, an
+    // `under` that walks them all, has 2ⁿ paths and 3n pairs. A walk that cut
+    // only the pairs on its path passes its account by n = 20.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var cost: [2]u64 = undefined;
+    for ([_]u32{ 20, 80 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pick : List Int, List Int → List Int\npick a b =\n    if List.length a > List.length b then a else b\n\n\nid1 : List Int → List Int\nid1 a = a\n\n\nid2 : List Int → List Int\nid2 a = a\n\n\npub dag : List Int, List Int → List Int\ndag p r =\n    x0 = r\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = id1 x{d}\n    u{d} = id2 x{d}\n    x{d} = pick y{d} u{d}\n", .{ k, k - 1, k, k - 1, k, k, k });
+        try src.print(a, "    z = List.push p 2\n    pick z x{d}\n", .{n});
+        cost[run] = try continuationFor(&w, src.items, "dag");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(cost[1] * 10 <= cost[0] * 44);
+}
+
+/// `chain`'s total in a v2 dump of #1146's chain of knots through calls,
+/// `n` deep: `x_k = knot c x_{k-1} e`, where `knot c x t = if c then T
+/// [ x ] else t` and `e` is `x_{k-1}` again or, `params`, the parameter `t`
+/// at every level. `x0 = L zs`, so `x_n` holds `zs` at every depth up to n,
+/// and a push of `zs` while `x_n` is read after is refused.
+fn knotChainTotal(w: *World, n: u32, params: bool) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type T =\n    T (List T)\n    | L (List Int)\n\n\nknot : Bool, T, T → T\nknot c x t =\n    if c then T [ x ] else t\n\n\npub chain : Bool, T, List Int → Int\nchain c t zs =\n    x0 = L zs\n");
+    for (1..n + 1) |k| {
+        if (params) try src.print(a, "    x{d} = knot c x{d} t\n", .{ k, k - 1 }) else try src.print(a, "    x{d} = knot c x{d} x{d}\n", .{ k, k - 1, k - 1 });
+    }
+    try src.print(a, "    ys = List.push zs 1\n    List.length ys + String.length (Debug.toString x{d})\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    var want_buf: [96]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, ":10 List.push zs: rejected alias: x{d} holds it and is read at ", .{n});
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, want) != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "knot", "growth"));
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
+test "the checker v2 counts #1146's chain of knots through calls in n log n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.3.1, §2.11.2, §8 S3b (#1146): the chain
+    // `X_k = union(N_k, X_{k+1})`, `N_k{arg: L_k}`, `L_k{[*]: X_{k-1}}`
+    // of the shape domain's `linkArgs` test, written as a program: each
+    // level is a call of `knot`, whose answer joins a new `T [ x ]` with
+    // the level below or with the parameter. `T` is one place, so `knot`'s
+    // contract is a few `⟲` slots whatever the depth, and the caller applies
+    // it once a call. The shape domain linked the chain in Θ(n²) records.
+    // At four times the levels, at most six times the records (n log n at
+    // most, never sixteen), with growth 0 at 1 024.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const sizes = [_]u32{ 4, 16, 64, 256, 1_024 };
+    for ([_]bool{ false, true }) |params| {
+        var cost: [sizes.len]u64 = undefined;
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        for (sizes, 0..) |n, i| cost[i] = try knotChainTotal(&w, n, params);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for (1..sizes.len) |i| if (cost[i] > 6 * cost[i - 1]) {
+            std.debug.print("knot chain (params {}): {any} records at {any}\n", .{ params, cost, sizes });
+            return error.TestUnexpectedResult;
+        };
+    }
+}
+
+/// `chain`'s total in a v2 dump of `x_k = f c x_{k-1}` to n, where `f c x
+/// = if c then x else [ 1 ]`: `x_n` is the parameter or a fresh list, one
+/// condition per call. `read`: `xs` is pushed while `x_n` is read only at
+/// the end, refused; otherwise `x_n` itself is pushed at the end, accepted
+/// as a parameter write.
+fn joinCallChainTotal(w: *World, n: u32, read: bool) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "f : Bool, List Int → List Int\nf c x =\n    if c then x else [ 1 ]\n\n\npub chain : Bool, List Int → Int\nchain c xs =\n    x0 = xs\n");
+    for (1..n + 1) |k| try src.print(a, "    x{d} = f c x{d}\n", .{ k, k - 1 });
+    if (read) {
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + List.length x{d}\n", .{n});
+    } else {
+        try src.print(a, "    List.length (List.push x{d} 1)\n", .{n});
+    }
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    var want_buf: [96]u8 = undefined;
+    const want = if (read)
+        try std.fmt.bufPrint(&want_buf, ":10 List.push xs: rejected alias: x{d} holds it and is read at ", .{n})
+    else
+        try std.fmt.bufPrint(&want_buf, ":18 List.push x{d}: accepted param\n", .{n});
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, want) != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
+test "the checker v2 reads a chain of 400 calls at its end in records linear in its calls" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.2, R-7.12 (#1130): `x_k = f c x_{k-1}`, each
+    // answer the join of its argument and a fresh list, so `x_400` is the
+    // parameter or one of 400 fresh lists, each under its own call's
+    // condition. Nothing reads a link of the chain before its end: the one
+    // read, or the one write, at the end resolves all 400. At 400 calls at
+    // most 4.4 times the records of 100. The shape domain also ran this read
+    // on a 64 KiB stack; the binary gives its check thread
+    // `Check.stack_size`, so a black-box test cannot pin that half.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_]bool{ true, false }) |read| {
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const c100 = try joinCallChainTotal(&w, 100, read);
+        const c400 = try joinCallChainTotal(&w, 400, read);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        if (c400 * 10 > c100 * 44) {
+            std.debug.print("call chain (read {}): {d} records at 100 calls, {d} at 400\n", .{ read, c100, c400 });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+/// `chain`'s total in a v2 dump of a chain of n choices written inline:
+/// `x_k = if c then x_{k-1} else [ 1 ]`, or, `knots`, `x_k = if c then
+/// T [ x_{k-1} ] else t`. `x_n` holds the parameter `xs` (`zs` inside
+/// `x0 = L zs`), so a push of it while `x_n` is read after is refused.
+fn inlineChoiceChainTotal(w: *World, n: u32, knots: bool) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    if (knots) {
+        try src.appendSlice(a, "type T =\n    T (List T)\n    | L (List Int)\n\n\npub chain : Bool, T, List Int → Int\nchain c t xs =\n    x0 = L xs\n");
+        for (1..n + 1) |k| try src.print(a, "    x{d} = if c then T [ x{d} ] else t\n", .{ k, k - 1 });
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + String.length (Debug.toString x{d})\n", .{n});
+    } else {
+        try src.appendSlice(a, "pub chain : Bool, List Int → Int\nchain c xs =\n    x0 = xs\n");
+        for (1..n + 1) |k| try src.print(a, "    x{d} = if c then x{d} else [ 1 ]\n", .{ k, k - 1 });
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + List.length x{d}\n", .{n});
+    }
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    var want_buf: [96]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, ":10 List.push xs: rejected alias: x{d}", .{n});
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, want) != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
+test "the checker v2 reads a chain of choices written inline in n log n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.3.4 *Reading*, §2.11.2 (#1714): the call-free
+    // twins of the call chains above. Each use of `x_k` is read deep in the
+    // read-off's one pass, and every set node of `x_{k-1}` is under the
+    // wrap of `x_k`'s choice; a pass that read a wrapped node again at each
+    // use read all k leaves again, Σk. At four times the links, at most six
+    // times the records (n log n at most, never sixteen), with growth 0.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const sizes = [_]u32{ 16, 64, 256, 1_024 };
+    for ([_]bool{ false, true }) |knots| {
+        var cost: [sizes.len]u64 = undefined;
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        for (sizes, 0..) |n, i| cost[i] = try inlineChoiceChainTotal(&w, n, knots);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for (1..sizes.len) |i| if (cost[i] > 6 * cost[i - 1]) {
+            std.debug.print("inline choice chain (knots {}): {any} records at {any}\n", .{ knots, cost, sizes });
+            return error.TestUnexpectedResult;
+        };
+    }
+}
+
+test "the checker v2 charges a callee's deep write path a few records a step at each call" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8, §2.11.2, §4.4 (#1225's S3b half): `deepN r`
+    // writes `π1.a…a`, N steps; `callN` passes its parameter on and
+    // `sharedN` reads it again after the call (the verdicts are
+    // `ownership/DeepWrittenPathCall`'s). Each caller instantiates the write
+    // once, a step at a time: at twice the steps at most 2.2 times the
+    // records, and growth 0 at every depth up to 256.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const depths = [_]u32{ 32, 64, 128, 256 };
+    var src: std.ArrayList(u8) = .empty;
+    for (depths) |n| {
+        try src.print(a, "deep{d} r = List.push r", .{n});
+        for (0..n) |_| try src.appendSlice(a, ".a");
+        try src.print(a, " 1\n\n\npub call{d} r = deep{d} r\n\n\npub shared{d} r = ( deep{d} r, r )\n\n\n", .{ n, n, n, n });
+    }
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\ntotal 12: accepted 8 (fresh 0, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4\ncause later-use 4\n") != null);
+    var cost: [2][depths.len]u64 = undefined;
+    var growth: [2][depths.len]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var name_buf: [2][16]u8 = undefined;
+        const names = [2][]const u8{
+            try std.fmt.bufPrint(&name_buf[0], "call{d}", .{n}),
+            try std.fmt.bufPrint(&name_buf[1], "shared{d}", .{n}),
+        };
+        for (names, 0..) |name, k| {
+            growth[k][i] = try accountField(dump.stdout, name, "growth");
+            cost[k][i] = try accountTotal(dump.stdout, name);
+        }
+    }
+    for (0..2) |k| {
+        const flat = for (1..depths.len) |i| {
+            if (cost[k][i] * 10 > cost[k][i - 1] * 22) break false;
+        } else true;
+        if (!flat or std.mem.max(u64, &growth[k]) != 0) {
+            std.debug.print("{s}: {any} records, growth {any}, at {any} steps\n", .{ if (k == 0) "call" else "shared", cost[k], growth[k], depths });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+/// The `total` of `owner`'s account in a v2 dump of `src` as `Main.beni`,
+/// growth 0 and no declaration past a limit.
+fn ownTotalFor(w: *World, src: []const u8, owner: []const u8) !u64 {
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    // No declaration past a limit: a limit leaves a small, unbuilt class.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, owner, "growth"));
+    return accountTotal(dump.stdout, owner);
+}
+
+test "the checker v2's read-off of a call's reads is linear in a chain of field wrappers" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.7, §2.10's read-off (#1325): `f_i g = f_{i-1}
+    // g.x` reads `π1.x`, `π1.x.x`, … below its argument, i paths. The
+    // callee's use is grafted once, never rebuilt from the root per path, so
+    // the last wrapper's records grow with its use's width: at 100 wrappers
+    // at most 11 times those at 10, not 100 times.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 10, 100 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "f1 g = List.length g.x\n");
+        for (2..n + 1) |i| try src.print(a, "\n\nf{d} g = f{d} g.x\n", .{ i, i - 1 });
+        var owner: [8]u8 = undefined;
+        totals[run] = try ownTotalFor(&w, src.items, try std.fmt.bufPrint(&owner, "f{d}", .{n}));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 11) {
+        std.debug.print("f10: {d} records, f100: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's read-off of a call's reads keeps a use shape that is a DAG a DAG" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.7, §2.10's read-off (#1325): `d_i ( a, b ) =
+    // d_{i-1} a + d_{i-1} b` reads both halves the same way, so its use
+    // shape is a DAG of depth i with 2^i paths. The graft is memoised per
+    // node pair and a call walks a read-only use per node, so depth 12 costs
+    // at most twice depth 6, never 64 times.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 6, 12 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "d1 ( a, b ) = List.length a + List.length b\n");
+        for (2..n + 1) |i| try src.print(a, "\n\nd{d} ( a, b ) = d{d} a + d{d} b\n", .{ i, i - 1, i - 1 });
+        var owner: [8]u8 = undefined;
+        totals[run] = try ownTotalFor(&w, src.items, try std.fmt.bufPrint(&owner, "d{d}", .{n}));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("d6: {d} records, d12: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's read-off of a call's reads costs a wrapper of a wide record what a narrow one costs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.7, §2.10's read-off (#1325): `w1 g = w0 g.x`,
+    // where `w0` reads every field of a record. A read-only use at the
+    // argument's own place is taken over whole, its children shared, so a
+    // record of 160 fields costs the wrapper at most twice one of 10.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 10, 160 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias W =\n");
+        for (1..n + 1) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\nw0 : W → Int\nw0 r =\n    0");
+        for (1..n + 1) |i| try src.print(a, " + List.length r.f{d:0>3}", .{i});
+        try src.appendSlice(a, "\n\n\nw1 : { x : W } → Int\nw1 g = w0 g.x\n");
+        totals[run] = try ownTotalFor(&w, src.items, "w1");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("10 fields: {d} records, 160: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// A v2 dump of `src` as `Main.beni` with no declaration past a limit;
+/// growth allowed.
+fn ownDumpNoLimit(w: *World, src: []const u8) ![]const u8 {
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    if (std.mem.indexOf(u8, dump.stdout, "\n  limit ")) |at| {
+        const end = std.mem.indexOfScalarPos(u8, dump.stdout, at + 1, '\n') orelse dump.stdout.len;
+        std.debug.print("{s}\n", .{dump.stdout[at + 1 .. end]});
+        return error.TestUnexpectedResult;
+    }
+    return dump.stdout;
+}
+
+test "the checker v2's write beside many read paths of its parameter costs its caller what one read costs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1 *call view and direct obligation*
+    // (#1325's review): `top` writes `π1.l` and, through `rall`, reads every
+    // field of `π1.w.w`. At `caller`'s call each read path is beside the
+    // write; they are one operand, walked by node in growth, so 256 fields
+    // cost the caller what 64 do, and no lane passes its ceiling (it was
+    // `ownership_accounting_invariant` at 64).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 256 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias W =\n");
+        for (1..n + 1) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\nrall : W → Int\nrall r =\n    0");
+        for (1..n + 1) |i| try src.print(a, " + List.length r.f{d:0>3}", .{i});
+        try src.appendSlice(a, "\n\n\ntop : { w : { w : W, z : Int }, l : List Int } → Int\ntop r = rall r.w.w + List.length (List.push r.l 1)\n\n\npub caller w =\n    l = [ 1 ]\n    top { w = w, l = l }\n");
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src.items), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("64 fields: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's write beside a doubling DAG of read paths costs its caller the DAG's nodes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1 (#1325's review): `top` writes
+    // `π1.l` beside `d_n`'s reads of `π1.d`, 2^n paths over n distinct
+    // nodes. Depth 10 costs the caller at most twice depth 5, with no limit
+    // (depth 5 was `ownership_accounting_invariant`).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 5, 10 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "d1 ( a, b ) = List.length a + List.length b\n");
+        for (2..n + 1) |i| try src.print(a, "\n\nd{d} ( a, b ) = d{d} a + d{d} b\n", .{ i, i - 1, i - 1 });
+        try src.print(a, "\n\ntop r = d{d} r.d + List.length (List.push r.l 1)\n\n\npub caller d =\n    l = [ 1 ]\n    top {{ d = d, l = l }}\n", .{n});
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src.items), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("depth 5: {d} records, depth 10: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// An `else if` chain of D arms (D nested `choice`s) at the root of `v`, for
+/// D = 8, 16 and 32, one module and one dump. Alone (`called` false), each
+/// `plainD` is #1467's: its arms `Rose [ Rose k, Rose [] ]` and
+/// `Rose [ Rose [ Rose k ], Rose [] ]` in turn. With `called`, `calledD`
+/// hands the chain to `incAll` (`CycleJoinRankWriter`'s writer) and
+/// `plainD` is the same chain without the call, each arm `chosen`'s, `k` at
+/// the first level or the level below, so the call is accepted only when
+/// each arm is read apart (§2.11 item 3, #1439).
+fn chainDump(w: *World, called: bool) ![3][3]u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n");
+    if (called) try src.appendSlice(a, "\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+    const depths = [_]u32{ 8, 16, 32 };
+    const arms: [2][]const u8 = if (called) .{ "Rose [ Rose k ]", "Rose [ Rose [ Rose k ] ]" } else .{ "Rose [ Rose k, Rose [] ]", "Rose [ Rose [ Rose k ], Rose [] ]" };
+    for (depths) |n| {
+        for ([_][]const u8{ "called", "plain" }) |name| {
+            if (!called and name[0] == 'c') continue;
+            try src.print(a, "\n\npub {s}{d} : Bool → Rose\n{s}{d} c =\n    k = [ Rose [] ]\n    v =\n", .{ name, n, name, n });
+            for (1..n + 1) |i| try src.print(a, "        {s} c then\n            {s}\n", .{ if (i == 1) "if" else "else if", arms[i % 2] });
+            try src.appendSlice(a, "        else\n            Rose []\n");
+            try src.appendSlice(a, if (name[0] == 'c') "    incAll v\n" else "    v\n");
+        }
+    }
+    const dump = try ownDumpNoLimit(w, src.items);
+    if (std.mem.indexOf(u8, dump, ": rejected") != null) {
+        std.debug.print("a call over the chain is refused\n{s}\n", .{dump});
+        return error.TestUnexpectedResult;
+    }
+    // Per depth: the plain chain's records, 0 (no test reads the call's
+    // other records; the call can cost less than the plain chain), and the
+    // call's demands.
+    var out: [3][3]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var pn: [16]u8 = undefined;
+        var cn: [16]u8 = undefined;
+        const plain = try accountTotal(dump, try std.fmt.bufPrint(&pn, "plain{d}", .{n}));
+        out[i] = .{ plain, 0, 0 };
+        if (!called) continue;
+        const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
+        const demands = try accountField(dump, name, "demands");
+        out[i][2] = demands;
+    }
+    return out;
+}
+
+/// The call's cost over an `else if` chain of D arms (`chosen`'s, as
+/// `chainDump`'s called chain), for D = 8, 16 and 32 (#1525): `calledD`'s
+/// total, less `plainD`'s (the same chain without the call). Each
+/// declaration is alone in its module and `incAll` is imported, so no walk
+/// of another declaration fills a memo it reads. The call's demands are
+/// kept in: less them the figure is 129 / 85 / -44 once the read-off reads
+/// a column per read (#1714), the call costing less than the plain chain's
+/// leaf escape queries, and a figure that cannot be negative checks
+/// nothing. One dump.
+fn chainCallCold(w: *World) ![3]u64 {
+    const a = testing.allocator;
+    try w.write("Lib.beni", "pub type Rose\n    = Rose (List Rose)\n\n\npub incAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+    const depths = [_]u32{ 8, 16, 32 };
+    const arms = [_][]const u8{ "Rose [ Rose k ]", "Rose [ Rose [ Rose k ] ]" };
+    for (depths) |n| {
+        for ([_][]const u8{ "called", "plain" }, [_][]const u8{ "Called", "Plain" }) |name, module| {
+            var src: std.ArrayList(u8) = .empty;
+            defer src.deinit(a);
+            try src.print(a, "import Lib exposing (Rose)\n\n\npub {s}{d} : Bool → Rose\n{s}{d} c =\n    k = [ Rose [] ]\n    v =\n", .{ name, n, name, n });
+            for (1..n + 1) |i| try src.print(a, "        {s} c then\n            {s}\n", .{ if (i == 1) "if" else "else if", arms[i % 2] });
+            try src.appendSlice(a, "        else\n            Rose []\n");
+            try src.appendSlice(a, if (name[0] == 'c') "    Lib.incAll v\n" else "    v\n");
+            var path: [32]u8 = undefined;
+            try w.write(try std.fmt.bufPrint(&path, "{s}{d}.beni", .{ module, n }), src.items);
+        }
+    }
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    if (std.mem.indexOf(u8, dump.stdout, "\n  limit ") != null or std.mem.indexOf(u8, dump.stdout, ": rejected") != null) {
+        std.debug.print("a call over the chain is refused or past a limit\n{s}\n", .{dump.stdout});
+        return error.TestUnexpectedResult;
+    }
+    var out: [3]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var pn: [16]u8 = undefined;
+        var cn: [16]u8 = undefined;
+        const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
+        // The plain chain's read-off asks each built leaf whether an
+        // escape reaches it (§2.10, *host objects*), which the call's
+        // result does not, so the call's own records can be fewer than the
+        // plain chain's: the difference includes the call's demands, and
+        // is positive.
+        const called = try accountTotal(dump.stdout, name);
+        const plain = try accountTotal(dump.stdout, try std.fmt.bufPrint(&pn, "plain{d}", .{n}));
+        if (called <= plain) {
+            std.debug.print("the call at D = {d} costs {d} records, the plain chain {d}\n", .{ n, called, plain });
+            return error.TestUnexpectedResult;
+        }
+        out[i] = called - plain;
+    }
+    return out;
+}
+
+/// Each doubling of D costs at most `num / den` times the last, and D = 32
+/// at most `ceiling` records.
+fn expectChainGrowth(what: []const u8, costs: [3]u64, num: u64, den: u64, ceiling: u64) !void {
+    if (costs[1] * den > costs[0] * num or costs[2] * den > costs[1] * num or costs[2] > ceiling) {
+        std.debug.print("{s} at D = 8 / 16 / 32: {d} / {d} / {d} records\n", .{ what, costs[0], costs[1], costs[2] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's else-if chain of D arms costs its records about linear in D" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 (#1467): the chain's own records, with no
+    // call. 13 210 / 27 163 / 55 932 at D = 8 / 16 / 32, ×2.06 a doubling:
+    // each arm inserts into persistent sets of O(D) members (the choice
+    // DAG's node set, κ's keys), a spine of O(log D) nodes copied, so
+    // D log D. At most 2.2 times a doubling, and 1.7 times D = 32's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const costs = try chainDump(&w, false);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectChainGrowth("the chain", .{ costs[0][0], costs[1][0], costs[2][0] }, 22, 10, 95_000);
+}
+
+test "the checker v2's call over a chain of nested choices is linear in its depth and reads each arm apart" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439, #1467): the
+    // call costs its arms, each once. Its records (the declaration's less
+    // the same chain's without the call, and less its demands) at D = 8 /
+    // 16 / 32 were 1 314 / 1 583 / 2 548 before #1467: the other-paths walk
+    // reads the reach of the chain's root, and each choice unioned its own
+    // cells (all its arms' roots) into it again, O(D) records a choice.
+    // Counted with one declaration a module (`chainCallCold`, #1525), as
+    // memos the callee group or another declaration filled made the count
+    // move with every change to their walks (74 at D = 128 once): 1 101 /
+    // 1 154 / 1 251, and 1 209 / 1 525 / 2 592 with #1467's `ownInSides`
+    // undone. The figure is now the call's total less the plain
+    // chain's, demands included (277 / 377 / 556 since #1714's column per
+    // read; the call's own records alone fell below the plain chain's).
+    // At most 1.5 times a doubling, and D = 32's +10%.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const costs = try chainCallCold(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectChainGrowth("the call", costs, 15, 10, 612);
+}
+
+test "the checker v2's demands over a chain of nested choices cost records linear in its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8 *The build* (#1467): the call's demands
+    // (its `demands` records) at D = 8 / 16 / 32 were 1 038 / 2 430 /
+    // 6 704 on master, 235 / 427 / 861 now. `v` holds each arm's cells and
+    // is used last at the call, and its cover for each arm's target walked
+    // the chain down to that arm: O(D²). A holder with no use after the
+    // pair's first demand has nothing to cover. At most 2.2 times a
+    // doubling, and 1.7 times D = 32's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const costs = try chainDump(&w, true);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectChainGrowth("the demands", .{ costs[0][2], costs[1][2], costs[2][2] }, 22, 10, 1_460);
+}
+
+test "the checker v2's demands over a chain still read after the call cost records about linear in its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8 *As built*, *The join index* (#1510): the chain
+    // of D arms (`chosen`'s) handed to `incAll`, then `count v`, so `v` is
+    // read after the call and each arm's target pairs with it. (It was
+    // `ignore v`, which reads nothing of `v` and is accepted since a call's
+    // uses are its callee's footprint: `ownership/CallReadsNothingAfter`.) Each pair's
+    // cover walked the chain down to its arm: 1 146 / 2 610 / 7 028 demand
+    // records at D = 8 / 16 / 32 on master (×2.3, ×2.7 a doubling). Read
+    // from the root's join index, 1 214 / 2 265 / 4 544. With the issue's
+    // arms (`Rose [ Rose k, Rose [] ]` in turn) it is 1 704 / 3 299 / 6 748,
+    // but that dump takes 0.9 s. At most 2.2 times a doubling, and 1.25 times
+    // D = 32's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n\n\ncount : Rose → Int\ncount r =\n    case r of\n        Rose kids →\n            List.length kids\n");
+    const depths = [_]u32{ 8, 16, 32 };
+    const arms = [_][]const u8{ "Rose [ Rose k ]", "Rose [ Rose [ Rose k ] ]" };
+    for (depths) |n| {
+        try src.print(a, "\n\npub read{d} : Bool → Rose × Int\nread{d} c =\n    k = [ Rose [] ]\n    v =\n", .{ n, n });
+        for (1..n + 1) |i| try src.print(a, "        {s} c then\n            {s}\n", .{ if (i == 1) "if" else "else if", arms[i % 2] });
+        try src.appendSlice(a, "        else\n            Rose []\n    ( incAll v, count v )\n");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try ownDumpNoLimit(&w, src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // `v` is read after the call: each depth's call is refused.
+    if (std.mem.count(u8, dump, "Main.incAll v#Rose.0: rejected later-use: v is read again") != depths.len) {
+        std.debug.print("a call over the chain is not refused\n{s}\n", .{dump});
+        return error.TestUnexpectedResult;
+    }
+    var costs: [3]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var name: [16]u8 = undefined;
+        costs[i] = try accountField(dump, try std.fmt.bufPrint(&name, "read{d}", .{n}), "demands");
+    }
+    try expectChainGrowth("the demands read after the call", costs, 22, 10, 5_700);
+}
+
+test "the checker v2's call over a choice whose arms share a subtree costs each arm its own part" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439's review):
+    // D arms `Rose [ sN, Rose a_i ]` share a tower `sN` of N levels, handed
+    // to `incAll` as one `else if` chain. A part arms share is walked once,
+    // so six more arms cost the call about the same over a tower four times
+    // as tall: at most 1.5 times as much. Walking the tower per arm cost
+    // 26 458 / 46 942 records for six more arms at N = 8 / 32 (×1.8); read
+    // once, 22 874 / 27 779 (×1.2). The declaration's own records count, not
+    // a twin's without the call: one module stays under a second.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+    const shapes = [_][2]u32{ .{ 8, 2 }, .{ 8, 8 }, .{ 32, 2 }, .{ 32, 8 } };
+    for (shapes) |nd| {
+        const n = nd[0];
+        const d = nd[1];
+        try src.print(a, "\n\npub c{d}x{d} : Bool → Rose\nc{d}x{d} c =\n    s0 = Rose []\n", .{ n, d, n, d });
+        for (1..n + 1) |i| try src.print(a, "    s{d} = Rose [ s{d} ]\n", .{ i, i - 1 });
+        for (1..d + 1) |i| try src.print(a, "    a{d} = [ Rose [] ]\n", .{i});
+        try src.appendSlice(a, "    v =\n");
+        for (1..d + 1) |i| try src.print(a, "        {s} c then\n            Rose [ s{d}, Rose a{d} ]\n", .{ if (i == 1) "if" else "else if", n, i });
+        try src.appendSlice(a, "        else\n            Rose []\n");
+        try src.appendSlice(a, "    incAll v\n");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try ownDumpNoLimit(&w, src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    var costs: [shapes.len]u64 = undefined;
+    for (shapes, 0..) |nd, i| {
+        var cn: [16]u8 = undefined;
+        costs[i] = try accountTotal(dump, try std.fmt.bufPrint(&cn, "c{d}x{d}", .{ nd[0], nd[1] }));
+    }
+    const short = costs[1] - costs[0];
+    const tall = costs[3] - costs[2];
+    if (2 * tall > 3 * short) {
+        std.debug.print("six more arms at N = 8 / 32: {d} / {d} records\n", .{ short, tall });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's write deep below a chain of field wrappers is linear in its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 *call view and direct obligation* (#1325's
+    // review): `f0 r = List.push r.b 1`, `f_i g = f_{i-1} g.x`. `f_i`'s call
+    // writes `i` steps below its argument; that walk is value-sized, growth
+    // chosen before it, never the call's lane (it was
+    // `ownership_accounting_invariant` at `f74`). One module of 80: `f80`
+    // costs at most 2.2 times `f40`, with no limit. 80, not 100: the module
+    // of 100 takes 1.3 s (0.7 s of it checking, as on master; the rest the
+    // dump's printing), past a black-box test's 1 s.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "f0 r = List.push r.b 1\n");
+    for (1..81) |i| try src.print(a, "\n\nf{d} g = f{d} g.x\n", .{ i, i - 1 });
+    const dump = try ownDumpNoLimit(&w, src.items);
+    const deep = try accountTotal(dump, "f80");
+    const half = try accountTotal(dump, "f40");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (deep * 10 > half * 22) {
+        std.debug.print("f40: {d} records, f80: {d}\n", .{ half, deep });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// `wall r` pushes onto each of `n` fields of `r`; `caller w = wall w`,
+/// and with `literal` also `fresh k`, which calls `wall` on a record
+/// literal of `n` fresh lists.
+fn manyWrites(a: std.mem.Allocator, n: u32, literal: bool) ![]u8 {
+    var src: std.ArrayList(u8) = .empty;
+    errdefer src.deinit(a);
+    try src.appendSlice(a, "type alias W =\n");
+    for (0..n) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
+    try src.appendSlice(a, "\n\nwall : W → Int\nwall r =\n    0");
+    // One term a line: a line of 640 terms takes 0.45 s more to check.
+    for (0..n) |i| try src.print(a, "\n        + List.length (List.push r.f{d:0>3} 1)", .{i});
+    try src.appendSlice(a, "\n\n\npub caller : W → Int\ncaller w =\n    wall w\n");
+    if (literal) {
+        try src.appendSlice(a, "\n\npub fresh : Int → Int\nfresh k =\n    wall\n");
+        for (0..n) |i| try src.print(a, "        {s} f{d:0>3} = [ k ]\n", .{ if (i == 0) "{" else ",", i });
+        try src.appendSlice(a, "        }\n");
+    }
+    return src.toOwnedSlice(a);
+}
+
+test "the checker v2's call writing many fields of one parameter costs its caller linear work" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1, §4.4 (#1334): each of `wall`'s
+    // writes is Disjoint against the other paths of its argument, and the
+    // other written fields are those paths. A write visits only the paths
+    // whose cells may be its base, through the call's index, so 256 fields
+    // cost `caller` about 4 times what 64 do, with no limit (it was
+    // quadratic: `ownership_summary_size` at 256).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 256 }, 0..) |n, run| {
+        const src = try manyWrites(a, n, false);
+        defer a.free(src);
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 45) {
+        std.debug.print("64 fields: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// `caller`'s records per written field of `manyWrites(n)`, with no limit.
+/// `caller`'s records per written field. `block_limit`: the one limit the
+/// dump may name, the module's block (#1461), which must then be there.
+fn recordsPerWrittenField(n: u32, block_limit: ?[]const u8) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const src = try manyWrites(testing.allocator, n, false);
+    defer testing.allocator.free(src);
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    var rest = dump.stdout;
+    if (block_limit) |l| {
+        const at = std.mem.indexOf(u8, dump.stdout, l) orelse return error.TestUnexpectedResult;
+        rest = try std.mem.concat(w.arena.allocator(), u8, &.{ dump.stdout[0..at], dump.stdout[at + l.len ..] });
+    }
+    if (std.mem.indexOf(u8, rest, "\n  limit ")) |at| {
+        const end = std.mem.indexOfScalarPos(u8, rest, at + 1, '\n') orelse rest.len;
+        std.debug.print("{s}\n", .{rest[at + 1 .. end]});
+        return error.TestUnexpectedResult;
+    }
+    return try accountTotal(dump.stdout, "caller") / n;
+}
+
+// `ownership-v2.md` §4.1 *direct demand query* (#1358): `wall`'s writes are
+// n demands on one argument, the call's product with its callee's routes,
+// so their queries are growth, never the argument's one lane (it was
+// `ownership_accounting_invariant` at 320 fields). Linear: at most 100
+// records a field at 320 and at 480 fields (both about 83), with no limit.
+// Two tests, so each stays well under a second.
+test "the checker v2's call writing 320 fields of one parameter stays in its lanes" {
+    const per = try recordsPerWrittenField(320, null);
+    if (per > 100) {
+        std.debug.print("320 fields: {d} records a field\n", .{per});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call writing 480 fields of one parameter stays in its lanes" {
+    // The slot domain's block (#1685) has no codec bound to pass: no
+    // limit at all is allowed.
+    const per = try recordsPerWrittenField(480, null);
+    if (per > 100) {
+        std.debug.print("480 fields: {d} records a field\n", .{per});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's walk of a callee's wide use is growth, not the call's lane" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 (#1369's review): `wall` pushes `r.l` and reads
+    // `n` fields of distinct types, so its use of `π1` has about n distinct
+    // nodes. Finding which hold a write is the use's size: growth, never the
+    // call's `call_view` lane (`ownership_accounting_invariant` at 600).
+    // 600 types cost `caller` at most 2.2 times what 300 do, with no limit
+    // (9 681 and 4 662 records; 1 200 cost 19 740, but take 1 s alone).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 300, 600 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        for (0..n) |i| try src.print(a, "type T{d:0>4}\n    = T{d:0>4} (List Int)\n\n\n", .{ i, i });
+        try src.appendSlice(a, "type alias W =\n    { l : List Int\n");
+        for (0..n) |i| try src.print(a, "    , f{d:0>4} : T{d:0>4}\n", .{ i, i });
+        try src.appendSlice(a, "    }\n\n\nwall : W → Int\nwall r =\n    List.length (List.push r.l 1)\n");
+        for (0..n) |i| try src.print(a, "        + (case r.f{d:0>4} of\n            T{d:0>4} x →\n                List.length x\n          )\n", .{ i, i });
+        try src.appendSlice(a, "\n\npub caller : W → Int\ncaller w =\n    wall w\n");
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src.items), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 22) {
+        std.debug.print("300 types: {d} records, 600: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's write through a doubling DAG of shared values costs its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3 (#1356): `t_k ( a, b )` pushes onto
+    // every leaf of a 2^k-path tuple; `f` hands it `x_k = ( x_{k-1},
+    // x_{k-1} )` over one list. Every route meets the same values, so it
+    // is one demand, refused `disjoint` (the list is written 2^k times).
+    // Depth 8 costs `f` at most 2.5 times what depth 4 does, with no limit
+    // (it was 27 times: one demand per path).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 4, 8 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "touch : List Int → Int\ntouch xs =\n    List.length (List.push xs 1)\n\n\nt1 ( a, b ) =\n    touch a + touch b\n");
+        for (2..n + 1) |k| try src.print(a, "\n\nt{d} ( a, b ) =\n    t{d} a + t{d} b\n", .{ k, k - 1, k - 1 });
+        try src.appendSlice(a, "\n\npub f : Int → Int\nf k =\n    x0 = [ k ]\n");
+        for (1..n) |k| try src.print(a, "    x{d} = ( x{d}, x{d} )\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "    t{d} ( x{d}, x{d} )\n", .{ n, n - 1, n - 1 });
+        const dump = try ownDumpNoLimit(&w, src.items);
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump, "rejected disjoint"));
+        totals[run] = try accountTotal(dump, "f");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 25) {
+        std.debug.print("depth 4: {d} records, depth 8: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call writing a doubling DAG below a parameter costs its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *One demand per state below a
+    // parameter's leaf* (#1412): `t_k ( a, b )` pushes onto every leaf of a
+    // 2^k-path tuple, and `caller w = t_n w` hands it its own parameter.
+    // Nothing else names `w` below its root, so every route is one state:
+    // one demand, and the class's writes by node. Each two levels add about
+    // what the last two did, with no limit (it was one demand per path:
+    // `ownership_summary_size` at depth 8, and `t9` was unchecked).
+    const a = testing.allocator;
+    const depths = [_]u32{ 8, 10, 12 };
+    var totals: [depths.len]u64 = undefined;
+    for (depths, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "touch : List Int → Int\ntouch xs =\n    List.length (List.push xs 1)\n\n\nt1 ( a, b ) =\n    touch a + touch b\n");
+        for (2..n + 1) |k| try src.print(a, "\n\nt{d} ( a, b ) =\n    t{d} a + t{d} b\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "\n\npub caller w =\n    t{d} w\n", .{n});
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        const call = try std.fmt.allocPrint(w.arena.allocator(), " Main.t{d} w.", .{n});
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump, call));
+        totals[run] = try accountTotal(dump, "caller");
+    }
+    if (totals[2] - totals[1] > (totals[1] - totals[0]) * 3 / 2) {
+        std.debug.print("depth 8: {d} records, 10: {d}, 12: {d}\n", .{ totals[0], totals[1], totals[2] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 reads a holder's later uses below a parameter's leaf by run, not use by use" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *One demand per state below a
+    // parameter's leaf* (#1412's review): `wall` writes `r.fᵢ` and reads
+    // `r` whole through `len` after each write, N times. Each write is a
+    // group, and its trie reads `r`'s uses on the leaf's line. Read use by
+    // use from the range's start, every group walked every earlier `len r`:
+    // 12 432 records at N = 64, ×3.5 a doubling. Read by runs of one path and
+    // group, four times N costs at most 4.5 times as much.
+    const a = testing.allocator;
+    const widths = [_]u32{ 64, 256 };
+    var totals: [widths.len]u64 = undefined;
+    for (widths, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias W =\n");
+        for (0..n) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\ntouch : List Int → Int\ntouch xs =\n    List.length (List.push xs 1)\n\n\nlen : W → Int\nlen r =\n    List.length r.f0\n\n\npub wall : W → Int\nwall r =\n    0");
+        for (0..n) |i| try src.print(a, "\n        + touch r.f{d}\n        + len r", .{i});
+        try src.appendSlice(a, "\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        totals[run] = try accountTotal(dump, "wall");
+    }
+    if (totals[1] * 10 > totals[0] * 45) {
+        std.debug.print("N = 64: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call writing a K-wide type below a parameter makes one demand per state" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *One demand per state below a
+    // parameter's leaf* (#1412): `T = Leaf | N (List Int) T … T`, K wide;
+    // `w2` pushes onto the root's list and, through `w1`, onto each child's,
+    // and `caller t = w2 t` hands it its own parameter. The K children's
+    // lists are one state (each a first return of `T`, then its list), the
+    // root's another: two demands at every K (it was K + 1), and twice K
+    // costs at most 2.2 times as much.
+    const a = testing.allocator;
+    const widths = [_]u32{ 8, 16, 32 };
+    var totals: [widths.len]u64 = undefined;
+    for (widths, 0..) |k, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type T\n    = Leaf\n    | N (List Int)");
+        for (0..k) |_| try src.appendSlice(a, " T");
+        try src.appendSlice(a, "\n\n\nw1 : T → Int\nw1 t =\n    case t of\n        Leaf →\n            0\n\n        N xs");
+        for (0..k) |_| try src.appendSlice(a, " _");
+        try src.appendSlice(a, " →\n            List.length (List.push xs 1)\n\n\nw2 : T → Int\nw2 t =\n    case t of\n        Leaf →\n            0\n\n        N xs");
+        for (0..k) |i| try src.print(a, " t{d}", .{i});
+        try src.appendSlice(a, " →\n            List.length (List.push xs 1)");
+        for (0..k) |i| try src.print(a, " + w1 t{d}", .{i});
+        try src.appendSlice(a, "\n\n\npub caller : T → Int\ncaller t =\n    w2 t\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(usize, 2), std.mem.count(u8, dump, " Main.w2 t"));
+        totals[run] = try accountTotal(dump, "caller");
+    }
+    if (totals[1] * 10 > totals[0] * 22 or totals[2] * 10 > totals[1] * 22) {
+        std.debug.print("K = 8: {d} records, 16: {d}, 32: {d}\n", .{ totals[0], totals[1], totals[2] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 returns a whole parameter of a wide mutually recursive type as one node" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.10, *Arrivals by structure* (#1715): five types,
+    // each a list and a `Maybe` of every other. `same t = t` returns its
+    // parameter at its own path, whose slots fold as the result's, so the
+    // result is one open arrival; written out, it passed the summary limit.
+    // A caller still reads each slot exactly: a write through the result
+    // refuses while the argument is read after it, and is accepted when it
+    // is not.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    for (0..5) |i| {
+        try src.print(a, "type K{d}\n    = K{d} (List Int)", .{ i, i });
+        for (0..5) |j| if (j != i) try src.print(a, " (Maybe K{d})", .{j});
+        try src.print(a, "\n    | KEnd{d}\n\n\n", .{i});
+    }
+    try src.appendSlice(a,
+        \\same : K0 → K0
+        \\same t =
+        \\    t
+        \\
+        \\
+        \\count : K0 → Int
+        \\count t =
+        \\    case t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length xs
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+        \\
+        \\pub bad : K0 → Int
+        \\bad t =
+        \\    case same t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length (List.push xs 1) + count t
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+        \\
+        \\pub good : K0 → Int
+        \\good t =
+        \\    case same t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length (List.push xs 1)
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+    );
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+    try testing.expectEqualStrings("res ε… π1ε; nondup ⇐ sel π1{ε*}; reads π1ε*", try summaryLine(dump.stdout, "same"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump.stdout, "List.push xs: rejected alias"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump.stdout, "List.push xs: accepted param"));
+}
+
+test "the checker v2's call writing many fields of a fresh record literal is linear" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1 (#1334): `fresh` hands `wall` a
+    // literal of distinct lists, so each write's other paths hold cells,
+    // none of which may be its base. They are not listed per write: 128
+    // fields cost `fresh` at most 2.2 times what 64 do (it was 4 times,
+    // 60 115 → 238 889 records).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 128 }, 0..) |n, run| {
+        const src = try manyWrites(a, n, true);
+        defer a.free(src);
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src), "fresh");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 22) {
+        std.debug.print("64 fields: {d} records, 128: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// A chain of `n` calls of one family of §2.11's counted tests, its last
+/// value's element read (a push on it) or, for `push`, published.
+fn shareProgram(a: std.mem.Allocator, family: []const u8, n: u32) ![]const u8 {
+    var src: std.ArrayList(u8) = .empty;
+    const read = "    case {s}{d} of\n        [ a, …_ ] →\n            List.length (List.push a 0)\n\n        _ →\n            0\n";
+    if (std.mem.eql(u8, family, "step") or std.mem.eql(u8, family, "shared")) {
+        const shared = family[1] == 'h';
+        try src.appendSlice(a, "step : List (List Int), List Int → List (List Int)\nstep x v =\n    List.push x v\n\n\npub chain : ⊤ → Int\nchain ⊤ =\n");
+        if (shared) try src.appendSlice(a, "    l = [ 1 ]\n");
+        try src.appendSlice(a, "    x0 = [ [ 0 ] ]\n");
+        for (1..n + 1) |k| if (shared) try src.print(a, "    x{d} = step x{d} l\n", .{ k, k - 1 }) else try src.print(a, "    x{d} = step x{d} [ {d} ]\n", .{ k, k - 1, k });
+        try src.print(a, read, .{ "x", n });
+    } else if (std.mem.eql(u8, family, "pick")) {
+        try src.appendSlice(a, "pick : Bool, List (List Int), List (List Int) → List (List Int)\npick c a b =\n    if c then a else b\n\n\npub chain : Bool → Int\nchain c =\n    z = [ [ 0 ] ]\n    y0 = [ [ 0 ] ]\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = pick c y{d} (List.push z [ {d} ])\n", .{ k, k - 1, k });
+        try src.print(a, read, .{ "y", n });
+    } else if (std.mem.eql(u8, family, "push")) {
+        try src.appendSlice(a, "pub chain : ⊤ → List Int\nchain ⊤ =\n    x0 = [ 0 ]\n");
+        for (1..n + 1) |k| try src.print(a, "    x{d} = List.push x{d} {d}\n", .{ k, k - 1, k });
+        try src.print(a, "    x{d}\n", .{n});
+    } else {
+        // `merge`: `x_k = merge x_{k-1} y_k`, `y_k` grown from `y_{k-1}` and
+        // held below `x_{k-1}`; `indep`: `m_k = merge a_k b_k`, two chains.
+        try src.appendSlice(a, "merge : List (List Int), List (List Int) → List (List Int)\nmerge a b =\n    a ++ b\n\n\npub chain : ⊤ → Int\nchain ⊤ =\n");
+        if (family[0] == 'm') {
+            try src.appendSlice(a, "    x0 = [ [ 0 ] ]\n    y0 = [ [ 0 ] ]\n");
+            for (1..n + 1) |k| try src.print(a, "    y{d} = List.push y{d} [ {d} ]\n    x{d} = merge x{d} y{d}\n", .{ k, k - 1, k, k, k - 1, k });
+            try src.print(a, read, .{ "x", n });
+        } else {
+            try src.appendSlice(a, "    a0 = [ [ 0 ] ]\n    b0 = [ [ 0 ] ]\n");
+            for (1..n + 1) |k| try src.print(a, "    a{d} = List.push a{d} [ {d} ]\n    b{d} = List.push b{d} [ {d} ]\n    m{d} = merge a{d} b{d}\n", .{ k, k - 1, k, k, k - 1, k, k, k, k });
+            try src.print(a, read, .{ "m", n });
+        }
+    }
+    return src.toOwnedSlice(a);
+}
+
+/// §2.11's counted test for one family: the share of `chain`'s records that
+/// is not Demands' resolve (#1214's), per call, at 10 and 40 calls, flat
+/// (at most a quarter more, a log factor's room). The slot domain (#1685)
+/// has no κ snapshot to cross: a call reads its callee's contract once.
+fn callChainShare(family: []const u8) !void {
+    return callChainShareIn(family, false);
+}
+
+/// `callChainShare` with the callee in another module, `Lib`, so each call
+/// applies the class `Lib`'s block publishes (§8 S3b slice 3), read once.
+fn callChainShareIn(family: []const u8, imported: bool) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var per: [2]u64 = undefined;
+    for ([_]u32{ 10, 40 }, 0..) |n, run| {
+        const program = try shareProgram(a, family, n);
+        if (imported) {
+            const at = std.mem.indexOf(u8, program, "pub chain").?;
+            try w.write("Lib.beni", try std.mem.concat(a, u8, &.{ "pub ", program[0..at] }));
+            try w.write("Main.beni", try std.mem.concat(a, u8, &.{ "import Lib\n\n\n", try std.mem.replaceOwned(u8, a, program[at..], " = step ", " = Lib.step ") }));
+        } else try w.write("Main.beni", program);
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (imported) "." else "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const main = dump.stdout[std.mem.indexOf(u8, dump.stdout, "module Main").?..];
+        // Every call checked: the callee's class applied, never unbuilt.
+        try testing.expect(std.mem.indexOf(u8, main, "unchecked") == null);
+        try testing.expectEqual(@as(u64, 0), try accountField(main, "chain", "growth"));
+        const total = try accountField(main, "chain", "total");
+        per[run] = (total - try accountField(main, "chain", "demands")) / n;
+    }
+    if (per[1] * 4 > per[0] * 5) {
+        std.debug.print("{s}: {d} records a call at 10, {d} at 40\n", .{ family, per[0], per[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call share is flat per call: a step chain read at its element (CallChainShare)" {
+    // `ownership-v2.md` §2.11 *κ across a call*, *Counted tests*: `x_k =
+    // step x_{k-1} [ k ]`. Each call's read below its argument crosses into
+    // the argument's own snapshot and meets the reads the earlier call made.
+    try callChainShare("step");
+}
+
+test "the checker v2's call share is flat per call: an imported step chain (CallChainShare)" {
+    // The same chain with `step` in `Lib` (§8 S3b slice 3): an imported
+    // call is a same-module one, so the share stays flat; the block is read
+    // once, at the first call.
+    try callChainShareIn("step", true);
+}
+
+test "the checker v2's call share is flat per call: an imported shared actual (CallChainShare)" {
+    try callChainShareIn("shared", true);
+}
+
+test "the checker v2's call share is flat per call: a push chain, published (CallChainShare)" {
+    try callChainShare("push");
+}
+
+test "the checker v2's call share is flat per call: one shared actual at every call (CallChainShare)" {
+    // `x_k = step x_{k-1} l`: `l`'s node is held below `x_{k-1}` with the same
+    // entry in both snapshots, so the crossing holds.
+    try callChainShare("shared");
+}
+
+test "the checker v2's call share is flat per call: a chain of joins (CallChainShare)" {
+    // The 2a guard's chain of joins: its share is flat, and so is its whole
+    // continuation since #1214 (the call-cost guard above).
+    try callChainShare("pick");
+}
+
+test "the checker v2's call share is flat per call: merge with a shared actual that grows (CallChainShare)" {
+    try callChainShare("merge");
+}
+
+test "the checker v2's call share is flat per call: merge over two independent chains (CallChainShare)" {
+    // Both sides of the callee's `apart` grow: merged along their tries,
+    // memoised per node pair, never the smaller side's size.
+    try callChainShare("indep");
+}
+
+test "the checker v2's dump of push chains with an early read is the same at --jobs=1 and --jobs=8" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §3.8, §2.11 *Representation of a view*: eight
+    // chains `x_k = List.push x_{k-1} k`, each with a later read of an
+    // intermediate `x_5`, through a helper call so the chains' groups and
+    // their calls' answers are walked in parallel at `--jobs=8`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "step : List Int, Int → List Int\nstep x k = List.push x k\n");
+    for (1..9) |c| {
+        try src.print(a, "\n\npub chain{d} : List Int → Int\nchain{d} x0 =\n", .{ c, c });
+        for (1..41) |k| try src.print(a, "    x{d} = step x{d} {d}\n", .{ k, k - 1, k });
+        try src.appendSlice(a, "    List.length x5 + List.length x40\n");
+    }
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--jobs=1", "Main.beni" });
+    const many = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--jobs=8", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), one.exit_code);
+    try testing.expect(std.mem.indexOf(u8, one.stdout, "== ownership v2") != null);
+    try testing.expectEqualStrings(one.stdout, many.stdout);
+    try testing.expectEqualStrings(one.stderr, many.stderr);
+}
+
 test "the checker v2 charges an instruction's records to its source lanes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §4.1: an instruction's transfer, a call's view, a
     // written demand's query and a holder's registration are kernels of
-    // their source atoms, baseline, never growth. What growth remains per
-    // statement of `x_k = List.push x_{k-1} k` is the graft of the
-    // callee's class at each call, named growth until S3b's call view by
-    // reference (#1097): it stays constant per statement, and twice the
-    // statements is twice the growth. Since the κ trie (#1073) the graft
-    // also relabels the class's snapshot and links the argument's at its
-    // path, about 35 records a call where it was 19 (until #1097 removes
-    // the graft's copy altogether).
-    var growth: [2]u64 = undefined;
+    // their source atoms, baseline, never growth. Since the call view by
+    // reference (#1097) a call grafts nothing: a chain of `x_k = List.push
+    // x_{k-1} k` spends no growth (G_f = 0), and its baseline is flat per
+    // statement (25 852 / 52 433 records at 100 / 200). It was about 35
+    // growth records a statement while the call grafted its callee's class.
+    var baseline: [2]u64 = undefined;
     for ([_]u32{ 100, 200 }, 0..) |n, run| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
@@ -8494,15 +11516,51 @@ test "the checker v2 charges an instruction's records to its source lanes" {
         // │ VERIFY OUTPUT                           │
         // └─────────────────────────────────────────┘
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
-        growth[run] = try accountField(dump.stdout, "chain", "growth");
-        const baseline = try accountField(dump.stdout, "chain", "baseline");
-        // Since #1201 a demand's walk of its holder's value is growth too,
-        // about 4 records a statement.
-        try testing.expect(growth[run] <= 48 * n);
-        // The graft's growth (#1097) is now about a third of the baseline.
-        try testing.expect(baseline >= 2 * growth[run]);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+        baseline[run] = try accountField(dump.stdout, "chain", "baseline");
     }
-    try testing.expect(growth[1] <= 2 * growth[0] + 40);
+    try testing.expect(baseline[1] * 10 <= baseline[0] * 22);
+}
+
+test "the checker v2's wide record literal stored by a call spends no growth (ValueCellsGuards.rebuilt)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1097's done condition, §4.1: `List.push [] { f1 = w.f1, … }` over a
+    // record of N lists, the corpus's `ValueCellsGuards.rebuilt` at 130.
+    // While the call grafted its callee's class over the record it spent
+    // 12 408 growth records at 130; by reference it spends none, and twice
+    // the fields cost about twice the records.
+    var total: [2]u64 = undefined;
+    for ([_]u32{ 65, 130 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pub type alias Wide =\n");
+        for (1..n + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\npub rebuilt : Wide → List Wide\nrebuilt w =\n    List.push [] { f1 = w.f1");
+        for (2..n + 1) |i| try src.print(a, ", f{d} = w.f{d}", .{ i, i });
+        try src.appendSlice(a, " }\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "rebuilt", "growth"));
+        total[run] = try accountTotal(dump, "rebuilt");
+    }
+    // 9 517 / 19 713 records (146 and 152 a field); at most 250 a field.
+    if (total[1] * 10 > total[0] * 22 or total[0] > 250 * 65 or total[1] > 250 * 130) {
+        std.debug.print("65 fields: {d} records, 130: {d}\n", .{ total[0], total[1] });
+        return error.TestUnexpectedResult;
+    }
 }
 
 test "the checker v2's summaries read each position of a value on its own (#1073): two corpus summaries pinned" {
@@ -8514,7 +11572,10 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     // level-1 split's entry no longer leaks into level 2 through the one
     // canonical `π1⟲` leaf. These summaries print stronger κ than before
     // (`{lost}` became `{excl π1[*]}`, and `fresh1{lost}` became `fresh1`),
-    // as their non-recursive twins already did; no verdict moves.
+    // as their non-recursive twins already did; no verdict moves. The slot
+    // domain (#1685) prints a contract per slot: each position's own
+    // arrivals, `.0` the parameter's elements and `.1[*]` them again,
+    // never the whole parameter at an element.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const inherit: world.RunOptions = .{ .cwd = .inherit };
@@ -8529,9 +11590,128 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), held.exit_code);
-    try testing.expect(std.mem.indexOf(u8, held.stdout, "  summary basic: π1 RAW, π1[*] RAW, π1[*][*] A; res .0 fresh1 π1[*], .0 fresh2, .0[*] π1[*][*]{excl π1[*][*]}, .1 fresh3, .1 π1, .1[*] fresh1 π1[*]{excl π1[*]}\n") != null);
+    try testing.expect(std.mem.indexOf(u8, held.stdout, "  summary basic: res .0 π1[*] fresh, .1 π1ε fresh, .1[*] π1[*] fresh; nondup no; reads π1ε*; writes π1ε π1[*]; req yes\n") != null);
     try testing.expectEqual(@as(u8, 0), rose.exit_code);
-    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1⟲ RA, π1⟲#Rose.0 RAW; res .0 fresh2, .0 π1⟲#Rose.0, .0[*] π1⟲{excl π1⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
+    // Since #1253 the child, the first return `π1#Rose.0[*]`, is a plain
+    // path, so its own list is written exactly and the levels below it are
+    // `π1#Rose.0[*]⟲`.
+    // Since #1459 the printer reads each line through the join on its way,
+    // as a reader at that path does: `.0[*]#Rose.0`'s built `fresh1` beside
+    // the parameter's level reads that level's `excl` (§2.9). In the slot
+    // domain (#1685) the child's own list `#0.0[*]#0.0` is written exactly
+    // and the levels below it are `⟲`, each slot with its own arrivals.
+    // `Rose` is on a cycle, so `below(π1)` is the symbol `↓π1` (§2.3.1)
+    // and the deep read is one at the root, `π1ε*`: the constructor at `ε`
+    // holds no object, so it reads the same slots as `π1#0.0*`.
+    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: res .0 π1#0.0[*]#0.0 fresh, .0[*]#0.0 fresh, .0[*]#0.0⟲ π1#0.0[*]⟲#0.0, .1 π1#0.0, .1[*]#0.0 π1#0.0[*]#0.0, .1[*]#0.0⟲ π1#0.0[*]⟲#0.0; nondup no; reads π1ε*; writes π1#0.0[*]#0.0; req yes\n") != null);
+}
+
+test "the checker v2's widen keeps a non-recursive function's choice at a tree's root exact (#1360)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `pick`'s result is a branch join at the root whose first arm builds a
+    // node at `#Node.0`: a finite value, no cycle. Outside a recursive
+    // group's rounds widen keeps the join, so the summary names
+    // `#Node.0#Node.0` exactly, as master's does; folding it merged every
+    // level into one class (`#Node.2 = #Node.0`).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "tests/corpus/ownership/WidenChoiceRoot.beni" }, .{ .cwd = .inherit });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    // Since #1253 `l` is `π1#Node.0` and its own list `π1#Node.0#Node.1`,
+    // exact; `a`, a level below `l`, is `π1#Node.0⟲`. In the slot domain
+    // (#1685) the root's list `#1.1` and `#1.0#1.1` each read only their
+    // own arrivals; the levels below `#1.0` are `#1.0⟲`. With result trees
+    // (#1714) a read subtree equal to an earlier sibling's prints as
+    // `π1#1.2 = π1#1.0`: the reads below `#1.2` are `#1.0`'s, each exact.
+    // `Tree` is on a cycle, so a subtree read or selected whole is the
+    // symbol (§2.3.1): `π2{ε*}` and `π1ε* π2ε*` name the object slots the
+    // written-out lists named, and `#1.0⟲*` is `#1.0⟲#1.1`. A contract's
+    // selection spells a subtree of at most `below_min` slots written out
+    // (§2.9.1, *One spelling of a subtree*): `π2{ε*}` is `Tree`'s five
+    // lists and `#1.0⟲*` is `#1.0⟲#1.1`. The result, the point of this
+    // test, is unchanged. `a` returns at its own path, so since the identity
+    // control (§2.11.2) its subtree is one open arrival, `#1.0⟲… π1#1.0⟲`,
+    // whatever its size: `#1.0⟲#1.1`'s `π1#1.0⟲#1.1` is said by it.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲… π1#1.0⟲, #1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1ε* π2ε*\n") != null);
+}
+
+test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.3 *The two pieces that (b) adds, prototyped (4e)*, *The check*:
+    // #1513's review found that the read-equality cross-check fired here
+    // with nothing moved, because κ snapshots key entries outside the
+    // value. The check that replaces it, σ a bisimulation of the raw image
+    // onto the moved one, runs in every safety build, and this program
+    // passes it, under `-Downership-full-cross-check` too.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\type T
+        \\    = N Int (List Int) T T
+        \\    | L
+        \\
+        \\
+        \\pub ins : Int, T → T
+        \\ins k t =
+        \\    case t of
+        \\        N k2 v lt rt →
+        \\            if k < k2 then
+        \\                N k2 v (ins k lt) rt
+        \\            else
+        \\                N k2 v lt (ins k rt)
+        \\
+        \\        L →
+        \\            N k [ k ] L L
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Exit 0: no check panicked. At the default allowance `ins` is a
+    // limit (#1489), after the walks that move its knots.
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+}
+
+test "the checker v2 refuses PushedTwiceLevels' writes through a list that holds one element twice" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.9 *The repeating split* refuses `g`'s write into `List.push bs x`
+    // and into the rest of a pattern over it. The fixture's golden holds
+    // v1's verdicts, which accept both, so it does not see v2 accept them:
+    // interning widen's acyclic images by their form did (§2.3, 4e step 5).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "tests/corpus/ownership/PushedTwiceLevels.beni" }, .{ .cwd = .inherit });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  37:13 PushedTwiceLevels.g <call List.push>: rejected ") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  49:21 PushedTwiceLevels.g rest: rejected ") != null);
 }
 
 test "the checker v2's growth is linear in a recursive tower's height: a one-member literal is its member's snapshot" {
@@ -8636,8 +11816,9 @@ fn expectWideRunPerItem(shape: WideRun, per_item: u64) !void {
 }
 
 test "the checker v2 checks 600 spreads of one list in no growth and work bounded per item" {
-    // Measured: 11 records per item.
-    try expectWideRunPerItem(.spreads, 20);
+    // Measured on the slot domain: 41 / 40 continuation records per item
+    // at 100 / 600 (each spread one arrival of `xs`'s slots, §2.3).
+    try expectWideRunPerItem(.spreads, 60);
 }
 
 test "the checker v2 checks 600 items before a spread in no growth and work bounded per item" {
@@ -8801,26 +11982,13 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §4.1: a value whose type's positions are not the declaration's source,
-    // re-read at a count that grows, is uses × positions: past K·I_f it is
-    // growth, and past the allowance the loud `ownership_summary_size`.
-    const a = testing.allocator;
-    var w = try World.init(a, testing.io);
+    // §4.1: work that is not the declaration's source is past K·I_f, which
+    // is growth, and past the allowance the loud `ownership_summary_size`.
+    // `nearLimitModule`'s `h` (`recordProduct`) costs about 76 000 growth
+    // records from a few atoms.
+    var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
-    try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..200) |i| try src.print(a, "\n    , r{d} : S", .{i});
-    try src.appendSlice(a, "\n    }\n\n\npub g : List Int → List R\ng xs =\n    s = { s0 = xs");
-    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
-    try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..200) |i| try src.print(a, ", r{d} = s", .{i});
-    try src.appendSlice(a, " }\n    [ r");
-    for (1..16) |_| try src.appendSlice(a, ", r");
-    try src.appendSlice(a, " ]\n");
-    try w.write("Main.beni", src.items);
+    try w.write("Main.beni", try nearLimitModule(w.arena.allocator(), true, 65_536));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -8831,7 +11999,7 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h: ownership_summary_size") != null);
 }
 
 /// `e` escapes of `xs` (`Js.ref xs`) and a chain of `w` pushes on it, in
@@ -8897,6 +12065,78 @@ test "the checker v2's escape queries are charged and indexed, never an uncharge
     try testing.expect(mixed >= 48 - 4);
     try testing.expect(mixed <= 8 * 48);
     try testing.expect(mixed < 48 * 48 / 4);
+}
+
+/// `g`'s `n` bound lists `xᵢ = [ i ]` and the list of them, the dump's
+/// `total` of `g`'s account line: every record the checker v2 charged.
+fn boundListsTotal(n: u32) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub g : ⊤ → List (List Int)\ng ⊤ =\n");
+    for (0..n) |i| try src.print(a, "    x{d} = [ {d} ]\n", .{ i, i });
+    try src.appendSlice(a, "    [ ");
+    for (0..n) |i| try src.print(a, "{s}x{d}", .{ if (i == 0) "" else ", ", i });
+    try src.appendSlice(a, " ]\n");
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked g") == null);
+    return accountField(dump.stdout, "g", "total");
+}
+
+test "the checker v2 walks a list of bound lists in time linear in their count" {
+    // #1273 (§4.1): the list's element is a recast of each bound list, all
+    // at one place. The join walked one entry per inner, each projecting
+    // every member through every member's own inners: n² projections, 3.6×
+    // the work at twice the lists. One run per place, each inner's node kept.
+    const t100 = try boundListsTotal(100);
+    const t200 = try boundListsTotal(200);
+    // Linear, with headroom: at most 2.3× (measured 2.1× once fixed).
+    try testing.expect(t200 * 10 <= t100 * 23);
+}
+
+/// `main`'s records for a tree `depth` levels deep, ten fields a level, the
+/// pushed list held at the bottom (`t⟲#Tree.0.a1`), read deeply `depth`
+/// times through `showKids` and once inline, all after the push.
+fn deepReadCycleTotal(depth: u32) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const nine = "a2 = [], a3 = [], a4 = [], a5 = [], a6 = [], a7 = [], a8 = [], a9 = []";
+    try src.appendSlice(a, "type Tree\n    = Tree { a1 : List Int, a2 : List Int, a3 : List Int, a4 : List Int, a5 : List Int, a6 : List Int, a7 : List Int, a8 : List Int, a9 : List Int, kids : List Tree }\n\n\n" ++
+        "showKids : Tree → String\nshowKids t =\n    case t of\n        Tree r →\n            Debug.toString r.kids\n\n\n" ++
+        "pub main : Int → Int\nmain n =\n    l = [ n ]\n    t = ");
+    for (0..depth) |_| try src.appendSlice(a, "Tree { a1 = [], " ++ nine ++ ", kids = [ ");
+    try src.appendSlice(a, "Tree { a1 = l, " ++ nine ++ ", kids = [] }");
+    for (0..depth) |_| try src.appendSlice(a, " ] }");
+    try src.appendSlice(a, "\n    case t of\n        Tree r →\n            p = List.push l 5\n            String.length (Debug.toString r.kids) + List.length p");
+    for (0..depth) |_| try src.appendSlice(a, " + String.length (showKids t)");
+    try src.appendSlice(a, "\n");
+    const dump = try ownDumpNoLimit(&w, src.items);
+    // v1's refusal: every tree below the root is read, and its path is `t⟲`.
+    try testing.expect(std.mem.indexOf(u8, dump, "List.push l: rejected") != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump, "main", "growth"));
+    return accountTotal(dump, "main");
+}
+
+test "the checker v2's deep reads on a cycle are linear in the depth of the value they read" {
+    // `ownership-v2.md` §2.7, *A read that leaves its path on a cycle*
+    // (#1345): a deep read at `t#Tree.0.kids` exits at `t⟲`, where the
+    // pushed list's levels fold. The fold targets are made once per path
+    // (`Place.foldsUp`) and the exits once per path and use node, so
+    // twice the levels, each ten fields wide, costs about twice the records.
+    const t50 = try deepReadCycleTotal(50);
+    const t100 = try deepReadCycleTotal(100);
+    // Linear, with headroom: at most 2.3× (measured 2.0×).
+    if (t100 * 10 > t50 * 23) {
+        std.debug.print("depth 50: {d} records, 100: {d}\n", .{ t50, t100 });
+        return error.TestUnexpectedResult;
+    }
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {
@@ -9123,6 +12363,336 @@ test "the checker v2's growth over a tower of one-element literals with a new pa
     try expectNLogN(&.{ 10, 100, 300 }, &growth);
 }
 
+/// One of §2.9's fixed-place tower families (Appendix B *Counted recursive
+/// families*) at `n` written levels, as `tower` in `Main`, or a push chain
+/// of `n` statements over a parameter, as `chain` (#1419).
+const TowerFamily = enum { one, wide, twin, param, mutual, maybe, wrap, wrap_imported, push_param, choice };
+
+/// `family`'s program at `n` levels: `Main.beni`, and `Lib.beni` for an
+/// imported helper.
+fn towerProgram(w: *World, family: TowerFamily, n: u32) !void {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    const rose = "type Rose =\n    Rose (List Rose)\n\n\n";
+    switch (family) {
+        .one, .wide, .twin => {
+            try src.print(a, "{s}pub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n", .{rose});
+            for (1..n + 1) |k| if (family == .one)
+                try src.print(a, "    r{d} = Rose [ r{d} ]\n", .{ k, k - 1 })
+            else if (family == .twin)
+                try src.print(a, "    r{d} = Rose [ r{d}, r{d} ]\n", .{ k, k - 1, k - 1 })
+            else
+                try src.print(a, "    r{d} = Rose [ r{d}, Rose [] ]\n", .{ k, k - 1 });
+        },
+        .param => {
+            try src.appendSlice(a, "type T =\n    T (List Int) (List T)\n\n\npub tower : ");
+            for (0..n) |_| try src.appendSlice(a, "List Int, ");
+            try src.appendSlice(a, "⊤ → T\ntower ");
+            for (1..n + 1) |k| try src.print(a, "a{d} ", .{k});
+            try src.appendSlice(a, "⊤ =\n    r0 = T [] []\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = T a{d} [ r{d} ]\n", .{ k, k, k - 1 });
+        },
+        .mutual => {
+            // `A` and `B` alternate: one SCC of two constructors.
+            try src.appendSlice(a, "type A =\n    A (List B)\n\n\ntype B =\n    B (List A)\n\n\npub tower : ⊤ → A\ntower ⊤ =\n    r0 = A []\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = {s} [ r{d} ]\n", .{ k, if (k % 2 == 1) "B" else "A", k - 1 });
+            if (n % 2 == 1) {
+                try src.print(a, "    A [ r{d} ]\n", .{n});
+                return w.write("Main.beni", src.items);
+            }
+        },
+        .maybe => {
+            try src.appendSlice(a, "type M =\n    M (List Int) (Maybe M)\n\n\npub tower : ⊤ → M\ntower ⊤ =\n    r0 = M [] Nothing\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = M [ {d} ] (Just r{d})\n", .{ k, k, k - 1 });
+        },
+        .wrap => {
+            try src.print(a, "{s}wrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n\n\npub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n", .{rose});
+            for (1..n + 1) |k| try src.print(a, "    r{d} = wrap r{d}\n", .{ k, k - 1 });
+        },
+        .wrap_imported => {
+            try w.write("Lib.beni", "pub type Rose =\n    Rose (List Rose)\n\n\npub wrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n");
+            try src.appendSlice(a, "import Lib\n\n\npub tower : ⊤ → Lib.Rose\ntower ⊤ =\n    r0 = Lib.Rose []\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = Lib.wrap r{d}\n", .{ k, k - 1 });
+        },
+        .choice => {
+            // K: a choice of a level and the level below (§2.9 *Choice controls*).
+            try src.print(a, "{s}pub tower : Bool → Rose\ntower c =\n    r0 = Rose []\n", .{rose});
+            for (1..n + 1) |k| try src.print(a, "    r{d} = if c then Rose [ r{d} ] else r{d}\n", .{ k, k - 1, k - 1 });
+        },
+        .push_param => {
+            try src.appendSlice(a, "pub chain : List Int → List Int\nchain x0 =\n");
+            for (1..n + 1) |k| try src.print(a, "    x{d} = List.push x{d} {d}\n", .{ k, k - 1, k });
+            try src.print(a, "    x{d}\n", .{n});
+            return w.write("Main.beni", src.items);
+        },
+    }
+    try src.print(a, "    r{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+}
+
+/// What the checker v2 spent on `family` at `n` levels at the default
+/// allowance: `Main`'s owner's records (N_f), the source continuation they
+/// took, and the published block's bytes. It is checked: no limit, no
+/// unchecked declaration, no growth (§4.1: a tower's height spends none).
+fn towerWork(family: TowerFamily, n: u32) !struct { total: u64, continuation: u64, block: u64 } {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try towerProgram(&w, family, n);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (family == .wrap_imported) "." else "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const main = dump.stdout[std.mem.indexOf(u8, dump.stdout, "module Main").?..];
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+    const owner = if (family == .push_param) "chain" else "tower";
+    try testing.expectEqual(@as(u64, 0), try accountField(main, owner, "growth"));
+    const at = std.mem.indexOf(u8, main, "  block: ").? + "  block: ".len;
+    const end = std.mem.indexOfScalarPos(u8, main, at, ' ').?;
+    return .{ .total = try accountTotal(main, owner), .continuation = try accountField(main, owner, "continuation"), .block = try std.fmt.parseInt(u64, main[at..end], 10) };
+}
+
+/// `family` at `sizes` meets §4.1's total O(n log n) bound: its records per
+/// n·log₂(n + 2) are at most `per`, a quarter over the most measured, and
+/// they do not rise (`expectNLogN`); so does the source continuation, and,
+/// with `bytes`, the block (#1419, #1420).
+fn expectTowerNLogN(family: TowerFamily, sizes: []const u32, per: u64, bytes: bool) !void {
+    var totals: [3]u64 = undefined;
+    var continuations: [3]u64 = undefined;
+    var blocks: [3]u64 = undefined;
+    for (sizes, 0..) |n, i| {
+        const work = try towerWork(family, n);
+        totals[i] = work.total;
+        continuations[i] = work.continuation;
+        blocks[i] = work.block;
+        const x: f64 = @floatFromInt(n);
+        if (@as(f64, @floatFromInt(work.total)) > @as(f64, @floatFromInt(per)) * x * std.math.log2(x + 2)) {
+            std.debug.print("{t} at {d}: {d} records, past {d} per n·log₂(n + 2)\n", .{ family, n, work.total, per });
+            return error.TestUnexpectedResult;
+        }
+    }
+    try expectNLogN(sizes, totals[0..sizes.len]);
+    try expectNLogN(sizes, continuations[0..sizes.len]);
+    if (bytes) try expectNLogN(sizes, blocks[0..sizes.len]);
+}
+
+// §2.9's tower families counted at the default allowance (§4.1, Appendix B
+// *Counted recursive families*). Each size runs twice (the warm and the cold
+// walk), so the sizes are what a test budget of 1 s holds: 10 / 40 / 160
+// levels (#1426). Their records per n·log₂(n + 2) fall with n in every
+// family. `Rose [ r, r ]` is counted below, but not in n log n (#1420).
+
+test "the checker v2 counts a tower of one-element literals in n log n (Rose [ r ])" {
+    // 1 834 / 7 174 / 30 352 records: 51, 33 and 26 per n·log₂(n + 2).
+    try expectTowerNLogN(.one, &.{ 10, 40, 160 }, 64, true);
+}
+
+test "the checker v2 counts a tower of repeated literals at the default allowance (Rose [ r, r ])" {
+    // #1420: each level's `[*]` is a positions node of the level below,
+    // twice. Before positions saturated at two (§2.3), projecting the tower
+    // made a node per level at every depth: 14 449 / 215 175 records at 10
+    // / 40, refused at 80. Now 5 785 / 32 732 / 316 884 at 10 / 40 / 160
+    // (161, 152 and 270 per n·log₂(n + 2)): accepted, with no growth, but
+    // still above n log n, which #1420 keeps. The ceilings are a quarter over.
+    const sizes = [_]u32{ 10, 40, 160 };
+    const ceilings = [_]u64{ 7_200, 40_700, 395_000 };
+    for (sizes, ceilings) |n, ceiling| {
+        const work = try towerWork(.twin, n);
+        if (work.total > ceiling) {
+            std.debug.print("Rose [ r, r ] at {d}: {d} records, past {d}\n", .{ n, work.total, ceiling });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "the checker v2 keeps a dropped positions node's shared entry (positions saturate at two)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.3 *The entries of a dropped node*: `[ l4, l4, …m7 ]` holds `l4`
+    // three times. Before the slot domain the rebuild dropped `m7`'s `[*]`
+    // node, which `m7`'s snapshot stores `shared`, and had to carry the
+    // entry. On the slot domain (#1685) every arrival at `[*]` is kept:
+    // `m`'s elements and `a`'s, and the result's elements may repeat
+    // (`nondup no`), as the tree the constructors would have made reads.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub sharedLost : List Int, List (List Int), List (List (List Int)) → List (List (List Int))
+        \\sharedLost q a m =
+        \\    l1 = [ q, …a ]
+        \\    l4 = [ …a, …l1 ]
+        \\    m5 = [ …m, l4 ]
+        \\    m7 = [ …m5, l1 ]
+        \\    [ l4, l4, …m7 ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary sharedLost: res ε π3ε fresh, [*] π2ε π3[*] fresh, [*][*] π1ε π2[*] π3[*][*]; nondup no;") != null);
+}
+
+test "the checker v2 counts a tower of joins of a level and the level below in n log n (K)" {
+    // K keys a join's κ on the joined DAG node, which a reader meets by the
+    // projection correspondence (§2.9 *Keyed where a reader looks*, #1428):
+    // 13 056 / 64 744 / 138 217 records at 10 / 40 / 80, 363, 300 and 272
+    // per n·log₂(n + 2); 292 195 (249) at 160. Keying every node of the DAG
+    // below it made K quadratic (706 567 at 80, refused at 160). 160 is not
+    // gated: it checks in 2 s and its dump prints a 7 MB summary (#1426). Its
+    // block still writes Θ(n²) positions, past the allowance at 300 (#1450).
+    try expectTowerNLogN(.choice, &.{ 10, 40, 80 }, 454, true);
+}
+
+test "the checker v2 counts a tower of two-element literals in n log n (W, Rose [ r, Rose [] ])" {
+    // 5 523 / 22 826 / 95 412 records: 154, 106 and 81 per n·log₂(n + 2).
+    try expectTowerNLogN(.wide, &.{ 10, 40, 160 }, 192, true);
+}
+
+test "the checker v2 counts a tower with a new parameter per level in n log n (T a_k [ r ])" {
+    // 3 989 / 17 186 / 75 524 records: 111, 80 and 64 per n·log₂(n + 2).
+    // The block is 1 940 / 7 520 / 65 840 bytes, past n log n: it is not
+    // checked here (#1427).
+    try expectTowerNLogN(.param, &.{ 10, 40, 160 }, 137, false);
+}
+
+test "the checker v2 counts a tower of two mutually recursive constructors in n log n (A, B)" {
+    // 1 912 / 7 206 / 30 136 records: 53, 33 and 26 per n·log₂(n + 2).
+    try expectTowerNLogN(.mutual, &.{ 10, 40, 160 }, 67, true);
+}
+
+test "the checker v2 counts a tower of Maybe children in n log n (M (List Int) (Maybe M))" {
+    // 2 472 / 9 116 / 37 126 records: 69, 42 and 32 per n·log₂(n + 2).
+    try expectTowerNLogN(.maybe, &.{ 10, 40, 160 }, 86, true);
+}
+
+test "the checker v2 counts a tower built by calls in n log n (wrap r = Rose [ r ])" {
+    // 2 334 / 9 076 / 37 526 records: 65, 42 and 32 per n·log₂(n + 2).
+    try expectTowerNLogN(.wrap, &.{ 10, 40, 160 }, 81, true);
+}
+
+test "the checker v2 counts a tower built by calls of another module in n log n (Lib.wrap)" {
+    // 2 394 / 9 102 / 37 144 records: 67, 42 and 32 per n·log₂(n + 2).
+    try expectTowerNLogN(.wrap_imported, &.{ 10, 40, 160 }, 84, true);
+}
+
+/// `wrap (wrap … r)` as §8 S3b slice 5d2 counts it: `n` calls of `wrap r =
+/// Rose [ r ]`, each of its argument through `ident r = r` when `ident`;
+/// the helpers in `Lib` when `imported`. The last call is of `top`, and
+/// with `writer` the tower ends in one call of `growKid`, which writes the
+/// kids one level down.
+const WrapCalls = struct { ident: bool = false, imported: bool = false, top: []const u8 = "wrap", writer: bool = false };
+
+fn wrapCallsDump(n: u32, o: WrapCalls) ![]const u8 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    const helpers = "type Rose =\n    Rose (List Rose)\n\n\nwrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n\n\nwrap2 : Rose → Rose\nwrap2 r =\n    Rose [ r, r ]\n\n\nident : Rose → Rose\nident r =\n    r\n\n\ngrow : Rose → Rose\ngrow r =\n    case r of\n        Rose kids →\n            Rose (List.push kids (Rose []))\n\n\ngrowKid : Rose → Rose\ngrowKid r =\n    case r of\n        Rose [ k, …rest ] →\n            Rose [ grow k, …rest ]\n\n        _ →\n            r\n";
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const p = if (o.imported) "Lib." else "";
+    if (o.imported) {
+        const lib = try std.mem.replaceOwned(u8, a, helpers, "\n\n\n", "\n\n\npub ");
+        defer a.free(lib);
+        try w.write("Lib.beni", try std.mem.concat(w.arena.allocator(), u8, &.{ "pub ", lib }));
+        try src.appendSlice(a, "import Lib\n\n\n");
+    } else try src.appendSlice(a, helpers);
+    try src.print(a, "\n\npub tower : ⊤ → {s}Rose\ntower ⊤ =\n    r0 = {s}Rose []\n", .{ p, p });
+    for (1..n + 1) |k| {
+        const callee = if (k == n) o.top else "wrap";
+        if (o.ident) try src.print(a, "    r{d} = {s}{s} ({s}ident r{d})\n", .{ k, p, callee, p, k - 1 }) else try src.print(a, "    r{d} = {s}{s} r{d}\n", .{ k, p, callee, k - 1 });
+    }
+    if (o.writer) try src.print(a, "    {s}growKid r{d}\n", .{ p, n }) else try src.print(a, "    r{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (o.imported) "." else "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    // Checked at the default allowance: no limit, nothing unchecked, no growth.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+    const main = dump.stdout[std.mem.indexOf(u8, dump.stdout, "module Main").?..];
+    try testing.expectEqual(@as(u64, 0), try accountField(main, "tower", "growth"));
+    return testing.allocator.dupe(u8, main);
+}
+
+/// `wrap (wrap … r)` at 10 and 100 calls: `tower`'s records per call stay
+/// flat (at most a quarter more, a log factor's room), and an identity
+/// helper around each argument adds a constant per call. A call costs at
+/// most 400 records (about 1.7 times the 234 measured), so a constant per
+/// call that doubles fails too. 1 000 calls are
+/// measured, not gated: they take about a second each (the test budget).
+fn expectWrapCallsFlat(imported: bool) !void {
+    var per: [2]u64 = undefined;
+    var plain: [2]u64 = undefined;
+    for ([_]u32{ 10, 100 }, 0..) |n, i| {
+        const dump = try wrapCallsDump(n, .{ .imported = imported });
+        defer testing.allocator.free(dump);
+        plain[i] = try accountTotal(dump, "tower");
+        per[i] = plain[i] / n;
+        const id = try wrapCallsDump(n, .{ .imported = imported, .ident = true });
+        defer testing.allocator.free(id);
+        const with_ident = try accountTotal(id, "tower");
+        if (with_ident > plain[i] + 32 * n) {
+            std.debug.print("ident at {d}: {d} records, {d} without it\n", .{ n, with_ident, plain[i] });
+            return error.TestUnexpectedResult;
+        }
+    }
+    if (per[1] * 4 > per[0] * 5 or per[0] > 400 or per[1] > 400) {
+        std.debug.print("wrap: {d} records a call at 10, {d} at 100\n", .{ per[0], per[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 counts wrap (wrap … r) flat per call, through an identity helper too" {
+    // §8 S3b slice 5d2, §4.1: 2 342 / 23 153 / 246 048 records at 10 / 100
+    // / 1 000 calls (234, 231 and 246 a call); through `ident`, 2 451 /
+    // 24 252 / 257 047 (`ident` answers its actual, about 11 a call).
+    try expectWrapCallsFlat(false);
+}
+
+test "the checker v2 counts Lib.wrap (Lib.wrap … r) flat per call, through an identity helper too" {
+    // The same tower with the helpers in `Lib` (§8 S3b slice 3).
+    try expectWrapCallsFlat(true);
+}
+
+test "the checker v2 refuses a kids writer below wrap2 at the top of a wrap tower, and accepts it below wrap" {
+    // §8 S3b slice 5d2: `growKid` writes the kids of its argument's first
+    // kid. Below `wrap` that kid is held once and the write is accepted;
+    // below `wrap2 r = Rose [ r, r ]` the list holds it twice, and the write
+    // is refused. Same-module and imported, at 10 calls. The
+    // writer's cost is above n log n in the tower's height (#1490),
+    // so only the verdicts are pinned.
+    const cases = [_]struct { n: u32, imported: bool }{ .{ .n = 10, .imported = false }, .{ .n = 10, .imported = true } };
+    for (cases) |c| {
+        const p = if (c.imported) "Lib." else "Main.";
+        var buf: [96]u8 = undefined;
+        const at = try std.fmt.bufPrint(&buf, " {s}growKid r{d}#Rose.0[*]#Rose.0: ", .{ p, c.n });
+        const ok = try wrapCallsDump(c.n, .{ .imported = c.imported, .writer = true });
+        defer testing.allocator.free(ok);
+        const i = std.mem.indexOf(u8, ok, at) orelse return error.NoDemand;
+        try testing.expect(std.mem.startsWith(u8, ok[i + at.len ..], "accepted fresh"));
+        const twin = try wrapCallsDump(c.n, .{ .imported = c.imported, .writer = true, .top = "wrap2" });
+        defer testing.allocator.free(twin);
+        const j = std.mem.indexOf(u8, twin, at) orelse return error.NoDemand;
+        try testing.expect(std.mem.startsWith(u8, twin[j + at.len ..], "rejected "));
+    }
+}
+
+test "the checker v2 counts a push chain over a parameter in n log n" {
+    // #1419: each call's argument is the view of the call before, and each
+    // read of the chain joined its views again at the read's new position:
+    // 3 464 / 21 444 / 214 792 records, 97, 99 and 183 per n·log₂(n + 2),
+    // and refused at 1 000. A chain join takes the one stored at the
+    // view's last position where the two read alike (§2.11 *A read at
+    // another position*): 3 363 / 14 613 / 62 601, 94, 68 and 53 (424 909
+    // at 1 000, accepted), the continuation 2 756 / 12 124 / 52 350.
+    try expectTowerNLogN(.push_param, &.{ 10, 40, 160 }, 117, true);
+}
+
 test "the checker v2 counts a branch's arms once at a fold, and coexisting occurrences twice" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -9133,7 +12703,8 @@ test "the checker v2 counts a branch's arms once at a fold, and coexisting occur
     // node's sides coexist and add. JoinFoldChoice reads `x` once; before
     // `choice`, its opened union counted `x` in both arms and read `lost`.
     // `Rose [ r, r ]` and an element beside a choice holding it repeat; K's
-    // tower keeps every kids read `yes` at every height.
+    // tower keeps every kids read `yes` at every height. On the slot domain
+    // (#1685) a repeat is the summary's `nondup no`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
@@ -9192,12 +12763,12 @@ test "the checker v2 counts a branch's arms once at a fold, and coexisting occur
     }.of;
     const fails = struct {
         fn in(l: []const u8) bool {
-            return std.mem.indexOf(u8, l, "{lost}") != null or std.mem.indexOf(u8, l, "{shared}") != null;
+            return std.mem.indexOf(u8, l, "; nondup no") != null;
         }
     }.in;
     try testing.expect(!fails(try line(dump.stdout, "joinFold")));
     try testing.expect(fails(try line(dump.stdout, "twice")));
-    try testing.expect(std.mem.indexOf(u8, try line(dump.stdout, "besides"), "{shared}") != null);
+    try testing.expect(fails(try line(dump.stdout, "besides")));
     try testing.expect(!fails(try line(dump.stdout, "kTower")));
 }
 
@@ -9266,12 +12837,12 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
         \\pub mTree : ⊤ → M
         \\mTree ⊤ =
         \\    k = [ 1 ]
-        \\    M k (Just (M k Nothing))
+        \\    M [] (Just (M k (Just (M k Nothing))))
         \\
         \\
         \\pub mPlain : ⊤ → M
         \\mPlain ⊤ =
-        \\    M [ 1 ] (Just (M [ 2 ] Nothing))
+        \\    M [] (Just (M [ 1 ] (Just (M [ 2 ] Nothing))))
         \\
     );
 
@@ -9288,11 +12859,14 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
     // and every fold reads its repeats (#1125's verification).
     for ([_][]const u8{ "minimal", "kidsPush", "kidsSpread", "onePush", "plainPush", "mTree", "mPlain" }) |name| {
         var buf: [64]u8 = undefined;
-        const field = if (name[0] == 'm' and name[1] != 'i') "#M.0" else "#Rose.0";
-        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res {s} ", .{ name, field });
+        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res ", .{name});
         const at = std.mem.indexOf(u8, dump.stdout, head) orelse return error.TestUnexpectedResult;
         const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
-        const repeat = std.mem.indexOf(u8, line, "{lost}") != null or std.mem.indexOf(u8, line, "{shared}") != null;
+        // Since #1253 a Maybe tree's depth-1 child is a first return, a
+        // plain path, so `mTree` holds `k` at depths 1 and 2, where the
+        // levels below the first return fold into its class. On the slot
+        // domain (#1685) a repeat is the summary's `nondup no`.
+        const repeat = std.mem.indexOf(u8, line, "; nondup no") != null;
         try testing.expectEqual(!std.mem.eql(u8, name, "plainPush") and !std.mem.eql(u8, name, "mPlain"), repeat);
     }
 }
@@ -9304,7 +12878,9 @@ test "a one-element literal's [*] compares the objects its element holds at ever
     // #1115's review: the link of a one-element literal keeps the entry at
     // its `[*]` that compares everything the element holds below (`apart`
     // over its arrivals): `( a, b )`'s two parameters, and `( xs, x )` with
-    // `x` one of `xs`'s elements, one object at two paths.
+    // `x` one of `xs`'s elements, one object at two paths. On the slot
+    // domain (#1685) the comparison is the result's `nondup` condition: the
+    // two parameters apart, and `no` for `xs` beside its own element.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -9333,11 +12909,11 @@ test "a one-element literal's [*] compares the objects its element holds at ever
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p10: π1 RA, π2 RA; res [*] {apart [π1] [π2]}, [*].0 π1, [*].1 π2, fresh1\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p11: π1 RA, π1[*] RA; res [*] {lost}, [*].0 π1, [*].1 π1[*]{excl π1[*]}, fresh1 fresh2\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p10: res ε fresh, [*].0 π1ε, [*].1 π2ε; nondup ⇐ sel π1{ε} π2{ε}; reads π1ε* π2ε*\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p11: res ε fresh, [*].0 π1ε, [*].0[*] π1[*], [*].1 π1[*]; nondup no; reads π1ε*\n") != null);
 }
 
-test "the checker v2's summary prints a cell at every path it is reached at, a shared value by reference" {
+test "the checker v2's summary prints a cell at every path it is reached at" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -9345,7 +12921,9 @@ test "the checker v2's summary prints a cell at every path it is reached at, a s
     // cells, so a class keeps every route to a cell. The printer kept each
     // `(node, position)` once and left out `pair`'s `.1.0 π1` and `twice`'s
     // `.1`; a built node met again is printed as a reference to its first
-    // route, so a DAG is never flattened.
+    // route, so a DAG is never flattened. The slot domain (#1685) prints
+    // each slot's own arrivals (§2.10), so every route is a line of its
+    // own, and `nondup no` says the result holds a parameter twice.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -9381,13 +12959,15 @@ test "the checker v2's summary prints a cell at every path it is reached at, a s
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary pair: π1 RA, π2 RA; res .0 π1, .1.0 π1, .1.1 π2\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary twice: π1 RA, π2 RA; res .0.0 π1, .0.1 π2, .1 = .0\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary pair: res .0 π1ε, .1.0 π1ε, .1.1 π2ε; nondup no; reads π1ε* π2ε*\n") != null);
+    // A kid equal to an earlier sibling is that sibling's subtree, one
+    // node, printed as `.1 = .0` (§2.10 *Text*, #1714).
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary twice: res .0.0 π1ε, .0.1 π2ε, .1 = .0; nondup no; reads π1ε* π2ε*\n") != null);
     // A union's two sides holding one leaf print it once at a route,
     // however the leaf was first met (#1151's review); a built node below
     // `[*]` is no reference to one above it.
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary choose: π1 RA, π2 RA; res .0 π1, .1.0 π1, .1.1 π1, .1.1 π2\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary both: π1 RA, π2 RA; res .0.0 π1, .0.1 π2, .1 fresh1, .1[*] {shared}, .1[*].0 π1, .1[*].1 π2\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary choose: res .0 π1ε, .1.0 π1ε, .1.1 π1ε π2ε; nondup no; reads π1ε* π2ε*\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary both: res .0.0 π1ε, .0.1 π2ε, .1 fresh, .1[*].0 π1ε, .1[*].1 π2ε; nondup no; reads π1ε* π2ε*\n") != null);
 }
 
 test "the checker v2 gives each demand of one call its own query lane" {
@@ -9396,7 +12976,9 @@ test "the checker v2 gives each demand of one call its own query lane" {
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §4.1, *direct demand query*: ≤ 512 records per
     // written demand. `Ref.set` writes its cell and stores its value: two
-    // demands at one call, two lanes, never one shared by the call point.
+    // demands at one call, each judged on its own. The slot domain (#1685)
+    // charges demands to their own category, not a lane per demand: the
+    // two cost at most 512 records each.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -9419,7 +13001,9 @@ test "the checker v2 gives each demand of one call its own query lane" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, dump.stdout, ": accepted param\n"));
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "direct_demand_query lanes 2,") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  6:5 Ref.set r◆: accepted param\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  6:5 Ref.set xs: accepted param\n") != null);
+    try testing.expect(try accountField(dump.stdout, "put", "demands") <= 2 * 512);
 }
 
 test "the checker v2's dump does not depend on where a declaration sits in its module" {
@@ -9549,7 +13133,8 @@ test "the checker v2 prints a summary of shared positions once per node, not onc
     // 2ⁱ routes. The summary print expanded each route and gathered each
     // route's cells: 2¹⁰ copies of `π1[*]` at ten bindings, and 101.8 s and
     // 6.8 GB at 25. It expands a shared node once per prefix now, and a
-    // position's cells are a set.
+    // position's cells are a set: on the slot domain (#1685), each slot's
+    // arrivals are a sorted run, `π1[*]` once.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
@@ -9569,35 +13154,165 @@ test "the checker v2 prints a summary of shared positions once per node, not onc
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary g: π1 RAW, π1[*] A; res [*] fresh1 π1[*]{shared}, π1\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary g: res ε π1ε, [*] π1[*] fresh; nondup no; reads π1ε*; writes π1ε; req yes\n") != null);
 }
 
-test "the checker v2 says why a summary is not printed" {
+test "the checker v2's branch join reads a repeated run once per call, whatever parent it is met through" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // #1182: the summary print reads the class on the declaration's account,
-    // so it can pass the allowance the walk stayed under. The dump dropped
-    // that error, and the `summary` line was simply missing. A 214-field
-    // record of records re-read 15 times checks at growth 65 276, and its
-    // print passes 65 536: the dump says so.
+    // #1372: a record that doubles at each of n levels is 2ⁿ paths of one
+    // list, and the runs below `.l` and `.r` are equal. A frame that read
+    // a run again for every parent it met it through would grow faster than
+    // the paths do. The slot domain (#1685) holds one state per path, so the
+    // cost doubles per level and no more: measured (self-hosted Debug)
+    // 17 311 / 34 767 / 70 143 records at n = 7 / 8 / 9.
     const a = testing.allocator;
-    var w = try World.init(a, testing.io);
+    var totals: [3]u64 = undefined;
+    for ([_]usize{ 7, 8, 9 }, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias R0 =\n    List Int\n\n\n");
+        for (1..n + 1) |k| try src.print(a, "type alias R{d} =\n    {{ l : R{d}, r : R{d} }}\n\n\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "pub f : Bool, List Int, List Int → R{d}\nf c xs ys =\n    s0 = xs\n    t0 = ys\n", .{n});
+        for (1..n + 1) |k| try src.print(a, "    s{d} = {{ l = s{d}, r = s{d} }}\n    t{d} = {{ l = t{d}, r = t{d} }}\n", .{ k, k - 1, k - 1, k, k - 1, k - 1 });
+        try src.print(a, "    if c then\n        s{d}\n\n    else\n        t{d}\n", .{ n, n });
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+        // Each leaf path holds either parameter, the join's two arms.
+        var path: std.ArrayList(u8) = .empty;
+        defer path.deinit(a);
+        for (0..n) |_| try path.appendSlice(a, ".l");
+        try path.appendSlice(a, " π2ε π3ε,");
+        try testing.expect(std.mem.indexOf(u8, try summaryLine(dump.stdout, "f"), path.items) != null);
+        totals[run] = try accountField(dump.stdout, "f", "total");
+    }
+    // One level more at most doubles the records (and a tenth for the
+    // statements): never a parent's run read again.
+    for (1..3) |i| if (totals[i] * 10 > totals[i - 1] * 21) {
+        std.debug.print("branch join: {d} / {d} / {d} records\n", .{ totals[0], totals[1], totals[2] });
+        return error.TestUnexpectedResult;
+    };
+}
+
+test "the checker v2 reads an imported doubling function's block as growth, at the same-module cost" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1566: `w1 x = ( x, x )`, `w_k x = w_{k-1} (w_{k-1} x)`, and
+    // `h x = w_k (w_k x)`, with the `w`s in `h`'s module or in `W`. The
+    // importer reads `W`'s block at its first call into `W`, and its
+    // re-interning compares the block's places with its own: `w9`'s result
+    // nests 256 tuples deep. That work was charged to the first call's
+    // `call_view` lane, so `h` stopped at `ownership_accounting_invariant`;
+    // and each place's comparison walked every place below it again, so the
+    // read cost the square of the depth. It is growth now, each pair once.
+    // At k = 7 and 9 (the depth ×4): `h`'s growth over the same-module
+    // twin's, the read's, within a tenth of the twin's total (+227 and +899,
+    // 3%; +66 000 at k = 9 with the square), and its total over the twin's,
+    // the block's read, the same factor at both k to a tenth (×1.43 at 7, 8
+    // and 9).
+    // The importer reads the same contract: `h`'s summary is its twin's,
+    // and it reads all of its parameter.
+    var keep: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer keep.deinit();
+    var ratio: [2]u64 = undefined;
+    for ([_]u32{ 7, 9 }, 0..) |k, run| {
+        var cost: [2]struct { growth: u64, total: u64 } = undefined;
+        var summary: [2][]const u8 = undefined;
+        for ([_]bool{ false, true }, 0..) |imported, side| {
+            var w = try World.init(testing.allocator, testing.io);
+            defer w.deinit();
+            const a = w.arena.allocator();
+            var ws: std.ArrayList(u8) = .empty;
+            const pubs: []const u8 = if (imported) "pub " else "";
+            try ws.print(a, "{s}w1 x = ( x, x )\n", .{pubs});
+            for (2..k + 1) |j| try ws.print(a, "\n\n{s}w{d} x = w{d} (w{d} x)\n", .{ pubs, j, j - 1, j - 1 });
+            const q: []const u8 = if (imported) "W." else "";
+            const h = try std.fmt.allocPrint(a, "h x = {s}w{d} ({s}w{d} x)\n", .{ q, k, q, k });
+            if (imported) {
+                try w.write("W.beni", ws.items);
+                try w.write("Main.beni", try std.fmt.allocPrint(a, "@ownership_summary_size(module, 4194304)\n\nimport W\n\n\n{s}", .{h}));
+            } else try w.write("Main.beni", try std.fmt.allocPrint(a, "@ownership_summary_size(module, 4194304)\n\n\n{s}\n\n{s}", .{ ws.items, h }));
+
+            // ┌─────────────────────────────────────────┐
+            // │ EXECUTE                                 │
+            // └─────────────────────────────────────────┘
+            const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+            // ┌─────────────────────────────────────────┐
+            // │ VERIFY OUTPUT                           │
+            // └─────────────────────────────────────────┘
+            try testing.expectEqual(@as(u8, 0), dump.exit_code);
+            try testing.expect(std.mem.indexOf(u8, dump.stdout, "ownership_accounting_invariant") == null);
+            try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h") == null);
+            summary[side] = try keep.allocator().dupe(u8, try summaryLine(dump.stdout, "h"));
+            try testing.expect(std.mem.endsWith(u8, summary[side], "; reads π1ε*"));
+            cost[side] = .{ .growth = try accountField(dump.stdout, "h", "growth"), .total = try accountField(dump.stdout, "h", "total") };
+        }
+        try testing.expectEqualStrings(summary[0], summary[1]);
+        try testing.expect(cost[1].growth <= cost[0].growth + cost[0].total / 10);
+        ratio[run] = 1000 * cost[1].total / cost[0].total;
+    }
+    try testing.expect(10 * ratio[1] <= 11 * ratio[0]);
+}
+
+test "the checker v2 joins a group's port without its unchanged res again" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1423: two mutual writers whose late rounds move only `xreq`. Each
+    // port join propagated κ over the whole unchanged `res`: `wa` cost
+    // 289 574 growth in 10 walks. Kept when the round's `res` is under the
+    // port's, `wa` costs 35 273 and `wb` 62 393, under this module's 100 000.
+    var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
-    try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..214) |i| try src.print(a, "\n    , r{d} : S", .{i});
-    try src.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
-    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
-    try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..214) |i| try src.print(a, ", r{d} = s", .{i});
-    try src.appendSlice(a, " }\n    [ r");
-    for (1..15) |_| try src.appendSlice(a, ", r");
-    try src.appendSlice(a, " ]\n");
-    try w.write("Main.beni", src.items);
+    try w.write("Main.beni",
+        \\@ownership_summary_size(module, 100000)
+        \\
+        \\
+        \\type A
+        \\    = A (List Int) B B
+        \\    | AL
+        \\
+        \\
+        \\type B
+        \\    = B A
+        \\    | BL
+        \\
+        \\
+        \\pub wa : A → A
+        \\wa a =
+        \\    case a of
+        \\        A xs b1 b2 →
+        \\            A (List.push xs 1) (wb b1) b2
+        \\
+        \\        AL →
+        \\            AL
+        \\
+        \\
+        \\pub wb : B → B
+        \\wb b =
+        \\    case b of
+        \\        B a →
+        \\            B (wa a)
+        \\
+        \\        BL →
+        \\            BL
+        \\
+    );
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -9608,55 +13323,237 @@ test "the checker v2 says why a summary is not printed" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h") == null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary h: not printed: ownership_summary_size\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  18:16 List.push xs: accepted param\n") != null);
 }
 
-/// A declaration a few hundredths below the default summary-size limit (`h`, its
-/// cold growth about 62 700 of 65 536), after another (`g`) or before it:
-/// its dump in that order (#1104). Its growth is a genuine product, a
-/// 210-field record of records re-read at 15 positions: source-shaped work
-/// spends the source continuation, never the allowance (§4.1, #1188).
-fn nearLimitDump(w: *World, h_first: bool) !world.Result {
-    const a = testing.allocator;
-    var h: std.ArrayList(u8) = .empty;
-    defer h.deinit(a);
-    try h.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try h.print(a, "\n    , s{d} : List Int", .{i});
-    try h.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..210) |i| try h.print(a, "\n    , r{d} : S", .{i});
-    try h.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
-    for (1..10) |i| try h.print(a, ", s{d} = xs", .{i});
-    try h.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..210) |i| try h.print(a, ", r{d} = s", .{i});
-    try h.appendSlice(a, " }\n    [ r");
-    for (1..15) |_| try h.appendSlice(a, ", r");
-    try h.appendSlice(a, " ]\n");
-    const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
-    const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
-    try w.write("Main.beni", src);
-    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
-}
-
-fn expectNearLimitAccepted(h_first: bool) !void {
+test "the checker v2 keeps no round of a group's port that its last round covers" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
+    // #1368, §2.3 *A port keeps no round that its last round covers*: each
+    // round of `mergeSort`'s port joined the last one in again, though the
+    // new round covered it, so the port held the history of its rounds. It
+    // took 4 walks and passed the default allowance (168 829 records with
+    // the allowance raised). The join keeps only the round that covers the
+    // other: 3 walks, about 37 000 records, no growth. On the slot domain
+    // (#1685) the group settles in one walk of three rounds, 998 records.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    try w.write("Main.beni",
+        \\import List
+        \\
+        \\
+        \\pub mergeSort : List Int → List Int
+        \\mergeSort xs =
+        \\    case xs of
+        \\        [] →
+        \\            []
+        \\
+        \\        [ x ] →
+        \\            [ x ]
+        \\
+        \\        _ →
+        \\            case split xs [] [] of
+        \\                ( left, right ) →
+        \\                    merge (mergeSort left) (mergeSort right)
+        \\
+        \\
+        \\split : List a, List a, List a → List a × List a
+        \\split xs left right =
+        \\    case xs of
+        \\        [] →
+        \\            ( left, right )
+        \\
+        \\        [ x, …rest ] →
+        \\            split rest right [ …left, x ]
+        \\
+        \\
+        \\merge : List Int, List Int → List Int
+        \\merge xs ys =
+        \\    case ( xs, ys ) of
+        \\        ( [], _ ) →
+        \\            ys
+        \\
+        \\        ( _, [] ) →
+        \\            xs
+        \\
+        \\        ( [ x, …xt ], [ y, …yt ] ) →
+        \\            if x ≤ y then
+        \\                [ x, …merge xt [ y, …yt ] ]
+        \\            else
+        \\                [ y, …merge [ x, …xt ] yt ]
+        \\
+    );
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try nearLimitDump(&w, h_first);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h:") == null);
-    const growth = try accountField(dump.stdout, "h", "growth");
-    try testing.expect(growth > 60_000 and growth <= 65_536);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit mergeSort") == null);
+    try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "mergeSort", "walks"));
+    try testing.expectEqual(@as(u64, 3), try accountField(dump.stdout, "mergeSort", "rounds"));
+    // #1459's read-off filter reads each joined entry it may drop: growth, as
+    // the limit must see it (4 045 records).
+    try testing.expect(try accountField(dump.stdout, "mergeSort", "growth") <= 5_000);
+    try testing.expect(try accountField(dump.stdout, "mergeSort", "total") < 45_000);
+}
+
+test "the checker v2 settles an accumulator of two equal subtrees in one walk" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.3 *The two pieces that (b) adds, prototyped (4e)*: `acc` puts `t`
+    // twice under a new node each round, and widen emits the same images
+    // every round. Interned by their canonical form (never onto a node of
+    // the widening's own source), they are the nodes an earlier round
+    // made. Since the atom rule (§2.3, #1483) the group settles in 3
+    // walks: growth 143 275 with one list (275 570 with two), against
+    // 147 621 with stable images off. The 4 walks and 661 866 records
+    // before it, and 5 walks without stable images, came from the `L`
+    // atom, one interned value under every level, which united the
+    // root's class with each subtree's (Debug, self-hosted). The bound is
+    // that figure and 10 %. The slot domain (#1685) walks the group once
+    // and settles it by delivering facts (§2.12, 4 rounds), in no growth,
+    // which the test asserts (the old bound let 158 000 records through).
+    var growth: [1]u64 = undefined;
+    for ([_]u32{1}, &growth) |k, *g| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        const a = w.arena.allocator();
+        try src.appendSlice(a, "@ownership_summary_size(module, 2000000)\n\n\ntype T\n    = N ");
+        for (0..k) |_| try src.appendSlice(a, "(List Int) ");
+        try src.appendSlice(a, "T T\n    | L\n\n\npub acc : Int, T → T\nacc n t =\n    if n == 0 then\n        t\n    else\n        acc (n - 1) (N ");
+        for (0..k) |_| try src.appendSlice(a, "[ n ] ");
+        try src.appendSlice(a, "t t)\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit acc") == null);
+        try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "acc", "walks"));
+        g.* = try accountField(dump.stdout, "acc", "growth");
+    }
+    try testing.expectEqual(@as(u64, 0), growth[0]);
+}
+
+/// `name`'s module text: a record that doubles at each of 11 levels, three
+/// fields of it and `wide` more lists in `T`, read twice in a list literal.
+/// Its positions are 3·2¹¹ paths, but its record DAG is 11 levels deep. It
+/// was a genuine product until §2.9 *Fold first* (#1543) built each set of
+/// states once: two fields that hold one record hold one set. A record of
+/// records re-read at many positions was the product until #1372's memos
+/// made a repeated run cost once per call.
+fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8, wide: usize) !void {
+    try src.appendSlice(a, "type alias R0 =\n    List Int\n\n\n");
+    for (1..12) |k| try src.print(a, "type alias R{d} =\n    {{ l : R{d}, r : R{d} }}\n\n\n", .{ k, k - 1, k - 1 });
+    try src.appendSlice(a, "type alias T =\n    { t0 : R11\n    , t1 : R11\n    , t2 : R11");
+    for (0..wide) |i| try src.print(a, "\n    , w{d} : List Int", .{i});
+    try src.print(a, "\n    }}\n\n\npub {s} : List Int → List T\n{s} xs =\n    s0 = xs\n", .{ name, name });
+    for (1..12) |k| try src.print(a, "    s{d} = {{ l = s{d}, r = s{d} }}\n", .{ k, k - 1, k - 1 });
+    try src.appendSlice(a, "    t = { t0 = s11, t1 = s11, t2 = s11");
+    for (0..wide) |i| try src.print(a, ", w{d} = xs", .{i});
+    try src.appendSlice(a, " }\n    [ t, t ]\n");
+}
+
+/// `h`, seven calls `( w4 x, …, w4 x )` over `w_k x = w_{k-1} (w_{k-1} x)`
+/// to 4, from `w1 x = ( x, x )`: each call applies a callee whose result
+/// doubles, so its work, about 75 000 growth records on the slot domain, is
+/// a genuine product of a few source atoms (§4.1, #1188; it took
+/// `doublingProduct`'s place when §2.9 *Fold first*, #1543, made that one
+/// linear). It was ten calls of `w9` before the slot domain (#1685), whose
+/// `w5` alone now passes the allowance. With it
+/// another declaration `g`, `h` first or not, under a module allowance of
+/// `size` (#1104): one module's text.
+/// A genuine product from a few atoms: `n` copies of a record of `m` list
+/// fields, each with one field fresh, joined at one list's elements. Each
+/// copy differs from the others, so the join is m·n work whatever shares,
+/// and nothing of it is source: at m = 93, n = 92 `h` costs about 77 000
+/// growth records.
+fn recordProduct(a: std.mem.Allocator, h: *std.ArrayList(u8), m: u32, n: u32) !void {
+    try recordType(a, h, m);
+    try h.appendSlice(a, "\n\n");
+    try h.appendSlice(a, "h : R → List R\nh r =\n    [ { r | f0 = [] }");
+    for (1..n) |i| try h.print(a, "\n    , {{ r | f{d} = [] }}", .{i % m});
+    try h.appendSlice(a, "\n    ]\n");
+}
+
+/// `type alias R`, a record of `m` list fields `f0`…
+fn recordType(a: std.mem.Allocator, out: *std.ArrayList(u8), m: u32) !void {
+    try out.appendSlice(a, "type alias R =\n");
+    for (0..m) |i| try out.print(a, "    f{d} : List Int\n", .{i});
+}
+
+fn nearLimitModule(a: std.mem.Allocator, h_first: bool, size: u64) ![]const u8 {
+    var h: std.ArrayList(u8) = .empty;
+    try recordProduct(a, &h, 93, 92);
+    const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
+    const head = try std.fmt.allocPrint(a, "@ownership_summary_size(module, {d})\n\n\n", .{size});
+    return std.mem.concat(a, u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items });
+}
+
+/// The lines of `module name`'s part of a dump of several modules.
+fn moduleSection(dump: []const u8, name: []const u8) ![]const u8 {
+    var buf: [64]u8 = undefined;
+    const head = try std.fmt.bufPrint(&buf, "module {s}\n", .{name});
+    const at = std.mem.indexOf(u8, dump, head) orelse return error.NoModule;
+    const rest = dump[at + head.len ..];
+    const end = std.mem.indexOf(u8, rest, "\nmodule ") orelse rest.len;
+    return rest[0..end];
+}
+
+test "the checker v2 charges a declaration near its limit the same in either order, and stops it just below" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1104: a table both declarations share once charged its first miss to
+    // whichever declaration met it first, so a declaration near its limit
+    // passed after another and failed before it. Three modules in one run:
+    // `h` first and `g` first under one allowance above `h`'s growth (77 222
+    // at 93 fields and 92 copies, with result trees, per-account table fills, paths read off their nodes
+    // and result slots read off a column per read, #1714, from `recordProduct`), and `g` first under one below it. The run
+    // checks that both lie within 5 % of the growth it reports, so a change
+    // of cost that moves them out fails here and names the growth.
+    const above: u64 = 80_000;
+    const below: u64 = 75_000;
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    try w.write("A.beni", try nearLimitModule(a, true, above));
+    try w.write("B.beni", try nearLimitModule(a, false, above));
+    try w.write("C.beni", try nearLimitModule(a, false, below));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--jobs=3", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const first = try moduleSection(dump.stdout, "A");
+    const second = try moduleSection(dump.stdout, "B");
+    try testing.expect(std.mem.indexOf(u8, first, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, second, "limit h") == null);
+    const growth = try accountField(first, "h", "growth");
+    try testing.expectEqual(growth, try accountField(second, "h", "growth"));
+    if (growth * 100 < above * 95 or below * 100 < growth * 95) std.debug.print("h's growth {d} is not within 5 % of {d} and {d}: move them\n", .{ growth, above, below });
+    try testing.expect(growth * 100 >= above * 95 and below * 100 >= growth * 95);
+    try testing.expect(std.mem.indexOf(u8, try moduleSection(dump.stdout, "C"), "limit h: ownership_summary_size") != null);
 }
 
 test "dump --stage=ownership --ownership=v2 walks each module once" {
@@ -9696,14 +13593,6 @@ test "dump --stage=ownership --ownership=v2 walks each module once" {
         }
         try testing.expectEqual(@as(u32, 1), walks);
     }
-}
-
-test "the checker v2 accepts a declaration near the summary-size limit after another" {
-    try expectNearLimitAccepted(false);
-}
-
-test "the checker v2 accepts a declaration near the summary-size limit before another" {
-    try expectNearLimitAccepted(true);
 }
 
 /// `ownership-v2.md` §4.1: a wide run supplies its own written atoms, and a
@@ -9862,4 +13751,1206 @@ test "the checker v2's growth over a tower of Js.array values is n log n, and a 
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked wide") == null);
+}
+
+test "the checker v2 treats core read with --core-root as core, not as user code" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13: a comparison written in beni composes its
+    // components' classes in core. A copy of core under `--core-root` is
+    // core as well: `f` is checked with either, never unchecked for one.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try w.write("Main.beni", "pub f : List Int → Bool × List Int\nf xs = ( xs == [ 1 ], List.push xs 2 )\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const embedded = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const copied = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core-root=mycore", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), embedded.exit_code);
+    try testing.expectEqual(@as(u8, 0), copied.exit_code);
+    try testing.expect(std.mem.indexOf(u8, embedded.stdout, "unchecked f:") == null);
+    try testing.expect(std.mem.indexOf(u8, copied.stdout, "unchecked f:") == null);
+}
+
+/// The sum of every `account f<k>:` line's `total` in a v2 dump.
+fn sumFunctionTotals(dump: []const u8) !u64 {
+    var sum: u64 = 0;
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "account f")) continue;
+        const key = ", total ";
+        const at = std.mem.indexOf(u8, t, key) orelse return error.NoField;
+        const digits = t[at + key.len ..];
+        const end = std.mem.indexOfNone(u8, digits, "0123456789") orelse digits.len;
+        sum += try std.fmt.parseInt(u64, digits[0..end], 10);
+    }
+    return sum;
+}
+
+test "the checker v2 reads 300 derived comparisons of one module in linear records" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13: a derived `==` is read through the
+    // user-written comparisons its type reaches. The module's `eq` is found
+    // once and remembered (`cmp_decl`), not by scanning its declarations at
+    // every use. The scan itself is a plain loop and no account charges it, so
+    // records cannot catch its return; what they pin is that the work every
+    // use is charged stays a constant per use: four times the uses, at most
+    // four times the records.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([2]usize{ 75, 300 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        for (0..n) |i| try src.print(a, "type T{d}\n    = T{d} (List Int)\n\n\npub f{d} : List Int → Bool × List Int\nf{d} xs = ( T{d} xs == T{d} [], xs )\n\n\n", .{ i, i, i, i, i, i });
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked f") == null);
+        totals[run] = try sumFunctionTotals(dump.stdout);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(totals[0] > 0);
+    try testing.expect(totals[1] <= totals[0] * 4 + totals[0] / 4);
+}
+
+/// The records `f` was charged under `dump --stage=ownership --ownership=v2`
+/// for `source` (`Main.beni`, with `Inner.beni` beside it, whose `eq`
+/// writes), or a failure when the checker stopped on `f` (`limit`).
+fn derivedComparisonCost(w: *world.World, source: []const u8) !u64 {
+    try w.write("Inner.beni",
+        \\pub type Inner
+        \\    = Inner (List Int)
+        \\
+        \\
+        \\pub eq : Inner, Inner → Bool
+        \\eq a b =
+        \\    case a of
+        \\        Inner l →
+        \\            List.length (List.push l 1) > 0
+        \\
+    );
+    try w.write("Main.beni", source);
+    const r = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "." });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "limit f:") == null);
+    const at = std.mem.indexOf(u8, r.stdout, "account f: ") orelse return error.TestUnexpectedResult;
+    const total = std.mem.indexOfPos(u8, r.stdout, at, "total ") orelse return error.TestUnexpectedResult;
+    const digits = r.stdout[total + "total ".len ..];
+    var end: usize = 0;
+    while (end < digits.len and std.ascii.isDigit(digits[end])) end += 1;
+    return try std.fmt.parseInt(u64, digits[0..end], 10);
+}
+
+test "a derived comparison over mutually recursive types costs the distinct types, not the paths" {
+    // The use of a derived comparison's argument is built once per place and
+    // a cycle is settled when it closes. `T1 = T1 T2 T2`, … `Tk = Tk T1 Inner`
+    // doubled its cost per type when every place in a cycle was rebuilt for
+    // every path reaching it (k = 6 stopped on the accounting invariant).
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_]u32{ 6, 12 }) |k| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(w.arena.allocator(), "import Inner\n\n");
+        for (1..k + 1) |i| {
+            const next = if (i == k) 1 else i + 1;
+            if (i == k) {
+                try src.print(w.arena.allocator(), "type T{d}\n    = T{d} T{d} Inner.Inner\n    | E{d}\n\n\n", .{ i, i, next, i });
+            } else {
+                try src.print(w.arena.allocator(), "type T{d}\n    = T{d} T{d} T{d}\n    | E{d}\n\n\n", .{ i, i, next, next, i });
+            }
+        }
+        try src.appendSlice(w.arena.allocator(), "pub f : T1, T1 → Bool\nf a b = a == b\n");
+        const cost = try derivedComparisonCost(&w, src.items);
+        try testing.expect(cost <= 600);
+    }
+}
+
+test "a derived comparison over a mutually recursive syntax tree is checked" {
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const cost = try derivedComparisonCost(&w,
+        \\import Inner
+        \\
+        \\
+        \\type Expr
+        \\    = Var Inner.Inner
+        \\    | Lit Int
+        \\    | Call Expr (List Expr)
+        \\    | Lam (List Pat) Expr
+        \\    | Let Decl Expr
+        \\    | Case Expr (List Branch)
+        \\    | Ann Expr Type
+        \\    | Rec (List Field)
+        \\
+        \\
+        \\type Branch
+        \\    = Branch Pat Expr
+        \\
+        \\
+        \\type Decl
+        \\    = Decl Pat Expr Type
+        \\    | DeclMany (List Decl) Expr
+        \\
+        \\
+        \\type Pat
+        \\    = PVar Inner.Inner
+        \\    | PCtor Inner.Inner (List Pat)
+        \\    | PAs Pat Inner.Inner
+        \\    | PRec (List Field)
+        \\
+        \\
+        \\type Type
+        \\    = TVar Inner.Inner
+        \\    | TApp Type (List Type)
+        \\    | TFun (List Type) Type
+        \\    | TRec (List Field)
+        \\
+        \\
+        \\type Field
+        \\    = Field Inner.Inner Expr Pat Type
+        \\
+        \\
+        \\pub f : Expr, Expr → Bool
+        \\f a b = a == b
+        \\
+    );
+    try testing.expect(cost <= 700);
+}
+
+test "a derived comparison over a wide type costs its fields, not their square" {
+    // `W (List Int) Inner …` with a writing `Inner.eq` at every field: each
+    // writing path is a demand in a caller, and the cost of the call is linear
+    // in them. Twice the fields cost at most 2.2 times as much.
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var costs: [2]u64 = undefined;
+    for ([_]usize{ 80, 160 }, &costs) |fields, *cost| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(w.arena.allocator(), "import Inner\n\n\ntype W\n    = W");
+        for (0..fields) |_| try src.appendSlice(w.arena.allocator(), " (List Int) Inner.Inner");
+        try src.appendSlice(w.arena.allocator(), "\n\n\npub f : W, W → Bool\nf a b = ( a, 0 ) == ( b, 0 )\n");
+        cost.* = try derivedComparisonCost(&w, src.items);
+    }
+    try testing.expect(costs[0] > 0);
+    try testing.expect(costs[1] * 10 <= costs[0] * 22);
+}
+
+test "a derived comparison over a doubling type with a component costs its levels" {
+    // `ownership-v2.md` §2.11 item 3 (#1356): `w_k x = w_{k-1} (w_{k-1} x)`
+    // is a tuple 2^(k-1) levels deep whose every level holds one value
+    // twice, with a writing `Inner` at the bottom. The comparison writes
+    // every path of it; one route per path of the (use, value) pair graph
+    // makes one demand per operand. Depth 8 (128 levels) costs at most 20
+    // times what depth 4 (8 levels) does, with no limit (it was 56 633
+    // records at depth 4 and `ownership_summary_size` at 5).
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var costs: [2]u64 = undefined;
+    for ([_]usize{ 4, 8 }, &costs) |depth, *cost| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(w.arena.allocator(), "import Inner\n\n\nw1 x = ( x, x )\n");
+        for (2..depth + 1) |i| try src.print(w.arena.allocator(), "\n\nw{d} x = w{d} (w{d} x)\n", .{ i, i - 1, i - 1 });
+        try src.print(w.arena.allocator(), "\n\npub f : List Int, List Int → Bool\nf a b = w{d} (Inner.Inner a) == w{d} (Inner.Inner b)\n", .{ depth, depth });
+        cost.* = try derivedComparisonCost(&w, src.items);
+    }
+    if (costs[1] > costs[0] * 20) {
+        std.debug.print("depth 4: {d} records, depth 8: {d}\n", .{ costs[0], costs[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// `go acc xs`, a recursive group of one, after `n` scalar statements
+/// (`GroupSelfFold`, ownership-v2.md §8 S3b slice 4).
+fn groupSelfFold(w: *World, n: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "pub go : List Int, List Int → List Int\ngo acc xs =\n");
+    for (0..n) |i| try src.print(a, "    s{d} = {d}\n", .{ i, i });
+    try src.appendSlice(a, "    case xs of\n        [ x, …rest ] →\n            go (List.push acc x) rest\n\n        [] →\n            acc\n");
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 solves a self-recursive fold in one walk and no growth at any length (GroupSelfFold)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4b: round 1's facts reach the port along the edges
+    // (the tail call's answer and the argument's marks, `π1[*] A` and `R`),
+    // and round 2, woken by `res` leaving nothing, reads x* and settles. 4a
+    // took four walks. G_f is 0 whatever the body's length. The slot domain
+    // (#1685) walks the body once and delivers the facts in rounds (§2.12).
+    for ([_]usize{ 10, 100, 1000 }) |n| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try groupSelfFold(&w, n);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "go", "walks"));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "go", "growth"));
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "15:17 List.push acc: accepted param") != null or std.mem.indexOf(u8, dump.stdout, "List.push acc: accepted param") != null);
+    }
+}
+
+/// R-7.4's Θ(NK) witness (§4.1's qualified row, §8 S3b slice 5d2): a ring
+/// of `k` members `m_i c = if c then T_i [] [] [] else T_i [] [ m_{i+1} c ] []`,
+/// each over a type of its own (`T_i (List Int) (List T_{i+1}) (List T_i)`,
+/// the last field a list of the type itself and never filled), so the ring's
+/// `res.shape` grows one type a round before it folds, and each type a
+/// round adds a self-referential level to every contract; `m0` also holds
+/// `n` statements.
+fn shapeRing(w: *World, n: usize, k: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    for (0..k) |i| try src.print(a, "type T{d} =\n    T{d} (List Int) (List T{d}) (List T{d})\n\n\n", .{ i, i, (i + 1) % k, i });
+    for (0..k) |i| {
+        try src.print(a, "pub m{d} : Bool → T{d}\nm{d} c =\n", .{ i, i, i });
+        if (i == 0) for (1..n + 1) |s| try src.print(a, "    s{d} = List.push [ {d} ] 0\n", .{ s, s });
+        try src.print(a, "    if c then\n        T{d} [] [] []\n\n    else\n        T{d} [] [ m{d} c ] []\n\n\n", .{ i, i, (i + 1) % k });
+    }
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 settles a ring whose res.shape grows a type a round in one walk per member (R-7.4)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R-7.4: "K shape changes affecting N transfer nodes can require Θ(NK)
+    // tasks". The ring takes K `res.shape` versions, and each one walks
+    // `m0`'s N statements again (the owner's Q1 decision, §8 slice 4's
+    // plan). Measured: `m0` walks 5 times at k = 2, 7 at k = 3 and 9 at
+    // k = 4, whatever n is (0 to 40); its records are 23 440 at (n, k) =
+    // (10, 2) and 36 381 at (10, 3) (56 456 at (40, 2)). A larger k
+    // exhausts R_f loudly (k = 8 is `ownership_summary_size`).
+    // History: k = 2 walked 5 times while the empty value at the kids'
+    // `[*]`, one interned atom at every level, united the levels' classes,
+    // and 6 under the atom rule (§2.3), whose extra class version was the
+    // ring's fold reaching the root's lists as `{lost}`. Since the fold
+    // certificate (#1485, #1588), a group call's view of a port is a
+    // hypothesis node: its folded classes are read by their certificates,
+    // so that `lost` never reaches the root, and the version and its walk
+    // are gone at every k. With hypothesis nodes off, the walks are 6 and 8
+    // again and the root reads `fresh1 fresh3{lost}`. The fixpoint is more
+    // precise and sound: the root's two lists are `m0`'s own literals,
+    // each held once in the value (`#T0.0 fresh1 fresh3`, no `{lost}`).
+    // The slot domain (#1685) walks no member again: a new `res` fact is
+    // delivered to the call that reads it (§2.12), so `m0` walks once at
+    // every k and its records are 3 011 at (10, 2) and 4 685 at (10, 3).
+    // Since the read-off reads a slot's result slots off a column per read
+    // (#1714), they are 1 959 and 2 589 (2 703 and 4 377 before it). With the third
+    // field they are 3 519 and 8 838.
+    const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
+    const walks = [_]u64{ 1, 1 };
+    // 1.5 times the measured records: a doubled cost per round fails.
+    const ceilings = [_]u64{ 5_300, 13_300 };
+    var total: [cases.len]u64 = undefined;
+    for (cases, walks, ceilings, 0..) |c, want, ceiling, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try shapeRing(&w, c[0], c[1]);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+        try testing.expectEqual(want, try accountField(dump.stdout, "m0", "walks"));
+        total[i] = try accountTotal(dump.stdout, "m0");
+        if (total[i] > ceiling) {
+            std.debug.print("ring at (n, k) = ({d}, {d}): {d} records, past {d}\n", .{ c[0], c[1], total[i], ceiling });
+            return error.TestUnexpectedResult;
+        }
+    }
+    // More versions, more rounds, each over a larger contract: 2.51 times
+    // the records from k = 2 to 3. The floor is what proves a round is
+    // charged as K grows, so it stays at 1.5 when the checker gets cheaper:
+    // the construction is made dearer instead. The third field, a list of
+    // the type itself, makes a contract's tree grow with every type the
+    // ring adds, which the column per read (#1714) must still pay for.
+    // A flat cost fails the floor, and one that grows with K² (3.5 times
+    // the records) the band's top.
+    try testing.expect(total[1] * 2 >= 3 * total[0]);
+    try testing.expect(total[1] <= 3 * total[0]);
+}
+
+/// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
+/// (`GroupFieldShift`, ownership-v2.md §8 S3b slice 4); with `mutual`, as
+/// the pair `shift`/`shift2`. `before` is an earlier group, and `after`
+/// calls it.
+fn groupFieldShift(w: *World, n: usize, mutual: bool) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "type R\n    = R");
+    for (0..n) |_| try src.appendSlice(a, " (List Int)");
+    try src.appendSlice(a, "\n\n\npub before : List Int → List Int\nbefore xs = List.push xs 0\n");
+    for ([_][]const u8{ "shift", "shift2" }, 0..) |name, k| {
+        if (k == 1 and !mutual) break;
+        const callee = if (mutual) (if (k == 0) "shift2" else "shift") else "shift";
+        try src.print(a, "\n\npub {s} : R, Int → R\n{s} r k =\n    case r of\n        R", .{ name, name });
+        for (0..n) |i| try src.print(a, " x{d}", .{i});
+        try src.appendSlice(a, " →\n            if k == 0 then\n                R");
+        for (0..n) |i| try src.print(a, " x{d}", .{i});
+        try src.print(a, "\n\n            else\n                {s} (R", .{callee});
+        for (1..n) |i| try src.print(a, " x{d}", .{i});
+        try src.appendSlice(a, " []) (k - 1)\n");
+    }
+    try src.appendSlice(a, "\n\npub after : List Int → Int\nafter xs = List.length (before xs) + List.length xs\n");
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2's GroupFieldShift: n = 4 and n = 16 settle in one walk (GroupFieldShift)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4b: the tail call's result edge, recorded by walk 1 over
+    // ⊥, carries the cells one field a delivery, so walk 2, woken by `res`
+    // leaving nothing, reads x* (4a: n + 3 walks). Each delivery is one
+    // version of the class along the edge, at most n(n + 1)/2 of them. A
+    // delivery reads the whole class, as a walk does (#1372), so n = 16 was
+    // loud. The slot domain (#1685) walks once and delivers the facts in
+    // three rounds at both sizes, with no growth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const four = try groupFieldShift(&w, 4, false);
+    var w16 = try World.init(testing.allocator, testing.io);
+    defer w16.deinit();
+    const sixteen = try groupFieldShift(&w16, 16, false);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), four.exit_code);
+    for ([_][]const u8{ four.stdout, sixteen.stdout }) |out| {
+        try testing.expectEqual(@as(u64, 1), try accountField(out, "shift", "walks"));
+        try testing.expect(try accountField(out, "shift", "rounds") <= 4);
+        try testing.expectEqual(@as(u64, 0), try accountField(out, "shift", "growth"));
+        try testing.expect(std.mem.indexOf(u8, out, "limit shift") == null);
+    }
+    try testing.expectEqual(@as(u8, 0), sixteen.exit_code);
+}
+
+/// `rot a₁ … aₙ k`, which pushes onto `a₁` and calls itself with its
+/// lists rotated by one (`GroupRotate`, ownership-v2.md §8 S3b slice 4).
+fn groupRotate(w: *World, n: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "pub rot : ");
+    for (0..n) |_| try src.appendSlice(a, "List Int, ");
+    try src.appendSlice(a, "Int → Int\nrot");
+    for (1..n + 1) |i| try src.print(a, " a{d}", .{i});
+    try src.appendSlice(a, " k =\n    if k == 0 then\n        List.length (List.push a1 0)\n\n    else\n        rot");
+    for (2..n + 1) |i| try src.print(a, " a{d}", .{i});
+    try src.appendSlice(a, " a1 (k - 1)\n");
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 takes one walk for a rotating writer at any width, the marks delivered (GroupRotate)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4b: walk 1 records the n argument edges, and `W` reaches
+    // every parameter backwards along them. A delivered mark wakes no walk:
+    // one inference walk, and the read check's validation. 4a took n + 1.
+    // The slot domain (#1685) walks once and delivers in rounds; every
+    // parameter is written. A round judges only the demands whose reads
+    // moved (§2.12, *judgements kept across rounds*): 287 898 records at
+    // 64, inside the allowance (406 404 and growth 51 561 when every round
+    // judged every demand).
+    for ([_]usize{ 4, 16, 64 }) |n| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try groupRotate(&w, n);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit rot") == null);
+        try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "rot", "walks"));
+        try testing.expect(try accountField(dump.stdout, "rot", "rounds") <= n + 2);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "rot", "growth"));
+        var buf: [16]u8 = undefined;
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, try std.fmt.bufPrint(&buf, " π{d}ε; req", .{n})) != null);
+    }
+}
+
+/// A ring of `k` members, each pushing onto its list and calling the next
+/// (`GroupMutualRing`, ownership-v2.md §8 S3b slice 4).
+fn groupMutualRing(w: *World, k: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    for (1..k + 1) |i| {
+        if (i > 1) try src.appendSlice(a, "\n\n");
+        try src.print(a, "pub ring{d} : List Int, Int → List Int\nring{d} acc n =\n    if n == 0 then\n        acc\n\n    else\n        ring{d} (List.push acc {d}) (n - 1)\n", .{ i, i, i % k + 1, i });
+    }
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 takes one walk per member of a ring of pushes at any size (GroupMutualRing)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4b: round 2, woken by each callee's `res` leaving
+    // nothing, reads x*, which the tail calls' result edges and the
+    // arguments' marks carried around the ring. 4a took four walks each.
+    // The slot domain (#1685) walks each member once (§2.12).
+    for ([_]usize{ 4, 16, 64 }) |k| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try groupMutualRing(&w, k);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        var name: [16]u8 = undefined;
+        // One walk, at most three rounds and no growth a member (measured:
+        // 3 rounds, growth 0), so a slow ring is caught again.
+        for (1..k + 1) |i| {
+            const m = try std.fmt.bufPrint(&name, "ring{d}", .{i});
+            try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, m, "walks"));
+            try testing.expect(try accountField(dump.stdout, m, "rounds") <= 3);
+            try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, m, "growth"));
+        }
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ring") == null);
+    }
+}
+
+test "the checker v2 publishes nothing of a recursive group a limit stops, and still serves an earlier group" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 136 fields exhausts past
+    // the lanes (at 24 before the slot domain, #1685, which checks 96; 112
+    // until the read-off named a slot once, #1714, which checks 114; 120
+    // until it read a slot's result slots off a column per read, #1714,
+    // which checks 134). The
+    // group is built whole or not at all: one member has the limit, the
+    // other is unbuilt at its group call, and neither publishes a class or a
+    // line. `before`, an earlier group, still serves `after`, whose call is
+    // checked.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try groupFieldShift(&w, 136, true);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const limit1 = std.mem.indexOf(u8, dump.stdout, "limit shift: ownership_summary_size") != null;
+    const limit2 = std.mem.indexOf(u8, dump.stdout, "limit shift2: ownership_summary_size") != null;
+    try testing.expect(limit1 or limit2);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "summary shift:") == null or std.mem.indexOf(u8, dump.stdout, "summary shift: not") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked shift") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked shift2") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.before xs: rejected later-use") != null);
+}
+
+test "the checker v2 charges a recursive group the same in either declaration order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §3.8, #1395's review: `wa` and `wb` share memos within a round, and the
+    // member walked first pays a first miss. Members are walked by name, so
+    // swapping the two declarations changes no account, and at an allowance
+    // near their cost both orders give the same answer.
+    const types = "@ownership_summary_size(module, 151100)\n\ntype A\n    = A (List Int) B B\n    | AL\n\n\ntype B\n    = B (List Int) A\n    | BL\n";
+    const wa = "\n\npub wa : A → A\nwa a =\n    case a of\n        A xs b1 b2 →\n            A (List.push xs 1) (wb b1) b2\n\n        AL →\n            AL\n";
+    const wb = "\n\npub wb : B → B\nwb b =\n    case b of\n        B ys a →\n            B ys (wa a)\n\n        BL →\n            BL\n";
+    var outs: [2][]const u8 = undefined;
+    var growth: [2]u64 = undefined;
+    for ([_]bool{ false, true }, &outs, &growth) |swapped, *out, *g| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Main.beni", try std.mem.concat(w.arena.allocator(), u8, if (swapped) &.{ types, wb, wa } else &.{ types, wa, wb }));
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const limited = std.mem.indexOf(u8, dump.stdout, "limit wa:") != null or std.mem.indexOf(u8, dump.stdout, "limit wb:") != null;
+        out.* = if (limited) "limit" else "checked";
+        g.* = if (limited) 0 else try accountField(dump.stdout, "wa", "growth");
+    }
+    try testing.expectEqualStrings(outs[0], outs[1]);
+    try testing.expectEqual(growth[0], growth[1]);
+}
+
+/// #1289's chain published: `t_k = insert t_{k-1} k` for `n` calls, `t_n`
+/// returned. `chain`'s account total and whether it reached a limit.
+const ChainRun = struct { total: u64, limit: bool };
+
+fn publishedChain(n: u32) !ChainRun {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "type Tree\n    = Leaf\n    | Node Tree (List Int)\n\n\ninsert : Tree, Int → Tree\ninsert t k =\n    case t of\n        Leaf →\n            Node Leaf [ k ]\n\n        Node l xs →\n            Node (insert l k) xs\n\n\npub chain : Tree → Tree\nchain t0 =\n");
+    for (1..n + 1) |i| try src.print(a, "    t{d} = insert t{d} {d}\n", .{ i, i - 1, i });
+    try src.print(a, "    t{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    return .{ .total = try accountTotal(dump.stdout, "chain"), .limit = std.mem.indexOf(u8, dump.stdout, "limit chain") != null };
+}
+
+test "the checker v2 publishes #1289's chain of inserts in records about linear in its calls" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE / EXECUTE                       │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 *Fold first*, #1289: each call's view added a
+    // knot to the published value, and a walk that built the positions a
+    // fold collapses multiplied them: 18 401 / 91 040 / 1 035 422 records at
+    // 4 / 6 / 8 calls (a limit at 8), 15 848 / 31 213 / 52 447 under the
+    // rule. Since #1538's atom rule both walks take 7 603 / 13 392 / 20 468;
+    // the doubling record below is the black-box witness of fold first.
+    var runs: [3]ChainRun = undefined;
+    for (&runs, [_]u32{ 4, 6, 8 }) |*r, n| r.* = try publishedChain(n);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (runs) |r| try testing.expect(!r.limit);
+    // Two more calls cost at most twice what the two before cost.
+    try testing.expect(runs[2].total - runs[1].total <= 2 * (runs[1].total - runs[0].total));
+}
+
+test "the checker v2 builds a doubling record once per set of states" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.9 *Fold first*, the class memo: `{ l = s, r = s }` puts one set of
+    // states at `.l` and `.r`, so 11 doublings build 11 levels of positions,
+    // not 3·2¹¹ (190 868 records before, 2 670 since, the same summary).
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try doublingProduct(a, &src, "g", 0);
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g") == null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "g", "growth"));
+    try testing.expect(try accountTotal(dump.stdout, "g") <= 2_940);
+}
+
+/// The two joins a wrapper returns unchanged (#1459's review): `inner`, a
+/// recursive group whose port is a joined DAG, and `t2`, a K-shaped join
+/// whose kids list two coexisting levels share.
+const wrapped_joins =
+    \\inner : List (List Int) → List (List Int)
+    \\inner ys =
+    \\    case ys of
+    \\        [] →
+    \\            []
+    \\
+    \\        [ l, …rest ] →
+    \\            [ List.push l 1, …inner rest ]
+    \\
+    \\
+    \\pub type Rose =
+    \\    Rose (List Rose)
+    \\
+    \\
+    \\t2 : Bool, Rose → Rose
+    \\t2 c x =
+    \\    r1 = if c then Rose [ x ] else x
+    \\    if c then Rose [ r1, r1 ] else r1
+    \\
+;
+
+test "the checker v2 reads a join's κ through one and two wrappers as the joined function does, same-module and imported" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1459's review: a call relabels a join's entry onto the view of the
+    // joined DAG node, which no part of the caller's value names, and the
+    // caller's read-off dropped it: a wrapper read its elements apart where
+    // `inner`'s may share, and `t2`'s shared kids read apart. A wrapper's
+    // summary is the joined function's, word for word: `inner`'s result
+    // is apart only under a condition, `t2`'s never (`nondup no`).
+    const a = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const wrappers =
+        \\pub w1 : List (List Int) → List (List Int)
+        \\w1 ys =
+        \\    {s}inner ys
+        \\
+        \\
+        \\pub w2 : List (List Int) → List (List Int)
+        \\w2 ys =
+        \\    w1 ys
+        \\
+        \\
+        \\pub v1 : Bool, {s}Rose → {s}Rose
+        \\v1 c x =
+        \\    {s}t2 c x
+        \\
+        \\
+        \\pub v2 : Bool, {s}Rose → {s}Rose
+        \\v2 c x =
+        \\    v1 c x
+        \\
+    ;
+    for ([_]bool{ false, true }) |imported| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        const q = if (imported) "Lib." else "";
+        const own = try std.fmt.allocPrint(ar, wrappers, .{ q, q, q, q, q, q });
+        if (imported) {
+            var lib: std.ArrayList(u8) = .empty;
+            try lib.appendSlice(ar, wrapped_joins);
+            // Exposed, so a caller in `Main` calls them.
+            const pub_lib = try std.mem.replaceOwned(u8, ar, lib.items, "inner :", "pub inner :");
+            try w.write("Lib.beni", try std.mem.replaceOwned(u8, ar, pub_lib, "t2 :", "pub t2 :"));
+            try w.write("Main.beni", try std.mem.concat(ar, u8, &.{ "import Lib\n\n\n", own }));
+        } else try w.write("Main.beni", try std.mem.concat(ar, u8, &.{ wrapped_joins, "\n\n", own }));
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (imported) "." else "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const inner = try summaryLine(dump.stdout, "inner");
+        const t2 = try summaryLine(dump.stdout, "t2");
+        try testing.expect(std.mem.indexOf(u8, inner, "; nondup ⇐ sel π1{[*]};") != null);
+        try testing.expect(std.mem.indexOf(u8, t2, "; nondup no;") != null);
+        try testing.expectEqualStrings(inner, try summaryLine(dump.stdout, "w1"));
+        try testing.expectEqualStrings(inner, try summaryLine(dump.stdout, "w2"));
+        try testing.expectEqualStrings(t2, try summaryLine(dump.stdout, "v1"));
+        try testing.expectEqualStrings(t2, try summaryLine(dump.stdout, "v2"));
+    }
+}
+
+test "the checker v2 counts K inside a recursive function, its read-off filter seen by the limit" {
+    // #1459's review: K's tower inside a recursive group (`r0` the recursive
+    // call, `r_k = if c then Rose [ r_{k-1} ] else r_{k-1}`). Read-off's
+    // filter reads each (position, entry) pair of the round's snapshot, Θ(n²)
+    // for K, and the rest of the group walk is superlinear too (#1479): its
+    // reads are on the walk's lanes and growth, so a tall
+    // tower stops at the limit (80 levels: `ownership_summary_size` in about
+    // 14 s on a ReleaseSafe beni) instead of running on. 68 243 / 165 581
+    // records at 10 / 20 (Debug), growth 0; 4d alone refused it at 20.
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 10, 20 }, 0..) |n, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = w.arena.allocator();
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "type Rose =\n    Rose (List Rose)\n\n\npub tower : Bool, Int → Rose\ntower c m =\n    r0 = if m == 0 then Rose [] else Rose [ tower c (m - 1) ]\n");
+        for (1..n + 1) |k| try src.print(a, "    r{d} = if c then Rose [ r{d} ] else r{d}\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked") == null);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "tower", "growth"));
+        totals[i] = try accountTotal(dump.stdout, "tower");
+    }
+    // At most quadratic: twice the levels, at most 3 times the records.
+    try testing.expect(totals[1] <= 3 * totals[0]);
+    try testing.expect(totals[0] <= 75_000);
+}
+
+/// The default growth allowance a function's walk may spend (§4.1).
+const default_growth_allowance: u64 = 65_536;
+
+/// `owner`'s verdict in a v2 dump of a generated module (§7.6 item 6): it
+/// either stopped at the loud limit (`limit <owner>: ownership_summary_size`
+/// with the declaration `unchecked`), or it was walked within the default
+/// allowance and `max_total` records. Returns whether it stopped.
+fn expectBoundedOrLimit(dump: []const u8, owner: []const u8, max_total: u64) !bool {
+    var buf: [96]u8 = undefined;
+    const limit = try std.fmt.bufPrint(&buf, "limit {s}: ownership_summary_size", .{owner});
+    if (std.mem.indexOf(u8, dump, limit) != null) {
+        const unchecked = try std.fmt.bufPrint(&buf, "unchecked {s}:", .{owner});
+        try testing.expect(std.mem.indexOf(u8, dump, unchecked) != null);
+        return true;
+    }
+    const unchecked = try std.fmt.bufPrint(&buf, "unchecked {s}:", .{owner});
+    try testing.expect(std.mem.indexOf(u8, dump, unchecked) == null);
+    try testing.expect(try accountField(dump, owner, "growth") <= default_growth_allowance);
+    try testing.expect(try accountTotal(dump, owner) <= max_total);
+    return false;
+}
+
+/// §7.6 item 6: each default-limit generated module stops in at most two
+/// seconds of ownership-pass wall time. The whole process is timed here, on
+/// the ReleaseSafe compiler the gates run, so the bound is looser than the
+/// spec's (a ReleaseFast pass) in the process's start and the front end and
+/// tighter in nothing; the generators run in well under a quarter of it.
+const generated_wall_ms: i64 = 2_000;
+
+/// A generated module's v2 dump at the default allowance.
+fn dumpGenerated(w: *World, src: []const u8) ![]const u8 {
+    try w.write("Main.beni", src);
+    const start = std.Io.Timestamp.now(testing.io, .awake);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expect(start.durationTo(std.Io.Timestamp.now(testing.io, .awake)).toMilliseconds() <= generated_wall_ms);
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    return dump.stdout;
+}
+
+test "the checker v2 keeps a reading of a label's answers out of a result's condition" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.3, *a traversal's supply*: the first run of the
+    // distinct check is exactly the old one. A write of one part of a call's
+    // result beside a holder of another asks the call's condition, may fall
+    // back to reading, and must leave no answer behind for `res_cond`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pairUp v = ( v, [ 1 ] )
+        \\
+        \\
+        \\forced f x =
+        \\    p = pairUp (f x)
+        \\    h = p.0
+        \\    t2 = List.push p.1 2
+        \\    if List.length h + List.length t2 > 0 then p else p
+        \\
+        \\
+        \\comp f g x =
+        \\    p = pairUp (f x)
+        \\    h = p.0
+        \\    t2 = List.push p.1 2
+        \\    n = List.length h + List.length t2
+        \\    if n > 0 then g p.0 else []
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-everywhere", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const at = std.mem.indexOf(u8, dump.stdout, "summary forced:") orelse return error.TestUnexpectedResult;
+    const line = dump.stdout[at..][0 .. std.mem.indexOfScalar(u8, dump.stdout[at..], '\n') orelse return error.TestUnexpectedResult];
+    try testing.expect(std.mem.indexOf(u8, line, "; nondup no; answers ⇐ sel π2{ε*} π1{ε!!1}") != null);
+    // A supply's `below` is never read.
+    const cat = std.mem.indexOf(u8, dump.stdout, "summary comp:") orelse return error.TestUnexpectedResult;
+    const cline = dump.stdout[cat..][0 .. std.mem.indexOfScalar(u8, dump.stdout[cat..], '\n') orelse return error.TestUnexpectedResult];
+    try testing.expect(std.mem.indexOf(u8, cline, "below ⇐ sel π3{ε*} π1{ε!!1}") == null);
+}
+
+test "the checker v2 walks CallbackWrapperDag's doubling wrappers in records that stay flat in the depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §7.6 item 6: `w0 f = ( f ⊤, f ⊤ )`, `wk f = ( w(k-1) f,
+    // w(k-1) f )` names 2^(k+1) callback answers in `wk`. Each wrapper is
+    // walked within the default allowance, or stops at the loud
+    // `ownership_summary_size`, never silently. The tuple form is the
+    // spec's own, at depth 10: its type has 2^(k+1) leaves and `beni check`
+    // pays for them (depth 24 is #2034). The list form (`++`) has a constant
+    // type and runs at 8/16/24. Measured on the slot domain: 270 to 330
+    // records per wrapper, growth 0, at every depth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var tuples: std.ArrayList(u8) = .empty;
+    defer tuples.deinit(a);
+    try tuples.appendSlice(a, "w0 f = ( f ⊤, f ⊤ )\n");
+    for (1..11) |k| try tuples.print(a, "\n\nw{d} f = ( w{d} f, w{d} f )\n", .{ k, k - 1, k - 1 });
+    var lists: std.ArrayList(u8) = .empty;
+    defer lists.deinit(a);
+    try lists.appendSlice(a, "w0 f = f ⊤ ++ f ⊤\n");
+    for (1..25) |k| try lists.print(a, "\n\nw{d} f = w{d} f ++ w{d} f\n", .{ k, k - 1, k - 1 });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const tuple_dump = try dumpGenerated(&w, tuples.items);
+    const list_dump = try dumpGenerated(&w, lists.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "w2", "w6", "w10" }) |owner| try testing.expect(!try expectBoundedOrLimit(tuple_dump, owner, 2_000));
+    try testing.expect(try accountTotal(tuple_dump, "w10") <= 2 * try accountTotal(tuple_dump, "w2"));
+    for ([_][]const u8{ "w8", "w16", "w24" }) |owner| {
+        try testing.expect(!try expectBoundedOrLimit(list_dump, owner, 2_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(list_dump, owner, "growth"));
+    }
+    try testing.expect(try accountTotal(list_dump, "w24") <= 2 * try accountTotal(list_dump, "w8"));
+}
+
+test "the checker v2 walks ClosureTower at depths 8, 16 and 24 in a flat number of records" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Appendix B's ClosureTower: `w0 ⊤ = (xs = [0]; λ_ → xs)`, each `wk`
+    // builds two `w(k-1)` closures and a closure over both. The type stays
+    // `⊤ → (Bool → List Int)`, with no callback label. Each level has one
+    // called contract of constant size (§2.11.3, *a function value in a
+    // result*), so nothing is enumerated and the walk is flat: 939 records
+    // per level, growth 0. A loud limit would pass too; the tower may never
+    // spend past the allowance or run on silently.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "w0 : ⊤ → (Bool → List Int)\nw0 ⊤ =\n    xs = [ 0 ]\n    λ_ → xs\n");
+    for (1..25) |k| try src.print(a, "\n\nw{d} : ⊤ → (Bool → List Int)\nw{d} ⊤ =\n    a = w{d} ⊤\n    b = w{d} ⊤\n    λflag → if flag then a flag else b flag\n", .{ k, k, k - 1, k - 1 });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try dumpGenerated(&w, src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    var totals: [3]u64 = .{ 0, 0, 0 };
+    for ([_][]const u8{ "w8", "w16", "w24" }, 0..) |owner, i| {
+        const stopped = try expectBoundedOrLimit(dump, owner, 2_000);
+        if (!stopped) totals[i] = try accountTotal(dump, owner);
+    }
+    if (totals[0] != 0 and totals[2] != 0) try testing.expect(totals[2] <= 2 * totals[0]);
+}
+
+const WideLeaf = enum { scalar, fresh, supplied };
+
+/// §7.6 item 6's WideCallbackResult: `h f` builds an `n`-field record of
+/// `f ⊤`; each answer is an `m`-field record of lists (or of `Int`s for
+/// `.scalar`, which has `h` alone). `use` hands `h` a lambda answering `[]`
+/// in every field (`.fresh`) or the parameter `x` (`.supplied`). `demo`
+/// writes one list of the answer while a list of another field is read.
+fn wideSource(a: std.mem.Allocator, src: *std.ArrayList(u8), n: u32, m: u32, leaf: WideLeaf) !void {
+    const field = if (leaf == .scalar) "Int" else "List Int";
+    try src.appendSlice(a, "type alias R = { ");
+    for (0..m) |j| try src.print(a, "{s}b{d} : {s}", .{ if (j == 0) "" else ", ", j, field });
+    try src.appendSlice(a, " }\n\n\ntype alias H = { ");
+    for (0..n) |i| try src.print(a, "{s}a{d} : R", .{ if (i == 0) "" else ", ", i });
+    try src.appendSlice(a, " }\n\n\npub h : (⊤ → R) → H\nh f = { ");
+    for (0..n) |i| try src.print(a, "{s}a{d} = f ⊤", .{ if (i == 0) "" else ", ", i });
+    try src.appendSlice(a, " }\n");
+    if (leaf == .scalar) return;
+    try src.appendSlice(a, "\n\npub use : List Int → H\nuse x =\n    h λ⊤ → { ");
+    for (0..m) |j| try src.print(a, "{s}b{d} = {s}", .{ if (j == 0) "" else ", ", j, if (leaf == .fresh) "[]" else "x" });
+    try src.appendSlice(a, " }\n\n\npub demo : List Int → List Int × List Int\ndemo x =\n    r = use x\n    ( List.push r.a0.b0 1, r.a1.b1 )\n");
+}
+
+test "the checker v2 keeps a direct N-field wrapper of scalar answers at baseline for any written width" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6: "A direct N-field `h` with scalar leaves stays baseline at
+    // arbitrary written width". `h f = { a0 = f ⊤, … }` over `Int` answers
+    // spends no growth, and its records are linear in N (2 080 / 17 952 at
+    // N = 64 / 512).
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 512 }, 0..) |n, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(testing.allocator);
+        const a = testing.allocator;
+        try src.appendSlice(a, "type alias H = { ");
+        for (0..n) |k| try src.print(a, "{s}a{d} : Int", .{ if (k == 0) "" else ", ", k });
+        try src.appendSlice(a, " }\n\n\npub h : (⊤ → Int) → H\nh f = { ");
+        for (0..n) |k| try src.print(a, "{s}a{d} = f ⊤", .{ if (k == 0) "" else ", ", k });
+        try src.appendSlice(a, " }\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "h", 40_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "h", "growth"));
+        totals[i] = try accountTotal(dump, "h");
+    }
+    try testing.expect(totals[1] <= 12 * totals[0]);
+}
+
+test "the checker v2 answers a 16-wide callback product exactly and a 32-wide one within the allowance" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, N = M: `use` hands `h` an M-field actual of lists it
+    // holds, so reading and writing the N×M descendants is the product the
+    // allowance bounds. At 16 the answer is exact: `demo` writes
+    // `r.a0.b0` while `r.a1.b1` is read, and both fields are `x`, so it is
+    // refused. At 32 the product spends 48 105 of the 65 536 growth
+    // records. The fresh actual is the shortcut that does not exist yet
+    // (#2035).
+    const a = testing.allocator;
+    var seen_demo: u32 = 0;
+    for ([_]u32{ 16, 32 }, 0..) |n, i| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try wideSource(a, &src, n, n, .supplied);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "use", 200_000));
+        if (i == 0) {
+            try testing.expect(std.mem.indexOf(u8, dump, ": rejected ") != null);
+            seen_demo += 1;
+        }
+    }
+    try testing.expectEqual(@as(u32, 1), seen_demo);
+}
+
+test "the checker v2 stops a 64-wide callback product loudly with ownership_limit and nothing else but its dependents" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6: "generated cases exceeding the growth allowance must fail
+    // with ownership_limit". N = M = 64 supplied descendants are 4 096
+    // products, past the default allowance on the slot domain. The dump says
+    // `limit use`, the declaration is unchecked, and `check` refuses with
+    // `ownership_limit` for `use`. (Should the product ever fit, the dump's
+    // verdict stands and the test ends there.)
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(testing.allocator);
+    try wideSource(testing.allocator, &src, 64, 64, .supplied);
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const check = try w.runWith(&.{ "check", "--ownership=v2", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "Main.beni" }, raw);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    if (!try expectBoundedOrLimit(dump.stdout, "use", 400_000)) return;
+    try testing.expectEqual(@as(u8, 1), check.exit_code);
+    try testing.expect(std.mem.indexOf(u8, check.stderr, "\"code\":\"ownership_limit\"") != null);
+    try testing.expect(std.mem.indexOf(u8, check.stderr, "ownership_summary_size") != null);
+    // `demo` reads `use`'s unknown answer and is refused for that; nothing else is.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, check.stderr, "\"code\":\"ownership_limit\""));
+    try testing.expectEqual(std.mem.count(u8, check.stderr, "\"code\":"), 1 + std.mem.count(u8, check.stderr, "\"code\":\"list_may_be_shared\""));
+}
+
+test "the checker v2 composes N-way and M-way callback unions exactly, in records below N times M" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6's CallbackUnionComposition, N = M = 16/64/256. `pickN`
+    // answers `f ⊤` in N arms, `pickM` in M arms, and `both` pairs the two
+    // unions. The unions add nothing (growth 0 in `both`); comparing the
+    // two answers of a caller costs at most the N×M pairs. At every size the
+    // verdicts are exact: `fresh` (a fresh lambda) is accepted, `shared`
+    // (the lambda answers the caller's `x`) is refused.
+    const a = testing.allocator;
+    var totals: [3]u64 = undefined;
+    for ([_]u32{ 16, 64, 256 }, 0..) |n, i| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        for ([_][]const u8{ "pickN", "pickM" }) |name| {
+            try src.print(a, "{s} : Int, (⊤ → List Int) → List Int\n{s} k f =\n    case k of\n", .{ name, name });
+            for (0..n - 1) |k| try src.print(a, "        {d} → f ⊤\n\n", .{k});
+            try src.appendSlice(a, "        _ → f ⊤\n\n\n");
+        }
+        try src.appendSlice(a, "pub both : Int, Int, (⊤ → List Int) → List Int × List Int\nboth i j f = ( pickN i f, pickM j f )\n\n\n");
+        try src.appendSlice(a, "pub fresh : Int, Int → List Int × List Int\nfresh i j =\n    ( p, q ) = both i j λ⊤ → [ 1 ]\n    ( List.push p 1, q )\n\n\n");
+        try src.appendSlice(a, "pub shared : Int, Int, List Int → List Int × List Int\nshared i j x =\n    ( p, q ) = both i j λ⊤ → x\n    ( List.push p 1, q )\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "both", "growth"));
+        try testing.expect(!try expectBoundedOrLimit(dump, "fresh", 200_000));
+        try testing.expect(!try expectBoundedOrLimit(dump, "shared", 200_000));
+        try testing.expect(std.mem.indexOf(u8, dump, "total 2: accepted 1 (fresh 1,") != null);
+        try testing.expect(std.mem.indexOf(u8, dump, "pending 0, rejected 1") != null);
+        totals[i] = try accountTotal(dump, "fresh") + try accountTotal(dump, "shared");
+    }
+    // A sixteen-fold step in N×M costs at most that many records.
+    try testing.expect(totals[1] <= 16 * totals[0]);
+    try testing.expect(totals[2] <= 16 * totals[1]);
+}
+
+test "the checker v2 walks mutual carried lambdas in no growth and answers exactly" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, "recursion through wrappers, mutual carried lambdas":
+    // `ping` and `pong` hand each other a lambda that calls the one they were
+    // given. The group terminates with growth 0 and no limit, a fresh actual
+    // is accepted, and one that answers the caller's `x` is refused.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const src =
+        \\ping : Int, (⊤ → List Int) → List Int
+        \\ping n f =
+        \\    if n == 0 then
+        \\        f ⊤
+        \\
+        \\    else
+        \\        pong (n - 1) λ⊤ → f ⊤
+        \\
+        \\
+        \\pong : Int, (⊤ → List Int) → List Int
+        \\pong n f =
+        \\    if n == 0 then
+        \\        f ⊤
+        \\
+        \\    else
+        \\        ping (n - 1) λ⊤ → f ⊤
+        \\
+        \\
+        \\pub fresh : Int → List Int
+        \\fresh n = List.push (ping n λ⊤ → [ 1 ]) 2
+        \\
+        \\
+        \\pub shared : Int, List Int → List Int × List Int
+        \\shared n x = ( List.push (ping n λ⊤ → x) 2, x )
+        \\
+    ;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try dumpGenerated(&w, src);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "ping", "pong", "fresh", "shared" }) |owner| {
+        try testing.expect(!try expectBoundedOrLimit(dump, owner, 5_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, owner, "growth"));
+    }
+    try testing.expect(std.mem.indexOf(u8, dump, "total 2: accepted 1 (fresh 1,") != null);
+    try testing.expect(std.mem.indexOf(u8, dump, "pending 0, rejected 1") != null);
+}
+
+test "the checker v2 walks a chain of folds that feed each other in records linear in its length" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, "supplies-only feedback": `r_k` folds `r_(k-1)` into a
+    // fresh accumulator, so each fold's feedback is its own supply and
+    // nothing else. Twice the folds cost at most 2.5 times the records, with
+    // growth 0 (72 144 / 142 659 at 100 / 200 on Debug).
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 40, 80 }, 0..) |n, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pub chain : List Int → List Int\nchain xs =\n    r0 = List.foldl xs [] λx acc → List.push acc x\n");
+        for (1..n + 1) |k| try src.print(a, "    r{d} = List.foldl r{d} [] λx acc → List.push acc x\n", .{ k, k - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "chain", 400_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "chain", "growth"));
+        totals[i] = try accountTotal(dump, "chain");
+    }
+    try testing.expect(totals[1] * 10 <= totals[0] * 25);
 }

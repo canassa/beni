@@ -1,0 +1,10 @@
+module PositionsSaturate
+  40:12 construction a: rejected disjoint: another operand of the same operation reaches it
+  41:12 construction m: accepted param
+  42:12 construction m5: accepted param
+  50:11 construction b: accepted fresh
+  56:11 construction a: accepted param
+  80:7 construction a: accepted fresh
+  demands 6: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 6: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause disjoint 1

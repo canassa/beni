@@ -1,0 +1,44 @@
+-- The comparisons are operators (`backend.md` §4): `Js.lt`, `gt`, `le` and
+-- `ge` are `<`, `>`, `<=` and `>=` written in place, with no call and no
+-- import, under the release optimiser as in a development build. `ordered`
+-- shows two in one expression, parenthesised by precedence like any binary,
+-- and `masked` and `against` put a looser operator (`&`, `===`) on either
+-- side, which the printer brackets; `viaValue` passes one as a value, which
+-- is the sibling's function. Built with `--core --release`.
+import Js
+
+
+pub lt : a, a → Bool
+lt x y = Js.lt x y
+
+
+pub gt : a, a → Bool
+gt x y = Js.gt x y
+
+
+pub le : a, a → Bool
+le x y = Js.le x y
+
+
+pub ge : a, a → Bool
+ge x y = Js.ge x y
+
+
+pub ordered : Int, Int, Int → Bool
+ordered a b c = Js.le a b && Js.lt b c
+
+
+pub masked : Int, Int, Int → Bool
+masked a b c = Js.lt (Js.bitAnd a b) c
+
+
+pub against : Int, Int, Int → Bool
+against a b c = Js.lt a (Js.same b c)
+
+
+pub viaValue : Int, Int → Bool
+viaValue a b = apply Js.lt a b
+
+
+apply : (Int, Int → Bool), Int, Int → Bool
+apply f a b = f a b

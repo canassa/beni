@@ -1,0 +1,31 @@
+-- `Io.run` and `Io.readFile` under `--release` once `Io.js` is gone
+-- (plans/runtime-in-beni.md step 10): `finish` reads the host `Program`'s
+-- two properties and sets the exit code, `startRead` asks `process` for
+-- `node:fs/promises`, and the rejection handler names the abort and reads
+-- the code table, one object of the constructors, by its own keys;
+-- `Exit` and `Result` carry integer tags, `FileError` its strings.
+import Io
+import Node exposing (Program)
+
+
+describe : Io.FileError → String
+describe failure =
+    case failure of
+        Io.NotFound →
+            "not found"
+
+        Io.PermissionDenied →
+            "permission denied"
+
+        _ →
+            "other"
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Io.readFile "notes.txt" of
+        Ok text →
+            Node.print text
+
+        Err failure →
+            Node.exitWith (describe failure) 2

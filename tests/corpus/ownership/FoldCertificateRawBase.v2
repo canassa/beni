@@ -1,0 +1,1 @@
+v2 reads a fold certificate's class whose base is a raw parameter (ownership-v2.md §2.11 item 3 (d3), §8 slice 4, *As built, part 3*): (d) does not read below the parameter's leaf, and a refusal by cells inside the knot is approximate; its verdicts are v2's own.

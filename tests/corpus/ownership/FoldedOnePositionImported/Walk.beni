@@ -1,0 +1,15 @@
+-- ownership (project): see Main.beni. `writeLL` writes the list of its
+-- argument's left grandchild's left child, one position of `π1#Node.0⟲#Node.1`.
+pub type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub writeLL : Tree → Tree
+writeLL t =
+    case t of
+        Node (Node (Node a xs b) ys c) zs d →
+            Node (Node (Node a (List.push xs 1) b) ys c) zs d
+
+        _ →
+            t

@@ -1,0 +1,85 @@
+-- A link whose `href` changes, on `browser-inline` (browser-inline.md
+-- §10.5, amended 2026-11-05): a routing page's links, each `"/blog/" ++
+-- slug`, written through the runtime's `safeUrl` at the mount and by the
+-- handler of each key that changes the slug. The post's link is in the
+-- `view`, the next one in a helper of the module, the edit one in an eager
+-- `when` arm. A click on a link is a request, which `onUrlRequest` hands
+-- `update` as the `Url` the host resolved from the attribute the page
+-- shows; `update` shows its path. A URL that is a field of the model no
+-- message changes is baked: the archive's link is in the markup.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Next
+    | Edit
+    | Requested Browser.UrlRequest
+
+
+type alias Model =
+    slug : String
+    next : String
+    archive : String
+    editing : Bool
+    last : String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Next →
+            ( { model | slug = model.next, next = "${model.next}-more" }, Cmd.none )
+
+        Edit →
+            ( { model | editing = not model.editing }, Cmd.none )
+
+        Requested (Browser.Internal url) →
+            ( { model | last = "Internal ${url.path}" }, Cmd.none )
+
+        Requested (Browser.External href) →
+            ( { model | last = "External ${href}" }, Cmd.none )
+
+
+nextLink : String → Html Msg
+nextLink slug = <a id="next" href={"/blog/" ++ slug}>next</a>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <a id="post" href={"/blog/" ++ model.slug}>post</a>
+        {nextLink model.next}
+        <a id="archive" href={model.archive}>archive</a>
+        {if model.editing then
+            <a id="edit" href={"/blog/" ++ model.slug ++ "/edit"}>edit</a>
+         else
+            <></>
+        }
+        <button id="advance" onClick={Next}>next post</button>
+        <button id="toggle" onClick={Edit}>edit</button>
+        <p>{model.last}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                ( { slug = "first"
+                  , next = "second"
+                  , archive = "/archive/2026"
+                  , editing = True
+                  , last = ""
+                  }
+                , Cmd.none
+                )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Navigation.onUrlRequest Requested
+        }

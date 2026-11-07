@@ -1,0 +1,1 @@
+v2 composes a derived comparison from a component that writes below its first field, at any depth (ownership-v2.md §2.13.13); v1 has no row for it.

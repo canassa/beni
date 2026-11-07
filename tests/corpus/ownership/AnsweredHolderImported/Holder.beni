@@ -1,0 +1,55 @@
+-- ownership (project): see Main.beni. The callees: each answers the
+-- record it was given in one branch and writes a list of it in the other.
+pub type alias Stack =
+    top : List Int
+    kept : List (List Int)
+
+
+pub g : Int, Stack → Stack
+g i s =
+    if i ≥ 10 then
+        s
+    else
+        { top = s.top, kept = List.push s.kept s.top }
+
+
+pub type alias Three =
+    top : List Int
+    kept : List (List Int)
+    extra : List (List Int)
+
+
+pub g3 : Int, Three → Three
+g3 i s =
+    if i ≥ 10 then
+        s
+    else
+        { top = s.top, kept = List.push s.kept s.top, extra = [] }
+
+
+pub type alias Outer =
+    inner : Stack
+    other : List (List Int)
+
+
+pub h : Int, Outer → Outer
+h i o =
+    if i ≥ 10 then
+        o
+    else
+        { inner = { top = o.inner.top, kept = List.push o.inner.kept o.inner.top }, other = [] }
+
+
+pub type alias Deep =
+    inner : Three
+    other : List (List Int)
+
+
+pub h3 : Int, Deep → Deep
+h3 i o =
+    if i ≥ 10 then
+        o
+    else
+        { inner = { top = o.inner.top, kept = List.push o.inner.kept o.inner.top, extra = [] }
+        , other = []
+        }

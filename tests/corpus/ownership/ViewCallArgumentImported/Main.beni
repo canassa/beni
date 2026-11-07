@@ -1,0 +1,66 @@
+-- ownership (project): `ViewCallArgument` with every writer in another
+-- module (ownership-v2.md Appendix B, V×A): a view and its base passed
+-- to one imported writer are refused `disjoint` at the caller, the view
+-- read before the call only accepts, and the same below a recursive root.
+-- `labelAndView` is accepted by v1 and refused by v2 (#1493).
+import Writers exposing (Rose)
+
+
+pub viewAndBase : List Int → Int
+viewAndBase xs =
+    case xs of
+        [ _, …rest ] →
+            Writers.writeFirst xs rest
+
+        [] →
+            0
+
+
+pub readBefore : List Int → Int
+readBefore xs =
+    case xs of
+        [ _, …rest ] →
+            n = List.length rest
+            n + Writers.writeOnly xs
+
+        [] →
+            0
+
+
+pub belowRoot : Rose → Int
+belowRoot t =
+    case t of
+        Rose _ [ Rose l _, …_ ] →
+            case l of
+                [ _, …lrest ] →
+                    Writers.writeFirst l lrest
+
+                [] →
+                    0
+
+        _ →
+            0
+
+
+pub kidsAndView : Rose → Int
+kidsAndView t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    Writers.writeKids t rest
+
+                [] →
+                    0
+
+
+pub labelAndView : Rose → Int
+labelAndView t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    Writers.writeLabel t rest
+
+                [] →
+                    0

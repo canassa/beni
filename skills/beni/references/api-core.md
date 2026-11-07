@@ -68,163 +68,33 @@ module Basics
   value truncate : Float → Int
   value turns : Float → Float
   value xor : Bool, Bool → Bool
-module Binary
-  type Backing
-    Local
-    Shared
-  type Buffer
-  type Endian
-    Little
-    Big
-  type Error
-    Unsupported
-    InvalidSize
-    InvalidRange
-    Misaligned
-    InvalidInteger
-    Detached
-    ResizableBacking
-    AllocationFailed
-    PrecisionLost
-    WrongViewKind
-    TransferDenied
-    IsolationRequired
-  type SharedBuffer
-  type Source
-  alias SourceInfo
-    SourceInfo
-  type View
-  type ViewKind
-    I8
-    U8
-    U8Clamped
-    I16
-    U16
-    I32
-    U32
-    I64
-    U64
-    F16
-    F32
-    F64
-    Data
-  opaque type Word64
-  value allocate : Int → Result Error Buffer  -- impure
-  value backing : View → Result Error Backing  -- impure
-  value bufferSource : Buffer → Result Error Source  -- impure
-  value byteLength : Backing → Result Error Int  -- impure
-  value copy : Source → Result Error Buffer  -- impure
-  value copyInto : View, Int, Source → Result Error ⊤  -- impure
-  value detached : Buffer → Bool  -- impure
-  value elementSize : ViewKind → Int
-  value fromList : List Int → Result Error Buffer  -- impure
-  value readF16 : View, Int, Endian → Result Error Float  -- impure
-  value readF32 : View, Int, Endian → Result Error Float  -- impure
-  value readF64 : View, Int, Endian → Result Error Float  -- impure
-  value readI16 : View, Int, Endian → Result Error Int  -- impure
-  value readI32 : View, Int, Endian → Result Error Int  -- impure
-  value readI8 : View, Int → Result Error Int  -- impure
-  value readU16 : View, Int, Endian → Result Error Int  -- impure
-  value readU32 : View, Int, Endian → Result Error Int  -- impure
-  value readU8 : View, Int → Result Error Int  -- impure
-  value readWord64 : View, Int, Endian → Result Error Word64  -- impure
-  value shared : Int → Result Error SharedBuffer  -- impure
-  value sharedSource : SharedBuffer → Result Error Source  -- impure
-  value sourceInfo : Source → Result Error SourceInfo  -- impure
-  value toList : Source → Result Error (List Int)  -- impure
-  value transfer : Buffer → Result Error Buffer  -- impure
-  value view : Backing, ViewKind, Int, Maybe Int → Result Error View  -- impure
-  value viewSource : View → Result Error Source  -- impure
-  value word64 : Int, Int → Result Error Word64  -- impure
-  value word64FromInt : Int → Result Error Word64  -- impure
-  value word64ToInt : Word64 → Result Error Int
-  value words : Word64 → { high : Int, low : Int }
-  value writeF16 : View, Int, Endian, Float → Result Error ⊤  -- impure
-  value writeF32 : View, Int, Endian, Float → Result Error ⊤  -- impure
-  value writeF64 : View, Int, Endian, Float → Result Error ⊤  -- impure
-  value writeI16 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeI32 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeI8 : View, Int, Int → Result Error ⊤  -- impure
-  value writeU16 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeU32 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeU8 : View, Int, Int → Result Error ⊤  -- impure
-  value writeWord64 : View, Int, Endian, Word64 → Result Error ⊤  -- impure
-module Binary.Atomics
-  type Error
-    BinaryError
-    InvalidView
-    InvalidIndex
-    InvalidValue
-    Unsupported
-  type Operation
-    Load
-    Store
-    Add
-    Subtract
-    And
-    Or
-    Xor
-    Exchange
-    CompareExchange
-  type Value
-    Number
-    Words
-  value access : View, Int, Operation → Result Error Value  -- impure
-  value isLockFree : Int → Bool  -- impure
-module Binary.Wgsl
-  type Error
-    InvalidDimension
-    InvalidScalar
-    InvalidCount
-    Overflow
-    EmptyStructure
-    DuplicateMember
-    InvalidAlignment
-    InvalidMemberSize
-    RuntimePlacement
-    UniformStride
-    UniformOffset
-    UniformStructureGap
-    AtomicInUniform
-    RuntimeInUniform
-    ValueShape
-    ValueCount
-    IntegerRange
-    BinaryError
-  alias Field
-    Field
-  opaque type Layout
-  alias Member
-    Member
-  type Scalar
-    Signed32
-    Unsigned32
-    Float32
-    Float16
-    AtomicSigned32
-    AtomicUnsigned32
-  type UniformRules
-    Standard
-    Legacy
-  type Value
-    Integer
-    Floating
-    Composite
-  value alignment : Layout → Int
-  value array : Layout, Int → Result Error Layout  -- impure
-  value byteSize : Layout → Maybe Int
-  value decode : View, Int, Layout → Result Error Value  -- impure
-  value encode : Layout, Value → Result Error Buffer  -- impure
-  value field : String, Layout → Field
-  value matrix : Scalar, Int, Int → Result Error Layout  -- impure
-  value members : Layout → List Member
-  value runtimeArray : Layout → Result Error Layout
-  value scalar : Scalar → Layout
-  value stride : Layout → Maybe Int
-  value structure : List Field → Result Error Layout  -- impure
-  value uniform : UniformRules, Layout → Result Error ⊤
-  value vector : Scalar, Int → Result Error Layout  -- impure
-  value write : View, Int, Layout, Value → Result Error ⊤  -- impure
+module Browser.Host.Document
+  type Document
+  type QueryError
+    SyntaxError
+  value querySelector : Document, String → Result QueryError (Maybe Element)  -- impure
+module Browser.Host.Element
+  type Element
+  value toNode : Element → Node
+module Browser.Host.Node
+  type Node
+  value setTextContent : Node, String → ⊤  -- impure
+  value textContent : Node → Maybe String  -- impure
+module Browser.Host.TextEncoder
+  type TextEncoder
+  value create : ⊤ → TextEncoder  -- impure
+  value encode : TextEncoder, String → Uint8Array  -- impure
+module Browser.Host.Timers
+  value setTimeout : (⊤ → ⊤), Int → Int  -- impure
+module Browser.Host.Uint8Array
+  type Uint8Array
+  value byteLength : Uint8Array → Int
+module Browser.Host.Window
+  type Window
+  value document : ⊤ → Document  -- impure
+module Browser.Host.WorkerGlobalScope
+  type WorkerGlobalScope
+  value self : ⊤ → WorkerGlobalScope  -- impure
 module Char
   type Char
   value fromCode : Int → Char
@@ -241,9 +111,47 @@ module Char
 module Clock
   opaque type Virtual
   value adjust : Virtual, Duration → ⊤  -- suspends
+  value elapsed : ⊤ → Float  -- impure
   value now : ⊤ → Int  -- impure
   value run : Virtual, (⊤ → a) → a  -- impure
   value virtual : Int → Virtual  -- impure
+module Date
+  type Month
+    Jan
+    Feb
+    Mar
+    Apr
+    May
+    Jun
+    Jul
+    Aug
+    Sep
+    Oct
+    Nov
+    Dec
+  alias Parts
+    Parts
+  type Posix
+    Posix
+  type Weekday
+    Mon
+    Tue
+    Wed
+    Thu
+    Fri
+    Sat
+    Sun
+  opaque type Zone
+  value fromIso8601 : String → Maybe Posix
+  value fromMillis : Int → Posix
+  value here : ⊤ → Zone  -- impure
+  value name : Zone → String
+  value named : String → Maybe Zone
+  value now : ⊤ → Posix  -- impure
+  value toIso8601 : Posix → String
+  value toMillis : Posix → Int
+  value toParts : Posix, Zone → Parts
+  value utc : Zone
 module Debug
   value log : String, a → a  -- impure
   value logAs : Value, String, a → a  -- impure
@@ -341,14 +249,19 @@ module Js
   value finally : (⊤ → a), (⊤ → ⊤) → a  -- impure
   value fingerprint : k, order → name where k.compare : k, k → order
   value from : a → Value
+  value ge : a, a → bool
   value get : Value, name → Value  -- impure
   value global : name → Value  -- impure
+  value gt : a, a → bool
   value instanceOf : Value, Value → bool  -- impure
   value isNull : Value → bool
   value isNullish : Value → bool
   value isUndefined : Value → bool
+  value le : a, a → bool
+  value lt : a, a → bool
   value maySuspend : f → bool
   value method : (Value → a) → Value
+  value module : specifier → Value  -- impure
   value null : Value
   value object : fields → Value
   value pure : (⊤ → a) → a
@@ -460,6 +373,27 @@ module Log
   value trace : String → ⊤  -- impure
   value warn : String → ⊤  -- impure
   value withSink : (Entry → ⊤), (⊤ → a) → a  -- impure
+module Markdown
+  type Block
+    Paragraph
+    Heading
+    ThematicBreak
+    CodeBlock
+    BlockQuote
+    BulletList
+    OrderedList
+    HtmlBlock
+  type Inline
+    Text
+    CodeSpan
+    Emphasis
+    Strong
+    Link
+    Image
+    HardBreak
+    SoftBreak
+    HtmlInline
+  value parse : String → List Block
 module Maybe
   type Maybe a
     Just
@@ -490,21 +424,21 @@ module Random.Pcg
     Generator
   type Seed
     Seed
-  value andThen : (Generator a), (a → Generator b) → Generator b
+  value andThen : Generator a, (a → Generator b) → Generator b
   value constant : a → Generator a
   value float : Float, Float → Generator Float
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
   value lazy : (⊤ → Generator a) → Generator a
-  value list : (Generator a), Int → Generator (List a)
-  value map : (Generator a), (a → b) → Generator b
-  value map2 : (Generator a), (Generator b), (a, b → c) → Generator c
-  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → Generator d
+  value list : Generator a, Int → Generator (List a)
+  value map : Generator a, (a → b) → Generator b
+  value map2 : Generator a, Generator b, (a, b → c) → Generator c
+  value map3 : Generator a, Generator b, Generator c, (a, b, c → d) → Generator d
   value maxInt : Int
   value minInt : Int
-  value pair : (Generator a), (Generator b) → Generator (a × b)
-  value step : (Generator a), Seed → a × Seed
+  value pair : Generator a, Generator b → Generator (a × b)
+  value step : Generator a, Seed → a × Seed
   value uniform : a, List a → Generator a
   value weighted : Float × a, List (Float × a) → Generator a
 module Record
@@ -540,7 +474,7 @@ module Schedule
     Continue
     Stop
   value concat : Schedule i, Schedule i → Schedule i
-  value delays : (Schedule i), List i → List Duration
+  value delays : Schedule i, List i → List Duration
   value during : Duration → Schedule i
   value exponential : Duration, Float → Schedule i
   value fibonacci : Duration → Schedule i
@@ -550,12 +484,12 @@ module Schedule
   value jittered : Schedule i → Schedule i
   value max : Schedule i, Schedule i → Schedule i
   value min : Schedule i, Schedule i → Schedule i
-  value modifyDelay : (Schedule i), (Metadata i, Duration → Duration) → Schedule i
+  value modifyDelay : Schedule i, (Metadata i, Duration → Duration) → Schedule i
   value recurs : Int → Schedule i
   value spaced : Duration → Schedule i
-  value step : (Schedule i), Metadata i → Step i
+  value step : Schedule i, Metadata i → Step i
   value upTo : Schedule i, Duration → Schedule i
-  value while : (Schedule i), (Metadata i → Bool) → Schedule i
+  value while : Schedule i, (Metadata i → Bool) → Schedule i
 module Schema
   alias Codec a
   alias ConstructorShape
@@ -641,7 +575,7 @@ module Schema
     VariantShape
   value bool : Schema Bool Bool
   value conversion : (b → Result (List Issue) a), (a → Result (List Issue) b) → Conversion b a
-  value converted : Schema e b, Conversion b a → Schema e a  -- impure
+  value converted : Schema e b, Conversion b a → Schema e a
   value decode : Schema e a, e → Result (List Issue) a  -- impure
   value decodeWith : Schema e a, Options, e → Result (List Issue) a  -- impure
   value defaultOptions : ⊤ → Options
@@ -649,23 +583,21 @@ module Schema
   value describe : Schema e a → Description  -- impure
   value encode : Schema e a, a → Result (List Issue) e  -- impure
   value encodeWith : Schema e a, Options, a → Result (List Issue) e  -- impure
-  value encodedOnly : Schema e a → Schema e e  -- impure
-  value erased : Schema e a → Codec a  -- impure
+  value erased : Schema e a → Codec a
   value field : Fields pe pa, String, Schema e a → Fields (pe × e) (pa × a)
   value fields : Fields ⊤ ⊤
   value finiteFloat : Schema Float Float
-  value flip : Schema e a → Schema a e  -- impure
   value float : Schema Float Float
   value injection : (p → a), (a → Maybe p) → Injection p a
   value int : Schema Int Int
   value issue : String → Issue
   value issueAt : List PathSegment, String → Issue
   value key : Fields pe pa, String → Fields pe pa
-  value list : Schema e a → Schema (List e) (List a)  -- impure
+  value list : Schema e a → Schema (List e) (List a)
   value mapping : (p → r), (r → p) → Mapping p r
   value maxDepthCeiling : Int
   value null : Schema (Nullable ⊥) (Nullable ⊥)
-  value nullable : Schema e a → Schema (Nullable e) (Nullable a)  -- impure
+  value nullable : Schema e a → Schema (Nullable e) (Nullable a)
   value nullary : String, String, Injection ⊤ e, Injection ⊤ a → Variant e a
   value optional : Fields pe pa, String, Schema e a → Fields (pe × Presence e) (pa × Presence a)
   value parse : Schema e a, String → Result (List Issue) a  -- impure
@@ -679,7 +611,6 @@ module Schema
   value string : Schema String String
   value structural : ⊤ → Codec a where a.codec : ⊤ → Codec a
   value tagged : String, List (Variant e a) → Schema e a
-  value typeOnly : Schema e a → Schema a a  -- impure
   value value : Schema Value Value
   value variant : String, String, Schema pe pa, Injection pe e, Injection pa a → Variant e a  -- impure
   value write : Schema e a, a → Result (List Issue) Value  -- impure
@@ -773,24 +704,26 @@ module Task
   type Soon
   value adjustClock : Value, Value → ⊤  -- suspends
   value andThen : a, (a → b) → b  -- impure
+  value beginUpdate : ⊤ → Value  -- impure
   value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure
-  value callback : (Resume a → (⊤ → ⊤)) → a  -- suspends
+  value callback : (Resume a → ⊤ → ⊤) → a  -- suspends
   value cancel : Fiber a → ⊤  -- suspends
   value cancelAll : List (Fiber a) → ⊤  -- suspends
+  value chainDefect : (⊤ → ⊤) → ⊤  -- impure
   value cleansUp : ⊤ → Bool  -- impure
   value closeRoot : Scope → ⊤  -- impure
   value currentClock : ⊤ → Value  -- impure
   value currentLogContext : ⊤ → Value  -- impure
   value defer : Scope, (Exit ⊤ → ⊤) → ⊤  -- impure
+  value endUpdate : Value → ⊤  -- impure
   value forEach : List a, Int, (a → b) → List b  -- suspends
   value forEachOk : List a, Int, (a → Result e b) → Result e (List b)  -- suspends
   value forever : (⊤ → a) → b  -- suspends
   value fromHost : (⊤ → ⊤) → ⊤  -- impure
-  value hasLogContext : ⊤ → Bool  -- impure
   value isWaiting : a → Bool
   value join : Fiber a → a  -- suspends
   value joinAll : List (Fiber a) → List a  -- suspends
-  value keepLogContext : (a → b) → (a → b)  -- impure
+  value keepLogContext : (a → b) → a → b  -- impure
   value never : ⊤ → a  -- suspends
   value onDefect : (⊤ → ⊤) → ⊤  -- impure
   value onExit : (⊤ → a), (Exit a → ⊤) → a  -- impure
@@ -807,10 +740,10 @@ module Task
   value race : (⊤ → a), (⊤ → a) → a  -- suspends
   value raceAll : (⊤ → a), List (⊤ → a) → a  -- suspends
   value raceOk : List (⊤ → Result e a) → Result (List e) a  -- suspends
-  value repeat : (Schedule a), (⊤ → a) → a  -- suspends
+  value repeat : Schedule a, (⊤ → a) → a  -- suspends
   value restore : Restore, (⊤ → b) → b  -- impure
   value resume : Resume a, a → ⊤  -- impure
-  value retry : (Schedule e), (⊤ → Result e a) → Result e a  -- suspends
+  value retry : Schedule e, (⊤ → Result e a) → Result e a  -- suspends
   value running : Fiber a → Bool  -- impure
   value scheduler : (⊤ → ⊤) → Scheduler  -- impure
   value schedulerBusy : Scheduler → Bool  -- impure
@@ -834,7 +767,6 @@ module Task
   value withClock : Value, (⊤ → a) → a  -- impure
   value withLogContext : Value, (⊤ → a) → a  -- impure
   value withScheduler : Scheduler, (⊤ → a) → a  -- suspends
-  value withoutLogContext : (⊤ → a) → a  -- impure
   value yieldNow : ⊤ → ⊤  -- suspends
 module Url
   type Protocol
@@ -865,20 +797,20 @@ module Url.Parser
   value custom : String, (String → Maybe a) → Parser (a → b) b
   value fragment : (Maybe String → fragment) → Parser (fragment → a) a
   value int : Parser (Int → a) a
-  value map : (Parser a b), a → Parser (b → c) c
-  value map2 : (Parser (a → b → r) r), (a, b → r) → Parser (r → c) c
-  value map3 : (Parser (a → b → d → r) r), (a, b, d → r) → Parser (r → c) c
-  value map4 : (Parser (a → b → d → e → r) r), (a, b, d, e → r) → Parser (r → c) c
-  value map5 : (Parser (a → b → d → e → g → r) r), (a, b, d, e, g → r) → Parser (r → c) c
-  value map6 : (Parser (a → b → d → e → g → h → r) r), (a, b, d, e, g, h → r) → Parser (r → c) c
-  value map7 : (Parser (a → b → d → e → g → h → i → r) r), (a, b, d, e, g, h, i → r) → Parser (r → c) c
-  value map8 : (Parser (a → b → d → e → g → h → i → j → r) r), (a, b, d, e, g, h, i, j → r) → Parser (r → c) c
+  value map : Parser a b, a → Parser (b → c) c
+  value map2 : Parser (a → b → r) r, (a, b → r) → Parser (r → c) c
+  value map3 : Parser (a → b → d → r) r, (a, b, d → r) → Parser (r → c) c
+  value map4 : Parser (a → b → d → e → r) r, (a, b, d, e → r) → Parser (r → c) c
+  value map5 : Parser (a → b → d → e → g → r) r, (a, b, d, e, g → r) → Parser (r → c) c
+  value map6 : Parser (a → b → d → e → g → h → r) r, (a, b, d, e, g, h → r) → Parser (r → c) c
+  value map7 : Parser (a → b → d → e → g → h → i → r) r, (a, b, d, e, g, h, i → r) → Parser (r → c) c
+  value map8 : Parser (a → b → d → e → g → h → i → j → r) r, (a, b, d, e, g, h, i, j → r) → Parser (r → c) c
   value oneOf : List (Parser a b) → Parser a b
-  value parse : (Parser (a → a) a), Url → Maybe a
-  value query : (QueryParser query) → Parser (query → a) a
-  value questionMark : (Parser a (query → b)), (QueryParser query) → Parser a b
+  value parse : Parser (a → a) a, Url → Maybe a
+  value query : QueryParser query → Parser (query → a) a
+  value questionMark : Parser a (query → b), QueryParser query → Parser a b
   value s : String → Parser a a
-  value slash : (Parser a b), (Parser b c) → Parser a c
+  value slash : Parser a b, Parser b c → Parser a c
   value string : Parser (String → a) a
   value top : Parser a a
 module Url.Parser.Internal
@@ -889,13 +821,13 @@ module Url.Parser.Query
   value custom : String, (List String → a) → Parser a
   value enum : String, Dict String a → Parser (Maybe a)
   value int : String → Parser (Maybe Int)
-  value map : (Parser a), (a → b) → Parser b
-  value map2 : (Parser a), (Parser b), (a, b → r) → Parser r
-  value map3 : (Parser a), (Parser b), (Parser c), (a, b, c → r) → Parser r
-  value map4 : (Parser a), (Parser b), (Parser c), (Parser d), (a, b, c, d → r) → Parser r
-  value map5 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (a, b, c, d, e → r) → Parser r
-  value map6 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (a, b, c, d, e, f → r) → Parser r
-  value map7 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (Parser g), (a, b, c, d, e, f, g → r) → Parser r
-  value map8 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (Parser g), (Parser h), (a, b, c, d, e, f, g, h → r) → Parser r
+  value map : Parser a, (a → b) → Parser b
+  value map2 : Parser a, Parser b, (a, b → r) → Parser r
+  value map3 : Parser a, Parser b, Parser c, (a, b, c → r) → Parser r
+  value map4 : Parser a, Parser b, Parser c, Parser d, (a, b, c, d → r) → Parser r
+  value map5 : Parser a, Parser b, Parser c, Parser d, Parser e, (a, b, c, d, e → r) → Parser r
+  value map6 : Parser a, Parser b, Parser c, Parser d, Parser e, Parser f, (a, b, c, d, e, f → r) → Parser r
+  value map7 : Parser a, Parser b, Parser c, Parser d, Parser e, Parser f, Parser g, (a, b, c, d, e, f, g → r) → Parser r
+  value map8 : Parser a, Parser b, Parser c, Parser d, Parser e, Parser f, Parser g, Parser h, (a, b, c, d, e, f, g, h → r) → Parser r
   value string : String → Parser (Maybe String)
 ```

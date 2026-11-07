@@ -1,0 +1,13 @@
+module RebuiltRecursiveResult
+  20:16 List.push v: accepted param
+  20:32 RebuiltRecursiveResult.f l#N.0: rejected later-use: l is read again at 20:13
+  20:32 RebuiltRecursiveResult.f l#N.1#N.0: rejected later-use: l is read again at 20:13
+  20:32 RebuiltRecursiveResult.f l#N.1⟨T⟩#N.0: rejected later-use: l is read again at 20:13
+  28:10 RebuiltRecursiveResult.f <N …>#N.0: accepted fresh
+  28:10 RebuiltRecursiveResult.f <N …>#N.1#N.0: accepted param
+  28:10 RebuiltRecursiveResult.f <N …>#N.1⟨T⟩#N.0: accepted param
+  30:21 List.push b: rejected alias: z holds it and is read at 30:13
+  demands 8: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 8: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause later-use 3
+cause alias 1

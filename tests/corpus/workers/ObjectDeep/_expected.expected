@@ -1,0 +1,10 @@
+> GET /deep/post
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< posted a value 5 000 deep
+> GET /deep/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< depth 5000

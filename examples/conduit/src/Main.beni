@@ -9,6 +9,7 @@ import ArticlePage
 import Browser
 import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
+import Date
 import Editor
 import Home
 import Html exposing (Html)
@@ -38,7 +39,9 @@ type Model
 
 init : Url, Navigation.Key → Model × Cmd Msg
 init url key =
-    changeRouteTo (Route.fromUrl url) (Redirect (Session.fromViewer key (Api.storedViewer ⊤)))
+    changeRouteTo
+        (Route.fromUrl url)
+        (Redirect (Session.fromViewer key (Date.here ⊤) (Api.storedViewer ⊤)))
 
 
 -- ---- View ------------------------------------------------------------------------
@@ -156,7 +159,7 @@ changeRouteTo maybeRoute model =
             -- events (`Storage.onChange`), so this tab signs out by itself
             -- and other open tabs keep the old session until reloaded.
             key = Session.navKey session
-            ( Redirect (Session.Guest key)
+            ( Redirect (Session.signOut session)
             , Cmd.batch [ Cmd.do λ⊤ → Api.logout ⊤, Route.replaceUrl key Route.Home RouteRefused ]
             )
 

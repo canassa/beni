@@ -869,11 +869,33 @@ const surface_list = "tests/corpus/ownership/trusted-surface.txt";
 /// a fixture that exists and names it; and every line listed under the
 /// package must be one the dump prints. One test per package, so that each
 /// uses one dump per platform.
+/// `dump --stage=ownership core` in the repository, which two tests read:
+/// run once per process, the same command on the same tree, its exit code
+/// and stdout kept for the second (#1577).
+const core_dump_args = [_][]const u8{ "dump", "--stage=ownership", "core" };
+const Dumped = struct { exit_code: u8, stdout: []const u8 };
+var core_dump: ?Dumped = null;
+
+fn coreOwnershipDump(w: *World) !Dumped {
+    if (core_dump == null) {
+        const r = try w.runWith(&core_dump_args, .{ .raw_diagnostics = true, .cwd = .inherit });
+        // Kept for the process: no test allocator owns it.
+        core_dump = .{ .exit_code = r.exit_code, .stdout = try std.heap.page_allocator.dupe(u8, r.stdout) };
+    }
+    return core_dump.?;
+}
+
 fn expectSurface(package: []const u8, args: []const []const u8) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
-    const r = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+    const core = args.len == core_dump_args.len and for (args, core_dump_args) |a, b| {
+        if (!std.mem.eql(u8, a, b)) break false;
+    } else true;
+    const r: Dumped = if (core) try coreOwnershipDump(&w) else blk: {
+        const run = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+        break :blk .{ .exit_code = run.exit_code, .stdout = run.stdout };
+    };
     try testing.expectEqual(@as(u8, 0), r.exit_code);
 
     // What the dump prints: `Module.name` per worded declaration.
@@ -1019,9 +1041,13 @@ test "ownership words: flipping Debug's words is noticed" {
     try expectFlips("ownership/JsPure.beni", &.{});
 }
 
-test "ownership words: flipping the browser platforms' words is noticed" {
-    try expectFlips("ownership/WordsBrowser.beni", &.{ "--platform=browser-tea", "--ownership-everywhere" });
-}
+// `ownership/WordsBrowser.beni` pinned `Hosted.keyOf`'s `aliased` until
+// 2026-10-26, when the keys became beni over `Js` (#877) and the word is
+// inferred; its remaining rows, `Html.Event` and `Html.Pointer`, are
+// `crossing`, the unsafe end already, so they have no flip (`-`). The
+// `browser` platform's flips are the entry rows, pinned below by
+// `HostedEntry` and `EntryInitProgram`; the entry rows of `browser-tea`,
+// `browser-inline` and `Page` have no test that runs them (#1118).
 
 test "ownership words: flipping Task's words is noticed" {
     try expectFlips("ownership/TaskWords.beni", &.{ "--platform=browser-tea", "--ownership-everywhere" });
@@ -1054,7 +1080,12 @@ fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: 
         var in = false;
         while (lines.next()) |line| {
             if (!in) {
-                if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig)) in = true else continue;
+                // Compiler-only primitives pin their foreign signature here
+                // and their actual implementation separately in the generator.
+                const foreign_head = if (std.mem.startsWith(u8, line, "pub foreign ")) line["pub foreign ".len..] else if (std.mem.startsWith(u8, line, "foreign ")) line["foreign ".len..] else "";
+                const rung = std.mem.indexOfScalar(u8, foreign_head, ' ');
+                const foreign_sig = if (rung) |at| foreign_head[at + 1 ..] else "";
+                if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig) or std.mem.startsWith(u8, foreign_sig, sig)) in = true else continue;
             } else if (line.len != 0 and line[0] != ' ' and !std.mem.startsWith(u8, line, def)) break;
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');
@@ -1354,7 +1385,7 @@ test "ownership words: a pin counts for the package its file lies under, not for
     var kept: std.ArrayList(u8) = .empty;
     var rows = std.mem.splitScalar(u8, list, '\n');
     while (rows.next()) |row| {
-        if (std.mem.startsWith(u8, row, "platforms/browser-inline/Tea.js") or std.mem.startsWith(u8, row, "tests/platforms/entry-shape/")) continue;
+        if (std.mem.startsWith(u8, row, "platforms/browser-inline/Tea.beni") or std.mem.startsWith(u8, row, "tests/platforms/entry-shape/")) continue;
         try kept.appendSlice(state.allocator(), row);
         try kept.append(state.allocator(), '\n');
     }
@@ -1476,12 +1507,24 @@ fn pinNeeds(arena: std.mem.Allocator, decls: []const DumpDecl, sources: *std.Str
     }
     // A worded beni body of a module with v2 rows (the asserted rows of
     // R-5.10.8: List, Ref, Deferred) is justified with the helpers it
-    // runs: every declaration of its module it reaches. v1's rows keep
-    // v1's rule, their own body (a `Task` row reaches the scheduler).
+    // runs: every declaration of its module it reaches. A v1 row of such
+    // a module is justified the same way. A v1 row of a module with no
+    // v2 row keeps v1's rule, its own body (a `Task` row reaches the
+    // scheduler), and so do `Task`'s v1 rows now that it has v2 ones
+    // (`spawn`, `join`): the v2 rows reach `fork` and the parts of the
+    // scheduler a fiber runs, and those are pinned; the v1 rows
+    // (`timeout`, `firstOf`, …) keep the rule they had.
+    const v1_own_body = [_][]const u8{"Task"};
     var v2_modules: std.StringHashMapUnmanaged(void) = .empty;
     for (decls) |d| if (d.v2) try v2_modules.put(arena, d.module, {});
     var stack: std.ArrayList(usize) = .empty;
-    for (decls, 0..) |d, i| if (d.worded and !d.foreign and v2_modules.contains(d.module)) try stack.append(arena, i);
+    for (decls, 0..) |d, i| {
+        if (!d.worded or d.foreign or !v2_modules.contains(d.module)) continue;
+        const exempt = for (v1_own_body) |m| {
+            if (std.mem.eql(u8, m, d.module)) break true;
+        } else false;
+        if (d.v2 or !exempt) try stack.append(arena, i);
+    }
     var seen: std.AutoHashMapUnmanaged(usize, void) = .empty;
     while (stack.pop()) |i| {
         if ((try seen.getOrPut(arena, i)).found_existing) continue;
@@ -1609,7 +1652,7 @@ test "ownership words: a taken result is followed through every form that forwar
 }
 
 fn expectCoreSurface() !void {
-    try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
+    try expectSurface("core", &core_dump_args);
 }
 
 test "ownership words: core's are catalogued" {
@@ -1808,10 +1851,10 @@ test "ownership entry: Page.sandbox reports its row without the enforcement flag
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
 
-test "ownership everywhere: tuple DAG keeps every path without repeated comparisons" {
+test "ownership v2 everywhere: tuple DAG keeps every path without repeated comparisons" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const checked = try w.runWith(&.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
+    const checked = try w.runWith(&.{ "check", "--ownership=v2", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
 }
@@ -2089,7 +2132,7 @@ test "ownership: only List's eight writers are pub core functions that write a p
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
-    const r = try w.runWith(&.{ "dump", "--stage=ownership", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    const r = try coreOwnershipDump(&w);
     try testing.expectEqual(@as(u8, 0), r.exit_code);
 
     var found: usize = 0;
@@ -2133,4 +2176,108 @@ test "ownership: only List's eight writers are pub core functions that write a p
         }
     }
     try testing.expectEqual(@as(usize, 8), found);
+}
+
+test "explicit standalone ownership enforcement checks list sharing" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const path = "tests/corpus/check/good/StandaloneOwnershipFlag.beni";
+    const ordinary = try w.runWith(&.{ "check", "--no-cache", path }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), ordinary.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), ordinary.diagnostics);
+    const enforced = try w.runWith(&.{ "check", "--no-cache", "--ownership-everywhere", path }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), enforced.exit_code);
+    try testing.expectEqualStrings("", enforced.stdout);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .list_still_used,
+        .severity = .@"error",
+        .span = .{ .file = path, .start = .{ .line = 4, .col = 15 }, .end = .{ .line = 4, .col = 33 } },
+        .title = "LIST CHANGED WHILE STILL IN USE",
+        .message = "`List.push` changes `values` in place, but `values` is read again afterwards.\n\n4|    changed = List.push values 1\n                ^^^^^^^^^^^^^^^^^^ the list is changed in place here\n5|    ( changed, values )\n                 ^^^^^^ and `values` is read here, after the change\n\nIf the list were changed in place, `values` would see the change when it is read\non line 5.\n\nTo change a copy and leave `values` as it was, copy it there:\n\n4|    changed = List.push (List.copy values) 1\n\nThis is sharing the checker can see: `values` is read on line 5, after the\nchange.",
+    }}, enforced.diagnostics);
+}
+
+const p_sync_list = "tests/corpus/ownership/p-sync.txt";
+
+/// The top-level declaration of `.beni` file text `text` around `at`.
+fn declAround(text: []const u8, at: usize) ?[]const u8 {
+    var lines = std.mem.splitScalar(u8, text[0..at], '\n');
+    var name: ?[]const u8 = null;
+    while (lines.next()) |l| {
+        const s = if (std.mem.startsWith(u8, l, "pub ")) l[4..] else l;
+        const end = std.mem.indexOf(u8, s, " :") orelse continue;
+        if (end == 0 or !std.ascii.isLower(s[0])) continue;
+        for (s[0..end]) |c| {
+            if (!std.ascii.isAlphanumeric(c)) break;
+        } else name = s[0..end];
+    }
+    return name;
+}
+
+fn pSyncWalk(arena: std.mem.Allocator, dir: []const u8, list: []const u8, ok: *bool) !void {
+    var d = try std.Io.Dir.cwd().openDir(testing.io, dir, .{ .iterate = true });
+    defer d.close(testing.io);
+    var it = d.iterate();
+    while (try it.next(testing.io)) |entry| {
+        const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, entry.name });
+        if (entry.kind == .directory and !std.mem.eql(u8, entry.name, "zig")) try pSyncWalk(arena, path, list, ok);
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        const text = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 24));
+        for ([_][]const u8{ "\"addEventListener\"", "\"addListener\"", "\"prependListener\"", "\"on\"", "\"once\"" }) |word| {
+            var at: usize = 0;
+            while (std.mem.indexOfPos(u8, text, at, word)) |hit| : (at = hit + word.len) {
+                const decl = declAround(text, hit) orelse continue;
+                var rows = std.mem.splitScalar(u8, list, '\n');
+                const listed = while (rows.next()) |row| {
+                    var fs = std.mem.tokenizeScalar(u8, row, ' ');
+                    _ = fs.next() orelse continue;
+                    const file = fs.next() orelse continue;
+                    const name = fs.next() orelse continue;
+                    if (std.mem.eql(u8, file, path) and std.mem.endsWith(u8, name, decl) and name[name.len - decl.len - 1] == '.') break true;
+                } else false;
+                if (!listed) {
+                    std.debug.print("{s}: `{s}` lets the host into beni and {s} does not list it\n", .{ path, decl, p_sync_list });
+                    ok.* = false;
+                }
+            }
+        }
+    }
+}
+
+test "P-sync: every platform's bodies are listed and pinned, and no listener is added outside them" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, p_sync_list, arena, .limited(1 << 20));
+    const pins = try Pins.parse(arena, try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, arena, .limited(1 << 20)));
+    var ok = true;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fs = std.mem.tokenizeScalar(u8, row, ' ');
+        const platform = fs.next() orelse return error.PSyncRow;
+        const file = fs.next() orelse return error.PSyncRow;
+        const decl = fs.next() orelse return error.PSyncRow;
+        if (std.mem.eql(u8, file, "none")) continue;
+        if (!pins.has(try std.fmt.allocPrint(arena, "platforms/{s}", .{platform}), decl)) {
+            std.debug.print("{s}: {s} of {s} has no pinned body in {s}\n", .{ p_sync_list, decl, platform, bodies_list });
+            ok = false;
+        }
+    }
+    var d = try std.Io.Dir.cwd().openDir(testing.io, "platforms", .{ .iterate = true });
+    defer d.close(testing.io);
+    var it = d.iterate();
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind != .directory) continue;
+        var named = std.mem.splitScalar(u8, list, '\n');
+        const found = while (named.next()) |row| {
+            if (std.mem.startsWith(u8, row, entry.name) and row.len > entry.name.len and row[entry.name.len] == ' ') break true;
+        } else false;
+        if (!found) {
+            std.debug.print("platform {s} is not in {s}\n", .{ entry.name, p_sync_list });
+            ok = false;
+        }
+        try pSyncWalk(arena, try std.fmt.allocPrint(arena, "platforms/{s}", .{entry.name}), list, &ok);
+    }
+    try testing.expect(ok);
 }

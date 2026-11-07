@@ -1,0 +1,191 @@
+-- ownership: a split's cells stand at positions of the list that was split,
+-- and of no other (ownership-v2.md §2.9 *Two positions of one image*). After
+-- `List.push xs el` (or `[ …xs, el ]`) the list holds `el` at two positions,
+-- so a second match on it takes `el` twice: its split's κ is `shared`, and
+-- no `excl` of a cell the first split refined stands for its positions.
+-- `twin`, `twinSpread` and `twinHead` answer one list twice; `inF` edits it
+-- in its own frame; `editOne` binds the second through `[ x ]`. All refused.
+-- `pairUp` stores a position back (`List.set xs 1 p`) and answers two heads.
+-- `prepend` copies (`[ el, …xs ]`): refused, as before.
+collect : List (List Int × Int), List (List Int) → List (List Int)
+collect rs acc =
+    case rs of
+        [] →
+            acc
+
+        [ ( v, _ ), …more ] →
+            collect more (List.push acc v)
+
+
+twin : List (List Int × Int) → List (List Int)
+twin xs =
+    case xs of
+        [ _, el, …_ ] →
+            case List.push xs el of
+                [ _, …rest ] →
+                    collect rest []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+twinSpread : List (List Int × Int) → List (List Int)
+twinSpread xs =
+    case xs of
+        [ _, el, …_ ] →
+            case [ …xs, el ] of
+                [ _, …rest ] →
+                    collect rest []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+twinHead : List (List Int × Int) → List (List Int)
+twinHead xs =
+    case xs of
+        [ el, …_ ] →
+            case List.push xs el of
+                [ ( a, _ ), …rest ] →
+                    collect rest [ a ]
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub inF : List (List Int × Int) → List (List Int)
+inF xs =
+    case xs of
+        [ _, el, …_ ] →
+            case List.push xs el of
+                [ _, …rest ] →
+                    case collect rest [] of
+                        [ f, …r ] →
+                            [ List.push f 9, …r ]
+
+                        [] →
+                            []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub inFCall : ⊤ → List (List Int)
+inFCall ⊤ = inF [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ]
+
+
+prepend : List (List Int × Int) → List (List Int)
+prepend xs =
+    case xs of
+        [ _, el, …_ ] →
+            case [ el, …xs ] of
+                [ _, …rest ] →
+                    collect rest []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+editFirst : List (List Int) → List (List Int)
+editFirst ls =
+    case ls of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub edit : ⊤ → List (List Int)
+edit ⊤ =
+    case twin [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editSpread : ⊤ → List (List Int)
+editSpread ⊤ =
+    case twinSpread [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editHead : ⊤ → List (List Int)
+editHead ⊤ =
+    case twinHead [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editPrepend : ⊤ → List (List Int)
+editPrepend ⊤ =
+    case prepend [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+pub editOne : ⊤ → List (List Int)
+editOne ⊤ =
+    case twin [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            case r of
+                [ x ] →
+                    [ List.push f 9, x ]
+
+                _ →
+                    []
+
+        [] →
+            []
+
+
+pairUp : List (List Int × Int) → List (List Int)
+pairUp xs =
+    case xs of
+        [ p, …_ ] →
+            case List.set xs 1 p of
+                [ ( a, _ ), ( b, _ ), …_ ] →
+                    [ a, b ]
+
+                _ →
+                    []
+
+        _ →
+            []
+
+
+pub editPair : ⊤ → List (List Int)
+editPair ⊤ =
+    case pairUp [ ( [ 1 ], 0 ), ( [ 2 ], 1 ) ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []

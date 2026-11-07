@@ -14,6 +14,7 @@
 // so a failure that repeats is shown once and not retried without end; a
 // newer version still runs.
 import { createCodeView, createEditor, markDiagnostics, replaceText, reveal, showCode, textOf } from "./editor.js";
+import { Share$opening, Share$sampleFragment } from "./beni/Share.mjs";
 import { decode, encode } from "./share.js";
 import { srcdoc } from "./srcdoc.js";
 
@@ -50,6 +51,9 @@ let ready = false;
 // A note for the status of the next build (a damaged link), so that the
 // build does not hide it.
 let notice = "";
+// The id of the sample the editor holds unchanged, or null after a
+// person's change: **Share** makes its short link (§4.5).
+let unchangedSample = null;
 // The editors of the source and the CSS, made once the first source is
 // known.
 let editor = null;
@@ -111,10 +115,12 @@ function pump() {
   if (command === "build") setStatus("Compiling…");
 }
 
-// A new version of the input. A person's change also clears the fragment:
-// the address holds a program only while the editor holds it.
+// A new version of the input. A person's change also clears the fragment,
+// a code link or a short one: the address holds a program only while the
+// editor holds it (§4.5).
 function edited(byUser) {
   version += 1;
+  if (byUser) unchangedSample = null;
   if (byUser && location.hash !== "") history.replaceState(null, "", location.pathname + location.search);
   for (const pane of [$("types-text"), $("ownership-text")]) pane.classList.add("stale");
   clearTimeout(timer);
@@ -240,6 +246,7 @@ function restyle() {
 // gets the CSS. So code that replaces the CSS must also start a build.
 function cssEdited(byUser) {
   if (!byUser) return;
+  unchangedSample = null;
   if (location.hash !== "") history.replaceState(null, "", location.pathname + location.search);
   restyle();
 }
@@ -378,17 +385,19 @@ fileList.addEventListener("change", () => {
 
 platform.addEventListener("change", () => edited(true));
 
-// The samples (§4.3, §4.6): a single path or a map of module paths to
-// site URLs, an optional focused module, and the program's CSS.
+// The samples (§4.3, §4.6): a stable id, a single path or a map of module
+// paths to site URLs, an optional focused module, and the program's CSS.
+// The list's values are the ids.
 const samples = JSON.parse(await text("samples/index.json"));
-sampleList.replaceChildren(...samples.map((s, i) => new Option(s.name, String(i))), new Option("(shared)", "shared"));
+sampleList.replaceChildren(...samples.map((s) => new Option(s.name, s.id)), new Option("(shared)", "shared"));
 
 // The newest sample asked for: a slower fetch of an older one is dropped.
 let sampleAsked = 0;
 
-async function loadSample(index) {
+async function loadSample(id) {
   const asked = ++sampleAsked;
-  const sample = samples[index];
+  const sample = samples.find((s) => s.id === id);
+  sampleList.value = sample.id;
   const paths = sample.files ?? { "Main.beni": sample.path };
   const [files, css] = await Promise.all([
     Promise.all(Object.entries(paths).map(async ([path, url]) => [path, await text(url)])).then(Object.fromEntries),
@@ -398,20 +407,28 @@ async function loadSample(index) {
   platform.value = sample.platform;
   setProject(files, sample.focus);
   replaceText(cssEditor, css);
-  // Also when the text did not change: the platform may have. Choosing a
-  // sample is a person's change.
-  edited(true);
+  // The address names the sample, with no new history entry (§4.5): it
+  // replaces a link the page opened with.
+  unchangedSample = sample.id;
+  history.replaceState(null, "", `#${Share$sampleFragment(sample.id)}`);
+  // Also when the text did not change: the platform may have.
+  edited(false);
 }
 
 sampleList.addEventListener("change", () => {
-  if (sampleList.value !== "shared") loadSample(Number(sampleList.value));
+  if (sampleList.value !== "shared") loadSample(sampleList.value);
 });
 
-// The shareable link (§4.5, §4.6): the source and the CSS in the fragment.
+// The shareable link (§4.5, §4.6): the short link of the sample the
+// editor holds unchanged, else the source and the CSS in the fragment.
 $("share").addEventListener("click", async () => {
-  const fragment = await encode(platform.value, textOf(editor), textOf(cssEditor), sourceFiles(), activeFile);
-  history.replaceState(null, "", `#${fragment}`);
-  sampleList.value = "shared";
+  if (unchangedSample !== null) {
+    history.replaceState(null, "", `#${Share$sampleFragment(unchangedSample)}`);
+  } else {
+    const fragment = await encode(platform.value, textOf(editor), textOf(cssEditor), sourceFiles(), activeFile);
+    history.replaceState(null, "", `#${fragment}`);
+    sampleList.value = "shared";
+  }
   // Only a secure page has a clipboard to write.
   if (navigator.clipboard === undefined) {
     setStatus("The address bar holds the link", "ok");
@@ -441,7 +458,9 @@ if (shared !== null) {
   // CSS.
   edited(false);
 } else {
-  if (location.hash !== "") notice = " (the link held no program, so this is the first sample)";
-  sampleList.value = "0";
-  await loadSample(0);
+  // A short link opens its sample (§4.5); a damaged link, an unknown id and
+  // no fragment open the first sample, with the note `Share.beni` gives.
+  const opened = Share$opening(location.hash, samples.map((s) => s.id));
+  notice = opened.notice;
+  await loadSample(opened.sample);
 }

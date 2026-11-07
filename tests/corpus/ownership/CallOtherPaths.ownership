@@ -1,0 +1,36 @@
+module CallOtherPaths
+  29:15 List.push xs: rejected alias: t#Node.1 holds it and is read at 29:13
+  36:13 List.push r.a: accepted param
+  42:16 call CallOtherPaths.keepAll <Node …>#Node.1: rejected disjoint: another operand of the same operation reaches it (CallOtherPaths.keepAll writes π1#Node.1)
+  48:16 call CallOtherPaths.pushA <record>.a: accepted fresh (CallOtherPaths.pushA writes π1.a)
+  58:23 List.push a: accepted param
+  70:16 call CallOtherPaths.elems <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (CallOtherPaths.elems writes π1[*])
+  76:16 call CallOtherPaths.elems <literal>[*]: accepted fresh (CallOtherPaths.elems writes π1[*])
+  86:16 List.push p.x: accepted param
+  90:16 call CallOtherPaths.twoPaths <record>.x: rejected disjoint: another operand of the same operation reaches it (CallOtherPaths.twoPaths writes π1.x)
+  94:19 call CallOtherPaths.twoPaths <record>.x: accepted param (CallOtherPaths.twoPaths writes π1.x)
+  104:26 List.push xs: accepted param
+  104:57 List.push a: accepted param
+  114:13 call CallOtherPaths.twoDepths l#Node.0⟨Tree⟩#Node.1: accepted param (CallOtherPaths.twoDepths writes π1#Node.0⟨Tree⟩#Node.1)
+  114:13 call CallOtherPaths.twoDepths l#Node.1: accepted param (CallOtherPaths.twoDepths writes π1#Node.1)
+  123:5 call CallOtherPaths.viaLeft <Node …>#Node.0⟨Tree⟩#Node.1: rejected exclusive: the callee needs the list's elements not to share, and they may (CallOtherPaths.viaLeft writes π1#Node.0⟨Tree⟩#Node.1)
+  127:20 call CallOtherPaths.viaLeft <Node …>#Node.0⟨Tree⟩#Node.1: accepted fresh (CallOtherPaths.viaLeft writes π1#Node.0⟨Tree⟩#Node.1)
+  summary keepAll: π1 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A; res .0 condition(fresh2) fresh2 π1#Node.1, .0[*] ~condition(fresh3) ~π1#Node.1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}r{lost}
+  summary pushA: π1.a RAW[storage], π1.a[*] A, π1.b RA; res .0 condition(fresh2) π1.a, .0[*] ~condition(fresh3) ~π1.a[*], .1 ~condition(fresh4) π1.b, condition(fresh1){sep π1.a π1.b, sep π1.a[*] π1.b}
+  summary keepShared: unused
+  summary siblingFresh: unused
+  summary elems: π1 R, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh3) fresh3 π1[*]{excl π1}, .0[*] ~condition(fresh1) ~fresh1 ~π1[*][*]{excl π1}, .1 fresh5 ~condition(fresh4) π1[*][*]{excl π1}, condition(fresh2){sep π1[*] π1[*][*], sep π1[*][*] π1[*][*]}; xreq excl π1
+  summary elemsShared: unused
+  summary elemsDistinct: unused
+  summary twoPaths: π1.x RAW[storage], π1.x[*] A, π1.y RA; res .0 condition(fresh2) π1.x, .0[*] ~condition(fresh3) ~π1.x[*], .1 ~condition(fresh4) π1.y, condition(fresh1){sep π1.x π1.y, sep π1.x[*] π1.y}
+  summary sameParam: π1 RAW[storage], π1[*] A; res .0 condition(fresh1) π1, .0[*] ~condition(fresh4) ~π1[*], .1 condition(fresh2) ~condition(fresh5) π1, condition(fresh3){shared}
+  summary twoParams: π1 RAW[storage], π1[*] A, π2 RA; res .0 condition(fresh1) π1, .0[*] ~condition(fresh2) ~π1[*], .1 condition(fresh3) ~condition(fresh5) π2, condition(fresh4){sep π1 π2, sep π1[*] π2}
+  summary twoDepths: π1 R, π1#Node.0⟨Tree⟩#Node.1 RW[storage], π1#Node.1 RW[storage]
+  summary viaLeft: π1 R, π1#Node.0 R, π1#Node.0⟨Tree⟩#Node.1 RW[storage]; xreq excl π1#Node.0
+  summary depthsShared: unused
+  summary depthsDistinct: unused
+  demands 16: accepted 11 (fresh 3, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 16: accepted 11 (fresh 3, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 2
+cause alias 1
+cause exclusive 2

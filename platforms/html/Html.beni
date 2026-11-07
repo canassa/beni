@@ -45,11 +45,57 @@ pub markup map : Html a, (a → b) → Html b
 
 
 --| The value of the form control an event came from.
-pub foreign impure targetValue : Event → String
+pub targetValue : Event → String
+targetValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
 
 
 --| Whether the checkbox an event came from is checked.
-pub foreign impure targetChecked : Event → Bool
+pub targetChecked : Event → Bool
+targetChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
+
+
+--| A text field's selection, in code points as `String` counts them: where
+--| it starts and where it ends (`start` never after `end`), and whether it
+--| was made backward, its moving end at `start`. A caret is a selection
+--| whose `start` is its `end`.
+pub type alias Selection =
+    start : Int
+    end : Int
+    backward : Bool
+
+
+--| The selection of the text field an event came from: a `textarea`, or an
+--| `input` of a type that has one (`text`, `search`, `url`, `tel`,
+--| `password`). `Nothing` for any other target. A position inside a
+--| character past U+FFFF counts that character.
+--|
+--|     onKeyDown={λevent → Key (Html.key event) (Html.targetSelection event)}
+pub targetSelection : Event → Maybe Selection
+targetSelection ev =
+    target = Js.get (Js.from ev) "target"
+    if Js.isNullish target then
+        Nothing
+    else
+        start = Js.get target "selectionStart"
+        -- `null` on an input of a type with no selection, absent on any
+        -- other element.
+        if not (Js.typeIs start "number") then
+            Nothing
+        else
+            value = Js.get target "value"
+            Just
+                { start = codePointsBefore value start
+                , end = codePointsBefore value (Js.get target "selectionEnd")
+                , backward = Js.same (Js.get target "selectionDirection") (Js.from "backward")
+                }
+
+
+-- How many code points of the string `value` are before UTF-16 offset
+-- `units`.
+codePointsBefore : Js.Value, Js.Value → Int
+codePointsBefore value units =
+    before = Js.call value "slice" [ Js.from 0, units ]
+    Js.to (Js.get (Js.call (Js.global "Array") "from" [ before ]) "length")
 
 
 -- What a handler reads of the event it is handed (`boundary.md` §9.8.10).
@@ -119,17 +165,37 @@ preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 pub crossing foreign type Pointer
 
 
--- What a pointer event's own listener hands its extractor: the event.
--- Not `pub`, and no event hands a handler one.
+-- What a pointer event's listener hands its extractor: the event, while
+-- its `currentTarget` is the element that has the handler. Not `pub`, and
+-- no event hands a handler one.
 foreign type Dispatched
 
 
 -- The extractor of every pointer event: the event, and its position in
--- the box of the element whose listener runs (`currentTarget`). Called on
--- another event, that element could be the document, which has no box,
--- so it is not `pub` and no program can call it. A `via` can name a value
--- that is not `pub` (`boundary.md` §9.3).
-foreign impure pointer : Dispatched → Pointer
+-- the box of the element whose handler runs (`currentTarget`, which a
+-- delegated walk defines as that element: `boundary.md` §9.8.20 (d)).
+-- Called on another event, that element could be the document, which has
+-- no box, so it is not `pub` and no program can call it. A `via` can name
+-- a value that is not `pub` (`boundary.md` §9.3). The position is read
+-- now, while the event is dispatched: `currentTarget` is null after it.
+-- The key is `ev`, which `pointerEvent` reads; the keys of a `Js.object`
+-- are literal in every build. No parameter is called `event`, the
+-- window's global, nor `e`, the prelude's constant.
+pointer : Dispatched → Pointer
+pointer v =
+    ev = Js.from v
+    box = Js.call (Js.get ev "currentTarget") "getBoundingClientRect" []
+    Js.to
+        (Js.object
+            [ ( "ev", ev )
+            , ( "x", Js.from (number (Js.get ev "clientX") - number (Js.get box "left")) )
+            , ( "y", Js.from (number (Js.get ev "clientY") - number (Js.get box "top")) )
+            ]
+        )
+
+
+number : Js.Value → Float
+number v = Js.to v
 
 
 --| The pointer's identity: the same number from its first event to its
@@ -655,6 +721,9 @@ pub element "feDisplacementMap" svg
 pub element "feDistantLight" svg
 
 
+pub element "feDropShadow" svg
+
+
 pub element "feFlood" svg
 
 
@@ -849,10 +918,36 @@ pub attribute "rows" on "textarea" : Int
 pub attribute "rowspan" on "td" "th" : Int
 
 
+--| The restrictions of an `iframe`'s document, as the HTML standard's
+--| space-separated tokens: `""` for all of them, and each token lifts one,
+--| as `allow-scripts` lets the frame run scripts. A token the browser does
+--| not know lifts nothing, so a misspelt one keeps its restriction. A frame
+--| takes its restrictions when it navigates, so write `sandbox` as text when
+--| its `src` comes from a hole.
+pub attribute "sandbox" on "iframe" : String
+
+
 pub attribute "selected" property stateful on "option" : Bool
 
 
 pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "source" "track" "video" : String
+
+
+--| The document of an `iframe`, as HTML text, in place of a `src`. The
+--| frame parses it as a page of its own and runs it, its scripts included,
+--| as far as the frame's `sandbox` lets it. The text is an attribute
+--| value, so it never becomes markup of this page. Without a `sandbox`, or
+--| with `allow-same-origin` in it, the frame has this page's origin, and
+--| its scripts can read and change this page. So the element must also
+--| have a constant `sandbox` without `allow-same-origin`, and the checker
+--| refuses anything else (`srcdoc_without_sandbox`). The frame's origin is
+--| then opaque.
+pub attribute "srcdoc" on "iframe" : String
+
+
+-- The number an ordered list starts at (HTML's `start`): CommonMark's
+-- `3. three` is `<ol start="3">` (`docs/design/markdown.md` §5).
+pub attribute "start" on "ol" : Int
 
 
 pub attribute "step" on "input" : String
@@ -867,7 +962,7 @@ pub attribute "type" on "button" "embed" "input" "link" "object" "ol" "source" "
 pub attribute "value" property stateful on "input" "select" "textarea" : String
 
 
-pub attribute "value" on "button" "data" "option" "output" : String
+pub attribute "value" on "button" "data" "meter" "option" "output" "progress" : String
 
 
 pub attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
@@ -1047,22 +1142,22 @@ pub attribute "writing-mode" : String
 
 -- SVG attributes of some elements: geometry.
 
-pub attribute "x" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
+pub attribute "x" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
     String
 
 
-pub attribute "y" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
+pub attribute "y" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
     String
 
 
 pub attribute "z" on "fePointLight" "feSpotLight" : String
 
 
-pub attribute "width" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+pub attribute "width" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
     String
 
 
-pub attribute "height" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+pub attribute "height" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
     String
 
 
@@ -1120,10 +1215,10 @@ pub attribute "preserveAspectRatio" on "svg" "symbol" "image" "marker" "pattern"
 
 -- SVG attributes of some elements: text.
 
-pub attribute "dx" on "text" "tspan" : String
+pub attribute "dx" on "text" "tspan" "feOffset" "feDropShadow" : String
 
 
-pub attribute "dy" on "text" "tspan" : String
+pub attribute "dy" on "text" "tspan" "feOffset" "feDropShadow" : String
 
 
 pub attribute "rotate" on "text" "tspan" "animateMotion" : String
@@ -1215,14 +1310,14 @@ pub attribute "primitiveUnits" on "filter" : String
 
 -- SVG attributes of some elements: filter primitives.
 
-pub attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" :
+pub attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" :
     String
 
 
 pub attribute "in2" on "feBlend" "feComposite" "feDisplacementMap" : String
 
 
-pub attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+pub attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
     String
 
 
@@ -1266,7 +1361,7 @@ pub attribute "amplitude" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
 pub attribute "exponent" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
 
 
-pub attribute "stdDeviation" on "feGaussianBlur" : String
+pub attribute "stdDeviation" on "feGaussianBlur" "feDropShadow" : String
 
 
 pub attribute "edgeMode" on "feGaussianBlur" "feConvolveMatrix" : String
@@ -1408,8 +1503,10 @@ pub attribute "accumulate" on "animate" "animateMotion" "animateTransform" : Str
 
 
 -- Events. A `delegated` event bubbles, so a lowering may listen for it once.
--- The pointer events bubble too, but are not `delegated`: their extractor
--- reads the box of the element whose own listener runs (§9.8.20).
+-- Four pointer events bubble and are `delegated`: the walk defines the
+-- event's `currentTarget` as the element whose handler runs, and their
+-- extractor reads that element's box. `pointerenter` and `pointerleave` do
+-- not bubble (§9.8.20 (d)).
 
 pub event "onBlur" : Event
 
@@ -1471,10 +1568,10 @@ pub event "onMouseOver" delegated : Event
 pub event "onMouseUp" delegated : Event
 
 
-pub event "onPointerCancel" via pointer : Pointer
+pub event "onPointerCancel" delegated via pointer : Pointer
 
 
-pub event "onPointerDown" via pointer : Pointer
+pub event "onPointerDown" delegated via pointer : Pointer
 
 
 pub event "onPointerEnter" via pointer : Pointer
@@ -1483,10 +1580,10 @@ pub event "onPointerEnter" via pointer : Pointer
 pub event "onPointerLeave" via pointer : Pointer
 
 
-pub event "onPointerMove" via pointer : Pointer
+pub event "onPointerMove" delegated via pointer : Pointer
 
 
-pub event "onPointerUp" via pointer : Pointer
+pub event "onPointerUp" delegated via pointer : Pointer
 
 
 pub event "onScroll" : Event

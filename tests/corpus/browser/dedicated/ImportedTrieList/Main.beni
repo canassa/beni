@@ -1,0 +1,21 @@
+-- More than 32 pushes produce a real trie, not an array or a rest view.
+import List
+import Page
+import String
+import Sub
+import Worker
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open Sub.sub of
+        Ok handle →
+            values = List.foldl (List.range 1 41) [] λn xs → List.push xs n
+            Worker.receive handle λsum → Page.text (String.fromInt sum)
+            Worker.send handle values
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

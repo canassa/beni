@@ -1,0 +1,127 @@
+-- Bounded, single-consumer event streams owned by the worker connection.
+import Js
+import Task
+
+
+pub foreign type Stream error a
+
+
+pub foreign type Chunk a
+
+
+pub type ReadError error
+    = Failed error
+    | StreamClosed
+    | StreamUnresponsive
+
+
+pub type Step a
+    = Item (Chunk a)
+    | End
+
+
+type alias V =
+    Js.Value
+
+
+pub make : Int → Stream error a
+make limit =
+    Js.to
+        (Js.from
+            { queue = Js.array []
+            , waiter = Js.null
+            , failure = Js.null
+            , ended = False
+            , limit = limit
+            , busy = False
+            , taken = Js.null
+            }
+        )
+
+
+pub offer : Stream error a, a → Bool
+offer stream item =
+    queue = Js.from stream
+    if Js.to (Js.get queue "ended") then
+        False
+    else if not (Js.isNull (Js.get queue "waiter")) then
+        wake = Js.get queue "waiter"
+        Js.set queue "waiter" Js.null
+        Task.resume (Js.to wake) (Ok (Item (Js.to (Js.from item))))
+        acknowledge queue (Js.from item)
+        True
+    else if Js.to (Js.get (Js.get queue "queue") "length") ≥ Js.to (Js.get queue "limit") then
+        False
+    else
+        _ = Js.call (Js.get queue "queue") "push" [ Js.from item ]
+        True
+
+
+pub end : Stream error a → ⊤
+end stream =
+    queue = Js.from stream
+    Js.set queue "ended" (Js.from True)
+    if Js.isNull (Js.get queue "waiter") then
+        ⊤
+    else
+        wake = Js.get queue "waiter"
+        Js.set queue "waiter" Js.null
+        Task.resume (Js.to wake) (Ok End)
+
+
+pub fail : Stream error a, error → ⊤
+fail stream error =
+    queue = Js.from stream
+    Js.set queue "failure" (Js.from error)
+    Js.set queue "queue" (Js.array [])
+    Js.set queue "ended" (Js.from True)
+    if Js.isNull (Js.get queue "waiter") then
+        ⊤
+    else
+        wake = Js.get queue "waiter"
+        Js.set queue "waiter" Js.null
+        Task.resume (Js.to wake) (Err (Failed error))
+
+
+pub next : Stream error a → Result (ReadError error) (Step a)
+next stream =
+    queue = Js.from stream
+    if Js.to (Js.get queue "busy") then
+        Err StreamClosed
+    else
+        Task.bracket
+            (λ⊤ → Js.set queue "busy" (Js.from True))
+            (λ_ _ → Js.set queue "busy" (Js.from False))
+            λ_ →
+                if not (Js.isNull (Js.get queue "failure")) then
+                    Err (Failed (Js.to (Js.get queue "failure")))
+                else if Js.to (Js.get (Js.get queue "queue") "length") > 0 then
+                    item = Js.call (Js.get queue "queue") "shift" []
+                    acknowledge queue (Js.from item)
+                    Ok (Item (Js.to item))
+                else if Js.to (Js.get queue "ended") then
+                    Ok End
+                else
+                    Task.callback λresume →
+                        Js.set queue "waiter" (Js.from resume)
+                        λ⊤ → Js.set queue "waiter" Js.null
+
+
+pub value : Chunk a → a
+value chunk = Js.to (Js.from chunk)
+
+
+pub release : Chunk a → ⊤
+release _ = ⊤
+
+
+pub take : Chunk a → a
+take chunk = value chunk
+
+
+acknowledge : V, V → ⊤
+acknowledge queue item =
+    if Js.isNull (Js.get queue "taken") then
+        ⊤
+    else
+        Js.to (Js.apply (Js.get queue "taken") [ item ])

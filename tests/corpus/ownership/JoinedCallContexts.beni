@@ -1,0 +1,101 @@
+-- ownership: two calls of one template under different arguments, joined
+-- (ownership-v2.md Appendix B, J×A, the S3b half; R-5.1.1, R-5.1.5).
+-- `pushAll` pushes onto each list of a list, so it needs the elements
+-- apart, and `ident` answers its argument. `twoCalls` writes through
+-- `ident` twice, once over two fresh lists, accepted, and once over one
+-- list twice, refused: the second call does not read the first's
+-- conditions. `joined` chooses between the two calls and is refused;
+-- `bothFresh` chooses between two fresh answers and is accepted. An
+-- actual that a call answers shared, `sharedOf x`, is refused through
+-- `ident` (`sharedActual`), and `freshOf x`'s two new lists are accepted
+-- (`freshActual`). `ident [ x, y ]` over two parameters owes them apart,
+-- which the callers discharge: two distinct lists are accepted
+-- (`apartParams`), one list twice is refused (`sameParams`). `keep a b`
+-- answers both its arguments and owes nothing; given one list twice, a
+-- write of the first answer while the second is read after is refused
+-- (`aliasedKeep`), and two lists are accepted (`distinctKeep`).
+pushAll : List (List Int) → List (List Int)
+pushAll xss =
+    case xss of
+        [ xs, …rest ] →
+            [ List.push xs 1, …pushAll rest ]
+
+        [] →
+            []
+
+
+ident : List (List Int) → List (List Int)
+ident v = v
+
+
+pub twoCalls : List Int → List (List Int) × List (List Int)
+twoCalls x = ( pushAll (ident [ [ 1 ], [ 2 ] ]), pushAll (ident [ x, x ]) )
+
+
+pub joined : Bool, List Int → List (List Int)
+joined c x =
+    pushAll
+        (if c then
+            ident [ [ 1 ], [ 2 ] ]
+         else
+            ident [ x, x ]
+        )
+
+
+pub bothFresh : Bool → List (List Int)
+bothFresh c =
+    pushAll
+        (if c then
+            ident [ [ 1 ], [ 2 ] ]
+         else
+            ident [ [ 3 ] ]
+        )
+
+
+sharedOf : List Int → List (List Int)
+sharedOf x = [ x, x ]
+
+
+freshOf : List Int → List (List Int)
+freshOf x = [ List.copy x, List.copy x ]
+
+
+pub sharedActual : List Int → List (List Int)
+sharedActual x = pushAll (ident (sharedOf x))
+
+
+pub freshActual : List Int → List (List Int)
+freshActual x = pushAll (ident (freshOf x))
+
+
+pairOf : List Int, List Int → List (List Int)
+pairOf x y = pushAll (ident [ x, y ])
+
+
+pub apartParams : ⊤ → List (List Int)
+apartParams ⊤ =
+    a = [ 1 ]
+    b = [ 2 ]
+    pairOf a b
+
+
+pub sameParams : List Int → List (List Int)
+sameParams x = pairOf x x
+
+
+keep : List Int, List Int → List Int × List Int
+keep a b = ( a, b )
+
+
+pub aliasedKeep : List Int → List Int × List Int
+aliasedKeep x =
+    case keep x x of
+        ( a, b ) →
+            ( List.push a 1, b )
+
+
+pub distinctKeep : List Int, List Int → List Int × List Int
+distinctKeep x y =
+    case keep x y of
+        ( a, b ) →
+            ( List.push a 1, b )

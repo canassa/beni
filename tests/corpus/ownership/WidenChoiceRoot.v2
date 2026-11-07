@@ -1,0 +1,1 @@
+v2 keeps a non-recursive branch join exact outside a group's rounds (ownership-v2.md §2.3, #1360); v1's summary is its own.

@@ -1,0 +1,2 @@
+The same rows read per field (ownership-v2.md §2.1, The row of a record): built again under --ownership=v2 and the list stale-read
+sanitiser. v2 accepts them, and the run prints what the plain run prints.

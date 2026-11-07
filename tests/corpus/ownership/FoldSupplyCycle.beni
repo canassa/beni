@@ -1,0 +1,26 @@
+-- ownership v2: a fold's step answers its accumulator on one arm and a new
+-- one on the other, so the supply of `acc` comes from the step's answer and
+-- the answer from the supply: the distinct check meets a leaf again around
+-- that cycle of expansions and reads it once (`ownership-v2.md` §2.9.3).
+-- `firsts` ends in a few thousand records instead of running out of any
+-- allowance, and the push onto its fresh list is accepted.
+import List
+import Node exposing (Program)
+import Set
+import String
+
+
+firsts : List a, (a → String) → Set.Set String × List String
+firsts items key = List.foldl items ( Set.empty, [] ) λitem acc →
+    k = key item
+    if Set.member acc.0 k then
+        acc
+    else
+        ( Set.insert acc.0 k, [ k, …acc.1 ] )
+
+
+main : Program
+main =
+    p = firsts [ "a", "b", "a" ] λx → x
+    sep = ","
+    Node.print (String.join (List.push p.1 "z") sep)

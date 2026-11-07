@@ -1,0 +1,35 @@
+-- The `sandbox` attribute of `iframe` (#1890, a gap of #142): written as
+-- the page writes it, as text and from a hole, and changed by a message.
+-- The playground's output frame is `sandbox="allow-scripts"`
+-- (`playground.md` §5, §10.3).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Lift
+
+
+update : Msg, String → String × Cmd Msg
+update Lift _ = ( "allow-scripts allow-forms", Cmd.none )
+
+
+view : String → Html Msg
+view tokens =
+    <main>
+        <button id="lift" onClick={Lift}>lift</button>
+        <iframe id="fixed" sandbox="allow-scripts" title="fixed" />
+        <iframe id="held" sandbox={tokens} title="held" />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

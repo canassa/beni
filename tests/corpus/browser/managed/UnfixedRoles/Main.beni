@@ -1,0 +1,77 @@
+-- Unused event/error roles do not need arbitrary concrete annotations. Both an
+-- annotated Program and an inferred Program still return their typed replies.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Task
+
+
+annotated : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ e event ⊥)
+annotated =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok (message ++ "!")
+        }
+
+
+inferred =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok (message ++ "?")
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    first =
+        case Worker.open owner annotated ⊤ Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle "annotated"
+                closed = Worker.close handle
+                case reply of
+                    Ok text →
+                        text == "annotated!" && closed == Worker.Confirmed
+                    Err _ →
+                        False
+    second =
+        case Worker.open owner inferred ⊤ Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle "inferred"
+                closed = Worker.close handle
+                case reply of
+                    Ok text →
+                        text == "inferred?" && closed == Worker.Confirmed
+                    Err _ →
+                        False
+    if first && second then "unfixed roles passed" else "unfixed roles failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

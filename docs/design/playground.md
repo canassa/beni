@@ -1,5 +1,10 @@
 # The playground — beni compiled to WebAssembly, in a page
 
+*Amended 2026-11-04:* the Counter, Print, TodoMVC and Ball machine sample
+sources use the accepted ASCII spellings (`language.md` §12.7–§12.10).
+Plain formatting preserves them; `fmt --to-unicode` is an optional conversion.
+
+
 > Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
 > requirements were removed (#740). Each test or corpus case now has a
 > 120-second wall-clock hang guard. Older counts and budget references below
@@ -37,6 +42,10 @@ dashboard at 12:36 UTC:
 |---|---|
 | `wasm-playground-q5`: the two `.wasm` gate tests cost a fixed 74% of the budget | **A budget of their own, and `test-playground` in CI on every pull request** (§6). The budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`). |
 | `wasm-playground-q6`: the editor's 13 modules from esm.sh run in the shared `canassa.github.io` origin with no integrity check | **Vendor the 13 files** in the repository, each with a checksum, and a script that fetches them again (§4.2). This replaces the "from a CDN" part of the editor decision above; CodeMirror 6 and the pinned versions stay. |
+
+*Amended 2026-11-04 (issue #142):* the editor row of the first table and `wasm-playground-q6` are
+superseded. The owner decided to replace CodeMirror with a simple editor written in beni (§10,
+first amendment; §10.10). They hold until that editor lands.
 
 The work lands in two pull requests:
 
@@ -182,6 +191,10 @@ compiled.
 
 ### 4.2 The editor (second pull request)
 
+*Amended 2026-11-04 (issue #142):* the owner decided to replace CodeMirror with a simple editor
+written in beni (§10, first amendment). §10.10 specifies it. This section describes the editor
+until that one lands.
+
 *Amended 2026-10-26, the owner's ball-machine refactor (#1083).* A sample may
 contain several source modules. Its index entry lists a `files` map from project
 paths to site URLs and an optional `focus` path; the existing `path` form means
@@ -248,6 +261,9 @@ diagnostics come from `--diagnostics=json` and show at their positions in the ed
   are attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text
   is text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It
   highlights and decides nothing else: the compiler's diagnostics say what is wrong.
+  *Amended 2026-11-04 (§10.7, step 2):* the grammar is `playground/src/Syntax.beni`, with the
+  Elm mode's rules translated into it, and a few lines of `editor.js` run it in
+  `StreamLanguage`. It names every piece as `syntax.js` and the Elm mode did.
 - **The emitted JavaScript** (*added 2026-10-15*, at Jayson Reis's request) is a read-only
   CodeMirror view with CodeMirror's JavaScript grammar (`@codemirror/lang-javascript`, on
   `@lezer/javascript` and `@lezer/lr`, vendored). One highlight style colours both views.
@@ -308,6 +324,14 @@ vertical bucket indicators and a lit exit mouth. Finished balls keep up to
 seven frame positions for short fading trails. This is drawing state; it does
 not alter collisions, admission, batching, semaphore ownership or retry timing.
 
+*Amended 2026-11-04, issue #1903 (Jayson Reis: "make the samples shareable urls").* Each sample in
+`index.json` has an `id`: one or more words of lower-case ASCII letters and digits, joined by
+`-`. The ids are `counter`, `todomvc`, `ball-machine` and `fibonacci`. The short link of §4.5
+names a sample by its id, and a person can keep such a link for a long time. So **an id never
+changes once it ships, and no other sample takes it**, also after its own sample goes. An id is
+never `shared`, the value of the sample list's "(shared)" entry. The sample list's values are
+the ids. A gate test (§6) checks the ids.
+
 ### 4.4 The tabs (second pull request)
 
 The emitted JavaScript, `beni dump --stage=types` and `beni dump --stage=ownership`, each from
@@ -342,6 +366,39 @@ on up.
 
 *Amended 2026-10-15, issue #143:* the link also holds the CSS pane, as `&css=<base64url>` after
 `code` (§4.6, *The link*).
+
+*Amended 2026-11-04, issue #1903: the short link of a sample.* A code link holds every module of
+its project, so the link of a large sample is long: the ball machine has nine modules. The site
+serves every file of a sample, so a link to an unchanged sample only names it:
+`#sample=<id>` (§4.3).
+
+- **The address names the sample.** When the page opens a sample, the address becomes
+  `#sample=<id>`, with `history.replaceState`, so the history gets no new entry. The page opens
+  a sample when a person chooses one in the list, when it opens with a short link, and when it
+  opens with no program (no fragment, a damaged link or an unknown id) and so shows the first
+  sample.
+- **A short link opens its sample** as the list does: its platform, its modules, its focused
+  module and its CSS.
+- **An unknown id**, or an empty one, opens the first sample, and the status of its first build
+  says that the link names no sample of the playground, as it says for a damaged code link.
+- **A change clears the short link**, as it clears a code link: a person's edit of a module or of
+  the CSS, and a change of platform.
+- **Share.** While the editor holds the sample unchanged, **Share** writes `#sample=<id>` into
+  the address and copies it, and the sample list stays on the sample. After a person's change,
+  **Share** makes the code link, as before, and the list shows "(shared)". The page keeps the id
+  of the unchanged sample in a variable, which a person's change clears; it does not read it
+  back from the address, which a person can edit by hand.
+- **A fragment with `code` is a code link**, whatever else it holds: `#sample=counter&code=@@@@`
+  is a damaged code link, not a short link. So every link made before this amendment opens as it
+  did.
+- **A short link opens the sample as the site serves it on the day it opens.** When a later
+  version of the site changes the sample, the link opens the changed sample. A person who wants
+  the exact text in the link makes a code link: an edit, then **Share**.
+- **The short link is beni** (§10.8). `playground/src/Share.beni` gives the fragment of a
+  sample's short link, and the sample that the page opens for a fragment with no program, with
+  the note for the status. It reads a fragment's fields as `URLSearchParams` does. `page.js`
+  calls it, and keeps the id of the unchanged sample until the page is beni (§10.7 step 7). The
+  code link stays in `share.js` until §10.7 step 3.
 
 ### 4.6 The program's CSS
 
@@ -441,7 +498,11 @@ bootstrap script (`playground/frame.js`, inlined in the frame's `srcdoc`):
 1. makes a blob URL for each module in the frame's own origin, dependencies first, after it
    replaces each relative import specifier with the blob URL of the file it names;
 2. replaces `node:process` with a small module whose `stdout.write` sends the text to the parent
-   (a printing program on the `node` platform, `platforms/node/runtime.js`);
+   (a printing program on the `node` platform, `platforms/node/runtime.js`). *Amended 2026-11-03*
+   (`plans/runtime-in-beni.md` step 15): the `node` platform's runtime is beni over `Js` and
+   reads `process` as a global, so the frame defines `globalThis.process` first — `stdout` and
+   `stderr` that send to the parent, the `exitCode` setter, a `beforeExit` that never comes, and
+   `getBuiltinModule` for `node:fs/promises` — and the two stand-in modules export that object;
 3. imports the entry module, `_main.mjs`, which mounts the program on the frame's `<body>`.
 
 The frame sends an uncaught error and an unhandled rejection to the parent from its `error` and
@@ -493,8 +554,12 @@ native threaded build. Items 1 and 4 prove it; items 2 and 3 test the page itsel
    runs, an error is marked on its text in the editor and listed, the Types, Ownership and
    JavaScript tabs show their output, Share after an edit makes a link that opens the edited
    source and platform, and a damaged link opens the first sample.
+
+   *Amended 2026-11-04 (issue #142):* when the beni editor lands (§10.10), item 2's check of the
+   vendored modules and item 3's checks that read CodeMirror go with `vendor/`. Every other check
+   of items 2 and 3 stays.
 4. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
-   every program of `tests/corpus/run/` and `tests/corpus/browser/direct/`, and on TodoMVC, and
+   the hand-picked programs of `tests/blackbox/playground_test.zig` (amended 2026-11-01, below), and
    compares every output file, both streams and the exit code with the native compiler's.
 
 *Amended 2026-10-15, issue #143* (§4.6). Item 2 also checks: the link's round trip with CSS, a
@@ -515,6 +580,17 @@ a comment, for `vendor/LICENSES.txt` and for `samples/LICENSES.txt`, and each li
 tab; a link with an empty `css=` opens no program, as one with an empty `code=` does; and the
 `aria-controls` of each tab names an element of the page, the same one that its data attribute
 names. Item 3 also checks: the note's two links open a new tab, and the site serves each file.
+
+*Amended 2026-11-04, issue #1903* (§4.3, §4.5). Item 2 also checks: each sample's id is well
+formed, unique and not `shared`, and each of the four ids that shipped still names a sample; and,
+on the beni build of `playground/src/` (`page_test.mjs links`), a short link's round trip, the
+sample and the note for a fragment with no program, the same answer as `URLSearchParams` gives,
+and that a fragment with `code` is not a short link. Item 3 also checks: a
+choice in the sample list sets the address to that sample's short link and adds no history
+entry; a page opened with `#sample=ball-machine` opens the ball machine, with its modules, its
+focused module and its CSS; an unknown id opens the first sample and says so; an edit clears the
+short link; and **Share** copies the short link for an unchanged sample and the code link after
+an edit.
 
 A test compares every file of the output tree and both streams byte for byte, and the exit code.
 It does not compare the persistent cache's directory, `.beni-cache/`, whose keys name the
@@ -546,6 +622,18 @@ single-threaded compiler on the remaining guarded code. Every test has the same
   `--self-profile` on both compilers and asserts the same `spec_points_to_sweeps`
   (`fast-compiler.md` §10, *The word size*). It failed on the old code (89 against 99 on
   `KeySubscription`) and passes now.
+
+*Amended 2026-11-01, issue #1573.* Item 4 runs a **hand-picked set** of programs, not every
+program of the corpus. The whole corpus was about 930 programs and 2 600 commands, each a Node
+process that compiles the 13.8 MB module, with the native compiler beside it: 12 minutes of
+processor time, and 14 minutes of the `playground` job on a CI runner, the longest job of every
+pull request. The owner asked for seconds. Each program in `tests/blackbox/playground_test.zig`'s
+list reaches something that a wasm32 build by LLVM at `ReleaseSmall` can write differently: the
+page's samples, number text and numeric edges, 32-bit hashing, Unicode text, `Dict` order, a deep
+alias chain and deep recursion, the release optimiser, schemas, markup, both browser platforms,
+diagnostics, and TodoMVC with its dumps. The sweep test stays as it is. A defect that only one
+program of the corpus shows on the shipped binary is no longer found before a merge; the
+self-hosted `.wasm` in the gates (item 1) and the native corpus still run.
 
 *Why Node runs the `.wasm` with `--liftoff-only`.* V8 compiles a hot function a second time with
 TurboFan, on background threads. For one short compile that costs more than it saves: the
@@ -696,3 +784,433 @@ prints). The samples that drew in the frame moved with their files to
 naming `browser-direct` opens on the default platform, as any link naming a platform the page does
 not offer does. `zig build test-playground` builds `browser/tea/` pages for `browser-tea` and
 `browser/inline/` pages for `browser-inline`, and TodoMVC for `browser-tea`.
+
+## 10. The page's own code in beni
+
+*Specified 2026-11-04, issue #142; not built.* The page's own JavaScript, nine files on `master`
+`99355536bc`, becomes beni. This section says which file becomes what, which part of `wasi.js` is
+privileged, and which host APIs `core/` and the platforms do not wrap yet. Each gap has its own
+issue. The choices that are the owner's are in §10.9; a part that depends on one waits for the
+answer.
+CLAUDE.md rules 6, 7, 9 and 10 apply to every step: only a platform or `core/` uses `Js`, a gap
+is filled inside the wall for every program, each host failure is a typed error or a crash, and a
+wall is reported, not worked around.
+
+*Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard questions `playground-beni-q3`
+and `q4`, 19:00:39 and 19:00:48 UTC): **"replace CodeMirror with a simple editor written in beni
+itself"**. CodeMirror leaves the playground. `editor.js`, `syntax.js` and `positions.js` become the
+beni editor of §10.10, and `vendor/` goes when that editor replaces CodeMirror. No library then
+owns an element of the page, and the page imports no third-party module, so #1881, #1882 and #1893
+are closed as not planned. The text below is amended where it named CodeMirror.
+
+### 10.1 What changes, and what stays JavaScript
+
+| File | Lines | Bytes | brotli -q 11 | Becomes |
+|---|---:|---:|---:|---|
+| `wasi.js` | 750 | 27 722 | 6 413 | beni of the page over a typed WebAssembly module (§10.5) |
+| `page.js` | 447 | 16 725 | 4 931 | the page program, a Tea program (§10.2) |
+| `syntax.js` | 270 | 9 750 | 2 815 | the beni editor's tokenizer (§10.10) |
+| `editor.js` | 152 | 6 592 | 1 996 | the beni editor (§10.10) |
+| `frame.js` | 138 | 6 533 | 2 254 | the frame runner, a beni program (§10.3) |
+| `share.js` | 155 | 5 987 | 1 915 | beni of the page |
+| `worker.js` | 66 | 3 047 | 1 083 | the compiler worker, a beni program (§10.3) |
+| `positions.js` | 31 | 1 260 | 554 | part of the beni editor (§10.10) |
+| `srcdoc.js` | 21 | 1 022 | 461 | nothing: it goes with `frame.js`, because the frame loads `frame.html` from a URL (§10.3, `q6`) |
+| **Total** | **2 030** | **78 638** | **22 422** | |
+
+Measured on 2026-11-04 with Node 24.19's `zlib` at brotli quality 11, one file at a time.
+
+*Amended 2026-11-04 (#1903):* short links for the samples, `#sample=<id>`, change `share.js`,
+`page.js` and `samples/index.json` (§4.3, §4.5). The beni `share.js` and `page.js` (§10.7, steps
+3 and 7) carry them.
+
+*Amended 2026-11-04, #1903 as built* (Jayson Reis: "write it in beni already to avoid introducing
+more js"): the short link needs no host API of §10.6, so it is beni already:
+`playground/src/Share.beni` (§4.5, *The short link is beni*). `share.js` gets no new code. Step 3
+adds the code link to that module, and step 7 moves the rest of the feature from `page.js` into
+the page program: the id of the unchanged sample, and the calls when a sample loads, at **Share**
+and when the page opens.
+
+**`vendor/`**, the 19 CodeMirror modules (§4.2), stays until the beni editor lands. Issue #142 kept
+it. *Amended 2026-11-04:* it then goes, with `vendor.sh`, `vendor/SHA256SUMS` and
+`vendor/LICENSES.txt` (§10.10).
+
+One part stays JavaScript:
+
+- **The load-error listener in `index.html`** (10 lines of code, `index.html:45-54`; §8 *A
+  module that does not load*). It runs before any module of the page, and a module that does not
+  load cannot report its own failure. It is part of the HTML document, not a module. This is the
+  one piece of hand-written JavaScript that this section keeps, and it needs the owner's word
+  (rule 10). Without it, a module that does not load leaves the status at "Loading the
+  compiler…". *Amended 2026-11-04, the owner's decision* (Cesar Canassa, `playground-beni-q7`,
+  19:31:48 UTC): "Keep the listener as the one named JavaScript exception, listening on window
+  in the capture phase." It stays as `addEventListener("error", …, true)` on `window`, and it is
+  the page's one JavaScript exception.
+
+The import map goes with `vendor/`: it names only the CodeMirror modules (*amended 2026-11-04*;
+it stayed, as JSON, before the decision of §10's first amendment).
+
+### 10.2 The platform of the page
+
+Issue #142 names `browser-direct`, after §1's launch decision. The owner retired that platform on
+2026-10-19 (#423): "browser-inline (#295) replaces it". It was not renamed. Today
+`browser-inline` depends on `html` alone and has no `Http`, `Time`, `Dom` or `core/Task`
+(`browser-inline.md` §1). `browser-tea` has them (`platforms/browser-tea/beni.json`).
+
+Which platform the page builds for was the owner's decision (§10.9, `playground-beni-q1`), and
+the amendment below records it. Both platforms give `Tea.element`, `Cmd` and `Sub` with the same
+signatures (`browser-inline.md` §1), so the page can move to `browser-inline` later with no change
+to its update loop.
+
+*Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard question
+`playground-beni-q1`, 18:48 UTC): **`browser-tea`**. The page is a `Tea.element` program that
+uses `Http`, `Time`, `Dom` and `Browser.Navigation` as they are. Only the gaps of §10.6 need new
+APIs. The other choice, `browser-inline`, was not taken.
+
+### 10.3 Three programs, in three realms
+
+The page runs code in three realms. Each becomes a beni program:
+
+| Realm | Today | Becomes | Platform |
+|---|---|---|---|
+| The page | `page.js`, `editor.js`, `syntax.js`, `positions.js`, `share.js`, `srcdoc.js` | a Tea program, `playground/src/` | `browser-tea` (§10.2) |
+| The compiler's worker | `worker.js`, `wasi.js` | a dedicated worker program | `Browser.Worker` (#1297, `workers-api.md` §1 on PR #1304) |
+| The output frame | `frame.js` | the frame runner | §10.4's platform |
+
+- **The worker.** The workers delivery (#1612) owns how a page opens a worker and how they
+  exchange messages. The playground uses that API and adds none of its own. Until #1297 lands,
+  `worker.js` stays as it is, and the WASI host in beni (§10.5) runs from it.
+- **The frame runner.** The page puts it in the frame's `srcdoc`, as it puts `frame.js` there
+  today (§5). It is built with `--release` into one module and inlined as a module script. The
+  rest of §5 does not change: the sandbox, the opaque origin, the files as JSON, the CSS of §4.6
+  and the messages to the parent.
+
+  *Amended 2026-11-04, the owner's decision* (Cesar Canassa, `playground-beni-q6`, 19:31:35 UTC):
+  "Frame from a URL. Post with '\*', check event.source on both sides, never event.origin, and tag
+  each run with an id." So the frame has no `srcdoc`, and the owner's rule of 2026-09-29 that
+  closed `srcdoc` (`language.md` §11.5) stays as it is:
+  - The frame loads `frame.html` from the site, with `sandbox="allow-scripts"` and no
+    `allow-same-origin`, so its origin stays opaque (§5). `frame.html` holds the runner.
+  - The frame posts `ready` to its parent when it listens. The page then sends the files and the
+    CSS pane's text with `postMessage(…, "*")`. The frame makes its blob URLs from them, in its
+    own origin, as `frame.js` does now.
+  - Each side takes a message only when `event.source` is the window it expects: the page takes
+    only its frame's `contentWindow`, and the frame only `parent`. Neither side reads
+    `event.origin`, which is `"null"` for a sandboxed frame.
+  - Every run has an id, and every message of the run carries it. A message with the id of an
+    older run is dropped, so a slow frame of an earlier build cannot write into the console of a
+    newer one.
+- **The build.** `zig build playground` builds the three programs with the native compiler of the
+  same build and writes them into the site, beside `beni.wasm`. The site stays static (§9).
+- **The format gate** (`beni-fmt-check`) covers every `.beni` file under `playground/`, as it
+  covers the samples now (§4.3).
+
+### 10.4 The playground's own platform
+
+`playground/platform/` is a platform package (`"platform": true`) that ships with the site, not in
+the beni binary. It is layered on `browser` (`boundary.md` §9.1, the `"platforms"` key), and the
+build names it with `--platform=<dir>` (`boundary.md` §5.3, *How a platform is located*). It has no
+Zig, so the beni binary does not change for it.
+
+It holds only what is specific to the site:
+
+- **The frame runner's host parts** (#1894): the runner's `main`, blob URLs in the frame's own
+  origin, a dynamic `import` of one, the `process` stand-in of §5 step 2, and the wrapper of
+  `console`. The rewrite of import specifiers is ordinary beni over strings.
+
+A host API that every program can use does not go here: it goes to `core/` or to a platform that
+ships (§10.6), so that the playground fills a gap for every program, not only for itself (rule 7).
+`skills/beni/` does not describe this platform, because no developer builds on it.
+
+*Amended 2026-11-04:* this section also held the CodeMirror binding (#1893) and an adapter that ran
+a beni tokenizer in CodeMirror's `StreamLanguage`. The beni editor (§10.10) replaces both, and the
+page needs nothing of this platform: only the frame runner uses it. So it is layered on `browser`,
+not on `browser-tea`.
+
+### 10.5 The WASI host
+
+Which part of the host is beni of the page, and which part is privileged, was the owner's
+decision (§10.9, `playground-beni-q2`).
+
+*Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard question
+`playground-beni-q2`, 18:51 UTC): **the recommended split**, a typed WebAssembly module and a host
+in beni. The module (#1883) wraps only compile, instantiate, memory and traps, each failure a
+typed error (rule 9), and every program gets it. The file system in memory and the 46 WASI
+functions are ordinary beni in `playground/`. The other choice, a privileged WASI host with one
+`run`, was not taken.
+
+The split:
+
+- **Privileged: a typed WebAssembly module** (#1883), next to `Binary` (#1278). It compiles a
+  module from bytes, makes an instance with imports that are beni functions, reads the exports
+  (a function, or a memory as a `Binary` buffer), calls a function, and lets an import stop the
+  instance. Each failure is typed: `CompileError`, `LinkError`, a trap (`RuntimeError`), and the
+  engine's stack exhaustion with §3 rule 7's exact messages.
+- **Beni of the page: everything else.** The files and directories, the file descriptors, every
+  one of the 46 functions of WASI preview 1, `directoryOf`, `filesOf` and `run`.
+
+§3's rules keep their meaning:
+
+1. One instance per compile, and the project directory is the first preopen, fd 3, named `.`.
+2. Standard input is empty. The two streams are captured. A positional read or write on them is
+   `ESPIPE`.
+3. Every function of WASI preview 1 exists. One with no meaning in memory returns `ENOSYS`.
+4. A position or a size past 1 GiB is `EFBIG` or `EINVAL`. So every offset and size that the host
+   keeps fits in an `Int` exactly.
+5. No function of the host catches. An unforeseen failure crashes the compile (rule 9).
+6. `proc_exit` stops the instance through the module's stop, not by a thrown object that beni
+   catches.
+7. A trap and an exhausted engine stack end that compile, and `run` returns them as its `crash`.
+
+**64-bit values.** WASI passes offsets, sizes, rights, cookies and times in nanoseconds as
+`i64`. The host takes them as `Binary.U64`, word pairs (`webgpu.md` §3.1), and converts one to an
+`Int` only with a check: past the bound of rule 4 it is `EFBIG`, as today. A time is kept as its
+word pair, so `path_filestat_set_times` and `fd_filestat_get` give back exactly what the
+compiler set.
+
+**The host APIs inside it:** UTF-8 for paths (#1884), random bytes for `random_get` (#1888), and a
+monotonic clock for clock id 1 (#1889).
+
+**The tests run the host that the page runs** (§3). `tests/wasm/beni.mjs` (§6 item 1) loads the
+beni build of the host, made for `node` by the compiler under test. So the host must use no
+API that only a browser has.
+
+### 10.6 The host APIs that `core/` and the platforms do not wrap
+
+Each row is a gap: no module of `core/` or of a platform gives it on `master` `99355536bc`.
+
+| Host API | Where the page uses it | Proposed home | Issue |
+|---|---|---|---|
+| A Web Worker and its messages | `page.js:40`, `worker.js` | `Browser.Worker` | #1297 (#1612) |
+| Bytes, `ArrayBuffer`, `DataView`, 64-bit word pairs | `wasi.js`, `share.js`, `worker.js` | `Binary` | #1278 (`webgpu.md` §3.1) |
+| WebAssembly: compile, instantiate, memory, traps | `wasi.js:724-740`, `worker.js:26-33` | `core/`, next to `Binary` | #1883 |
+| UTF-8 between `String` and bytes, fatal decode | `share.js:53-90`, `wasi.js:84-87`, `worker.js:17` | `core/`, on `Binary` | #1884 |
+| Base64 and base64url (`btoa`, `atob`) | `share.js:67-91` | `core/`, ordinary beni | #1885 |
+| `CompressionStream`, `DecompressionStream` | `share.js:98-155` | `browser` and `node` | #1886 |
+| A response body as bytes | `worker.js:26-33` | `Http.expectBytes` | #1887 |
+| Random bytes (`crypto.getRandomValues`) | `wasi.js:379-384` | `browser` and `node` | #1888 |
+| A monotonic clock (`performance.now`) | `wasi.js:376`, `worker.js:27,46` | `core/Clock` | #1889 |
+| `sandbox` on `iframe` (*amended 2026-11-04*: `srcdoc` is not needed, §10.3) | `page.js:154-166` | the `html` vocabulary | #1890 |
+| Messages between a page and its frame | `page.js:234,296-312`, `frame.js:19,131-133` | `browser` | #1891 |
+| The clipboard (`navigator.clipboard.writeText`) | `page.js:415-430` | `browser` | #1892 |
+| A scroll into view with `block` and `inline` options | `page.js:327`, the beni editor | `Dom` | #1896 |
+| The selection of a text field, in code points | the beni editor (§10.10) | `Html`, `Dom` | #1900 |
+| Insert text that the browser's undo keeps (`execCommand("insertText")`) | not needed: `q8` drops `execCommand` (§10.10) | — | none |
+| Blob URLs, a dynamic `import`, the `process` stand-in, `console` | `frame.js` | §10.4's platform | #1894 |
+
+`boundary.md` §9.13 lists the failures that each platform row must type.
+
+*Amended 2026-11-04:* three rows left this table with CodeMirror (§10.10), each closed as not
+planned: an element whose inside a library owns (#1881), a third-party ES module from beni (#1882)
+and the CodeMirror 6 API (#1893). The selection row (#1900) and the conditional `insertText` row
+came with the beni editor.
+
+These are wrapped already, and the page uses them as they are:
+
+| Host API | Where the page uses it | Module |
+|---|---|---|
+| `fetch` of text (the samples, the frame runner) | `page.js:64-68` | `Http.get` with `expectString` |
+| A timer (the compile 300 ms after an edit) | `page.js:116-126` | `Time.sleep`, a command with `Cmd.Restart` (`boundary.md` §9.8.2) |
+| The URL fragment and `history.replaceState` | `page.js:118,243,413` | `Browser.Navigation.currentUrl`, `replace` |
+| `JSON.parse`, `JSON.stringify` | `page.js`, `share.js`, `srcdoc.js` | `Json` |
+| `URLSearchParams` (the fragment's fields) | `share.js:18,34` | `Url.percentEncode`, `Url.percentDecode` |
+| Code points against UTF-16 units | `positions.js` | `String`, `Char.toCode` |
+| Key events with `preventDefault` (Tab, Shift+Tab) | the beni editor | `Html.key`, `Html.shiftKey`, `Html.preventDefault` |
+| A `textarea` whose value the program sets, with its caret kept | the beni editor | the `value` attribute (`stateful`), `rows`, `spellcheck` |
+| A mark's tooltip | the beni editor | the `title` attribute |
+| Wall-clock time (`Date.now`) | `wasi.js:106` | `Clock.now` |
+
+### 10.7 The order of the work
+
+One pull request per gap or per file, smallest first. A file goes when every gap it needs has
+landed. After each pull request the page works and every test of §6 passes.
+
+1. `srcdoc.js`: no gap. *Amended 2026-11-04 (`q6`, §10.3):* it does not become beni. The frame
+   loads `frame.html` from a URL, so `srcdoc.js` goes with `frame.js` in step 4.
+2. `syntax.js`: no gap. It becomes the beni editor's tokenizer (§10.10), with the Elm mode's rules
+   in beni too. Until the editor lands, a few lines of `editor.js` run it in CodeMirror's
+   `StreamLanguage`: they keep the beni state in the stream's state object and move the stream's
+   position. Those lines are JavaScript, and they go with `editor.js` in step 7. The vendored Elm
+   mode is then used by nothing.
+
+   *As built, 2026-11-04:* `playground/src/Syntax.beni`. `line` takes a state and one line and
+   gives the line's pieces, each a text and a name (`""` for none), and the state after the
+   line; the pieces of a line together are the line. The Elm mode's file stays in `vendor/`
+   until step 7, because `vendor/LICENSES.txt` holds the MIT notice that its translation
+   needs; step 7 moves that notice into the site's other licence file. Checked against
+   `syntax.js` with the Elm mode in Node 24.19: the same named pieces on every `.beni` file of
+   the repository (4 428 files, 319 194 lines, 1 327 812 pieces) and on 30 000 random lines of
+   the grammar's hard cases. It takes about twice as long: 2.9 ms against 1.4 ms for TodoMVC
+   (298 lines), and 32 ms against 18 ms for `core/Schema.beni` (4 251 lines). The page loads
+   `Syntax.mjs` and four modules of `_core/` from the development library build, 30 821 bytes
+   raw and 6 243 at brotli quality 11, in place of `syntax.js` and the Elm mode, 14 071 and
+   3 841. A release build of the same would be 10 090 and 3 543 (§10.8, #1901).
+3. `share.js`: #1278, #1884, #1885, #1886.
+4. `frame.js` and `srcdoc.js`: #1890 (`sandbox` only), #1891, #1894: the frame from a URL, with
+   the messages of §10.3's `q6` amendment.
+5. `wasi.js`: #1278, #1883, #1884, #1888, #1889.
+6. `worker.js`: #1297, #1887, #1889.
+7. `page.js`, `editor.js` and `positions.js`, in one pull request: the page program with the beni
+   editor (§10.10), and `vendor/` goes. #1890, #1891, #1892, #1896, #1900, and the answer to
+   `playground-beni-q5`.
+
+*Amended 2026-11-04*, after the decision of §10's first amendment. `positions.js` was first and
+`editor.js` fifth. The beni editor counts code points, as the compiler does, so the conversion of
+`positions.js` to UTF-16 units moves into the selection wrapper (#1900). The editor is part of the
+page's view, so the editor and the page move in one pull request.
+
+### 10.8 During the move
+
+- **The JavaScript that remains calls the beni that has landed.** A file that is still JavaScript
+  imports the beni modules from a development `--library` build of `playground/src/`
+  (`backend.md` §2), which keeps the source field names of what it exports (`boundary.md` §4,
+  *What JavaScript may read of a beni value*). `zig build playground` writes that build into the
+  site. *Amended 2026-11-04:* a `--release --library` build is about a third of the size (§10.7,
+  step 2, *As built*), but it renames its exports, so no hand-written file can import them
+  (#1901). The library build also writes `_core/Task.mjs` and `_platform/_browser/Rt.mjs`, which
+  no module of the page imports and the page never loads.
+- **Defects.** In beni, a failure that no wrapper foresaw is a defect of the program
+  (`boundary.md` §9.8.14). When `page.js` goes, its `error` and `unhandledrejection` listeners
+  (`page.js:33-38`) go with it, and the platform's defect screen shows such a failure. A crash of
+  the compiler (§3 rule 7) and a defect of the worker (§4.4) stay values that the page shows.
+- **The tests check the beni build.** For a file that becomes beni, the checks of §6 item 2 run
+  on its beni build. `tests/blackbox/playground_page_test.zig` builds `playground/src/` with the
+  compiler under test, and `tests/wasm/page_test.mjs` imports the result, as the page does. The
+  list of checks does not get shorter. The test scripts are tooling, not code of the page, so they
+  stay JavaScript. The Chrome test (§6 item 3) does not change, and each pull request that changes
+  the page runs it.
+- **Measurements, before and after.** Each pull request that moves a file measures, on one
+  machine and in one session: the bytes, raw and at brotli quality 11, of each file that the site
+  serves except `beni.wasm` and `vendor/` (the baseline is §10.1's table), and the load and
+  compile times of §7.2 with `bench/playground/chrome.mjs`. The editor's pull request also counts
+  `vendor/`, which it removes (§10.10). A beni page that is slower than the
+  JavaScript one is a finding to report, not a reason to keep JavaScript (rule 10).
+
+### 10.9 The owner's decisions
+
+Asked on the dashboard on 2026-11-04. Each part that depends on an answer waits for it.
+*Amended 2026-11-04:* `playground-beni-q1` is decided (§10.2): `browser-tea`. `playground-beni-q2`
+is decided (§10.5): a typed WebAssembly module and a host in beni. `playground-beni-q3` and `q4`
+are decided (§10's first amendment): a simple editor written in beni replaces CodeMirror. That
+decision asked one more question, `playground-beni-q5` (§10.10). *Amended 2026-11-04:* every
+question of this section is decided. `q5` is withdrawn and `q8` decides undo; `q6`, `q7` and `q8`
+are recorded in §10.3, §10.1 and §10.10.
+
+| Question | Options | Recommended |
+|---|---|---|
+| `playground-beni-q1`: the platform of the page (§10.2) | `browser-tea`; `browser-inline` | `browser-tea`: it has `Http`, `Time` and `Dom` today, and the page can move later. **Decided: `browser-tea`** (Cesar Canassa, 2026-11-04) |
+| `playground-beni-q2`: the split of the WASI host (§10.5) | a typed WebAssembly module and a host in beni; a privileged WASI host with one `run` | the WebAssembly module: every program gets WebAssembly. **Decided: the WebAssembly module and a host in beni** (Cesar Canassa, 2026-11-04) |
+| `playground-beni-q3`: an element whose inside a library owns (#1881) | a new markup form; static elements by id in `index.html` | the markup form: every widget library needs it. **Decided: neither — "replace CodeMirror with a simple editor written in beni itself"** (Cesar Canassa, 2026-11-04) |
+| `playground-beni-q4`: a third-party ES module from beni (#1882) | `Js.module` of a bare specifier that the platform's `beni.json` lists; a sibling `.js` file | `Js.module`: no new JavaScript. **Decided: as `q3`** (Cesar Canassa, 2026-11-04) |
+| `playground-beni-q5`: undo and redo in the beni editor (§10.10) | the browser's own undo, with `execCommand("insertText")` for the editor's own insertions; a history that the editor keeps in beni | the browser's undo. **Withdrawn:** its reason was wrong, so `q8` replaces it (§10.10, *Undo*). The owner answered it at 19:31:17 UTC, before he read `q8`: "Browser undo with execCommand("insertText"), as prism-code-editor does"; `q8` decides |
+| `playground-beni-q6`: how the frame gets its program (#1890) | a frame loaded from a URL, with the files by `postMessage`; a typed `srcdoc` in `html` | the frame from a URL: the owner's rule that closed `srcdoc` (`language.md` §11.5, 2026-09-29) stays. **Decided: the frame from a URL**, with `"*"`, `event.source` and a run id (Cesar Canassa, 2026-11-04; §10.3) |
+| `playground-beni-q7`: the load-error listener of `index.html` (§10.1) | keep its 10 lines of JavaScript; remove it | keep it: no beni module can report a module that does not load. **Decided: keep it, as the one named JavaScript exception, on `window` in the capture phase** (Cesar Canassa, 2026-11-04; §10.1) |
+| `playground-beni-q8`: undo and redo in the beni editor, replacing `q5` (§10.10) | a history for each file in beni; the browser's one history for the whole page | the history in beni: it keeps §4.2's per-file undo (amended 2026-10-26). **Decided: a history in beni, one for each file**, with no `execCommand` (Cesar Canassa, 2026-11-04; §10.10) |
+
+### 10.10 The beni editor
+
+*Specified 2026-11-04, after the owner's decision on `playground-beni-q3` and `q4`* (§10's first
+amendment). "Simple" is the owner's word. The editor keeps what a person needs to write a program
+and to read the compiler's answer. It drops the rest of what CodeMirror gave. It is beni of the
+page, on `browser-tea`, and replaces `editor.js`, `syntax.js` and `positions.js`.
+
+**The form.**
+
+- Each editor is a `<textarea>` over a `<pre>` that shows the same text highlighted, with the same
+  font, line height and padding. The text of the `textarea` is transparent, and its caret shows.
+- The `textarea` grows to its text: `rows` is its count of lines, and it does not wrap
+  (`white-space: pre` in `style.css`). So the pane scrolls the `textarea` and the `<pre>`
+  together, and no code keeps two scroll positions in step.
+- A gutter beside them shows one number for each line.
+- Typing, paste, the selection and input methods are the browser's. `onInput` gives the new text
+  (`Html.targetValue`). The `value` is the program's (`stateful`), so the caret stays where it is.
+
+**What it keeps.**
+
+| Today | In the beni editor |
+|---|---|
+| One editor for each source module and one for the CSS pane; a hidden tab keeps its text, undo history and diagnostics (§4.2, amended 2026-10-26) | The same. Each editor is its own keyed `textarea`, hidden and not removed |
+| Line numbers | A gutter |
+| beni highlighting, §4.2 *The grammar* | Every token class of §4.2, the Elm mode's included: names, a definition at the start of a line, types and constructors, numbers, characters, operators and brackets, strings with `${…}` and escapes, `\\` lines, comments and doc comments, the Unicode notation, `⊤` and `⊥`, keywords, `.field`, and the three modes of markup. All of it is beni (`playground/src/Syntax.beni`). The state goes from line to line, so an edit highlights again from its line only until the state is as it was |
+| Diagnostics as lint marks, and the list under the editor | A mark under each diagnostic's span in its own module, with its title and message as the mark's `title`, and the same list. A click on one opens its file, selects its span (#1900) and scrolls it into view (#1896). A column counts code points, as the editor's text does |
+| Tab inserts the indent unit | Tab inserts the file's unit (four spaces for beni, two for CSS) at the caret; with a selection over lines it indents each line. Shift+Tab removes one unit from the start of each line of the selection. beni refuses a tab character (`language.md` §2.1) |
+| Undo and redo, for each file | A history in beni for each file, as `playground-beni-q8` decided (*Undo*, below) |
+| The emitted JavaScript, highlighted, read-only | A read-only `<pre>` with line numbers, highlighted for comments, strings, numbers and keywords by a small beni tokenizer |
+| The CSS pane, highlighted | Highlighted for comments, strings, numbers, at-rules and property names by a small beni tokenizer |
+| One highlight style, from `style.css` | The same `--syntax-*` colours, in both schemes |
+
+A tab character that a person pastes stays in the text. The compiler's `tab_in_source`
+diagnostic marks it, as it marks any other error (`language.md` §2.1).
+
+**Undo.** *Added 2026-11-04.* `playground-beni-q5` recommended the browser's undo, for "each file
+keeps its own history". A test in headless Chromium 153 showed that reason to be wrong:
+
+- After `insertText` "a1" in one `textarea` and "b1" in a second, an undo with the first focused
+  took back "b1". The browser keeps one history for the whole document, not one for each field.
+- After code set a field's value, an undo in that field changed nothing.
+- An edit in a hidden field, shown again, was not the one that undo took back.
+
+The runtime does not write a `value` that the field already shows
+(`platforms/browser/Rt.beni:1746`), so typing alone keeps the browser's history. But a sample, a
+link and any text that the editor inserts itself (Tab, Shift+Tab) clear it, unless the editor
+calls `execCommand("insertText")`. That call is deprecated: where a browser answers `false`, the
+wrapper's typed error is the answer to the key, and the editor must then set the value itself and
+lose the browser's history at that edit. So `playground-beni-q8` replaces `q5`, and recommends a
+history in beni: an undo and a redo stack of each file's text and selection, the keys Ctrl+Z,
+Ctrl+Shift+Z and Ctrl+Y and their Cmd forms, and the `beforeinput` events `historyUndo` and
+`historyRedo`, all handled by the editor, which sets the text and the selection itself. It needs
+no deprecated call.
+
+*Amended 2026-11-04, the owner's decision* (Cesar Canassa, `playground-beni-q8`, 19:32:46 UTC):
+"History in beni, one per file. Cancel the undo keys and historyUndo/historyRedo beforeinput.
+Record text plus selection, group typing, record once per IME composition, cap at about 1 000
+entries. Drop execCommand. Add a two-file undo test." So:
+
+- Each file keeps its own undo and redo history in the editor's model. An entry holds the text and
+  the selection.
+- The editor cancels the undo and redo keys (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y, and Cmd+Z and
+  Cmd+Shift+Z) and the `beforeinput` events whose `inputType` is `historyUndo` or `historyRedo`,
+  and applies its own history.
+- A run of typing is one entry, not one for each key. An input method's composition records one
+  entry, when it ends. A history holds at most about 1 000 entries; the oldest goes first.
+- No `execCommand`. Tab and Shift+Tab set the text and the selection from the model.
+- This replaces §4.2's undo (CodeMirror's `history` and its keys) only for the beni editor; a
+  hidden tab keeps its history, as §4.2's amendment of 2026-10-26 says.
+
+**What it drops**, each the author's reading of "simple", with what it would cost to keep:
+
+- CodeMirror's search panel: the browser's own find searches the text of a `textarea`.
+- The match of a bracket: a scan of the tokens around the caret, about 50 lines of beni.
+- The closing bracket written as one types: a key handler of about 30 lines, which every undo
+  then has to take back too.
+- The highlight of the active line: about 10 lines, the caret's line in the gutter.
+- The highlight of the matches of the selection: a search of the text on each move of the caret.
+- The lint gutter: the marks and the list stay, so the gutter shows only line numbers.
+- Several carets: a `textarea` has one selection, so this cannot come back on this form.
+- CodeMirror's other keys.
+
+**What goes with CodeMirror:** `vendor/` (19 modules of 1 344 418 bytes; with `SHA256SUMS` and
+`LICENSES.txt`, 1 371 215 bytes raw and 294 035 at brotli quality 11, measured on 2026-11-04 one
+file at a time), `vendor.sh`, the import map, the page's link to `vendor/LICENSES.txt`, and the
+checks of §6 item 2 and item 3 that read the vendored files and their notice. The note keeps its
+link to `samples/LICENSES.txt`. The MIT notice of `@codemirror/legacy-modes` moves into
+`samples/LICENSES.txt`, or a licence file of its own, because `playground/src/Syntax.beni`
+translates the Elm mode's rules (§10.7, step 2, *As built*).
+
+**Tests.** §6 item 2's `syntax` check runs on the beni tokenizer, with its list of lines and names.
+The Chrome test (§6 item 3) keeps every check of what the editor does: an error marked on its
+text and listed, a click that selects it, Tab, a link that gives back the text, a hidden tab that
+keeps its text. It types as a person does, through the DevTools protocol, as now. It drops the
+checks of CodeMirror's own parts. *Added 2026-11-04 (`q8`):* a two-file undo test. Edit file A,
+edit file B, then press the undo key with A focused: A goes back, and B does not change. A second
+part runs the same with the browser's own undo command, which fires `beforeinput` with
+`historyUndo`. It runs in the Chrome test (`test-playground-page`). happy-dom does not run it:
+a key event there has no default action, so no key press edits a `textarea` or fires
+`beforeinput`, and the gates run no page of the playground under happy-dom (§6 item 2 runs
+modules under Node).
+
+**Measurements.** The editor's pull request gives the page's bytes with `vendor/`, raw and at
+brotli quality 11, before and after; the after bytes hold all the beni of the editor, its three
+tokenizers included. It also gives `bench/playground/chrome.mjs`'s `editorReady` and TodoMVC edit
+times before and after, and the time from a keystroke to the highlighted text, on TodoMVC
+(298 lines) and on a file of 2 000 lines.

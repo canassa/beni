@@ -1,0 +1,27 @@
+-- ownership (core project): see Main.beni. The polymorphic callees that
+-- join a parameter with a cast (#1350).
+import Js
+
+
+pub mix : Bool, a, Js.Value → a
+mix b x v =
+    if b then
+        x
+    else
+        Js.to v
+
+
+pub mix2 : Bool, a → a
+mix2 b x =
+    if b then
+        x
+    else
+        Js.to (Js.from 0)
+
+
+pub mix3 : Bool, a → a
+mix3 b x =
+    if b then
+        x
+    else
+        Js.to (Js.from [ [ 1 ] ])

@@ -92,3 +92,13 @@
 < content-type: text/plain; charset=utf-8
 <
 < count 2 ticks 0
+> GET /by-id/a
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< ok
+> GET /bad-id
+< 400
+< content-type: text/plain; charset=utf-8
+<
+< invalid id

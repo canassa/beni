@@ -1,0 +1,103 @@
+-- A value of another module, called, with function values (`ownership-v2.md`
+-- §2.14.5, #2132): each row of the table, H1 to H5, for a value with no
+-- contract and for a value's lambda. H6 is `SanitiserValueKept` and
+-- `SanitiserValueCallQueue`.
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+h1 : ⊤ → String
+h1 ⊤ =
+    k = [ 1 ]
+    x = Lib.run λ⊤ → List.push k 2
+    "${show x} ${show k}"
+
+
+h2 : ⊤ → String
+h2 ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapv [ k ] λl → List.push l 2
+    "${shows ys} ${show k}"
+
+
+h2l : ⊤ → String
+h2l ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapl [ k ] λl → List.push l 2
+    "${shows ys} ${show k}"
+
+
+h3 : ⊤ → String
+h3 ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapv [ k, k ] λl → List.push l 2
+    "${shows ys}"
+
+
+h3l : ⊤ → String
+h3l ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapl [ k, k ] λl → List.push l 2
+    "${shows ys}"
+
+
+h4 : ⊤ → String
+h4 ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapv [ [ 2 ], [ 3 ] ] λl → List.push k 2
+    "${shows ys}"
+
+
+h4l : ⊤ → String
+h4l ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapl [ [ 2 ], [ 3 ] ] λl → List.push k 2
+    "${shows ys}"
+
+
+h5 : ⊤ → String
+h5 ⊤ =
+    k = [ 1 ]
+    p = Lib.two (λ⊤ → List.push k 2) λ⊤ → k
+    "${show p.0} ${show p.1}"
+
+
+h5l : ⊤ → String
+h5l ⊤ =
+    k = [ 1 ]
+    p = Lib.twol (λ⊤ → List.push k 2) λ⊤ → k
+    "${show p.0} ${show p.1}"
+
+
+h1l : ⊤ → String
+h1l ⊤ =
+    k = [ 1 ]
+    x = Lib.runl λ⊤ → List.push k 2
+    "${show x} ${show k}"
+
+
+h2reader : ⊤ → String
+h2reader ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapv [ k ] λl → List.copy l
+    n = List.push k 2
+    "${shows ys} ${show n}"
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ h1 ⊤, h2 ⊤, h2l ⊤, h3 ⊤, h3l ⊤, h4 ⊤, h4l ⊤, h5 ⊤, h5l ⊤, h1l ⊤, h2reader ⊤ ]
+            ";"
+        )

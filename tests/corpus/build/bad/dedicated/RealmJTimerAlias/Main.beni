@@ -1,0 +1,22 @@
+-- Kept beni code binds `Js.global "setTimeout"` to a local before calling it, so the call is not proved. Dynamic code is refused in a worker (#2211, `workers.md` §4).
+import Page
+import RealmJs
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → RealmJs.timerAlias ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

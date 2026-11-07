@@ -1,0 +1,14 @@
+module Joins
+  summary t2: π2 RA; res #Rose.0 fresh1{excl π2}r{excl π2} fresh2{shared}r{shared}, #Rose.0[*] condition(fresh3) π2, π2, ⟨Rose⟩⁺#Rose.0 condition(fresh4) fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0[*] condition(fresh5) π2
+  summary wrap: π2 RA; res #Rose.0 ~fresh1{excl π2}r{excl π2} ~fresh2{shared}r{shared}, #Rose.0[*] condition(fresh3) π2, π2, ⟨Rose⟩⁺#Rose.0 condition(fresh4) fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0[*] condition(fresh5) π2
+  summary wrap2: π2 RA; res #Rose.0 ~fresh1{excl π2}r{excl π2} ~fresh2{shared}r{shared}, #Rose.0[*] condition(fresh3) π2, π2, ⟨Rose⟩⁺#Rose.0 condition(fresh4) fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0[*] condition(fresh5) π2
+  summary size: π1 R, π1#Rose.0 R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  11:26 List.push kids: rejected level: other⟨Rose⟩#Rose.0 may hold it at another level, and is read at 11:60 (approx)
+  21:26 List.push kids: rejected level: other⟨Rose⟩#Rose.0 may hold it at another level, and is read at 21:60 (approx)
+  summary viaWrap: unused
+  summary viaWrap2: unused
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause level 2

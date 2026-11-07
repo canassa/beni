@@ -17,17 +17,18 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `writes/` | `check`, then `dump --stage=writes`, both `--platform=browser-tea` | `<name>.writes` | the write-set pass (`write-sets.md` §8.1): per message key its write set and class, per view hole its class and reads; a project may name its sources elsewhere (`_expected.sources`), carry the hidden `--writes-work` cap (`.writes-work`), and be the gate of §8.2 (`.gate`: its `keys` lines must show two thirds bounded) |
-| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file, one platform per line, the fixture is a case per platform (`<name> [<platform>]`), checked and dumped under it, with one golden per platform (`<name>.<platform>.ownership`, the last part of a path); a token `<platform>+everywhere` is that platform with the hidden `--ownership-everywhere`. Where the chain edits lists in place (its first `"lists"`, read from the manifests) or the token says `+everywhere`, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line, and elsewhere it must pass (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4). With a `.v2` file (its reason), `dump --stage=ownership --ownership=v2` must give the golden's verdict and count lines (`module`, demand, `demands`, `total`, `records`, `limits`, `cause`; R-7.15), or those of a `<name>.v2.ownership` where v2 differs on purpose (`ownership-v2.md` §8) |
+| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file, one platform per line, the fixture is a case per platform (`<name> [<platform>]`), checked and dumped under it, with one golden per platform (`<name>.<platform>.ownership`, the last part of a path); a token `<platform>+everywhere` is that platform with the hidden `--ownership-everywhere`. Where the chain edits lists in place (its first `"lists"`, read from the manifests) or the token says `+everywhere`, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line, and elsewhere it must pass (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4). With a `.v2` file (its reason), `dump --stage=ownership --ownership=v2` must give the golden's verdict and count lines (`module`, demand, `demands`, `total`, `records`, `limits`, `cause`; R-7.15), or those of a `<name>.v2.ownership` where v2 differs on purpose (`ownership-v2.md` §8); the other lines of a v2 golden (`summary`, `hoist`, `limit` and block lines) are not compared, on purpose: R-7.15 (`ownership-requirements.md`) makes them v2's own, not required of a checker, so a `.v2.ownership` holds them only as the output of its last blessing and they may drift while the verdicts hold; a `<name>.v2.diag` pins the diagnostics of that fixture's `check --ownership=v2` whole, for a code only v2 raises (`comparison_changes_value`) |
 | `typekeys/` | `check`, then `dump --stage=typekeys` | `<name>.typekeys` | the checker's type-key artifact (`checker-v2.md` §36): every node, the keys the module adds to the wild set, each local's key and each allocating instruction's; a project takes `_expected.typekeys`; the fixture must check clean, and a `core/` fixture is checked with `--core` |
 | `repkeys/` | `build --release --rep-keys` (hidden) | `<name>.repkeys` | the representation keys a release build lowers with (`js/RepKeys.zig`, `backend.md` §9): the build's table of canonical closed types, each with what it is at run time and whether it is in the wild set, then per module every name and node lowering keyed; a project takes `_expected.repkeys` and may carry a `platform/` of its own; `repkeys/inline/` builds for `browser-inline`; the build must say nothing |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
+| `external-platform/` | explicit scenarios in `external_platform_test.zig`, against the compiler carrying the toy Zig lowerings | expectations in the scenario | generated markup expressions; source projects copied into a test world |
 | `run/` | `build --platform=node`, then `node out/_main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `run/`, with `<name>.requests` | `build --platform=node`, then `node tests/serve/driver.mjs out/_main.mjs <name>.requests` | `<name>.expected` | a server program driven by the script: the transcript of its answers, then its streams and exit (*A server program*) |
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
 | `browser/prerender/<Dir>/` | `build --platform=browser-inline`, with and without the hidden `--no-prerender`, each in both modes, then each page opened on the file it wrote that a host answers the script's address with | `_expected/<page>.html`, `_expected.expected` | a prerendered page (`prerender.md`): the page the build writes, and one transcript for the page with no view and the prerendered one (*Prerendered pages*) |
-| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug` with its own `_expected.release-run-hash`); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
+| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug`, each with a digest of its own); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
 **Warnings on a fixture that compiles.** A `check/good/`, `writes/`,
@@ -73,29 +74,55 @@ the one code in the catalogue a development build cannot produce
 `README.md` has the four assertions.
 
 `run/` builds every fixture twice, in development and with `--release
---allow-debug`, and runs each build under Node — unless the fixture's
-`.run-hash` (`_expected.run-hash` in a project) says that exact build was
-already verified. A record holds one line per build, `<dev|release> <node
-version> <sha-256>`; the digest covers every file of the output tree (its
-path and bytes; `_manifest.txt` left out, since it only lists the others'
-hashes), the golden the build is compared with (`.expected`, or
-`.release-expected` for the release build when there is one) and the Node
+--allow-debug`, and runs each build under Node — unless the run-hash cache
+holds the build's digest, which says that exact build was verified before.
+The digest covers every file of the output tree (its path and bytes;
+`_manifest.txt` left out, since it only lists the others' hashes), the
+golden the build is compared with (`.expected`, or `.release-expected` for
+the release build when there is one), the build's name and the Node
 version. Any change to one of them makes the build run under Node again,
-exactly as it would with no record, and the gates say in one line how many
-did. `zig build test-run-hashes` (with `-Dcorpus`, `-Dllvm`) runs the
-selected programs and rewrites their records with the builds whose output
-matched; a build that fails is reported and left without a line. Regenerate
-after a change to what the compiler emits (the emitter, the runtime,
-`core/`), after adding or re-blessing a `run/` fixture, or after a Node
-upgrade, and commit the records with the change; on a merge conflict in
-them, take either side and regenerate. The code is
+exactly as it would with no cache, and the gates say in one line how many
+did. A build that ran, exited as expected and matched its golden writes its
+digest into the cache: one empty file, `<dir>/<sha-256>`, written
+atomically (a named temporary file in the directory, then a rename), so two
+processes that verify the same program both succeed; a writer killed in
+between leaves a 16-digit temporary file, which is never read as a digest.
+The digest written is of the bytes the compare used, not of a golden read
+before the run. A build that fails writes nothing. A blessing run
+(`BENI_WRITE_EXPECTED=1`) writes no digest for the build it blesses — a
+golden written from the output is no verdict — while the fixture's other
+passes, compared with the golden it just wrote as always, are verified and
+recorded. A cache that cannot be read or written prints one warning, and
+every build runs and nothing is recorded. A record file that comes back
+into the corpus — `<fixture>.run-hash`, `.release-run-hash`,
+`.fuzz-run-hash`, or `tests/blackbox/run-hashes.txt` — fails the walk,
+every one named, with the fix: delete it (`git ls-files '*run-hash'
+tests/blackbox/run-hashes.txt` lists them), and for a `browser/tea` page's
+value fuzz add the `.value-fuzz` marker. The cache is the
+directory `BENI_RUN_HASH_DIR` names — the dev shells set
+`~/.cache/beni-run-hashes`, one directory for every worktree, which is safe
+because the digest covers every input of the verdict; empty means no cache.
+Nothing is committed, and nothing records on demand (the owner,
+2026-10-23, #875): a fresh clone, a new Node or a change to what the
+compiler emits runs the affected programs once. On CI `actions/cache` keeps
+the directory, saved from master and restored into every run; a pull
+request writes only in its own scope, under a key that also hashes the
+harness (`tests/blackbox/`, `tests/browser/`, `tests/serve/`,
+`tests/workers/`, `tests/test_runner.zig`, `build.zig`; the owner,
+2026-10-28), so a pull request that changes what "passed" means restores
+nothing it recorded with the old meaning. Locally one directory serves
+every worktree, so run a branch that changes the harness with a
+`BENI_RUN_HASH_DIR` of its own. Headless Chrome (`zig build test-browser`)
+looks nothing up and records nothing: it runs every page, every time (the
+owner, 2026-10-28). The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
-show a recorded build skipped, a changed one run, and a mismatch refused.
-A line of `tests/blackbox/run-hashes.txt`, a program a black-box scenario
-runs, covers the same things: the emitted output tree, the expectation
-written in the test and the Node version. A script that lives in the
-project directory rather than in that tree contributes its own bytes, and
-the rest of the project, `.beni-cache` included, contributes nothing.
+show a verified build skipped, a changed one run, a mismatch failed with
+nothing written, and one digest written by eight writers at once.
+A program a black-box scenario runs goes through the same cache; its digest
+covers the same things: the emitted output tree, the expectation written in
+the test and the Node version. A script that lives in the project directory
+rather than in that tree contributes its own bytes, and the rest of the
+project, `.beni-cache` included, contributes nothing.
 
 ### A program that must crash
 
@@ -139,9 +166,10 @@ never appears in the transcript**. The script is one JSON object per line,
                                 or `(error …)` when its connection ends, is
                                 printed after the last step under
                                 `--- detached ---`, in completion order
-    {…, "abort": true}          the same request, sent and then given up on
-                                at once: the server sees a client that left
-                                before it answered
+    {…, "abort": true}          the same request with `expect: 100-continue`,
+                                given up on when the server answers `100
+                                Continue`: the server has the request, and
+                                the client left before it answered
     {"raw": "GARBAGE\r\n\r\n"}  those bytes on a new connection; prints
                                 the first line of the answer and `(closed by
                                 the server)`
@@ -175,6 +203,10 @@ browser answers one:
     {"send": "a", "repeat": 300, "bytes": 1024}
                                 300 messages of 1024 bytes, `<i> ` then `x`s,
                                 in one write
+    {"send": "a", "repeat": 24000, "opcode": 10}
+                                24000 empty frames of that opcode, masked, in
+                                one write: 6 bytes each, for a chunk of many
+                                frames
     {"send": "a", "frame": {"opcode": 1, "text": "x", "fin": false, "mask": false, "rsv": 4, "hex": "…", "length": 9}}
                                 one frame as written, for a fault: the
                                 payload is `text` or `hex`, `length` the
@@ -240,24 +272,18 @@ The driver exits 0 whatever the program did; what it did is the
 transcript. A served fixture has no `.crash`: the crash is in the
 transcript.
 
-The record line (`.run-hash`) of a served build is `<pass> <node version>
-serve <sha-256>`: the digest covers what a `run/` one covers, and the
+The digest of a served build covers what a `run/` one covers, and the
 driver's bytes, the preload's and the script, so a change to any of them
 runs the program again (`tests/blackbox/serve.zig`).
 
 ### A program whose schemas are all compiled
 
-A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
-(`_expected.compiled-schemas` in a project) asserts `schema.md` §6's guarantee,
-*A statically known schema runs compiled*. Every schema it builds is fixed at
-compile time, so its development build must ship no library interpreter,
-whichever of the runners and `describe` it calls:
-`_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
-runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. The file's
-text says why the fixture qualifies. Like `.crash`, it is written by hand and
-never blessed. It costs no build of its own, because it reads the output of the
-development build the case already makes. Conduit's pages and the schema
-fixtures that build only compiled schemas carry one.
+Every `run/` fixture checks its development output for the removed Schema
+interpreter: if `_core/Schema.mjs` exists, it must declare neither `Schema$run`
+nor `Schema$box`. A `<name>.compiled-schemas` marker additionally requires that
+module to exist; browser fixtures use the marker to opt into the same assertion.
+The marker is written by hand and never blessed. The check reads the output of
+the existing development build and adds no build pass.
 
 ### The ownership differentials: records and lists in place
 
@@ -279,11 +305,33 @@ wrote is checked against its `dump --stage=ownership`: the sites the build
 wraps must be exactly the `List.<writer>`, `construction`, `++` and
 `value List.<writer>` lines v1 accepts, by position and writer.
 
+A `<name>.sanitize-lists-v2` file (and its `<name>.sanitize-lists-v2-crash`)
+gives the same pass under `--ownership=v2`: the sanitiser wraps the writes
+v2's lowering channel lists (`src/own2/Hoists.zig`, `ownership-v2.md` §3.7),
+and the sites are checked against v2's `dump --stage=ownership`. A write in a
+declaration v2 did not build is not wrapped, and v2 makes no
+`value List.<writer>` demand, so a writer handed as a value is not wrapped.
+Each wrapped site says whether its verdict rests on callers v2 may not have
+checked (`ownership-v2.md` §7.3), which a trap's message then repeats. With a
+`<name>.sanitize-lists-v2-refuses` file the fixture is a fixed v2 defect: v2
+must refuse it under the pass's flags, and when it accepts the program instead
+the sanitised build is run anyway and the case fails, its trap or its other
+output the evidence.
+
+The `-refuses` file names the refusal it expects. A line that starts with `#`
+is the reason. Every other line is one refusal, `line:col code writer`: the
+position of its diagnostic, the ownership code, and the first word of its
+message, which is the writer (`List.push`, or the function that writes). The
+build's refusals, in the order it prints them, must equal those lines exactly,
+so a refusal of another write, or of one more write, fails the case even when
+the named write is accepted.
+
 Both files hold their reason, are written by hand and never blessed, and their
-passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build
+passes' digests go to the run-hash cache as every pass's do. `BENI_IN_PLACE=all` (`zig build
 test-records-in-place`) gives every `run/` fixture and every
 `browser/inline/` page the record passes, and `BENI_IN_PLACE=lists` (`zig
-build test-lists-in-place`) the list pass; there a program the ownership
+build test-lists-in-place`) the list pass, `BENI_IN_PLACE=lists-v2` (`zig
+build test-lists-in-place-v2`) its v2 twin; there a program the ownership
 checker refuses under the pass's flags is skipped, and nothing is recorded.
 
 ### A Worker
@@ -299,11 +347,11 @@ the release build — is run by `node tests/workers/driver.mjs
 Miniflare (the `workerd` nixpkgs' `wrangler` carries; `nix develop .#workers`
 sets `BENI_MINIFLARE`), with `cf: false`, on 127.0.0.1, disposed at the end.
 Nothing is deployed and no account is used. The transcript is the golden,
-`_expected.expected`; the port never appears in it. The two run-hash
-records of a project are written by `zig build test-run-hashes
--Dcorpus=workers` in the same shell; `zig build test-workers` only checks
-them and does not read `BENI_RUN_HASHES`. The script is one JSON object per
-line, `#` for a comment:
+`_expected.expected`; the port never appears in it. Each of the two cases
+has a digest of its own in the run-hash cache, covering the driver, the
+script and the Wrangler configuration as well: `zig build test-workers`
+skips a build whose digest is there and records a build that matched. The
+script is one JSON object per line, `#` for a comment:
 
     {"method": "GET", "path": "/items?limit=3", "headers": {"accept": "text/plain"}, "body": "…"}
                                 a request, printed as `> GET /items?limit=3`,
@@ -345,7 +393,14 @@ line, `#` for a comment:
                                 even count of hex digits, is a script error:
                                 the driver stops with exit 2 and names the step
     {"drop": "a"}               end the connection with no close frame
-    {…, "until": "closed p2"}   any step: wait for a console line of the
+    {"idle": 16000}             no event for 16 s, past the 5 s step limit,
+                                for what the host does on its own clock:
+                                hibernate an idle object; `> (idle 16000
+                                ms)`. A count that is negative or not an
+                                integer, a script whose idle steps sum over
+                                60 000 ms, or an idle step with another key
+                                is a script error, before anything runs
+    {…, "until": "closed p2"}   any step but `idle`: wait for a console line of the
                                 Worker that holds the text before the step
                                 ends, since a line an object writes from a
                                 socket event has no order with the mark;
@@ -367,7 +422,10 @@ the next; the host's stack lines (`    at …`) are left out, since they hold a
 store path. A request forwarded to a Durable Object whose path ends in
 `/__beni/tick` fires the object's timer (a `ticked` event; 204, or 409 when
 no timer is armed), and one ending in `/__beni/alarm` runs its `alarm`
-(204); under `--test-hooks` the object arms no host timer. Each of the two
+(204); under `--test-hooks` the object arms no host timer. The host alarm
+that the object shares with the wake (`boundary.md` §9.12 (e.5)) is not set
+either: `/__beni/host-alarm` is its firing (204), and `/__beni/alarms`
+answers `host <none|program|wake>, program <none|set>`. Each of the two
 cases starts Miniflare once.
 
 ### `browser/`: a program in a page
@@ -431,7 +489,7 @@ project) against it, one step per line, `#` for a comment:
                                 `dragleave` and `dragend`; one whose
                                 default a handler prevented logs
                                 `(drop's default prevented)` (or its name's)
-    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]
+    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>] [trusted]
                                 one `PointerEvent` of that name
                                 (`pointerdown`, `pointermove`, `pointerup`,
                                 `pointercancel`, `pointerenter`,
@@ -449,12 +507,23 @@ project) against it, one step per line, `#` for a comment:
                                 neither, `pointercancel` does not cancel.
                                 One whose default a handler prevented logs
                                 `(pointerdown's default prevented)` (or its
-                                name's). happy-dom has no layout, so every
-                                box is at 0 there and only Chrome shows a
-                                handler converting the point to its own
-                                box: name the point in the box of the
-                                element that has the handler, and both DOMs
-                                print the same transcript
+                                name's). happy-dom has no layout: there,
+                                only an element that an allow list places
+                                has a box away from 0 (*layout*, below).
+                                Name the point in the box of the element
+                                that has the handler, and both DOMs print
+                                the same transcript. For the gates to see
+                                a handler convert the point to its own box,
+                                place that element as the list allows and
+                                point at a child of it. With `trusted`, a
+                                user's mouse move to the point: only
+                                `pointermove`, with the mouse's defaults
+                                (`id:1`, `type:mouse`, primary). It is
+                                trusted (below): a `pointermove`, then a
+                                `mousemove`, and neither logs a prevented
+                                default. In Chrome the mouse goes to the
+                                point, and a step whose point is over an
+                                element outside the selector's fails
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -541,6 +610,17 @@ project) against it, one step per line, `#` for a comment:
     timers                      log `(timers: <n>)`, the virtual clock's
                                 timers that have neither fired nor been
                                 cleared
+    posted                      wait in real time, 5 s at most, until
+                                every `iframe` of the page with a
+                                `srcdoc` has loaded, and 100 ms more;
+                                then log `(#<id> posted
+                                <json>)` for each message a frame posted
+                                to the page since the last `posted` (a
+                                frame with no id is `iframe <n>`), by
+                                frame in document order and, within one
+                                frame, in the order it came; or `(no
+                                frame posted)`. happy-dom runs no script
+                                of a frame (*known differences*, below)
     listeners <window|document> [<name>]
                                 log `(listeners: <n>)`, the listeners the
                                 page added to that target (for that event)
@@ -649,15 +729,38 @@ driver counts from the post to the delivery. A step that starts more
 fibers than 64 therefore shows them all run
 (`browser/tea/SettlesManyFibers`).
 
+**A turn is one task of the host's event loop, and it waits for no real
+time.** The driver queues it in the queue core's scheduler goes on in: a
+`setImmediate` under happy-dom, and in Chrome a message to a
+`MessagePort` of the driver's own, which the prelude makes before the page
+runs and does not count. A turn guarantees three things. It is a task and
+not a microtask, so every microtask queued before it has run when it runs.
+The host can run the tasks queued before it: under happy-dom every
+`setImmediate` queued before it has run. And it is the host's own, taken
+before the page runs, so a page that replaces `setImmediate` or
+`MessageChannel` does not change it. A turn does not guarantee where it falls
+among the scheduler's tasks: the count of what is pending decides when the
+page has settled, not the turn, so a turn that runs before a continuation
+costs one more turn and does not change the page. For the work the driver
+counts, a step's page therefore does not depend on how long a turn is. A
+turn does not wait for a timer of the host, for an answer from the
+network, or for anything else that becomes ready in real time; this
+includes happy-dom's own zero-delay timers, which carry its
+`window.postMessage`, `hashchange` and `FileReader` events. A turn is not a
+`setTimeout(…, 0)`: Node holds that to 1 ms and Chrome holds a nested one
+to 4 ms. A `frame` step settles after each frame it draws, so a page of
+many frames would wait mostly on that floor (`browser/tea/BallMachine`
+draws 340).
+
 After 1 000 turns the driver stops waiting and fails the step: `Error: the
 page still had a setImmediate to run after 1 000 turns` (`a message to
 deliver` in Chrome), `core's scheduler never ran dry` — a `throws` step
 too, which does not take the cap for the throw it expects. The step fires
 no later timer, frame or chunk, and a later settle of that page waits one
 turn, so a page that keeps the scheduler busy forever costs one capped
-settle — about 4 s in Chrome, which holds a nested timer to 4 ms — and not
-one per timer. (Such a page also grows core's queue without end, and V8
-refuses the queue's array, `RangeError: Invalid array length`, after a few
+settle — 1 000 turns, which add no real time to the scheduler's own work —
+and not one per timer. (Such a page also grows core's queue without end,
+and V8 refuses the queue's array, `RangeError: Invalid array length`, after a few
 seconds of work.) A message that is never delivered keeps the count above
 zero, so the next settle reaches the cap. Five things leave a message
 undelivered: a port the page never starts, a port closed (`close()`) with
@@ -808,7 +911,42 @@ compares instead of `.expected`. The differences known today:
   a fixture about scheduling order belongs to `test-browser`. Frames are
   not among the differences: both DOMs draw only the driver's virtual
   frames (`frame`);
-- layout: happy-dom lays nothing out, so sizes and positions are zero;
+- layout: happy-dom lays nothing out, so sizes and positions are zero,
+  with one exception for `getBoundingClientRect`. An element is placed
+  when an allow list leaves nothing else that can move or size its box:
+  - the document has no style sheet, and no `style` or `link` element;
+  - the element is a `div` or a `span`. Its inline style sets
+    `position: absolute` or `fixed`, and `left`, `top`, `width` and
+    `height`, each written as `Npx` or `0`. `width` and `height` are not
+    negative;
+  - each ancestor is an `html`, `body`, `main`, `div` or `span`;
+  - the element and each ancestor are HTML elements with no `hidden` or
+    `popover` attribute. Their inline style names no property but
+    `position`, `left`, `top`, `width`, `height` and `touch-action`, and
+    names each one once;
+  - the element is in the document, not in a shadow tree.
+
+  happy-dom keeps a declaration only for a property that it knows, so the
+  names come from the text of the `style` attribute, as written: an
+  unknown name, a `-webkit-` alias or a name in another case (`LEFT`)
+  there refuses the element. A later `style.setProperty` writes that text
+  again without the unknown name, so the driver marks the element each
+  time it reads its `style` and the text has such a name, and a
+  `setProperty` whose name, as given, is outside the list marks it too. A
+  marked element keeps the box at 0. The marks see the two writes that
+  the runtimes make: the `style` attribute and `setProperty`. They do not
+  see `cssText`, an assignment to a style property (`style.left = …`),
+  `attachShadow` or `element.animate`, so a platform that starts to use
+  one of these adds it to the driver's list.
+
+  A placed element gets the box that Chrome gives it on a page that is
+  not scrolled: from the viewport for `fixed`, and for `absolute` from
+  the box of the nearest ancestor whose inline `position` is not
+  `static`. That ancestor must be placed too. When there is none, the box
+  is from the page's origin. Any other element has the box at 0. So under
+  the gates, `browser/tea/PointerInput` and
+  `browser/dom/PointerEvents` see `Html.localX` subtract the box of the
+  element that has the handler;
 - CSS values: a property the page sets through `style.setProperty`
   goes back into the `style` attribute as each DOM serialises it. A
   colour is `rgb(…)` in Chrome and as the page wrote it in happy-dom
@@ -830,10 +968,14 @@ compares instead of `.expected`. The differences known today:
   the `location` step prints the same, since `location.hash` is `""` in
   both;
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
-  except `press` and the focus events a `focus()` or `blur()` call fires,
-  which are trusted as Chrome makes them: Chrome's `press` is its own
-  click, sent through `Input.dispatchMouseEvent`, and happy-dom, which has
-  no `isTrusted`, is given one that is true for exactly those. The
+  except `press`, a `trusted` `pointer` move and the focus events a
+  `focus()` or `blur()` call fires, which are trusted as Chrome makes
+  them: Chrome's `press` is its own click and its move its own mouse
+  move, sent through `Input.dispatchMouseEvent`, and happy-dom, which has
+  no `isTrusted`, is given one that is true for exactly those. A move in
+  Chrome also sends the over, out, enter and leave events of the elements
+  that the mouse crosses, and happy-dom's does not, so a page that a
+  `trusted` move drives has no handler for those events. The
   emulation is dispatched from the driver's stack, so where Chrome runs
   microtasks between two listeners of a user's click, happy-dom does not:
   a fixture shows what the runtime does at a listener's end, not what the
@@ -856,12 +998,17 @@ compares instead of `.expected`. The differences known today:
   loading anything, so a fixture shows the address before such a click;
 - `history.back()`: happy-dom fires the `popstate` at once, in the step's
   task, Chrome in a later one; the `back` and `forward` steps wait for it.
+- frames: happy-dom loads a frame's `srcdoc` and fires its `load`, but it
+  runs no script of the frame, whatever the frame's `sandbox` says. It
+  loads no `src` and fires no `load` for a frame without a `srcdoc`. So
+  under the gates no frame posts, and `posted` logs `(no frame posted)`;
+  Chrome runs the scripts that the frame's `sandbox` lets run
+  (`browser/dom/IframeSrcdoc`). happy-dom also lets the page read a
+  sandboxed frame's document, which Chrome gives an opaque origin.
 
-**Run hashes** work as in `run/`, with the DOM on the line
-(`dev v24.19.0 happy-dom-20.14.5 <sha-256>`) and the digest covering the
-DOM's checksum, the driver and the steps as well; `zig build
-test-run-hashes` records them. `test-browser` never skips and never
-records.
+**Run hashes** work as in `run/`, the digest covering the DOM's name and
+checksum, the driver and the steps as well. `test-browser` never skips and
+never records.
 
 **The `dom` lowering's fixtures** (`backend.md` §15.10) are under
 `browser/dom/`, files and projects alike, and are built with
@@ -1003,15 +1150,18 @@ every logged line but those the pair may differ on, the errors — in the
 driver's process after the fixture's pages. A difference fails the case
 with the seed, the step, the sequence shrunk, and what differs; a
 sequence of view events is printed as a `.steps` script, the red-first
-fixture of the defect. A fuzz that agreed is the `fuzz` line of the
-fixture's run hash. `zig build fuzz` runs fifty seeds of sixty steps.
-A `browser/tea/` page that carries a `.fuzz-run-hash` (create it empty,
-then `zig build test-run-hashes`) has a value-fuzz case of its own,
+fixture of the defect. A fuzz that agreed has a digest of its own in the
+run-hash cache. `zig build fuzz` runs fifty seeds of sixty steps.
+Every `browser/tea/` page has a value-fuzz case of its own as well,
 `<page> [value fuzz]`, budgeted apart from the page's: it builds the two
 `--fuzz` builds, development and release, dumps the message types and
-fuzzes them, messages as values included, and records its line in
-`<name>.fuzz-run-hash` (`_expected.fuzz-run-hash` in a project), beside
-the page case's own fuzz of view events (`browser/tea/TypedInput`).
+fuzzes them, messages as values included, with a digest of its own beside
+the page case's own fuzz of view events (`browser/tea/TypedInput`). There
+is no opt-in (the owner, 2026-10-28, #881). A page that cannot be fuzzed
+is a line `<page>: <reason>` of `browser/tea/no-value-fuzz.txt` (a
+project by its directory's name), and the file fails closed: a line that
+names no page, or gives no reason, fails the walk, so a page that comes
+back is fuzzed until someone writes down again why it cannot be.
 
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering

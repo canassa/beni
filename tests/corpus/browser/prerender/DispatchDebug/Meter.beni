@@ -1,0 +1,14 @@
+--! A distance whose method logs a value out of range, through a second
+--! function of this module, and gives back its label. The program hands it
+--! none out of range, so the build writes nothing to standard error.
+
+pub type Meter
+    = Meter Int
+
+
+pub label : Meter → String
+label (Meter n) = if n > 100 then far n else "${n} m"
+
+
+far : Int → String
+far n = Debug.log "far" "${n} m"

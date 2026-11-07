@@ -1,0 +1,41 @@
+-- ownership (project): see Main.beni. The callees.
+pub type A
+    = A (List Int) (List B)
+
+
+pub type B
+    = B (List A)
+
+
+pub pushLabel : A → A
+pushLabel a =
+    case a of
+        A l bs →
+            A (List.push l 1) bs
+
+
+pub type P
+    = P (List Int) (Maybe Q)
+
+
+pub type Q
+    = Q P
+
+
+pub incP : P → P
+incP p =
+    case p of
+        P l m →
+            case m of
+                Just q →
+                    P (List.push l 1) (Just (incQ q))
+
+                Nothing →
+                    P (List.push l 1) Nothing
+
+
+pub incQ : Q → Q
+incQ q =
+    case q of
+        Q p →
+            Q (incP p)

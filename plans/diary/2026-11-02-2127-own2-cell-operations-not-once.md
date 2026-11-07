@@ -1,0 +1,5 @@
+## 2026-11-02 21:27 CET — own2: cell operations on a captured Ref are not once
+
+**What I did.** Under #1727, a closure whose only capture writes are `Ref.set`, `Ref.update` or `Ref.modify` is no longer `once`. Its creation is now a `writer` demand on each cell's `◆`, so the enclosing contract keeps `writes π◆`. A captured record's projection names the cell's `◆`, not the handle. The spec is amended in §2.11.4 and §2.13.7. Fixtures: `run/SanitiserCellCapture` and its refused twin. Ledger vs the base: refused→accepted 64, no new refusal. Oracle: 575 probes, no trap.
+
+**What I learned.** The old `once` demand was the only path by which a closure's cell write reached its declaration's summary. Dropping the demand alone made `simulate` claim `writes π1.world`, a write of the handle. A loan of a cell's contents is not checked against `Ref.update` at all (#1729). Today the callback's `unknown (approx)` refusal covers that gap. The corpus sanitised-sites check counts any accepted `List.x` line as a list write, a callsite on `List.map` included.

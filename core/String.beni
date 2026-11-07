@@ -433,9 +433,11 @@ pub reverse : String → String
 reverse str = fromList (List.reverse (toList str))
 
 
---| Repeat a string `n` times.
+--| Repeat a string `n` times. A fraction is cut toward zero, and a count
+--| below 1 is `""`.
 --|
 --|     repeat "ha" 3 == "hahaha"
+--|     repeat "ha" (1 + 2 ^ (0 - 1)) == "ha"
 pub repeat : String, Int → String
 repeat chunk n = concat (List.repeat chunk n)
 
@@ -611,23 +613,27 @@ uncons str =
             Nothing
 
 
---| Pad a string on both sides until it has a given length.
+--| Pad a string on both sides until it has a given length. A fraction of
+--| the length is cut toward zero.
 --|
 --|     pad "1" 5 ' ' == "  1  "
 pub pad : String, Int, Char → String
 pad str n char =
-    half = Basics.toFloat (n - length str) / 2
+    -- Cut first: `ceiling` and `floor` of a fraction's half pad one too many.
+    half = Basics.toFloat (Basics.truncate (Basics.toFloat n) - length str) / 2
     repeat (fromChar char) (ceiling half) ++ str ++ repeat (fromChar char) (floor half)
 
 
---| Pad a string on the left until it has a given length.
+--| Pad a string on the left until it has a given length. A fraction of the
+--| length is cut toward zero.
 --|
 --|     padLeft "1" 5 '.' == "....1"
 pub padLeft : String, Int, Char → String
 padLeft str n char = repeat (fromChar char) (n - length str) ++ str
 
 
---| Pad a string on the right until it has a given length.
+--| Pad a string on the right until it has a given length. A fraction of
+--| the length is cut toward zero.
 --|
 --|     padRight "1" 5 '.' == "1...."
 pub padRight : String, Int, Char → String

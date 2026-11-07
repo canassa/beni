@@ -1,0 +1,1 @@
+#1368, #1420 (ownership-v2.md §2.3 *Saturation at two*): rebuilds that drop positions nodes, their entries carried, and v2's ReleaseSafe check on every read of a rebuilt node. v2 names its own cause at 40:12 (disjoint, where v1 says call).

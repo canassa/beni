@@ -1,0 +1,9 @@
+pub type Inner
+    = Inner (List Int)
+
+
+pub eq : Inner, Inner → Bool
+eq a b =
+    case a of
+        Inner l →
+            List.length (List.push l 1) > 0

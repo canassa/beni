@@ -1,0 +1,43 @@
+-- ownership (project): see Main.beni. The callees.
+pub type T a
+    = T (List (T a)) a
+
+
+pub k : List (List Int) → List (List Int)
+k rows =
+    case rows of
+        [ r ] →
+            [ List.push r 0 ]
+
+        _ →
+            []
+
+
+pub elems : List (List (List Int)) → List (List Int) × List Int
+elems ys =
+    case ys of
+        [ a, b ] →
+            case b of
+                [ c ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kT : List (List (T Int)) → List (List (T Int)) × List (T Int)
+kT rows =
+    case rows of
+        [ r, s ] →
+            case s of
+                [ T kids _ ] →
+                    ( [ List.push r (T [] 0) ], kids )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )

@@ -1,0 +1,13 @@
+module CmpDeepWrite
+  16:34 List.push l: accepted param
+  20:16 value CmpDeepWrite.eq: pending: it is passed as evidence, whose calls the checker does not see
+  summary eq: π1 R, π1#Deep.1.1 RW[storage], π2 R, π2#Deep.1.1 R
+  summary listOf: π1 R
+  summary callerList: π1 RA; res .1 π1
+  summary nestedLeft: π1 RA; res .1 π1
+  summary nestedRight: π1 RA; res .1 π1
+  summary nestedParam: π1 RA; res .1 π1
+  summary viaFn2: π1 R
+  summary callerViaFn2: π1 RA; res .1 π1
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 0
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 0

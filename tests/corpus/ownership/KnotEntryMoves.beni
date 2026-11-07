@@ -1,0 +1,113 @@
+-- ownership: a knot's entry moves with the rest of the knot (issue
+-- #1582, `LevelFreshDup`'s sibling). Each builder threads one list down
+-- the tree, `c n xs = Node (c (n - 1) xs) xs Leaf`, in a form whose
+-- walk closes a knot that an earlier walk's knot equals: the map must
+-- put the entry's mark on the trail before the entry's own pair, or the
+-- stable-image move leaves the entry behind and the walk at the
+-- fixpoint reads off another class. The corpus walks every member again
+-- and compares. `ev` and `od` are the mutual pair.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+type Choice
+    = Stop
+    | Left Choice (List Int)
+    | Right (List Int) Choice
+
+
+tree : Int, List Int → Tree
+tree n xs =
+    if n == 0 then
+        Leaf
+    else
+        Node (tree (n - 1) xs) xs Leaf
+
+
+choice : Int, List Int → Choice
+choice n xs =
+    if n == 0 then
+        Stop
+    else if n > 5 then
+        Left (choice (n - 1) xs) xs
+    else
+        Right xs (choice (n - 1) xs)
+
+
+ev : Int, List Int → Tree
+ev n xs =
+    if n == 0 then
+        Leaf
+    else
+        Node (od (n - 1) xs) xs Leaf
+
+
+od : Int, List Int → Tree
+od n xs =
+    if n == 0 then
+        Leaf
+    else
+        Node (ev (n - 1) xs) xs (ev (n - 1) xs)
+
+
+count : Tree → Int
+count t =
+    case t of
+        Leaf →
+            0
+
+        Node l xs r →
+            count l + List.length xs + count r
+
+
+depth : Choice → Int
+depth c =
+    case c of
+        Stop →
+            0
+
+        Left c2 xs →
+            depth c2 + List.length xs
+
+        Right xs c2 →
+            depth c2 + List.length xs
+
+
+pub driveTree : Int → Int
+driveTree n = count (tree n [ 1, 2 ])
+
+
+pub driveChoice : Int → Int
+driveChoice n = depth (choice n [ 1, 2 ])
+
+
+pub driveMutual : Int → Int
+driveMutual n = count (ev n [ 1 ]) + count (od n [ 2 ])
+
+
+type PTree
+    = PLeaf
+    | PNode PTree (List Int × Int) PTree
+
+
+pair : Int, List Int → PTree
+pair n xs =
+    if n == 0 then
+        PLeaf
+    else
+        PNode (pair (n - 1) xs) ( xs, n ) PLeaf
+
+
+psize : PTree → Int
+psize t =
+    case t of
+        PLeaf →
+            0
+
+        PNode l ( xs, k ) r →
+            psize l + List.length xs + k + psize r
+
+
+pub drivePair : Int → Int
+drivePair n = psize (pair n [ 1 ])

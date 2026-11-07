@@ -1,0 +1,42 @@
+-- ownership: levels below the first return that fold through two routes
+-- (#1253, ownership-v2.md §2.1 *one position, one name*): in
+-- `B (List B) (List B)` the lists below a level's list are those of each
+-- of its two lists. A callee's `⟲` names both, and a call reads each.
+-- `distinct`'s lists are all distinct: accepted. `shared` puts one list
+-- below both of the root's lists, `crossed` one below the left list and
+-- one level deeper below the right one: refused.
+type B
+    = B (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+pub distinct : B
+distinct = incAll (B [ B [ B [] [] ] [] ] [ B [] [ B [] [] ] ])
+
+
+pub shared : B
+shared =
+    k = [ B [] [] ]
+    incAll (B [ B [] [ B k [] ] ] [ B [] [ B k [] ] ])
+
+
+pub crossed : B
+crossed =
+    k = [ B [] [] ]
+    incAll (B [ B [ B k [] ] [] ] [ B [] [ B [ B k [] ] [] ] ])

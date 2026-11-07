@@ -1,0 +1,15 @@
+module KnotEntryMoves
+  summary tree: π2 RA; res #Node.0 condition(fresh4){shared} condition(fresh5){shared}, #Node.0⟨Tree⟩#Node.0 condition(fresh5){shared}, #Node.0⟨Tree⟩#Node.1 condition(fresh3) π2{shared}, #Node.1 condition(fresh2) π2{shared}, condition(fresh1){shared}
+  summary choice: π2 RA; res #Left.0 condition(fresh10){shared} condition(fresh8){shared}, #Left.0⟨Choice⟩#Left.0 condition(fresh10){shared}, #Left.0⟨Choice⟩#Left.1 condition(fresh3) π2{shared}, #Left.0⟨Choice⟩#Right.0 condition(fresh4) π2{shared}, #Left.0⟨Choice⟩#Right.1 condition(fresh10){shared}, #Left.1 condition(fresh2) π2{shared}, #Right.0 condition(fresh5) π2{shared}, #Right.1 condition(fresh11){shared} condition(fresh9){shared}, #Right.1⟨Choice⟩#Left.0 condition(fresh11){shared}, #Right.1⟨Choice⟩#Left.1 condition(fresh6) π2{shared}, #Right.1⟨Choice⟩#Right.0 condition(fresh7) π2{shared}, #Right.1⟨Choice⟩#Right.1 condition(fresh11){shared}, condition(fresh1){shared}
+  summary ev: π2 RA; res #Node.0 condition(fresh1){shared} condition(fresh5){shared} condition(fresh6){shared} condition(fresh7){shared}, #Node.0⟨Tree⟩#Node.0 condition(fresh5){shared} ~condition(fresh6){shared} ~condition(fresh7){shared}, #Node.0⟨Tree⟩#Node.1 condition(fresh2) π2{shared}, #Node.0⟨Tree⟩#Node.2 condition(fresh5){shared} condition(fresh6){shared} ~condition(fresh7){shared}, #Node.1 condition(fresh4) π2{shared}, condition(fresh3){shared}
+  summary od: π2 RA; res #Node.0 condition(fresh5){shared} condition(fresh7){shared} condition(fresh9){shared}, #Node.0⟨Tree⟩#Node.0 condition(fresh5){shared} condition(fresh7){shared} ~condition(fresh9){shared}, #Node.0⟨Tree⟩#Node.1 condition(fresh3) π2{shared}, #Node.0⟨Tree⟩#Node.2 condition(fresh7){shared} ~condition(fresh9){shared}, #Node.1 condition(fresh2) π2{shared}, #Node.2 condition(fresh10){shared} condition(fresh6){shared} condition(fresh8){shared}, #Node.2⟨Tree⟩#Node.0 condition(fresh6){shared} condition(fresh8){shared} ~condition(fresh10){shared}, #Node.2⟨Tree⟩#Node.1 condition(fresh4) π2{shared}, #Node.2⟨Tree⟩#Node.2 condition(fresh8){shared} ~condition(fresh10){shared}, condition(fresh1){shared}
+  summary count: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
+  summary depth: π1 R, π1⟨Choice⟩#Left.0 R, π1⟨Choice⟩#Left.1 R, π1⟨Choice⟩#Right.0 R, π1⟨Choice⟩#Right.1 R
+  summary driveTree: unused
+  summary driveChoice: unused
+  summary driveMutual: unused
+  summary pair: π2 RA; res #PNode.0 condition(fresh4){shared} condition(fresh5){shared}, #PNode.0⟨PTree⟩#PNode.0 condition(fresh5){shared}, #PNode.0⟨PTree⟩#PNode.1.0 condition(fresh3) π2{shared}, #PNode.1.0 condition(fresh2) π2{shared}, condition(fresh1){shared}
+  summary psize: π1 R, π1⟨PTree⟩#PNode.0 R, π1⟨PTree⟩#PNode.1.0 R, π1⟨PTree⟩#PNode.2 R
+  summary drivePair: unused
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

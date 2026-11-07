@@ -1,0 +1,16 @@
+-- ownership (v2; R-5.13.1 with R-5.5.6): `Inner.eq = sameLength` is a
+-- comparison written as an alias in an imported module. Its push is
+-- `comparison_changes_value` in `Inner`, where it is walked as `eq`; `same`
+-- here calls `==` on `Inner.T` and is judged as any call of a writing
+-- function is. `Inner.compare = Helpers.always` names a function of another
+-- module, walked there as no comparison: it is left unchecked, never taken
+-- for a read-only one, and `less` applies `always`' class.
+import Inner exposing (T)
+
+
+pub same : T, T → Bool
+same x y = x == y
+
+
+pub less : T, T → Bool
+less x y = x < y

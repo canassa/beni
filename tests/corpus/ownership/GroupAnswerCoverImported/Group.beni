@@ -1,0 +1,33 @@
+-- ownership (project): see Main.beni. The recursive group, published in
+-- this module's block: `q`'s class has `A` at `π1` only, `p`'s at `π1[*]`
+-- too (#1451).
+pub q : List Int, List Int, Int → List Int
+q a b n = p a b n
+
+
+pub p : List Int, List Int, Int → List Int
+p a b n =
+    if n ≤ 0 then
+        a
+    else
+        r = q a b (n - 1)
+        if List.length r > 3 then
+            [ …r, 0 ]
+        else
+            q b a (n - 2)
+
+
+pub qq : List (List Int), List (List Int), Int → List (List Int)
+qq a b n = pp a b n
+
+
+pub pp : List (List Int), List (List Int), Int → List (List Int)
+pp a b n =
+    if n ≤ 0 then
+        a
+    else
+        r = qq a b (n - 1)
+        if List.length r > 3 then
+            [ …r, [] ]
+        else
+            qq b a (n - 2)

@@ -1,0 +1,167 @@
+-- ownership: two unrelated paths of one parameter that a callee relied on
+-- being apart (ownership-v2.md §2.11 item 3, rule (c), as amended for
+-- #1383). A callee that writes one path of its parameter while it answers,
+-- reads deeply or reads after it another finds the two apart in its own
+-- frame, so its callers must: a call over an actual that holds one value at
+-- both paths is refused `disjoint`, as v1 refuses it. `g` answers `l` beside
+-- `kidsBox r` over `Pair b b`; `gRead` reads `l` after; `gDeep` compares it
+-- (`l == l`); `callerT` puts `t`'s own list `ys`, refined by the pattern, at
+-- the root beside `t`; `b8`, `twoRoutes` and `twoRoutesShared` hold one tree
+-- at two subtrees. The `Distinct` twins and `c8` hold distinct values and
+-- are accepted. Before #1383 v2 accepted `g`, `gDeep` and `callerT`: a
+-- symbolic leaf's reach is its own cell, and a refined base was matched by
+-- its cell only.
+type Box
+    = Box (List Int)
+
+
+type Pair
+    = Pair Box Box
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+rightLeftBox : Pair → List Int × Box
+rightLeftBox p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+pub g : Box → Int × Int
+g b =
+    case rightLeftBox (Pair b b) of
+        ( ys, l ) →
+            ( List.length ys, sizeBox l )
+
+
+readAfter : Pair → List Int × Int
+readAfter p =
+    case p of
+        Pair l r →
+            ( kidsBox r, sizeBox l )
+
+
+pub gRead : Box → List Int × Int
+gRead b = readAfter (Pair b b)
+
+
+pub gDistinct : ⊤ → Int × Int
+gDistinct ⊤ =
+    case rightLeftBox (Pair (Box [ 1 ]) (Box [ 2 ])) of
+        ( ys, l ) →
+            ( List.length ys, sizeBox l )
+
+
+type Tree
+    = Leaf
+    | Br Tree (List Int) Tree
+
+
+kids : Tree → List Int
+kids t =
+    case t of
+        Br _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []
+
+
+rightLeft : Tree → List Int × Tree
+rightLeft t =
+    case t of
+        Br l _ r →
+            ( kids r, l )
+
+        Leaf →
+            ( [], Leaf )
+
+
+size : Tree → Int
+size t =
+    case t of
+        Br _ xs _ →
+            List.length xs
+
+        Leaf →
+            0
+
+
+pub b8 : Tree → Int × Int
+b8 t =
+    case rightLeft (Br t [] t) of
+        ( ys, l ) →
+            ( List.length ys, size l )
+
+
+pub c8 : ⊤ → Int × Int
+c8 ⊤ = b8 (Br Leaf [ 0 ] Leaf)
+
+
+pub twoRoutes : Tree → Int × Int
+twoRoutes t =
+    case rightLeft (Br (Br t [] Leaf) [] t) of
+        ( ys, l ) →
+            ( List.length ys, size l )
+
+
+pub twoRoutesShared : Tree, List Int → Int × Int
+twoRoutesShared r xs =
+    case rightLeft (Br (Br r [] Leaf) xs r) of
+        ( ys, l ) →
+            ( List.length ys, size l )
+
+
+rootVsSub : Tree → List Int × Int
+rootVsSub t =
+    case t of
+        Br l xs _ →
+            ( List.push xs 1, size l )
+
+        Leaf →
+            ( [], 0 )
+
+
+pub callerT : Tree → List Int × Int
+callerT t =
+    case t of
+        Br _ ys _ →
+            rootVsSub (Br t ys Leaf)
+
+        Leaf →
+            ( [], 0 )
+
+
+pub distinctTree : ⊤ → Int × Int
+distinctTree ⊤ =
+    case rightLeft (Br (Br Leaf [ 1 ] Leaf) [] (Br Leaf [ 2 ] Leaf)) of
+        ( ys, l ) →
+            ( List.length ys, size l )
+
+
+readDeep : Pair → List Int × Bool
+readDeep p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l == l )
+
+
+pub gDeep : Box → List Int × Bool
+gDeep b = readDeep (Pair b b)
+
+
+pub gDeepDistinct : ⊤ → List Int × Bool
+gDeepDistinct ⊤ = readDeep (Pair (Box [ 1 ]) (Box [ 2 ]))

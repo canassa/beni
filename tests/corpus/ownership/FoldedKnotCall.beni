@@ -1,0 +1,96 @@
+-- ownership: reader 2 of the fold certificate (ownership-v2.md §8 slice
+-- 4, *Readers*; §2.9 rule 4; #1485). `incAll`'s `xreq` owes `excl` at the
+-- lists below its argument's first returns, and `incBelow` owes it
+-- through its two calls. A call's folded read (`Calls.preimage`) of a
+-- certified view reads the certificate instead of the view's cycle: one
+-- view of `t` meets it and is accepted. `unroll` and `dupL` put one list
+-- at two coexisting positions, which their certificates' condition holds
+-- (`lost`), so every write of either is refused, whether the call writes
+-- the root's list or only the lists below it.
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+incBelow : Tree → Tree
+incBelow t =
+    case t of
+        Node l xs r →
+            Node (incAll l) xs (incAll r)
+
+        Leaf →
+            Leaf
+
+
+same : Tree → Tree
+same t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (same l) xs (same r)
+
+
+unroll : Tree → Tree
+unroll t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (Node (unroll l) xs Leaf) xs (unroll r)
+
+
+swap : Tree → Tree
+swap t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (swap r) xs (swap l)
+
+
+dupL : Tree → Tree
+dupL t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs _ →
+            Node (dupL l) xs (dupL l)
+
+
+pub oneView : Tree → Tree
+oneView t = incAll (same t)
+
+
+pub unrolled : Tree → Tree
+unrolled t = incAll (unroll t)
+
+
+pub doubled : Tree → Tree
+doubled t = incAll (dupL t)
+
+
+pub belowView : Tree → Tree
+belowView t = incBelow (same t)
+
+
+pub belowUnrolled : Tree → Tree
+belowUnrolled t = incBelow (unroll t)
+
+
+pub belowDoubled : Tree → Tree
+belowDoubled t = incBelow (dupL t)

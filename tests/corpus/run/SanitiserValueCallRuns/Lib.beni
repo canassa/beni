@@ -1,0 +1,46 @@
+ra : (⊤ → List Int) → List Int
+ra f = f ⊤
+
+
+pub runl : (⊤ → List Int) → List Int
+runl = λf → f ⊤
+
+
+ra0 : ⊤ → ((⊤ → List Int) → List Int)
+ra0 _ = ra
+
+
+pub run : (⊤ → List Int) → List Int
+run = ra0 ⊤
+
+
+mapa : List (List Int), (List Int → List Int) → List (List Int)
+mapa ls f = List.map ls f
+
+
+mapa0 : ⊤ → (List (List Int), (List Int → List Int) → List (List Int))
+mapa0 _ = mapa
+
+
+pub mapv : List (List Int), (List Int → List Int) → List (List Int)
+mapv = mapa0 ⊤
+
+
+pub mapl : List (List Int), (List Int → List Int) → List (List Int)
+mapl = λls f → List.map ls f
+
+
+twa : (⊤ → List Int), (⊤ → List Int) → List Int × List Int
+twa f g = ( f ⊤, g ⊤ )
+
+
+twa0 : ⊤ → ((⊤ → List Int), (⊤ → List Int) → List Int × List Int)
+twa0 _ = twa
+
+
+pub two : (⊤ → List Int), (⊤ → List Int) → List Int × List Int
+two = twa0 ⊤
+
+
+pub twol : (⊤ → List Int), (⊤ → List Int) → List Int × List Int
+twol = λf g → ( f ⊤, g ⊤ )

@@ -1,0 +1,12 @@
+-- Imported Programs must not become executable page-side descriptors either.
+import Definition
+import Page
+import Worker
+
+
+start : ⊤ → ⊤
+start _ = Worker.run Definition.worker
+
+
+main : Page.Program
+main = Page.program start

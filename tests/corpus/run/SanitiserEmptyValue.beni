@@ -1,0 +1,38 @@
+-- A top-level value that holds no object is no shared object
+-- (`ownership-v2.md` §2.3.3): `Dict.empty` is `Dict Leaf`, and its
+-- contract says nothing at any slot. A write that `bumped` makes of a value
+-- of its dictionary was refused `top-level` at `bumped Dict.empty 3`, a
+-- path `Dict.empty` does not have; it names no object now and is accepted,
+-- and the sanitised run prints the same. `bumped` of a dictionary built at
+-- the top level is still refused `top-level`.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+seeded : Dict Int (List Int)
+seeded = Dict.fromList [ ( 3, [ 7 ] ) ]
+
+
+bumped : Dict Int (List Int), Int → List Int
+bumped d k =
+    case Dict.get d k of
+        Just xs →
+            List.push xs 1
+
+        Nothing →
+            []
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (bumped Dict.empty 3)
+        , show (bumped Dict.empty 4)
+        , String.fromInt (Dict.size Dict.empty)
+        ]

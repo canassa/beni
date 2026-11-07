@@ -1,0 +1,19 @@
+-- ownership (project): the same with `Key` imported; `Wrap`'s derived
+-- comparisons call `Key.compare` and `Key.eq`, which write.
+import Key
+
+
+type Wrap
+    = Wrap Key.Key
+
+
+pub direct : List Int → Bool × List Int
+direct xs = ( Key.Key xs < Key.Key [], xs )
+
+
+pub derivedLt : List Int → Bool × List Int
+derivedLt xs = ( Wrap (Key.Key xs) < Wrap (Key.Key []), xs )
+
+
+pub derivedEq : List Int → Bool × List Int
+derivedEq xs = ( Wrap (Key.Key xs) == Wrap (Key.Key []), xs )

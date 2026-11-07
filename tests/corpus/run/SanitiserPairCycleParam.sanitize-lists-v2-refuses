@@ -1,0 +1,2 @@
+# v2 refuses a write a cycle of pairs reaches, whichever pair is read first (§2.9.2, #2146)
+27:9 list_still_used List.push

@@ -336,6 +336,7 @@ pub const Code = enum {
     invalid_html_shell,
     /// Appended with `λ` (language.md §12.1): a lambda written with the
     /// removed `\`, whose message is the head written `λ`.
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     backslash_lambda_removed,
     /// Appended with the names that read right subject first (language.md
     /// §12.4): a use of `modBy`, `remainderBy` or `logBase`, whose
@@ -360,6 +361,7 @@ pub const Code = enum {
     /// `...` — reported at every occurrence, its message naming the symbol;
     /// and a tuple type written `( a, b )`, whose message is the type
     /// written with `×`.
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     ascii_symbol_removed,
     tuple_type_removed,
     /// Appended on 2026-10-02 (`backend.md` §4, *The emitter's imports of
@@ -389,7 +391,9 @@ pub const Code = enum {
     /// the enforce step); the `then` branch of an `if` without `else` whose
     /// type is not `⊤` (the checker's); and a `_ =` in front of a `⊤`, a
     /// `warning` (the checker's, checker-v2.md §34).
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     unit_spelling_removed,
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     never_spelling_removed,
     if_without_else_not_unit,
     unit_discarded,
@@ -505,6 +509,37 @@ pub const Code = enum {
     prerender_data_failed,
     prerender_data_invalid,
     prerender_data_ignored,
+    /// Appended on 2026-10-31 with R-5.13.1 (ownership-requirements.md;
+    /// ownership-v2.md §2.13.13 item 13): a type's `eq` or `compare` that
+    /// changes a value it is handed, or calls a function that does, at the
+    /// write. A language rule; the ownership checker v2's, an error.
+    comparison_changes_value,
+    /// Appended on 2026-11-04 with `Js.module` (`boundary.md` §4.2): its
+    /// specifier is not a string literal naming a `node:` or `cloudflare:`
+    /// built-in. The checker's, at the argument.
+    invalid_js_module,
+    /// Appended on 2026-11-05 with the typed `srcdoc` of `html` (the
+    /// owner's decision, `language.md` §11.5): an element that writes the
+    /// typed `srcdoc` without a constant `sandbox` free of the token
+    /// `allow-same-origin`. The checker's, at the `srcdoc` name.
+    srcdoc_without_sandbox,
+    /// Generic entry contracts (workers-entry-implementation.md). Appended after
+    /// upstream diagnostics. Cached ordinals are compiler-build-key scoped.
+    invalid_entry_kind,
+    worker_message_not_serializable,
+    worker_realm_violation,
+    invalid_native_binding,
+    obsolete_host_promise,
+    entry_runtime_suspends,
+    worker_entry_not_static,
+    /// A kept `importScripts` in a module worker (`workers.md` §4 and §6),
+    /// appended 2026-11-07.
+    module_worker_import_scripts,
+    /// Markup that would reach a Trusted Types sink, in a build whose
+    /// project says `"trustedTypes": true`: `dom`'s `raw`, `srcdoc` and
+    /// `<script>` (`boundary.md` §9.4.7, `backend.md` §15.3). The
+    /// lowering's, at the markup. Appended 2026-11-07 (#2208).
+    trusted_types_sink,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -607,6 +642,15 @@ pub fn title(code: Code) []const u8 {
         .missing_main => "MISSING MAIN",
         .duplicate_main => "TWO MAINS",
         .main_not_program => "MAIN IS NOT A PROGRAM",
+        .invalid_entry_kind => "INVALID ENTRY KIND",
+        .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
+        .worker_realm_violation => "WORKER REALM VIOLATION",
+        .trusted_types_sink => "TRUSTED TYPES SINK",
+        .module_worker_import_scripts => "IMPORTSCRIPTS IN A MODULE WORKER",
+        .invalid_native_binding => "INVALID NATIVE BINDING",
+        .obsolete_host_promise => "OBSOLETE HOST PROMISE",
+        .worker_entry_not_static => "WORKER ENTRY NOT STATIC",
+        .entry_runtime_suspends => "ENTRY RUNTIME SUSPENDS",
         .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",
         .duplicate_where_constraint => "DUPLICATE CONSTRAINT",
         .unknown_method => "UNKNOWN METHOD",
@@ -701,6 +745,7 @@ pub fn title(code: Code) []const u8 {
         .prerender_data_failed => "DATA PROGRAM FAILED",
         .prerender_data_invalid => "PAGE DATA DOES NOT DECODE",
         .prerender_data_ignored => "DATA PROGRAM IGNORED",
+        .comparison_changes_value => "COMPARISON CHANGES A VALUE",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",
@@ -713,6 +758,8 @@ pub fn title(code: Code) []const u8 {
         .unknown_exports_mode => "UNKNOWN EXPORTS MODE",
         .invalid_entry_export => "INVALID ENTRY EXPORT",
         .exports_ignored => "EXPORTS IGNORED",
+        .invalid_js_module => "INVALID HOST MODULE",
+        .srcdoc_without_sandbox => "SRCDOC WITHOUT A SAFE SANDBOX",
     };
 }
 
@@ -793,6 +840,32 @@ pub fn column(source: []const u8, line_start: u32, offset: u32) u32 {
     const start = @min(line_start, end);
     return codePoints(source[start..end]) + (offset - @max(end, line_start)) + 1;
 }
+
+/// Columns of ascending offsets, each continuing from the one before it on
+/// the same line, so a run of tokens costs one pass over their line instead
+/// of one pass from the line start per token. Every column equals what
+/// `column` returns; an offset that does not continue (another line, an
+/// earlier offset, past the end of `source`) restarts from the line start.
+pub const ColumnCursor = struct {
+    line_start: u32 = 0,
+    offset: u32 = 0,
+    col: u32 = 1,
+    /// Bytes read so far, for a test that pins the cost.
+    scanned: u64 = 0,
+
+    pub fn at(c: *ColumnCursor, source: []const u8, line_start: u32, offset: u32) u32 {
+        const continues = c.line_start == line_start and c.offset >= line_start and
+            c.offset <= offset and offset <= source.len;
+        const from = if (continues) c.offset else line_start;
+        const base: u32 = if (continues) c.col else 1;
+        const end = @min(offset, source.len);
+        const begin = @min(from, end);
+        c.scanned += end - begin;
+        const col = base + codePoints(source[begin..end]) + (offset - @max(end, from));
+        c.* = .{ .line_start = line_start, .offset = offset, .col = col, .scanned = c.scanned };
+        return col;
+    }
+};
 
 /// The code points in `bytes`: a well-formed UTF-8 sequence counts one,
 /// and every byte of an ill-formed one counts one on its own, as an editor
@@ -898,4 +971,33 @@ test "position: a column counts code points, not bytes" {
     try std.testing.expectEqualDeep(Position{ .line = 1, .col = 7 }, position(&starts, source, 9));
     try std.testing.expectEqualDeep(Position{ .line = 2, .col = 1 }, position(&starts, source, 10));
     try std.testing.expectEqual(@as(u32, 2), lineOf(&starts, 10));
+}
+
+test "ColumnCursor: columns equal column() on a line of multi-byte code points" {
+    // `λ` two bytes, `→` three, `😀` four, a lone 0xFF byte one column;
+    // a second line, a step backwards and an offset past the end restart.
+    const source = "λa → 😀 x\xFFy\nbλc";
+    const line2: u32 = 17;
+    const offsets = [_]u32{ 0, 2, 3, 4, 7, 8, 12, 13, 14, 15, 16, 17, 18, 20, 21, 25, 12, 4, 0, 30 };
+    var cursor: ColumnCursor = .{};
+    for (offsets, 0..) |offset, i| {
+        const line_start: u32 = if (i >= 11 and i <= 15) line2 else 0;
+        try std.testing.expectEqual(column(source, line_start, offset), cursor.at(source, line_start, offset));
+    }
+}
+
+test "ColumnCursor: bytes scanned grow linearly with the length of one line" {
+    // One token every 4 bytes on a single line: a cursor reads each byte
+    // once, where `column` from the line start reads n^2 / 8 of them.
+    var scanned: [2]u64 = undefined;
+    for (&scanned, [_]usize{ 1000, 4000 }) |*out, tokens| {
+        const source = try std.testing.allocator.alloc(u8, tokens * 4);
+        defer std.testing.allocator.free(source);
+        @memset(source, 'a');
+        var cursor: ColumnCursor = .{};
+        for (0..tokens) |i| _ = cursor.at(source, 0, @intCast(i * 4));
+        out.* = cursor.scanned;
+    }
+    try std.testing.expectEqual(@as(u64, 3996), scanned[0]);
+    try std.testing.expectEqual(@as(u64, 15996), scanned[1]);
 }

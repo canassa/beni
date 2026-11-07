@@ -1,0 +1,59 @@
+import Browser
+import Browser.Worker as Worker
+import Duration
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init =
+            λ_ _ →
+                Probe.started ⊤
+                Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → Ok ⊤
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    Probe.install ⊤
+    case Worker.open owned worker ⊤ { Worker.options | cleanupWithin = Duration.millis 50 } of
+        Ok _ →
+            "unexpected ready"
+        Err error →
+            case error.reason of
+                Worker.HandshakeFailed Worker.ProtocolVersionMismatch →
+                    if Probe.untouched ⊤ then "mismatch before init" else "initialized wrong build"
+                Worker.ReadyDeadlineExceeded →
+                    "wrong deadline"
+                _ →
+                    "wrong failure"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

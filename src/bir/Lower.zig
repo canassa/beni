@@ -2089,14 +2089,10 @@ fn resolveType(l: *Lower, token: TokenIndex) Allocator.Error!Index {
         },
         .exposed => {
             const module = l.importModule(entry.index);
-            if (symbol == WellKnown.Never.symbol() and module == WellKnown.Basics.symbol()) try l.reportToken(.never_spelling_removed, token);
             return l.importRef(.type_import, .import_type, module, symbol);
         },
     };
     if (prelude.wellKnown(symbol)) |w| {
-        // `Never` is written `⊥` (language.md §12.10): reported, and
-        // resolved to the same type.
-        if (w == .Never) try l.reportToken(.never_spelling_removed, token);
         if (prelude.typeModule(w)) |m| return l.importRef(.type_import, .import_type, m.symbol(), symbol);
     }
     if (l.schemas.contains(symbol)) return l.schemaNamespaceRef(token, .schema_type_ref);
@@ -2147,10 +2143,6 @@ fn resolveQualified(l: *Lower, token: TokenIndex, tag: Inst.Tag, ref_kind: Bir.R
         return l.errorInst(unbound);
     };
     const name = try l.interner.getOrPut(l.gpa, name_text);
-    // `Basics.Never` is written `⊥` (language.md §12.10).
-    if (tag == .type_qualified and module == WellKnown.Basics.symbol() and name == WellKnown.Never.symbol()) {
-        try l.reportToken(.never_spelling_removed, token);
-    }
     return l.importRef(tag, ref_kind, module, name);
 }
 
@@ -2500,7 +2492,9 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
         const first = S.at(slots, 0);
         const needs = [_]struct { w: W, ok: bool }{
             .{ .w = .cellnew, .ok = first & W.consumed.bit() != 0 },
-            .{ .w = .cellempty, .ok = first & W.unused.bit() != 0 },
+            // `cellempty`: nothing of parameter 1 goes into the cell: it is unused,
+            // or escaped to code that fills the cell later (a fiber's work).
+            .{ .w = .cellempty, .ok = first & (W.unused.bit() | W.escaped.bit()) != 0 },
             .{ .w = .lent, .ok = first & W.cellread.bit() != 0 },
             .{ .w = .lentoptional, .ok = first & W.cellread.bit() != 0 },
             // `builderdone`: the builder and its length, read only.

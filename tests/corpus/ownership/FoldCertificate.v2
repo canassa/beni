@@ -1,0 +1,1 @@
+v2 reads the fold certificate (ownership-v2.md §8 slice 4, §2.9 rule 4, §2.11 item 3 (d)): one view of a certified class is accepted where v1 refuses exclusive (approx); its verdicts are v2's own.

@@ -1,0 +1,59 @@
+-- ownership (project): `CallTempArgument` with the callees in another
+-- module (ownership-v2.md §2.10's read-off, §2.11 item 1, #1330). The
+-- block publishes `Temps.wrapRec`'s class with the read below the new
+-- record it builds, `π1.x.c R`, so a push of a list that `g.x.c` holds,
+-- with `g` read later, is refused `alias`: a record, a tuple, a
+-- constructor, an inline call result and a field of one. `ownRec` builds
+-- the record in this module for the imported `Temps.rbc`.
+import Temps
+
+
+ownRec g = Temps.rbc { b = g.x }
+
+
+pub recordArg : List Int → Int
+recordArg xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    Temps.wrapRec g + List.length p
+
+
+pub localRecord : List Int → Int
+localRecord xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    ownRec g + List.length p
+
+
+pub tupleArg : List Int → Int
+tupleArg xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    Temps.wrapTuple g + List.length p
+
+
+pub ctorArg : List Int → Int
+ctorArg xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    Temps.wrapCtor g + List.length p
+
+
+pub inlineCall : List Int → Int
+inlineCall xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    Temps.n1 g + List.length p
+
+
+pub inlineField : List Int → Int
+inlineField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    Temps.n2 g + List.length p

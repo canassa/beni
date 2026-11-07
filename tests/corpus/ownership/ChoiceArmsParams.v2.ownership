@@ -1,0 +1,16 @@
+module ChoiceArmsParams
+  14:17 List.push a: accepted param
+  18:17 List.push a: accepted param
+  23:5 ChoiceArmsParams.t2 <expression>.0: accepted param
+  33:5 ChoiceArmsParams.t2 <expression>.0: accepted param
+  43:5 ChoiceArmsParams.t2 <expression>.0: rejected disjoint: another path of the same argument reaches it (approx)
+  53:5 ChoiceArmsParams.t3 <expression>.0: accepted param
+  62:26 List.push a: accepted param
+  66:29 List.push a: accepted param
+  71:5 ChoiceArmsParams.w2 <expression>.0.0: accepted param
+  82:5 ChoiceArmsParams.w2 <expression>.0.0: accepted param
+  92:5 ChoiceArmsParams.u2 <expression>.1.0: accepted param
+  103:5 ChoiceArmsParams.u2 <expression>.1.0: accepted param
+  demands 12: accepted 11 (fresh 0, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 12: accepted 11 (fresh 0, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause disjoint 1

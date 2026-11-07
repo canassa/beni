@@ -257,12 +257,6 @@ main =
         , issues (Schema.parse early "1")
         , invalid (pair Schema.int Schema.int "x" "x")
         , issues (Schema.parse (Schema.list (pair Schema.int Schema.int "x" "x")) "[]")
-        , "-- no external form"
-        , issues (Schema.read (Schema.typeOnly counted) (host "5"))
-        , issues (Schema.print (Schema.flip counted) "5")
-        , issues (Schema.parse (Schema.list (Schema.flip counted)) "[]")
-        , issues (Schema.decode (Schema.typeOnly counted) 5)
-        , issues (Schema.encode (Schema.flip counted) "12")
         , "-- a reference entered again without reading anything"
         , issues (Schema.parse loop "1")
         , issues (Schema.parse (Schema.list loop) "[]")

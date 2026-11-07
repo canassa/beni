@@ -1,0 +1,156 @@
+-- ownership (project): `ViewCycleHolder`'s calls with every writer in
+-- another module (ownership-v2.md Appendix B, V×C): a call of an imported
+-- writer applies the class its block publishes. A grandchild list's `rest`
+-- kept across `Trees.pushInner`, which writes that list, is refused
+-- `alias`; the dead view and the label written instead accept. One level
+-- (`oneLevelCall`, #1491) is refused too. The same through `A`/`B` and
+-- `Maybe` children. v1 accepts the three `viaCall` forms: known entries
+-- for v1.
+import Trees exposing (A, B, M, Rose)
+
+
+pub viaCall : Rose → Rose × List Rose
+viaCall t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( Trees.pushInner t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )
+
+
+pub deadViewCall : Rose → Rose
+deadViewCall t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …_ ] →
+                    Trees.pushInner t
+
+                [] →
+                    t
+
+        _ →
+            t
+
+
+pub labelCall : Rose → Rose × List Rose
+labelCall t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( Trees.labelInner t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )
+
+
+pub oneLevelCall : Rose → Rose × List Rose
+oneLevelCall t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    ( Trees.pushKids t, rest )
+
+                [] →
+                    ( t, [] )
+
+
+pub viaCallA : A → A × List A
+viaCallA a =
+    case a of
+        A _ [ B xs, …_ ] →
+            case xs of
+                [ _, …rest ] →
+                    ( Trees.pushInnerA a, rest )
+
+                [] →
+                    ( a, [] )
+
+        _ →
+            ( a, [] )
+
+
+pub deadViewCallA : A → A
+deadViewCallA a =
+    case a of
+        A _ [ B xs, …_ ] →
+            case xs of
+                [ _, …_ ] →
+                    Trees.pushInnerA a
+
+                [] →
+                    a
+
+        _ →
+            a
+
+
+pub labelCallA : A → A × List A
+labelCallA a =
+    case a of
+        A _ [ B xs, …_ ] →
+            case xs of
+                [ _, …rest ] →
+                    ( Trees.labelInnerA a, rest )
+
+                [] →
+                    ( a, [] )
+
+        _ →
+            ( a, [] )
+
+
+pub viaCallM : M → M × List (Maybe M)
+viaCallM t =
+    case t of
+        M _ [ Just (M _ gs), …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( Trees.pushInnerM t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )
+
+
+pub deadViewCallM : M → M
+deadViewCallM t =
+    case t of
+        M _ [ Just (M _ gs), …_ ] →
+            case gs of
+                [ _, …_ ] →
+                    Trees.pushInnerM t
+
+                [] →
+                    t
+
+        _ →
+            t
+
+
+pub labelCallM : M → M × List (Maybe M)
+labelCallM t =
+    case t of
+        M _ [ Just (M _ gs), …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( Trees.labelInnerM t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )

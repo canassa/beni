@@ -1,0 +1,7 @@
+# v2 refuses the edit of a list another row also holds, through each helper that passes the callback on over tuples (§2.13.6, taken).
+61:13 list_may_be_shared SanitiserPassedTupleRow.upd
+63:11 list_may_be_shared SanitiserPassedTupleRow.upd
+65:11 list_may_be_shared SanitiserPassedTupleRow.updVia
+67:11 list_may_be_shared SanitiserPassedTupleRow.updTwo
+69:13 list_may_be_shared SanitiserPassedTupleRow.updTwice
+71:14 list_may_be_shared SanitiserPassedTupleRow.updNested

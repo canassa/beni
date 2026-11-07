@@ -1153,19 +1153,19 @@ test "unknown flag exits 2 with the exact message and does nothing" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.runWith(&.{ "check", "--frob", "--self-profile=trace.json", "src" }, .{ .raw_diagnostics = true });
+    for ([_][2][]const u8{ .{ "check", "--frob" }, .{ "build", "--schema-library" } }) |case| {
+        const r = try w.runWith(&.{ case[0], case[1], "--self-profile=trace.json", "src" }, .{ .raw_diagnostics = true });
 
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 2), r.exit_code);
-    try testing.expectEqualStrings("", r.stdout);
-    try testing.expectEqualStrings("beni: unknown option '--frob'; run 'beni help' for usage\n", r.stderr);
+        // VERIFY OUTPUT: the removed schema option is an ordinary unknown flag.
+        try testing.expectEqual(@as(u8, 2), r.exit_code);
+        try testing.expectEqualStrings("", r.stdout);
+        const message = try std.fmt.allocPrint(w.arena.allocator(), "beni: unknown option '{s}'; run 'beni help' for usage\n", .{case[1]});
+        try testing.expectEqualStrings(message, r.stderr);
 
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("trace.json"));
+        // VERIFY SIDE EFFECTS
+        try testing.expect(!w.exists("trace.json"));
+        try testing.expect(!w.exists("out"));
+    }
 }
 
 test "check on a missing path exits 2" {
@@ -1864,123 +1864,157 @@ test "fmt --migrate-cons rewrites a file's `::` in brackets, keeps its layout an
     );
 }
 
-test "fmt --migrate-lambda writes every lambda's head as λ in place and restyles nothing" {
+test "fmt preserves ASCII and --to-unicode converts code only and reaches a fixed point" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // frontend.md §11.4: an edit — `y`'s spacing is not canonical and stays
-    // so; the multiline string's `\\` and the string's escape are not lambdas.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "y   =   \\a → [ \\⊤ → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "fmt", "--migrate-lambda", "Main.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("y   =   λa → [ λ⊤ → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
-}
-
-test "fmt --migrate-lambda migrates a case whose first branch shares the of line after a lambda" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // language.md §12.7, *columns*: `λ` is one column, as `\` was, so the
-    // first branch on the `of` line stays on the column `Nothing` is at.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = "f m =\n    case g (\\x → x) of Just y → y\n                       Nothing → 0\n";
+    const source =
+        \\-- -> <- /= <= >= |> <| ... () Never \ stay
+        \\f : Never -> ()
+        \\f = \x -> never x
+        \\
+        \\
+        \\pair : Int * String * Bool
+        \\pair = ( 1, "-> () Never \\ stays ${ 1 <= 2 }", True )
+        \\
+        \\
+        \\view = <p title="... ()">wait... () {1 |> f}</p>
+        \\
+        \\
+        \\raw =
+        \\    \\raw -> () Never \ stays
+        \\
+        \\
+        \\char = '\\'
+        \\
+        \\
+        \\g xs =
+        \\    value <- with xs
+        \\    if 1 /= 2 && 3 >= 2 then [ ...value ] else identity <| []
+        \\
+    ;
+    const expected =
+        \\-- -> <- /= <= >= |> <| ... () Never \ stay
+        \\f : ⊥ → ⊤
+        \\f = λx → never x
+        \\
+        \\
+        \\pair : Int × String × Bool
+        \\pair = ( 1, "-> () Never \\ stays ${ 1 ≤ 2 }", True )
+        \\
+        \\
+        \\view = <p title="... ()">wait... () {1 ▷ f}</p>
+        \\
+        \\
+        \\raw =
+        \\    \\raw -> () Never \ stays
+        \\
+        \\
+        \\char = '\\'
+        \\
+        \\
+        \\g xs =
+        \\    value ← with xs
+        \\    if 1 ≠ 2 && 3 ≥ 2 then [ …value ] else identity ◁ []
+        \\
+    ;
     try w.write("Main.beni", source);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "fmt", "--migrate-lambda", "Main.beni" });
+    const plain = try w.run(&.{ "fmt", "--check", "Main.beni" });
+    const preserve = try w.run(&.{ "fmt", "--stdout", "Main.beni" });
+    const check = try w.run(&.{ "fmt", "--check", "--to-unicode", "Main.beni" });
+    try testing.expectEqualStrings(source, try w.read("Main.beni"));
+    const convert = try w.run(&.{ "fmt", "--to-unicode", "Main.beni" });
+    const again = try w.run(&.{ "fmt", "--check", "--to-unicode", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("f m =\n    case g (λx → x) of Just y → y\n                       Nothing → 0\n", try w.read("Main.beni"));
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", plain.stderr);
+    try testing.expectEqual(@as(u8, 0), preserve.exit_code);
+    try testing.expectEqualStrings("", preserve.stderr);
+    try testing.expectEqualStrings(source, preserve.stdout);
+    try testing.expectEqual(@as(u8, 1), check.exit_code);
+    try testing.expectEqualStrings("", check.stderr);
+    try testing.expectEqualStrings("Main.beni\n", check.stdout);
+    try testing.expectEqual(@as(u8, 0), convert.exit_code);
+    try testing.expectEqualStrings("", convert.stderr);
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+    try testing.expectEqualStrings("", again.stderr);
+    try testing.expectEqualStrings(expected, try w.read("Main.beni"));
 }
 
-test "fmt --migrate-unicode writes the symbols and × in code only and restyles nothing" {
+test "fmt --to-unicode leaves a failed rewrite alone and continues with other files" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // frontend.md §11.8: an edit — `f`'s spacing is not canonical and stays
-    // so. Comments, strings, a multiline string, a character and markup text
-    // keep their `->`, `<=` and `...`; the code in an interpolation and a
-    // markup hole is rewritten. A comma tuple type is joined with `×`,
-    // parenthesised only as a type argument or an operand of a product.
+    // The original unit's closing parenthesis keeps `.0` on its line.
+    // Deleting it after the comment makes the selector start a new line.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni",
-        \\-- a -> b in a comment, |> and ... stay
-        \\f : ( Int, String ) -> Maybe ( Int,String )
-        \\f p=if p/=p then Nothing else Just p
-        \\g xs = case xs of
-        \\    [ x, ...rest ] -> x |> h
-        \\    _ -> "<= stays ${ 1 >= 2 }" ++ "${ h <| 1 }"
-        \\m =
-        \\    \\raw -> <| ... stays
-        \\c = '>'
-        \\k : ( ( Int, Bool ), List ( a, b ) ) -> { at : ( Int, Int ) }
-        \\k = k
-        \\r url =
-        \\    x <- with url
-        \\    x
-        \\v = <p>wait... {x |> f}</p>
-        \\
-    );
+    const source = "f = ( -- unit\n    ).0\n";
+    try w.write("Bad.beni", source);
+    try w.write("Good.beni", "f : Int -> Int\nf x = x\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "fmt", "--migrate-unicode", "Main.beni" });
+    const result = try w.run(&.{ "fmt", "--to-unicode", "--jobs=1", "Bad.beni", "Good.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualStrings("", result.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unexpected_token,
+        .severity = .@"error",
+        .span = .{ .file = "Bad.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNEXPECTED TOKEN",
+        .message = "`beni fmt --to-unicode` left this file alone: the rewritten text does not parse\n(unexpected_token). Convert it by hand.",
+    }}), result.diagnostics);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(
-        \\-- a -> b in a comment, |> and ... stay
-        \\f : Int × String → Maybe (Int × String)
-        \\f p=if p≠p then Nothing else Just p
-        \\g xs = case xs of
-        \\    [ x, …rest ] → x ▷ h
-        \\    _ → "<= stays ${ 1 ≥ 2 }" ++ "${ h ◁ 1 }"
-        \\m =
-        \\    \\raw -> <| ... stays
-        \\c = '>'
-        \\k : (Int × Bool) × List (a × b) → { at : Int × Int }
-        \\k = k
-        \\r url =
-        \\    x ← with url
-        \\    x
-        \\v = <p>wait... {x ▷ f}</p>
-        \\
-    , try w.read("Main.beni"));
+    try testing.expectEqualStrings(source, try w.read("Bad.beni"));
+    try testing.expectEqualStrings("f : Int → Int\nf x = x\n", try w.read("Good.beni"));
+}
+
+test "fmt --to-unicode preserves shadowed Never and unit comments" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "type Never = N\nf : Never -> Basics.Never -> ()\nf x y = never y\nu =\n    ( -- unit\n    )\n");
+    const result = try w.run(&.{ "fmt", "--to-unicode", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stderr);
+    try testing.expectEqualStrings("type Never\n    = N\n\n\nf : Never → ⊥ → ⊤\nf x y = never y\n\n\nu = ⊤ -- unit\n", try w.read("Main.beni"));
+}
+
+test "fmt --to-unicode resolves qualified Never through module aliases" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Basics as B\nimport Other as Basics exposing (Never)\n\n\nf : Never, Basics.Never, B.Never -> ()\nf x y z = never z\n");
+    const result = try w.run(&.{ "fmt", "--to-unicode", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stderr);
+    try testing.expectEqualStrings("import Basics as B\nimport Other as Basics exposing (Never)\n\n\nf : Never, Basics.Never, ⊥ → ⊤\nf x y z = never z\n", try w.read("Main.beni"));
+}
+
+test "fmt --to-unicode formats a case branch that shares the of line" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "f m =\n    case g (\\x → x) of Just y → y\n                       Nothing → 0\n");
+    const result = try w.run(&.{ "fmt", "--to-unicode", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stderr);
+    try testing.expectEqualStrings("f m =\n    case g λx → x of\n        Just y →\n            y\n        Nothing →\n            0\n", try w.read("Main.beni"));
 }
 
 test "⊤ and (), ⊥ and Never, and an if without else and its else () lower to the same BIR" {
@@ -2017,15 +2051,14 @@ test "⊤ and (), ⊥ and Never, and an if without else and its else () lower to
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 1), old.exit_code);
-    try testing.expect(std.mem.indexOf(u8, old.stderr, "REMOVED UNIT SPELLING") != null);
-    try testing.expect(std.mem.indexOf(u8, old.stderr, "REMOVED NEVER SPELLING") != null);
+    try testing.expectEqual(@as(u8, 0), old.exit_code);
+    try testing.expectEqualStrings("", old.stderr);
     try testing.expectEqual(@as(u8, 0), new.exit_code);
     try testing.expectEqualStrings("", new.stderr);
     try testing.expectEqualStrings(old.stdout, new.stdout);
 }
 
-test "fmt --migrate-top writes ⊤ and ⊥ in code only, drops else (), and restyles nothing" {
+test "fmt --migrate-top drops else () and preserves spelling and layout" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2081,24 +2114,24 @@ test "fmt --migrate-top writes ⊤ and ⊥ in code only, drops else (), and rest
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(
         \\-- () in a comment stays
-        \\f : ⊥ → ⊤
+        \\f : Never → ( )
         \\f v=never v
-        \\g : Bool, Bool → ⊤
+        \\g : Bool, Bool → ()
         \\g a b =
         \\    if a then
-        \\        Debug.log "() stays" ⊤
-        \\h a b = if a then if b then ⊤
-        \\j a b = if a then if b then ⊤ else ⊤ else Debug.log "j" ⊤
-        \\v = <p>(){f ⊤}</p>
-        \\k : ⊥ → Maybe ⊥
+        \\        Debug.log "() stays" ()
+        \\h a b = if a then if b then ()
+        \\j a b = if a then if b then () else () else Debug.log "j" ()
+        \\v = <p>(){f ()}</p>
+        \\k : Basics.Never → Maybe Never
         \\k = k
         \\
     , once);
     try testing.expectEqualStrings(once, try w.read("Main.beni"));
     try testing.expectEqualStrings(
         \\type Never = Never Never
-        \\n : Never → ⊤
-        \\n x = ⊤
+        \\n : Never → ()
+        \\n x = ()
         \\
     , try w.read("Other.beni"));
 }

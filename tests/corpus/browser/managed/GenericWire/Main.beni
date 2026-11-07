@@ -1,0 +1,197 @@
+-- One generic declaration supplies both realms, reused at different concrete
+-- messages. Views occur inside unknown records, tags, tuples and List elements.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Html exposing (Html)
+import List
+import Probe
+import Task
+
+
+type Envelope a
+    = Envelope a (List a) (a × String)
+
+
+echo : Worker.Program a ⊤ (Worker.Protocol a a ⊥ String a ⊥)
+echo =
+    Worker.program
+        { init =
+            λcontext config →
+                _ = Worker.emit context config
+                Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok message
+        }
+
+
+nested : Worker.Program ⊤ ⊤ (Worker.Protocol (List a) (List a) ⊥ String ⊥ ⊥)
+nested =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok (List.drop message 1)
+        }
+
+
+enveloped : Worker.Program ⊤ ⊤ (Worker.Protocol (Envelope a) (Envelope a) ⊥ String ⊥ ⊥)
+enveloped =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ message →
+                case message of
+                    Envelope value items _ →
+                        Ok (Envelope value (List.drop items 1) ( value, "worker" ))
+        }
+
+
+packet :
+    Worker.Program
+        ⊤
+        ⊤
+        (Worker.Protocol
+            { stable : { text : String }, payload : a }
+            { stable : { text : String }, payload : a }
+            ⊥
+            String
+            ⊥
+            ⊥
+        )
+packet =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok message
+        }
+
+
+row :
+    Worker.Program ⊤ ⊤ (Worker.Protocol { a | fixed : String } { a | fixed : String } ⊥ String ⊥ ⊥)
+row =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok message
+        }
+
+
+succeeded : Result e a, (a → Bool) → Bool
+succeeded reply accept =
+    case reply of
+        Ok actual →
+            accept actual
+        Err _ →
+            False
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    tail = List.drop [ 0, 1, 2 ] 1
+    value = { values = tail }
+    message =
+        { values = List.drop [ [], tail, tail ] 1
+        , tag = Envelope value [ value ] ( value, "page" )
+        , pair = ( tail, value )
+        }
+    genericGood =
+        case Worker.open owner echo message Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle message
+                event = Events.next (Worker.events handle)
+                closed = Worker.close handle
+                succeeded reply (λactual → actual == message)
+                    && (case event of
+                           Ok (Events.Item chunk) →
+                               Events.take chunk == message
+                           _ →
+                               False
+                       )
+                    && closed == Worker.Confirmed
+    secondGood =
+        case Worker.open owner echo "second instance" Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle "same declaration"
+                closed = Worker.close handle
+                succeeded reply (λactual → actual == "same declaration")
+                    && closed == Worker.Confirmed
+    nestedGood =
+        case Worker.open owner nested ⊤ Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle [ value, value, value ]
+                closed = Worker.close handle
+                succeeded reply (λactual → actual == [ value, value ]) && closed == Worker.Confirmed
+    envelopeGood =
+        case Worker.open owner enveloped ⊤ Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle (Envelope value [ value, value ] ( value, "page" ))
+                closed = Worker.close handle
+                succeeded reply (λactual → actual == Envelope value [ value ] ( value, "worker" ))
+                    && closed == Worker.Confirmed
+    stableGood =
+        case Worker.open owner packet ⊤ Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                stable = { text = "untouched" }
+                unchanged = { text = "stable inside variable", sentinel = 0 / 0 }
+                request = { stable = stable, payload = { view = tail, unchanged = unchanged } }
+                Probe.watch stable unchanged
+                reply = Worker.call handle request
+                closed = Worker.close handle
+                succeeded reply
+                    (λactual →
+                        actual.stable == stable
+                            && actual.payload.view == tail
+                            && actual.payload.unchanged.text == unchanged.text
+                            && isNaN actual.payload.unchanged.sentinel
+                    )
+                    && Probe.passed ⊤
+                    && closed == Worker.Confirmed
+    rowGood =
+        case Worker.open owner row ⊤ Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                request = { fixed = "known", unknown = value }
+                reply = Worker.call handle request
+                closed = Worker.close handle
+                succeeded reply (λactual → actual == request) && closed == Worker.Confirmed
+    if genericGood && secondGood && nestedGood && envelopeGood && stableGood && rowGood then
+        "generic wire passed"
+    else
+        "generic wire failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

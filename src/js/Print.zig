@@ -38,7 +38,10 @@ const Opt = @import("Opt.zig");
 const Rename = @import("Rename.zig");
 const Fields = @import("Fields.zig");
 const SourceMap = @import("SourceMap.zig");
+const small_stack = @import("../small_stack.zig");
 const Join = @import("Join.zig");
+const RealmCheck = @import("RealmCheck.zig");
+const Realm = @import("../entry/Plan.zig").Realm;
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -111,10 +114,30 @@ pub const Options = struct {
     /// *Roots*). Read only through `rename`, which is what gives a name
     /// its ordinal.
     imported: ?*const Imported = null,
+    /// `--release`: the whole-program ordinals of names the build imports
+    /// from a hand-written file (`Emit.markHandWritten`). §9 item 6 never
+    /// writes one in place of a forwarding arrow (`resolve`). Null in a
+    /// development build, which runs no plan.
+    hand_written: ?*const Imported = null,
     /// How many expression levels the printer takes by recursion before it
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
-    recursion_limit: u32 = 256,
+    ///
+    /// The number comes from the stack a level costs. In the Debug test
+    /// binary (2026-11-04, self-hosted x86_64) one level is two frames,
+    /// `rawRecursive` 3 664 B and `expression` 240 B (or `raw` 144 B):
+    /// 3 936 B with the saved frame pointers and the return addresses. The
+    /// entry frames above the first level take 25 472 B. So 112 levels reach
+    /// 466 304 B, 44.5 % of `small_stack.size`, the stack the depth tests run
+    /// on. The other half is for what runs below the deepest level: `run`'s
+    /// loop and `testing.allocator`'s stack-trace capture under an
+    /// allocation. The test "the recursive printer's levels take at most half
+    /// of the small stack" holds it. 128 levels reached 529 280 B, 50.5 %;
+    /// 256 took about 1 000 KB of the 1 024 KB, and a frame 32 B larger
+    /// overflowed it. LLVM's frames are smaller: 128 levels took 38.9 %.
+    /// 112 is the owner's decision of 2026-11-04 (#1171): lower the limit,
+    /// and measure from the thread's first frame, entry frames included.
+    recursion_limit: u32 = 112,
     /// A scope-hoisted build (§9, *One scope-hoisted file under
     /// `--release`*): the module's `import` and `export` statements are not
     /// printed, because every name they carry is already one binding of the
@@ -133,6 +156,12 @@ pub const Options = struct {
     /// §5.2): `Rename.page_globals` are written bare too (`backend.md` §9,
     /// item 8, amended 2026-10-24).
     page: bool = false,
+    /// The realm the build's entry runs in. In a browser worker a host
+    /// global is written bare only when it is on that realm's global object
+    /// (`RealmCheck.onWorkerGlobal`): a bare `document` there throws
+    /// `ReferenceError` where `globalThis.document` reads `undefined`
+    /// (`workers.md` §4, *The worker global allow-list*).
+    realm: Realm = .unknown,
     /// `--release`: a record field's short spelling, by the field's text
     /// (`backend.md` §9, *Item 4, taken up*; `Fields.Table`). A field name
     /// with no entry is pinned and printed as its text. Null prints every
@@ -144,6 +173,8 @@ pub const Options = struct {
     marks: ?*SourceMap.Marks = null,
     /// Bytes written after the module: its `//# sourceMappingURL=` line.
     footer: []const u8 = "",
+    // Output-root-relative path after relocation and scope hoisting.
+    artifact_path: []const u8 = "",
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -162,14 +193,17 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .ir = ir,
         .names = names,
         .plan = options.plan,
+        .artifact_path = options.artifact_path,
         .rename = options.rename,
         .compact = options.compact,
         .imported = options.imported,
+        .hand_written = options.hand_written,
         .recursion_limit = options.recursion_limit,
         .unobserved = options.unobserved,
         .bare_globals = options.bare_globals,
         .bare_blocked = options.bare_blocked,
         .page = options.page,
+        .realm = options.realm,
         .fields = options.fields,
         .marks = options.marks,
         .spelled = scratch,
@@ -464,6 +498,7 @@ const Spelling = struct {
 };
 
 const Printer = struct {
+    artifact_path: []const u8 = "",
     joiner: Joiner,
     ir: *const JsIr,
     names: Names,
@@ -477,6 +512,8 @@ const Printer = struct {
     compact: bool = false,
     /// `Options.imported`.
     imported: ?*const Imported = null,
+    /// `Options.hand_written`.
+    hand_written: ?*const Imported = null,
     /// The last byte pushed, for the token-adjacency guard. Only read in
     /// compact mode, where it is the whole of the tokenisation risk.
     last: u8 = 0,
@@ -485,7 +522,9 @@ const Printer = struct {
     work: std.ArrayList(Work) = .empty,
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
-    recursion_limit: u32 = 256,
+    /// `Options.recursion_limit`. A piece's printer takes the default, so the
+    /// default is `Options`' own and has one place.
+    recursion_limit: u32 = (Options{}).recursion_limit,
     /// `Options.fields`.
     fields: ?*const Fields.Table = null,
     /// Each name's printed text, spelled the first time it is printed
@@ -519,6 +558,8 @@ const Printer = struct {
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
     page: bool = false,
+    /// `Options.realm`.
+    realm: Realm = .unknown,
     /// `Options.marks`.
     marks: ?*SourceMap.Marks = null,
     /// Each name's entry in the map's `names` (`mapName`), by `NameIndex`;
@@ -528,6 +569,12 @@ const Printer = struct {
     function_name: u32 = SourceMap.Mapping.no_name,
 
     // ---- Source map ---------------------------------------------------------
+
+    // A mark records a node's `pos` as it is, a row of `JsIr.far` included,
+    // and the map resolves the row (`SourceMap.Stretch.far`).
+    comptime {
+        std.debug.assert(Node.far_bit == SourceMap.Mapping.far_bit);
+    }
 
     /// Record that `node` starts at the next byte (`backend.md` §11). A
     /// node the lowering invented has no position and maps nothing: the
@@ -557,6 +604,16 @@ const Printer = struct {
         const at = p.ir.pos(node);
         if (at == Node.no_pos) return;
         try marks.add(p.joiner.length, at, try p.mapName(marks, index));
+    }
+
+    fn workerPath(p: *Printer, node: Index) Allocator.Error!void {
+        var path: std.ArrayList(u8) = .empty;
+        const depth = std.mem.count(u8, p.artifact_path, "/");
+        if (depth == 0) try path.appendSlice(p.spelled, "./") else {
+            for (0..depth) |_| try path.appendSlice(p.spelled, "../");
+        }
+        try path.appendSlice(p.spelled, p.ir.bytes(node));
+        try p.quoted(path.items);
     }
 
     /// `index`'s entry in the map's `names`, numbered the first time it is
@@ -1239,6 +1296,22 @@ const Printer = struct {
         return last;
     }
 
+    /// Whether `ident` names a function the build imports from a
+    /// hand-written file (`Options.hand_written`); false when the printer
+    /// was given no such set, as in a development build.
+    fn handWritten(p: *const Printer, ident: Index) bool {
+        const set = p.hand_written orelse return false;
+        const rename = p.rename orelse return false;
+        const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(ident).lhs));
+        // Only a qualified name is in the first namespace, where the set's
+        // ordinals live: `ordinal` of a local gives its slot in the
+        // function's own namespace, which means nothing here. A local — a
+        // parameter, a `const` of the body — is never an import's binding.
+        if (p.ir.name(n).module == .none) return false;
+        const ordinal = rename.ordinal(n) orelse return false;
+        return ordinal < set.bit_length and set.isSet(ordinal);
+    }
+
     /// Whether an `export` list names `n`: always, unless `imported`
     /// says no file of the build asks for it.
     fn exports(p: *const Printer, n: JsIr.NameIndex) bool {
@@ -1262,8 +1335,19 @@ const Printer = struct {
         switch (p.ir.tag(node)) {
             .import_stmt => {
                 const imp = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
-                try p.tok("import { ", "import{");
                 const specs = p.ir.extraSlice(imp.specs(), JsIr.Specifier);
+                // A namespace import of a host built-in (`Js.module`,
+                // boundary.md §4.2): `import * as local from "…"`.
+                if (specs.len == 1 and specs[0].imported == .none) {
+                    try p.tok("import * as ", "import*as ");
+                    try p.name(specs[0].local, .binding);
+                    try p.tok(" from \"", "from\"");
+                    try p.push(p.ir.string_bytes[imp.source_start..][0..imp.source_len]);
+                    try p.push("\";");
+                    try p.endLine(level);
+                    return;
+                }
+                try p.tok("import { ", "import{");
                 for (specs, 0..) |spec, i| {
                     if (i != 0) try p.tok(", ", ",");
                     // The two halves differ exactly for a SIBLING binding —
@@ -1954,7 +2038,7 @@ const Printer = struct {
         var budget: u32 = 64;
         while (budget > 0) : (budget -= 1) {
             switch (p.ir.tag(n)) {
-                .ident, .global_this, .this_lit => return true,
+                .ident, .global_this, .import_meta_url, .this_lit => return true,
                 .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
                 else => return false,
             }
@@ -2002,6 +2086,7 @@ const Printer = struct {
     fn bareName(p: *Printer, text: []const u8) bool {
         if (!Rename.isBareGlobal(text)) return false;
         if (!p.page and Rename.isPageGlobal(text)) return false;
+        if (RealmCheck.isWorker(p.realm) and !RealmCheck.onWorkerGlobal(text, p.realm)) return false;
         for (p.bare_blocked) |b| {
             if (std.mem.eql(u8, b, text)) return false;
         }
@@ -2097,15 +2182,39 @@ const Printer = struct {
 
     fn paramList(p: *Printer, f: JsIr.Func, depth: bool, arrow: bool) Allocator.Error!void {
         const all = p.ir.extraSlice(f.params(), JsIr.NameIndex);
+        const places = p.ir.extraSlice(f.paramPos(), u32);
         const names = if (p.compact and !depth) all[0..try p.namedParams(f)] else all;
-        if (arrow and p.compact and !depth and names.len == 1) return p.name(names[0], .binding);
+        if (arrow and p.compact and !depth and names.len == 1) {
+            try p.markParam(places[0], names[0], true);
+            return p.name(names[0], .binding);
+        }
         try p.push("(");
         for (names, 0..) |n, i| {
             if (i != 0) try p.tok(", ", ",");
+            try p.markParam(places[i], n, false);
             try p.name(n, .binding);
             if (depth and i + 1 == names.len) try p.tok(" = 0", "=0");
         }
         try p.push(")");
+    }
+
+    /// Under `--release`, record that the parameter `index`, written at
+    /// `at` in the source, starts at the next byte, with its beni name
+    /// (`backend.md` §11.2, *Deferred* item 3, amended 2026-11-05). A
+    /// parameter that is its arrow's first token (`first`: `a=>…`) carries
+    /// no name of its own: the mapping at a function's first byte names its
+    /// stack frame, so it keeps the function's name or none, as a
+    /// hand-written file's does (*Hand-written JavaScript*). A development
+    /// build prints a parameter as written and marks none (§11.1).
+    fn markParam(p: *Printer, at: u32, index: JsIr.NameIndex, first: bool) Allocator.Error!void {
+        const marks = p.marks orelse return;
+        if (p.rename == null or at == Node.no_pos) return;
+        if (first) {
+            const carried = p.function_name;
+            p.function_name = SourceMap.Mapping.no_name;
+            return marks.add(p.joiner.length, at, carried);
+        }
+        try marks.add(p.joiner.length, at, try p.mapName(marks, index));
     }
 
     // ---- Expressions ------------------------------------------------------
@@ -2253,6 +2362,8 @@ const Printer = struct {
     /// stack is shared and this is re-entered by an `arrow`'s block body, so
     /// each call owns only the entries above its `base`.
     fn run(p: *Printer, first: Work, level: u32) Allocator.Error!void {
+        // Where the recursion stopped, for the margin test; empty outside tests.
+        small_stack.mark();
         const base = p.work.items.len;
         defer p.work.shrinkRetainingCapacity(base);
         var next: ?Work = first;
@@ -2336,21 +2447,40 @@ const Printer = struct {
     fn later(p: *Printer, w: Work) Allocator.Error!void {
         try p.work.append(p.spelled, w);
     }
+
     /// Follow §9 item 1's substitutions to the node that is really printed.
     /// A chain of them — `const x = p.a; const y = x.b;` — collapses here, so
     /// the pass itself needs neither a fixpoint nor a backward walk.
     ///
     /// **One step, and total**: `Opt.compress` records every
-    /// substitution already resolved, so a target is never itself
-    /// substituted. This used to loop with a budget of 64 and, once a chain
+    /// name substitution already resolved, so its target is never itself
+    /// a substituted name. This used to loop with a budget of 64 and, once a chain
     /// of single-use aliases outran it, print the name it stopped at — whose
     /// binding the plan had dropped — and a `--release` build printed an
     /// unrelated top-level's value.
+    ///
+    /// An `arrow` §9 item 6 reduces (`Opt.eta`) resolves to its callee's
+    /// `ident`, itself resolved already; an `ident` whose binding was an
+    /// arrow made once and used once resolves to that arrow, and then one
+    /// step further if the arrow reduces. Two steps at most, each total.
+    /// An equal-arm conditional is checked after the first substitution:
+    /// its replacement is an already compressed atom. `Opt.eta` declines
+    /// a callee whose substitution is substituted. Neither rule creates a
+    /// chain that needs a fixpoint.
     fn resolve(p: *Printer, node: Index) Index {
-        if (p.ir.tag(node) != .ident) return node;
-        const target = p.plan.replacement(node) orelse return node;
-        std.debug.assert(p.ir.tag(target) != .ident or p.plan.replacement(target) == null);
-        return target;
+        var n = node;
+        if (p.ir.tag(n) == .ident) n = p.plan.replacement(n) orelse return n;
+        if (p.ir.tag(n) == .arrow) {
+            // §9 item 6's veto: the join knows which names the build
+            // imports from a hand-written file, and `Opt` does not, so a
+            // forwarding arrow to one is written as the arrow it is.
+            const callee = p.plan.replacement(n) orelse return n;
+            if (p.handWritten(callee)) return n;
+            n = callee;
+        }
+        std.debug.assert(p.ir.tag(n) != .ident or p.plan.replacement(n) == null);
+        std.debug.assert(p.ir.tag(n) != .arrow or p.plan.replacement(n) == null);
+        return n;
     }
 
     /// Compact printing writes `x["key"]` as `x.key` where `key` is an
@@ -2450,6 +2580,8 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .import_meta_url => try p.push("import.meta.url"),
+            .worker_path => try p.workerPath(node),
             .this_lit => try p.push("this"),
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
@@ -2622,6 +2754,8 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .import_meta_url => try p.push("import.meta.url"),
+            .worker_path => try p.workerPath(node),
             .this_lit => try p.push("this"),
             .call => {
                 // callee, then `call_rest`
@@ -2868,7 +3002,7 @@ const Printer = struct {
         var n = p.resolve(node);
         while (true) switch (p.ir.tag(n)) {
             .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return true,
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => return true,
             else => return false,
         };
     }
@@ -3407,7 +3541,6 @@ const reserved_words: std.StaticStringMap(void) = .initComptime(.{
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
-const small_stack = @import("../small_stack.zig");
 const Arena = @import("../Arena.zig");
 
 /// `print` with a scratch arena of its own.
@@ -3474,12 +3607,7 @@ const Fixture = struct {
     fn func(f: *Fixture, params: []const JsIr.NameIndex, body: []const Index) !Index {
         const param_range = try f.b.addNames(params);
         const body_range = try f.b.addRange(body);
-        const record = try f.b.addRecord(JsIr.Func{
-            .params_start = param_range.start,
-            .params_end = param_range.end,
-            .body_start = body_range.start,
-            .body_end = body_range.end,
-        });
+        const record = try f.b.addFunc(param_range, body_range);
         return f.node(.arrow, @backingInt(record), 0);
     }
 
@@ -4196,11 +4324,14 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
     try testing.expect(!isReservedWord("newer"));
 }
 
-/// Twice the depth the printer fails at when it only recurses, on
-/// `small_stack.size`: with no switch to its work stack
-/// (`recursion_limit` unbounded) it printed 250 links on the Debug test
-/// binary and overflowed at 400. Its default 256 recursive levels fit, with
-/// about a third of the stack to spare.
+/// Deeper than the printer can take by recursion on `small_stack.size`:
+/// with no switch to its work stack (`recursion_limit` unbounded) it printed
+/// 250 links on the Debug test binary and overflowed at 400, when the test
+/// was written. Its default recursive levels take less than half of that
+/// stack (`Options.recursion_limit` has the frames, and a margin test holds
+/// it). 256 took nearly all of it, and the overflow that a few more bytes
+/// per frame caused was found only as a hang, before a crash on a test
+/// thread failed the test at once (#1171).
 const deep_chain = 800;
 
 test "a chain deeper than the recursive printer survives prints in a loop, not a stack frame per link" {
@@ -4212,10 +4343,11 @@ test "a chain deeper than the recursive printer survives prints in a loop, not a
     try small_stack.run(printDeepChains, .{});
 }
 
-fn printDeepChains() !void {
+/// `const c = a && a && …; const l = { b: { b: … null … } };`, each chain
+/// `deep_chain` links long: a left-nested `&&` (a derived `eq`'s shape) and
+/// a right-nested object in the last property (a list literal's).
+fn deepChains(f: *Fixture) !JsIr {
     const depth = deep_chain;
-    var f = try Fixture.init(testing.allocator);
-    defer f.deinit();
     const a = try f.name("a");
     var chain = try f.node(.ident, @backingInt(a), 0);
     for (1..depth) |_| chain = try f.binary(.logical_and, chain, try f.node(.ident, @backingInt(a), 0));
@@ -4231,7 +4363,14 @@ fn printDeepChains() !void {
     try f.constDecl(&out, "c", chain);
     try f.constDecl(&out, "l", list);
     const body = try f.b.addRange(out.items);
-    var ir = try f.b.toOwned(body);
+    return f.b.toOwned(body);
+}
+
+fn printDeepChains() !void {
+    const depth = deep_chain;
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    var ir = try deepChains(&f);
     defer ir.deinit(testing.allocator);
     // `--release`'s planning walks the same two trees; it finds nothing to
     // drop at the top level, and what matters is that it returns.
@@ -4255,6 +4394,36 @@ fn printDeepChains() !void {
         for (0..depth) |_| try expected.appendSlice(testing.allocator, close);
         try expected.appendSlice(testing.allocator, ";\n");
         try testing.expectEqualStrings(expected.items, text);
+    }
+}
+
+test "the recursive printer's levels take at most half of the small stack" {
+    // `Options.recursion_limit` is sized for half of `small_stack.size`; the
+    // other half is for what runs below the deepest level: `run`'s loop and
+    // `testing.allocator`'s stack-trace capture under an allocation. A frame
+    // that grows moves the limit toward an overflow, and an overflow is
+    // found only as a crash (#1171): this test fails first. `run` marks the
+    // frame where the recursion stopped; both chains are deeper than the
+    // limit, so it stopped at `recursion_limit` levels.
+    try small_stack.run(printMargin, .{});
+}
+
+fn printMargin() !void {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    var ir = try deepChains(&f);
+    defer ir.deinit(testing.allocator);
+    for ([_]bool{ false, true }) |compact| {
+        const text = try printAlone(testing.allocator, &ir, .fromLocal(&f.interner), .{ .compact = compact });
+        testing.allocator.free(text);
+    }
+    const used = small_stack.deepest();
+    try testing.expect(used != 0);
+    if (used > small_stack.size / 2) {
+        std.debug.print("the printer's {d} recursive levels took {d} B of the {d} B small stack, more than half\n", .{
+            (Options{}).recursion_limit, used, small_stack.size,
+        });
+        return error.TestUnexpectedResult;
     }
 }
 

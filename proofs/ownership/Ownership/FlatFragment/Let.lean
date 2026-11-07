@@ -33,15 +33,35 @@ structure Preserved (declarations : List Decl) (depth : Nat)
       (InPlaceSemantics.eval depth declarations none (heapEnv env) e).run hs = .ok (actual, hs') ∧
       FlatInvariant declarations vs' hs' env after aenv tenv escapes' gamma' ∧
       hs.heap.size ≤ hs'.heap.size ∧
-      Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+      Corresponds hs'.heap value actual ∧
+      Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
       obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-      ResultTags type result actual ∧ ChainTags type result value
+      Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual (entryType type) ∧
+      ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+      ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+      TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+      KindsAt hs' env tenv type actual
   failure : ∀ message,
     (ValueSemantics.eval depth declarations none (valueEnv env) e).run vs = .error message →
     ∃ actualMessage,
       (InPlaceSemantics.eval depth declarations none (heapEnv env) e).run hs = .error actualMessage
 
 /-! ### State lemmas -/
+
+/-- Dropping a fresh binder keeps a heap typing of the outer bindings. -/
+theorem kindsAt_unbind {hs : State} {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    {v : Var} {x : Observation} {w : Value} {ty type : Ty} {actual : Value}
+    (kinds : KindsAt hs ((v, x, w) :: env) ((v, ty) :: tenv) type actual)
+    (fresh : v ∉ env.map Prod.fst) : KindsAt hs env tenv type actual := by
+  obtain ⟨heapTyping, state, typed⟩ := kinds
+  refine ⟨heapTyping, ⟨state.heap, state.links, ?_⟩, typed⟩
+  intro key ty' o w' declared binding
+  have different : key ≠ v := by
+    intro same
+    subst same
+    exact fresh (lookup_key_member binding)
+  exact state.env key ty' o w' (by rw [lookup_cons_other _ _ _ different]; exact declared)
+    (by rw [lookup_cons_other _ _ _ different]; exact binding)
 
 theorem ticked_invariant {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
     FlatInvariant declarations (valueTicked vs) (heapTicked hs) env live aenv tenv escapes gamma :=
@@ -62,16 +82,18 @@ at typed field paths; every other use was live after the right-hand side. -/
 theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {live' : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin} {v : Var} {x : Observation} {w : Value} {a : Abstract} {ty : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (fresh : v ∉ env.map Prod.fst)
-    (paired : Corresponds hs.heap x w) (described : Describes gamma hs.heap a w)
+    (paired : Corresponds hs.heap x w) (described : Describes gamma hs.heap (entryAbstract declarations ty a) w)
     (flatType : FlatType ty) (flatAbstract : FlatAbstract ty a)
     (observed : obsTyped declarations x ty = true)
-    (valueTyped : ValueTyped declarations hs.heap w ty)
-    (tags : ResultTags ty a w) (chains : ChainTags ty a x)
+    (shape : Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap w (entryType ty))
+    (tags : ResultTags (entryType ty) (entryAbstract declarations ty a) w)
+    (chains : ChainTags (entryType ty) (entryAbstract declarations ty a) x)
+    (deep : TagsDeep hs.heap (entryType ty) (entryAbstract declarations ty a) w)
+    (kinds : KindsAt hs env tenv ty w)
     (liveSub : ∀ use ∈ live', use.1 = v ∨ use ∈ live)
     (liveTyped : ∀ p, (v, p) ∈ live' → ∃ t, tyAt ty p = some t) :
     FlatInvariant declarations vs hs ((v, x, w) :: env) live' ((v, a) :: aenv) ((v, ty) :: tenv)
       escapes gamma := by
-  have shape := allocated_shape_of_typed flatType valueTyped tags
   refine {
     toInvariant := {
       reads := inv.reads
@@ -84,21 +106,95 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       described := ?_
       named := ?_
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
+      linksValid := inv.toInvariant.linksValid
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed inv.linkClosed
     }
-    heapInts := inv.heapInts
-    links := inv.links
+    linkClosed := inv.linkClosed
     abstractKeys := by simp [inv.abstractKeys]
     typeKeys := by simp [inv.typeKeys]
     types := ?_
     abstractShapes := ?_
     bindingsTyped := ?_
+    deepTags := by
+      intro key p use o w' ty' a' t w'' binding declared abstractBinding at_p valuePath
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at binding declared abstractBinding
+        cases Option.some.inj binding
+        cases Option.some.inj declared
+        cases Option.some.inj abstractBinding
+        have projected := tagsDeep_project deep (flatAbstract_entry flatAbstract) (tyAt_entryType at_p) valuePath
+        rwa [entryAbstract_atPath flatAbstract at_p] at projected
+      · rw [lookup_cons_other _ _ _ same] at binding declared abstractBinding
+        rcases liveSub _ use with equal | old
+        · exact absurd equal same
+        · exact inv.deepTags key p old o w' ty' a' t w'' binding declared abstractBinding at_p valuePath
+    bindingsBounded := ?_
     tags := ?_
     chains := ?_
     liveTyped := ?_
     namingBound := inv.namingBound
     observers := inv.observers
+    heapKinds := by
+      obtain ⟨heapTyping, state, typed⟩ := kinds
+      refine ⟨heapTyping, ⟨state.heap, state.links, ?_⟩⟩
+      intro key ty' o w' declared binding
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at declared binding
+        cases Option.some.inj declared
+        cases Option.some.inj binding
+        exact typed
+      · rw [lookup_cons_other _ _ _ same] at declared binding
+        exact state.env key ty' o w' declared binding
+    observationsTyped := by
+      intro key ty' o w' declared binding
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at declared binding
+        cases Option.some.inj declared
+        cases Option.some.inj binding
+        exact observed
+      · rw [lookup_cons_other _ _ _ same] at declared binding
+        exact inv.observationsTyped key ty' o w' declared binding
+    objectsCertified := by
+      intro key o w' a' q c roots e ex ws binding abstractBinding fields projected at_q slot keep liveKeep
+        n os fps represented
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at binding abstractBinding
+        cases Option.some.inj binding
+        cases Option.some.inj abstractBinding
+        by_cases anyKept : ∃ g : Nat, keep[g]? = some true
+        · obtain ⟨g, kept⟩ := anyKept
+          obtain ⟨t, at_p⟩ := liveTyped _ (liveKeep g kept)
+          obtain ⟨ts, at_q'⟩ := tyAt_route_object at_p
+          exact objectCertified_of_described shape flatAbstract described at_q' projected at_q slot keep
+            represented
+        · have empty : selectFields keep ws = [] :=
+            selectFields_nil_of_none (fun g kept => anyKept ⟨g, kept⟩)
+          rw [empty] at represented ⊢
+          cases represented
+          exact ⟨fun _ => by simp, fun _ v member => by simp at member⟩
+      · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
+        exact inv.objectsCertified key o w' a' q c roots e ex ws binding abstractBinding fields projected at_q
+          slot keep (fun g kept => by
+            rcases liveSub _ (liveKeep g kept) with equal | old
+            · exact absurd equal same
+            · exact old) n os fps represented
+    liveTags := by
+      intro key p use o w' ty' a' t o' w'' binding declared abstractBinding at_p obsPath valuePath
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at binding declared abstractBinding
+        cases Option.some.inj binding
+        cases Option.some.inj declared
+        cases Option.some.inj abstractBinding
+        exact liveTags_of_value flatAbstract tags chains deep paired at_p obsPath valuePath
+      · rw [lookup_cons_other _ _ _ same] at binding declared abstractBinding
+        rcases liveSub _ use with equal | old
+        · exact absurd equal same
+        · exact inv.liveTags key p old o w' ty' a' t o' w'' binding declared abstractBinding at_p obsPath valuePath
   }
   · intro key p use o w' binding
     by_cases same : key = v
@@ -106,32 +202,36 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       obtain ⟨t, at_p⟩ := liveTyped p use
       rw [lookup_cons_same] at binding
       cases Option.some.inj binding
-      obtain ⟨w', valuePath, _⟩ := projectVal_of_tyAt shape at_p
+      obtain ⟨w', valuePath, _⟩ := projectHeap_of_tyAt shape (tyAt_entryType at_p)
       obtain ⟨x', obsPath, _⟩ := projectObs_of_tyAt observed at_p
       exact ⟨x', w', obsPath, valuePath, corresponds_project paired valuePath obsPath⟩
     · rw [lookup_cons_other _ _ _ same] at binding
       rcases liveSub _ use with equal | old
       · exact absurd equal same
       · exact inv.bindings key p old o w' binding
-  · intro key p use o w' a' w'' binding abstractBinding valuePath
+  · intro key p use o w' a' t' w'' binding abstractBinding declared valuePath
     by_cases same : key = v
     · subst same
       obtain ⟨t, at_p⟩ := liveTyped p use
-      rw [lookup_cons_same] at binding abstractBinding
+      rw [lookup_cons_same] at binding abstractBinding declared
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
-      exact describes_project flatAbstract at_p described valuePath
-    · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
+      cases Option.some.inj declared
+      rw [fieldType_of_tyAt at_p, ← entryAbstract_atPath flatAbstract at_p]
+      exact describes_project (flatAbstract_entry flatAbstract) (tyAt_entryType at_p) described valuePath
+    · rw [lookup_cons_other _ _ _ same] at binding abstractBinding declared
       rcases liveSub _ use with equal | old
       · exact absurd equal same
-      · exact inv.described key p old o w' a' w'' binding abstractBinding valuePath
+      · exact inv.toInvariant.described key p old o w' a' t' w'' binding abstractBinding declared valuePath
   · intro key o w' a' binding abstractBinding q c immutable located
     by_cases same : key = v
     · subst same
       rw [lookup_cons_same] at binding abstractBinding
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
-      exact named_cellsAt_of_covers shape flatAbstract inv.heapInts described.1.1 located
+      obtain ⟨origin, member, address⟩ :=
+        named_cellsAt_of_covers shape (flatAbstract_entry flatAbstract) described.1.1 located immutable
+      exact ⟨origin, mem_cellsAt_entryAbstract_immutable flatAbstract immutable member, address⟩
     · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
       exact inv.named key o w' a' binding abstractBinding q c immutable located
   · intro key ty' declared
@@ -151,15 +251,28 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       exact flatAbstract
     · rw [lookup_cons_other _ _ _ same] at declared abstractBinding
       exact inv.abstractShapes key ty' a' declared abstractBinding
+  · intro key p use o w' ty' binding declared
+    by_cases same : key = v
+    · subst same
+      obtain ⟨t, at_p⟩ := liveTyped p use
+      rw [lookup_cons_same] at binding declared
+      cases Option.some.inj binding
+      cases Option.some.inj declared
+      obtain ⟨w'', valuePath, shape'⟩ := projectHeap_of_tyAt shape (tyAt_entryType at_p)
+      obtain ⟨x', obsPath, observed'⟩ := projectObs_of_tyAt observed at_p
+      exact ⟨t, x', w'', at_p, obsPath, valuePath, observed', shape'⟩
+    · rw [lookup_cons_other _ _ _ same] at binding declared
+      rcases liveSub _ use with equal | old
+      · exact absurd equal same
+      · exact inv.bindingsTyped key p old o w' ty' binding declared
   · intro key o w' binding
     by_cases same : key = v
     · subst same
       rw [lookup_cons_same] at binding
       cases Option.some.inj binding
-      exact ⟨ty, lookup_cons_same _ _ _, observed, valueTyped⟩
+      exact fun c reach => allocated_reach_bound shape reach
     · rw [lookup_cons_other _ _ _ same] at binding
-      obtain ⟨ty', declared, observed', typed'⟩ := inv.bindingsTyped key o w' binding
-      exact ⟨ty', by rw [lookup_cons_other _ _ _ same]; exact declared, observed', typed'⟩
+      exact inv.bindingsBounded key o w' binding
   · intro key ty' a' o w' declared abstractBinding binding
     by_cases same : key = v
     · subst same
@@ -229,30 +342,64 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
       described := ?_
       named := ?_
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
+      linksValid := inv.toInvariant.linksValid
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed inv.linkClosed
     }
-    heapInts := inv.heapInts
-    links := inv.links
+    linkClosed := inv.linkClosed
     abstractKeys := abstractKeys
     typeKeys := typeKeys
     types := ?_
     abstractShapes := ?_
     bindingsTyped := ?_
+    deepTags := by
+      intro key p use o w' ty' a' t w'' binding declared abstractBinding at_p valuePath
+      have different := noUse _ use
+      exact inv.deepTags key p use o w' ty' a' t w''
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+        (by rw [lookup_cons_other _ _ _ different]; exact declared)
+        (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) at_p valuePath
+    bindingsBounded := ?_
     tags := ?_
     chains := ?_
     liveTyped := ?_
     namingBound := inv.namingBound
     observers := inv.observers
+    heapKinds := by
+      obtain ⟨heapTyping, state⟩ := inv.heapKinds
+      refine ⟨heapTyping, ⟨state.heap, state.links, ?_⟩⟩
+      intro key ty' o w' declared binding
+      have different := envOther key (o, w') binding
+      exact state.env key ty' o w' (by rw [lookup_cons_other _ _ _ different]; exact declared)
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+    observationsTyped := by
+      intro key ty' o w' declared binding
+      have different := envOther key (o, w') binding
+      exact inv.observationsTyped key ty' o w' (by rw [lookup_cons_other _ _ _ different]; exact declared)
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+    objectsCertified := by
+      intro key o w' a' q c roots e ex ws binding abstractBinding fields projected at_q slot keep liveKeep
+      have different := envOther key (o, w') binding
+      exact inv.objectsCertified key o w' a' q c roots e ex ws
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+        (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) fields projected at_q slot keep
+        liveKeep
+    liveTags := by
+      intro key p use o w' ty' a' t o' w'' binding declared abstractBinding at_p obsPath valuePath
+      have different := noUse _ use
+      exact inv.liveTags key p use o w' ty' a' t o' w''
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+        (by rw [lookup_cons_other _ _ _ different]; exact declared)
+        (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) at_p obsPath valuePath
   }
   · intro key p use o w' binding
     have different := noUse _ use
     exact inv.bindings key p use o w' (by rw [lookup_cons_other _ _ _ different]; exact binding)
-  · intro key p use o w' a' w'' binding abstractBinding valuePath
+  · intro key p use o w' a' t' w'' binding abstractBinding declared valuePath
     have different := noUse _ use
-    exact inv.described key p use o w' a' w''
+    exact inv.toInvariant.described key p use o w' a' t' w''
       (by rw [lookup_cons_other _ _ _ different]; exact binding)
-      (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) valuePath
+      (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding)
+      (by rw [lookup_cons_other _ _ _ different]; exact declared) valuePath
   · intro key o w' a' binding abstractBinding q c immutable located
     have different := envOther key _ binding
     exact inv.named key o w' a'
@@ -266,12 +413,14 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
     exact inv.abstractShapes key ty' a'
       (by rw [lookup_cons_other _ _ _ different]; exact declared)
       (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding)
+  · intro key p use o w' ty' binding declared
+    have different := noUse _ use
+    exact inv.bindingsTyped key p use o w' ty'
+      (by rw [lookup_cons_other _ _ _ different]; exact binding)
+      (by rw [lookup_cons_other _ _ _ different]; exact declared)
   · intro key o w' binding
     have different := envOther key _ binding
-    obtain ⟨ty', declared, observed, typed⟩ :=
-      inv.bindingsTyped key o w' (by rw [lookup_cons_other _ _ _ different]; exact binding)
-    rw [lookup_cons_other _ _ _ different] at declared
-    exact ⟨ty', declared, observed, typed⟩
+    exact inv.bindingsBounded key o w' (by rw [lookup_cons_other _ _ _ different]; exact binding)
   · intro key ty' a' o w' declared abstractBinding binding
     have different := envOther key _ binding
     exact inv.tags key ty' a' o w'
@@ -496,10 +645,10 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
         | ok p1 =>
           rcases p1 with ⟨x, s1⟩
           rw [value_let_rhs_ok vs (valueEnv env) noDepth noFuel rhsValue] at run
-          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, size1, paired1, described1, observed1, typed1, tags1,
-            chains1⟩ := rhsPreserved.success x s1 rhsValue
+          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, size1, paired1, described1, observed1, _, shaped1, tags1,
+            chains1, deep1, kinds1⟩ := rhsPreserved.success x s1 rhsValue
           have inv1' := flatInvariant_bind inv1 fresh paired1 described1 rhsFlatType rhsFlatAbstract
-            observed1 typed1 tags1 chains1 restLiveSub restLiveTyped
+            observed1 shaped1 tags1 chains1 deep1 kinds1 restLiveSub restLiveTyped
           have restPreserved := ihRest s1 hs1 ((v, x, w) :: env) (union (uses rest) after)
             ((v, a) :: aenv) ((v, rhsType) :: tenv) middle next gamma1 type (v :: bound) after
             (site ++ [1]) result childFuel (depth - 1) _ inv1' restTyped restShadow
@@ -507,7 +656,7 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           obtain ⟨p2, restValueRun, run⟩ := except_bind_success run
           rcases p2 with ⟨y, s2⟩
           obtain ⟨actual, hs2, gamma2, restHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-            tags2, chains2⟩ := restPreserved.success y s2 restValueRun
+            shaped2, tags2, chains2, deep2, kinds2⟩ := restPreserved.success y s2 restValueRun
           have restHeapRun' : (InPlaceSemantics.eval (depth - 1) declarations none
               ((v, w) :: heapEnv env) rest).run hs1 = .ok (actual, hs2) := restHeapRun
           try dsimp only at run
@@ -528,7 +677,8 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           subst vsEq
           subst valueEq
           refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_,
-            observed2, ?_, tags2, chains2⟩
+            observed2, ?_, ?_, tags2, chains2, by simpa only [heapObserved_heap] using deep2,
+            kindsAt_of_heap (kindsAt_unbind kinds2 fresh) (heapObserved_heap _ _) (heapObserved_links _ _)⟩
           · rw [heap_let_rhs_ok hs (heapEnv env) noDepth heapFuel rhsHeapRun]
             simp [restHeapRun', heapObserveRun, Except.bind, Except.pure, bind, pure]
           · rw [heapObserved_heap]
@@ -536,6 +686,7 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           · rw [heapObserved_heap]; exact paired2
           · rw [heapObserved_heap]; exact described2
           · rw [heapObserved_heap]; exact typed2
+          · rw [heapObserved_heap]; exact shaped2
   · intro message run
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", heap_let_depth hs (heapEnv env) noDepth⟩
@@ -551,10 +702,10 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
         | ok p1 =>
           rcases p1 with ⟨x, s1⟩
           rw [value_let_rhs_ok vs (valueEnv env) noDepth noFuel rhsValue] at run
-          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, _, paired1, described1, observed1, typed1, tags1,
-            chains1⟩ := rhsPreserved.success x s1 rhsValue
+          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, _, paired1, described1, observed1, _, shaped1, tags1,
+            chains1, deep1, kinds1⟩ := rhsPreserved.success x s1 rhsValue
           have inv1' := flatInvariant_bind inv1 fresh paired1 described1 rhsFlatType rhsFlatAbstract
-            observed1 typed1 tags1 chains1 restLiveSub restLiveTyped
+            observed1 shaped1 tags1 chains1 deep1 kinds1 restLiveSub restLiveTyped
           have restPreserved := ihRest s1 hs1 ((v, x, w) :: env) (union (uses rest) after)
             ((v, a) :: aenv) ((v, rhsType) :: tenv) middle next gamma1 type (v :: bound) after
             (site ++ [1]) result childFuel (depth - 1) _ inv1' restTyped restShadow

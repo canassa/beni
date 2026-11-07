@@ -1,0 +1,60 @@
+import Js
+
+
+nullFunction : Js.Ref Js.Value
+nullFunction = Js.ref Js.null
+
+
+undefinedFunction : Js.Ref Js.Value
+undefinedFunction = Js.ref Js.undefined
+
+
+undefinedObject : Js.Ref Js.Value
+undefinedObject = Js.ref Js.undefined
+
+
+nullObject : Js.Ref Js.Value
+nullObject = Js.ref Js.null
+
+
+writeFunction : Js.Ref Js.Value → ⊤
+writeFunction cell = Js.write cell (Js.from λ⊤ → ⊤)
+
+
+writeObject : Js.Ref Js.Value → ⊤
+writeObject cell = Js.write cell (Js.from { value = 1 })
+
+
+pub snapshot : ⊤ → String
+snapshot _ =
+    a = Js.read nullFunction
+    beforeA = if Js.typeIs a "function" then "fn" else "nofn"
+    writeFunction nullFunction
+    afterA = if Js.typeIs (Js.read nullFunction) "function" then "fn" else "nofn"
+    b = Js.read undefinedFunction
+    beforeB = if Js.typeIs b "function" then "fn" else "nofn"
+    writeFunction undefinedFunction
+    afterB = if Js.typeIs (Js.read undefinedFunction) "function" then "fn" else "nofn"
+    c = Js.read undefinedObject
+    beforeC = if Js.typeIs c "object" then "obj" else "noobj"
+    writeObject undefinedObject
+    afterC = if Js.typeIs (Js.read undefinedObject) "object" then "obj" else "noobj"
+    d = Js.read nullObject
+    beforeD = if Js.typeIs d "object" then "obj" else "noobj"
+    writeObject nullObject
+    afterD = if Js.typeIs (Js.read nullObject) "object" then "obj" else "noobj"
+    beforeA
+        ++ ":"
+        ++ afterA
+        ++ ","
+        ++ beforeB
+        ++ ":"
+        ++ afterB
+        ++ ","
+        ++ beforeC
+        ++ ":"
+        ++ afterC
+        ++ ","
+        ++ beforeD
+        ++ ":"
+        ++ afterD

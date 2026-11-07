@@ -138,8 +138,9 @@ tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
 tests/pending/ownership/DictFocusGrow.beni exit=0 ownership-differs
 
 # CK-269 (#856): a deep tuple's summary lists 2^16 places; building them to the
-# `entries` limit (1 276 786) takes past the 20 s case timeout.
-tests/pending/ownership/DeepTupleDag.beni timeout
+# `entries` limit (1 276 786) took past the 20 s case timeout; it now prints
+# them all in about 12 s, so the golden (no summary line) differs.
+tests/pending/ownership/DeepTupleDag.beni exit=0 node+everywhere.ownership-differs
 
 # CK-270 (#474): one list in the tuple or record payloads at two dictionary
 # keys, edited in place at one; red until #294's representation.
@@ -156,14 +157,6 @@ tests/pending/ownership/RecordSchemaRun.beni exit=0 ownership-differs
 # refused, a false refusal #982 accepts on purpose; the keep edge does not know
 # the order of the write and the call.
 tests/pending/ownership/RecordWriteBeforeKeep.beni exit=0 ownership-differs
-
-# CK-273 (#1000): a record inside a fresh literal handed to a function that
-# keeps it, written after: a miscompile.
-tests/pending/ownership/RecordKeptInLiteral.beni exit=0 ownership-differs
-
-# CK-274 (#1001): a nested record written through a local after a function
-# kept its parent: a miscompile.
-tests/pending/ownership/RecordInnerKept.beni exit=0 ownership-differs
 
 # The ownership checker v2's acceptance gaps (ownership-requirements.md
 # R-8.2, #1006), one per row of its table that v1 does not meet.
@@ -186,15 +179,9 @@ tests/pending/ownership/PatternStoredBack.beni exit=0 ownership-differs
 
 # CK-279 (#395): with mutually recursive types, a List Int field is taken to
 # reach the other type; R-4.7.4.
-tests/pending/ownership/MutualListField.beni exit=0 ownership-differs
-
-# CK-280 (#400): a write to one list under a marker needs the whole region
-# exclusive; R-4.7.8.
-tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
 
 # CK-281: a write in a type's `eq` is accepted as a write of its own
 # parameter; `comparison_changes_value` does not exist yet; R-5.13.1.
-tests/pending/check/bad/inline/ComparisonWrites.beni exit=0 codes=none
 
 # CK-282: a prepend whose front item is a fresh constructor value or record
 # literal is taken as maybe its base; R-4.4.3.
@@ -207,7 +194,6 @@ tests/pending/ownership/RecordIndexExchange.beni exit=0 ownership-differs
 
 # CK-284: a top-level alias of a writer is called as the writer, through any
 # number of names; v1 makes the alias pending and stops at 8; R-5.5.6.
-tests/pending/ownership/AliasWriterCall.beni exit=0 ownership-differs
 
 # CK-285: `Task.resume` is read from its body over `Js`, so the list it
 # hands on is not given up and a later read is silent; R-5.10.12.
@@ -322,11 +308,47 @@ tests/pending/ownership/RecordCopyOpen.beni exit=0 ownership-differs
 # "sharing the checker can see"); it is a limit of the checker; R-6.3.
 tests/pending/check/bad/inline/LogScopeUnknownLimit.beni exit=1 codes=record_still_used×1 why=code
 
-# CK-311 (#954): a lambda applied directly to a function parameter overflows
-# the stack of `dump --stage=ownership`; R-7.12.
-tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
+# CK-311 (#954): a lambda applied directly to a function parameter overflowed
+# the stack of v1 (#1747, fixed); red now because v1 answers borrowed and unseen; R-7.12.
+tests/pending/ownership/AppliedLambdaRecursion.beni exit=0 ownership-differs
 
-# CK-312 (#1225): a list pattern over a 1 000-item literal of fresh lists;
-# `Demands.resolve` inspects the push's alternatives on its own lane, so v2
-# reports an accounting invariant; ownership-v2.md §4.1.
-tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
+# CK-315 (#1435): a local bound to `[]` inside a constructor, handed to a
+# writer of its elements' lists, is refused `disjoint` (approx) by v2; the
+# literal written inline is accepted; R-8.1.
+tests/pending/ownership/LocalEmptyInCtor.beni OwnershipV2Differs
+
+# CK-316, #856 (issue #1509, #1640): v1 summarises the repeated tuple paths of
+# tests/corpus/check/good/OwnershipAnnotationDag.beni as 1,276,786 entries, over
+# the limit of 262,144, on a program with no list writes, so `check
+# --ownership-everywhere` fails with `ownership_limit`. Honouring an explicit
+# flag without a platform chain (#1509) exposed it. v2 checks it in 0.03 s
+# (check_test.zig), so this goes with v1.
+scenario/CK-316 exit=1 codes=ownership_limit×1
+
+# CK-317 (#2028): a closure a declaration returns is opaque, so a write of
+# its answer is refused `unknown`; Appendix B GrowFresh, CallFeedbackGeneration
+# and a fresh ClosureTower.
+
+# CK-318 (#2029): `r.f ⊤` on a lambda stored in a record field answers unknown.
+
+# CK-319 (#2030): List.copy of the answer of a returned closure still reads as
+# holding its source.
+
+# CK-320 (#2031): an element edit of a list that stores a callback's answers is
+# refused over a fresh lambda.
+tests/pending/ownership/CallbackAnswerInList.beni exit=0 ownership-differs
+
+# CK-321 (#2032): a fold that pushes its elements into its accumulator is
+# refused `disjoint`.
+tests/pending/ownership/FoldStoresElements.beni exit=0 ownership-differs
+
+# CK-322 (#1978): the answers of a many label are one per invocation; an
+# element edit of a map's fresh answers is refused `disjoint`.
+tests/pending/ownership/MapAnswersFresh.beni exit=0 ownership-differs
+
+# CK-323 (#1238): v1 summarises the 2^depth paths of an annotated doubling
+# record, `w{i} = { a = w{i-1}, b = w{i-1} }`, and `check` grows ×4 a level:
+# a whole run at depth 16 takes 9.9 s, and the scenario kills each one after
+# 1 s. `slow` is the ratio: no run at depth 16 came under 2.5 times depth 8.
+# The type checker and v2 are far from exponential on it. Goes with v1.
+scenario/CK-323 slow

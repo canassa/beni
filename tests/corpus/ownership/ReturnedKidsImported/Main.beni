@@ -1,0 +1,36 @@
+-- ownership (project): ReturnedKids with `incAll` imported (#1483). The
+-- root's `xs` of the tree `Trees.incAll` returns is its own, so a push
+-- into it is accepted `param`; a push read after, or into a list the
+-- argument held at the root and in a subtree, is refused.
+import Trees exposing (Leaf, Node, Tree)
+
+
+pub returnedKids : Tree → Tree
+returnedKids t =
+    case Trees.incAll t of
+        Node l xs r →
+            Node l (List.push xs 2) r
+
+        Leaf →
+            Leaf
+
+
+pub readAfter : Tree → Int
+readAfter t =
+    case Trees.incAll t of
+        Node _ xs _ →
+            ys = List.push xs 2
+            List.length xs + List.length ys
+
+        Leaf →
+            0
+
+
+pub rootBelow : List Int → Tree
+rootBelow xs =
+    case Trees.incAll (Node Leaf xs (Node Leaf xs Leaf)) of
+        Node l ys r →
+            Node l (List.push ys 2) r
+
+        Leaf →
+            Leaf

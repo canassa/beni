@@ -1,0 +1,23 @@
+-- ownership: a helper hands `List.update`'s element to its callback inside a
+-- lambda (#1959). The element is exclusive only as its list is, so the record
+-- the two rows of `shared` hold is refused as the plain `List.update rs 1 f`
+-- is. `distinct` holds one record per row: accepted.
+import List
+
+
+type alias R =
+    n : Int
+
+
+upd : List (Int × R), (Int × R → Int × R) → List (Int × R)
+upd rs f = List.update rs 1 λv → f v
+
+
+pub shared : ⊤ → List (Int × R)
+shared ⊤ =
+    r = { n = 1 }
+    upd [ ( 1, r ), ( 2, r ) ] λ( k, x ) → ( k, { x | n = 8 } )
+
+
+pub distinct : ⊤ → List (Int × R)
+distinct ⊤ = upd [ ( 1, { n = 1 } ), ( 2, { n = 2 } ) ] λ( k, x ) → ( k, { x | n = 8 } )

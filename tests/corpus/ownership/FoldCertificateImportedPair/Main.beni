@@ -1,0 +1,27 @@
+-- ownership (project): a block keeps one class's fold obligation on that
+-- class's own node (ownership-v2.md §8 slice 4, C4; #1570). Under the atom
+-- rule a subtree class of `same` is a plain leaf of cells, and `unroll`
+-- has a class with the same leaf. The block reader rebuilt both through
+-- the one interned leaf and joined their obligations there, so `same`
+-- read `unroll`'s failed certificate. Each producer now reads its own:
+-- `oneView` is accepted on every line, as in one module, and
+-- `ofUnroll`, which writes one list twice, is still refused.
+import Lib exposing (Leaf, Node, Tree)
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+pub oneView : Tree → Tree
+oneView t = incAll (Lib.same t)
+
+
+pub ofUnroll : Tree → Tree
+ofUnroll t = incAll (Lib.unroll t)

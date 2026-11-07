@@ -1,0 +1,27 @@
+-- ownership (project): see Main.beni. `incT` writes the kids list of every
+-- `T` at every depth, and `incTs` walks a list of `T` with
+-- `[ t, …rest ]`; `run` builds a folded `T` from two lists at different
+-- depths and writes it.
+pub type T
+    = T (List T)
+
+
+pub incT : T → T
+incT t =
+    case t of
+        T kids →
+            T (incTs (List.push kids (T [])))
+
+
+pub incTs : List T → List T
+incTs ts =
+    case ts of
+        [ t, …rest ] →
+            [ incT t, …incTs rest ]
+
+        [] →
+            []
+
+
+pub run : List T, List T → T
+run a b = incT (T [ T a, T [ T b ] ])

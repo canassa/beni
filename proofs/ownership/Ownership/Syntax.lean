@@ -19,13 +19,20 @@ inductive Ty where
       whose insertion order is part of its value. A string key would be a
       second scalar key type and adds nothing to ownership. -/
   | dict (value : Ty)
+  /-- A record (`ownership-checker.md` §31.2, #316): positional fields in one
+      object, which `Expr.assign` writes in place. Both interpreters and the
+      checker hold it as a one-slot array whose element is the record
+      (`list [record fields]`), so every list rule reads it as it reads a
+      list. `record` stays the immutable positional value (a tuple, the
+      Result encoding, a dictionary entry, a markup record). -/
+  | object (fields : List Ty)
   deriving Repr, Inhabited
 
 /-- Explicitly total: Lean's derived BEq for nested inductives is opaque. -/
 def Ty.equal (a b : Ty) : Bool :=
   match a, b with
   | .int, .int => true
-  | .record xs, .record ys =>
+  | .record xs, .record ys | .object xs, .object ys =>
     xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
   | .result e a, .result f b => e.equal f && a.equal b
   | .chain x, .chain y | .list x, .list y | .builder x, .builder y | .dict x, .dict y => x.equal y
@@ -82,6 +89,12 @@ inductive Prim where
       `Result Int v`, `ok v` or `err 0`; `dictSize` (dict) counts the
       entries. -/
   | dictEmpty (value : Ty) | dictInsert | dictRemove | dictGet | dictSize
+  /-- The record objects (#316, `ownership-checker.md` §31): `object` is a
+      record literal, a new object (`site(ι)`, §31.2); `get i` reads field
+      `i` of an object (`r.f`), a pure read that records no observation
+      (`language.md` §11.11); `recordCopy` is `Record.copy` (§31.15), a new
+      object with the same fields. The update is `Expr.assign`. -/
+  | object | get (index : Nat) | recordCopy
   deriving Repr, BEq, Inhabited
 
 inductive Source where
@@ -108,6 +121,14 @@ inductive Expr where
       the key is absent; the body answers `ok w` to store `w` at the key or
       `err _` to remove the key. The result is the dictionary. -/
   | dictFocus (input key : Atom) (found : Var) (body : Expr)
+  /-- `{ base | f₁ = v₁, … }` written in place (`ownership-checker.md`
+      §31.3, #316): the fields `fields` of the record object `base` get
+      `values`, in order, after every value is evaluated, and the result is
+      the base's object. `width` is the record's field count: the update
+      reads the fields it keeps (§7.1). Its checker rule is a demand on the
+      base's object that reads the continuation's liveness per field
+      (§31.4 item 5), which no primitive does; so it is an expression. -/
+  | assign (width : Nat) (fields : List Nat) (base : Atom) (values : List Atom)
   deriving Repr, BEq, Inhabited
 
 structure Decl where
@@ -122,6 +143,12 @@ structure Program where
   declarations : List Decl := []
   main : Expr
   deriving Repr, BEq, Inhabited
+
+/-- `fields` with each `fs[k]` replaced by `vs[k]`, in order: what
+    `Expr.assign` makes of a record's fields, in both interpreters and in the
+    checker. -/
+def assignFields (fields : List α) (fs : List Nat) (vs : List α) : List α :=
+  (fs.zip vs).foldl (fun ys (f, v) => ys.set f v) fields
 
 abbrev Env (α : Type) := List (Var × α)
 
@@ -186,6 +213,9 @@ def primType (p : Prim) (ts : List Ty) : Except String Ty := do
   | .dictRemove, [.dict t, .int] => pure (.dict t)
   | .dictGet, [.dict t, .int] => pure (.result .int t)
   | .dictSize, [.dict _] => pure .int
+  | .object, xs => pure (.object xs)
+  | .get i, [.object fs] => fs[i]?.toExcept "record field out of range"
+  | .recordCopy, [.object fs] => pure (.object fs)
   | _, _ => throw s!"ill-typed primitive {repr p} on {repr ts}"
 
 def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except String Ty
@@ -245,6 +275,15 @@ def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except Str
     if (← exprType ds self ((found, .result .int t) :: env) body) != .result .int t then
       throw "dictionary focus type mismatch"
     pure (.dict t)
+  | .assign width fields base values => do
+    let .object ts ← atomType env base | throw "update of a non-record"
+    if ts.length != width then throw "update width"
+    if fields.isEmpty || fields.length != values.length || fields.eraseDups.length != fields.length then
+      throw "update fields"
+    for (f, v) in fields.zip values do
+      let t ← ts[f]?.toExcept "update field out of range"
+      if (← atomType env v) != t then throw "incorrect update value"
+    pure (.object ts)
 
 /-- Ordinary typing only: every declaration body and the main expression. -/
 def typesOf (p : Program) : Except String Ty := do

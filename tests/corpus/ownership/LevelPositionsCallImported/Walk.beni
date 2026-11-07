@@ -1,0 +1,22 @@
+-- ownership: LevelPositionsCall's walk, in its own module: `incList`'s
+-- own `incAll b` is accepted `param` (§2.9 rule 3), and the class each
+-- publishes in the block is what `Main` reads.
+pub type B
+    = B (List B) (List B)
+
+
+pub incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+pub incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []

@@ -1,0 +1,15 @@
+module RefMakeWrapped
+  9:14 Ref.make <literal>: accepted param
+  13:13 RefMakeWrapped.wrapped xs: rejected later-use: xs is read again at 13:11
+  17:19 Ref.make xs: rejected later-use: xs is read again at 17:17
+  account wrapped: source 16, baseline 248, growth 0 of 65536, total 248, continuation 211 of 16384, demands 28, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 17
+  crossing: reads 0, redone 0, base moves 0
+  summary wrapped: π1 RAS; res fresh1, ◆ fresh2, ◆[*] π1
+  account kept: source 21, baseline 259, growth 0 of 65536, total 259, continuation 242 of 21504, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 22
+  summary kept: π1 RAS; res .0 fresh1, .0◆ fresh2, .0◆[*] π1, .1 π1
+  account keptDirect: source 19, baseline 222, growth 0 of 65536, total 222, continuation 176 of 19456, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 20
+  summary keptDirect: π1 RAS; res .0 fresh1, .0◆ π1, .1 π1
+  block: 1148 bytes, hash 21f0fd3fe2579a32
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 2

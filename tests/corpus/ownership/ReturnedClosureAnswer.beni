@@ -1,0 +1,57 @@
+-- CK-317: #2028. A closure that a declaration returns is opaque, so a write of
+-- its answer is refused `unknown` (approx). `useFresh` is Appendix B's
+-- GrowFresh: every invocation reaches a fresh allocation, so `a` and `b` are
+-- two lists and the push is accepted. `useChain` is CallFeedbackGeneration:
+-- a recursive helper's closure calls the fresh lambda it was given.
+-- `useTower` is ClosureTower at depth 2 with a fresh base. The captured twins
+-- (run/GrowAlias, run/ClosureTower) stay refused. The golden claims the
+-- verdict lines and the totals.
+grow : Int → (⊤ → List Int)
+grow n =
+    if n == 0 then
+        λ⊤ → [ 0 ]
+    else
+        previous = grow (n - 1)
+        λ⊤ → previous ⊤
+
+
+pub useFresh : Int → List Int × List Int
+useFresh n =
+    g = grow n
+    a = g ⊤
+    b = g ⊤
+    ( List.push a 1, b )
+
+
+chain : Int, (⊤ → List Int) → (⊤ → List Int)
+chain n f =
+    if n == 0 then
+        λ⊤ → f ⊤
+    else
+        previous = chain (n - 1) f
+        λ⊤ → previous ⊤
+
+
+pub useChain : ⊤ → List Int × List Int
+useChain ⊤ =
+    g = chain 3 λ⊤ → [ 0 ]
+    a = g ⊤
+    b = g ⊤
+    ( List.push a 1, b )
+
+
+w0 : ⊤ → (Bool → List Int)
+w0 ⊤ = λ_ → [ 0 ]
+
+
+w1 : ⊤ → (Bool → List Int)
+w1 ⊤ =
+    a = w0 ⊤
+    b = w0 ⊤
+    λflag → if flag then a flag else b flag
+
+
+pub useTower : ⊤ → List Int × List Int
+useTower ⊤ =
+    f = w1 ⊤
+    ( List.push (f True) 1, f False )

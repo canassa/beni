@@ -1,0 +1,1 @@
+v2 reads a choice's arms apart over the caller's own parameters (#1439): each arm's parameter cells beside the write are read against that arm's base; v1 reads the arms together.

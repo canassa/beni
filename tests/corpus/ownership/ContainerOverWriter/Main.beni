@@ -1,0 +1,12 @@
+-- ownership (project): a container's comparison in core is handed `Key`'s,
+-- which writes: `List.compare`'s class is not read-only then
+-- (ownership-v2.md §2.13.13).
+import Key
+
+
+pub viaListLt : List Int → Bool × List Int
+viaListLt xs = ( [ Key.Key xs ] < [], xs )
+
+
+pub viaListEq : List Int → Bool × List Int
+viaListEq xs = ( [ Key.Key xs ] == [], xs )

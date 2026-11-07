@@ -1,0 +1,40 @@
+-- A runtime catch for #1516 under `--ownership=v2` and the list stale-read
+-- sanitiser (`ownership-v2.md` §7.3). A local bound to a generic call's
+-- result (`wrap b`) is read after a push of it, so v2 refuses the push.
+-- When v2 accepted it (#1516: two cells for the one fresh object), the
+-- sanitised build ran the push on a copy and poisoned `l0`: `heldLength`
+-- reads only `l0`'s length and prints the length an in-place push leaves
+-- (2, not 1), and `heldList` traps where it reads `l0`'s elements.
+import List
+import Node exposing (Program)
+import String
+
+
+wrap : a → List a
+wrap x = [ x ]
+
+
+heldLength : List Int → Int × Int
+heldLength b =
+    l0 = wrap b
+    l3 = List.push l0 [ 5 ]
+    ( List.length l3, List.length l0 )
+
+
+heldList : List Int → List (List Int) × List (List Int)
+heldList b =
+    l0 = wrap b
+    l3 = List.push l0 [ 5 ]
+    ( l0, l3 )
+
+
+main : Program
+main =
+    ( a, b ) = heldLength [ 1 ]
+    ( c, d ) = heldList [ 2 ]
+    Node.printLines
+        [ String.fromInt a
+        , String.fromInt b
+        , String.fromInt (List.length c)
+        , String.fromInt (List.length d)
+        ]

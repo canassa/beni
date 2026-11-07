@@ -1,25 +1,6 @@
 {
   "platform": true,
   "name": "browser-tea",
-  "platforms": [
-    "browser"
-  ],
-  "reexports": [
-    "Html",
-    "Browser",
-    "Cmd",
-    "Sub",
-    "Time",
-    "Dom",
-    "Http",
-    "Browser.Events",
-    "Browser.Navigation",
-    "Random",
-    "Storage",
-    "WebSocket",
-    "Browser.Source",
-    "Browser.Image",
-    "Browser.Video",
-    "Browser.Canvas"
-  ]
+  "platforms": ["browser"],
+  "reexports": ["Html", "Html.Markdown", "Browser", "Browser.Worker", "Browser.WorkerStream", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "WebSocket", "Browser.Source", "Browser.Image", "Browser.Video", "Browser.Canvas"]
 }

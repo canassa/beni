@@ -58,7 +58,7 @@ pub const usage =
     \\                            unless beni.json's "build" names it, as it does the paths)
     \\  --out=<dir>               output directory (default: beni.json's "build" "out", else out)
     \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
-    \\  --source-maps             a .map beside every emitted module, which embeds the beni source
+    \\  --source-maps             a .map beside every emitted module, which embeds the source it maps
     \\                            (the default; with --release, only when given)
     \\  --no-source-maps          write no .map files
     \\  --release                 dead bindings out, short names, compact printing, joined consts
@@ -83,6 +83,7 @@ pub const usage =
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
     \\  --stdout                  print the formatted text instead of writing it
+    \\  --to-unicode              convert ASCII notation to Unicode while formatting
     \\
     \\dump options:
     \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership
@@ -374,13 +375,6 @@ pub const Build = struct {
     /// Until record enforcement is apart from list enforcement (O4a), it
     /// enforces both.
     records_in_place: bool = false,
-    /// `--schema-library` — **hidden**, for `--allow-debug`'s reason: every
-    /// schema declaration's `parse` and `print` run through the library
-    /// interpreter rather than its specialised code, which is the forced
-    /// library path the differential corpus builds every schema program with
-    /// (`schema.md` §10). It changes no answer — that is what the corpus
-    /// asserts — and no user has a reason to reach for it.
-    schema_library: bool = false,
     /// `--schema-shapes=always|never` — **hidden**, for `--allow-debug`'s
     /// reason: every validator run with a shape takes it, or none does,
     /// whatever the program's count of them against
@@ -499,9 +493,6 @@ pub const Fmt = struct {
     /// `--migrate-cons`, hidden: rewrite `::` in the list syntax
     /// (`Format.migrateCons`) instead of formatting.
     migrate_cons: bool = false,
-    /// `--migrate-lambda`, hidden: write the `\` that begins every lambda
-    /// as `λ` (`Format.migrateLambda`) instead of formatting.
-    migrate_lambda: bool = false,
     /// `--migrate-names`, hidden: write `modBy`, `remainderBy` and
     /// `logBase` as `Int.mod`, `Int.rem` and `Float.log`
     /// (`Format.migrateNames`) instead of formatting.
@@ -514,13 +505,9 @@ pub const Fmt = struct {
     /// kept so a branch written before can be migrated with the flag its
     /// mechanical commit names.
     migrate_trailing_lambda: bool = false,
-    /// `--migrate-unicode`, hidden: write every old ASCII spelling as its
-    /// symbol and every comma tuple type with `×` (`Format.migrateUnicode`)
-    /// instead of formatting.
-    migrate_unicode: bool = false,
-    /// `--migrate-top`, hidden: write `()` as `⊤`, the prelude's `Never`
-    /// as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
-    /// `--discards` names (`Format.migrateTop`, frontend.md §11.9).
+    /// Convert accepted ASCII notation to Unicode while formatting.
+    to_unicode: bool = false,
+    /// Drop redundant unit else branches and the unit discards named by `--discards`.
     migrate_top: bool = false,
     /// `--migrate-init`, hidden: write the `init = e` of every program
     /// record `init = λ⊤ → e` (`Format.migrateInit`, frontend.md §11.10).
@@ -567,6 +554,11 @@ pub const Dump = struct {
     /// harness's parity, one process per program).
     ownership_both: bool = false,
     ownership_flips: ?[]const u8 = null,
+    /// `--ownership-below` — hidden, test-only: with `--stage=ownership
+    /// --ownership=v2`, each summary's parameters' object slots written out
+    /// (`ownership-v2.md` §2.9.1, *One spelling of a subtree*), so a
+    /// script compares a deep occurrence with its written-out spelling.
+    ownership_below: bool = false,
     file: []const u8,
 };
 
@@ -919,7 +911,6 @@ const BuildSpecific = struct {
     sanitize_records: bool = false,
     sanitize_lists: bool = false,
     records_in_place: bool = false,
-    schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
     check_call_graph: bool = false,
@@ -980,11 +971,6 @@ const BuildSpecific = struct {
             // A hidden flag (see `Build.records_in_place`).
             if (value != null) return noValue(name);
             self.records_in_place = true;
-            self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--schema-library")) {
-            // The fourth hidden flag (see `Build.schema_library`).
-            if (value != null) return noValue(name);
-            self.schema_library = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--schema-shapes")) {
             // A hidden flag (see `Build.schema_shapes`).
@@ -1088,7 +1074,6 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .sanitize_records = s.specific.sanitize_records,
         .sanitize_lists = s.specific.sanitize_lists,
         .records_in_place = s.specific.records_in_place,
-        .schema_library = s.specific.schema_library,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
         .points_to_largest = s.specific.points_to_largest,
@@ -1248,11 +1233,10 @@ const FmtSpecific = struct {
     check: bool = false,
     stdout: bool = false,
     migrate_cons: bool = false,
-    migrate_lambda: bool = false,
     migrate_names: bool = false,
     migrate_let: bool = false,
     migrate_trailing_lambda: bool = false,
-    migrate_unicode: bool = false,
+    to_unicode: bool = false,
     migrate_top: bool = false,
     migrate_init: bool = false,
     discards: ?[]const u8 = null,
@@ -1269,9 +1253,9 @@ const FmtSpecific = struct {
         } else if (std.mem.eql(u8, name, "--discards")) {
             self.discards = value orelse return needsValue(name, "<file>");
             self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--migrate-unicode")) {
+        } else if (std.mem.eql(u8, name, "--to-unicode")) {
             if (value != null) return noValue(name);
-            self.migrate_unicode = true;
+            self.to_unicode = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--migrate-trailing-lambda")) {
             if (value != null) return noValue(name);
@@ -1284,10 +1268,6 @@ const FmtSpecific = struct {
         } else if (std.mem.eql(u8, name, "--migrate-let")) {
             if (value != null) return noValue(name);
             self.migrate_let = true;
-            self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--migrate-lambda")) {
-            if (value != null) return noValue(name);
-            self.migrate_lambda = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--migrate-cons")) {
             if (value != null) return noValue(name);
@@ -1322,16 +1302,15 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         return .{ .usage = .init("beni: fmt --check and --stdout are mutually exclusive", .{}) };
     }
     const migrations = @as(u8, @intFromBool(s.specific.migrate_cons)) +
-        @intFromBool(s.specific.migrate_lambda) +
         @intFromBool(s.specific.migrate_names) +
         @intFromBool(s.specific.migrate_let) +
         @intFromBool(s.specific.migrate_trailing_lambda) +
-        @intFromBool(s.specific.migrate_unicode) +
+        @intFromBool(s.specific.to_unicode) +
         @intFromBool(s.specific.migrate_top) +
         @intFromBool(s.specific.migrate_init);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
-        return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
+        return .{ .usage = .init("beni: fmt's conversion and migration flags are mutually exclusive", .{}) };
     }
     if (s.specific.discards != null and !s.specific.migrate_top) {
         s.positionals.deinit(gpa);
@@ -1342,11 +1321,10 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .check = s.specific.check,
         .stdout = s.specific.stdout,
         .migrate_cons = s.specific.migrate_cons,
-        .migrate_lambda = s.specific.migrate_lambda,
         .migrate_names = s.specific.migrate_names,
         .migrate_let = s.specific.migrate_let,
         .migrate_trailing_lambda = s.specific.migrate_trailing_lambda,
-        .migrate_unicode = s.specific.migrate_unicode,
+        .to_unicode = s.specific.to_unicode,
         .migrate_top = s.specific.migrate_top,
         .migrate_init = s.specific.migrate_init,
         .discards = s.specific.discards,
@@ -1365,6 +1343,7 @@ const DumpSpecific = struct {
     ownership_both: bool = false,
     ownership_skew_sites: bool = false,
     ownership_flips: ?[]const u8 = null,
+    ownership_below: bool = false,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
@@ -1413,6 +1392,11 @@ const DumpSpecific = struct {
             if (value != null) return noValue(name);
             self.ownership_both = true;
             self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--ownership-below")) {
+            // Hidden and test-only: v2's parameters' slots, for scripts.
+            if (value != null) return noValue(name);
+            self.ownership_below = true;
+            self.consumed = true;
         } else if (std.mem.eql(u8, name, "--ownership-flips")) {
             // Hidden and test-only (ownership-checker.md §24.6): what the
             // trusted-surface tests flip a word with, to see a pin fail.
@@ -1448,6 +1432,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.ownership_totals and stage != .ownership) return .{ .usage = .init("beni: --ownership-totals applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_flips != null and stage != .ownership) return .{ .usage = .init("beni: --ownership-flips applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_skew_sites and stage != .ownership) return .{ .usage = .init("beni: --ownership-skew-sites applies to --stage=ownership only", .{}) };
+    if (s.specific.ownership_below and stage != .ownership) return .{ .usage = .init("beni: --ownership-below applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_both and stage != .ownership) return .{ .usage = .init("beni: --ownership-both applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership == .v2)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", .{}) };
     return .{ .command = .{ .dump = .{
@@ -1461,6 +1446,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         .ownership_both = s.specific.ownership_both,
         .ownership_skew_sites = s.specific.ownership_skew_sites,
         .ownership_flips = s.specific.ownership_flips,
+        .ownership_below = s.specific.ownership_below,
         .file = s.positionals.items[0],
     } } };
 }
@@ -1560,6 +1546,9 @@ test "check: usage errors" {
 }
 
 test "fmt: flags in any order" {
+    try expectCommand(.{ .fmt = .{ .check = true, .to_unicode = true, .paths = &.{"a.beni"} } }, &.{ "fmt", "--check", "--to-unicode", "a.beni" });
+    try expectUsage("beni: unknown option '--migrate-unicode'; run 'beni help' for usage", &.{ "fmt", "--migrate-unicode", "a.beni" });
+    try expectUsage("beni: unknown option '--migrate-lambda'; run 'beni help' for usage", &.{ "fmt", "--migrate-lambda", "a.beni" });
     try expectCommand(.{ .fmt = .{ .paths = &.{"src"} } }, &.{ "fmt", "src" });
     try expectCommand(.{ .fmt = .{ .check = true, .paths = &.{ "a.beni", "b.beni" } } }, &.{ "fmt", "a.beni", "--check", "b.beni" });
     try expectCommand(.{ .fmt = .{
@@ -1591,6 +1580,8 @@ test "dump: stage, positions, exactly one file" {
     try expectUsage("beni: --ownership-both applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-both", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_skew_sites = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-skew-sites", "src" });
     try expectUsage("beni: --ownership-skew-sites applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-skew-sites", "M.beni" });
+    try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_below = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-below", "src" });
+    try expectUsage("beni: --ownership-below applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-below", "M.beni" });
     try expectUsage("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership=v2", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
@@ -1759,6 +1750,12 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try expectUsage("beni: unknown option '--allow-debug'; run 'beni help' for usage", &.{ "check", "--allow-debug", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "--allow-debug") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "allow-debug") == null);
+
+    // `--allow-unchecked-workers` was the workers landing's launch gate,
+    // removed 2026-11-07 (`workers.md`, *Launch amendment*): like any
+    // removed flag it is now an unknown option, for `build` and `check`.
+    try expectUsage("beni: unknown option '--allow-unchecked-workers'; run 'beni help' for usage", &.{ "build", "--platform=node", "--allow-unchecked-workers", "src" });
+    try expectUsage("beni: unknown option '--allow-unchecked-workers'; run 'beni help' for usage", &.{ "check", "--allow-unchecked-workers", "src" });
 
     // `--roundtrip-dispatch` is a fourth, and on `Common` for its twin's
     // reason: a round-trip test may pass it to `dump` as well as to

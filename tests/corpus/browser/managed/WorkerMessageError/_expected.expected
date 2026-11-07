@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "deserialization failed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"deserialization failed"</output>
+  </main>
+</body>

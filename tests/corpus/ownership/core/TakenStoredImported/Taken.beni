@@ -1,0 +1,11 @@
+-- ownership (core project): see Main.beni. The callees that store a
+-- `taken` element into another list (#1393).
+pub foreign pure takeAt : borrowed List a, borrowed Int → taken a
+
+
+pub copyOne : List a, Int, List a → List a
+copyOne a k b = List.set b 0 (takeAt a k)
+
+
+pub copyInto : List a, Int, List a → List a
+copyInto a k b = List.push b (takeAt a k)

@@ -1,0 +1,6 @@
+-- The manifest may name an alias of the platform-owned Program.
+import Facade
+
+
+main : Facade.Program
+main = Facade.make "ready"

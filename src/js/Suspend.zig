@@ -102,6 +102,11 @@ pub const Pass = struct {
         return p.b.nodes.items(.pos)[n.int()];
     }
 
+    /// `JsIr.Node.host` of a `call`.
+    fn hostOf(p: *const Pass, n: Node.Index) bool {
+        return p.b.nodes.items(.host)[n.int()];
+    }
+
     fn word(p: *const Pass, at: u32) u32 {
         return p.b.extra.items[at];
     }
@@ -132,6 +137,8 @@ pub const Pass = struct {
             .params_end = @fromBackingInt(@intCast(p.word(at + 1))),
             .body_start = @fromBackingInt(@intCast(p.word(at + 2))),
             .body_end = @fromBackingInt(@intCast(p.word(at + 3))),
+            .param_pos_start = @fromBackingInt(@intCast(p.word(at + 4))),
+            .param_pos_end = @fromBackingInt(@intCast(p.word(at + 5))),
         };
     }
 
@@ -163,12 +170,7 @@ pub const Pass = struct {
     fn arrow(p: *Pass, params: []const NameIndex, body: []const Node.Index, at: u32) Error!Node.Index {
         const params_range = try p.b.addNames(params);
         const body_range = try p.b.addRange(body);
-        const record = try p.b.addRecord(JsIr.Func{
-            .params_start = params_range.start,
-            .params_end = params_range.end,
-            .body_start = body_range.start,
-            .body_end = body_range.end,
-        });
+        const record = try p.b.addFunc(params_range, body_range);
         return p.add(.arrow, at, @backingInt(record), Node.arrow_plain);
     }
 
@@ -423,7 +425,13 @@ pub const Pass = struct {
         for (tree) |n| {
             if (p.joinValue(n, j)) |value| {
                 const at = p.posOf(n);
-                try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(param), value.int()));
+                const binding = try p.add(.const_decl, at, @backingInt(param), value.int());
+                // A joined value can do work even when the rest ignores it.
+                switch (p.tag(value)) {
+                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
+                    else => if (p.keep) |keep| try keep.append(p.scratch, binding),
+                }
+                try out.append(p.scratch, binding);
                 try out.appendSlice(p.scratch, try p.cloneList(rest));
                 continue;
             }
@@ -590,6 +598,8 @@ pub const Pass = struct {
         return p.b.addRange(copied);
     }
 
+    /// A copy of the function at `at`, whose parameters keep their places:
+    /// the copy shares the positions' range, which no pass writes.
     fn cloneFunc(p: *Pass, at: u32) Error!JsIr.ExtraIndex {
         const f = p.func(at);
         const params = try p.b.addNames(try p.namesOf(f.params()));
@@ -599,6 +609,8 @@ pub const Pass = struct {
             .params_end = params.end,
             .body_start = body.start,
             .body_end = body.end,
+            .param_pos_start = f.param_pos_start,
+            .param_pos_end = f.param_pos_end,
         });
     }
 
@@ -613,7 +625,7 @@ pub const Pass = struct {
         const t = p.tag(n);
         const at = p.posOf(n);
         switch (t) {
-            .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
+            .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
             .const_decl => {
                 const copy = try p.add(t, at, d.lhs, (try p.clone(@fromBackingInt(@intCast(d.rhs)))).int());
                 if (p.keep) |keep| if (std.mem.indexOfScalar(Node.Index, keep.items, n) != null) try keep.append(p.scratch, copy);
@@ -682,7 +694,11 @@ pub const Pass = struct {
             .call, .new_call => {
                 const callee = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const args = try p.cloneRange(p.rangeAt(d.rhs));
-                return p.add(t, at, callee.int(), @backingInt(try p.b.addRecord(args)));
+                const copy = try p.add(t, at, callee.int(), @backingInt(try p.b.addRecord(args)));
+                // A `Js.apply`'s call keeps its mark (`JsIr.Node.host`): §9
+                // item 6 reads it on the copy as on the original.
+                if (t == .call and p.hostOf(n)) p.b.markHost(copy);
+                return copy;
             },
             .object, .array, .template, .sequence => {
                 const r = try p.cloneRange(JsIr.inlineRange(d));

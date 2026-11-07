@@ -3,8 +3,9 @@
 -- with no words escapes every argument (§24.5), so each acceptance below is
 -- the row's. `from` and `to` return what they are handed, and `pure`,
 -- `finally` and `catchIf` what their function returns: the value is the
--- list, read after the edit (`alias`). The comparisons, `typeOf`, `typeIs`
--- and `fingerprint` keep nothing: accepted. `array` and `object` hold what
+-- list, read after the edit (`alias`). The comparisons — `same` and the
+-- null tests, `lt`, `gt`, `le`, `ge` — `typeOf`, `typeIs` and `fingerprint`
+-- keep nothing: accepted. `array` and `object` hold what
 -- they are handed in a new value: an edit while the new value is no longer
 -- read is accepted. `each`, `pure`, `finally`, `catchIf` and `suspending`
 -- call their functions during the call and keep them not, so what the
@@ -51,8 +52,9 @@ compares xs ys =
     a = Js.same xs ys
     b = Js.isNull (Js.from xs) && Js.isUndefined (Js.from xs) && Js.isNullish (Js.from xs)
     c = Js.typeIs (Js.from xs) "object" && Js.same (Js.typeOf (Js.from xs)) (Js.from "x")
+    d = Js.lt xs ys && Js.gt xs ys && Js.le xs ys && Js.ge xs ys
     zs = [ …xs, 1 ]
-    if a && b && c then List.length zs else 0
+    if a && b && c && d then List.length zs else 0
 
 
 identity : List Int → Int

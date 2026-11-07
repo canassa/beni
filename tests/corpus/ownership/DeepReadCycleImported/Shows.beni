@@ -1,0 +1,52 @@
+-- ownership (project): see Main.beni. The types and the callees, whose
+-- reads leave the argument's path on a cycle of the place graph (#1345).
+pub type Tree
+    = Tree { v : List Int, kids : List Tree }
+
+
+pub type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub type Leaf
+    = Leaf (List Int) Wood
+
+
+pub type Wood
+    = Wood (List Leaf)
+
+
+pub showKids : Rose → String
+showKids t =
+    case t of
+        Rose _ kids →
+            Debug.toString kids
+
+
+pub showWood : Leaf → String
+showWood t =
+    case t of
+        Leaf _ w →
+            Debug.toString w
+
+
+pub showLeaves : Leaf → String
+showLeaves t =
+    case t of
+        Leaf _ (Wood leaves) →
+            Debug.toString leaves
+
+
+pub grand : List Tree → Int
+grand ts =
+    case ts of
+        [ Tree a ] →
+            case a.kids of
+                [ Tree b ] →
+                    List.length b.v
+
+                _ →
+                    0
+
+        _ →
+            0

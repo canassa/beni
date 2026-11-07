@@ -1,0 +1,7 @@
+-- load
+<body>
+  <main>
+    <p id="zone">"UTC"</p>
+    <p id="day">"18"</p>
+  </main>
+</body>

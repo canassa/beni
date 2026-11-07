@@ -1,0 +1,13 @@
+module ComparisonAlias
+  13:39 List.push a: accepted param
+  18:21 List.push a: accepted param
+  25:6 value ComparisonAlias.sameLength: pending: it is returned
+  29:11 value ComparisonAlias.byLength: pending: it is returned
+  33:14 call ComparisonAlias.sameLength x#T.0: accepted param (ComparisonAlias.sameLength writes π1#T.0)
+  37:14 call ComparisonAlias.byLength x#T.0: accepted param (ComparisonAlias.byLength writes π1#T.0)
+  summary sameLength: π1#T.0 RW[storage], π2#T.0 R
+  summary byLength: π1#T.0 RW[storage], π2#T.0 R
+  summary same: π1#T.0 RW[storage], π2#T.0 R
+  summary less: π1#T.0 RW[storage], π2#T.0 R
+  demands 6: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0
+total 6: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0

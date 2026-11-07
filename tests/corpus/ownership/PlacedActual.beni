@@ -1,0 +1,18 @@
+-- ownership: an actual at a place other than its parameter's is the same
+-- value there, not a value inside it (ownership-v2.md §2.13.9, #1242).
+-- `List.push zs 3` gives `List.push`'s `List a` the `List Int` `zs`, a
+-- recast to another place; its cells are `zs`'s own, exactly, so `h`
+-- returns a fresh list at `.0`. `k` takes it as `a` and pushes it while
+-- `ys` is still read: accepted, as v1 accepts it. Reading the recast as a
+-- value inside `zs`, with `⊤`, refused the push on `a`.
+h : List Int → List Int × Int
+h ys =
+    zs = List.push [ 1 ] 2
+    ( List.push zs 3, List.length ys )
+
+
+pub k : ⊤ → List Int × List Int
+k ⊤ =
+    ys = [ 1 ]
+    ( a, _ ) = h ys
+    ( List.push a 9, ys )

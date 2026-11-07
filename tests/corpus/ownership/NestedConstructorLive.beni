@@ -1,0 +1,49 @@
+-- ownership: a push onto a list two constructors deep is refused while the
+-- list stays live (issue #509). `Ok (Ok xs)` reached `v` through two levels
+-- of one non-recursive type, and the nested path was dropped, so the push
+-- was `accepted fresh` and `xs` was read after it. Every shape is refused
+-- `alias`, as the one-level `Ok xs` is, under both checkers.
+pub viaCases : ⊤ → { f0 : List Int, f1 : Int }
+viaCases _ =
+    xs = [ 1 ]
+    r = Ok xs
+    rr = Ok r
+    y =
+        case rr of
+            Err _ →
+                [ 0 ]
+
+            Ok inner →
+                case inner of
+                    Err _ →
+                        [ 0 ]
+
+                    Ok v →
+                        List.push v 9
+    { f0 = y, f1 = List.length xs }
+
+
+pub viaPattern : List Int → { f0 : List Int, f1 : Int }
+viaPattern xs =
+    rr = Ok (Ok xs)
+    y =
+        case rr of
+            Ok (Ok v) →
+                List.push v 9
+
+            _ →
+                [ 0 ]
+    { f0 = y, f1 = List.length xs }
+
+
+pub viaJust : List Int → { f0 : List Int, f1 : Int }
+viaJust xs =
+    mm = Just (Just xs)
+    y =
+        case mm of
+            Just (Just v) →
+                List.push v 9
+
+            _ →
+                [ 0 ]
+    { f0 = y, f1 = List.length xs }

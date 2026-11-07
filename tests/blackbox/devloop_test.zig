@@ -220,6 +220,46 @@ test "a project's beni.json supplies build's platform, paths and output director
     try testing.expectEqualStrings("beni: cannot read 'beni.json': it is not a JSON object\n", broken.stderr);
 }
 
+test "a project's \"trustedTypes\" is a boolean, and a lowering that writes a sink refuses it" {
+    // frontend.md §10.1, boundary.md §9.4.7 (#2208): `inline` writes rows
+    // with `insertAdjacentHTML`, so a page under Trusted Types would stop on
+    // its first render; the build is refused before anything is written. A
+    // chain whose lowering writes no DOM (`ssr`) builds as before.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("page/Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\view : {} → Html {}
+        \\view _ = <p>hello</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }
+        \\
+    );
+    try w.write("server/Main.beni", nodeMain("on node"));
+    try w.write("beni.json", "{ \"trustedTypes\": true }");
+
+    const refused = try w.runWith(&.{ "build", "--platform=browser-inline", "--out=out", "page" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), refused.exit_code);
+    try testing.expectEqualStrings("beni: beni.json's \"trustedTypes\" is true, and the markup lowering 'inline' does not support Trusted Types\n", refused.stderr);
+    try testing.expect(!w.exists("out"));
+
+    const served = try w.runWith(&.{ "build", "--platform=node", "--out=dist", "server" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), served.exit_code);
+    try testing.expectEqualStrings("", served.stderr);
+    try w.expectProgram("dist/_main.mjs", .{ .stdout = "on node\n" });
+
+    // Any other JSON type is the manifest's exit-2 failure.
+    try w.write("beni.json", "{ \"trustedTypes\": \"yes\" }");
+    const wrong = try w.runWith(&.{ "build", "--platform=node", "--out=dist", "server" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), wrong.exit_code);
+    try testing.expectEqualStrings("beni: cannot read 'beni.json': it is not a JSON object\n", wrong.stderr);
+}
+
 test "beni new writes a browser-tea project that builds, and refuses a directory that is not empty" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

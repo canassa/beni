@@ -1,0 +1,27 @@
+-- FoldOverFoldShared (Appendix B, S4; R-5.3.2, R-3.1): `r` holds every list of
+-- `xs` twice, so the element write is refused. Both folds stay accepted: their
+-- accumulator writes are storage writes. The fold-element condition stays lost
+-- (Appendix C.9).
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List (List Int)
+build xs =
+    r = List.foldl xs (List.foldr xs [] λx a → List.push a x) λx a → List.push a x
+    List.map r λl → List.push l 1
+
+
+main : Program
+main = Node.print (show (build [ [ 1 ], [ 2 ] ]))

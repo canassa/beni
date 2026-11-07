@@ -1,0 +1,17 @@
+-- ownership: a hold through alternatives in the holder is approximate
+-- (ownership-v2.md §2.8 condition 5, #1214). `j2`'s `h` is `{ f = xs }` or
+-- `{ f = ys }`, so `h.f` holds `xs` only when `b` is true: refused
+-- `element` at `h.f`, approximately (the live index said exact `alias`). `j1`
+-- holds `xs` or `ys` at its root, `element` as before.
+pub j2 : Bool, List Int, List Int → List Int × { f : List Int }
+j2 b xs ys =
+    h = if b then { f = xs } else { f = ys }
+    p = List.push xs 1
+    ( p, h )
+
+
+pub j1 : Bool, List Int, List Int → List Int × List Int
+j1 b xs ys =
+    h = if b then xs else ys
+    p = List.push xs 1
+    ( p, h )

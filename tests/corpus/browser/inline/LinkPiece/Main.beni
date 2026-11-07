@@ -1,0 +1,34 @@
+-- Another module's markup with URL bindings (browser-inline.md §8.4,
+-- §10.5, amended 2026-11-05): the widget's links are written through the
+-- runtime's `safeUrl` at the mount and by the program's handler of each
+-- of its keys, mapped with `Html.map`. A page number the widget's key
+-- moves is written again; a home link that becomes a script URL is written
+-- as an empty `href`; `über`, a constant whose answer turns on a character
+-- outside ASCII, is written once, by the first pass.
+import Html exposing (Html)
+import Nav
+import Tea
+
+
+type alias Model =
+    nav : Nav.Model
+
+
+type Msg
+    = NavMsg Nav.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        NavMsg sub →
+            { model | nav = Nav.update sub model.nav }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { nav = { page = 1, home = "/" } }
+        , update = update
+        , view = λmodel → <main>{Html.map (Nav.view model.nav) NavMsg}</main>
+        }

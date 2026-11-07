@@ -1,0 +1,4 @@
+pub foreign impure csp : String → ⊤
+
+
+pub foreign impure observation : ⊤ → String

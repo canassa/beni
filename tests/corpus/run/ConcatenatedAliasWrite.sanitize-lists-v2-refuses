@@ -1,0 +1,3 @@
+# v2 refuses the write(s) below; the edit would change what the program prints.
+30:9 list_still_used ConcatenatedAliasWrite.appendAlias
+31:9 list_still_used ConcatenatedAliasWrite.viaWrapper

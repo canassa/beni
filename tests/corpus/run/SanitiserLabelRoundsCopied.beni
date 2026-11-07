@@ -1,0 +1,29 @@
+-- The labels of `SanitiserLabelRounds`, each applied to its own code
+-- (`ownership-v2.md` §2.11.3, *A virtual call is an evaluation's*, #2166). `q` goes
+-- round the fields through `k2`, and `k1` copies what it hands `r.1`, so `w.1`
+-- holds no part of `q` and `push` may write it. A virtual call kept by
+-- position gave `k1`'s label `k2`'s code, whose answer holds `q`, and this
+-- write was refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    k0 = λv → v
+    k1 = λv → List.map v λx → x
+    k2 = λv → if List.length v > 0 then v else q
+    r = List.foldl [ 1, 2, 3, 4, 5, 6 ] ( [], [], [] ) λi acc →
+        ( List.foldl [ 1, 2 ] (k0 acc.2) λj s → s
+        , List.foldl [ 1, 2 ] (k1 acc.0) λj s → k1 s
+        , List.foldl [ 1, 2 ] (k2 acc.1) λj s → s
+        )
+    w = ( r.0, r.1, r.2 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.1)

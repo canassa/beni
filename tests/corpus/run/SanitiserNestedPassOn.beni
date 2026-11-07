@@ -1,0 +1,37 @@
+-- v1 must keep the facts of a nested `passOn` (#1747). `callee g writer7`
+-- hands `g` on, and the supply of `callee` instantiates `writer7` with
+-- `h = g`, which is a second `passOn` of another summary. `writer7`
+-- appends onto what `g` returns in place, and `g` returns `ys`, so `test`
+-- edits a list it does not own and v1 refuses it. A guard that stops a
+-- nested `passOn` by its parameter numbers alone loses that `need`, and the
+-- sanitised build traps on a stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+callee : (List Int → List Int), ((List Int → List Int) → List Int) → List Int
+callee k m = k (m k)
+
+
+stash : (List Int → List Int) → List (List Int → List Int)
+stash k = [ k ]
+
+
+writer7 : (List Int → List Int) → List Int
+writer7 h = List.push (List.append (h [ 1 ]) (h [ List.length (stash h) ])) 7
+
+
+test : (List Int → List Int) → List Int
+test g = callee g writer7
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    ys = [ 1 ]
+    r = test λl → ys
+    Node.printLines [ show r, show ys ]

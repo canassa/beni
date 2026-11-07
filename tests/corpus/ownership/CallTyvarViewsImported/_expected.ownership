@@ -1,0 +1,38 @@
+module Main
+  19:9 List.push xs: rejected alias: g.x.c holds it and is read at 20:5
+  30:9 List.push xs: rejected alias: g.x.c holds it and is read at 31:5
+  41:9 List.push xs: rejected alias: g.x.c holds it and is read at 42:5
+  54:9 List.push xs: rejected alias: g.x.c holds it and is read at 55:5
+  65:9 List.push xs: rejected alias: g.x.c holds it and is read at 66:5
+  71:5 List.push v.c: accepted param
+  78:9 call Main.wv g.x.c: rejected call: xs holds it and is read at 79:5; the callee writes it only through an approximate step (Main.wv writes π1.x.c) (approx)
+  78:9 call Main.wv g.y.c: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (Main.wv writes π1.y.c) (approx)
+  91:9 List.push xs: rejected alias: g.x.c holds it and is read at 92:5
+  104:9 List.push xs: rejected alias: g.x.c holds it and is read at 105:5
+  118:9 List.push xs: rejected alias: g.x.c holds it and is read at 119:5
+  summary a1: π1.x R, π1.y R
+  summary viewActual: π1 RW[storage], π1[*] R
+  summary a2: π1.x R, π1.y R
+  summary chooseInChoose: π1 RW[storage], π1[*] R
+  summary a3: π1.x R, π1.y R
+  summary twoViews: π1 RW[storage], π1[*] R
+  summary a4: π1.x R, π1.y R
+  summary boundView: π1 RW[storage], π1[*] R
+  summary a5: π1.x R, π1.y R
+  summary chooseInRecord: π1 RW[storage], π1[*] R
+  summary wv: π1.x R, π1.x.c RAw[storage], π1.x.c[*] A, π1.y R, π1.y.c RAw[storage], π1.y.c[*] A; res [*] ~condition(fresh1) ~π1.x.c[*] ~π1.y.c[*], ~π1.x.c ~π1.y.c
+  summary writtenView: π1 Rw[storage], π1[*] R
+  summary b1: π1.x R, π1.x.c R, π1.y R, π1.y.c R
+  summary storedChoice: π1 RW[storage], π1[*] R
+  summary b2: π1.x R, π1.x.c R
+  summary storedSelector: π1 RW[storage], π1[*] R
+  summary b3: π1.x R, π1.x.c R
+  summary storedBound: π1 RW[storage], π1[*] R
+  demands 11: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+module Picks
+  summary choose: π2 RA, π3 RA; res π2 π3
+  summary ans: π1.b RA; res π1.b
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 11: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause alias 8
+cause call 2

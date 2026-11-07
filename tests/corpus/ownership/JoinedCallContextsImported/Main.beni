@@ -1,0 +1,67 @@
+-- ownership (project): `JoinedCallContexts` with the template and its
+-- helpers in another module (ownership-v2.md Appendix B, J×A, the S3b
+-- half; R-5.1.1, R-5.1.5). The verdicts are the same-module fixture's: of
+-- two calls of `ident`, the one over one list twice is refused and the one
+-- over fresh lists accepted (`twoCalls`); their join is refused
+-- (`joined`), a join of fresh answers accepted (`bothFresh`); a shared
+-- actual is refused (`sharedActual`) and two copies accepted
+-- (`freshActual`, which v1 refuses); `pairOf` over one list twice is
+-- refused, over two accepted; `keep x x` is refused, `keep x y` accepted.
+import Calls
+
+
+pub twoCalls : List Int → List (List Int) × List (List Int)
+twoCalls x = ( Calls.pushAll (Calls.ident [ [ 1 ], [ 2 ] ]), Calls.pushAll (Calls.ident [ x, x ]) )
+
+
+pub joined : Bool, List Int → List (List Int)
+joined c x =
+    Calls.pushAll
+        (if c then
+            Calls.ident [ [ 1 ], [ 2 ] ]
+         else
+            Calls.ident [ x, x ]
+        )
+
+
+pub bothFresh : Bool → List (List Int)
+bothFresh c =
+    Calls.pushAll
+        (if c then
+            Calls.ident [ [ 1 ], [ 2 ] ]
+         else
+            Calls.ident [ [ 3 ] ]
+        )
+
+
+pub sharedActual : List Int → List (List Int)
+sharedActual x = Calls.pushAll (Calls.ident (Calls.sharedOf x))
+
+
+pub freshActual : List Int → List (List Int)
+freshActual x = Calls.pushAll (Calls.ident (Calls.freshOf x))
+
+
+pub apartParams : ⊤ → List (List Int)
+apartParams ⊤ =
+    a = [ 1 ]
+    b = [ 2 ]
+    Calls.pairOf a b
+
+
+pub sameParams : List Int → List (List Int)
+sameParams x = Calls.pairOf x x
+
+
+pub aliasedKeep : List Int → List Int × List Int
+aliasedKeep x =
+    case Calls.keep x x of
+        ( a, b ) →
+            ( List.push a 1, b )
+
+
+pub distinctKeep : List Int, List Int → List Int × List Int
+distinctKeep x y =
+    case Calls.keep x y of
+        ( a, b ) →
+            ( List.push a 1, b )

@@ -1,0 +1,14 @@
+-- ownership (project): see Main.beni. `g` and `g2` publish the results of
+-- polymorphic callees at an instantiated type (#1374).
+pub w1 x = ( x, x )
+
+
+pub w2 x = w1 (w1 x)
+
+
+pub g : List Int → List Int × List Int
+g xs = w1 xs
+
+
+pub g2 : List Int → (List Int × List Int) × (List Int × List Int)
+g2 xs = w2 xs

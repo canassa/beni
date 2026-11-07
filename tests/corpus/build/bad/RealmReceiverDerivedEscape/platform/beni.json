@@ -1,0 +1,1 @@
+{"platform": true, "name": "realmreceiverderivedescape", "program": "Start.Program", "entryKinds": [{"programType": "Start.Program", "realm": "dedicatedWorker", "runtime": "Start", "constructors": [], "launches": [], "parameters": []}]}

@@ -1,0 +1,24 @@
+-- ownership: a record update's base waits for its consumer, which reads it
+-- at every field but the updated ones (`ownership-v2.md` §2.6's
+-- `record_update` row, §2.8 *Dead*). `grow` writes the updated field in
+-- place: accepted, `param`, the base holds no field the write reaches.
+-- `keepOld` writes the field and also keeps it under another field: the
+-- base `m` is read again after the write, refused. `other`
+-- writes a field the update does not replace: the base still holds it
+-- for the consumer, refused.
+type alias Model =
+    items : List Int
+    kept : List Int
+    count : Int
+
+
+pub grow : Model → Model
+grow m = { m | items = List.push m.items 1, count = m.count + 1 }
+
+
+pub keepOld : Model → Model
+keepOld m = { m | items = List.push m.items 1, kept = m.items }
+
+
+pub other : Model → Model
+other m = { m | items = List.push m.kept 1 }

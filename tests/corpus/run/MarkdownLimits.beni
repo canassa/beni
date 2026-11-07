@@ -1,0 +1,161 @@
+-- run: the limits of core's `Markdown.parse` (docs/design/markdown.md §7).
+-- The nesting caps: 64 block quotes or lists, mixed or not, and 64 levels
+-- of emphasis and images, are trees; a 65th marker stays as text (§7.2). Then cmark's 25 pathological
+-- inputs (cmark `test/pathological_tests.py`) at cmark's sizes, and two of
+-- them larger: a quadratic `[a](b` (the destination scan) or `<!--` (the
+-- comment scan) cannot finish them inside the 120-second hang guard (§7.1).
+-- Each line is a summary of the tree: its blocks, its inline nodes, how
+-- deep they nest, and how much text they hold.
+import Markdown exposing (Block, BlockQuote, BulletList, CodeBlock, CodeSpan, Emphasis, HardBreak, Heading, HtmlBlock, HtmlInline, Image, Inline, Link, OrderedList, Paragraph, SoftBreak, Strong, Text, ThematicBreak)
+import Node exposing (Program)
+
+
+type alias Summary =
+    blocks : Int
+    inlines : Int
+    depth : Int
+    chars : Int
+
+
+none : Summary
+none = { blocks = 0, inlines = 0, depth = 0, chars = 0 }
+
+
+both : Summary, Summary → Summary
+both a b =
+    { blocks = a.blocks + b.blocks
+    , inlines = a.inlines + b.inlines
+    , depth = Basics.max a.depth b.depth
+    , chars = a.chars + b.chars
+    }
+
+
+ofBlocks : List Block → Summary
+ofBlocks bs = List.foldl bs none λb acc → both acc (ofBlock b)
+
+
+ofBlock : Block → Summary
+ofBlock b =
+    one = { none | blocks = 1 }
+    case b of
+        Paragraph xs →
+            both one (ofInlines xs)
+
+        Heading _ xs →
+            both one (ofInlines xs)
+
+        ThematicBreak →
+            one
+
+        CodeBlock _ code →
+            { one | chars = String.length code }
+
+        HtmlBlock html →
+            { one | chars = String.length html }
+
+        BlockQuote inner →
+            both one (ofBlocks inner)
+
+        BulletList _ items →
+            List.foldl items one λitem acc → both acc (ofBlocks item)
+
+        OrderedList _ _ items →
+            List.foldl items one λitem acc → both acc (ofBlocks item)
+
+
+ofInlines : List Inline → Summary
+ofInlines xs = List.foldl xs none λx acc → both acc (ofInline x)
+
+
+ofInline : Inline → Summary
+ofInline x =
+    one = { none | inlines = 1 }
+    nested inner =
+        s = ofInlines inner
+        { s | inlines = s.inlines + 1, depth = s.depth + 1 }
+    case x of
+        Text s →
+            { one | chars = String.length s }
+
+        CodeSpan s →
+            { one | chars = String.length s }
+
+        HtmlInline s →
+            { one | chars = String.length s }
+
+        Emphasis inner →
+            nested inner
+
+        Strong inner →
+            nested inner
+
+        Link _ _ inner →
+            nested inner
+
+        Image _ _ inner →
+            nested inner
+
+        HardBreak →
+            one
+
+        SoftBreak →
+            one
+
+
+rep : String, Int → String
+rep s n = String.repeat s n
+
+
+cases : List (String × String)
+cases =
+    [ ( "64 block quotes", rep "> " 64 ++ "a" )
+    , ( "65 block quotes", rep "> " 65 ++ "a" )
+    , ( "64 nested lists", String.concat (List.map (List.range 0 63) λx → rep "  " x ++ "* a\n") )
+    , ( "65 nested lists", String.concat (List.map (List.range 0 64) λx → rep "  " x ++ "* a\n") )
+    , ( "64 emphasis levels", rep "*a " 64 ++ "b" ++ rep " a*" 64 )
+    , ( "65 emphasis levels", rep "*a " 65 ++ "b" ++ rep " a*" 65 )
+    , ( "64 quotes and lists, mixed", rep "> - " 32 ++ "a" )
+    , ( "66 quotes and lists, mixed", rep "> - " 33 ++ "a" )
+    , ( "64 images and emphasis", rep "![*" 32 ++ "x" ++ rep "*](/u)" 32 )
+    , ( "65 images and emphasis", rep "![*" 32 ++ "_x_" ++ rep "*](/u)" 32 )
+    , ( "nested strong emph", rep "*a **a " 32500 ++ "b" ++ rep " a** a*" 32500 )
+    , ( "many emph closers with no openers", rep "a_ " 32500 )
+    , ( "many emph openers with no closers", rep "_a " 32500 )
+    , ( "many link closers with no openers", rep "a]" 32500 )
+    , ( "many link openers with no closers", rep "[a" 32500 )
+    , ( "mismatched openers and closers", rep "*a_ " 25000 )
+    , ( "issue #389", rep "*a " 20000 ++ rep "_a*_ " 20000 )
+    , ( "openers and closers multiple of 3", "a**b" ++ rep "c* " 25000 )
+    , ( "link openers and emph closers", rep "[ a_" 25000 )
+    , ( "pattern [ (]( repeated", rep "[ (](" 40000 )
+    , ( "pattern ![[]() repeated", rep "![[]()" 160000 )
+    , ( "nested brackets", rep "[" 25000 ++ "a" ++ rep "]" 25000 )
+    , ( "nested block quotes", rep "> " 25000 ++ "a" )
+    , ( "deeply nested lists"
+      , String.concat (List.map (List.range 0 499) λx → rep "  " x ++ "* a\n")
+      )
+    , ( "backticks", String.concat (List.map (List.range 1 2499) λx → "e" ++ rep "`" x) )
+    , ( "unclosed links A", rep "[a](<b" 30000 )
+    , ( "unclosed links B", rep "[a](b" 130000 )
+    , ( "unclosed <!--", "</" ++ rep "<!--" 450000 )
+    , ( "empty lines in deeply nested lists", rep "- " 30000 ++ "x" ++ rep "\n" 30000 )
+    , ( "empty lines in deeply nested lists in blockquote"
+      , "> " ++ rep "- " 30000 ++ "x\n" ++ rep ">\n" 30000
+      )
+    , ( "emph in deep blockquote", rep ">" 100000 ++ rep "a*" 100000 )
+    , ( "nested inlines", rep "*" 20000 ++ "a" ++ rep "*" 20000 )
+    , ( "a label scan after each ]", rep ("x][" ++ rep "\\a" 499) 1000 )
+    , ( "many references"
+      , String.concat (List.map (List.range 1 80000) λx → "[" ++ String.fromInt x ++ "]: u\n")
+          ++ rep "[0] " 5000
+      )
+    ]
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map cases λ( name, input ) →
+            s = ofBlocks (Markdown.parse input)
+            "${name}: blocks ${String.fromInt s.blocks}, inlines ${String.fromInt s.inlines}, depth ${String.fromInt s.depth}, chars ${String.fromInt s.chars}"
+        )

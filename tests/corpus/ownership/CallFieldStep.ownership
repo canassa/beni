@@ -1,0 +1,32 @@
+module CallFieldStep
+  36:9 List.push xs: rejected alias: g.x.b holds it and is read at 37:5
+  44:9 List.push xs: rejected alias: k.y.x.b holds it and is read at 45:5
+  52:9 List.push xs: accepted param
+  66:9 List.push xs: rejected alias: g.x.1 holds it and is read at 67:5
+  83:9 List.push xs: rejected alias: g.x#Box.0 holds it and is read at 84:5
+  87:8 List.push r.b: accepted param
+  90:10 call CallFieldStep.wb g.x.b: accepted param (CallFieldStep.wb writes π1.b)
+  97:9 call CallFieldStep.wxb2 g.x.b: rejected alias: xs holds it and is read at 98:5 (CallFieldStep.wxb2 writes π1.x.b)
+  109:9 List.push xs: rejected alias: h.x.b holds it and is read at 110:5
+  summary rb: π1.b R
+  summary ra: π1.a R
+  summary rxb2: π1.x R, π1.x.b R
+  summary rxa2: π1.x R, π1.x.a R
+  summary rxb3: π1.y R, π1.y.x R, π1.y.x.b R
+  summary twoCalls: π1 RW[storage], π1[*] R
+  summary threeCalls: π1 RW[storage], π1[*] R
+  summary otherField: π1 RW[storage], π1[*] R
+  summary tb: π1.1 R
+  summary txb2: π1.x R, π1.x.1 R
+  summary tuplePart: π1 RW[storage], π1[*] R
+  summary cb: π1 R, π1#Box.0 R
+  summary cxb2: π1.x R, π1.x#Box.0 R
+  summary ctorField: π1 RW[storage], π1[*] R
+  summary wb: π1.b RAW[storage], π1.b[*] A; res [*] ~π1.b[*], π1.b
+  summary wxb2: π1.x R, π1.x.b RAW[storage], π1.x.b[*] RA; res [*] ~π1.x.b[*], π1.x.b
+  summary written: π1 RW[storage], π1[*] R
+  summary both: π1.x R, π1.x.b R, π2.x R, π2.x.b R
+  summary secondArgument: π1 RW[storage], π1[*] R
+  demands 9: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 9: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause alias 6

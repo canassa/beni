@@ -1,0 +1,10 @@
+module NestedConstructorLive
+  22:25 List.push v: rejected alias: xs holds it and is read at 23:20
+  32:17 List.push v: rejected alias: xs holds it and is read at 36:20
+  45:17 List.push v: rejected alias: xs holds it and is read at 49:20
+  summary viaCases: res .f0 fresh1, fresh501◦
+  summary viaPattern: π1 RAW[storage], π1[*] RA; res .f0 fresh1 π1, .f0[*] ~π1[*], fresh501◦
+  summary viaJust: π1 RAW[storage], π1[*] RA; res .f0 fresh1 π1, .f0[*] ~π1[*], fresh501◦
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause alias 3

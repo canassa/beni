@@ -1,0 +1,81 @@
+-- `Html.targetSelection` and `Dom.select` (boundary.md §9.8.6, amended
+-- 2026-11-04 for #1900): a text field's selection, read from an event and
+-- set by id, in code points. The text is "a😀bcd": `😀` is one code point
+-- and two UTF-16 units, so the driver's `select #ed 1 3` (units) is the
+-- code points 1 to 2, and `Dom.select` of 3 to 4 sets the units 4 to 5.
+-- A key on a button reads no selection, and `Dom.select` on a node that
+-- is not there, or on one that is no text field, is a typed error.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Key String (Maybe Html.Selection)
+    | Errors
+
+
+update : Msg, ⊤ → ⊤ × Cmd Msg
+update msg model =
+    case msg of
+        Key key selection →
+            _ = Debug.log "${key}: selection" selection
+            if key == "Tab" then
+                ( model, Cmd.perform selectLater )
+            else
+                ( model, Cmd.none )
+
+        Errors →
+            ( model, Cmd.perform errors )
+
+
+selectLater : Cmd.Send Msg → ⊤
+selectLater _ =
+    report "select 3 4 backward" (Dom.select "ed" { start = 3, end = 4, backward = True })
+
+
+errors : Cmd.Send Msg → ⊤
+errors _ =
+    report "select nowhere" (Dom.select "nowhere" { start = 0, end = 1, backward = False })
+    report "select a button" (Dom.select "errors" { start = 0, end = 1, backward = False })
+
+
+report : String, Result Dom.SelectError ⊤ → ⊤
+report name result =
+    case result of
+        Ok ⊤ →
+            Debug.log "${name}: ok" ⊤
+
+        Err (Dom.NoField id) →
+            _ = Debug.log "${name}: no field" id
+            ⊤
+
+        Err (Dom.NotText id) →
+            _ = Debug.log "${name}: not text" id
+            ⊤
+
+
+view : ⊤ → Html Msg
+view _ =
+    <main>
+        <textarea id="ed" onKeyDown={λevent → Key (Html.key event) (Html.targetSelection event)} />
+        <button
+            id="errors"
+            onClick={Errors}
+            onKeyDown={λevent → Key (Html.key event) (Html.targetSelection event)}
+        >
+            errors
+        </button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( ⊤, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

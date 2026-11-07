@@ -1,0 +1,25 @@
+-- StoredCallbackResult (Appendix B, S4; R-4.6.10, R-5.12.3): `List.update`'s
+-- callback returns a capture, which now sits in the list, so the later write
+-- of the captured holder is refused. The control returns the taken item:
+-- see StoredCallbackTaken.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main =
+    c = [ 1 ]
+    r = List.update [ [ 0 ], [ 2 ] ] 0 λ_ → c
+    d = List.push c 9
+    Node.print "${show r} ${ints d}"

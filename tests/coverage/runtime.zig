@@ -22,7 +22,7 @@ const linux = std.os.linux;
 const options = @import("coverage_options");
 const beni_main = @import("beni_main");
 
-pub fn main(init: std.process.Init) u8 {
+pub fn main(init: std.process.Init.Minimal) u8 {
     return beni_main.main(init);
 }
 

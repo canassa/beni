@@ -1,0 +1,7 @@
+-- ownership (project): the same, `eq` imported. Its block says an importer
+-- may not apply its class, so `==` in Main is not derived (§2.13.13).
+import Lib
+
+
+pub bad2 : List Int → Bool × List Int
+bad2 xs = ( Lib.Key xs == Lib.Key [], xs )

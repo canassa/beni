@@ -1,0 +1,36 @@
+-- The twin of `SanitiserClosureList` (`ownership-v2.md` §2.11.3): the captured
+-- function only reads, and a closure that writes a list of its own is run from
+-- a list. v2 accepts both; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+reader : List Int, (List Int → Int) → List Int
+reader y g = List.map [ (λ⊤ → g y), (λ⊤ → 0) ] λq → q ⊤
+
+
+owner : ⊤ → List (List Int)
+owner ⊤ = List.map [ (λ⊤ → List.push [ 1 ] 2), (λ⊤ → []) ] λq → q ⊤
+
+
+handed : List Int, (List Int → Int), ((⊤ → Int) → a) → a
+handed y g k = k λ⊤ → g y
+
+
+main : Program
+main =
+    lines =
+        [ show (reader [ 1 ] List.length)
+        , shows (owner ⊤)
+        , String.fromInt (handed [ 1 ] List.length λc → c ⊤)
+        ]
+    Node.print (String.join lines "\n")

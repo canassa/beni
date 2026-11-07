@@ -1,0 +1,7 @@
+-- A native receiver mismatch names the explicit identity upcast.
+import Browser.Host.Element as Element
+import Browser.Host.Node as Node
+
+
+pub wrong : Element.Element → Maybe String
+wrong element = Node.textContent element

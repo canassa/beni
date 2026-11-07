@@ -1,0 +1,37 @@
+-- A runtime catch for a fold that holds the answer it hands back
+-- (`ownership-v2.md` §2.11.3, *a label's answer handed back to it*):
+-- `keepFold` keeps each answer in its result and hands it to the next call
+-- of the callback, which pushes onto it. Read as the accumulator it was
+-- handed, the answer must still be judged where it is handed back: there a
+-- pending operand holds it. Without that the edit is accepted, every row is
+-- one list, and the sanitised run traps.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+keepFold : List a, b, (a, b → b) → List b
+keepFold l acc f =
+    case l of
+        [] →
+            []
+
+        [ x, …rest ] →
+            a = f x acc
+            [ a, …keepFold rest a f ]
+
+
+rows : ⊤ → String
+rows ⊤ =
+    sep = ";"
+    String.join (List.map (keepFold [ 1, 2, 3 ] [] λn acc → List.push acc n) ints) sep
+
+
+main : Program
+main = Node.print (rows ⊤)

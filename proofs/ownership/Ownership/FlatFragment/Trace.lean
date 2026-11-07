@@ -1,4 +1,5 @@
-import Ownership.FlatFragment.ChainCase
+import Ownership.FlatFragment.ObjectUpdate
+import Ownership.RecordPrograms
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
 
@@ -98,7 +99,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     have covered : ∀ use ∈ atomUses a, use ∈ live :=
       fun use member => usesLive use (by simpa [uses, usesArms] using member)
     obtain ⟨o, w, abs, valueAtom, heapAtom, abstractRun, paired, described, observed, valueTyped,
-      _, _, _, tags, chains⟩ := flat_atom_values inv atomTyped covered
+      _, _, allocated, tags, chains, deep⟩ := flat_atom_entry inv atomTyped covered
     obtain ⟨atomRun, checkerState⟩ := infer_atom_success defaultConfig accepted
     subst checkerState
     rw [abstractRun] at atomRun
@@ -118,10 +119,14 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
           refine ⟨w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
             Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
             Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), ?_, ?_,
-            observed, ?_, tags, chains⟩
+            observed, ?_, ?_, tags, chains, by simpa only [heapAtomPost_heap] using deep,
+            inv.kindsAt_of (heapAtomPost_heap hs vs.kept.toList)
+              (by unfold Ownership.FlatFragment.StateFrame.heapAtomPost heapObserved; split <;> rfl)
+              (fun _ state => kinded_atom inv state atomTyped covered heapAtom)⟩
           · rw [heapAtomPost_heap]; exact paired
           · rw [heapAtomPost_heap]; exact described
           · rw [heapAtomPost_heap]; exact valueTyped
+          · rw [heapAtomPost_heap]; exact allocated
     · intro message failed
       exact atom_failure inv valueAtom heapAtom failed
   | @letE rhs rest v rhsFlat restFlat ihRhs ihRest =>
@@ -134,7 +139,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
     exact branch_preserved yesFlat noFlat ihYes ihNo inv typed shadow boundKeys usesLive afterSub
       defaultConfig accepted
-  | @literal args =>
+  | @literal args t elemT =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live := by
@@ -143,14 +148,14 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨atom, member, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      literal_preserved (depth := depth) inv typed covered defaultConfig accepted
+      literal_preserved (depth := depth) elemT inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @push receiver item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -177,15 +182,19 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       apply usesLive use
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨receiver, by simp, useMember⟩
-    obtain ⟨_, _, _, success, failure⟩ :=
+    obtain ⟨typeInt, _, resultScalar, success, failure⟩ :=
       length_preserved (depth := depth) inv typed covered defaultConfig accepted
+    subst typeInt
+    subst resultScalar
+    have free : DictFree .int := .int
+    have shapeOut : FlatAbstract .int .scalar := .int
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @scalar op a b sop =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -202,16 +211,20 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       rw [uses_scalar sop]
       simp only [atomsUses, List.mem_flatMap]
       exact ⟨b, by simp, useMember⟩
-    obtain ⟨_, _, _, success, failure⟩ :=
+    obtain ⟨typeInt, _, resultScalar, success, failure⟩ :=
       Ownership.FlatFragment.Scalar.scalar_preserved (depth := depth) inv sop typed
         coveredA coveredB defaultConfig accepted
+    subst typeInt
+    subst resultScalar
+    have free : DictFree .int := .int
+    have shapeOut : FlatAbstract .int .scalar := .int
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @shared value =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -226,10 +239,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value' vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value' vs' run
+        shaped, tags, chains, deep⟩ := success value' vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
 
   | @record args =>
@@ -246,10 +259,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
 
   | @ok error x flatError =>
@@ -266,10 +279,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @err success x flatSuccess =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -285,10 +298,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success' value vs' run
+        shaped, tags, chains, deep⟩ := success' value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @resultCase onError onSuccess input err ok errorFlat successFlat ihError ihSuccess =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -298,15 +311,16 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
   | @endChain =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ _ afterSub defaultConfig accepted
-    obtain ⟨_, _, _, success, failure⟩ :=
+    obtain ⟨typeChain, _, shapeOut, success, failure⟩ :=
       endChain_preserved (depth := depth) inv typed defaultConfig accepted
+    have free : DictFree type := by rw [typeChain]; exact .chain _ .int
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @link head tail =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -323,15 +337,16 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       rw [uses_link]
       simp only [atomsUses, List.mem_flatMap]
       exact ⟨tail, by simp, useMember⟩
-    obtain ⟨_, _, _, success, failure⟩ :=
+    obtain ⟨typeChain, _, shapeOut, success, failure⟩ :=
       link_preserved (depth := depth) inv typed coveredH coveredT defaultConfig accepted
+    have free : DictFree type := by rw [typeChain]; exact .chain _ .int
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @chainCase onEnd onLink input head tail endFlat linkFlat ihEnd ihLink =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -364,10 +379,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @set receiver index item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -407,10 +422,29 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @view receiver front =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_view]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.View.view_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @prepend item receiver =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -432,11 +466,146 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
+  | @dictEmpty t _ =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ _ afterSub defaultConfig accepted
+    obtain ⟨success, failure⟩ :=
+      Ownership.FlatFragment.Dictionary.dictEmpty_preserved (depth := depth) inv typed defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @dictInsert receiver key item =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ [receiver, key, item], ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      rw [uses_dictInsert]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    exact Ownership.FlatFragment.Dictionary.dictInsert_preserved (depth := depth) inv typed
+      (covered receiver (by simp)) (covered key (by simp)) (covered item (by simp)) afterSub defaultConfig accepted
+  | @dictRemove receiver key =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ [receiver, key], ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      rw [uses_dictRemove]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    exact Ownership.FlatFragment.Dictionary.dictRemove_preserved (depth := depth) inv typed
+      (covered receiver (by simp)) (covered key (by simp)) afterSub defaultConfig accepted
+  | @dictGet receiver key =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ [receiver, key], ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      rw [uses_dictGet]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Dictionary.dictGet_preserved (depth := depth) inv typed
+        (covered receiver (by simp)) (covered key (by simp)) defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @dictSize receiver =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_dictSize]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨typeInt, _, resultScalar, success, failure⟩ :=
+      Ownership.FlatFragment.Dictionary.dictSize_preserved (depth := depth) inv typed covered defaultConfig accepted
+    subst typeInt
+    subst resultScalar
+    have free : DictFree .int := .int
+    have shapeOut : FlatAbstract .int .scalar := .int
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @object args =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ args, ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      change use ∈ atomsUses args
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Objects.object_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @get receiver index =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ fieldUses receiver [index], use ∈ live := fun use member => usesLive use member
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Objects.get_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @recordCopy receiver =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      change use ∈ atomsUses [receiver]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Objects.recordCopy_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @assign width fields base values =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    exact Ownership.FlatFragment.Objects.assign_preserved (depth := depth) inv typed usesLive afterSub
+      defaultConfig accepted
 
 /-- The public trace corollary for the fragment, with the exact conclusion
 of `accepted_traces_agree` and the one extra scope hypothesis. -/
@@ -535,7 +704,7 @@ def every : Program := { main :=
   (.atom (.var 5)))))))) }
 
 theorem every_flat : FlatANF0 every.main :=
-  .letE .literal (.letE .shared (.letE .atom (.letE .literal
+  .letE (.literal .int .int) (.letE .shared (.letE .atom (.letE (.literal .int .int)
     (.letE .push (.letE .length .atom)))))
 
 /-- The push target still live afterwards: rejected by the Dead test. -/
@@ -546,7 +715,7 @@ def liveAlias : Program := { main :=
   (.atom (.var 1))))) }
 
 theorem liveAlias_flat : FlatANF0 liveAlias.main :=
-  .letE .literal (.letE .push (.letE .length .atom))
+  .letE (.literal .int .int) (.letE .push (.letE .length .atom))
 
 /-- A push onto an observed array: rejected by the Unescaped test. -/
 def observed : Program := { main :=
@@ -556,7 +725,7 @@ def observed : Program := { main :=
   (.prim .length [.var 2])))) }
 
 theorem observed_flat : FlatANF0 observed.main :=
-  .letE .literal (.letE .shared (.letE .push .length))
+  .letE (.literal .int .int) (.letE .shared (.letE .push .length))
 
 /-- `[2]`, its length 1, `1 + 7`, `8 - 3`, `5 == 5`, `1 < 5`, and a push of
     the last result onto the list: the four integer primitives, accepted, one
@@ -571,7 +740,7 @@ def arith : Program := { main :=
   (.prim .push [.var 0, .var 5]))))))) }
 
 theorem arith_flat : FlatANF0 arith.main :=
-  .letE .literal (.letE .length (.letE (.scalar .add) (.letE (.scalar .sub)
+  .letE (.literal .int .int) (.letE .length (.letE (.scalar .add) (.letE (.scalar .sub)
     (.letE (.scalar .eq) (.letE (.scalar .lt) .push)))))
 
 /-- `[1]`, `[2, 3]`, the record `{xs, 7, ys}`, the length of `r.0`, `r.1`
@@ -588,7 +757,7 @@ def recordOps : Program := { main :=
   (.prim .push [.var 5, .var 4]))))))) }
 
 theorem recordOps_flat : FlatANF0 recordOps.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .length
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .record (.letE .length
     (.letE (.scalar .add) (.letE .atom .push)))))
 
 /-- `[1]`, `[2, 3]`, `inner = {xs, 7}`, `outer = {inner, ys}`, a push of
@@ -604,7 +773,7 @@ def fieldWrite : Program := { main :=
   (.prim .record [.var 4, .field (.var 3) 1])))))) }
 
 theorem fieldWrite_flat : FlatANF0 fieldWrite.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .record (.letE .record (.letE .push .record))))
 
 /-- The same write with the written field's record live afterwards: rejected
     by the Dead test, and the two runs differ. -/
@@ -617,7 +786,7 @@ def fieldWriteLive : Program := { main :=
   (.prim .record [.var 4, .field (.var 3) 0])))))) }
 
 theorem fieldWriteLive_flat : FlatANF0 fieldWriteLive.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .record (.letE .record (.letE .push .record))))
 
 /-- `[1]`, `[2]`, the length of the first, a branch on it between the two
     lists (the length is 1, so the second), and a push onto the branch's
@@ -632,7 +801,7 @@ def branchOps : Program := { main :=
   (.prim .push [.var 3, .int 9]))))) }
 
 theorem branchOps_flat : FlatANF0 branchOps.main :=
-  .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom) .push)))
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .length (.letE (.branch .atom .atom) .push)))
 
 /-- The same push with the second list still live afterwards: rejected by
     the Dead test, because the branch's result names both lists; the two
@@ -646,7 +815,7 @@ def branchAlias : Program := { main :=
   (.prim .length [.var 1])))))) }
 
 theorem branchAlias_flat : FlatANF0 branchAlias.main :=
-  .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom)
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .length (.letE (.branch .atom .atom)
     (.letE .push .length))))
 
 /-- `[1]`, a branch on the condition `0` whose both arms push onto it (the
@@ -656,7 +825,7 @@ def bothWrite : Program := { main :=
   (.branch (.int 0) (.prim .push [.var 0, .int 5]) (.prim .push [.var 0, .int 7]))) }
 
 theorem bothWrite_flat : FlatANF0 bothWrite.main :=
-  .letE .literal (.branch .push .push)
+  .letE (.literal .int .int) (.branch .push .push)
 
 /-- The same branch with the list read afterwards: rejected by the Dead test;
     the two runs differ. -/
@@ -666,7 +835,7 @@ def bothWriteLive : Program := { main :=
   (.prim .length [.var 0]))) }
 
 theorem bothWriteLive_flat : FlatANF0 bothWriteLive.main :=
-  .letE .literal (.letE (.branch .push .push) .length)
+  .letE (.literal .int .int) (.letE (.branch .push .push) .length)
 
 /-- `[1]`, `ok` of it, a result case that binds the list in the success arm
     (the error arm builds `[2]`), and a push onto the case's result: accepted,
@@ -679,7 +848,7 @@ def resultOps : Program := { main :=
   (.prim .push [.var 2, .int 9])))) }
 
 theorem resultOps_flat : FlatANF0 resultOps.main :=
-  .letE .literal (.letE (.ok .int) (.letE (.resultCase .literal .atom) .push))
+  .letE (.literal .int .int) (.letE (.ok .int) (.letE (.resultCase (.literal .int .int) .atom) .push))
 
 /-- The same push with the list read afterwards: rejected by the Dead test;
     the two runs differ. -/
@@ -691,7 +860,7 @@ def resultAlias : Program := { main :=
   (.prim .length [.var 0]))))) }
 
 theorem resultAlias_flat : FlatANF0 resultAlias.main :=
-  .letE .literal (.letE (.ok .int) (.letE (.resultCase .literal .atom) (.letE .push .length)))
+  .letE (.literal .int .int) (.letE (.ok .int) (.letE (.resultCase (.literal .int .int) .atom) (.letE .push .length)))
 
 /-- `[3]`, `err` of it, and a result case that pushes onto the list in the
     error arm (the success arm builds a list of its integer payload):
@@ -703,7 +872,7 @@ def errOps : Program := { main :=
   (.resultCase (.var 1) 2 3 (.prim .push [.var 2, .int 4]) (.prim (.literal .int) [.var 3])))) }
 
 theorem errOps_flat : FlatANF0 errOps.main :=
-  .letE .literal (.letE (.err .int) (.resultCase .push .literal))
+  .letE (.literal .int .int) (.letE (.err .int) (.resultCase .push (.literal .int .int)))
 
 /-- An empty chain, `1` and `2` linked onto it, and a chain case that binds
     the head `2` and the copied tail in the link arm (the end arm builds
@@ -717,7 +886,7 @@ def chainOps : Program := { main :=
     (.letE 5 (.prim (.literal .int) [.var 3]) (.prim .push [.var 5, .int 7])))))) }
 
 theorem chainOps_flat : FlatANF0 chainOps.main :=
-  .letE .endChain (.letE .link (.letE .link (.chainCase .literal (.letE .literal .push))))
+  .letE .endChain (.letE .link (.letE .link (.chainCase (.literal .int .int) (.letE (.literal .int .int) .push))))
 
 /-- A chain case on an empty chain: the end arm builds `[9]` and pushes `1`
     onto it; the link arm, which the checker infers with a bottom head, builds
@@ -729,7 +898,7 @@ def chainEnd : Program := { main :=
     (.prim (.literal .int) [.var 1]))) }
 
 theorem chainEnd_flat : FlatANF0 chainEnd.main :=
-  .letE .endChain (.chainCase (.letE .literal .push) .literal)
+  .letE .endChain (.chainCase (.letE (.literal .int .int) .push) (.literal .int .int))
 
 /-- `[1]`, a chain of `5`, a chain case whose link arm pushes the head onto
     the list, and a length read of the list afterwards: rejected by the Dead
@@ -742,7 +911,7 @@ def chainAlias : Program := { main :=
   (.prim .length [.var 0]))))) }
 
 theorem chainAlias_flat : FlatANF0 chainAlias.main :=
-  .letE .literal (.letE .endChain (.letE .link (.letE (.chainCase .literal .push) .length)))
+  .letE (.literal .int .int) (.letE .endChain (.letE .link (.letE (.chainCase (.literal .int .int) .push) .length)))
 
 /-- A chain of `3` wrapped in `ok`, a result case that binds it in the
     success arm, and a chain case on the payload whose link arm builds a list
@@ -758,7 +927,7 @@ def chainResult : Program := { main :=
 
 theorem chainResult_flat : FlatANF0 chainResult.main :=
   .letE .endChain (.letE .link (.letE (.ok .int)
-    (.resultCase .literal (.chainCase .literal (.letE .literal .push)))))
+    (.resultCase (.literal .int .int) (.chainCase (.literal .int .int) (.letE (.literal .int .int) .push)))))
 
 /-- `[4, 5]`, the element at `1` (fallback `0`), at `7` (out of range, so
     the fallback `0`) and at `-1` (negative, so the fallback `3`), their sum
@@ -774,7 +943,7 @@ def atOps : Program := { main :=
   (.prim .push [.var 0, .var 5]))))))) }
 
 theorem atOps_flat : FlatANF0 atOps.main :=
-  .letE .literal (.letE .atRead (.letE .atRead (.letE .atRead
+  .letE (.literal .int .int) (.letE .atRead (.letE .atRead (.letE .atRead
     (.letE (.scalar .add) (.letE (.scalar .add) .push)))))
 
 /-- `[1, 2]`, `9` written at `0`, `7` at `5` (out of range: unchanged) and
@@ -787,7 +956,7 @@ def setOps : Program := { main :=
   (.prim .set [.var 2, .int (-1), .int 6])))) }
 
 theorem setOps_flat : FlatANF0 setOps.main :=
-  .letE .literal (.letE .set (.letE .set .set))
+  .letE (.literal .int .int) (.letE .set (.letE .set .set))
 
 /-- The written list read after the write: rejected by the Dead test; the
     two runs differ. -/
@@ -797,7 +966,7 @@ def setAlias : Program := { main :=
   (.prim .at [.var 0, .int 0, .int 0]))) }
 
 theorem setAlias_flat : FlatANF0 setAlias.main :=
-  .letE .literal (.letE .set .atRead)
+  .letE (.literal .int .int) (.letE .set .atRead)
 
 /-- `[1]`, a copy of it, a push onto the copy, and the length of the
     original: accepted, one in-place write, final value `1`. -/
@@ -808,7 +977,7 @@ def copyOps : Program := { main :=
   (.prim .length [.var 0])))) }
 
 theorem copyOps_flat : FlatANF0 copyOps.main :=
-  .letE .literal (.letE .copy (.letE .push .length))
+  .letE (.literal .int .int) (.letE .copy (.letE .push .length))
 
 /-- `[2]`, `1` prepended, and a push onto the result: accepted, one in-place
     write, final value `[1, 2, 9]`, the read of the base `[2]` on both sides. -/
@@ -818,7 +987,7 @@ def prependOps : Program := { main :=
   (.prim .push [.var 1, .int 9]))) }
 
 theorem prependOps_flat : FlatANF0 prependOps.main :=
-  .letE .literal (.letE .prepend .push)
+  .letE (.literal .int .int) (.letE .prepend .push)
 
 /-- The base read after that push: rejected by the Dead test, because the
     result is named by the base's origins. -/
@@ -829,7 +998,7 @@ def prependAlias : Program := { main :=
   (.prim .length [.var 0])))) }
 
 theorem prependAlias_flat : FlatANF0 prependAlias.main :=
-  .letE .literal (.letE .prepend (.letE .push .length))
+  .letE (.literal .int .int) (.letE .prepend (.letE .push .length))
 
 set_option maxRecDepth 100000
 
@@ -1001,5 +1170,776 @@ set_option maxRecDepth 100000
 #guard match ValueSemantics.run prependAlias 100, InPlaceSemantics.run prependAlias 100 with
   | .ok t, .ok t' => t.reads == t'.reads && t.finalValue == t'.finalValue && t.finalValue == .int 1
   | _, _ => false
+
+/-! ### Lists of lists (slice 2b of #522)
+
+`nestedPush` stores two integer lists in a list of lists, reads the first back
+with a list fallback and pushes onto it: accepted, one in-place write, both runs
+end at the length `2`. `nestedAlias` reads the list of lists after that push and
+is rejected (the Dead test), and its two runs differ: the value run still sees
+`[1]`, the heap run `[1, 7]`. `nestedSet` writes a fresh list at an index of the
+list of lists and reads it back: accepted, one counted write, both runs end at
+`1`. `nestedItemAlias` pushes onto a list after storing it in a list of lists
+that stays live, and is rejected (the Dead test); the value run's element stays
+`[9]`, the heap run's is `[9, 1]`. `nestedRecord` stores a record holding a list
+in a list of records, reads it back and pushes through its field: accepted, one
+write, both runs end at the push result's length `2`. -/
+
+/-- `[1]`, `[2]`, the list of both, its first element with the fallback `[]`,
+    a push onto it, and its length: accepted, one in-place write, `2`. -/
+def nestedPush : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal (.list .int)) [.var 0, .var 1])
+  (.letE 3 (.prim (.literal .int) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim .push [.var 4, .int 7])
+  (.prim .length [.var 5]))))))) }
+
+theorem nestedPush_flat : FlatANF0 nestedPush.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int))
+    (.letE (.literal .int .int) (.letE .atRead (.letE .push .length)))))
+
+/-- The list of lists read after that push: rejected by the Dead test; the
+    value run reads the length `1`, the heap run `2`. -/
+def nestedAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal (.list .int)) [.var 0, .var 1])
+  (.letE 3 (.prim (.literal .int) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim .push [.var 4, .int 7])
+  (.letE 6 (.prim .at [.var 2, .int 0, .var 3])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedAlias_flat : FlatANF0 nestedAlias.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int))
+    (.letE (.literal .int .int) (.letE .atRead (.letE .push (.letE .atRead .length))))))
+
+/-- `[[1], [2]]`, a fresh `[9]` written at index `1`, and the length of the
+    element read back: accepted, one counted write, `1`. -/
+def nestedSet : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal (.list .int)) [.var 0, .var 1])
+  (.letE 3 (.prim (.literal .int) [.int 9])
+  (.letE 4 (.prim .set [.var 2, .int 1, .var 3])
+  (.letE 5 (.prim (.literal .int) [])
+  (.letE 6 (.prim .at [.var 4, .int 1, .var 5])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedSet_flat : FlatANF0 nestedSet.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int))
+    (.letE (.literal .int .int) (.letE .set (.letE (.literal .int .int) (.letE .atRead .length))))))
+
+/-- A push onto `[9]` after it was stored in a list of lists that stays live:
+    rejected by the Dead test; the value run's element stays `[9]`, the heap
+    run's is `[9, 1]`. -/
+def nestedItemAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal (.list .int)) [.var 0])
+  (.letE 2 (.prim (.literal .int) [.int 9])
+  (.letE 3 (.prim .push [.var 1, .var 2])
+  (.letE 4 (.prim .push [.var 2, .int 1])
+  (.letE 5 (.prim (.literal .int) [])
+  (.letE 6 (.prim .at [.var 3, .int 1, .var 5])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedItemAlias_flat : FlatANF0 nestedItemAlias.main :=
+  .letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int)) (.letE (.literal .int .int)
+    (.letE .push (.letE .push (.letE (.literal .int .int) (.letE .atRead .length))))))
+
+/-- `{5, [1]}` in a list of records, read back with a record fallback, a push
+    through its list field, and the length of the push's result: accepted, one
+    write, `2`. -/
+def nestedRecord : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim .record [.int 5, .var 0])
+  (.letE 2 (.prim (.literal (.record [.int, .list .int])) [.var 1])
+  (.letE 3 (.prim (.literal .int) [])
+  (.letE 4 (.prim .record [.int 0, .var 3])
+  (.letE 5 (.prim .at [.var 2, .int 0, .var 4])
+  (.letE 6 (.prim .push [.field (.var 5) 1, .int 7])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedRecord_flat : FlatANF0 nestedRecord.main :=
+  .letE (.literal .int .int) (.letE .record
+    (.letE (.literal (.record [.int, .list .int]) (.record _ (by
+      intro t member
+      simp only [List.mem_cons, List.mem_nil_iff, or_false] at member
+      rcases member with rfl | rfl
+      · exact .int
+      · exact .list .int .int)))
+    (.letE (.literal .int .int) (.letE .record (.letE .atRead (.letE .push .length))))))
+
+#guard (check nestedPush).isOk
+#guard match ValueSemantics.run nestedPush 100, InPlaceSemantics.run nestedPush 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 2
+  | _, _ => false
+#guard InPlaceSemantics.writeCount nestedPush 100 == 1
+#guard match check nestedAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run nestedAlias 100, InPlaceSemantics.run nestedAlias 100 with
+  | .ok t, .ok t' => t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
+#guard (check nestedSet).isOk
+#guard match ValueSemantics.run nestedSet 100, InPlaceSemantics.run nestedSet 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 1
+  | _, _ => false
+#guard InPlaceSemantics.writeCount nestedSet 100 == 1
+#guard match check nestedItemAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run nestedItemAlias 100, InPlaceSemantics.run nestedItemAlias 100 with
+  | .ok t, .ok t' => t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
+#guard (check nestedRecord).isOk
+#guard match ValueSemantics.run nestedRecord 100, InPlaceSemantics.run nestedRecord 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 2
+  | _, _ => false
+#guard InPlaceSemantics.writeCount nestedRecord 100 == 1
+
+/-! ### Lists of results and chains (#932)
+
+The scope proofs below require the new flat element types. The runtime probes
+exercise tags from array elements, fallback values, joins and nested arrays. -/
+
+def resultElements (condition index : Int) : Program := { main :=
+  (.letE 0 (.prim (.ok .int) [.int 7])
+  (.letE 1 (.prim (.err .int) [.int 9])
+  (.letE 2 (.branch (.int condition)
+    (.prim (.literal (.result .int .int)) [.var 0])
+    (.prim (.literal (.result .int .int)) [.var 1]))
+  (.letE 3 (.prim .at [.var 2, .int index, .var 1])
+  (.resultCase (.var 3) 4 5 (.atom (.var 4)) (.atom (.var 5))))))) }
+
+theorem resultElements_flat (condition index : Int) : FlatANF0 (resultElements condition index).main :=
+  .letE (.ok .int) (.letE (.err .int)
+    (.letE (.branch (.literal _ (.result _ _ .int .int)) (.literal _ (.result _ _ .int .int)))
+      (.letE .atRead (.resultCase .atom .atom))))
+
+def chainElements (condition index : Int) : Program := { main :=
+  (.letE 0 (.prim (.endChain .int) [])
+  (.letE 1 (.prim .link [.int 7, .var 0])
+  (.letE 2 (.branch (.int condition)
+    (.prim (.literal (.chain .int)) [.var 0])
+    (.prim (.literal (.chain .int)) [.var 1]))
+  (.letE 3 (.prim .at [.var 2, .int index, .var 0])
+  (.chainCase (.var 3) 4 5 (.atom (.int 0)) (.atom (.var 4))))))) }
+
+theorem chainElements_flat (condition index : Int) : FlatANF0 (chainElements condition index).main :=
+  .letE .endChain (.letE .link
+    (.letE (.branch (.literal _ .chainInt) (.literal _ .chainInt))
+      (.letE .atRead (.chainCase .atom .atom))))
+
+def resultElementStores (index : Int) : Program := { main :=
+  (.letE 0 (.prim (.ok .int) [.int 7])
+  (.letE 1 (.prim (.err .int) [.int 9])
+  (.letE 2 (.prim (.literal (.result .int .int)) [.var 0])
+  (.letE 3 (.prim .push [.var 2, .var 1])
+  (.letE 4 (.prim .set [.var 3, .int 0, .var 1])
+  (.letE 5 (.prim .copy [.var 4])
+  (.letE 6 (.prim .prepend [.var 0, .var 5])
+  (.letE 7 (.prim .shared [.var 6])
+  (.letE 8 (.prim .at [.var 7, .int index, .var 0])
+  (.resultCase (.var 8) 9 10 (.atom (.var 9)) (.atom (.var 10)))))))))))) }
+
+theorem resultElementStores_flat (index : Int) : FlatANF0 (resultElementStores index).main :=
+  .letE (.ok .int) (.letE (.err .int) (.letE (.literal _ (.result _ _ .int .int))
+    (.letE .push (.letE .set (.letE .copy (.letE .prepend (.letE .shared
+      (.letE .atRead (.resultCase .atom .atom)))))))))
+
+def nestedResultElements : Program := { main :=
+  (.letE 0 (.prim (.ok .int) [.int 7])
+  (.letE 1 (.prim (.literal (.result .int .int)) [.var 0])
+  (.letE 2 (.prim (.literal (.list (.result .int .int))) [.var 1])
+  (.letE 3 (.prim (.literal (.result .int .int)) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim (.err .int) [.int 9])
+  (.letE 6 (.prim .at [.var 4, .int 0, .var 5])
+  (.resultCase (.var 6) 7 8 (.atom (.var 7)) (.atom (.var 8)))))))))) }
+
+theorem nestedResultElements_flat : FlatANF0 nestedResultElements.main :=
+  .letE (.ok .int) (.letE (.literal _ (.result _ _ .int .int))
+    (.letE (.literal _ (.list _ (.result _ _ .int .int)))
+      (.letE (.literal _ (.result _ _ .int .int)) (.letE .atRead (.letE (.err .int)
+        (.letE .atRead (.resultCase .atom .atom)))))))
+
+private def taggedProbe (p : Program) (expected : Int) : Bool :=
+  (check p).isOk && match ValueSemantics.run p 100, InPlaceSemantics.run p 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == .int expected
+  | _, _ => false
+
+#guard taggedProbe (resultElements 1 0) 9
+#guard taggedProbe (resultElements 0 0) 7
+#guard taggedProbe (resultElements 1 8) 9
+#guard taggedProbe (resultElements 0 (-1)) 9
+#guard taggedProbe (chainElements 1 0) 7
+#guard taggedProbe (chainElements 0 0) 0
+#guard taggedProbe (chainElements 0 8) 0
+#guard taggedProbe (chainElements 0 (-1)) 0
+#guard taggedProbe (resultElementStores 0) 7
+#guard taggedProbe (resultElementStores 1) 9
+#guard taggedProbe (resultElementStores 8) 7
+#guard InPlaceSemantics.writeCount (resultElementStores 1) 100 == 2
+#guard taggedProbe nestedResultElements 7
+
+/-! ### Dictionaries (slice 3 of #522, #1796)
+
+A dictionary of `t` is its entries in insertion order, each the record of an
+integer key and a value; the relation reads it through that representation
+(`entryType`, `entryAbstract`). `dictOps` inserts two lists, replaces the first
+in place, removes the second and an absent key, reads the size and a lookup,
+and pushes onto the value it found: accepted, five in-place writes (an insert
+or a remove that changes the entries counts one), both runs end at `2`.
+`dictValueWritten` pushes onto a value got out of the dictionary and reads the
+dictionary afterwards: rejected (the Dead test), and the two runs read `1` and
+`2`. `dictBranch` joins a dictionary with one entry and an empty one in a
+branch and looks the key up: accepted, both runs end at `7` or at `0`.
+`dictInRecord` stores a record holding a list in a dictionary and puts the
+dictionary in a result in a record: accepted, both runs end at the same value. -/
+
+def dictOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal .int) [.int 3])
+  (.letE 3 (.prim (.dictEmpty (.list .int)) [])
+  (.letE 4 (.prim .dictInsert [.var 3, .int 1, .var 0])
+  (.letE 5 (.prim .dictInsert [.var 4, .int 2, .var 1])
+  (.letE 6 (.prim .dictInsert [.var 5, .int 1, .var 2])
+  (.letE 7 (.prim .dictRemove [.var 6, .int 2])
+  (.letE 8 (.prim .dictRemove [.var 7, .int 9])
+  (.letE 9 (.prim .dictSize [.var 8])
+  (.letE 10 (.prim .dictGet [.var 8, .int 1])
+  (.resultCase (.var 10) 11 12 (.atom (.var 9))
+    (.letE 13 (.prim .push [.var 12, .var 9]) (.prim .length [.var 13])))))))))))))) }
+
+theorem dictOps_flat : FlatANF0 dictOps.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal .int .int)
+    (.letE (.dictEmpty (.list .int) (.list .int .int))
+      (.letE .dictInsert (.letE .dictInsert (.letE .dictInsert (.letE .dictRemove (.letE .dictRemove
+        (.letE .dictSize (.letE .dictGet (.resultCase .atom (.letE .push .length))))))))))))
+
+def dictValueWritten : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.dictEmpty (.list .int)) [])
+  (.letE 2 (.prim .dictInsert [.var 1, .int 1, .var 0])
+  (.letE 3 (.prim .dictGet [.var 2, .int 1])
+  (.resultCase (.var 3) 4 5 (.atom (.int 0))
+    (.letE 6 (.prim .push [.var 5, .int 1])
+    (.letE 7 (.prim .dictGet [.var 2, .int 1])
+    (.resultCase (.var 7) 8 9 (.atom (.int 0)) (.prim .length [.var 9]))))))))) }
+
+theorem dictValueWritten_flat : FlatANF0 dictValueWritten.main :=
+  .letE (.literal .int .int) (.letE (.dictEmpty (.list .int) (.list .int .int))
+    (.letE .dictInsert (.letE .dictGet (.resultCase .atom (.letE .push (.letE .dictGet
+      (.resultCase .atom .length)))))))
+
+def dictBranch (condition : Int) : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim .dictInsert [.var 0, .int 1, .int 7])
+  (.letE 2 (.prim (.dictEmpty .int) [])
+  (.letE 3 (.branch (.int condition) (.atom (.var 1)) (.atom (.var 2)))
+  (.letE 4 (.prim .dictGet [.var 3, .int 1])
+  (.resultCase (.var 4) 5 6 (.atom (.int 0)) (.atom (.var 6)))))))) }
+
+theorem dictBranch_flat (condition : Int) : FlatANF0 (dictBranch condition).main :=
+  .letE (.dictEmpty .int .int) (.letE .dictInsert (.letE (.dictEmpty .int .int)
+    (.letE (.branch .atom .atom) (.letE .dictGet (.resultCase .atom .atom)))))
+
+def dictInRecord : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 4])
+  (.letE 1 (.prim .record [.var 0, .int 5])
+  (.letE 2 (.prim (.dictEmpty (.record [.list .int, .int])) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 1, .var 1])
+  (.letE 4 (.prim (.ok .int) [.var 3])
+  (.letE 5 (.prim .record [.var 4, .int 0])
+  (.atom (.var 5)))))))) }
+
+theorem dictInRecord_flat : FlatANF0 dictInRecord.main := by
+  have flatRecord : FlatType (.record [.list .int, .int]) := .record _ (by
+    intro t member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with rfl | rfl
+    · exact .list .int .int
+    · exact .int)
+  exact .letE (.literal .int .int) (.letE .record
+    (.letE (.dictEmpty _ flatRecord) (.letE .dictInsert (.letE (.ok .int) (.letE .record .atom)))))
+
+#guard taggedProbe dictOps 2
+#guard InPlaceSemantics.writeCount dictOps 100 == 5
+#guard match check dictValueWritten with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run dictValueWritten 100, InPlaceSemantics.run dictValueWritten 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+#guard taggedProbe (dictBranch 1) 0
+#guard taggedProbe (dictBranch 0) 7
+#guard (check dictInRecord).isOk
+#guard match ValueSemantics.run dictInRecord 100, InPlaceSemantics.run dictInRecord 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads && a.finalValue == b.finalValue
+  | _, _ => false
+
+/-! ### Nested dictionaries (#1840)
+
+A list element and a dictionary's value can be a dictionary. Each case reads
+the element at its representation (`entryType`, `entryAbstract`); the
+checker's store tests give the same answers there (`storeExclusive_entry`,
+`storeSpines_entry`). `listOfDicts` pushes a dictionary onto a list of
+dictionaries, reads one back with `at` and inserts into it in place: accepted,
+four in-place writes, both runs end at `8`, `7` or `1`.
+`listOfDictsAlias` writes a dictionary read out of a list while the list is
+live: rejected (the Dead test), and the two runs read `1` and `2`.
+`dictOfDicts` stores dictionaries in a dictionary, removes one, looks the
+other up and inserts into it in place: accepted, five in-place writes, both
+runs end at `2`. `dictOfDictsAlias` writes the inner dictionary while the
+outer one holds it: rejected, and the runs read `1` and `2`.
+`dictListDicts` stores one list of dictionaries at two keys: accepted, both
+runs end at `2`. `dictListDictsAlias` then pushes onto the list found at one
+key and reads the other: rejected, and the runs read `1` and `2`. -/
+
+def listOfDicts (index : Int) : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim .dictInsert [.var 0, .int 1, .int 7])
+  (.letE 2 (.prim (.dictEmpty .int) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 1, .int 8])
+  (.letE 4 (.prim (.literal (.dict .int)) [.var 1])
+  (.letE 5 (.prim .push [.var 4, .var 3])
+  (.letE 6 (.prim (.dictEmpty .int) [])
+  (.letE 7 (.prim .at [.var 5, .int index, .var 6])
+  (.letE 8 (.prim .dictInsert [.var 7, .int 2, .int 9])
+  (.letE 9 (.prim .dictGet [.var 8, .int 1])
+  (.resultCase (.var 9) 10 11 (.prim .dictSize [.var 8]) (.atom (.var 11))))))))))))) }
+
+theorem listOfDicts_flat (index : Int) : FlatANF0 (listOfDicts index).main :=
+  .letE (.dictEmpty .int .int) (.letE .dictInsert (.letE (.dictEmpty .int .int) (.letE .dictInsert
+    (.letE (.literal _ (.dict _ .int)) (.letE .push (.letE (.dictEmpty .int .int) (.letE .atRead
+      (.letE .dictInsert (.letE .dictGet (.resultCase .dictSize .atom))))))))))
+
+/-- The dictionary read out of the list is live after a write of it. -/
+def listOfDictsAlias : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim .dictInsert [.var 0, .int 1, .int 7])
+  (.letE 2 (.prim (.literal (.dict .int)) [.var 1])
+  (.letE 3 (.prim (.dictEmpty .int) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim .dictInsert [.var 4, .int 2, .int 9])
+  (.letE 6 (.prim .at [.var 2, .int 0, .var 3])
+  (.prim .dictSize [.var 6])))))))) }
+
+theorem listOfDictsAlias_flat : FlatANF0 listOfDictsAlias.main :=
+  .letE (.dictEmpty .int .int) (.letE .dictInsert (.letE (.literal _ (.dict _ .int))
+    (.letE (.dictEmpty .int .int) (.letE .atRead (.letE .dictInsert (.letE .atRead .dictSize))))))
+
+def dictOfDicts : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim .dictInsert [.var 0, .int 1, .int 5])
+  (.letE 2 (.prim (.dictEmpty (.dict .int)) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 2, .var 1])
+  (.letE 4 (.prim (.dictEmpty .int) [])
+  (.letE 5 (.prim .dictInsert [.var 3, .int 3, .var 4])
+  (.letE 6 (.prim .dictRemove [.var 5, .int 3])
+  (.letE 7 (.prim .dictGet [.var 6, .int 2])
+  (.resultCase (.var 7) 8 9 (.atom (.int 0))
+    (.letE 10 (.prim .dictInsert [.var 9, .int 3, .int 6])
+    (.prim .dictSize [.var 10]))))))))))) }
+
+theorem dictOfDicts_flat : FlatANF0 dictOfDicts.main :=
+  .letE (.dictEmpty .int .int) (.letE .dictInsert (.letE (.dictEmpty _ (.dict _ .int)) (.letE .dictInsert
+    (.letE (.dictEmpty .int .int) (.letE .dictInsert (.letE .dictRemove (.letE .dictGet
+      (.resultCase .atom (.letE .dictInsert .dictSize)))))))))
+
+/-- The inner dictionary is written while the outer one is live. -/
+def dictOfDictsAlias : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim .dictInsert [.var 0, .int 1, .int 5])
+  (.letE 2 (.prim (.dictEmpty (.dict .int)) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 2, .var 1])
+  (.letE 4 (.prim .dictInsert [.var 1, .int 3, .int 6])
+  (.letE 5 (.prim .dictGet [.var 3, .int 2])
+  (.resultCase (.var 5) 6 7 (.atom (.int 0)) (.prim .dictSize [.var 7])))))))) }
+
+theorem dictOfDictsAlias_flat : FlatANF0 dictOfDictsAlias.main :=
+  .letE (.dictEmpty .int .int) (.letE .dictInsert (.letE (.dictEmpty _ (.dict _ .int)) (.letE .dictInsert
+    (.letE .dictInsert (.letE .dictGet (.resultCase .atom .dictSize))))))
+
+/-- A dictionary of lists of dictionaries: the store tests on a list of
+dictionaries inserted twice. -/
+def dictListDicts : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim (.literal (.dict .int)) [.var 0])
+  (.letE 2 (.prim (.dictEmpty (.list (.dict .int))) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 1, .var 1])
+  (.letE 4 (.prim .dictInsert [.var 3, .int 2, .var 1])
+  (.prim .dictSize [.var 4])))))) }
+
+theorem dictListDicts_flat : FlatANF0 dictListDicts.main :=
+  .letE (.dictEmpty .int .int) (.letE (.literal _ (.dict _ .int)) (.letE (.dictEmpty _ (.list _ (.dict _ .int)))
+    (.letE .dictInsert (.letE .dictInsert .dictSize))))
+
+/-- The list stored at two keys is written through one of them while the
+dictionary is live. -/
+def dictListDictsAlias : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim (.literal (.dict .int)) [.var 0])
+  (.letE 2 (.prim (.dictEmpty (.list (.dict .int))) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 1, .var 1])
+  (.letE 4 (.prim .dictInsert [.var 3, .int 2, .var 1])
+  (.letE 5 (.prim .dictGet [.var 4, .int 1])
+  (.resultCase (.var 5) 6 7 (.atom (.int 0))
+    (.letE 8 (.prim (.dictEmpty .int) [])
+    (.letE 9 (.prim .push [.var 7, .var 8])
+    (.letE 10 (.prim .dictGet [.var 4, .int 2])
+    (.resultCase (.var 10) 11 12 (.atom (.int 0)) (.prim .length [.var 12])))))))))))) }
+
+theorem dictListDictsAlias_flat : FlatANF0 dictListDictsAlias.main :=
+  .letE (.dictEmpty .int .int) (.letE (.literal _ (.dict _ .int)) (.letE (.dictEmpty _ (.list _ (.dict _ .int)))
+    (.letE .dictInsert (.letE .dictInsert (.letE .dictGet (.resultCase .atom (.letE (.dictEmpty .int .int)
+      (.letE .push (.letE .dictGet (.resultCase .atom .length))))))))))
+
+/-- The flat theorem gives each accepted nested program equal traces. -/
+theorem listOfDicts_traces_agree (index : Int) (a : Accepted) (ok : check (listOfDicts index) = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run (listOfDicts index) fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run (listOfDicts index) fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree (listOfDicts index) a ok (listOfDicts_flat index) fuel t run
+
+theorem dictOfDicts_traces_agree (a : Accepted) (ok : check dictOfDicts = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run dictOfDicts fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run dictOfDicts fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree dictOfDicts a ok dictOfDicts_flat fuel t run
+
+#guard taggedProbe (listOfDicts 1) 8
+#guard taggedProbe (listOfDicts 0) 7
+#guard taggedProbe (listOfDicts 5) 1
+#guard InPlaceSemantics.writeCount (listOfDicts 1) 100 == 4
+#guard match check listOfDictsAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run listOfDictsAlias 100, InPlaceSemantics.run listOfDictsAlias 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+#guard taggedProbe dictOfDicts 2
+#guard InPlaceSemantics.writeCount dictOfDicts 100 == 5
+#guard match check dictOfDictsAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run dictOfDictsAlias 100, InPlaceSemantics.run dictOfDictsAlias 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+#guard taggedProbe dictListDicts 2
+#guard match check dictListDictsAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run dictListDictsAlias 100, InPlaceSemantics.run dictListDictsAlias 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+
+/-! ### Views (#169)
+
+`viewWrite` makes a suffix view of `[1, 2, 3]`, pushes onto the view after
+the source's last use, and reads the pushed element: accepted, one in-place
+write, `9`; the write is linked, so it rewrites the source too.
+`viewReadSource` reads the view and then the source: accepted, `[2, 3]`.
+`viewReadBoth` reads both sides of the split (the `readBoth` shape):
+accepted, `[5, 4]`. `viewEmpty` makes a view of `[]`, which the heap side
+allocates with no link, and pushes onto it: accepted, `1`.
+`viewWriteLive` pushes onto the view while the source is live, and
+`viewSourceWriteLive` pushes onto the source while the view is live: both
+are refused by the Dead test, and their two runs differ. -/
+
+def viewWrite : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2, .int 3])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 9])
+  (.prim .at [.var 2, .int 2, .int 0])))) }
+
+theorem viewWrite_flat : FlatANF0 viewWrite.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .atRead))
+
+def viewReadSource : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2, .int 3])
+  (.letE 1 (.prim (.view false) [.var 0])
+  (.letE 2 (.prim .length [.var 1])
+  (.letE 3 (.prim .length [.var 0])
+  (.prim .record [.var 2, .var 3]))))) }
+
+theorem viewReadSource_flat : FlatANF0 viewReadSource.main :=
+  .letE (.literal .int .int) (.letE (.view false) (.letE .length (.letE .length .record)))
+
+def viewReadBoth : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 4, .int 5, .int 6])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .at [.var 1, .int 0, .int 0])
+  (.letE 3 (.prim .at [.var 0, .int 0, .int 0])
+  (.prim .record [.var 2, .var 3]))))) }
+
+theorem viewReadBoth_flat : FlatANF0 viewReadBoth.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .atRead (.letE .atRead .record)))
+
+def viewEmpty : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 7])
+  (.prim .length [.var 2])))) }
+
+theorem viewEmpty_flat : FlatANF0 viewEmpty.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .length))
+
+def viewWriteLive : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 9])
+  (.prim .length [.var 0])))) }
+
+theorem viewWriteLive_flat : FlatANF0 viewWriteLive.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .length))
+
+def viewSourceWriteLive : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 0, .int 9])
+  (.prim .length [.var 1])))) }
+
+theorem viewSourceWriteLive_flat : FlatANF0 viewSourceWriteLive.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .length))
+
+/-- The flat theorem gives each accepted view program equal traces. -/
+theorem viewWrite_traces_agree (a : Accepted) (ok : check viewWrite = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewWrite fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewWrite fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewWrite a ok viewWrite_flat fuel t run
+
+theorem viewReadSource_traces_agree (a : Accepted) (ok : check viewReadSource = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewReadSource fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewReadSource fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewReadSource a ok viewReadSource_flat fuel t run
+
+theorem viewReadBoth_traces_agree (a : Accepted) (ok : check viewReadBoth = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewReadBoth fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewReadBoth fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewReadBoth a ok viewReadBoth_flat fuel t run
+
+theorem viewEmpty_traces_agree (a : Accepted) (ok : check viewEmpty = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewEmpty fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewEmpty fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewEmpty a ok viewEmpty_flat fuel t run
+
+#guard taggedProbe viewWrite 9
+#guard InPlaceSemantics.writeCount viewWrite 100 == 1
+#guard (check viewReadSource).isOk
+#guard match ValueSemantics.run viewReadSource 100, InPlaceSemantics.run viewReadSource 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == .record [.int 2, .int 3]
+  | _, _ => false
+#guard (check viewReadBoth).isOk
+#guard match ValueSemantics.run viewReadBoth 100, InPlaceSemantics.run viewReadBoth 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == .record [.int 5, .int 4]
+  | _, _ => false
+#guard taggedProbe viewEmpty 1
+#guard InPlaceSemantics.writeCount viewEmpty 100 == 1
+#guard match check viewWriteLive with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run viewWriteLive 100, InPlaceSemantics.run viewWriteLive 100 with
+  | .ok a, .ok b => a.finalValue == .int 2 && b.finalValue == .int 3
+  | _, _ => false
+#guard match check viewSourceWriteLive with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run viewSourceWriteLive 100, InPlaceSemantics.run viewSourceWriteLive 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+
+/-! ### Record objects (#316, slice 2)
+
+The record programs of slice 1 (`RecordPrograms.lean`) that the checker
+accepts are in the fragment, and the flat theorem gives each one equal
+traces. `keptRead` reads through the old holder a field that the update
+keeps, after the write: the value at the kept field is the old one.
+`hoistedRead` is `writtenRead` as the lowering writes it, the read of the
+written field before the write. `allFields` writes every field.
+`aliasKept` reads a kept field through a second local. `payloadKept` and
+`twoForms` are the accepted controls of #316's message payload and two-path
+shapes, `nested` is the nested update, `copied` updates a `Record.copy`,
+`sameFieldTwice` writes one field twice through the old holder, and
+`heldField` replaces a list field whose old list a local still holds and
+then pushes onto it. Each refused control (`writtenRead`, `wholeUse`,
+`payloadRead`, `twoPaths`, `twoUpdates`, `heldFieldKept` and `topLevel`) is
+refused, and where the in-place run completes, its two runs differ. -/
+
+open Ownership.RecordPrograms
+
+/-- `r = { a = 1, b = 2 }` and then `r.b`: a field read right after the
+literal, the live use `(0, [.element, .field 1])`. -/
+def fieldRead : Program := { main :=
+  (.letE 0 (.prim .object [.int 1, .int 2]) (.prim (.get 1) [.var 0])) }
+
+theorem fieldRead_flat : FlatANF0 fieldRead.main :=
+  .letE .object (.get 1)
+
+theorem fieldRead_traces_agree (a : Accepted) (ok : check fieldRead = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run fieldRead fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run fieldRead fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree fieldRead a ok fieldRead_flat fuel t run
+
+/-! The element step of a live path reads a record object's one slot and no
+other array (the owner, 2026-11-04, `own-record-flat-q1`): not a one-slot list
+of integers, not a list of two records. -/
+#guard (projectHeap #[[Value.record [.int 1, .int 2]]] (.ref 0) [.element, .field 1]).isSome
+#guard (projectHeap #[[Value.int 5]] (.ref 0) [.element]).isNone
+#guard (projectHeap #[[Value.record [.int 1], .record [.int 2]]] (.ref 0) [.element, .field 0]).isNone
+#guard (projectObs (.list [.int 5]) [.element]).isNone
+#guard (projectObs (.list [.record [.int 1], .record [.int 2]]) [.element, .field 0]).isNone
+
+theorem keptRead_flat : FlatANF0 keptRead.main :=
+  .letE .object (.letE .assign (.letE (.get 1) (.letE (.get 0) (.scalar .add))))
+
+theorem hoistedRead_flat : FlatANF0 hoistedRead.main :=
+  .letE .object (.letE (.get 0) (.letE .assign (.letE (.get 0) (.scalar .add))))
+
+theorem allFields_flat : FlatANF0 allFields.main :=
+  .letE .object (.letE .assign (.get 1))
+
+theorem aliasKept_flat : FlatANF0 aliasKept.main :=
+  .letE .object (.letE .atom (.letE .assign (.letE (.get 1) (.letE (.get 0) (.scalar .add)))))
+
+theorem payloadKept_flat : FlatANF0 payloadKept.main :=
+  .letE .object (.letE .object (.letE .record (.letE (.get 0) (.letE .assign (.letE .assign
+    (.letE (.get 1) .record))))))
+
+theorem twoForms_flat : FlatANF0 twoForms.main := by
+  unfold twoForms
+  repeat (first | apply FlatANF0.letE | apply FlatANF0.object | apply FlatANF0.get | apply FlatANF0.assign |
+    apply FlatANF0.record | apply FlatANF0.atom)
+
+theorem copied_flat : FlatANF0 copied.main :=
+  .letE .object (.letE .recordCopy (.letE .assign .record))
+
+theorem nested_flat : FlatANF0 nested.main :=
+  .letE .object (.letE .object (.letE (.get 0) (.letE .assign (.letE .assign (.letE (.get 0) (.get 0))))))
+
+theorem sameFieldTwice_flat : FlatANF0 sameFieldTwice.main :=
+  .letE .object (.letE .assign (.letE .assign .atom))
+
+theorem heldField_flat : FlatANF0 heldField.main :=
+  .letE (.literal .int .int) (.letE .object (.letE (.get 0) (.letE (.literal .int .int) (.letE .assign
+    (.letE .push .record)))))
+
+/-- The flat theorem gives each accepted record program equal traces. -/
+theorem keptRead_traces_agree (a : Accepted) (ok : check keptRead = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run keptRead fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run keptRead fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree keptRead a ok keptRead_flat fuel t run
+
+theorem hoistedRead_traces_agree (a : Accepted) (ok : check hoistedRead = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run hoistedRead fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run hoistedRead fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree hoistedRead a ok hoistedRead_flat fuel t run
+
+theorem allFields_traces_agree (a : Accepted) (ok : check allFields = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run allFields fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run allFields fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree allFields a ok allFields_flat fuel t run
+
+theorem aliasKept_traces_agree (a : Accepted) (ok : check aliasKept = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run aliasKept fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run aliasKept fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree aliasKept a ok aliasKept_flat fuel t run
+
+theorem payloadKept_traces_agree (a : Accepted) (ok : check payloadKept = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run payloadKept fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run payloadKept fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree payloadKept a ok payloadKept_flat fuel t run
+
+theorem twoForms_traces_agree (a : Accepted) (ok : check twoForms = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run twoForms fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run twoForms fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree twoForms a ok twoForms_flat fuel t run
+
+theorem copied_traces_agree (a : Accepted) (ok : check copied = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run copied fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run copied fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree copied a ok copied_flat fuel t run
+
+theorem nested_traces_agree (a : Accepted) (ok : check nested = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run nested fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run nested fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree nested a ok nested_flat fuel t run
+
+theorem sameFieldTwice_traces_agree (a : Accepted) (ok : check sameFieldTwice = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run sameFieldTwice fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run sameFieldTwice fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree sameFieldTwice a ok sameFieldTwice_flat fuel t run
+
+theorem heldField_traces_agree (a : Accepted) (ok : check heldField = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run heldField fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run heldField fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree heldField a ok heldField_flat fuel t run
+
+/-- An accepted record probe: both runs complete with the same trace and the
+expected final value, and the in-place run writes in place. -/
+private def recordProbe (p : Program) (expected : Observation) (writes : Nat) : Bool :=
+  (check p).isOk &&
+  match ValueSemantics.run p 100, InPlaceSemantics.run p 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == expected &&
+      InPlaceSemantics.writeCount p 100 == writes
+  | _, _ => false
+
+/-- A refused record control: the checker names the Dead test, and the two
+runs give different final values. -/
+private def refusedRecord (p : Program) : Bool :=
+  (match check p with
+   | .error message => message == "Dead: an old holder is live after the demand"
+   | .ok _ => false) &&
+  match ValueSemantics.run p 100, InPlaceSemantics.run p 100 with
+  | .ok a, .ok b => a.finalValue != b.finalValue
+  | _, _ => false
+
+#guard recordProbe fieldRead (.int 2) 0
+#guard recordProbe keptRead (.int 7) 1
+#guard recordProbe hoistedRead (.int 6) 1
+#guard recordProbe allFields (.int 6) 1
+#guard recordProbe aliasKept (.int 7) 1
+#guard recordProbe twoForms (.int 1) 1
+#guard recordProbe nested (.int 7) 1
+#guard recordProbe copied (.record [.list [.record [.int 1, .int 2]], .list [.record [.int 5, .int 2]]]) 1
+#guard recordProbe sameFieldTwice (.list [.record [.int 2, .int 0]]) 2
+#guard recordProbe heldField (.record [.list [.record [.list [], .int 0]], .list [.int 1, .int 2]]) 2
+#guard (check payloadKept).isOk
+#guard match ValueSemantics.run payloadKept 100, InPlaceSemantics.run payloadKept 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads && a.finalValue == b.finalValue
+  | _, _ => false
+#guard refusedRecord writtenRead
+#guard refusedRecord wholeUse
+#guard refusedRecord payloadRead
+#guard refusedRecord twoPaths
+#guard refusedRecord twoUpdates
+#guard refusedRecord heldFieldKept
+#guard !(check topLevel).isOk
 
 end Ownership.FlatFragment.Preservation

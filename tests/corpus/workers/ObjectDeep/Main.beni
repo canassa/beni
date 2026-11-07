@@ -1,0 +1,112 @@
+-- workers: a message posted to `self` may hold a value nested deeper than
+-- a recursive walk survives (`plans/runtime-in-beni.md` step 11): the ids
+-- of the replies it holds are found by a walk over a work list, so a value
+-- of a recursive type nested 5 000 deep reaches `received`, which measures
+-- it. With the recursive walk the object stopped with a `RangeError` at
+-- about 4 050 levels, a defect the transcript showed. The value is built
+-- and measured by loops, so only the walk's own depth is tested.
+import Schema exposing (Schema)
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ deep ] }
+
+
+--| A nest: each holds the nests below it.
+type Inner
+    = Inner { a : List Inner }
+
+
+inner : Schema Inner Inner
+inner = Schema.recursive "Inner" λself →
+    i = Schema.injection Inner λ(Inner r) → Just r
+    Schema.tagged "t"
+        [ Schema.variant
+            "Inner"
+            "inner"
+            (Schema.record
+                (Schema.fields ▷ Schema.field "a" (Schema.list self))
+                (Schema.mapping one unOne)
+                (Schema.mapping one unOne)
+            )
+            i
+            i
+        ]
+
+
+one ( ⊤, a ) = { a = a }
+
+
+unOne r = ( ⊤, r.a )
+
+
+type alias State =
+    depth : Int
+
+
+deep : Worker.Definition
+deep =
+    Object.define "Deep" inner (λ_ → { depth = 0 })
+        { Object.none | request = serve, received = received }
+
+
+serve : Object.Context Inner, State, Request → State × Response
+serve ctx state request =
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "post", …rest ] →
+            Object.post (Object.self ctx) (nested 5000 (Inner { a = [] }))
+            ( state, Worker.text 200 "posted a value 5 000 deep" )
+
+        [ "get", …rest ] →
+            ( state, Worker.text 200 "depth ${String.fromInt state.depth}" )
+
+        _ →
+            ( state, Worker.text 404 "no such page" )
+
+
+received : Object.Context Inner, State, Inner → State
+received _ state message = { state | depth = depthOf message 0 }
+
+
+-- A nest holding `v`, `n` levels down: a loop, so that building it tests
+-- nothing but the walk.
+nested : Int, Inner → Inner
+nested n v =
+    if n == 0 then
+        v
+    else
+        nested (n - 1) (Inner { a = [ v ] })
+
+
+-- How many levels deep the nest goes: a loop too.
+depthOf : Inner, Int → Int
+depthOf (Inner r) n =
+    case r.a of
+        [ x, …rest ] →
+            depthOf x (n + 1)
+
+        [] →
+            n
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "DEEPS" inner, String.split (Worker.path request) "/" )
+    of
+        ( Just deeps, [ "", "deep", …rest ] ) →
+            case Worker.forward (Worker.byName deeps "one") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the object is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no DEEPS binding"
+
+        _ →
+            Worker.text 404 "no such page"

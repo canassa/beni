@@ -1,0 +1,1659 @@
+         Functional Programming with Bananas, Lenses,
+                  Envelopes and Barbed Wire
+               Erik Meijer          Maarten Fokkinga y            Ross Paterson z
+
+
+                                              Abstract
+           We develop a calculus for lazy functional programming based on recursion operators
+        associated with data type de nitions. For these operators we derive various algebraic
+        laws that are useful in deriving and manipulating programs. We shall show that all
+        example functions in Bird and Wadler's \Introduction to Functional Programming" can
+        be expressed using these operators.
+
+
+1 Introduction
+Among the many styles and methodologies for the construction of computer programs the
+Squiggol style in our opinion deserves attention from the functional programming community.
+The overall goal of Squiggol is to calculate programs from their speci cation in the way a math-
+ematician calculates solutions to di erential equations, or uses arithmetic to solve numerical
+problems.
+It is not hard to state, prove and use laws for well-known operations such as addition, multi-
+plication and |at the function level| composition. It is, however, quite hard to state, prove
+and use laws for arbitrarily recursively de ned functions, mainly because it is dicult to refer to
+the recursion scheme in isolation. The algorithmic structure is obscured by using unstructured
+recursive de nitions. We crack this problem by treating various recursion schemes as separate
+higher order functions, giving each a notation of its own independent of the ingredients with
+which it constitutes a recursively de ned function.
+     University of Nijmegen, Department of Informatics, Toernooiveld 6525 ED Nijmegen, e-mail:
+erik@cs.kun.nl
+  y   CWI, Amsterdam & University of Twente
+  z   Imperial College, London
+
+                                                 1
+This philosophy is similar in spirit to the `structured programming' methodology for imperative
+programming. The use of arbitrary goto's is abandoned in favour of structured control ow
+primitives such as conditionals and while-loops that replace xed patterns of goto's, so that rea-
+soning about programs becomes feasible and sometimes even elegant. For functional programs
+the question is which recursion schemes are to be chosen as a basis for a calculus of programs.
+We shall consider several recursion operators that are naturally associated with algebraic type
+de nitions. A number of general theorems are proven about these operators and subsequently
+used to transform programs and prove their correctness.
+Bird and Meertens [4, 18] have identi ed several laws for speci c data types (most notably nite
+lists) using which they calculated solutions to various programming problems. By embedding
+the calculus into a categorical framework, Bird and Meertens' work on lists can be extended
+to arbitrary, inductively de ned data types [17, 12]. Recently the group of Backhouse [1] has
+extended the calculus to a relational framework, thus covering indeterminancy.
+Independently, Paterson [21] has developed a calculus of functional programs similar in contents
+but very dissimilar in appearance (like many Australian animals) to the work referred to above.
+Actually if one pricks through the syntactic di erences the laws derived by Paterson are the
+same and in some cases slightly more general than those developped by the Squiggolers.
+This paper gives an extension of the theory to the context of lazy functional programming, i.e.,
+for us a type is an !-cpo and we consider only continuous functions between types (categorically,
+we are working in the category CPO). Working in the category SET as done by for example
+Malcolm [17] or Hagino [14] means that nite data types (de ned as initial algebras) and in nite
+data types (de ned as nal co-algebras) constitute two di erent worlds. In that case it is not
+possible to de ne functions by induction (catamorphisms) that are applicable to both nite and
+in nite data types, and arbitrary recursive de nitions are not allowed. Working in CPO has
+the advantage that the carriers of initial algebras and nal co-algebras coincide, thus there is a
+single data type that comprises both nite and in nite elements. The price to be paid however
+is that partiality of both functions and values becomes unavoidable.
+
+
+2 The data type of lists
+We shall illustrate the recursion patterns of interest by means of the speci c data type of cons-
+lists. So, the de nitions given here are actually speci c instances of those given in x4. Modern
+functional languages allow the de nition of cons-lists over some type A by putting:
+                                A    ::=   Nil j Cons AkA
+                                                       (       )
+
+
+The recursive structure of this de nition is employed when writing functions 2 A ! B that
+destruct a list; these have been called catamorphisms (from the greek preposition   meaning
+                                               2
+\downwards" as in \catastrophe"). Anamorphisms are functions 2 B ! A (from the greek
+preposition  meaning \upwards" as in \anabolism") that generate a list of type A from a
+seed from B. Functions of type A ! B whose call-tree has the shape of a cons-list are called
+hylomorphisms (from the Aristotelian philosophy that form and matter are one, o meaning
+\dust" or \matter").
+
+
+Catamorphisms
+Let b 2 B and  2 AkB ! B, then a list-catamorphism h 2 A ! B is a function of the
+following form:
+                                  h Nil = b                                     (1)
+                                     h Cons a; as
+                                         (          a  h as
+                                                         (       ))       =           (       )
+
+
+In the notation of Bird&Wadler [5] one would write h foldr b  . We write catamorphisms
+                                                                              =               (   )
+
+by wrapping the relevant constituents between so called banana brackets:
+                                                         h   =        jb; j)
+                                                                      (                (2)
+Countless list processing functions are readily recognizable as catamorphisms, for example
+length 2 A ! Num, or filter p 2 A ! A, with p 2 A ! bool.
+                        length       =  j0; j) where a  n = 1 + n
+                                             (
+
+                       filter p      = (jNil; j)
+
+                                             where a  as Cons a; as ; p a=           (       )
+
+                                                          as;          :p a
+                                                                          =
+
+
+Separating the recursion pattern for catamorphisms (j j) from its ingredients b and  makes it
+feasible to reason about catamorphic programs in an algebraic way. For example the Fusion
+Law for catamorphisms over lists reads:
+                  f jb; j
+                      (    jc; j) ( f b = c ^ f (a  as) = a (f as)
+                           ) = (
+
+
+Without special notation pinpointing catas, such as (j j) or foldr, we would be forced to for-
+mulate the fusion law as follows.
+
+      Let h; g be given by
+                h Nil     b       =                                                g Nil               =   c
+        h Cons a; as
+          (            (  a  h as
+                            ))    =              (           )            g Cons a; as
+                                                                              (           (       ))   =   a   (   g as
+                                                                                                                      )
+
+
+      then f h g if f b c and f a  as
+                 =              =                   (           ) =      a f as .(       )
+
+
+
+A clumsy way of stating such a simple algebraic property.
+                                                                 3
+Anamorphisms
+Given a predicate p 2 B ! bool and a function g 2 B ! AkB, a list-anamorphism h 2 B !
+A is de ned as:
+                            hb       =   Nil;          pb                                                                (3)
+                                     =   Cons a; h b ; otherwise
+                                                     (
+                                                                          0
+                                                                              )
+
+                                         where a; b g b  (
+                                                                      0
+                                                                          ) =
+
+
+Anamorphisms are not well-known in the functional programming folklore, they are called
+unfold by Bird&Wadler, who spend only few words on them. We denote anamorphisms
+by wrapping the relevant ingredients between concave lenses:
+                                                 h       =        db g; p ec
+                                                                  (               )                                      (4)
+Many important list-valued functions are anamorphisms; for example zip 2 AkB ! (AkB)
+which `zips' a pair of lists into a list of pairs.
+                                          zip      db g; p ec             =           (       )
+
+                                  p as; bs       (   as Nil _ bs Nil
+                                                             )            =       (       =         )   (        =   )
+
+               g Cons a; as ; Cons b; bs
+                (       (        )               (    a; b ; as; bs
+                                                             ))           =       ((          ) (           ))
+
+
+Another anamorphism is iterate f which given a, constructs the in nite list of iterated appli-
+cations of f to a.
+                   iterate f      db g; false ec where g a a; f a
+                                     =       (
+                                                              
+                                                                  )                               = (            )
+
+
+We use c to denote the constant function x:c.
+         
+
+
+
+
+Given f 2 A ! B, the map function f 2 A ! B applies f to every element in a given list.
+                                    fNil        Nil         =
+
+                        f Cons a; as
+                             (           (       Cons f a; fas
+                                                     ))      =                            (             )
+
+
+Since a list appears at both sides of its type, we might suspect that map can be written
+both as a catamorphism and as an anamorphisms. Indeed this is the case. As catamorphism:
+f = (jNil; j) where a  bs = Cons (f a; bs), and as anamorphism f = db(g; p)ec where
+p as = (as = Nil) and g (Cons (a; as)) = (f a; as).
+
+Hylomorphisms
+A recursive function h 2 A ! C whose call-tree is isomorphic to a cons-list, i.e., a linear
+recursive function, is called a hylomorphism. Let c 2 C and  2 BkC ! C and g 2 A ! BkA
+                                                             4
+and p 2 A ! bool then these determine the hylomorphism h
+                               ha        =        c;        pa                                               (5)
+                                         =        b  h a ; otherwise
+                                                            (
+                                                                      0
+                                                                          )
+
+                                                  where b; a g a  (
+                                                                              0
+                                                                                  ) =
+
+
+This is exactly the same structure as an anamorphism except that Nil has been replaced by c
+and Cons by . We write hylomorphisms by wrapping the relevant parts into envelopes.
+                                         h        =    [[(      c;  ; g; p
+                                                                        ) (            )]]                   (6)
+A hylomorphism corresponds to the composition of an anamorphism that builds the call-tree as
+an explicit data structure and a catamorphism that reduces this data object into the required
+value.
+                              [[(c;  ; g; p
+                                         ) (          )]]       =         jc; j) db(g; p)ec
+                                                                          (             
+
+
+
+A proof of this equality will be given in x15.
+An archetypical hylomorphism is the factorial function:
+                                        fac             =           1;  ; g; p
+                                                                  [[(             ) (              )]]
+
+                                        pn              =         n 0     =
+
+                                    g 1 n
+                                     (    +       )     =         (1 n; n +                )
+
+
+
+
+Paramorphisms
+The hylomorphism de nition of the factorial maybe correct but is unsatisfactory from a theoretic
+point of view since it is not inductively de ned on the data type num ::= 0 j 1 + num. There
+is however no `simple' ' such that fac = (j'j). The problem with the factorial is that it \eats
+its argument and keeps it too" [27], the brute force catamorphic solution would therefore have
+fac return a pair (n; n!) to be able to compute (n + 1)!.
+    0
+
+
+
+
+Paramorphisms were investigated by Meertens [19] to cover this pattern of primitive recursion.
+For type num a paramorphism is a function h of the form:
+                                         h0       b             =                                            (7)
+                                  h 1 n   (       n h n
+                                                  +    )        =                  (           )
+
+
+For lists a paramorphism is a function h of the form:
+                                        h Nil       b             =
+
+                            h Cons a; as
+                               (              (     a  as; h as
+                                                        ))        =                    (                 )
+
+
+
+                                                                 5
+ We write paramorphisms by wrapping the relevant constituents in barbed wire h = h[ b; i], thus
+ we may write fac = h[ 1; i] where n  m = (1 + n)  m. The function tails 2 A ! A,
+ which gives the list of all tail segments of a given list is de ned by the paramorphism tails =
+h[Cons (Nil; Nil); i] where a  (as; tls) = Cons (Cons (a; as); tls).
+
+3 Algebraic data types
+In the preceding section we have given speci c notations for some recursion patterns in connec-
+tion with the particular type of cons-lists. In order to de ne the notions of cata-, ana-, hylo-
+and paramorphism for arbitrary data types, we now present a generic theory of data types and
+functions on them. For this we consider a recursive data type (also called `algebraic' data type
+in Miranda) to be de ned as the least xed point of a functor1 .
+
+
+Functors
+A bifunctor y is a binary operation taking types into types and functions into functions such
+that if f 2 A ! B and g 2 C ! D then f y g 2 A y C ! B y D, and which preserves identities
+and composition:
+                                       id y id       =       id
+                                fyg hyj             =       (f h y g j
+                                                                        )   (      )
+
+
+Bifunctors are denoted by y; z; x; : : :
+A monofunctor is a unary type operation F, which is also an operation on functions, F 2 (A !
+B) ! (AF ! BF) that preserves the identity and composition. We use F; G; : : : to denote
+monofunctors. In view of the notation A we write the application of a functor as a post x:
+AF. In x5 we will show that  is a functor indeed.
+The data types found in all current functional languages can be de ned by using the following
+basic functors.
+
+Product The (lazy) product DkD of two types D and D and its operation k on functions
+                                         0                                       0
+
+
+are de ned as:
+                                   DkD       0
+                                                 =   f(d; d ) j d 2 D; d 2 D g
+                                                                 0                   0   0
+
+
+
+  1 We give the de nitions of various concepts of category theory only for the special case of the category
+
+CPO. Also `functors' are really endo-functors, and so on.
+
+                                                         6
+                          fkg x; x
+                           (   ) (            f x; g x
+                                              0
+                                                  )           =        (
+                                                                                               0
+                                                                                                   )
+
+
+Closely related to the functor k are the projection and tupling combinators:
+                                      x; y        x     (           )        =
+
+                                      x; y        y     (           )        =
+
+                                     f g x(          f x; g x
+                                                      4        )               =       (                       )
+
+
+Using ;  and we can express fkg as fkg f 
+                4                                             g  . We can also de ne using
+                                                                               = (                    ) 4 (              )               4
+
+
+k and the doubling combinator  x x; x , since f g fkg .
+                                              = (                     )                            4       =               
+
+
+
+
+Sum The sum D j D of D and D and the operation j on functions are de ned as:
+                       0                          0
+
+
+
+
+                               DjD         f0gkD [ f1gkD [ f?g
+                                                      0
+                                                              =        (                   )           (
+                                                                                                                   0
+                                                                                                                       )
+
+                              fjg ?
+                               (          ?
+                                          )                   =
+
+                          f j g 0; x
+                           (       ) (     0; f x )           =        (                   )
+
+                         f j g 1; x
+                           (       ) (     1; g x
+                                              0
+                                                  )           =        (
+                                                                                           0
+                                                                                               )
+
+
+The arbitrarily chosen numbers 0 and 1 are used to `tag' the values of the two summands so
+that they can be distinguished. Closely related to the functor j are the injection and selection
+combinators:
+                                                                            { x = (0; x)
+                                                                           { y = (1; y)
+                                  f g ?      ?            (    5           )               =
+
+                                f g 0; x  (  fx       5        ) (                 )       =
+
+                                f g 1; y  (  gy   5            ) (                 )       =
+
+
+with which we can write f j g { f   { g . Using r which removes the tags from its
+                                    = (                      ) 5 (                   )
+
+argument, r ? ? and r i; x x, we can de ne f g r f j g.
+                =              (         ) =                                                               5       =           
+
+
+
+
+Arrow The operation ! that forms the function space D ! D of continuous functions from                                     0
+
+
+D to D , has as action on functions the `wrapping' function:
+        0
+
+
+
+
+                                    f!g h (       g h f           )                =                      
+
+
+
+
+Often we will use the alternative notation g f h g h f, where we have swapped the
+                                                                   (                   )           =                  
+
+arrow already so that upon application the arguments need not be moved, thus localizing the
+changes occurring during calculations. The functional (f F g) h = f hF g wraps its F-ed                                               
+
+
+argument between f and g.
+                                                                               7
+Closely related to the ! are the combinators:
+                                           curry f x y  f x; y                       =        (   )
+
+                                       uncurry f x; y   fxy        (        )        =
+
+                                            eval f; x   fx         (        )        =
+
+
+Note that ! is contra-variant in its rst argument, i.e. f ! g                            (        )  (   h!j   ) = (   h f ! g j.
+                                                                                                                            )       (           )
+
+
+
+
+Identity, Constants The identity functor I is de ned on types as DI = D and on functions
+as fI = f. Any type D induces a functor with the same name D, whose operation on objects
+is given by CD = D, and on functions fD = id.
+
+Lifting For mono-functors F; G and bi-functor y we de ne the mono-functors FG and FyG by
+                                            x FG   (       )       =        (   xF G )
+
+                                           x F yG
+                                               (           )       =        (   xF y xG
+                                                                                     )   (    )
+
+
+for both types and functions x.
+In view of the rst equation we need not write parenthesis in xFG. Notice that in (FyG) the
+bi-functor y is `lifted' to act on functors rather than on objects; (FyG) is itself a mono-functor.
+
+Sectioning Analogous to the sectioning of binary operators, a b a  b and b a                    (      )   =                  (       )        =
+
+a  b we de ne sectioning of bi-functors y;
+                                               Ay  (      AyI  )       =
+
+                                                fy     (  f y id
+                                                               )       =
+
+
+hence B(Ay) = A y B and f(Ay) =            id y f. Similarly we can de ne sectioning of y in its second
+argument, i.e. (yB) and (yf).
+It is not too dicult to verify the following two properties of sectioned functors:
+                  fy g Ay
+                     (       )    (   )   =       g By fy
+                                                       (           )  (         )           for all f 2 A ! B                                   (8)
+                    fy gy(     )  (   )   =       ((f gy             ) )                                                                       (9)
+Taking f y g g ! f, thus fy
+             =                     (   ) = (   f gives some nice laws for function composition.
+                                               )
+
+
+
+
+                                                                        8
+Laws for the basic combinators
+There are various equations involving the above combinators, we state nothing but a few of
+these. In parsing an expression function composition has least binding power while k binds
+stronger than j.
+             fkg
+                   f          =                                                    f j g {  { f                =       
+
+
+           f g
+                   f4           =                                                    f g {      f
+                                                                                                  5                  =
+
+             fkg
+                   g          =                                                    f j g {  { g                =       
+
+
+           f g    g                                                                 f g {      g
+                                                                                                  h ( h strict
+                    4           =                                                                5                  =
+
+(    h  h
+        ) 4 (      h       )   =                                           (   h { h {
+                                                                                        ) 5 (               )       =
+
+                id
+                     4           =                                                         { {  id   5              =
+
+        fkg h j      f h g j                                                       f g hjj         f h g j
+                                                                                                   f g f h ( f strict
+                        4       =   (           ) 4 (        )                        5                           =   (          ) 5 (      )
+
+          f g h
+             4       f h g h
+                                =   (           ) 4 (         )                   f g h           5               =   (          ) 5 (      )
+
+         fkg hkj  f h ^ g j
+                 =                       =                 =                       fjg hjj  f h^g j
+                                                                                                  =                           =               =
+
+      f g h j  f h^g j
+         4   =           4               =                 =                      f g h j  f h^g j
+                                                                                     5       =         5                      =               =
+
+
+A nice law relating and is the abides law:
+                                 4       5
+
+
+
+
+                                             (   f g
+                                                 4   ) 5 (     h j   4   )       =       (   f h
+                                                                                             5        ) 4 (       g j 5   )                           (10)
+
+Varia
+The one element type is denoted 1 and can be used to model constants of type A by nullary
+functions of type 1 ! A. The only member of 1 called void is denoted by ().
+In some examples we use for a given predicate p 2 A ! bool, the function:
+                                    p 2 A!AjA              ?
+
+                                 p a         ?; p a ?  ?         =                            =
+
+                                            { a; p a true       =                            =
+
+                                            { a; p a false      =                            =
+
+
+thus f g p models the familiar conditional if p then f else g . The function VOID
+         5              ?
+
+maps its argument to void: VOID x          . Some laws that hold for these functions are:
+                                                               = ()
+
+
+                                VOID f           VOID                   =
+
+                                     p x         xjx p x       ?        =                       (          )?
+
+
+In order to make recursion explicit, we use the operator  2 A ! A ! A de ned as:                                 (               )
+
+
+                                  f         x where x f x       =                                =
+
+
+
+                                                                                 9
+We assume that recursion (like x = f x) is well de ned in the meta-language.
+Let F; G be functors and 'A 2 AF ! AG for any type A. Such a ' is called a polymorphic
+function. A natural transformation is a family of functions 'A (omitting subscripts whenever
+possible) such that:
+                         8f f 2 A ! B 'B fF fG 'A
+                              :               :           =                     (11)
+As a convenient shorthand for 11 we use ' 2 F ! G to denote that ' is a natural trans-
+                                  (   )
+                                                           
+
+
+
+formation. The \Theorems For Free!" theorem of Wadler, deBruin and Reynolds [28, 9, 22]
+states that any function de nable in the polymorphic -calculus is a natural transformation. If
+' is de ned using , one can only conclude that (11) holds for strict f.
+
+Recursive types
+After all this stu on functors we have nally armed ourselves suciently to abstract from the
+peculiarities of cons-lists, and formalize recursively de ned data types in general.
+Let F be a monofunctor whose operation of functions is continuous, i.e., all monofunctors
+de ned using the above basic functors or any of the map-functors introduced in x5. Then
+there exists a type L and two strict functions inF 2 LF ! L and outF 2 L ! LF (omitting
+subscripts whenever possible) which are each others inverse and even id = (in F out)
+[6, 23, 16, 24, 30, 12]. We let F denote the pair (L; in) and say that it is \the least xed
+point of F". Since in and out are each others inverses we have that LF is isomorphic to L, and
+indeed L is | upto isomorphism | a xed point of F.
+For example taking XL = 1 j AkX, we have that (A; in) = L de nes the data type of cons-
+lists over A for any type A. If we put Nil = in { 2 1 ! A and Cons = in { 2 AkA !
+                                                                               
+
+
+A, we get the more familiar (A; Nil Cons) = L. Another example of data types, binary
+                                          5
+
+trees with leaves of type A results from taking the least xed point of XT = 1 j A j XkX.
+Backward lists with elements of type A, or snoc lists as they are sometimes called, are the
+least xed point of XL = 1 j XkA. Natural numbers are speci ed as the least xed point of
+XN = 1 j X.
+
+4 Recursion Schemes
+Now that we have given a generic way of de ning recursive data types, we can de ne cata-,
+ana-, hylo- and paramorphisms over arbitrary data types. Let (L; in) = F, ' 2 AF ! A; 2
+
+                                                  10
+A ! AF;  2 AkL F ! A then we de ne
+                     (           )
+
+
+                         j'j F    ' F out            (       )     =       (                    )                                                    (12)
+                       db ecF     in F               (       )     =       (                )                                                        (13)
+                     '; F        ' F         [[              ]]    =       (                )                                                        (14)
+                          hiF    f:  id f F out       [   ]     =       (               (       4   )          )                                (15)
+When no confusion can arise we omit the F subscripts.
+De nition (13) agrees with the de nition given in x2; where we wrote (je; j) we now write
+je ()j).
+(
+    
+        5
+
+
+
+
+De nition (14) agrees with the informal one given earlier on; the notation db(g; p)ec of x2 now
+becomes db((VOID j g) p?)ec.             
+
+
+
+
+De nition (15) agrees with the earlier one in the sense that taking ' = c                                                            
+                                                                                                                                         5     and     =
+
+(VOID j g)   p? makes [[(c ; ); (g; p)]] equal to [['; ]].
+                 
+                                              
+
+
+
+
+ De nition (15) agrees with the description of paramorphisms as given in x2 in the sense that
+h[b; i] equals h[b ()]i here.
+                         
+                             5
+
+
+
+
+Program Calculation Laws
+Rather than letting the programmer use explicit recursion, we encourage the use of the above
+  xed recursion patterns by providing a shopping list of laws that hold for these patterns. For
+each -morphism, with 2 fcata, ana, parag, we give an evaluation rule, which shows how
+such a morphism can be evaluated, a Uniqueness Property, a canned induction proof for a given
+function to be a -morphism, and a fusion law, which shows when the composition of some
+function with an -morphism is again an -morphism. All these laws can be proved by mere
+equational reasoning using the following properties of general recursive functions. The rst one
+is a `free theorem' for the xed point operator  2 (A ! A) ! A
+                                             f g
+                                              (           ) =      h ( f strict ^ f g h f                      =                                   (16)
+Theorem (16) appears under di erent names in many places2 [20, 8, 2, 15, 7, 25, 13, 31]. In
+this paper it will be called xed point fusion.
+The strictness condition in (16) can sometimes be relaxed by using
+               f g
+                 (       ) =     f g0
+                                         (
+                                              0
+                                                  )       ( f? f ? ^ f g h f ^ f g
+                                                                        =
+                                                                                0
+                                                                                                        =   
+                                                                                                                         0
+                                                                                                                             
+                                                                                                                                 0
+                                                                                                                                     =   h f
+                                                                                                                                          
+                                                                                                                                               0
+                                                                                                                                                      (17)
+    2   Other references are welcome.
+
+                                                                                    11
+Fixed point induction over the predicate P(g; g )  f g = f g will prove (17).              0                       0       0
+
+
+
+
+For hylomorphisms we prove that they can be split into an ana- and a catamorphism and show
+how computation may be shifted within a hylomorphism. A number of derived laws show
+the relation between certain cata- and anamorphisms. These laws are not valid in SET. The
+hylomorphism laws follow from the following theorem:
+                                    f F g h F j
+                                    (               )        (                ) =      f F j  (       )   ( g h id               =           (18)
+
+
+Catamorphisms
+Evaluation rule The evaluation rule for catamorphisms follows from the xed point property
+x f ) x f x:
+  =                 =
+
+
+                                    j'j in         ' j'j L    (       )           (CataEval)
+                                                                                        =              (   )
+
+
+It states how to evaluate an application of j'j to an arbitrary element of L (returned by the
+                                                                                    (       )
+
+constructor in); namely, apply j'j recursively to the argument of in and then ' to the result.
+                                                    (     )
+
+
+For cons lists (A; Nil Cons) = L where XL = 1 j AkX and fL = id j idkf with
+                                        5
+
+catamorphism (jc j) the evaluation rule reads:
+                                5
+
+
+
+                                (jc   j) Nil = c         5                          (19)
+                             (jc    j) Cons =  idk(jc j)
+                                                    5                                (20)                             5
+
+
+
+i.e. the variable free formulation of (1). Notice that the constructors, here Nil Cons are                                                  5
+
+used for parameter pattern matching.
+
+UP for catamorphisms The Uniqueness Property can be used to prove the equality of two
+functions without using induction explicitly.
+                      f j'j  f ? j'j ? ^ f in ' fL
+                                     = (        )                              (CataUP)
+                                                                               = (          )                                 =       
+
+
+
+A typical induction proof for showing f j'j takes the following steps. Check the induction
+                                                                              = (       )
+
+base: f ? j'j ?. Assuming the induction hypothesis fL j'j L proceed by calculating:
+               = (         )                                                                                          = (         )
+
+
+
+            f in : : : ' fL
+                           =       =       
+
+
+      =                 induction hypothesis
+            ' j'j L    (   )
+
+      =                 evaluation rule (CataEval)
+            j'j) in
+            (           
+
+
+
+
+                                                                                        12
+to conclude that f = (j'j). The schematic set-up of such a proof is done once and for all, and
+built into law (CataUP). We are thus saved from the standard ritual steps; the last two lines in
+the above calculation, plus the declaration that `by induction' the proof is complete.
+The ) part of the proof for (CataUP) follows directly from the evaluation rule for cata-
+morphisms. For the ( part we use the xed point fusion theorem (17) with f := (f ),                                                    
+
+
+g := g := in L out and f := (j'j). This gives us f (in L out) = (j'j) (in L out)
+       0                                     0
+                                                                                                                       
+
+
+and since (in L out) = id we are done.
+
+Fusion law for catamorphisms The Fusion Law for catamorphisms can be used to trans-
+form the composition of a function with a catamorphism into a single catamorphism, so that
+intermediate values can be avoided. Sometimes the law is used the other way around, i.e. to
+split a function, in order to allow for subsequent optimizations.
+                   f j'j
+                        (       ) = (           j j) ( f ? = (j j) ? ^ f ' =
+                                                                                                           fL           (CataFusion)
+The fusion law can be proved using xed point fusion theorem (17) with f := (f ), g := ' L                                   
+
+
+out, g := in L out and f := ((j j) ).
+       0                                 0
+                                                             
+
+
+
+
+A slight variation of the fusion law is to replace the condition f ? = (j j) ? by f ? = ?,                                    
+
+
+i.e. f is strict.
+                             f j'j
+                                    (           ) = ( j j) ( f strict ^ f ' =                      fL                    (CataFusion')
+This law follows from (16). In actual calculations this latter law is more valuable as its appli-
+cability conditions are on the whole easier to check.
+
+Injective functions are catamorphisms Let f 2 A ! B be a strict function with left-inverse
+g, then for any ' 2 AF ! A we have
+                         f j'j
+                                (       ) = (        jf ' gFj) ( f strict ^ g f = id
+                                                                                                                                 (21)
+Taking ' = in we immediatly get that any strict injective function can be written as a
+catamorphism.
+                             f   = (         jf in gFj)F ( f strict ^ g f = id
+                                                                                                                                 (22)
+Using this latter result we can write out in terms of in since out = (jout in inLj) = (jinLj).                         
+
+
+
+
+                                                                         13
+Catamorphisms preserve strictness The given laws for catamorphisms all demonstrate the
+importance of strictness, or generally of the behaviour of a function with respect to ?. The
+following \poor man's strictness analyser" for that reason can often be put into good use.
+                             F ? = ? ( 8f :: F f ? = ?
+                                                                                        (23)
+The proof of (23) is by xed point induction over P(F)  F ? = ?.                     
+
+
+
+
+Speci cally for catamorphisms we have
+                                           (  j'j)L ? = ?  ' ? = ?
+                                                                            
+
+
+
+if L is strictness preserving. The ( part of the proof directly follows from (23) and the de nition
+of catamorphisms. The other way around is shown as follows
+
+          ?
+      =           premise
+          j'j) ?
+          (       
+
+
+      =      in ? ?              =
+
+          j'j in ?
+          (   )              
+
+
+      =           evaluation rule
+          ' j'j L ?
+                 (       )   
+
+
+      =           L   preserves strictness
+          ' ? 
+
+
+
+
+Examples
+Unfold-Fold Many transformations usually accomplished by the unfold-simplify-fold tech-
+nique can be restated using fusion. Let (Num; Nil Cons) = L, where XL = 1 j NumkX
+                                                                             5
+
+and fL = id j idkf be the type of lists of natural numbers. Using fusion we derive an ecient
+version of sum squares where sum = (j0 +j) and squares = (jNil (Cons SQkid)j).
+                      
+                                                                
+                                                                    5                    5   
+
+
+Since sum is strict we just start calculating aiming at the discovery of a that satis es the
+condition of (CataFusion').
+
+          sum Nil Cons Skid
+                                 5 (              )
+      =
+          (sum Nil sum Cons SQkid
+                                 ) 5 (                                )
+      =
+          Nil     idksum SQkid
+                  5 ((+)                                  )
+      =
+          Nil     SQkid idksum
+                  5 ((+)                                  )
+      =
+          Nil     SQkid sumL
+                  5 ((+)                 ) 
+
+
+
+                                                                    14
+and conclude that sum squares = (jNil
+                                                                       5 ((+)              SQkid j .     ))
+
+
+A slightly more complicated problem is to derive a one-pass solution for
+                                             average               =    DIV sum length
+                                                                                                    4
+
+
+
+
+Using the tupling lemma of Fokkinga [10]
+                                         j'j)L
+                                         (           4 ( j j)L = (j(' L)                          4 (          L j
+                                                                                                                       ))
+
+
+a simple calculation shows that average = DIV (j(0                                   
+                                                                                                 
+                                                                                                     5 (+)          idk      ) 4 (   0   
+                                                                                                                                                5 (+        1 j .
+                                                                                                                                                                )        )
+
+
+
+
+Accumulating Arguments An important item in the functional programmer's bag of tricks
+is the technique of accumulating arguments where an extra parameter is added to a function to
+accumulate the result of the computation. Though stated here in terms of catamorphisms over
+cons-lists, the same technique is applicable to other data types and other kind of morphisms as
+well.
+                   jc
+                   (
+                        
+                                j l j c
+                                     )       = ((
+                                                           
+                                                           )            j) l  where (a f) b = f (a b)                                                                        (24)
+                   (
+                            5                                   5               
+
+
+
+
+                   a      a ^ ? a ? ^ ab c b a c
+                                    =                              =                (                )            =            (               )
+
+
+Theorem (24) follows from the fusion law by taking Accu jc j j c                    j with                      (
+                                                                                                                       
+                                                                                                                           5        ) = ((
+                                                                                                                                                        
+                                                                                                                                                        )       5         )
+
+Accu a b a b.
+           =
+
+
+Given the naive quadratic de nition of reverse 2 A ! A as a catamorphism jNil j                                                                          (
+                                                                                                                                                                      
+                                                                                                                                                                          5      )
+
+where a  as as=       Cons a; Nil , we can derive a linear time algorithm by instantiating
+                           +
+                           + (                   (             ))
+
+(24) with   := +
+                +  and      Cons to get a function which accumulates the list being reversed
+                                     :=
+
+as an additional argument: jid       j where a as bs as Cons a; bs . Here
+                                             (       5         )            (                    )          =               (               (               ))                 +
+                                                                                                                                                                               +
+
+is the function that appends two lists, de ned as as      bs jid j as bs where                       +
+                                                                                                      +                = (
+                                                                                                                                    
+                                                                                                                                        5           )
+
+a  f bs Cons a; f bs .
+         =             (                 )
+
+
+In general catamorphisms of higher type L ! I ! S form an interesting class by themselves
+                                                                            (                )
+
+as they correspond to attribute grammars [11].
+
+
+Anamorphisms
+Evaluation rule The evaluation rule for anamorphisms is given by:
+                                                      out db ec    (   )   =        db ecL
+                                                                                         (   )                                                                  (AnaEval)
+
+                                                                            15
+It says what the result of an arbitrary application of db( )ec looks like: the constituents produced
+by applying out can equivalently be obtained by rst applying and then applying db( )ecL
+recursively to the result.
+Anamorphisms are real old fusspots to explain. To instantiate (AnaEval) for cons list we de ne:
+                               hd        ?  out=            5       
+
+
+                                 tl      ?  out=            5       
+
+
+                            is nil       true false out
+                                                 =
+                                                                  
+                                                                      5
+                                                                                  
+                                                                                      
+
+
+
+
+Assuming that f db VOID j h t p ec we nd after a little calculation that:
+                   = (         (   4       )        ?)
+
+
+                                is nil f       p              =
+
+                                               h ( :p
+                                                     
+
+
+                                    hd f                      =
+
+                                               t ( :p
+                                                     
+
+
+                                     tl f                    =
+
+
+which corresponds to the characterization of unfold given by Bird and Wadler [5] on page
+173.
+
+UP for anamorphisms The UP for anamorphisms is slightly simpler than the one for cata-
+morphisms, since the base case does not have to be checked.
+                                   f db ' ec  out f fL '
+                                       = (       )                           =                                (AnaUP)
+To prove it we can use xed point fusion theorem (16) with f := ( f), g := in L out and            
+
+
+h := in L . This gives us (in L out) f = (in L ) and again since (in L out) =
+                                                          
+
+
+id we are done.
+
+Fusion law for anamorphisms The strictness requirement that was needed for catamor-
+phisms can be dropped in the anamorphism case. The dual condition of f ? ? for                                  =
+
+strictness is ? f ? which is vacuously true.
+                  =
+
+
+                              db ' ec f db ec ( ' f fL
+                              (    )        = (          )                      =                          (AnaFusion)
+This law can be proved by xed point fusion theorem (16) with f := ( f), g := in L ' and               
+
+
+h := in L .
+
+
+
+                                                              16
+Any surjective function is an anamorphism The results (21) and (22) can be dualized
+for anamorphisms. Let f 2 B ! A a surjective function with right-inverse g, then for any
+   2 A ! AL we have
+                                            db ec f db gL
+                                                (   )      = (   f ec ( f g id
+                                                                                    )                  (25)
+                                                                                                                =
+
+
+since     f = fL (gL
+                           )              f . The special case where equals out yields that any surjective
+function can be written as an anamorphism.
+                           f db gL out f ecL ( f g id
+                                                    = (                        )                          =                                     (26)
+As in has right-inverse out, we can express in using out by in                                                          =    db outL out in ec
+                                                                                                                             (                   )   =
+
+db outL ec.
+(       )
+
+
+
+
+Examples
+Reformulated in the lense notation, the function iterate f becomes:
+                                   iterate f       db { id f ec                 =    (          4          )
+
+
+We have db { id f ec db VOID j id f false ec db id f; false ec in the notation of
+                  (               4   ) = (                        4        
+                                                                                          
+                                                                                              ?) (= (            4
+                                                                                                                                 
+                                                                                                                                     )
+
+section 2).
+Another useful list-processing function is takewhile p which selects the longest initial segment
+of a list all whose elements satisfy p. In conventional notation:
+                   takewhile p Nil          Nil                 =
+
+         takewhile p Cons a as          (   Nil;            )   =           :p a
+                                            Cons a takewhile p as ; otherwise
+                                                                =                         (                              )
+
+
+The anamorphism de nition may look a little daunting at rst:
+                   takewhile p          db { VOID j id :p  out ec
+                                                            =       (   5 (                         (              )?)            )
+
+
+The function f while p contains all repeated applications of f as long as predicate p holds:
+                          f while p          takewhile p iterate f  =                                
+
+
+
+
+Using the fusion law (after a rather long calculation) we can show that f while p db VOID j                                                  = (
+
+(id f :p ec.
+    4       )            ?)
+
+
+
+
+                                                                                 17
+Hylomorphisms
+Splitting Hylomorphisms In order to prove that a hylomorphism can be split into an anamor-
+phism followed by a catamorphism
+                                                                          [[   ';   ]]    =    (j'j) db( )ec                   (HyloSplit)
+we can use the total fusion theorem (18).
+
+Shifting law Hylomorphisms are nice since their decomposability into a cata- and an anamor-
+phism allows us to use the respective fusion laws to shift computation in or out of a hylomor-
+phism. The following shifting law shows how computations can be shifted within a hylomor-
+phism.
+                                                    [[  ' ;
+                                                                        ]]
+                                                                          L = [[    ';           ]]
+                                                                                                        M       ( 2 !
+                                                                                                                    L
+                                                                                                                        
+                                                                                                                            M   (HyloShift)
+The proof of this theorem is straightforward.
+
+          [[   ' ;           ]]
+                                L
+      =            de nition hylo
+           f:'  fL
+               (                                        )
+
+      =      2L!M                  
+
+
+
+
+           f:' fM 
+               (                                        )
+
+      =            de nition hylo
+          [[   ';            ]]
+                                M
+
+
+An admittedly humbug example of (HyloShift) shows how left linear recursive functions can be
+transformed into right linear recursive functions. Let fL = id j fkid and fR = id j idkf de ne
+the functors which express left respectively right linear recursion, then if x  y = y  x we
+have
+
+          [[   c ; f j h t p L
+                   5                (           4        )        ?]]
+      =
+          [[   c  SWAP; f j h t p L
+                   5                                          (     4        )    ?]]
+
+      =          SWAP 2 L ! R                        
+
+
+
+
+          [[   c ; SWAP f j h t p R
+                   5                                          (     4        )    ?]]
+      =
+          [[   c ; f j t h p R
+                   5                (       4            )        ?]]
+
+
+
+where SWAP = id j ( ).                      4
+
+
+
+
+                                                                                           18
+Relating cata- and anamorphisms
+From the splitting and shifting law (HyloShift), (HyloSplit) and the fact that (j'j) = [['; out]]
+and db( )ec = [[in; ]] we can derive a number of interesting laws which relate cata- and anamor-
+phisms with each other.
+                            (jinM   'j)L = db(' outL )ecM ( ' 2 L ! M
+                                                                                          (27)                        
+
+
+
+
+Using this law we can easily show that
+                        (j'     j)L = (j'j)M db( outL)ecM ( 2 L ! M
+                                                                                         (28)                                
+
+
+
+
+                                    = (j'j)
+                                              M (jinM    j)L ( 2 L ! M                     (29) 
+                                                                                                                            
+
+
+
+
+                          db '
+                          (                 ecM
+                                             )           =       jinM 'j)L db( )ecL ( ' 2 L ! M
+                                                                 (                      
+                                                                                                                            
+                                                                                                                                         (30)
+                                                         =       db ' outL ecM db ecL ( ' 2 L ! M
+                                                                 (                  )              (   )
+                                                                                                                                
+                                                                                                                                         (31)
+This set of laws will be used in x5.
+From the total fusion theorem (18) we can derive:
+                                                 db ecL j'j L id (
+                                                 (       )      (   )       =                                  ' id
+                                                                                                                  =                      (32)
+
+Example: Re ecting binary trees
+The type of binary trees with leaves of type A is given by (tree A; in) = L where XL =
+1 j A j XkX and fL = id j id j gkg. Re ecting a binary tree can be de ned by: reflect =
+(jin SWAPj) where SWAP = id j id j ( ). A simple calculation proves that reflect
+                                                                                 4                                                           
+
+reflect = id.
+             reflect reflect
+                  
+
+
+        =        SWAP fL fL SWAP
+                                    =               
+
+
+            db SWAP out ec jin SWAPj
+            (                   )          (                          )
+
+        =        SWAP out in SWAP id
+                                                                      =
+
+             id
+
+Paramorphisms
+The evaluation rule for paramorphisms is
+                                                         h'i in
+                                                         [   ]              =   ' id h'i L     (       4 [     ])                 (ParaEval)
+                                                                                 19
+The UP for paramorphisms is similar to that of catamorphisms:
+                          f h'i  f ? h'i ? ^ f in ' id f L
+                           = [             ]                  = [       ]                                 =          (       4   )         (ParaUP)
+The fusion law for paramorphisms reads
+                           f h'i h i ( f strict ^ f '
+                                      [       ] = [   ]                                                    =      (   idkf L  )        (ParaFusion)
+Any function f (of the right type of course!) is a paramorphism.
+                                                               f   =     hf in Li
+                                                                             [                     ]
+
+
+The usefulness of this theorem can be read from its proof.
+
+          hf in Li
+          [              ]
+
+      =    de nition (15)
+        (g:f in L (id g)L out)
+                                                4           
+
+
+      =    functor calculus
+           g:f in out
+              (                              )
+
+      =
+
+          f
+
+Example: composing paramorphisms from ana- and catamorphisms
+A nice result is that any paramorphism can be written as the composition of a cata- and an
+anamorphism. Let (L; in) = L be given, then de ne
+                                                               XM   LkX L        =       (           )
+
+                                                               hM   idkh L       =       (           )
+
+                                                           M; IN
+                                                           (       M    )       =
+
+
+For natural numbers we get XM = (                          NumkX L 1 j NumkX, i.e. Num; in
+                                                                             )       =                                       (           ) =   M, which
+is the type of lists of natural numbers.
+Now de ne preds 2 L ! M as follows:
+                                  preds       db L outL ecM         =           (                      )
+
+
+For the naturals we get preds db id j  out ec, that is given a natural number N n, the
+                                                   = (                              )                                                          =
+
+expression preds N yields the list n 1; : : :; 0 .     [       -                     ]
+
+
+Using preds we start calculating:
+                                                                                 20
+          (j'j)M preds    
+
+
+          (j'j)
+                M d
+                  b(L outL)ecM
+      =
+                                             
+
+      =
+           f:' fM L outL
+              (                                            )
+      =
+           f:' idkf L id id L outL
+              (                  (               )    (     4        )           )
+      =
+           f:' id f L outL
+              (                  (               4   )          )
+      =
+          h'iL
+          [       ]
+
+
+
+Thus h[' ]iL = (j'j)M preds. Since (jINj)M = id we immediately get preds = h[IN ]iL .
+                                  
+
+
+
+
+5 Parametrized Types
+In x2 we have de ned for f 2 A ! B, the map function f 2 A ! B. Two laws for  are
+id = id and (f g) = f g. These two laws precisely state that  is a functor. Another
+                                                         
+
+
+characteristic property of map is that it leaves the `shape' of its argument unchanged. It turns
+out that any parametrized data type comes equipped with such a map functor. A parametrized
+type is a type de ned as the least xed point of a sectioned bifunctor. Contrary to Malcolms
+approach [17] map can be de ned both as a catamorphism and as an anamorphism.
+
+
+Maps
+Let y be a bi-functor, then we de ne the functor  on objects A as the parametrized type
+A where (A; in) = (Ay), and on functions f 2 A ! B as:
+                                                                  f       =   (jin (fy)j) A
+                                                                                        
+                                                                                              (       y)
+                                                                                                            (33)
+Since (fy) 2 (Ay) ! (By), from (27) we immediately get an alternative version of f as an
+                                      
+
+
+
+anamorphism:
+                                                                  f       =   db fy out ec B
+                                                                               ((       )    )
+                                                                                                  (    y)
+
+
+
+Functoriality of f is calculated as follows:
+
+          f g   
+
+
+      =               de nition 
+          jin (fy)j) (jin (gy)j)
+          (                                         
+
+
+      =               (29)
+
+                                                                                    21
+          jin (fy) (gy)j)
+          (                  
+
+
+      =           (9)
+          jin ((f g)y)j)
+          (              
+
+
+      =           de nition 
+          (   f g
+                     )
+
+
+
+Maps are shape preserving. De ne SHAPE = VOID then SHAPE f = VOID f =                                                               
+
+
+SHAPE.
+For cons-list (A; Nil Cons) = (Ay) with A y X = 1 j AkX and f y g = id j fkg we get
+                                      5
+
+
+f = db(f y id out)ec. From the UP for catas we nd that this conforms to the usual de nition
+                  
+
+of map.
+                                                        f Nil
+                                                                             =    Nil
+                                                      f Cons
+                                                                             =    Cons fkf       
+
+
+
+Other important laws for maps are factorization [26] and promotion [4].
+                          (   j'j) f = (j' (fy)j)
+                                                                                                                                          (34)
+                          f db ec   (       )   =    db fy
+                                                       ((      )        ec
+                                                                         )                                                                  (35)
+
+                          (   j'j) f = g (jj) ( g  = ' f y g ^ g strict           (36)
+                  f db( )ec = db()ec g (  g = f y g
+                                                                                                    
+
+
+                                                                                  (37)                  
+
+
+
+Now we know that  is a functor, we can recognize that in 2 Iy !  and out 2  ! Iy are                                          
+
+
+
+natural transformations.
+                                                        f in               =     in f y f
+                                                                                           
+
+
+                                                       out f               =     f y f out  
+
+
+
+
+Iterate promotion
+Recall the function iterate f = db({ id f)ec, the following law turns an O(n ) algorithm into
+                                                                    4
+                                                                                                                                2
+
+
+an O(n) algorithm, under the assumption that evaluating g fn takes n steps.                                
+
+
+
+                      g iterate f = iterate h g ( g f = h g
+                                                                                        (38)                         
+
+
+
+Law (38) is an immediate consequence of the promotion law for anamorphisms (37).
+Interestingly we may also de ne iterate as a cyclic list:
+                                              iterate f x            =    xs:Cons x; fxs
+                                                                              (                        (           ))
+
+and use xed point fusion to prove (38).
+                                                                              22
+Map-Reduce factorization
+A data type (A; in) = (Ay) with A y X = A j XF is called a free F-type over A. For a free
+type we can always write strict catas (j j) as (jf 'j) by taking f = { and ' =
+                                                                           5         {. For                                   
+
+
+f we get
+                                          f       =  jin f j idj)
+                                                           (       
+
+
+                                                   = (jtau j join  f j idj)            
+
+
+                                                   = (jtau   f joinj)         5
+
+
+
+where tau = in { and join = in {.
+                                              
+
+
+
+
+If we de ne the reduction with ' as
+                                                   '=          =       jid 'j)
+                                                                       (       5          (39)
+the factorization law (34) shows that catamorphisms on a free type can be factored into a map
+followed by a reduce.
+
+           jf 'j)
+            (   5
+
+
+          (jid ' f j idj)
+        =
+                5       
+
+        =
+          (jid 'j) f
+                5           
+
+        =
+            '= f
+                
+
+
+
+
+The fact that tau and join are natural transformations give evaluation rules for f and '= on
+free types.
+                             f tau
+                                     =    tau f                          '= tau                     =   id
+                            f join
+                                     =    join fF                       '= join                    =   ' '= F
+                                                                                                               (       )
+
+Early Squiggol was based completely on map-reduce factorization. Some of these laws from
+the good old days; reduce promotion and map promotion.
+                                          '= join=
+                                                                  =           '= '=     (       )
+
+                                          f join=
+                                                                  =           join= f       
+
+
+
+
+Monads
+Any free type gives rise to a monad [17], in the above notation, (; tau 2 I ! ; join= 2                                   
+
+
+
+ ! ) since:
+    
+
+
+
+
+                                        join= tau                 =       id
+                                       join= tau
+                                                                  =       id
+                                      join= join=
+                                                                  =       join= join=    
+
+
+
+
+                                                                   23
+Wadler [29] gives a thorough discussion on the concepts of monads and their use in functional
+programming.
+
+
+6 Conclusion
+We have considered various patterns of recursive de nitions, and have presented a lot of laws
+that hold for the functions so de ned. Although we have illustrated the laws and the recursion
+operators with examples, the usefulness for practical program calculation might not be evident
+to every reader. Unfortunately we have not enough space here to give more elaborate examples.
+There are more aspects to program calculation than just a series of combining forms (like
+ j j ,db ec,h i, ; ]]) and laws about them. For calculating large programs one certainly needs high
+( ) ( ) [ ] [[
+
+level algorithmic theorems. The work reported here provides the necessary tools to develop
+such theorems. For the theory of lists Bird [3] has started to do so, and with success.
+Another aspect of program calculation is machine assistance. Our experience |including that
+of our colleagues| shows that the size of formal manipulations is much greater than in most
+textbooks of mathematics; it may well be comparable in size to \computer algebra" as done
+in systems like MACSYMA, Maple, Mathematica etc. Fortunately, it also appears that most
+manipulations are easily automated and, moreover, that quite a few equalities depend on natural
+transformations. Thus in several cases type checking alone suces. Clearly machine assistance
+is fruitful and does not seem to be too dicult.
+Finally we observe that category theory has provided several notions and concepts that were
+indispensable to get a clean and smooth theory; for example, the notions of functor and natural
+transformation. (While reading this paper, a category theorist may recognize several other
+notions that we silently used). Without doubt there is much more categorical knowledge that
+can be useful for program calculation; we are just at the beginning of an exciting development.
+
+Acknowledgements Many of the results presented here have for the case SET already ap-
+peared in numerous notes of the STOP Algorithmics Club featuring among others Roland
+Backhouse, Johan Jeuring, Doaitse Swierstra, Lambert Meertens, Nico Verwer and Jaap van
+der Woude. Graham Hutton provided many useful remarks on draft versions of this paper.
+
+
+
+
+                                                24
+References
+ [1] Roland Backhouse, Jaap van der Woude, Ed Voermans, and Grant Malcolm. A relational
+     theory of types. Technical Report ??, TUE, 1991.
+ [2] Rudolf Berghammer. On the use of composition in transformational programming. Tech-
+     nical Report TUM-I8512, TU Munchen, 1985.
+ [3] R. Bird. An introduction to the theory of lists. In M. Broy, editor, Logic of Program-
+     ming and Calculi of Discrete Design, pages 3{42. Springer Verlag, 1987. Also Technical
+     Monograph PRG-56, Oxford University, October 1986.
+ [4] Richard Bird. Constructive functional programming. In M. Broy, editor, Marktoberdorf
+     International Summer school on Constructive Methods in Computer Science, NATO Ad-
+     vanced Science Institute Series. Springer Verlag, 1989.
+ [5] Richard Bird and Phil Wadler. Introduction to Functional Programming. Prentice-Hall,
+     1988.
+ [6] R. Bos and C. Hemerik. An introduction to the category-theoretic solution of recursive
+     domain equations. Technical Report TRCSN 88/15, Eindhoven University of Technology,
+     October 1988.
+ [7] Manfred Broy. Transformation parallel ablaufender Programme. PhD thesis, TU Munchen,
+     Munchen, 1980.
+ [8] A. de Bruin and E.P. de Vink. Retractions in comparing Prolog semantics. In Computer
+     Science in the Netherlands 1989, pages 71{90. SION, 1989.
+ [9] Peter de Bruin. Naturalness of polymorphism. Technical Report CS 8916, RUG, 1989.
+[10] Maarten Fokkinga. Tupling and mutumorphisms. The Squiggolist, 1(4), 1989.
+[11] Maarten Fokkinga, Johan Jeuring, Lambert Meertens, and Erik Meijer. Translating at-
+     tribute grammars into catamorphisms. The Squiggolist, 2(1), 1991.
+[12] Maarten Fokkinga and Erik Meijer. Program calculation properties of continuous algebras.
+     Technical Report 91-4, CWI, 1991.
+[13] C. Gunter, P. Mosses, and D. Scott. Semantic domains and denotational semantics. In
+     Marktoberdorf International Summer school on Logic, Algebra and Computation, 1989. to
+     appear in: Handbook of Theoretical Computer Science, North Holland.
+[14] Tasuya Hagino. Codatatypes in ML. Journal of Symbolic Computation, 8:629{650, 1989.
+
+
+                                             25
+[15] J.Arsac and Y Kodrato . Some techniques for recursion removal. ACM Toplas, 4(2):295{
+     322, 1982.
+[16] D.J. Lehmann and M.B. Smyth. Algebraic speci cation of data types: a synthetic ap-
+     proach. Math. Systems Theory, 14:97{139, 1981.
+[17] Grant Malcolm. Algebraic Types and Program Transformation. PhD thesis, University of
+     Groningen, The Netherlands, 1990.
+[18] Lambert Meertens. Algorithmics | towards programming as a mathematical activity.
+     In Proceedings of the CWI symposium on Mathematics and Computer Science, pages
+     289{334. North-Holland, 1986.
+[19] Lambert Meertens. Paramorphisms. To appear in Formal Aspects of Computing, 1990.
+[20] John-Jules Ch. Meyer. Programming calculi based on xed point transformations: seman-
+     tics and applications. PhD thesis, Vrije Universiteit, Amsterdam, 1985.
+[21] Ross Paterson. Reasoning about Functional Programs. PhD thesis, University of Queens-
+     land, Brisbane, 1988.
+[22] John C. Reynolds. Types abstraction and parametric polymorphism. In Information Pro-
+     cessing '83. North Holland, 1983.
+[23] David A. Schmidt. Denotational Semantics. Allyn and Bacon, 1986.
+[24] M.B. Smyth and G.D. Plotkin. The category-theoretic solution of recursive domain equa-
+     tions. SIAM Journal on Computing, 11(4):761{785, November 1982.
+[25] Joseph E. Stoy. Denotational Semantics, The Scott-Strachey Approach to Programming
+     Language Theory. The MIT press, 1977.
+[26] Nico Verwer. Homomorphisms, factorisation and promotion. The Squiggolist, 1(3), 1990.
+     Also technical report RUU-CS-90-5, Utrecht University, 1990.
+[27] Phil Wadler. Views: A way for pattern matching to cohabit with data abstraction. Tech-
+     nical Report 34, Programming Methodology Group, University of Goteborg and Chalmers
+     University of Technology, March 1987.
+[28] Philip Wadler. Theorems for free ! In Proc. 1989 ACM Conference on Lisp and Functional
+     Programming, pages 347{359, 1989.
+[29] Philip Wadler. Comprehending monads. In Proc. 1990 ACM Conference on Lisp and
+     Functional Programming, 1990.
+[30] M. Wand. Fixed point constructions in order enriched categories. Theoretical Computer
+     Science, 8, 1979.
+                                            26
+[31] Hans Zierer. Programmierung mit funktionsobjecten: Konstruktive erzeugung semantische
+     bereiche und anwendung auf die partielle auswertung. Technical Report TUM-I8803, TU
+     Munchen, 1988.
+
+
+
+
+                                           27
+

@@ -1,0 +1,23 @@
+-- run: a failure thrown from `spawn` whose code `ChildProcess.RunError`
+-- does not name (`EIO`) is not a `RunError`, and so a defect that ends the
+-- program (boundary.md §9.14 (e), CLAUDE.md rule 9). `Js.catchIf` takes
+-- only the codes the table names and throws every other one on. The
+-- program must exit 1 with Node's report of the error and print nothing
+-- after it.
+import ChildProcess
+import Debug
+import Fault
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Fault.failSpawns "EIO"
+    Debug.log "before the run" ⊤
+    case ChildProcess.run (ChildProcess.command "/bin/sh" [ "-c", "true" ]) of
+        Ok _ →
+            Node.print "ran"
+
+        Err _ →
+            Node.print "an error value"

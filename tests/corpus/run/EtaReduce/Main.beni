@@ -1,0 +1,76 @@
+-- Item 6 of the release optimiser (`backend.md` §9) prints a forwarding
+-- lambda as its callee, in a release build only; the two builds print the
+-- same here. Each lambda is stored — in a record, a list, a tuple — and
+-- called through the stored value, so the call goes through what the build
+-- wrote where the lambda stood: a `where` clause's evidence, a top-level
+-- function, a local `const` read twice, an alias of one, a reassigned loop
+-- parameter and a lambda that reorders its arguments.
+import Node
+
+
+type alias Holder =
+    order : String, String → Order
+    add : Int, Int → Int
+
+
+comparer : a → (a, a → Order)
+    where a.compare : a, a → Order
+comparer _ = λx y → x.compare y
+
+
+gcd : Int, Int → Int
+gcd a b =
+    if b == 0 then
+        a
+    else
+        gcd b (Int.mod a b)
+
+
+local : Int → (Int, Int → Int) × (Int, Int → Int)
+local n =
+    f = λa b → a + b + n
+    ( f, λa b → f a b )
+
+
+aliased : Int → (Int, Int → Int) × (Int, Int → Int)
+aliased n =
+    f = λa b → a * b * n
+    g = f
+    ( f, λa b → g a b )
+
+
+loop : (Int, Int → Int), Int → (Int, Int → Int)
+loop f n =
+    if n == 0 then
+        λa b → f a b
+    else
+        loop (λa b → f b a) (n - 1)
+
+
+showOrder : Order → String
+showOrder o =
+    case o of
+        LT →
+            "LT"
+        EQ →
+            "EQ"
+        GT →
+            "GT"
+
+
+main : Node.Program
+main =
+    holder = { order = comparer "", add = λa b → gcd a b }
+    ( f1, f2 ) = local 10
+    ( g1, g2 ) = aliased 10
+    adders = [ holder.add, f1, f2, g1, g2, loop (λa b → a - b) 0, loop (λa b → a - b) 1 ]
+    Node.printLines
+        [ "order "
+            ++ showOrder (holder.order "a" "b")
+            ++ " "
+            ++ showOrder (holder.order "b" "a")
+            ++ " "
+            ++ showOrder (holder.order "a" "a")
+        , "sums " ++ String.join (List.map adders λf → String.fromInt (f 7 3)) " "
+        , "gcd " ++ String.fromInt (gcd 12 18)
+        ]

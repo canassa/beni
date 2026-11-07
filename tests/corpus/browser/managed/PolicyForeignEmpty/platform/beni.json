@@ -1,0 +1,1 @@
+{ "platform": true, "name": "worker-policy-probe", "platforms": ["browser"], "reexports": ["Browser", "Browser.Worker", "Browser.WorkerStream", "Html", "Hosted"] }

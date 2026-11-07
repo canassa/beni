@@ -1,0 +1,52 @@
+-- ownership: two positions of one image through `⟲` at a call
+-- (ownership-v2.md §2.9 rule 3, slice 4c, #1195). `incAll` needs the lists
+-- at `π1#B.0[*]⟲#B.0` and at `π1#B.0[*]⟲#B.1` apart. In `incList`'s frame
+-- `[*]#B.0` is the first return, so both name one cell, `π1[*]#B.0⟲`. The
+-- two callee paths end in different fields, and `b` is one element, so
+-- they are two positions of that cell, which owe its `excl`: `incList`'s
+-- `incAll b` is accepted `param`, as in v1. `chosen` passes one of two
+-- heads, one position whichever runs: accepted. The refused twins are the
+-- rule's conditions failing. `sharedInside` builds the element in the
+-- caller with one list `k` at both fields, so the actual at the split is
+-- two positions of one object (condition (b)): refused. `freshShared` does
+-- that with one fresh list, one concrete object at both fields
+-- (condition (b)): refused.
+type B
+    = B (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+pub chosen : Bool, List B → B
+chosen c bs =
+    case bs of
+        [ b1, b2, …_ ] →
+            incAll (if c then b1 else b2)
+
+        _ →
+            B [] []
+
+
+pub sharedInside : List B → B
+sharedInside k = incAll (B [ B k k ] [])
+
+
+pub freshShared : B
+freshShared =
+    l = [ B [] [] ]
+    incAll (B [ B l l ] [])

@@ -1,0 +1,11 @@
+module ComparisonNameOnly
+  11:17 List.push a: accepted param
+  15:18 List.push a: accepted param
+  19:9 call ComparisonNameOnly.compare t#T.0: accepted param (ComparisonNameOnly.compare writes π1#T.0)
+  23:12 call ComparisonNameOnly.eq s#T.0: accepted param (ComparisonNameOnly.eq writes π1#T.0)
+  summary compare: π1#T.0 RAW[storage], π1#T.0[*] A; res [*] ~π1#T.0[*], π1#T.0
+  summary eq: π1#T.0 RAW[storage], π1#T.0[*] A, π2#T.0 R; res [*] ~π1#T.0[*], π1#T.0
+  summary use: π1#T.0 RAW[storage], π1#T.0[*] RA; res [*] ~π1#T.0[*], π1#T.0
+  summary both: π1#T.0 RAW[storage], π1#T.0[*] RA, π2#T.0 R; res [*] ~π1#T.0[*], π1#T.0
+  demands 4: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 4: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

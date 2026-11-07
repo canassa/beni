@@ -1,0 +1,21 @@
+-- ownership (project): see Main.beni. `box` wraps a list in a singleton
+-- through the identity `ident`; `cursors` puts it at two cursors; `orEmpty`
+-- joins the box with an empty list.
+ident : List (List Int) → List (List Int)
+ident v = v
+
+
+pub box : List Int → List (List Int)
+box v = ident [ v ]
+
+
+pub cursors : List Int → List (List Int) × List Int
+cursors v = ( ident [ v ], v )
+
+
+pub orEmpty : Bool, List Int → List (List Int)
+orEmpty c v =
+    if c then
+        box v
+    else
+        []

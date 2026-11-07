@@ -356,8 +356,8 @@ requirement or section number.
   list, `k.mk r`, `List.map fs λf → f r`) and then writes it is refused `supply (a)` at the function value supplied
   (`record_may_be_shared`). (oc §16.4, §31.5 revised #982; bbi/RecordCallbackKeeps)
   - Also when the record is wrapped in a fresh literal handed to the keeper (`b = f [ r ]`, `{ w = r }`) or written
-    through a local bound to a field of the kept parent (`i = o.inner`). [G #1000, #1001: miscompiled today]
-    (p/RecordKeptInLiteral, p/RecordInnerKept)
+    through a local bound to a field of the kept parent (`i = o.inner`).
+    (o/RecordKeptInLiteral, o/RecordInnerKept, run/SanitiserRecordKeptInLiteral, run/SanitiserRecordInnerKept)
   - A record written *before* it is handed to a keeper and returned beside the keeper's answer: accept.
     [G #999] (p/RecordWriteBeforeKeep)
 - R-4.8.12 A read of an old field through a wrapper (`w = Just p` or `t = ( p, 1 )`, then a pattern) is a field read,
@@ -807,7 +807,7 @@ requirement or section number.
   elements, list condition `lost`, record condition preserved, comparator many with borrowed supplies
   (ownership-v2.md Appendix C.9; #1014). Everything else in `core/` is inferred from its body. (oc §16.8, §24.5)
 - R-5.10.9 The words must express at least v1's annotated surface (`Js.*`, `String.*`, `Schema.print*`, `Debug.*`,
-  `Hosted.keyOf`, `Html.Event`, `Html.Pointer`, `Node.*`, `Ssr.render`, `Task.timeout`, `Task.raceOk`, `Int32`).
+  `Hosted.key` (beni and inferred since 2026-10-26, #877; `Hosted.keyOf` until then), `Html.Event`, `Html.Pointer`, `Node.*`, `Ssr.render`, `Task.timeout`, `Task.raceOk`, `Int32`).
   (oc §24.8, §30.9; o/Words, o/WordsBrowser, o/JsPure, o/TaskWords, o/core/JsWords)
 - R-5.10.10 Test platforms' foreigns that take lists carry words, like shipped platforms' (`refEq`, `Page.element`'s
   children). (oc §30.5)
@@ -898,7 +898,8 @@ requirement or section number.
 - R-6.3 The causes, in print order, with their kinds (e exact, a approximate, p position, e/a exact only when the
   text shows it): `unknown` a, `escaped` a, `top-level` p, `captured-edit` a, `disjoint` e/a, `held-operand` e,
   `later-use` e, `alias` e, `captured` e, `element` a, `call` a, `supply` e/a, `need` e/a, `limit` a, `exclusive`
-  e/a, `once` e/a, `payload` a, `read-only` p, `level` a. Acceptance kinds: `fresh`, `call`, `param`,
+  e/a, `once` e/a, `payload` a, `read-only` p, `level` a, `comparison` p (a write in a type's `eq` or
+  `compare` of what it was handed, R-5.13.1; appended 2026-10-31), `loan` e (a write of what a cell still holds, handed out by `Ref.get` or a lent `Ref.modify`, §2.13.7 of `ownership-v2.md`; appended 2026-11-05). Acceptance kinds: `fresh`, `call`, `param`,
   `callback-param`, `once`, `entry`; the counter `assumed` counts acceptances resting on a callee with no facts,
   allowed only for a markup construction. A label of exact resting on any approximation is a defect [G #996 claims
   visible sharing for a limit; #313, #714 blame the wrong place]. (oc §8.3, §16.11, §18.10, §20.7, §28.5, §30.11;
@@ -1134,8 +1135,7 @@ requirement or section number.
 - R-8.2 **The known gaps are acceptance.** Every [G] item turns green, with the verdict this document gives, not
   v1's; a gap moves from `tests/pending/` to the corpus as it closes. [O 2026-10-25] (mem `ownership-v1-frozen`)
   - Pinned already: p/DeepTupleDag, p/DictFocusGrow, p/DictHelperAlias, p/DictRecordAlias, p/DictTupleAlias,
-    p/RecordForItem, p/RecordSchemaRun, p/RecordSplitPushBack, p/RecordWriteBeforeKeep, p/RecordKeptInLiteral,
-    p/RecordInnerKept.
+    p/RecordForItem, p/RecordSchemaRun, p/RecordSplitPushBack, p/RecordWriteBeforeKeep.
   - Without a pinning fixture (a red fixture is to be written for each before design starts):
 
   | Req | Program | Required verdict |

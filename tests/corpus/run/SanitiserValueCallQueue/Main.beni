@@ -1,0 +1,52 @@
+-- A shared queue, written, behind two values of another module (`ownership-v2.md`
+-- §2.3.4, §2.14.5 H6, #2132): what `offv` is handed escapes, so `k` is not edited,
+-- and what `plv` answers is `host`, so it is not edited either, though it is `k`.
+import Io
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+handed : ⊤ → String
+handed ⊤ =
+    k = [ 1 ]
+    Lib.offv k
+    x = Lib.plv ⊤
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+answered : ⊤ → String
+answered ⊤ =
+    k = [ 3 ]
+    Lib.offv k
+    x = Lib.plv ⊤
+    y = List.push x 4
+    "${show y} ${show k}"
+
+
+handedc : ⊤ → String
+handedc ⊤ =
+    k = [ 5 ]
+    Lib.offc k
+    x = Lib.plc ⊤
+    n = List.push k 6
+    "${show n} ${show x}"
+
+
+answeredc : ⊤ → String
+answeredc ⊤ =
+    k = [ 7 ]
+    Lib.offc k
+    x = Lib.plc ⊤
+    y = List.push x 8
+    "${show y} ${show k}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.print (String.join [ handed ⊤, answered ⊤, handedc ⊤, answeredc ⊤ ] ";")

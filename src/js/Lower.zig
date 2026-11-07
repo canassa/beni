@@ -76,6 +76,7 @@ const SchemaLower = @import("SchemaLower.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Hoists = @import("../own/Hoists.zig");
+const Channel = @import("../own2/Hoists.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -243,6 +244,17 @@ pub const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
+    entry_window: ?bool = null,
+    encode_worker_private: bool = false,
+    worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
+    worker_definition: ?u32 = null,
+    worker_events: ?bool = null,
+    worker_event_constructors: []const u32 = &.{},
+    worker_host: bool = false,
+    worker_host_client: bool = false,
+    worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
+    worker_wire: ?*const @import("../check/Wire.zig").Artifact = null,
+    worker_wire_direct_calls: []const Bir.Inst.Index = &.{},
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
     token_starts: []const u32,
@@ -269,6 +281,15 @@ pub const Input = struct {
     dispatches: []const Dispatch = &.{},
     /// The checked or installed module-local ownership facts (§31.10).
     ownership: Hoists.Table = .empty,
+    /// Under `--ownership=v2` in a build that enforces, the module's v2
+    /// lowering channel (`own2/Hoists.zig`, `ownership-v2.md` §3.7): the
+    /// list writes v2 accepted, which `sanitize_lists` wraps one by one.
+    /// Null: v1's `ownership.clean` says it, for every write of the module.
+    list_writes: ?*const Channel.Table = null,
+    /// Under v2, whether every module of the program was checked whole, so
+    /// that every caller of a write was (§7.3): what a sanitised site says
+    /// of a verdict that rests on its callers.
+    callers_checked: bool = false,
     /// The session's type table, read as a **name, declaration and
     /// derivability service** and as nothing else.
     ///
@@ -377,9 +398,6 @@ pub const Input = struct {
     /// The build's schema plans and what reads them (`schema.md` §6), when
     /// a module declares or uses a schema. Null: the module emits none.
     schemas: ?*const SchemaGraph = null,
-    /// `--schema-library`: every schema root runs through the library
-    /// interpreter (`schema.md` §10, the forced library path).
-    schema_library: bool = false,
     /// Whether this module's shape runs take their shapes: the program's
     /// choice (`Reach.Input.schema_shapes`), false for a module whose edges
     /// came from the embedded pack.
@@ -866,12 +884,12 @@ pub fn lower(
     // every unit that reads `valid_sites` asks it where it branches
     // (`referenceName`, `callExpr`, `jsonValidatorCall`), because these
     // prep asks are before the first unit and belong to none.
-    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_shapes);
     // Reachability found the module's validator runs from its own dispatch
     // table (`Reach.Result.dispatch`); the runs this lowering writes must be
     // the ones it kept, or a `Json` run would name a worker set it dropped.
     if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
-        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
+        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_shapes);
         if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
     };
     // Declarations first: the import list is what lowering DISCOVERS (the
@@ -1287,6 +1305,13 @@ pub const Lowerer = struct {
     /// `a ++ b ++ c` likewise), so they are not sanitised. A column by
     /// instruction, made on the first mark.
     sanitize_chain: []bool = &.{},
+    /// Under v2's channel (`Input.list_writes`), per instruction the root
+    /// of the spread chain whose first spread item it is, or `maxInt`: v2
+    /// names a chain's write by its root (§2.13.2), which is the `List.cons`
+    /// of its leading items when it has some, and the write is the
+    /// `List.append` of that item. A column by instruction, made on the
+    /// first question.
+    spread_roots: []u32 = &.{},
     /// The padded nullary constructors this module has written in value
     /// position, each one module-level constant (`backend.md` §4, *A
     /// nullary constructor is one object*). Discovered like `needs`, so
@@ -1552,6 +1577,9 @@ pub const Lowerer = struct {
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
+    /// `Js.module`'s specifiers, in first-use order, each bound once
+    /// (`hostModule`).
+    host_imports: std.ArrayList([]const u8) = .empty,
     /// The same exports by name, for `--release`'s cut of the runtime
     /// file to what the build imports (`backend.md` §9).
     markup_exports: std.ArrayList([]const u8) = .empty,
@@ -1731,6 +1759,14 @@ pub const Lowerer = struct {
         return l.add(.call, p, callee.int(), @backingInt(record));
     }
 
+    /// `call` for a `Js.apply`: the callee is a `Js.Value`, a host function
+    /// by type, and the node says so (`JsIr.Node.host`).
+    pub fn hostCall(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
+        const node = try l.call(callee, args, p);
+        l.b.markHost(node);
+        return node;
+    }
+
     pub fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.no_tag });
         if (field == l.well.tag) if (try l.tagOfChoice(target, n, p)) |chosen| return chosen;
@@ -1830,11 +1866,25 @@ pub const Lowerer = struct {
         return l.add(.property, p, @backingInt(n), value.int());
     }
 
-    /// A beni record's field, as a key or a read: the name carries
-    /// `Name.field`, which is what `--release` renames and nothing else is
-    /// (`backend.md` §9, *Item 4, taken up*). A development build prints it
-    /// as its text, exactly as a plain name.
+    /// Literals in the closed, embedded worker protocol implementation.
+    /// Constructor tagLiteral and interpolation chunks bypass this path.
+    fn privateWorkerString(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
+        if (l.in.encode_worker_private) {
+            const encoding = @import("WorkerEncoding.zig");
+            if (encoding.tag(bytes)) |tag| return l.intNode(tag, p);
+            return l.stringNode(encoding.field(bytes), p);
+        }
+        return l.stringNode(bytes, p);
+    }
+
+    /// A record field normally uses Name.field. Prescribed private worker
+    /// keys are plain names so each projection keeps the same encoding.
     fn fieldName(l: *Lowerer, field: Symbol) !JsIr.NameIndex {
+        if (l.in.encode_worker_private) {
+            const source = l.text(field);
+            const encoded = @import("WorkerEncoding.zig").field(source);
+            if (!std.mem.eql(u8, source, encoded)) return l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, encoded), .tag = JsIr.Name.no_tag });
+        }
         return l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.field });
     }
 
@@ -1990,6 +2040,20 @@ pub const Lowerer = struct {
         return false;
     }
 
+    /// Whether a core schema helper is already reachable from source.
+    /// Cache the external declaration fact before using it to select a shape.
+    pub fn coreSchemaAlive(l: *Lowerer, text_of: []const u8) bool {
+        const m = l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return false;
+        const symbol = l.interner.global.find(text_of) orelse return false;
+        const bir = l.in.birs[m.int()];
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue() or bir.symbol(d.name) != symbol) continue;
+            const answer = if (l.in.live) |r| r.decl(m, i) else true;
+            l.ask(.{ .question = .decl, .module = m.int(), .index = @intCast(i), .answer = answer });
+            return answer;
+        }
+        return false;
+    }
     /// One of `core/Schema`'s values by name: a `pub` builder or runner
     /// through its interface, or a core-private value of the specialised
     /// path by its printed name, as `corePrivate` names `List`'s.
@@ -2190,7 +2254,7 @@ pub const Lowerer = struct {
         // followed nothing out of it, with or without a survivor set.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks) orelse continue;
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks, l.in.entry_window) orelse continue;
             const body = l.bir.instData(branch).rhs;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
@@ -2280,7 +2344,7 @@ pub const Lowerer = struct {
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         l.askSelf(.development, l.in.development, 0, 0);
         l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
-        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks) orelse
+        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks, l.in.entry_window) orelse
             l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
         for (branches) |branch| {
@@ -2419,14 +2483,6 @@ pub const Lowerer = struct {
     fn entryDecl(l: *Lowerer) ?u32 {
         l.askSelf(.entry, l.in.entry_decl != null, 0, 0);
         return l.in.entry_decl;
-    }
-
-    /// `Input.schema_library`, `--schema-library`: every schema root runs
-    /// through the library interpreter (`schema.md` §10). A module-fixed
-    /// read of the build.
-    pub fn schemaLibrary(l: *Lowerer) bool {
-        l.askSelf(.schema_library, l.in.schema_library, 0, 0);
-        return l.in.schema_library;
     }
 
     /// Opens a unit's record; `Funnel.no_record` when nobody is recording.
@@ -2979,7 +3035,6 @@ pub const Lowerer = struct {
             // their answer is not build state.
             .nullary, .primitive, .steps => return fact.answer,
             .entry => l.in.entry_decl != null,
-            .schema_library => l.in.schema_library,
             .core_private => blk: {
                 if (fact.where >= l.in.core_private.len) return false;
                 break :blk l.in.core_private[fact.where];
@@ -3449,6 +3504,14 @@ pub const Lowerer = struct {
             // The parser already reported it and there is no body.
             .annotation_only => return,
         }
+        if (l.in.worker_definition == null or l.in.worker_definition.? != index) {
+            for (l.in.worker_descriptors) |descriptor| {
+                if (descriptor.module != l.in.module or descriptor.decl != index) continue;
+                if (!l.liveDecl(index)) return;
+                try l.constDecl(out, try l.topName(index), try l.workerDescriptor(descriptor, Node.no_pos), Node.no_pos);
+                return;
+            }
+        }
         if (d.body == .none) return;
         // The direct record opens before the consumed check, so the unit
         // the check drops carries the answer: a build whose program hook
@@ -3526,6 +3589,7 @@ pub const Lowerer = struct {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
+                if (l.in.worker_events) |enabled| if (std.mem.indexOfScalar(u32, l.in.worker_event_constructors, index) != null) try l.constructorEvents(record, enabled, p);
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
                 // The declaration's own arrow takes what it returns as its key
                 // (checker-v2.md §36, the declarations), its return var's
@@ -3570,7 +3634,43 @@ pub const Lowerer = struct {
                     try out.append(l.scratch, try l.add(.let_decl, decl_p, @backingInt(n), @backingInt(value.toOptional())));
                     return;
                 }
-                const value = try l.expr(&stmts, body);
+                var value = try l.expr(&stmts, body);
+                if (l.in.worker_definition != null and l.in.worker_definition.? == index and l.in.worker_wire != null and for (l.in.worker_wire.?.roots) |root| {
+                    if (root.decl == index) break true;
+                } else false) {
+                    const global = try l.add(.global_this, p, 0, 0);
+                    const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+                    const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
+                    var properties: std.ArrayList(Node.Index) = .empty;
+                    const plan = try l.wirePlan(l.in.worker_wire, l.in.module, index, p);
+                    if (l.b.tagOf(plan) != .null_lit) try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
+                    if (l.in.worker_events) |enabled| try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$events"), try l.add(if (enabled) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p));
+                    if (properties.items.len != 0) {
+                        const metadata = try l.object(properties.items, p);
+                        if (l.in.development) {
+                            value = try l.call(assign, &.{ value, metadata }, p);
+                        } else {
+                            // Preserve the definition's identity. Direct stores expose
+                            // compiler-owned metadata to Spec; the original operation
+                            // still boxes a platform's primitive representation.
+                            const target = try l.fresh(l.well.temp);
+                            try l.constDecl(&stmts, target, value, p);
+                            const target_value = try l.ident(target, p);
+                            const is_object = try l.binary(.logical_and, try l.binary(.strict_eq, try l.unary(.worker_definition_type, target_value, p), try l.stringNode("object", p), p), try l.binary(.strict_ne, target_value, try l.nullNode(p), p), p);
+                            var stores: std.ArrayList(Node.Index) = .empty;
+                            for (properties.items) |prop| {
+                                const data = l.b.dataOf(prop);
+                                const field_target = try l.add(.member, p, target_value.int(), data.lhs);
+                                try stores.append(l.scratch, try l.add(.assign, p, field_target.int(), data.rhs));
+                            }
+                            try stores.append(l.scratch, target_value);
+                            const range = try l.b.addRange(stores.items);
+                            const direct = try l.add(.sequence, p, @backingInt(range.start), @backingInt(range.end));
+                            value = try l.condOf(is_object, direct, try l.call(assign, &.{ target_value, metadata }, p), p);
+                        }
+                    }
+                }
+
                 // A constant whose lowering needed statements cannot be a
                 // bare `const`: wrap it in a called arrow, which is the one
                 // place lowering emits an IIFE and the one place §9.2's
@@ -3810,8 +3910,13 @@ pub const Lowerer = struct {
     /// The calls are written by the emitter in OTHER modules, so no BIR of
     /// this one shows them: such a value is exported and its result read.
     fn emitterCalled(l: *Lowerer, index: u32) bool {
-        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
         const d = l.bir.decls[index];
+        if (l.in.worker_host_client and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "installHostStop")) return true;
+        if (l.in.worker_host) {
+            const spelling = l.text(l.bir.symbol(d.name));
+            if (std.mem.eql(u8, spelling, "stop") or std.mem.eql(u8, spelling, "stopped")) return true;
+        }
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
         if (!d.kind.isValue()) return false;
         return corePrivateSlot(l.bir.symbol(d.name)) != null;
     }
@@ -3820,6 +3925,11 @@ pub const Lowerer = struct {
     /// and spliced in front of the declarations by `lower`.
     fn importStatements(l: *Lowerer) ![]const Node.Index {
         var out: std.ArrayList(Node.Index) = .empty;
+        // Host built-ins first (`Js.module`, boundary.md §4.2): `import * as
+        // Rt$$node_path from "node:path"`, one per specifier.
+        for (l.host_imports.items) |specifier| {
+            try out.append(l.scratch, try l.importStatement(specifier, &.{.{ .imported = .none, .local = try l.hostModuleName(specifier) }}));
+        }
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
@@ -3967,6 +4077,8 @@ pub const Lowerer = struct {
     /// of the two it becomes without lowering the body twice.
     fn functionOf(l: *Lowerer, evidence: u32, ev_let: Inst.OptionalIndex, params: []const Inst.Index, body: Inst.Index, suspendable: bool) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
+        // Each parameter's place: its pattern's, `no_pos` for evidence.
+        var positions: std.ArrayList(u32) = .empty;
         var stmts: StmtList = .empty;
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
@@ -3981,7 +4093,9 @@ pub const Lowerer = struct {
         // never has any, and reads its enclosing binders' by capture.
         var k: u16 = 0;
         while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceNameOf(ev_let, k));
+        try positions.appendNTimes(l.scratch, Node.no_pos, evidence);
         for (params[0..l.writtenParams(params)]) |param| {
+            try positions.append(l.scratch, l.pos(param));
             // A bare variable pattern IS the JavaScript parameter; anything
             // else (a tuple, a record, a constructor) needs a name of its
             // own and a destructuring statement at the top of the body.
@@ -4007,7 +4121,7 @@ pub const Lowerer = struct {
         // instruction — so this no longer takes one.
         try l.tailStmts(&stmts, body, null);
         const split = try l.splitSuspensions(stmts.items, null, .closure);
-        return l.funcRecord(names.items, split);
+        return l.funcRecordAt(names.items, positions.items, split);
     }
 
     /// Trailing unit literals in positions the named declaration omits
@@ -4352,15 +4466,21 @@ pub const Lowerer = struct {
         return names;
     }
 
+    /// The `Func` record of a function this file invents: its parameters
+    /// have no position (`JsIr.Builder.addFunc`).
     fn funcRecord(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index) !JsIr.ExtraIndex {
         const param_range = try l.b.addNames(params);
         const body_range = try l.b.addRange(body);
-        return l.b.addRecord(JsIr.Func{
-            .params_start = param_range.start,
-            .params_end = param_range.end,
-            .body_start = body_range.start,
-            .body_end = body_range.end,
-        });
+        return l.b.addFunc(param_range, body_range);
+    }
+
+    /// The `Func` record of a function the source writes: `positions` has
+    /// each parameter's place (`backend.md` §11.2, *Deferred* item 3,
+    /// amended 2026-11-05).
+    fn funcRecordAt(l: *Lowerer, params: []const JsIr.NameIndex, positions: []const u32, body: []const Node.Index) !JsIr.ExtraIndex {
+        const param_range = try l.b.addNames(params);
+        const body_range = try l.b.addRange(body);
+        return l.b.addFuncAt(param_range, positions, body_range);
     }
 
     pub fn arrowOf(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
@@ -4568,22 +4688,24 @@ pub const Lowerer = struct {
         const outer = l.enterFunction(suspendable);
         defer l.leaveFunction(outer);
         const built = try l.loopOf(&loop, body, p);
-        return l.funcRecord(built.names, built.stmts);
+        return l.funcRecordAt(built.names, built.positions, built.stmts);
     }
 
     /// A loop's parameter names and its statements (§8): `functionOrLoop`'s
     /// function, or the loop a function called once is written as in its
     /// caller (§9, *A function called once is written where it is called*).
-    fn loopOf(l: *Lowerer, loop: *Loop, body: Inst.Index, p: u32) !struct { names: []const JsIr.NameIndex, stmts: []const Node.Index } {
+    fn loopOf(l: *Lowerer, loop: *Loop, body: Inst.Index, p: u32) !struct { names: []const JsIr.NameIndex, positions: []const u32, stmts: []const Node.Index } {
         const slots = loop.slots;
         const evidence = loop.evidence;
         const ev_let = loop.ev_let;
         const label = loop.label;
         const jumps = loop.jumps;
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
+        var positions: std.ArrayList(u32) = .empty;
         for (slots, 0..) |*slot, i| {
             const index: u32 = @intCast(i);
             if (slot.unwritten) continue;
+            try positions.append(l.scratch, if (slot.pattern.unwrap()) |pattern| l.pos(pattern) else Node.no_pos);
             slot.body = if (index < evidence)
                 try l.evidenceNameOf(ev_let, @intCast(index))
             else if (slot.local != Loop.no_local)
@@ -4713,7 +4835,7 @@ pub const Lowerer = struct {
         }
         if (loop.builds) try head.append(l.scratch, before);
         try head.append(l.scratch, while_node);
-        return .{ .names = names.items, .stmts = head.items };
+        return .{ .names = names.items, .positions = positions.items, .stmts = head.items };
     }
 
     /// §8's *Scalar views*: which list slots of `loop` are walked — every
@@ -5132,8 +5254,49 @@ pub const Lowerer = struct {
     /// accepted by a build that enforces, so that every write it lowers is
     /// an accepted one (`ownership-v2.md` §7.3, R-8.9). Core and the
     /// platforms are not such modules.
+    /// Under `--ownership=v2` (`Input.list_writes`) it is a module whose
+    /// accepted writes v2's channel lists, each judged by `sanitizesAt`.
     fn sanitizesLists(l: *const Lowerer) bool {
-        return l.in.sanitize_lists and l.in.ownership.clean;
+        return l.in.sanitize_lists and (l.in.ownership.clean or l.in.list_writes != null);
+    }
+
+    /// Whether the list write at `inst` goes through the sanitiser: under
+    /// v1 every write of a module `sanitizesLists` holds of; under v2 the
+    /// writes its channel lists, its demand's instruction (§3.7), and no
+    /// other: a write in a declaration v2 did not build was judged by no
+    /// one.
+    fn sanitizesAt(l: *const Lowerer, inst: Inst.Index) bool {
+        if (!l.sanitizesLists()) return false;
+        const channel = l.in.list_writes orelse return true;
+        return channel.accepted(inst.int());
+    }
+
+    /// `sanitizesAt` for a spread's `List.append` call `inst` whose first
+    /// operand is `first`: under v2 the channel names the chain by its root
+    /// (`spread_roots`), which is `inst` itself only when no item leads.
+    fn sanitizesSpreadAt(l: *Lowerer, inst: Inst.Index, first: Inst.Index) Allocator.Error!bool {
+        if (l.sanitizesAt(inst)) return true;
+        const channel = l.in.list_writes orelse return false;
+        if (!l.sanitizesLists() or !l.isSpreadAppend(inst)) return false;
+        if (l.spread_roots.len == 0) {
+            l.spread_roots = try l.scratch.alloc(u32, l.bir.insts.len);
+            @memset(l.spread_roots, std.math.maxInt(u32));
+            for (l.bir.decls) |d| for (l.bir.spreads(d)) |s| for (l.bir.spreadItems(s)) |it| if (it[1] == 1) {
+                if (it[0] < l.spread_roots.len) l.spread_roots[it[0]] = s.root;
+                break;
+            };
+        }
+        if (first.int() >= l.spread_roots.len) return false;
+        const root = l.spread_roots[first.int()];
+        return root != std.math.maxInt(u32) and channel.accepted(root);
+    }
+
+    /// Whether a list writer handed to a call as a value is sanitised: v1's
+    /// `value` demand. v2 makes no demand of a writer value (it judges the
+    /// write where the callee calls it, a callback parameter's), so under
+    /// v2 the value is passed as it is: a limit of this instrument (§7.3).
+    fn sanitizesWriterValues(l: *const Lowerer) bool {
+        return l.sanitizesLists() and l.in.list_writes == null;
     }
 
     /// The writer of core's `List` that `callee` names — `set`, `update`,
@@ -5171,7 +5334,12 @@ pub const Lowerer = struct {
     /// on its first operand.
     fn markSanitizeChain(l: *Lowerer, inst: Inst.Index, arg_insts: []const Inst.Index) Allocator.Error!void {
         if (!l.sanitizesLists() or arg_insts.len != 2) return;
-        const rest = arg_insts[1];
+        var rest = arg_insts[1];
+        // Items between two spreads are `List.cons` links in front of the
+        // next spread's call: look through them (`[ …a, x, …b ]`).
+        if (l.isSpreadAppend(inst)) {
+            while (l.consTail(rest)) |tail| rest = tail;
+        }
         const spread = l.isSpreadAppend(inst) and l.isSpreadAppend(rest);
         const plus = l.in.dispatch.isListAppend(inst) and l.bir.instTag(rest) == .call and l.in.dispatch.isListAppend(rest);
         if (!spread and !plus) return;
@@ -5204,10 +5372,23 @@ pub const Lowerer = struct {
     /// a write of a list under the sanitiser (`sanitize_runtime.mjs`). The
     /// callee and the operands are evaluated in the order the plain call
     /// evaluates them, and only then is the base copied and poisoned.
-    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+    /// `inst` is the write's instruction and `first` a spread's first
+    /// operand: under v2 the site also says whether the verdict rests on
+    /// callers v2 did not all check (§7.3), so that a trap there is told
+    /// from an unsound verdict.
+    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32, inst: Inst.Index, first: ?Inst.Index) Allocator.Error!Node.Index {
         if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and args.len != 0);
         l.needs.sanitize = true;
-        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const note: []const u8 = if (l.in.list_writes) |channel| note: {
+            const w = channel.find(inst.int()) orelse root: {
+                const f = first orelse break :root null;
+                if (f.int() >= l.spread_roots.len) break :root null;
+                break :root channel.find(l.spread_roots[f.int()]);
+            } orelse break :note "";
+            if (!w.callers) break :note ", whatever its callers";
+            break :note if (l.in.callers_checked) ", every caller checked" else ", a caller may be unchecked";
+        } else "";
+        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d}{s})", .{ writer_name, l.interner.slice(l.module_name), p, note });
         const all = try l.scratch.alloc(Node.Index, args.len + 2);
         all[0] = try l.stringNode(site, p);
         all[1] = writer;
@@ -6251,7 +6432,6 @@ pub const Lowerer = struct {
     fn orderedExprs(l: *Lowerer, out: *StmtList, insts: []const Inst.Index, reordered: bool) ![]Node.Index {
         const values = try l.scratch.alloc(Node.Index, insts.len);
         const held = try l.scratch.alloc([]const Node.Index, insts.len);
-        var movable: usize = 0;
         // Each element into a list of its own: whether it hoists is not
         // known until it is lowered, and what it hoists may not be written
         // out before the elements in front of it are pinned.
@@ -6259,8 +6439,18 @@ pub const Lowerer = struct {
             var stmts: StmtList = .empty;
             values[i] = try l.expr(&stmts, inst);
             held[i] = stmts.items;
-            if (!l.isAtom(values[i])) movable += 1;
         }
+        try l.orderValues(out, insts, reordered, values, held);
+        return values;
+    }
+
+    /// Merge operands already lowered into separate statement lists. The
+    /// iterative arithmetic walk shares exactly the ordinary call's order.
+    fn orderValues(l: *Lowerer, out: *StmtList, insts: []const Inst.Index, reordered: bool, values: []Node.Index, held: []const []const Node.Index) !void {
+        var movable: usize = 0;
+        for (values) |value| if (!l.isAtom(value)) {
+            movable += 1;
+        };
         var last_hoist: usize = 0;
         for (held, 0..) |stmts, i| {
             if (stmts.len != 0 and !l.onlyClosures(stmts)) last_hoist = i;
@@ -6273,9 +6463,16 @@ pub const Lowerer = struct {
             const p = l.pos(inst);
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, values[i], p);
+            // Read by nothing or not, a pinned value that may have an
+            // effect is evaluated, where it was written: the release
+            // optimiser keeps it, and does not fold it into a read in the
+            // caller's order (`enterInline` lists its arguments the same
+            // way). Unlisted, a record key nothing reads went with its
+            // temporary (`Spec.dropKeys`), and two pinned getters were
+            // folded back into the sorted keys.
+            if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             values[i] = try l.ident(n, p);
         }
-        return values;
     }
 
     /// Whether every statement is `const $t = (…) => …`: a closure bound
@@ -6337,7 +6534,107 @@ pub const Lowerer = struct {
     /// machinery that makes `?` evaluate in written order makes this do so
     /// too. A branch of a short circuit or of a `case` has an `out` of its
     /// own, so nothing is ever evaluated that the source would not have.
+    fn wirePlan(l: *Lowerer, maybe: ?*const @import("../check/Wire.zig").Artifact, module: Graph.Index, decl: u32, p: u32) Allocator.Error!Node.Index {
+        const wire = maybe orelse return l.nullNode(p);
+        const root = for (wire.roots) |root| {
+            if (root.decl == decl) break root;
+        } else return l.nullNode(p);
+        const needs = try @import("../check/Wire.zig").normalization(l.scratch, wire);
+        const descriptor = for (l.in.worker_descriptors) |descriptor| {
+            if (descriptor.module == module and descriptor.decl == decl) break descriptor;
+        } else return l.nullNode(p);
+        if (descriptor.elide_stable_wire and for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+            if (needs[role.node]) break false;
+        } else true) return l.nullNode(p);
+        var roles: std.ArrayList(Node.Index) = .empty;
+        // A descriptor may name a Program declared outside the opening module.
+        const parameters = l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
+        for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+            const parameter = parameters[role.index];
+            var path: std.ArrayList(Node.Index) = .empty;
+            var semantic_path: std.ArrayList(Node.Index) = .empty;
+            for (parameter.path) |field| {
+                try path.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, field), p));
+                try semantic_path.append(l.scratch, try l.stringNode(field, p));
+            }
+            // Record-role adapters use the encoded path; type-only protocol
+            // groups select a member by its declared name without sending it.
+            try roles.append(l.scratch, try l.arrayNode(&.{ try l.intNode(parameter.index, p), try l.intNode(role.node, p), try l.arrayNode(path.items, p), try l.arrayNode(semantic_path.items, p) }, p));
+        }
+        var nodes: std.ArrayList(Node.Index) = .empty;
+        for (wire.nodes, 0..) |node, ni| {
+            if (!needs[ni]) {
+                try nodes.append(l.scratch, try l.intNode(0, p));
+                continue;
+            }
+            var edges: std.ArrayList(Node.Index) = .empty;
+            for (wire.edges[node.edges.start..][0..node.edges.len], 0..) |edge, ei| {
+                const label = if (edge.label.unwrap()) |label|
+                    if (node.kind == .record or node.kind == .open_record) try l.fieldString(label, p) else try l.stringNode(l.interner.slice(label), p)
+                else
+                    try l.stringNode(l.interner.slice(try l.slotName(@intCast(ei))), p);
+                try edges.append(l.scratch, try l.arrayNode(&.{ label, try l.intNode(edge.child, p) }, p));
+            }
+            try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(@backingInt(node.kind), p), try l.arrayNode(edges.items, p) }, p));
+        }
+        return l.arrayNode(&.{ try l.arrayNode(roles.items, p), try l.arrayNode(nodes.items, p) }, p);
+    }
+
+    /// Put the fact in the allocation itself: a later write would also join
+    /// the initially absent field's undefined value in the may-analysis.
+    fn constructorEvents(l: *Lowerer, record: JsIr.ExtraIndex, enabled: bool, p: u32) Allocator.Error!void {
+        const f = l.b.record(@backingInt(record), JsIr.Func);
+        const statements = try l.scratch.dupe(u32, l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]);
+        for (statements) |raw| {
+            const stmt: Node.Index = @fromBackingInt(raw);
+            if (l.b.tagOf(stmt) != .return_stmt) continue;
+            const value = @as(Node.OptionalIndex, @fromBackingInt(l.b.dataOf(stmt).lhs)).unwrap() orelse continue;
+            if (l.b.tagOf(value) != .object) continue;
+            const data = l.b.dataOf(value);
+            var props: std.ArrayList(Node.Index) = .empty;
+            for (l.b.extra.items[data.lhs..data.rhs]) |prop| try props.append(l.scratch, @fromBackingInt(prop));
+            try props.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$events"), try l.add(if (enabled) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p));
+            const range = try l.b.addRange(props.items);
+            l.b.nodes.items(.data)[value.int()] = .{ .lhs = @backingInt(range.start), .rhs = @backingInt(range.end) };
+        }
+    }
+
+    fn workerDescriptor(l: *Lowerer, descriptor: @import("WorkerEntry.zig").Descriptor, p: u32) Allocator.Error!Node.Index {
+        const global = try l.add(.global_this, p, 0, 0);
+        const ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "URL"), p);
+        const path = if (l.in.development) try l.stringNode(descriptor.url, p) else blk: {
+            const target = try std.fmt.allocPrint(l.scratch, "_workers/{s}/_main.mjs", .{descriptor.id});
+            const offset, const len = try l.b.addString(target);
+            break :blk try l.add(.worker_path, p, offset, len);
+        };
+        const base = try l.add(.import_meta_url, p, 0, 0);
+        const url = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{ path, base }))));
+        var properties: std.ArrayList(Node.Index) = .empty;
+        const plan = try l.wirePlan(descriptor.wire, descriptor.module, descriptor.decl, p);
+        if (l.b.tagOf(plan) != .null_lit)
+            try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
+        try properties.appendSlice(l.scratch, &.{
+            try l.property(try l.interner.getOrPut(l.gpa, "id"), try l.stringNode(descriptor.id, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "fingerprint"), try l.stringNode(descriptor.fingerprint, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
+        });
+        return l.object(properties.items, p);
+    }
+
+    // Descriptor copies must not grow the stack of every recursive expression.
+    noinline fn workerReference(l: *Lowerer, inst: Inst.Index) Allocator.Error!?Node.Index {
+        if (l.declTarget(l.in.module.int(), inst)) |ref| {
+            for (l.in.worker_descriptors) |descriptor| {
+                if (descriptor.module.int() == ref[0] and descriptor.decl == ref[1])
+                    return try l.workerDescriptor(descriptor, l.pos(inst));
+            }
+        }
+        return null;
+    }
+
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (l.in.worker_descriptors.len != 0)
+            if (try l.workerReference(inst)) |value| return value;
         const saved = l.evidence_out;
         l.evidence_out = out;
         defer l.evidence_out = saved;
@@ -6348,6 +6645,12 @@ pub const Lowerer = struct {
         l.expr_height = 0;
         const before = l.b.nodes.len;
         const value = try l.exprValue(out, inst);
+        return l.finishExpr(out, inst, value, before, outer);
+    }
+
+    /// Finish one expression, whether entered recursively or by arithmetic's
+    /// explicit work stack. Spills and allocation keys keep the same boundary.
+    fn finishExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index, before: usize, outer: u32) !Node.Index {
         try l.keyNode(inst, value, before);
         var height = l.expr_height +| l.exprWeight(inst);
         if (l.isAtom(value)) {
@@ -6356,6 +6659,11 @@ pub const Lowerer = struct {
             const p = l.pos(inst);
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, value, p);
+            // Kept for its effect like any other binding: the name may end
+            // up read by nothing — a record key `Spec.dropKeys` drops, or a
+            // `let` that becomes this name — and the value is evaluated
+            // all the same.
+            if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             l.expr_height = outer;
             return l.ident(n, p);
         }
@@ -6801,15 +7109,22 @@ pub const Lowerer = struct {
         return l.call(define, &.{ old, try l.stringNode(field_text, p), descriptor }, p);
     }
 
-    fn exprValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
-        const d = l.bir.instData(inst);
+    /// Placements and replacements run before an expression's children,
+    /// including children entered by the iterative arithmetic walk.
+    fn exprOverride(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!?Node.Index {
         const p = l.pos(inst);
         l.region = inst;
         try l.placeHoists(out, inst, 0);
-        if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        if (l.deadArm(inst)) return try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         if (l.arm_override) |ov| if (try l.overriddenArm(out, ov, inst)) |node_| return node_;
         if (l.msg_track) |mt| if (try l.trackedExpr(out, mt, inst)) |node_| return node_;
-        if (try l.routeSiteValue(out, inst)) |node_| return node_;
+        return l.routeSiteValue(out, inst);
+    }
+
+    fn exprValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        if (try l.exprOverride(out, inst)) |node_| return node_;
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -6822,7 +7137,8 @@ pub const Lowerer = struct {
                     std.unicode.utf8Encode(0xFFFD, &buf) catch unreachable;
                 return l.stringNode(buf[0..len], p);
             },
-            .string, .chunk => return l.stringNode(l.bir.bytes(inst), p),
+            .string => return l.privateWorkerString(l.bir.bytes(inst), p),
+            .chunk => return l.stringNode(l.bir.bytes(inst), p),
             .interp => {
                 // Segment by segment, left to right (`language.md` §6); a
                 // literal chunk evaluates nothing, so only the expression
@@ -7207,6 +7523,7 @@ pub const Lowerer = struct {
                 l.askSelf(.development, l.in.development, 0, 0);
                 return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            .entryWindow => return l.returnArrow(&.{}, try l.entryWindowValue(p), p),
             .testHooks => {
                 l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
                 return l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
@@ -7252,12 +7569,6 @@ pub const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int())) {
-            // A direct run's callee is its call's, which `callExpr` lowers
-            // whole (`directValidatorCall`). Reached here, the run is the
-            // library's — what a build answering `--schema-library` yes
-            // lowers every `S.schema ⊤` read as — so the unit carries the
-            // answer (`EmitPack.Question.schema_library`).
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             std.debug.assert(!SchemaValid.has(l.valid_sites.direct_callees, inst.int()));
             return l.coreSchemaValue("readValid", p);
         }
@@ -7268,10 +7579,6 @@ pub const Lowerer = struct {
         // issue #432).
         l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int())) {
-            // `shape_callees` is filled only outside the library
-            // (`SchemaValid.sites`), so the unit carries the answer
-            // (`EmitPack.Question.schema_library`).
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return l.coreSchemaValue(l.valid_sites.shapeRunner(inst.int()), p);
         }
         return switch (l.bir.instTag(inst)) {
@@ -9847,9 +10154,9 @@ pub const Lowerer = struct {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
                 // `xs.push x` is `List.push xs x`, a write of its receiver.
-                if (target == .ext and evidence.len == 0 and l.sanitizesLists()) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
+                if (target == .ext and evidence.len == 0 and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
                     const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
-                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p));
+                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p, inst, null));
                 };
                 const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
                 const value = try l.suspension(out, inst, called);
@@ -10179,12 +10486,6 @@ pub const Lowerer = struct {
     /// validator worker where it stands (`validatorRun`); null for any other
     /// call. The reference itself has nothing to evaluate.
     noinline fn jsonValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, p: u32) !?Node.Index {
-        // Both runner sets are empty under `--schema-library` and the call
-        // lowers as an ordinary one, so the unit carries the answer
-        // (`EmitPack.Question.schema_library`). The shape choice changes
-        // which set has the call (`EmitPack.Question.schema_shapes`, issue
-        // #432), so it is asked here too.
-        l.askSelf(.schema_library, l.in.schema_library, 0, 0);
         l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         const d = l.bir.instData(inst);
         const shape = l.valid_sites.shapeCodecOfCall(inst.int());
@@ -10312,6 +10613,43 @@ pub const Lowerer = struct {
         return .{ .c = c, .x = x };
     }
 
+    // Keep native recipe temporaries out of the recursive ordinary-call frame.
+    noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
+        if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
+            switch (native.recipe) {
+                .query_selector, .text_content, .timeout => {}, // Precise generated adapters.
+                else => {
+                    const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder;
+                    const values = if (ignores_unit) blk: {
+                        // Unit arguments can perform effects before the native call.
+                        for (arg_insts) |arg| try l.discard(out, arg, p);
+                        break :blk @as([]const Node.Index, &.{});
+                    } else try l.orderedExprs(out, arg_insts, false);
+                    const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+                    switch (native.recipe) {
+                        .document, .worker_self => return try l.member(global, try l.interner.getOrPut(l.gpa, if (native.recipe == .document) "document" else "self"), p),
+                        .identity => return values[0],
+                        .byte_length => return try l.member(values[0], try l.interner.getOrPut(l.gpa, "byteLength"), p),
+                        .encode => return try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "encode"), p), values[1..], p),
+                        .text_encoder => {
+                            const target = try l.member(global, try l.interner.getOrPut(l.gpa, "TextEncoder"), p);
+                            const range = try l.b.addRange(&.{});
+                            const record = try l.b.addRecord(range);
+                            return try l.add(.new_call, p, target.int(), @backingInt(record));
+                        },
+                        .set_text_content => {
+                            const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "textContent"), p);
+                            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                            return try l.nullNode(p);
+                        },
+                        else => unreachable,
+                    }
+                },
+            }
+        }
+        return null;
+    }
+
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
         // this instruction is an evidence ARGUMENT and they are numbered
@@ -10327,6 +10665,9 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        // These built-in calls only read compiler plan metadata before the payload.
+        if (std.mem.indexOfScalar(Inst.Index, l.in.worker_wire_direct_calls, inst) != null)
+            return l.expr(out, arg_insts[3]);
 
         // The build's markup state, which steers whether this call is a
         // program constructor's, the placements beside it, and every
@@ -10353,17 +10694,10 @@ pub const Lowerer = struct {
         // `S.schema ⊤` a validator run calls directly: `S`'s validator
         // worker (`SchemaValid`).
         if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| {
-            // `args` is empty under `--schema-library` (`SchemaValid.sites`),
-            // so only a build that answers no takes this road: the unit
-            // carries the answer (`EmitPack.Question.schema_library`).
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return SchemaLower.validWorker(l, ref, p);
         };
         // `S.schema ⊤` a shape run reads: `S`'s shape.
         if (l.valid_sites.shape_args.len != 0) if (l.valid_sites.shapeOfArg(inst.int())) |ref| {
-            // `shape_args` likewise holds only outside `--schema-library`
-            // (`SchemaValid.sites`), so the unit carries the answer.
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return SchemaLower.shapeName(l, ref, p);
         };
         // Version 1.14: a placement the program's mount already made.
@@ -10412,7 +10746,7 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesLists() and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p, inst, null));
             return l.suspension(out, inst, try l.call(append, values, p));
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -10429,6 +10763,7 @@ pub const Lowerer = struct {
             return l.binary(.add, v[0], v[1], p);
         }
 
+        if (try l.nativeCallExpr(out, callee_inst, arg_insts, p)) |native| return native;
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
         if (l.jsIntrinsicOf(callee_inst)) |which| {
@@ -10461,7 +10796,7 @@ pub const Lowerer = struct {
         // Arithmetic, `not` and `Int32`'s bit operations are the JavaScript
         // operators they compute (§4, *Arithmetic is an operator*).
         if (l.operatorOf(callee_inst)) |which| {
-            if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorCall(out, which, arg_insts, p);
+            if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorExpr(out, inst, which, arg_insts, p);
         }
 
         // A constructor is an object literal and never a call (§4); the
@@ -10536,7 +10871,7 @@ pub const Lowerer = struct {
         const written = values[1 .. values.len - l.unwrittenArgs(callee_inst, arg_insts)];
         // A list writer handed to the callee as a value writes wherever the
         // callee calls it (v1's `value` demand at this call).
-        if (l.sanitizesLists()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
+        if (l.sanitizesWriterValues()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
             w.* = try l.sanitizedWriterValue(w.*, writer, p);
         };
         l.region = inst;
@@ -10546,8 +10881,8 @@ pub const Lowerer = struct {
         const evidence = try l.evidenceArguments(roots, p);
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
-            if (l.sanitizesLists() and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
-                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p));
+            if ((if (arg_insts.len != 0) try l.sanitizesSpreadAt(inst, arg_insts[0]) else l.sanitizesAt(inst)) and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
+                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null));
             return l.suspension(out, inst, try l.call(callee, written, p));
         }
         // How the evidence is passed is the callee's convention
@@ -10567,6 +10902,17 @@ pub const Lowerer = struct {
     /// lowered IS core's `Basics`. Keyed on the core package and on the
     /// well-known symbols, never on the spelling, so a user's own `and` is
     /// an ordinary function.
+    // ownership pin begin: entryWindow
+    /// Only library lowering lacks an entry and emits a runtime fallback.
+    fn entryWindowValue(l: *Lowerer, p: u32) !Node.Index {
+        if (l.in.entry_window) |present| return l.add(if (present) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const document = try l.member(global, try l.interner.getOrPut(l.gpa, "document"), p);
+        return l.binary(.strict_ne, try l.unary(.type_of, document, p), try l.stringNode("undefined", p), p);
+    }
+
+    // ownership pin end: entryWindow
+
     /// The `Js` intrinsic `inst` names, or null (research 47).
     fn jsIntrinsicOf(l: *Lowerer, inst: Inst.Index) ?JsIntrinsic.Which {
         return JsIntrinsic.of(l.in.graph, l.in.interfaces, l.bir, inst, l.interner);
@@ -10761,12 +11107,13 @@ pub const Lowerer = struct {
         return l.object(props, p);
     }
 
-    /// `Js.method λself → body`: the lambda lowered as an arrow, then made a
-    /// `function` of no parameters whose first statement binds `self` to
-    /// `this` — the receiver of a method JavaScript calls as `o.m()`
-    /// (`backend.md` §4, *`Js.method` is a `function`*).
+    /// `Js.method λself a b → body`: the lambda lowered as an arrow, then
+    /// made a `function` of the parameters after the first, whose first
+    /// statement binds the first, `self`, to `this` — the receiver of a
+    /// method JavaScript calls as `o.m(x, y)` (`backend.md` §4, *`Js.method`
+    /// is a `function`*, amended 2026-11-04 for the parameters).
     fn methodFunc(l: *Lowerer, out: *StmtList, lambda: Inst.Index, p: u32) !Node.Index {
-        const refused = "`Js.method` takes a lambda of one parameter, its receiver, written in place.";
+        const refused = "`Js.method` takes a lambda of its receiver and any parameters, written in place.";
         if (l.bir.instTag(lambda) != .lambda) {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -10776,16 +11123,9 @@ pub const Lowerer = struct {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        // The `Func` record's four indexes, in field order.
-        const at = l.b.dataOf(arrow).lhs;
-        const f: JsIr.Func = .{
-            .params_start = @fromBackingInt(@intCast(l.b.extra.items[at])),
-            .params_end = @fromBackingInt(@intCast(l.b.extra.items[at + 1])),
-            .body_start = @fromBackingInt(@intCast(l.b.extra.items[at + 2])),
-            .body_end = @fromBackingInt(@intCast(l.b.extra.items[at + 3])),
-        };
-        const params = l.b.extra.items[@backingInt(f.params_start)..@backingInt(f.params_end)];
-        if (params.len != 1) {
+        const f = l.b.record(l.b.dataOf(arrow).lhs, JsIr.Func);
+        const params = try l.scratch.dupe(u32, l.b.extra.items[@backingInt(f.params_start)..@backingInt(f.params_end)]);
+        if (params.len == 0) {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
@@ -10793,9 +11133,42 @@ pub const Lowerer = struct {
         try l.constDecl(&stmts, @fromBackingInt(@intCast(params[0])), try l.add(.this_lit, p, Node.Data.unused, Node.Data.unused), p);
         for (l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]) |s| try stmts.append(l.scratch, @fromBackingInt(@intCast(s)));
         const body = try l.b.addRange(stmts.items);
-        const none = try l.b.addNames(&.{});
-        const record = try l.b.addRecord(JsIr.Func{ .params_start = none.start, .params_end = none.end, .body_start = body.start, .body_end = body.end });
+        // The parameters after the receiver are the `function`'s, each at
+        // its place.
+        const rest = try l.b.addNames(@ptrCast(params[1..]));
+        const record = try l.b.addRecord(JsIr.Func{
+            .params_start = rest.start,
+            .params_end = rest.end,
+            .body_start = body.start,
+            .body_end = body.end,
+            .param_pos_start = @fromBackingInt(@backingInt(f.param_pos_start) + 1),
+            .param_pos_end = f.param_pos_end,
+        });
         return l.add(.arrow, p, @backingInt(record), Node.arrow_method);
+    }
+
+    /// The module-level name `Js.module specifier` binds, of this module.
+    fn hostModuleName(l: *Lowerer, specifier: []const u8) !JsIr.NameIndex {
+        var buf: [512]u8 = undefined;
+        if (specifier.len + 1 > buf.len) return error.OutOfMemory;
+        const base = JsIntrinsic.moduleBindingBase(&buf, specifier);
+        return l.name(.{ .module = l.module_name.toOptional(), .base = try l.interner.getOrPut(l.gpa, base), .tag = JsIr.Name.no_tag });
+    }
+
+    /// `Js.module "spec"`: the binding of the module's namespace import,
+    /// recorded for `importStatements` on first use (`boundary.md` §4.2).
+    /// The checker has refused a specifier that is not a literal naming a
+    /// host built-in (`invalid_js_module`).
+    fn hostModule(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
+        if (args.len != 1 or JsIntrinsic.moduleFault(l.bir, args[0]) != null) {
+            try l.report(.internal, if (args.len != 0) args[0] else @fromBackingInt(@intCast(0)), "`Js.module` takes a string literal naming a `node:` or `cloudflare:` built-in.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const specifier = l.bir.bytes(args[0]);
+        var known = false;
+        for (l.host_imports.items) |s| known = known or std.mem.eql(u8, s, specifier);
+        if (!known) try l.host_imports.append(l.scratch, specifier);
+        return l.ident(try l.hostModuleName(specifier), p);
     }
 
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
@@ -11035,6 +11408,10 @@ pub const Lowerer = struct {
 
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
+        if (which == .entryWindow) {
+            for (args) |arg| if (l.bir.instTag(arg) != .unit) try l.discard(out, arg, p);
+            return l.entryWindowValue(p);
+        }
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
         // escape is a `let`*): a read is its name, a write assigns it. The
         // name is not an atom, so whatever holds a read pins it before a
@@ -11056,6 +11433,7 @@ pub const Lowerer = struct {
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
         if (which == .regExp) return l.regExpLiteral(args, p);
+        if (which == .module) return l.hostModule(args, p);
         if (which == .typeIs) return l.typeIsTest(out, args, p);
         if (which == .object and args.len == 1) return l.objectLiteral(out, args[0], p);
         if (which == .method and args.len == 1) return l.methodFunc(out, args[0], p);
@@ -11080,7 +11458,7 @@ pub const Lowerer = struct {
         var list_len: usize = 0;
         for (args, 0..) |arg, i| {
             if (name_at != null and name_at.? == i and l.bir.instTag(arg) == .string and isIdentifier(l.bir.bytes(arg))) {
-                literal_name = l.bir.bytes(arg);
+                literal_name = if (l.in.encode_worker_private) @import("WorkerEncoding.zig").field(l.bir.bytes(arg)) else l.bir.bytes(arg);
                 continue;
             }
             if (list_at != null and list_at.? == i) {
@@ -11115,6 +11493,10 @@ pub const Lowerer = struct {
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
             W.isNullish => l.binary(.loose_eq, v[0], try l.nullNode(p), p),
+            W.lt => l.binary(.lt, v[0], v[1], p),
+            W.gt => l.binary(.gt, v[0], v[1], p),
+            W.le => l.binary(.le, v[0], v[1], p),
+            W.ge => l.binary(.ge, v[0], v[1], p),
             W.bitAnd => l.binary(.bit_and, v[0], v[1], p),
             W.bitOr => l.binary(.bit_or, v[0], v[1], p),
             W.bitXor => l.binary(.bit_xor, v[0], v[1], p),
@@ -11135,12 +11517,12 @@ pub const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
-            W.apply => l.call(v[0], rest, p),
+            W.apply => l.hostCall(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
             // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`
             // `objectLiteral` and a `method` `methodFunc`, above.
-            W.each, W.finally, W.catchIf, W.regExp, W.typeIs, W.object, W.method => l.nullNode(p),
+            W.each, W.finally, W.catchIf, W.regExp, W.module, W.typeIs, W.object, W.method => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
             W.pure, W.suspending => l.call(v[0], &.{}, p),
@@ -11167,6 +11549,7 @@ pub const Lowerer = struct {
                 l.askSelf(.development, l.in.development, 0, 0);
                 break :blk l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            W.entryWindow => l.entryWindowValue(p),
             W.testHooks => blk: {
                 l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
                 break :blk l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
@@ -11290,11 +11673,148 @@ pub const Lowerer = struct {
         return scheme != .none and iface.schemes[@backingInt(scheme)].total;
     }
 
+    /// Numeric and boolean primitives whose operands all run in order.
+    /// Short circuits and list operations keep their own lowering paths.
+    fn arithmetic(which: Operator.Which) bool {
+        return switch (which) {
+            .add,
+            .sub,
+            .mul,
+            .fdiv,
+            .pow,
+            .lt,
+            .gt,
+            .le,
+            .ge,
+            .not,
+            .negate,
+            .int32_fromInt,
+            .int32_toInt,
+            .int32_toUnsignedInt,
+            .int32_add,
+            .int32_sub,
+            .int32_and,
+            .int32_or,
+            .int32_xor,
+            .int32_shiftLeft,
+            .int32_shiftRight,
+            .int32_shiftRightZero,
+            => true,
+            else => false,
+        };
+    }
+
+    fn arithmeticAt(l: *Lowerer, inst: Inst.Index) ?Operator.Which {
+        const which = Operator.atCall(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.in.dispatch, l.interner) orelse return null;
+        return if (arithmetic(which) and l.rootsOf(inst).len == 0) which else null;
+    }
+
+    /// One expression entry and its suspended operand walk. The array is
+    /// collected before evaluation, so evidence_out can point into a held
+    /// statement list without a later append moving it.
+    const ArithmeticFrame = struct {
+        inst: Inst.Index,
+        which: Operator.Which,
+        args: []const Inst.Index,
+        parent: ?usize = null,
+        slot: u1 = 0,
+        children: [2]?usize = .{ null, null },
+        held: [2]StmtList = .{ .empty, .empty },
+        values: [2]Node.Index = undefined,
+        entered: bool = false,
+        next: u2 = 0,
+        before: usize = 0,
+        outer: u32 = 0,
+        replacement: ?Node.Index = null,
+    };
+
+    /// Walk arithmetic subtrees without a native frame per operator (#1673).
+    /// Each parent still sees the same operand statement lists, in the
+    /// same order, and finishes at the same spill/key boundary as expr.
+    fn operatorExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index, which: Operator.Which, args: []const Inst.Index, p: u32) Allocator.Error!Node.Index {
+        if (!arithmetic(which)) return l.operatorCall(out, which, args, p);
+        var nested = false;
+        for (args) |arg| if (l.arithmeticAt(arg) != null) {
+            nested = true;
+            break;
+        };
+        if (!nested) return l.operatorCall(out, which, args, p);
+
+        var frames: std.ArrayList(ArithmeticFrame) = .empty;
+        try frames.append(l.scratch, .{ .inst = inst, .which = which, .args = args, .entered = true });
+        var scan: usize = 0;
+        while (scan < frames.items.len) : (scan += 1) {
+            const operands = frames.items[scan].args;
+            for (operands, 0..) |arg, slot| {
+                const child = l.arithmeticAt(arg) orelse continue;
+                frames.items[scan].children[slot] = frames.items.len;
+                const d = l.bir.instData(arg);
+                try frames.append(l.scratch, .{
+                    .inst = arg,
+                    .which = child,
+                    .args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index),
+                    .parent = scan,
+                    .slot = @intCast(slot),
+                });
+            }
+        }
+
+        const saved = l.evidence_out;
+        defer l.evidence_out = saved;
+        var current: usize = 0;
+        while (true) {
+            const f = &frames.items[current];
+            const stmts = if (f.parent) |parent| &frames.items[parent].held[f.slot] else out;
+            l.evidence_out = stmts;
+            if (!f.entered) {
+                f.entered = true;
+                f.outer = l.expr_height;
+                l.expr_height = 0;
+                f.before = l.b.nodes.len;
+                f.replacement = try l.exprOverride(stmts, f.inst);
+                if (f.replacement == null) {
+                    const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(f.inst).lhs));
+                    if (try l.refuseEvidence(f.inst, l.rootsOf(f.inst), l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, callee))) {
+                        f.replacement = try l.add(.undefined_lit, l.pos(f.inst), Node.Data.unused, Node.Data.unused);
+                    } else {
+                        // The same build facts every callExpr records. These
+                        // exact core primitives cannot be program/schema calls.
+                        l.askSelf(.markup, l.mk != null, 0, 0);
+                        l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
+                    }
+                }
+            }
+            if (f.replacement == null and f.next < f.args.len) {
+                const slot = f.next;
+                f.next += 1;
+                if (f.children[slot]) |child| {
+                    current = child;
+                } else {
+                    f.values[slot] = try l.expr(&f.held[slot], f.args[slot]);
+                }
+                continue;
+            }
+            var value = f.replacement orelse blk: {
+                const held = [2][]const Node.Index{ f.held[0].items, f.held[1].items };
+                try l.orderValues(stmts, f.args, false, f.values[0..f.args.len], held[0..f.args.len]);
+                break :blk try l.operatorValues(stmts, f.which, f.values[0..f.args.len], l.pos(f.inst));
+            };
+            const parent = f.parent orelse return value;
+            value = try l.finishExpr(stmts, f.inst, value, f.before, f.outer);
+            frames.items[parent].values[f.slot] = value;
+            current = parent;
+        }
+    }
+
     /// A saturated call of an `Operator` as the JavaScript it computes. The
     /// operands are evaluated once each, in written order (`orderedExprs`),
     /// which is the order the call evaluated them in.
     fn operatorCall(l: *Lowerer, out: *StmtList, which: Operator.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const v = try l.orderedExprs(out, args, false);
+        return l.operatorValues(out, which, v, p);
+    }
+
+    fn operatorValues(l: *Lowerer, out: *StmtList, which: Operator.Which, v: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         const zero = struct {
             fn node(lw: *Lowerer, at: u32) !Node.Index {
                 return lw.numberNode("0", at);
@@ -11731,6 +12251,18 @@ pub const Lowerer = struct {
         for (0..decls.len) |i| {
             if (l.emitterCalled(@intCast(i))) dispatched[i] = true;
         }
+        // And the vocabulary module's payload extractors that are not
+        // `pub`: a lowering's listener calls one while the event is
+        // dispatched (`extractor`, `boundary.md` §9.3), in no BIR, so a
+        // beni-bodied one with a block body would otherwise lose its
+        // `return` and hand the handler `undefined` (#1806).
+        if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
+            const iface = &l.in.interfaces[l.in.module.int()];
+            for (0..iface.events.len) |row| {
+                const decl = Reach.privateExtractor(iface, l.bir, @intCast(row)) orelse continue;
+                if (decl < decls.len) dispatched[decl] = true;
+            }
+        };
         for (decls, 0..) |d, i| {
             const index: u32 = @intCast(i);
             l.unobserved[i] = d.kind == .value and !d.is_pub and !dispatched[i] and
@@ -12778,7 +13310,11 @@ pub const Lowerer = struct {
                 if (literalCondFan(c.tree)) |fan| {
                     if (fan.edgeCount() > 1 and !l.isRead(c.roots[0])) {
                         const roots = try l.scratch.dupe(Node.Index, c.roots);
+                        const before = out.items.len;
                         roots[0] = try l.bindSubject(out, roots[0], c.p);
+                        const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+                        if (out.items.len > before and l.mayHaveEffect(scrutinee))
+                            try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                         c.roots = roots;
                     }
                 }
@@ -12967,8 +13503,15 @@ pub const Lowerer = struct {
                 break :blk value;
             } else if (reads == 1 and !spread)
                 value
-            else
-                try l.bindSubject(out, value, p);
+            else blk: {
+                const before = out.items.len;
+                const bound = try l.bindSubject(out, value, p);
+                // Specialisation can remove every later read of this subject.
+                // Its original evaluation must retain any checker-known effects.
+                if (out.items.len > before and l.mayHaveEffect(source))
+                    try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+                break :blk bound;
+            };
         }
 
         var shared: std.ArrayList(u32) = .empty;
@@ -13965,7 +14508,11 @@ pub const Lowerer = struct {
                 const decl = l.bir.decls[d.lhs];
                 if (decl.kind != .value or decl.params != 2 or decl.body.unwrap() == null) return false;
                 if (Convention.ofDecl(l.in.dispatch, l.bir, d.lhs).evidence != 0) return false;
-                if (l.in.dispatch.effectDecl(d.lhs).twin) return false;
+                const effect = l.in.dispatch.effectDecl(d.lhs);
+                if (l.suspendsHere(effect.own)) return false;
+                // A direct update may have a twin only for closures it returns.
+                // Inline it only while both caller and selected update are direct.
+                if (effect.twin and (l.variant != .direct or l.suspendsHere(l.in.dispatch.effectAt(f).body))) return false;
                 return l.paramsOf(d.lhs).len == 2 and (!share or l.updateArmShape(l.paramsOf(d.lhs), l.bodyOf(d.lhs)));
             },
             else => return false,
@@ -15112,6 +15659,31 @@ pub const Lowerer = struct {
         };
     }
 
+    /// `calleeEffect` of value `value` of module `m`, when the walk follows
+    /// `m`'s code (`followed`); else the call at `at` is the effect.
+    fn extCalleeEffect(l: *Lowerer, m: Graph.Index, value: u32, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
+        const other = l.followed(m) orelse return .{ .site = at };
+        const decl = l.in.provenance[m.int()].valueDecl(value) orelse return .{ .site = at };
+        return l.calleeEffect(other, decl.int(), at, verdicts);
+    }
+
+    /// The `Effect` of the method call or operator at `at` that the checker
+    /// says may be impure (§3.1, amended for #1247): the function the
+    /// dispatch resolves to (`Dispatch.calleeOf`) answers it, as a call of
+    /// it does (`calleeEffect`), when that is a top-level function of the
+    /// module of `at` or of an app's or a platform's module. The evidence
+    /// the call passes is a parameter of that function, and a call of it
+    /// there is a `param` term, the effect at that call. Any other target —
+    /// evidence of the code `at` is in, a field, a derived function, a
+    /// codec, a function of core — is the effect at the call.
+    fn dispatchEffect(l: *Lowerer, f: CodeFrame, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
+        return switch (f.dispatch.calleeOf(at.inst) orelse return .{ .site = at }) {
+            .top => |t| l.calleeEffect(f, t.decl.int(), at, verdicts),
+            .ext => |t| l.extCalleeEffect(t.module, @backingInt(t.value), at, verdicts),
+            else => .{ .site = at },
+        };
+    }
+
     /// The `Effect` of calling the top-level function `d` of `f`'s module
     /// that a program's field names, where no call site holds the
     /// checker's answer (§3.1, amended for #1170): none when the checker
@@ -15127,8 +15699,9 @@ pub const Lowerer = struct {
     /// The `Effect` of evaluating `root`, of `f`'s module: the checker's
     /// answer at each call that may be impure, except that a call of
     /// `Debug`'s is `Debug`'s and a call of a function of the app's or a
-    /// platform's modules is answered by that function's body, in its own
-    /// module (`calleeEffect`). A top-level constant of those modules is
+    /// platform's modules, or a method call or an operator dispatched to
+    /// one (`dispatchEffect`), is answered by that function's body, in its
+    /// own module (`calleeEffect`). A top-level constant of those modules is
     /// evaluated where its module loads, in the build as in the browser:
     /// its body's effect is the read's. The body of a function a value
     /// makes is not evaluated where it is made — a lambda, a `let` of a
@@ -15167,13 +15740,10 @@ pub const Lowerer = struct {
                         const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                         const cd = b.instData(callee);
                         const e: Effect = switch (b.instTag(callee)) {
-                            .ext_value => blk: {
-                                if (debug != null and cd.lhs == debug.?.int()) break :blk .debug;
-                                const m: Graph.Index = @fromBackingInt(@intCast(cd.lhs));
-                                const other = l.followed(m) orelse break :blk .{ .site = here_at };
-                                const decl = l.in.provenance[m.int()].valueDecl(cd.rhs) orelse break :blk .{ .site = here_at };
-                                break :blk try l.calleeEffect(other, decl.int(), here_at, verdicts);
-                            },
+                            .ext_value => if (debug != null and cd.lhs == debug.?.int())
+                                .debug
+                            else
+                                try l.extCalleeEffect(@fromBackingInt(@intCast(cd.lhs)), cd.rhs, here_at, verdicts),
                             .top => try l.calleeEffect(f, cd.lhs, here_at, verdicts),
                             else => .{ .site = here_at },
                         };
@@ -15184,9 +15754,19 @@ pub const Lowerer = struct {
                         }
                     }
                 },
+                // A method call or an operator: the function the dispatch
+                // resolves to answers it, as a call of it (§3.1, amended
+                // for #1247).
                 .method_call, .type_dispatch => {
                     const site = f.dispatch.effectAt(at);
-                    if (site.impure or site.own != .no) return .{ .site = here_at };
+                    if (site.impure or site.own != .no) {
+                        if (site.own != .no) return .{ .site = here_at };
+                        switch (try l.dispatchEffect(f, here_at, verdicts)) {
+                            .none => {},
+                            .debug => saw_debug = true,
+                            else => |e| return e,
+                        }
+                    }
                 },
                 // A constant read: evaluated where the module loads, in the
                 // build as in the browser, so its effect is this read's.
@@ -16360,7 +16940,7 @@ pub const Lowerer = struct {
             const v: Inst.Index = @fromBackingInt(c.value);
             const value = switch (fb.instTag(v)) {
                 .int, .float => try l.numberNode(fb.bytes(v), p),
-                .string => try l.stringNode(fb.bytes(v), p),
+                .string => if (r.fn_module == l.in.module.int()) try l.privateWorkerString(fb.bytes(v), p) else try l.stringNode(fb.bytes(v), p),
                 .ext_ctor => value: {
                     const d = fb.instData(v);
                     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
@@ -19712,12 +20292,13 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(try l.markupComponentCall(n, if (children) |c| node(c) else null));
     }
 
-    /// An event's payload extractor, as a `foreign` of the vocabulary
-    /// module. A `pub` one is an interface value. One that is not `pub` is
-    /// found by the vocabulary row (`Reach.privateExtractor`) and imported
-    /// by its name, the way a core-private value is (`checker-v2.md` §25.8,
-    /// amended 2026-10-21). In the vocabulary module itself, either is
-    /// written by its local name. Reachability keeps either alive.
+    /// An event's payload extractor, a `foreign` or a beni declaration of
+    /// the vocabulary module (#883). A `pub` one is an interface value. One
+    /// that is not `pub` is found by the vocabulary row
+    /// (`Reach.privateExtractor`) and imported by its name, the way a
+    /// core-private value is (`checker-v2.md` §25.8, amended 2026-10-21). In
+    /// the vocabulary module itself, either is written by its local name.
+    /// Reachability keeps either alive.
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
@@ -19732,7 +20313,7 @@ const markup_vtable: beni_markup.VTable = struct {
             return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
         }
         const vbir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
-        // The event has a `via`, and the checker bound it to a `foreign` of
+        // The event has a `via`, and the checker bound it to a declaration of
         // the vocabulary module (§25.8), so finding no declaration is a
         // compiler bug. The identity a lowering writes for a null hands the
         // handler the event instead of the extractor's result.
@@ -19786,6 +20367,12 @@ const markup_vtable: beni_markup.VTable = struct {
     fn notImplemented(impl: *anyopaque, n: M.Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
         const l = lowerer(impl);
         try l.reportAtNode(.not_implemented, n, message);
+        return error.Reported;
+    }
+
+    fn trustedTypesSink(impl: *anyopaque, n: M.Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
+        const l = lowerer(impl);
+        try l.reportAtNode(.trusted_types_sink, n, message);
         return error.Reported;
     }
 
@@ -20412,6 +20999,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .start = start,
         .report = report,
         .not_implemented = notImplemented,
+        .trusted_types_sink = trustedTypesSink,
         .program_init = programInit,
         .program_start = programStart,
         .program_field = programField,

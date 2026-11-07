@@ -1,0 +1,31 @@
+-- JoinedClosurePorts (Appendix B, S4; R-5.4.2, R-5.5.5): the arms of `if` join
+-- two closures with different code and captures; one arm's closure edits
+-- `a`. The shared twin hands both arms the same list, and the call is
+-- refused while `a` is read after it.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pick : Bool → List Int × List Int
+pick c =
+    a = [ 1 ]
+    f = if c then λ⊤ → List.push a 2 else λ⊤ → a
+    r = f ⊤
+    ( r, a )
+
+
+main : Program
+main =
+    ( r, a ) = pick True
+    Node.print "${ints r} ${ints a}"

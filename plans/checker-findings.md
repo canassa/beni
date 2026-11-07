@@ -2521,6 +2521,12 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   accepted programs lower to). Red proof on the Debug harness binary (a ReleaseSafe 7fd409e builds
   the 60 000-field program without crashing).
 
+*Amended 2026-11-04 (#1171, the owner's decision of 2026-11-04):* the printer takes 112 levels by
+recursion, not 256. It was 128 from 2026-10-29 (`f049a55b36`), after 256 overflowed its 1 MiB
+small stack. At 128 the levels took 50.5 % of that stack, measured from the thread's first frame.
+At 112 they take 44.5 %, and the test "the recursive printer's levels take at most half of the
+small stack" holds it (`Options.recursion_limit` in `src/js/Print.zig` has the frames).
+
 ### CK-82 — A nominal payload record wider than 65 535 fields panics the checker, compared or not
 
 - **Severity** compiler-crash-or-hang. **Area** derivation's evidence count (`check/Solve.zig`).
@@ -6375,12 +6381,18 @@ miscompiled: 11 for 1. The supply's ownership is judged for the literal at its r
 reads ε only), so the record inside it, used after the call, is never asked about. A tuple wrapper is
 refused.
 
+**Fixed 2026-11-06:** `ownership-checker.md` §31.5, *A record handed to a function, and what it holds*.
+Fixtures: `tests/corpus/ownership/RecordKeptInLiteral.beni`, `tests/corpus/run/SanitiserRecordKeptInLiteral.beni`.
+
 ## CK-274 — a nested record written through a local after its parent was kept is written in place (2026-10-25)
 
 **Issue:** #1001. **Fixture:** `tests/pending/ownership/RecordInnerKept.beni`. `b = f o; i = o.inner;
 { i | x = 1 }`, with `f = BoxO` keeping `o`, is accepted on master and miscompiled: 11 for 1. The probe
 at the supply of `o` sees no later use of `o`, because `i` is no holder of `o`. The whole-path form is
 refused, and so is the local form with no callback.
+
+**Fixed 2026-11-06:** the same section. Fixtures: `tests/corpus/ownership/RecordInnerKept.beni`,
+`tests/corpus/run/SanitiserRecordInnerKept.beni`.
 
 ## The ownership checker v2's acceptance gaps (2026-10-25)
 
@@ -6448,7 +6460,7 @@ type, so R-4.7.4 requires it accepted.
 
 ## CK-280 — a write to one list of a recursive part needs the whole region exclusive (2026-10-25)
 
-**Issue:** #400 (the Lean bridge's `Case5230`). **Fixture:** `tests/pending/ownership/WriteOneLevel.beni`.
+**Issue:** #400 (the Lean bridge's `Case5230`). **Fixture:** `tests/corpus/ownership/WriteOneLevel.beni` (promoted from `tests/pending/`; fixed).
 `f` pushes the left child's list and returns the right subtree. `run` and `runFresh` hand it a tree that
 holds one list at three levels, none of them in the right subtree, and both calls are refused
 `exclusive`: the checker cannot tell a write to one of the region's lists from a write to every one.

@@ -1,0 +1,100 @@
+-- The readers and the helper of `PatternReadsListImported` (#1530).
+pub type Rose
+    = Rose (List Rose)
+    | Leaf
+
+
+pub skip2c : Rose → Int
+skip2c r =
+    case r of
+        Rose [ Rose [ _, …_ ], …_ ] →
+            7
+
+        _ →
+            0
+
+
+pub d3 : Rose → Int
+d3 r =
+    case r of
+        Rose [ Rose [ Rose [ Rose [] ] ] ] →
+            1
+
+        _ →
+            0
+
+
+pub deepLen : Rose → Int
+deepLen r =
+    case r of
+        Rose [ s, …_ ] →
+            deepLen s
+
+        Rose [] →
+            100
+
+        Leaf →
+            0
+
+
+pub evenR : Rose → Int
+evenR r =
+    case r of
+        Rose [ s ] →
+            oddR s
+
+        Rose [] →
+            2
+
+        _ →
+            0
+
+
+pub oddR : Rose → Int
+oddR r =
+    case r of
+        Rose [ s, …_ ] →
+            evenR s
+
+        _ →
+            1
+
+
+pub nested : List (List Int) → Int
+nested xs =
+    case xs of
+        [ [ _, …_ ], …_ ] →
+            1
+
+        _ →
+            0
+
+
+pub inTuple : Int × List (List Int) → Int
+inTuple p =
+    case p of
+        ( _, [ [] ] ) →
+            1
+
+        _ →
+            0
+
+
+pub inMaybe : Maybe (List (List Int)) → Int
+inMaybe m =
+    case m of
+        Just [ [ _, _ ] ] →
+            1
+
+        _ →
+            0
+
+
+pub firstKids : Rose → List Rose
+firstKids v =
+    case v of
+        Rose [ Rose ks, …_ ] →
+            ks
+
+        _ →
+            []

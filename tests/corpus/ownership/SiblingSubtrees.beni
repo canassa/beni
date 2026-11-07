@@ -1,0 +1,84 @@
+-- ownership: a node's two subtrees are two places (ownership-v2.md §2.1, as
+-- amended for #1253). The first return to `Tree` is a plain path, so `l` is
+-- `π1#Node.0` and `r` is `π1#Node.2`, and only the levels below a subtree
+-- fold (`π1#Node.0⟲`, v1's `#Node.0⟨Tree⟩`). A write to `l`'s list beside
+-- `r` is accepted (`both`, `bothRight`), and so is a writer of both
+-- subtrees through real calls (`pushKids`); the call answers each
+-- subtree's own subtrees, which do not hold its list. Twins: `l` read
+-- again after its list is written is refused (`sameTwice`); `pushKids`
+-- over one list in both subtrees is refused (`sharedKids`) and over two
+-- lists accepted (`distinctKids`). Before #1253 `l` and `r` were both
+-- `π1⟲`, and every line but `sameTwice` and `sharedKids` was refused.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+kids : Tree → List Int
+kids t =
+    case t of
+        Node _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []
+
+
+pub both : Tree → List Int × Tree
+both t =
+    case t of
+        Node l _ r →
+            ( kids l, r )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub bothRight : Tree → Tree × List Int
+bothRight t =
+    case t of
+        Node l _ r →
+            ( l, kids r )
+
+        Leaf →
+            ( Leaf, [] )
+
+
+pushRoot : Tree → Tree
+pushRoot t =
+    case t of
+        Node l xs r →
+            Node l (List.push xs 1) r
+
+        Leaf →
+            Leaf
+
+
+pub pushKids : Tree → Tree
+pushKids t =
+    case t of
+        Node l xs r →
+            Node (pushRoot l) xs (pushRoot r)
+
+        Leaf →
+            Leaf
+
+
+pub sameTwice : Tree → List Int × Tree
+sameTwice t =
+    case t of
+        Node l _ _ →
+            ( kids l, l )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub sharedKids : ⊤ → Tree
+sharedKids ⊤ =
+    xs = [ 1 ]
+    pushKids (Node (Node Leaf xs Leaf) [] (Node Leaf xs Leaf))
+
+
+pub distinctKids : ⊤ → Tree
+distinctKids ⊤ = pushKids (Node (Node Leaf [ 1 ] Leaf) [] (Node Leaf [ 2 ] Leaf))

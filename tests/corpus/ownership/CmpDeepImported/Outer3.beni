@@ -1,0 +1,14 @@
+import Mid
+
+
+pub type Outer3
+    = Outer3 Int Mid.Mid
+
+
+pub eq : Outer3, Outer3 → Bool
+eq a b =
+    case a of
+        Outer3 _ x →
+            case b of
+                Outer3 _ y →
+                    x == y

@@ -13,6 +13,8 @@ module Html
   type Event
   type Html a
   type Pointer
+  alias Selection
+    Selection
   value altKey : Event → Bool  -- impure
   value clientX : Pointer → Float  -- impure
   value clientY : Pointer → Float  -- impure
@@ -30,6 +32,7 @@ module Html
   value preventDefault : Event → ⊤  -- impure
   value shiftKey : Event → Bool  -- impure
   value targetChecked : Event → Bool  -- impure
+  value targetSelection : Event → Maybe Selection  -- impure
   value targetValue : Event → String  -- impure
   value text : String → Html msg
   element "*-*"
@@ -82,6 +85,7 @@ module Html
   element "feDiffuseLighting" svg
   element "feDisplacementMap" svg
   element "feDistantLight" svg
+  element "feDropShadow" svg
   element "feFlood" svg
   element "feFuncA" svg
   element "feFuncB" svg
@@ -246,8 +250,8 @@ module Html
   attribute "download" on "a" "area" : String
   attribute "draggable" : String
   attribute "dur" on "animate" "animateMotion" "animateTransform" "set" : String
-  attribute "dx" on "text" "tspan" : String
-  attribute "dy" on "text" "tspan" : String
+  attribute "dx" on "feDropShadow" "feOffset" "text" "tspan" : String
+  attribute "dy" on "feDropShadow" "feOffset" "text" "tspan" : String
   attribute "edgeMode" on "feConvolveMatrix" "feGaussianBlur" : String
   attribute "elevation" on "feDistantLight" : String
   attribute "end" on "animate" "animateMotion" "animateTransform" "set" : String
@@ -274,13 +278,13 @@ module Html
   attribute "gradientTransform" on "linearGradient" "radialGradient" : String
   attribute "gradientUnits" on "linearGradient" "radialGradient" : String
   attribute "height" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
-  attribute "height" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
+  attribute "height" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
   attribute "hidden" : Bool
   attribute "href" on "a" "area" "base" "link" url : String
   attribute "href" on "animate" "animateMotion" "animateTransform" "feImage" "filter" "image" "linearGradient" "mpath" "pattern" "radialGradient" "set" "textPath" "use" url : String
   attribute "id" : String
   attribute "image-rendering" : String
-  attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" : String
+  attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" : String
   attribute "in2" on "feBlend" "feComposite" "feDisplacementMap" : String
   attribute "innerHTML" property raw : String
   attribute "intercept" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
@@ -352,13 +356,14 @@ module Html
   attribute "repeatDur" on "animate" "animateMotion" "animateTransform" "set" : String
   attribute "required" on "input" "select" "textarea" : Bool
   attribute "restart" on "animate" "animateMotion" "animateTransform" "set" : String
-  attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" : String
+  attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" : String
   attribute "role" : String
   attribute "rotate" on "animateMotion" "text" "tspan" : String
   attribute "rows" on "textarea" : Int
   attribute "rowspan" on "td" "th" : Int
   attribute "rx" on "ellipse" "rect" : String
   attribute "ry" on "ellipse" "rect" : String
+  attribute "sandbox" on "iframe" : String
   attribute "scale" on "feDisplacementMap" : String
   attribute "seed" on "feTurbulence" : String
   attribute "selected" on "option" property stateful : Bool
@@ -370,8 +375,10 @@ module Html
   attribute "spellcheck" : String
   attribute "spreadMethod" on "linearGradient" "radialGradient" : String
   attribute "src" on "audio" "embed" "iframe" "img" "input" "source" "track" "video" url : String
+  attribute "srcdoc" on "iframe" : String
+  attribute "start" on "ol" : Int
   attribute "startOffset" on "textPath" : String
-  attribute "stdDeviation" on "feGaussianBlur" : String
+  attribute "stdDeviation" on "feDropShadow" "feGaussianBlur" : String
   attribute "step" on "input" : String
   attribute "stitchTiles" on "feTurbulence" : String
   attribute "stop-color" : String
@@ -402,22 +409,22 @@ module Html
   attribute "type" on "animateTransform" "feColorMatrix" "feFuncA" "feFuncB" "feFuncG" "feFuncR" "feTurbulence" : String
   attribute "type" on "button" "embed" "input" "link" "object" "ol" "source" "style" : String
   attribute "unicode-bidi" : String
-  attribute "value" on "button" "data" "option" "output" : String
+  attribute "value" on "button" "data" "meter" "option" "output" "progress" : String
   attribute "value" on "input" "select" "textarea" property stateful : String
   attribute "values" on "animate" "animateMotion" "animateTransform" "feColorMatrix" : String
   attribute "vector-effect" : String
   attribute "viewBox" on "marker" "pattern" "svg" "symbol" "view" : String
   attribute "visibility" : String
   attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
-  attribute "width" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
+  attribute "width" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
   attribute "word-spacing" : String
   attribute "writing-mode" : String
-  attribute "x" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
+  attribute "x" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
   attribute "x1" on "line" "linearGradient" : String
   attribute "x2" on "line" "linearGradient" : String
   attribute "xChannelSelector" on "feDisplacementMap" : String
   attribute "xlink:href" on "a" "animate" "animateMotion" "animateTransform" "feImage" "filter" "image" "linearGradient" "mpath" "pattern" "radialGradient" "set" "textPath" "use" url : String
-  attribute "y" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
+  attribute "y" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
   attribute "y1" on "line" "linearGradient" : String
   attribute "y2" on "line" "linearGradient" : String
   attribute "yChannelSelector" on "feDisplacementMap" : String
@@ -442,12 +449,15 @@ module Html
   event "onMouseOut" delegated : Event
   event "onMouseOver" delegated : Event
   event "onMouseUp" delegated : Event
-  event "onPointerCancel" via pointer : Pointer
-  event "onPointerDown" via pointer : Pointer
+  event "onPointerCancel" delegated via pointer : Pointer
+  event "onPointerDown" delegated via pointer : Pointer
   event "onPointerEnter" via pointer : Pointer
   event "onPointerLeave" via pointer : Pointer
-  event "onPointerMove" via pointer : Pointer
-  event "onPointerUp" via pointer : Pointer
+  event "onPointerMove" delegated via pointer : Pointer
+  event "onPointerUp" delegated via pointer : Pointer
   event "onScroll" : Event
   event "onSubmit" on "form" delegated preventDefault : Event
+module Html.Markdown
+  value fromString : String → Html msg
+  value view : List Block → Html msg
 ```

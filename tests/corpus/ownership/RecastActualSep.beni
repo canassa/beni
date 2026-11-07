@@ -1,0 +1,58 @@
+-- ownership: #1219's repro through real calls (ownership-v2.md §8, slice
+-- 4's plan, 4a). `deepest` is a recursive descent over `[ u, …_ ]` that
+-- answers the kids list at the bottom of the first spine, `π1·arg·⟲·arg`.
+-- Applied to `a = T [ T [ T k ] ]`, its result stands for `k`. `g` writes
+-- its first list and reads its second, so it relies on the two being
+-- separate: `shared` applies it to `( deepest a, k )` and is refused, and
+-- so are `sharedChoice`, where the descent is one arm of an `if`, and
+-- `deeperShared`, one level further down. `distinct` passes a separate
+-- `k2` and is accepted.
+type T
+    = T (List T)
+
+
+deepest : T → List T
+deepest t =
+    case t of
+        T kids →
+            case kids of
+                [ u, …_ ] →
+                    deepest u
+
+                [] →
+                    kids
+
+
+g : List T, List T → Int
+g xs ys =
+    n = List.length ys
+    List.length (List.push xs (T [])) + n
+
+
+pub shared : Int
+shared =
+    k = [ T [] ]
+    a = T [ T [ T k ] ]
+    g (deepest a) k
+
+
+pub distinct : Int
+distinct =
+    k = [ T [] ]
+    k2 = [ T [] ]
+    a = T [ T [ T k ] ]
+    g (deepest a) k2
+
+
+pub sharedChoice : Bool → Int
+sharedChoice c =
+    k = [ T [] ]
+    a = T [ T [ T k ] ]
+    g (if c then deepest a else []) k
+
+
+pub deeperShared : Int
+deeperShared =
+    k = [ T [] ]
+    a = T [ T [ T [ T k ] ] ]
+    g (deepest a) k

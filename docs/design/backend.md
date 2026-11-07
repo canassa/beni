@@ -148,6 +148,20 @@ exported and still a root, because Â§5's export list has the entry declaration
 library at its export list; Â§9's "Roots" says why at length. It is not a second output mode; a
 library build emits the same `.mjs` per module as any other.
 
+**A generic entry runtime is selected by the platform's `entryKinds` row.**
+The top-level `program` names the nominal type; `main` may have an applied type
+such as `Start.Program String`, or an alias of it. The selected runtime is a
+beni module with a public, synchronous `run` taking that Program and returning
+unit. The entry imports it and calls `run(main)`; release output makes the same
+call in its hoisted scope. No markup lowering or legacy runtime file is required.
+A chain with an `entryKinds` row may omit `runtime`. Check and build report
+`invalid_entry_kind` for invalid metadata or runtime signatures, and
+`entry_runtime_suspends` when `run` itself may suspend. Initialization may suspend
+inside a root fiber started by `run`. A library validates rows but does not
+require a runtime for the top Program or write an entry. The contract is
+`boundary.md` §5.2 and
+[`workers-entry-implementation.md`](workers-entry-implementation.md).
+
 Development output is **one ESM file per source module**, mirroring the source tree, with readable
 names â but not with everything the source declared. Release output is **reachability chunks**. Both
 read one declaration graph (Â§9.1 of the design doc) and **both eliminate against it**: a dev build
@@ -337,7 +351,11 @@ static, the same in both builds, where a test of the runtime's exports would fol
 and differ between them. `stop` is not refused: only a runtime module supplies it, and the exports
 mode refuses a runtime module. A chain whose runtime is a module (`boundary.md` Â§9.2) may not
 declare the key yet: the same `unknown_exports_mode`, found from the chain alone, so `check`, a
-development build and a release build refuse it alike. A listed name is ASCII only â letters,
+development build and a release build refuse it alike. *Amended 2026-11-04:* that refusal is the
+markup runtime module's. A runtime module without markup (`boundary.md` §5.2, the manifest's
+top-level `"module"`) supplies `run` alone, so the key takes it: the entry file imports `run` from
+the module's output and the rest of the file is as above, and the hoisted release file spells
+`run` as the module's declaration, as it does for every runtime module. A listed name is ASCII only â letters,
 digits, `_` and `$` â although an export name may be any identifier name, a reserved word
 included: the name is printed into the entry file without escaping, as the entry file's name is,
 and the ASCII rule is what makes the print safe.
@@ -729,6 +747,20 @@ same expression yields the same object every time it runs. A constant of a modul
 constructor (`<Module>$<Ctor>`), a multi-file build and a development build are as before. On
 S1 seed 1 this is one `{$:1,a:null}` in place of one per widget module: −2.6 B per widget from
 N = 64 to 256 (`emit/release/app/NullaryShared`).
+
+*Amended 2026-11-07 (#2177, first written for #1856): the kept literal covers every copy.* Release
+field pruning can leave two modules' copies of one constant with different fields: a copy used only
+for identity may be `{}`. "Every one is the same object literal" therefore does not hold, and
+dropping a later copy for an earlier, pruned one loses fields a later reader needs. The link step
+groups the copies by name and takes one of those with the most fields (on a tie, the
+lexicographically first module name, so the bytes do not depend on encounter order or on
+`--jobs`). It shares the group only when that literal covers every copy: each field of each copy
+is present in it with exactly the same literal value, the tag included. The first declaration in
+the file's order receives the covering literal, so no earlier use reads a later uninitialised
+constant. A group with no covering copy, or with conflicting values, stays separate. A safety
+build asserts that the kept literal covers every dropped copy. `run/NullaryCoverage` pins it: an
+early identity-only `Nothing` was pruned to `{}` and shared with two later host readers, which
+printed `{}` for `{"$":"Nothing","a":null}`.
 
 Fixtures: `emit/NullaryConstant` (local and imported constants, a top-level use, uses inside
 functions), `run/NullaryIdentity/` (`refEq` through a test platform, dev and `--release`, as Â§15.8's),
@@ -1412,7 +1444,7 @@ exports, each a `foreign` of `List.beni`, are the runtime every other part of th
 | `unsafeGet(xs, i)` | core-private; the emitter imports it | element `i`, for `0 â¤ i < length`, which the caller guarantees | O(1) plain or view, O(logââ n) trie |
 | `view(xs, k)` | core-private; the emitter imports it | the list without its first `k` elements, `0 â¤ k â¤ length`: `xs` when `k = 0`, `[]` when `k = length`, otherwise a view (of a view's backing array, or of a trie's cached plain copy). *E1tp:* of a trie, the trie without its first `k` elements (*Removing a prefix*, above), never a view | O(1), after at most one conversion of a trie per header. *E1tp:* O(1) and at most 31 copied, never a flatten |
 | `base(xs)`, `offset(xs)` | core-private; the emitter imports them | the plain array `xs` is a suffix of, and where in it `xs` starts: `(xs, 0)` for plain, `(b, o)` for a view, `(p, 0)` for a trie | O(1) after that conversion |
-| `builder(n)`, `add(b, x)`, `done(b)` | core-private, for `List.beni` alone | invariant 5's builder: `[]`, `b.push(x); return b`, `b`. `n` is a size hint the implementation may ignore | O(1) amortised |
+| `builder(n)`, `add(b, x)`, `done(b)` | core-private, for `List.beni` alone | invariant 5's builder: `[]`, `b.push(x); return b`, `b`. `n` is a size hint the implementation may ignore. *Amended 2026-11-05 (#990):* `builder(n)` is `new Array(n)`, which throws `RangeError` for a fraction or a negative `n`, so `n` is a length or a count the caller has already cut (`language.md` §6.8, *An index or a count that is not a whole number*); `builder` tests nothing | O(1) amortised |
 | `at(a, i)`, `put(b, i, x)` | core-private, for `List.beni` alone; *added 2026-10-02* | `a[i]` of an array `base` returned, and `b[i] = x; return b` into a builder; the code generator writes both in place (*`List.beni`'s loops read and write in place*, below), and `add` is withdrawn: no loop grows a builder | O(1) |
 
 `core/Basics.js`'s `append` â what `++` lowers to â keeps its string half and gets a new list half,
@@ -1723,6 +1755,11 @@ Two consequences worth stating, because they are what the emitted shape looks li
   rebound, and its failure returns out of the loop rather than continuing it.
 
 ### Emitted JavaScript nests only as deep as the source
+
+*Compiler traversal, #1673:* saturated arithmetic subtrees are lowered with an explicit
+work stack. A written operator chain must not consume one native compiler stack frame
+per term. Each operand keeps its written evaluation order, statement hoists, representation
+key and expression-height accounting; the walk does not reassociate arithmetic.
 
 *Added 2026-09-25.* Every JavaScript engine parses â and V8 and JavaScriptCore
 compile â a nested expression or block by recursion, and gives up with `RangeError` or
@@ -2369,6 +2406,15 @@ Nothing about the TYPE is asked, because nothing needs to be: a value nobody rea
 cannot tell: the caller that would have seen `undefined` for `null` does not exist.
 Fixture: `emit/DiscardedStatements` (with the statements above), and every `run/` program.
 
+*Amended 2026-11-03* (#1806). **A payload extractor's result is read**, by the lowering's
+listener, which calls it while the event is dispatched (`boundary.md` §9.3): the call is in no
+module's BIR, as `core/List`'s five and `core/Schema`'s compiled values are called from code no
+BIR shows. A beni extractor that is not `pub` (#925) is in no interface, so without this it
+qualified, and one with a block body was written with no `return` and handed the handler
+`undefined` (a one-line body is an expression arrow and never lost its value). `findUnobserved`
+marks every extractor `Reach.privateExtractor` finds for the vocabulary module's event rows as
+read. Fixture: `browser/dom/PrivateViaBlock`.
+
 *Amended 2026-10-02.* **A discarded `case` is its tree, each leaf discarded** (`Lower.discardCase`).
 The list above covered a conditional that lowers to `c ? a : b`; an `if` or `case` whose arms need
 statements of their own lowered to a temporary assigned in every arm, `let $t; if (c) { â¦; $t =
@@ -2637,6 +2683,38 @@ JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each witho
 build's declaration).
 
 
+### `Js.entryWindow` is the private entry realm (2026-11-06)
+
+Part of #2120. `boundary.md` §4.2's private selector is
+`pub foreign pure entryWindow : ⊤ → fresh bool`, used as `Js.entryWindow ⊤`.
+It has no data inputs or writes. A concrete Window entry lowers it to true;
+all other concrete entries lower it to false. Both reachability and lowering
+drop the unused arm of a direct test, as for `Js.development`. Ordinary global
+lookups are not compile-time facts and are unchanged.
+
+Workers already emit an independent `_workers/<id>/` module tree. A shared
+source module therefore gets a separate lowering for the page and worker,
+without a new output copy or loader. Http and WebSocket retain precisely the
+page's `document.baseURI` expression, and use the worker's `location.href`.
+There is no runtime selector, fallback or selector call in entry output.
+
+Frontend, interface and unknown-entry cache facts keep the reference symbolic.
+Modules referring to this intrinsic do not reuse unknown-realm packed edge or
+emit rows when emitting a concrete entry; other modules retain existing reuse.
+A library has no concrete realm and may retain an inline fallback,
+`typeof globalThis.document !== "undefined"`, exclusively in `--library` output. This is a compiler-only intrinsic: its foreign export is discharged by
+lowering, with no `Js.js` export or dependency, so even development library
+builds that copy the whole sibling remain unchanged. Branch elimination
+requires the literal unit argument; an effectful unit expression is evaluated
+normally before the constant answer. Tests
+compare all artifacts of one page-plus-worker build cold and warm, at jobs 1
+and 8, and check both modes for absence of the fallback and selector calls.
+
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
+
 ### `Js.testHooks` is the build's test hooks
 
 *Added 2026-10-22* (`boundary.md` Â§9.12 (k): the hidden flag the owner chose for the corpus to
@@ -2797,6 +2875,10 @@ wherever `global_this` is. Both printers write it `function(){â¦}` with a bl
 in the method's own statements as `this`, never one read in a nested arrow, whose statements it does
 not enter; an arrow nested in the method reads the receiver through the name. `this_lit` is not an
 atom (`Lower.isAtom`), so no argument substitution can carry it into another function.
+*Amended 2026-11-04 (`boundary.md` §4.2, the owner's answer A to `runtime-in-beni-q3`):* the
+lambda's parameters after the first are the `function`'s, in order — `Js.method λself a b →
+body` is `function (a, b) { const self = this; return body }` — and everything above holds of
+them: `Lower.methodFunc` keeps them as the arrow's parameters and binds only the first to `this`.
 
 **An object holding a method is one object** (the specialiser, Â§9). A method reads and writes its
 receiver through `this`, which the points-to pass cannot follow to a site, so:
@@ -2815,6 +2897,17 @@ with `this` undefined. Fixtures: `emit/core/JsMethod` and `emit/release/core/JsM
 receiver an arrow reads), `run/JsMethod` (a method writing its receiver, one read through a nested
 arrow, a method making an object with a method of its own, one caching on its receiver; both
 builds), `check/bad/core/MethodSuspends` (`sync_boundary`).
+
+### The comparisons are operators
+
+*Added 2026-10-23 (#882; `boundary.md` §4.2).* `Js.lt`, `Js.gt`, `Js.le` and `Js.ge` are JsIr's
+`lt`, `gt`, `le` and `ge` binary operators, written in place where `Js.same` is `strict_eq` and
+`Js.bitAnd` `bit_and` (`Lower`'s intrinsic switch): `a < b`, its operands parenthesised by the
+printer's precedence table like any other binary's. No pass treats them specially; each is a binary
+as `&` is. Passed as a value, each is `core/Js.js`'s function of two parameters, and `Reach` drops
+the edge a written-in-place use would add, as for every intrinsic. Fixtures: `run/JsOperators` (each
+on two numbers and on two strings, in place and as a value, both builds) and
+`emit/release/core/JsCompare` (the four shapes under the release optimiser).
 
 ## 5. Module output and linking
 
@@ -4823,21 +4916,21 @@ is reached, and not before.
   with a `.top` instruction that leg 2 reads (`Lower.resolveValue`), so a row adds an unguarded
   edge only when no instruction of the declaration names its target â a net under an invariant, not
   a source of edges.
-- **Exempt constructors are roots**, reached before the walk: every constructor of a type declared
+- **Exempt constructors are roots**, reached before the walk: a record alias's constructor, since any
+  record of its shape is a value of it and a literal names no constructor (#2058: `case r of Pt a b → a + b`
+  over `{ n = 1, m = 2 }` wrote `undefined`); every constructor of a type declared
   in `core` â the compiler writes `Bool`, `List`, `Order`, `Maybe` and `Result` values no
   instruction spells (an `if`, a list literal, a derived `compare`, `?`), and core's siblings build
   them; every constructor of a type that a `foreign`, `foreign type` or vocabulary declaration of
   the build names, and of every type that such a type's constructors or an alias name,
   transitively; and every constructor at all in a `--library` build, whose callers are not in the
   build, or in a build with a `schema` declaration, whose parse will build values no instruction
-  spells. None of these is ever a guard. *Amended 2026-10-15 (`schema.md` Â§6, *A statically known
-  schema runs compiled*):* in an application build, the constructors of `core/Schema`'s private
-  `Engine` (`Interpreted`, `Compiled`) and `Made` are not exempt. Only `core/Schema`'s own code
-  spells them: `box` builds `Interpreted`, and the compiled makers build the rest. The compiler
-  writes none, and no sibling, `foreign` or schema endpoint can name either type. An arm on
-  `Interpreted` is the library interpreter behind every runner, and it survives only where a
-  builder that boxes a node does. An arm on a `Made` constructor is that maker's worker, and it
-  survives only where the maker does.
+  spells. None of these is ever a guard. *Amended 2026-10-15; retained on master
+  2026-11-06 (schema.md A.14):* in an application build the constructors of
+  `core/Schema`'s private `Engine` and `Made` are not exempt. Only core's makers
+  build them; the compiler writes none and no sibling, foreign signature or schema
+  endpoint names either type. Unused maker arms therefore retain no worker helper.
+  Removing the interpreter does not remove this existing private-constructor rule.
 - **Why that is sound.** A value is built by beni code that spells one of its constructors, by the
   compiler for a core type, or by hand-written JavaScript â a sibling, a runtime â which receives
   and returns values only through signatures: it can build a value of a type its signatures name,
@@ -5608,6 +5701,15 @@ day, and it is decided by lowering, not guessed by this pass:
   the fold of a member chain into the next statement would read it after that statement's earlier
   operands ran: `f(bump(o), o.v)` answered `2` where the program says `1`. Only a read of a beni
   value, which nothing can change, is folded. `run/JsIntrinsics`'s last line.
+  *Amended 2026-11-04 (#1227, #1842):* **lowering's own temporaries go under the same rule.** A
+  value pinned in a `const $t$<n>` where it is written (`orderedExprs`: the keys of a record are
+  sorted, or a later value hoists statements) and a value bound because it grew
+  `JsIr.nesting.spill` tall are listed when they may have an effect, as `enterInline` lists the
+  arguments it binds. Unlisted, each one lost its effect when its only reader went:
+  `Spec.dropKeys` dropped an unread key whose value was the temporary's name, and `Opt` then
+  dropped the temporary. A pinned `Js.get` was also folded back into the sorted keys, so two getters
+  ran in the order of the keys and not in the order written. `run/ReleaseKeepsUnreadField`,
+  `run/ReleaseKeepsSpilledCall`.
 - **`impure` in the table means *may be***: the callee's rung is `impure` or `suspends`, or it is
   `poly` (it would be, used with something that is), or a `sync` class of the declaration's scheme
   reaches it â a `sync` class cannot suspend, so it never makes a call `poly`, but it can still be
@@ -6112,6 +6214,149 @@ used to live in; building a rewrite for three sites is how a printer grows a pas
 `switch` labels that reach one body (Â§7's last bullet) is measured with this family and is **not
 built**: Â§7's `default:` rule already removes the case that would fire most.
 
+#### Item 6 — a forwarding lambda is its callee
+
+*Added 2026-10-26 (#1111; found by the review of #1116).* A method named as a value is written in
+beni only as a lambda that calls it: `comparer _ = λa b → a.compare b`. `Lower` turns the dot-call
+into a saturated call of the `where` clause's evidence, so the arrow is `(b,c)=>a(b,c)` where `a` is
+the evidence — one closure allocated at every evaluation, 8 raw bytes at every site, and a call
+through it is one frame deeper. The hand-written sibling it replaced stored `a` itself. On a page
+that makes 1 000 keys per message the closure is +3.2 % to +3.4 % of the release build's time, and 30
+of the 32 bytes `tea/LogCommandContext` grew by (#1116, its review's F1). The rule is **η-reduction
+under the conditions JavaScript needs**, and it runs in `Opt`, under `--release` only, as item 1 does:
+
+**The shape.** An `arrow` node of the plain kind (`arrow_plain`; never `arrow_depth`, whose last
+parameter is the derived comparison's depth, and never an `arrow_method`, whose `this` is its
+receiver) whose `Func` has parameters `p₁ … pₙ` (n ≥ 0, all distinct) and whose body is exactly one
+`return_stmt` of a `call` whose callee is an `ident` `f` and whose arguments are exactly the `ident`s
+`p₁ … pₙ`, in order, each once, and `f` is none of them. `new_call`, a `member` callee, a spread, a
+default, a parameter read anywhere else and an argument that is anything but the matching parameter
+all fail the shape; so does a body of two statements.
+
+**The callee.** `f` must denote the same function at every call of the arrow as at the arrow's
+evaluation, which is true of a name JavaScript never rebinds after its binding:
+
+- a **parameter** of the enclosing `func_decl` or `arrow` — evidence included, since `where`
+  evidence is a leading parameter (§6) — that no `assign_stmt` in that function targets. §8's
+  tail-call loop assigns its parameters on every iteration, so a parameter of a self-tail-calling
+  declaration is excluded by this test and by nothing else;
+- a **top-level `const` or function of the file, or another beni module's export** (a declaration
+  `Reach` kept), which no emitted statement assigns — a `const` cannot be, and module state is a
+  `let` — and `Opt` asserts it. **Never a function the build imports from a hand-written file** — a
+  `foreign`'s sibling export, the platform's runtime (*amended 2026-10-27, the review of #1127;
+  amended 2026-10-29, its second review: another beni module's export passes and the veto is the
+  printer's, which `77ee6b72a` built on 2026-10-28, a day before this text said so*): a
+  hand-written function may read `arguments` or `this` where emitted code never does, and a host
+  that holds the value may call it with more arguments than the lambda took — `then`, `replaceAll`,
+  a listener — which the lambda dropped and `f` would receive. An emitted function has no rest or
+  default parameter and reads no `arguments`; it reads `this` only when `Js.method` made it, and
+  such a function is a `Js.Value`, which only a `Js.apply` calls (the rule below). So an emitted
+  callee is the same function to every caller; a sibling is not promised to be. Only the join
+  knows which names are such imports (a
+  specifier whose imported name is not its local one, `Emit.markHandWritten`), so the veto is the
+  printer's: `Print.resolve` leaves an arrow whose recorded callee is one as the arrow it is.
+  Under `--release` a module's `import`s also bind every other beni module's emitted functions it
+  reads, under their own names; those pass, as the bullet's first words say (#1116's
+  `emit/release/tea/HttpSendTracked` shows a key's comparer as core `String`'s compare itself,
+  `c:jb`). `emit/release/core/JsCompare`'s `viaValue`, which forwards to the sibling's `lt` taken
+  as a value, stays a lambda; so do `emit/release/core/EtaReduce`'s `aliasOnce` and `aliasTwice`,
+  which forward to a local `const` that holds it (the next rule);
+- a **local `const_decl`** of the enclosing function **whose statement comes before the statement
+  that evaluates the arrow** — in the arrow's own list, in an enclosing list of the same function,
+  or in a list of an enclosing function, whose `const` is bound before the inner function that
+  holds the arrow is made (*amended 2026-10-29, the review of #1127, F1, and its second review*).
+  JavaScript binds a `const` at its statement and
+  not at the top of its scope: `const g = (x) => h(x); const h = …` is valid, since `g` reads `h`
+  when called, after both exist, but `const g = h; const h = …` reads `h` before its initialisation
+  and throws `ReferenceError`. So `Opt` marks each local `const` once its statement is planned, and
+  an arrow planned before the mark keeps its lambda. A lambda made once and moved to its use (item
+  1) is planned where it was declared, so it keeps its lambda too when its callee is declared
+  between the two. A parameter is bound before the body and an inner `func_decl` is hoisted, so
+  neither needs the order. A `let_decl` (a `Js.Ref`, a `case` result, a loop variable) is excluded:
+  the arrow would read the name at its call, the lambda read it at its evaluation.
+
+**The name's value must be an emitted function too** (*amended 2026-10-29, the review of #1127,
+F2*). The tests above are on names, and a name that never changes may hold a host function: a
+`const` read from `Js.global` or `Js.get`, a parameter handed `Object.prototype.toString`, a `const`
+that aliases a sibling's export. A host function sees what the host passes — `Array.prototype.map`
+passes the index and the array, so `parseInt` read into `p` and handed to `map` in place of
+`λs → Js.apply p [ Js.from s ]` parses `"10"` with the radix `1` — and reads `this`. Two rules keep
+such a name out, and a third is a duty:
+
+- **a lambda whose call is a `Js.apply` is left as written.** The callee of a `Js.apply` is a
+  `Js.Value`, a host value by type. `Lower` marks the `call` node it writes for one
+  (`JsIr.Node.host`), `Spec` and `Suspend` copy the mark with the node (`run/EtaReduceHostSuspend`
+  runs such a lambda in the rest of a tail-call loop that `Suspend`'s loop mode copies after a
+  park; *amended 2026-10-29, the second review*), and item 6 declines a body whose call carries
+  it. `Js.call`'s callee is a `member` and fails the shape on its own;
+- **a `const` whose value is a name an `import` binds is never a callee in the module that
+  declares it**, directly or through `const` aliases (`c = counted; … λx → c x`,
+  `countedAlias = counted` at the top level): `Opt` refuses it, since the printer's veto sees only
+  the name written. `Opt` runs per module, so another module's `const` that holds a sibling's
+  export is a callee when it is named from outside, and a function `Spec` moves into its one
+  caller in another module is planned there (`emit/release/app/EtaReduceAlias` pins both: the
+  entry's lambda prints as the alias, and `Counted`'s own `viaAlias`, called twice so that it
+  stays, keeps its lambda; `run/EtaReduceHostValue`'s `viaAlias`, called once, is moved and
+  reduced). That is harmless today: a sibling's export takes the declared arity (`boundary.md`
+  §4, check 4) and names no `arguments` (check 3); no shipped sibling uses check 4's two
+  `function` forms, which can read `this`, and a sibling that does must revisit this; the
+  runtime's functions have no beni name; a change to either check must revisit it too
+  (*amended 2026-10-29, the second review, and its third*);
+- what remains is a beni function type whose value a `Js.to` cast from a host function.
+  `boundary.md` §4.2 makes it the duty of the code that writes the `Js.to`: such a function ignores
+  the arguments past the type's arity and `this`, as an emitted function does. `run/EtaReduceHostValue`
+  runs the three probes of the review in both builds, and `run/EtaReduceHostSuspend` the second
+  review's: the same lambdas after a park in a tail-call loop.
+
+An `ident` that `Opt` item 1 already plans to substitute is read through the plan first, and **the
+tests above run on the name the printer writes**: `const g = f; … λa b → g a b` reduces to `f` when
+`f` passes them, whatever `g` is (*amended 2026-10-27*). The plan is final for that name when the
+arrow is visited: `planList` plans a list's bindings before it descends into their statements, so
+every binding in scope at the arrow was planned before the arrow.
+
+**The rewrite.** The `arrow` node is printed as the `ident` `f`. The arrow's node index joins the
+plan's node table (`Opt.Plan.inlined`, keyed by node and never by name, for the reason its comment
+gives), and the printer's `resolve` follows it at an `arrow` as it follows a substitution at an
+`ident` — at most two steps, an `ident` whose binding was a lambda made once and then that lambda's
+callee, each recorded resolved. Nothing else moves: the arrow built no value an effect could see, so
+the ordering rule has nothing to order.
+
+**What it may not change.** Beni has no function identity — no `==` on functions, no `eq` derived for
+them — so the one observable difference, that `λa b → f a b` evaluated twice gave two objects and `f`
+gives one, is visible to no program. Privileged code that compares functions with `Js.same` (none
+does today) compares the function it was handed, which is now `f`. The host tells functions apart
+too: `addEventListener` registers one function once, `removeEventListener` matches by identity, and
+a `Set` or a `Map` keys by it, so code that added `λe → f e` twice registered two listeners and
+would now register one. None of core or the platforms does (the review of #1127 read every
+`addEventListener` and every `Set` of them; `Listen.beni`'s listener does not forward), and a
+program cannot: it has no `Js`. Arity is checked by nothing beyond the callee rules: a beni call is
+saturated (§6) and passes the n the arrow took; a host that holds the value may pass more, which an
+emitted callee ignores and a hand-written or host one may not — hence the printer's veto, the
+`Js.apply` rule and the `Js.to` duty above (*amended 2026-10-29*). The development build does not run `Opt`, so it prints the lambda as before, and
+`run/` fixtures prove both builds print the same (*Testing*).
+
+**What it does not do.** It does not reduce `λa → f a b₀` (a partial application written out), `λa b →
+f b a`, `λa → g (f a)`, a lambda whose callee is a constructor (`λa → Just a` is `x=>({$:1,a:x})` and
+has no callee), or a lambda whose body is a method call `λa → o.m a`, whose `this` the reduction would
+lose. Nor does it reduce to a name bound twice in one declaration (a positional compiler-made
+name, whose one `NameIndex` would mean two bindings), to a callee whose item-1 substitution is not a
+name (a function made once and used here, which is written in place instead), or to one whose
+substitution is itself substituted (`compress` leaves none; `Opt` asserts it). Each stays as
+written; a measurement, not a guess, may add one later.
+
+**Fixtures.** `emit/release/core/EtaReduce` pins every shape above: reduced through evidence, through a
+top-level name, through a local `const`, through an item-1 substitution; kept for a reordered,
+repeated, extra or missing argument, for a `let` callee, for a tail-loop parameter, for a method
+callee and for a local `const` that holds a sibling's function, read once or twice. `run/EtaReduce`
+stores such a lambda in a record and a list, calls it through the stored value in both builds, and
+prints the same under each; `run/EtaReduceForwardRef` binds a forwarding lambda before its callee,
+read twice, stored, and in a recursive pair; `run/EtaReduceHost` hands a host the callee itself;
+`run/EtaReduceHostValue` forwards to `parseInt` under `map`, to `Object.prototype.toString` as a
+method, to a top-level alias of a sibling and to a `Js.Ref`'s function. #1116's
+`emit/release/tea/HttpSendTracked` shows a key's comparer as the evidence itself. Sizes: the `tea/` pages against the compiler before this item (`zig-out/scratch/pages.mjs`),
+and the speed page of #1116's review, `speed/Keys1000`, 300 clicks under happy-dom, which must tie
+the base within its spread.
+
 #### Throughput, and where the four passes sit
 
 Measured today on this machine, `bench -- --generate=100000`, ReleaseFast: emit is **54.15 ms for
@@ -6153,6 +6398,8 @@ The fixtures, by intent:
 | `run/ReleaseDeadDebug` | a `Debug.log` in a binding nothing reads, beside one in a binding that is read, beside one in a dropped declaration (`run/DceDebugLog`'s other half) | exactly the live lines, in order â pins that the surviving order did not move. *Amended 2026-09-30*: the unread binding's line is now printed by both builds (item 1 keeps a binding that may be impure), and the fixture's `.release-expected` is gone |
 | `run/ReleaseKeepsNamedSpawn` | a named, unread `Task.spawnIn`, and one inside a list literal, whose children print through a test platform's `foreign impure` | the children's lines in both builds (2026-09-30) |
 | `run/ReleaseKeepsNamedForeign` | unread bindings over an impure `foreign` called directly, inside a pure call's argument, in one branch of an `if`, inside a tuple a pattern takes apart, through an inferred-impure helper, through a callback parameter, and through a `sync` callback parameter | every line in both builds (2026-09-30) |
+| `run/ReleaseKeepsUnreadField` | records whose two fields are written out of sorted order, each a call: `Log.info`, `Debug.log`, an impure `foreign`, a record alias constructor, and in a platform module `Js.call` and getters read by `Js.get`; one field read or none | every line in both builds, the getters in the order written (2026-11-04, #1227) |
+| `run/ReleaseKeepsSpilledCall` | a `Debug.log` under 50 and under 51 calls in a field nothing reads, so that the record or the field value is a spill temporary | every line in both builds (2026-11-04, #1842) |
 | `emit/release/ReleaseDropsPureBinding` | unread bindings over arithmetic and over pure calls, beside one over `Task.spawn` | golden: the pure two are gone, the impure one's `const` stays (2026-09-30) |
 | `run/ReleaseNameCollision` | locals whose source names are JavaScript reserved words (`new`, `class`, `let`, `eval`); more than 54 locals in one declaration, so the alphabet spills to two characters; two sibling `case` branches binding the same source name; a Â§8 loop label beside a binding of the same source name; a declaration that mentions enough globals to push its locals past the ones they may not take | the answers; a collision is a `SyntaxError` at load or a silently wrong value |
 | `run/ReleaseAsiTraps` | expressions whose printed form starts with `(`, `[`, `` ` ``, `+`, `-` and `/`, in statement position and after a `return`; `a - -1` and `a + +b` in one expression | the values; pins that the printer never needs ASI and never merges two operators |
@@ -6296,7 +6543,7 @@ both, so `slotName` (`src/js/Lower.zig:430-437`) costs the field alphabet nothin
 
 | | Why |
 |---|---|
-| `program.out` / `program.code` | **not a record and never were.** `Program` is a `foreign type` (`platforms/node/Node.beni:24`); the object is built in `Node.js` and read in `runtime.js`, and **no generated `.mjs` in any of the 109 trees mentions either name**. The first slice recorded this as item 4's hard constraint; it is not one |
+| `program.out` / `program.code` | **not a record and never were.** *(2026-10-23, #877: the two keys are `$c` and `$o`, written by `Js.object` in `Node.beni`, so that a beni field named `code` or `out` is not pinned by them; `boundary.md` §4's amendment.)* `Program` is a `foreign type` (`platforms/node/Node.beni:34`); the object was built in `Node.js` and is built by `Js.object` in `Node.beni` since 2026-10-23, and read in `runtime.js`, and **no generated `.mjs` in any of the 109 trees mentions either name**. The first slice recorded this as item 4's hard constraint; it is not one |
 | the `$` tag and the `a`/`b`/`c`â¦ slots | not fields, and already one character |
 | a `<T>$$order` key | it is a **constructor tag name**, read dynamically as `M$T$$order[x]` (`Lower.orderTable`, `src/js/Lower.zig:2229-2272`; `orderLookup`, `:2282-2286`). Not item 4's â but it is worth recording that report 12 Â§5.4's "no `obj[dynamicString]` exists" is **false of today's output**, and the integer-tag item is where that is paid |
 | anything inside a `*.foreign.mjs` | copied verbatim, never parsed. *Amended 2026-09-29: never renamed still; under `--release` compacted and cut to its imported exports by a lexical pass (*Hand-written JavaScript under `--release`*, below)* |
@@ -6503,7 +6750,8 @@ constructors are all nullary is the bare integer. A type keeps its string tags w
   are built by beni code, and neither is in the boundary on their account â `Http` hands its fiber
   the answer through a type variable, which is opaque at the door)*
 - it is core's `Order` or `Bool` â `Order`'s `"LT"`/`"EQ"`/`"GT"` are written by siblings
-  (`List.compare`, `String.compare`, `Hosted.compareKeys`) and by every derived `compare`, and `Bool`
+  (`List.compare`, `String.compare`; `Hosted.compare` reads one back with `Js.to` at `Order` since
+  2026-10-26, which pins it the same way, `boundary.md` §4) and by every derived `compare`, and `Bool`
   is `true`/`false`;
 - the build is a `--library` build or reaches `Debug`, as for fields.
 
@@ -6605,8 +6853,13 @@ keeps a type's string tags keeps its object:
   development, `{$: "Meters", a}`: a sibling reads `.$` and `.a`, and builds the object. A value
   handed through a type variable is opaque (`boundary.md` Â§4, *What JavaScript may read of a beni
   value*), so its type may be unboxed; JavaScript may store it, hand it back and compare it with
-  `===`, none of which reads the object. A type a reflective order compares (`Hosted.key`) is in
-  the boundary already.
+  `===`, none of which reads the object. A type a reflective order compared (`Hosted.keyOf`,
+  with `where k.compare`) was in the boundary until 2026-10-26. `Hosted.key` is beni since then:
+  it hands the key's value to `Js.from` at its quantifier `k`, the comparer the key stores reads
+  it back with `Js.to` at `k` in the same build, and `Hosted.compare` reads only that comparer's
+  answer, at `Order`; so the key's type is opaque at the door and a release build may unbox it.
+  `emit/release/tea/HttpSendTracked` shows `Http.Key`'s `Track` box gone and its compare on two
+  strings (*amended 2026-10-26*).
 - **A `--library` build, and a build that reaches `Debug`, unbox nothing**, as they number no tag.
 - **Markup.** A selector probe (Â§15.5) of such a type is the value itself, which is the field the
   probe would have read; nothing else a lowering writes reads a beni constructor.
@@ -6865,10 +7118,13 @@ spelling. What is new is the hand-written files' top-level bindings, which join 
   emitted code imports them as.
 
 **Host imports.** A hand-written file's `import` of a `node:` built-in moves to the top of the one
-file, once per distinct statement text; a built-in's evaluation is not observable to the program, so
+file, once per distinct statement text (*amended 2026-11-04:* and so does an emitted module's
+`import * as <name> from "<specifier>";`, which `Js.module` writes, `boundary.md` §4.2 — once per
+distinct specifier, the name spelled as the one scope spells the module's binding; a development
+build and a multi-file release build write it first among the module's statements); a built-in's evaluation is not observable to the program, so
 evaluating it first moves nothing anyone can see. *Amended 2026-10-23: a `cloudflare:` built-in is a
 host built-in the same way — the `cloudflare` platform's runtime imports `DurableObject` from
-`cloudflare:workers`, which the host requires of a class that answers RPC (`boundary.md` §9.12
+`cloudflare:workers`, (*since 2026-11-04 through `Js.module` in `Rt.beni`: the emitted module's import of this paragraph's amendment of that date*) which the host requires of a class that answers RPC (`boundary.md` §9.12
 (e.11)) — so the rule reads "a `node:` or `cloudflare:` built-in" wherever this section says
 `node:`.* Of two files binding one name from different
 statements, the later keeps a module of its own, and so does a file whose `import` binds a name
@@ -7313,6 +7569,16 @@ file must defeat it (a DOM node's own `h`, an object passed to a sibling), and e
   left when a function written where it is called (*A function called once â¦*) ends in a value
   that folds to a literal â `return c ? f() : null` with `c` folded false â which `if (x) null;`
   printed; it does nothing. Fixture: `emit/release/app/SpecLiteralStatement`.
+- *Amended 2026-11-06 (#1153)*: **a `try` that has no `catch` and whose `finally` folded to
+  nothing is its guarded statements.** A `finally` that runs nothing changes nothing of how they
+  end: a `return`, a `throw` or a jump leaves as before. They join the list as a folded `if`'s arm
+  does, or stay a block. It is what is left of a `Js.finally` whose cleanup reads a cell that the
+  build never writes: `send` in `platforms/browser/Rt.beni`, in a build in which nothing sets a
+  slot (`boundary.md` §9.8.16 (b), amended 2026-11-06). It also removes two latches of a hosted
+  page whose `busy` nothing reads: the render's and the after-render phase's `finally` only clear
+  it, so they fold to nothing. Fixtures: `build_test`'s *a release page ships the hosted program's
+  loop only when it mounts one* (5 `finally` before, 3 now), and the release goldens of the pages
+  that set no slot (`emit/release/tea/`, `emit/release/dom/`).
 
 Measured: `emit/release/split/EmptyPage` **1 043 â 957** brotli (the hand-written runtime's page
 is 980) â `template`'s flags and html folded into `parse`, a slot's constant marker and context;
@@ -7438,7 +7704,12 @@ its read field kept), `run/PayloadReassign`, `emit/release/split/EmptyPage`.
 
 **The entry's call is a call** (*added 2026-10-02*, `plans/runtime-in-beni.md` step 3). The entry
 file is the compiler's own output, and when the runtime module supplies `run` what it does is
-known: `run(main)`, once, its result unread. So `run` and `main` no longer escape (`Input.escaping`
+known: `run(main)`, once, its result unread. *Amended 2026-11-04 (`plans/runtime-in-beni.md`
+step 16):* under `"exports": "program"` (`boundary.md` §9.12 (c)) the entry file reads the
+result — its `default`, and `exports(name)` per listed name — which the pass cannot see, so both
+names escape, as at any unknown call; a release build of such a chain does not specialise `run`
+on `main` (the first such program, `run/ProgramModuleExports`, is the measure for any later form
+that hands the call over with its result read). So `run` and `main` no longer escape (`Input.escaping`
 lists what the entry reads it cannot say more about â `start`, `flush`, and what the markup runtime
 imports); the pass is handed the call instead (`Input.entry`: the callee's and the arguments'
 whole-program names), and each fact reads it as the call it is:
@@ -7847,8 +8118,12 @@ fact 3 finds at the call:
   That model prices the body against the call alone. But when the call is the program's only use
   of the function, the function goes after it: nothing reads the key that holds it, so fact 3
   drops the key, and nothing reads its binding, so item 1 drops a local binding and the pass
-  drops a top-level one. Each of these drops needs an `inert` value. So slice 8 does not ask the
-  size model at a call through a property when, by fact 3's values over the whole program, these
+  drops a top-level one. `dropKeys` drops an unread key when its value is `inert`, and the pass
+  drops an unread top-level binding only when its value is `inert` (`Spec.candidate`). Item 1
+  does not need one: it drops an unread local binding unless `Lower` kept its initialiser
+  (`keep`). The rule still asks an `inert` value of a local binding, because slice 9 can move its
+  initialiser into a key (below). So slice 8 does not ask the size model at a call through a
+  property when, by fact 3's values over the whole program, these
   three hold: the callee of exactly one call may be that function, the function does not escape,
   and every other node that may be it only holds it (the function itself, an `inert` key's value
   in an object literal whose site neither escapes nor has every key read, or a binding's `inert`
@@ -8378,6 +8653,12 @@ construction, as the note above asks:
   - a scalar-replaced object written to, called through or read two deep;
   - a call the scan no longer counts. `inlineSmallPass` lists a statement's calls before it
     writes any, and a copy of a call's root (`Copy.atom`) shares that call's callee.
+- **Shared expressions count at every occurrence** (#1782). A lowering may reuse a generated
+  expression node. Rewriting that node changes every occurrence of it: a call update retracts
+  and extends its subtree as many times as the scan lists the call. A pending list of calls
+  rewrites each node once, even when its replacement is another call; its old callee body no
+  longer describes the replacement. Sharing is not common-subexpression elimination: every
+  occurrence still evaluates the expression where it stands.
 - **Checked.** A safety build checks every scan it updates, and every one it keeps across a
   change, in a module of at most 3 000 nodes. It walks the statement again and compares the sum
   of each node's `contribution` (its operands and what it reads of its child), the first name of
@@ -10563,7 +10844,7 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    no longer. Fixture: `emit/release/core/StatementShapes`.
 
    *Amended 2026-10-24 (the owner, #936).* `window` is bare only in a build for a chain that
-   says it always runs in a page (`"host": "page"`, `boundary.md` §5.2): it is
+   has a proven Window EntryHost (`"entryHost": "window"`, `boundary.md` §5.2): it is
    `Rename.page_globals`, apart from the list above. Where there is no window, a bare `window`
    throws `ReferenceError` and `globalThis.window` reads `undefined`, so a build for any other
    chain keeps `globalThis.window`; the rule writes a bare name only where both read the same
@@ -10574,6 +10855,14 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    where it may be missing (#941). Fixtures: `emit/release/inline/PushAndTimer`
    (`f=window`, on `browser-inline`), `emit/release/core/GlobalWindow` (`globalThis.window`, on
    `node`).
+
+   *Amended 2026-11-07 (#2207).* In a build for a browser worker realm, a name of
+   `bare_globals` is bare only when it is on that realm's global object
+   (`RealmCheck.onWorkerGlobal`, `workers.md` §4, *The worker global allow-list*). A bare
+   `document` throws `ReferenceError` in a worker where `globalThis.document` reads `undefined`,
+   so `Js.isUndefined (Js.global "document")` printed `document===undefined` and crashed the
+   worker it was written to probe. Every other build prints exactly as before. Fixtures:
+   `emit/release/dedicated/RealmProbe`, `browser/dedicated/RealmProbeSafe`.
 
 4. **A for-each is a `forâ¦of`.** `Js.each xs f` (`boundary.md` Â§4.2) is the statement
    `for (const x of xs) â¦` (JsIr's `for_of`): with a lambda of one parameter that cannot suspend,
@@ -11116,17 +11405,20 @@ printing (`src/js/Print.zig`), and `Emitter.linkHoisted` (`src/js/Emit.zig`).
 
 - **The multi-file layout** (`--library`, and an application that Â§9 does not hoist): each `.mjs`
   lowered from a `.beni` module gets `<path>.mjs.map` beside it, exactly as Â§11.1 says. One source
-  per map.
+  per map. *Amended 2026-11-04:* and one more for each module that a body copied into it came from
+  (*Copied bodies*, below).
 - **The one scope-hoisted file** (Â§9, *One scope-hoisted file under `--release`*): one map,
   `<entry>.map` beside the entry file (`_main.mjs.map`). Its `sources` has one entry for each
   emitted module that the file holds, in the order of the file. The modules that the file does not
   hold have no entry. A module that records no mark has no entry either, and its bytes are an
   unmapped stretch. Its text would only add to the map: a
   body copied out of `core/Debug` maps to its call, so `Debug.beni` often has nothing that maps to
-  it.
+  it. *Amended 2026-11-04:* a copied body maps to the module it came from, so a module has an
+  entry when a mark maps to it, its own or a copy's (*Copied bodies*, below).
 - **No map:** the entry file of the multi-file layout and `_core/_derived.mjs`, for Â§11.1's reason
   (no beni line wrote them), and each hand-written file that the build writes as a file of its own
-  (below).
+  (below). *Amended 2026-11-04:* a compacted hand-written file gets a map; one that the build
+  copies does not (*Hand-written JavaScript*, the amendment of 2026-11-04).
 
 *Amended 2026-10-17 (issue #94):* **a release build reads no emit row** (Â§9, *The embedded
 modules' printed text, in the pack*). The release text is entangled with the specialiser, the
@@ -11148,6 +11440,76 @@ not map it: `Minify` does not record token positions. So:
 
 A map from the compacted text back to the original `.js` file is deferred (item 1 below).
 
+*Amended 2026-11-04 (issue #141, part 1): hand-written JavaScript is mapped.* `Minify` records a
+mark at each token that it prints: the token's first byte in the compacted text, and the token's
+first byte in the file as written. So each kept token maps to its own token in the `.js` file.
+Compaction does not change the order of the tokens, so the marks are in generated order and in
+source order. The two bullets above now hold only for the files and the bytes that this amendment
+names. The rules:
+
+- **Which files.** Each hand-written file that `Minify` compacts: a `foreign` sibling, a program
+  runtime, a markup runtime. A file that `Minify` declines is copied byte for byte. It IS its
+  source, so it gets no map, as in development (§11.1). `_core/_derived.mjs` gets no map, and its
+  stretch of the hoisted file stays unmapped: the compiler holds its compacted text
+  (`derived_runtime.min.mjs`), and no person wrote that text.
+- **Its source.** The `.js` file, by §11.1's `sources` rule: a file read from disk by its path
+  relative to the map (`../hand/Hand.js`), an embedded one by `beni:///` and its path
+  (`beni:///core/Js.js`). `sourcesContent` holds the file's text as written. A line of the source
+  ends at `\n`, at `\r\n` and at a `\r` alone, as an editor and the developer tools count the
+  lines of a file they show.
+- **`names`.** A token that A2 renamed (§9, *Hand-written JavaScript under `--release`*, amended
+  2026-09-30) carries its spelling as written, at each of its occurrences. A2 renames by name and
+  not by scope, so all the occurrences of one spelling have one name. A spelling that A2 did not
+  change has no name. Two exceptions, both at the first token of a function, because Node's
+  `--enable-source-maps` names a stack frame by the mapping at the start of the enclosing function
+  (§11.1):
+  - a named function's first token carries the function's name as written, renamed or not, as
+    §11.1's named function does. That token is a `function` keyword (and an `async` before it),
+    or the first printed token of a declarator's initialiser that is an arrow or a function
+    expression (`a` of `a=>`, for `const f = (a) =>`);
+  - a parameter that is an arrow's first token carries no name of its own. With its name, the
+    frame of `export const run = (program) => …`, printed `run=a=>…`, read `at program`.
+
+  `names` holds each spelling once for each file.
+- **A compacted file of its own** (the multi-file layout, or a file that §9 declines to hoist):
+  it gets `<path>.map` beside it (`_core/List.foreign.mjs.map`), with one source, and the comment
+  line at its end (*The comment line*, below). A file with no mark gets none.
+- **The hoisted file.** Each hand-written piece is a stretch of its own, and its `.js` file is one
+  more entry of `sources`, in the order of the file. A piece with no mark is an unmapped stretch
+  and has no entry. The bytes that the link step writes stay unmapped: the `import` statements at
+  the top of the file, the `const` aliases after a piece, `start(…)`, `run(main)` and the
+  `export`s.
+- **A markup runtime that the build rewrote.** In the multi-file layout, the build rewrites a
+  markup runtime's `import`s of the runtime module before `Minify` reads it (`rewriteProgramImports`,
+  §15.1). Each mark moves back to the file as written: a mark after a rewritten `import` moves by
+  the difference of the two lengths, and a mark inside one moves to the `import`'s first byte. The
+  hoisted file reads the file as written, so its marks need no move.
+
+Without `--source-maps`, `Minify` records nothing and prints the same bytes (`minifyMarked`'s
+marks are optional, and `zig build fuzz` holds the two outputs equal). Cost, measured 2026-11-04 as
+the table below, master `d2a7239dc1` against this amendment: today the only hand-written file
+these builds reach is `core/Record.js` (every platform runtime is beni since 2026-11-03). Its map
+stretch is 12 segments, and its text is 407 of the bytes it adds.
+
+| Build | Instructions with maps, before → after | Map bytes, before → after | Code bytes |
+|---|---|---|---|
+| `bench/corpus`, `--release --library` | 2 738.19 M → 2 738.37 M | 315 600 → 316 216, 30 → 31 maps | +44, the comment line of `_core/Record.foreign.mjs` |
+| `examples/conduit`, `--release` | 5 150.61 M → 5 150.66 M | 874 340 → 874 857 | the same |
+| `examples/sternhalma`, `--release` | 1 528.99 M → 1 529.03 M | 372 046 → 372 563 | the same |
+
+Each difference of instructions is less than the spread of the five runs of one build (up to
+0.5 M). Without the flag, each build writes the same bytes as before, and its instructions move by
+less than that spread too.
+
+**Tests** (`build_test`): *a release build maps hand-written JavaScript back to the file it is
+written in* (the hoisted file: each token, the names, the function's first token, a callback whose
+first token is its parameter, the link step's alias, the crash frames under
+`--enable-source-maps`, and `beni:///core/Record.js`); *a release library build maps each
+compacted hand-written file, and not one it copies*; *a markup runtime the build rewrites maps back
+to the file as written*. Each was checked red by a revert of its rule: the aliases' unmapped
+stretch, the move back of a rewritten file's marks, and the parameter with no name. `Minify`'s
+unit tests pin the marks and names of a file and of a hoisted body.
+
 **What the marks survive.** The printer records the marks of Â§11.1 at the same sites, in the same
 order. Each release pass changes the printed bytes, and each has a rule.
 
@@ -11164,7 +11526,8 @@ order. Each release pass changes the printed bytes, and each has a rule.
    that call, and the stack frame points at the line that the development build names (Â§11.1).
    Before this rule the copy had no position, and the mark before it covered it: the `throw`
    mapped to the `case` scrutinee. A map that names the other module's own line is item 2 of
-   *Deferred*.
+   *Deferred*. *Amended 2026-11-04:* it is built (*Copied bodies*, below). The copy keeps the
+   positions of the module it came from, and `Spec.Copy.site` is gone.
 3. **Compact printing** (Â§9 item 3): the adjacency guard can put a space between a mark and the
    token that the mark is for. The guard moves the mark past the space, so the mark is on the
    token. A lookup of the token finds the same segment either way, but a tool that reads `names`
@@ -11181,7 +11544,8 @@ order. Each release pass changes the printed bytes, and each has a rule.
    binding that the printer marks at its declaration gets its beni name in `names`, a local as well
    as a module's top-level name. A temporary that the lowering invented (`$tâ¦`) still has no entry.
    A named function's first mapping carries its name, as in Â§11.1, so a stack frame under Node's
-   `--enable-source-maps` names the beni function and not its short name.
+   `--enable-source-maps` names the beni function and not its short name. *Amended 2026-11-05:* a
+   parameter is marked too, with its beni name (*Parameters*, below).
 6. **Decided branches** (Â§9, *Whole-program specialisation*): specialisation writes the operand
    that a decided `cond`, `&&` or `||` keeps in place of the node (`Spec.foldTo`). The node takes
    the kept operand's position too. The kept code is what runs, so it maps to where it was written
@@ -11189,6 +11553,170 @@ order. Each release pass changes the printed bytes, and each has a rule.
    (item 2). Before this rule, `if n > 100 then Aid.boom n` with `n` known to be 500 mapped the
    copied `Aid.boom` to the `>`, and the crash frame named the test's line. A node that an inline
    writes in place of a call keeps the call's position: the call is where the inlined code runs.
+   *Amended 2026-11-04:* a copy into a kept call no longer takes the call's position (*Copied
+   bodies*), so this rule now shows on a kept node that is not copied.
+
+*Amended 2026-11-04 (issue #141, part 2): **copied bodies** map to the module that they came from.*
+The owner chose the representation (Cesar, 2026-11-04, of two: a source column on every node, or
+a table for the copies only). A position stays four bytes. A node that whole-program
+specialisation copies from another module gets a `pos` that names a row of a per-module table,
+`JsIr.far`, and a row is a module and a byte offset into its source. Only the copies pay. The
+rules:
+
+- **The table.** A `pos` with the top bit set (`Node.far_bit`) is row `pos & ~far_bit` of the
+  module's `JsIr.far`. Every other `pos` is an offset into the module's own source, as before. The
+  builder gives a node at 2 GiB or more into its source no position, so no offset reads as a row.
+  `no_pos` keeps its value.
+- **The copy** (`Spec.Copy.posOf`). A node that a copy writes in the same module keeps its `pos`.
+  A node that a copy writes into another module gets its position in the module where it was
+  written: its offset there, or its row there when it is itself a copy. That is the destination's
+  own offset when the body comes back to the module it was written in, and a new row of the
+  destination's table otherwise. A node with no position gets none, and the mark before it covers
+  it, as in §11.1.
+- **The printer** records a row in a mark as it is. **The map** turns each row that a mark names
+  into its module's entry of `sources` and the offset (`SourceMap.Stretch.far`). A row that no mark
+  names adds nothing.
+- **`sources`.** A module map of the multi-file layout has the module's own source first, then one
+  entry for each module that a row of its marks names, in the order of first use. In the hoisted
+  file, a module has an entry when a mark maps to it, its own mark or a row of another module's,
+  in the order of first use in the file. So `Debug.beni` is an entry when the copied `throw` of
+  `Debug.todo` maps to it.
+- **What a frame shows.** `Debug.todo "…"` copied into `describe` maps its `throw` to `Debug.beni`,
+  and under `--enable-source-maps` the crash frame is `at describe (…/Debug.beni:43:15)`: the
+  function that runs, and the line that throws. A copy has no frame of its own, so the line of
+  the call (`Main.beni:17:13`, which this section mapped the copy to before) is not in the trace.
+  A map cannot hold both, because ECMA-426 has no record of a copy.
+
+**Memory**, measured 2026-11-04 with the ReleaseSafe beni, master `af5ac04778` against this
+amendment. A node stays 14 bytes (tag, `pos`, two data words, `host`). A row is 8 bytes.
+
+| Build | Nodes at print | Rows of `far` (bytes) | Modules with rows | Peak RSS, median of 5 |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 31 549 | 53 (424) | 6 of 30 | 94 804 → 95 304 KB |
+| `examples/conduit`, `--release` | 63 978 | 1 102 (8 816) | 17 of 42 | 141 012 → 140 952 KB |
+| `examples/sternhalma`, `--release` | 18 113 | 265 (2 120) | 8 of 20 | 89 568 → 89 572 KB |
+
+The peak RSS moves within its noise. A module that nothing is copied into has an empty table and
+pays nothing. A build with no copy across modules has no row at all: a development build runs no
+specialisation, and a `--release --library` build of one module with no call into another (2
+modules, 36 nodes) has 0 rows.
+
+**Cost**, measured as the table under *Cost*, below, master `af5ac04778` against this amendment:
+
+| Build | Instructions without maps | Instructions with maps | Map bytes | Entries of `sources` |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 2 686.86 M → 2 687.43 M | 2 738.52 M → 2 745.93 M | 316 216 → 400 364 | 31 → 37 |
+| `examples/conduit`, `--release` | 5 040.73 M → 5 041.82 M | 5 150.81 M → 5 154.42 M | 874 857 → 876 763 | 39 → 39 |
+| `examples/sternhalma`, `--release` | 1 490.50 M → 1 490.74 M | 1 529.10 M → 1 539.28 M | 372 563 → 505 581 | 18 → 19 |
+
+The code bytes are the same in every build, with and without the flag. Without maps, the
+instructions grow by 0.24 M to 1.09 M, at most +0.02%: the rows, `posOf`, and the builder's test of
+each position. The five runs of master and of this amendment do not overlap, so the growth is
+real. With maps, most of the cost is the text of the new sources: `sourcesContent` grows by 80 505
+bytes on `bench/corpus` and by 127 991 on Sternhalma. Conduit already named every module that its copies come from, and it gains 297
+segments, the copies' own.
+
+**Tests.** `build_test`: *a release build maps the one hoisted file back to each module's beni
+source* (the copied `throw` maps to `Debug.beni:43:5`, the frame to `Debug.beni:43:15`, and
+`Debug.beni` is a source); *a branch that specialisation decides maps to the code it keeps* (the
+copied `Aid.boom` maps to `Aid.beni`, the frame too; the copied `Aid.twice` maps its argument to
+`Main.beni` and its `2` to `Aid.beni`; and `and/` keeps item 6 with a kept call that is not a
+copy); *a release library map names the module a copied body came from* (the multi-file layout:
+`Lib.mjs.map` has `Aid.beni` as its second source). `SourceMap`'s unit test *a far mark maps to
+its row's source* holds the encoder. Each test fails when the copy gives its nodes no position.
+
+*Amended 2026-11-05 (issue #141, part 3): **parameters** map to the place where they are written,
+with their beni names.* The owner chose the representation (Cesar, 2026-11-05, of two: a sorted
+table of (name, position) rows for each module, or a range of positions in each `JsIr.Func`). A
+table that a name keys cannot work. `JsIr` keeps one `NameIndex` for each distinct name, and the
+tag of a parameter's name is `local_tag_base + index + 1`, with the base set to 0 for each
+declaration (`Lower.localName`). So the `x` of `f x` and the `x` of `g x` in one module are one
+`NameIndex` at two places. The rules:
+
+- **The record.** `JsIr.Func` has a third range, `param_pos`, after `params` and the body. It holds
+  one `pos` for each parameter, in the order of `params` and of its length. A `pos` here is what a
+  node's `pos` is: an offset into the module's source, `no_pos`, or a row of `JsIr.far` (*Copied
+  bodies*, above). The body stays two words into the record, so a pass that rewrites a body in
+  place does not change.
+- **Who gives a position.** Only `Lower` gives a real one (`Builder.addFuncAt`), to each parameter
+  that the beni source writes: the place of its pattern (`functionOf`, `loopOf`). That is a
+  variable, a `_`, and the fresh name of a pattern that the body destructures. An evidence
+  parameter gets `no_pos`. A function that the compiler invents gets `no_pos` for each parameter,
+  through one helper, `Builder.addFunc`: a derived function, a continuation of `Suspend`, a
+  schema's function, a markup lowering's function, a constructor used as a value.
+- **What keeps them.** A pass that makes a function from another keeps the place of each parameter
+  that it keeps: the copy that `Suspend` makes for a `$s` body, `Lower.methodFunc` (the parameters
+  after the receiver), the drop of a parameter in `Spec.applyDrops`, and `Spec.Copy`. A copy into
+  another module gives each parameter its place in the module where it was written, by part 2's
+  rule for a node (`Copy.posAt`). A copy gives each local a fresh name (`$i`), which has no entry
+  in `names` by item 5, so a copied parameter maps to its place with no name (issue #1962).
+- **The printer**, under `--release` only. Each parameter that has a position gets a mark at its
+  first byte, with its beni name in `names`, by item 5's rule (a `$` name has no entry). A
+  parameter that is its arrow's first token (`a=>…`, one written parameter) carries no name of its
+  own, by the rule of *Hand-written JavaScript*: the mark keeps the function's name, or no name for
+  a function that has none. So Node still names the frame after the function, and not after the
+  parameter. A development build prints a parameter as written, so it records no mark for it, and
+  its maps do not change (§11.1).
+
+**Memory.** Every function pays now: 8 bytes for the range and 4 for each parameter, in every
+build, because `Lower` does not know whether a map will be written. Measured
+2026-11-05 with the ReleaseSafe beni, part 2 (`8005777321`) against this amendment. The counts are
+of every range that a build writes: the builder's, each drop and each copy, before a copy inside
+one module shared its range with the function it copies (below), so they are an upper bound.
+
+| Build | Ranges | Parameters | Words added, at most | Peak RSS without maps | Peak RSS with maps |
+|---|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 742 | 1 517 | 3 001 (12 004 bytes) | 95 192 → 95 356 KB | 97 224 → 95 084 KB |
+| `bench/corpus`, `--library` | 563 | 1 128 | 2 254 (9 016 bytes) | 51 088 → 50 636 KB | 51 140 → 52 668 KB |
+| `examples/conduit`, `--release` | 1 464 | 2 913 | 5 841 (23 364 bytes) | 140 524 → 140 872 KB | 140 796 → 142 488 KB |
+| `examples/sternhalma`, `--release` | 442 | 786 | 1 670 (6 680 bytes) | 89 352 → 89 244 KB | 89 076 → 89 420 KB |
+
+The peak RSS moves within its noise, which is about 2 MB. A copy inside one module shares the
+range of the function that it copies, because its parameters are at the same places; a copy into
+another module writes a range of its own.
+
+**Cost**, measured as the table under *Cost*, below, part 2 (`8005777321`) against this
+amendment:
+
+| Build | Instructions without maps | Instructions with maps | Map bytes | Segments |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 2 687.36 M → 2 692.19 M | 2 745.74 M → 2 753.53 M | 400 364 → 408 261 | 9 144 → 10 092 |
+| `bench/corpus`, `--library` | 1 586.98 M → 1 588.43 M | 1 651.04 M → 1 652.18 M | 336 301 → 336 301 | 11 923 → 11 923 |
+| `examples/conduit`, `--release` | 5 041.58 M → 5 053.25 M | 5 154.50 M → 5 169.17 M | 876 763 → 885 357 | 13 806 → 14 693 |
+| `examples/sternhalma`, `--release` | 1 490.70 M → 1 494.04 M | 1 539.16 M → 1 543.60 M | 505 581 → 508 466 | 3 980 → 4 298 |
+
+Without maps the output is the same, byte for byte, in each build, and with maps the code is the
+same. The development maps are the same files. Without maps, the instructions grow by 0.09% in the
+development build and by 0.18% to 0.23% in a release build. A profile of `bench/corpus` puts the
+growth in `Spec`. Its walks read a whole `Func` record (`extraData`) to find the body, and the
+record is 6 words now. The tests' beni comes from Zig's self-hosted backend, which reads and checks
+each word. The ReleaseFast beni that LLVM builds grows by 0.04% to 0.07% without maps and by 0.07%
+to 0.13% with maps:
+
+| Build, ReleaseFast | Instructions without maps | Instructions with maps |
+|---|---|---|
+| `bench/corpus`, `--release --library` | 446.59 M → 446.77 M | 457.87 M → 458.47 M |
+| `bench/corpus`, `--library` | 255.68 M → 255.86 M | 268.42 M → 268.60 M |
+| `examples/conduit`, `--release` | 814.24 M → 814.56 M | 837.07 M → 837.88 M |
+| `examples/sternhalma`, `--release` | 246.34 M → 246.45 M | 256.44 M → 256.73 M |
+
+With maps, a release map gains the segments of the parameters: 948 on `bench/corpus`, 887 on
+Conduit and 318 on Sternhalma. A bare parameter adds none, because its mark is at the byte of the
+function's mark and replaces it.
+
+**Tests.** `build_test`: *a release map gives each parameter the place where it is written and its
+beni name* (`before x y` and `after x y` in one module: one `x` in
+`names`, at `Lib.beni:2:8` and `7:7`; `twice x` prints as `c=a=>a*2`, and its `a` keeps the
+function's name); *a release map gives a copied lambda's parameters their places in the module
+they came from* (the lambda of `Aid.bumpAll`, copied into `main`: `i` and `v` map to
+`Aid.beni:3:26` and `3:28`, with no name, issue #1962). Two tests that check a frame also check
+that the mark of a bare parameter keeps the function's name: *a release build maps the one
+hoisted file back to each module's beni source* (`spread`, `describe`, `total`, `report`) and
+*a release library build writes a map beside every module* (`spread`, `label`). Each of the four
+fails when `Lower` gives no position. The first and the two frame tests fail when a bare parameter
+carries its own name: the frame of `describe` becomes `step`. The copy test fails when
+`Spec.Copy` keeps the offsets of the module the lambda came from (`Main.beni:8:3`, `8:5`).
+`JsIr`'s unit test *a function's parameters each have a place* holds the builder and `verify`.
 
 **The join.** The printer prints each module of the hoisted file on its own, with marks relative
 to the module's own bytes (Â§9). The link step joins the pieces, and the map follows the join:
@@ -11286,12 +11814,15 @@ without `--release`, as in development.
 
 1. **Maps for hand-written JavaScript under `--release`.** `Minify` would record the position of
    each token it keeps, as the printer does, and the hoisted map would get the `.js` file as one
-   more source. The one-field segments of this slice mark where those stretches go.
+   more source. The one-field segments of this slice mark where those stretches go. *Amended
+   2026-11-04:* built (issue #141, part 1); *Hand-written JavaScript* above has the rules.
 2. **The other module's line for a body copied across modules.** `JsIr` positions are offsets
    into one source. A copy from another module maps to its call (item 2 above); to map it to the
-   lines it came from, a position needs a source index with its offset.
+   lines it came from, a position needs a source index with its offset. *Amended 2026-11-04:*
+   built (issue #141, part 2); *Copied bodies* above.
 3. **Parameter names.** A parameter is a `NameIndex` with no node in `JsIr`, so it has no position
-   to mark, and `names` gives it no beni name. A debugger shows its short name.
+   to mark, and `names` gives it no beni name. A debugger shows its short name. *Amended
+   2026-11-05:* built (issue #141, part 3); *Parameters* above.
 4. **A map without the comment line** ("hidden" maps, for an error-reporting service that reads
    maps the page does not name). It needs a flag of its own.
 5. **Â§10's chunks**: each chunk file gets a map by the join above.
@@ -11401,7 +11932,10 @@ text (Â§15.3, Â§15.6) are compiled; and the differential oracle has a harnes
   brotli**. *Amended 2026-09-29: whole in a development build; under `--release`, like a sibling, it
   is compacted and cut to the exports the build imports (Â§9, *Hand-written JavaScript under
   `--release`*), and the empty page is 1 393 bytes brotli.*
-- **The runtime module** (*added 2026-10-02*; `boundary.md` Â§9.2's `"module"`). An export the
+- **The runtime module** (*added 2026-10-02*; `boundary.md` Â§9.2's `"module"`; *amended
+  2026-11-04*: a runtime module without markup, `boundary.md` §5.2's top-level `"module"`, is the
+  same module whose one supplied export is `run` — the entry file, the hoisting and the roots
+  below read it as they read the markup one, and no lowering is asked for a list). An export the
   module supplies is a declaration of an emitted module: `cx.runtime(name)` answers the name of
   that declaration, imported from the module's file as any other module's value is (`Rt$template`,
   a short name under `--release`), and the build records it as used. A use of a markup primitive
@@ -11671,6 +12205,7 @@ runtime, `boundary.md` Â§9.2, Â§15.11) and the `html` primitives `text` (1) 
 | `delegate` | 1 | the same, idempotently, for a `--library` build's kinds |
 | `template` | 1 | `(html)`: a lazy cloner â the first call parses, later calls clone (`rt/client.js:140-158`); pure to create; a template with no flag (*amended 2026-10-15*, below the table) |
 | `templateOf` | 2 | `(html, flags)`: the same for a template with a flag (*amended 2026-10-15*) |
+| `built` | 2 | `(desc, flags)`: `templateOf` for a build whose project says `"trustedTypes": true`, the template built by DOM calls from `desc` (*amended 2026-11-07*, *Templates under Trusted Types*, below the table) |
 | `slot` | 3 | `(parent, marker, cx)`: makes a slot, remembering the mount context its content mounts with |
 | `childHtml` | 2 | `(slot, block)`: patches when the block's kind is the slot's, remounts otherwise (Â§15.4) |
 | `childMaybe` | 2 | `(slot, blockOrNull)`: likewise, `null` emptying the slot |
@@ -11705,6 +12240,52 @@ Sternhalma and the table app byte for byte. `browser-direct`'s `Direct` supplies
 is imported, not copied*). Fixtures: `emit/release/split/TemplateOneFlag` (a page whose one flag is
 a fragment's ships no `importNode`, `createDocumentFragment` or `gather`) and
 `browser/direct/TemplateShapes` (every flag in one page, on both platforms).
+
+**Templates under Trusted Types** (*amended 2026-11-07*, the owner's decision on #2208). A page
+served with `require-trusted-types-for 'script'` refuses a string assigned to `innerHTML`, so
+`template` and `templateOf` stop the page on its first render. A beni-owned `TrustedHTML` policy is
+not the fix: `Rt` is a module a program may import (`tests/corpus/run/ProgramModule`), so a
+`Rt.template` that minted `TrustedHTML` would mint it from any string, and Trusted Types would
+guarantee nothing. A build whose project says `"trustedTypes": true` (`frontend.md` §10.1;
+`Build.trusted_types`, `boundary.md` §9.4.7) instead writes no HTML-parsing sink:
+
+- **Each template is built, not parsed.** Where it would hand `template` or `templateOf` the
+  template's HTML, the lowering hands `built` the same template as data, `(desc, flags)`, with the
+  same flags. `desc` is the list of nodes the HTML parser makes of the HTML, which the lowering
+  reads back from the text it wrote (the HTML is the lowering's own, and §15.3's parser rules already
+  make the parser's tree the planned one): a string is a text node, `0` an empty comment (`<!>`),
+  and an array `[name, attributes, …children]` an element, its attributes `0` or a flat list
+  `[name, value, …]` in written order, character references decoded. `built` makes the nodes with
+  `createElement`, `createElementNS`, `setAttribute`, `createTextNode` and `createComment` into a
+  fragment, on its first call, and from then on is `templateOf`'s steps over that fragment — the
+  same flags, the same walk, the same `cloneNode` — so every walk path and patch is unchanged. The
+  namespace is the parser's: `svg` opens SVG's and `math` MathML's; a child of `foreignObject`,
+  `desc` or `title` in SVG, or of `mi`, `mo`, `mn`, `ms` or `mtext` in MathML, is HTML again; an
+  `xlink:`, `xml:` or `xmlns` attribute of a foreign element is set in its namespace, as the parser
+  sets it.
+- **What would still be a sink is refused when it is built** (the owner's decision): the `raw`
+  attribute (it writes `innerHTML`), `srcdoc` (a `TrustedHTML` sink) and a `<script>` element (its
+  content and `src` are sinks; `html` declares no `script` element, so a program meets
+  `unknown_element` there first) are each the error `trusted_types_sink` at the markup, from the
+  lowering (`boundary.md` §9.4.7). None takes a `TrustedHTML` value instead.
+- **No policy is created**, so the page's CSP may say `trusted-types 'none'`; a page that opens
+  workers names the one policy it gives `Browser.Worker` (`workers.md` §6).
+
+**Cost: a build without the key writes exactly what it wrote before** — the lowering's choice is
+made per template at compile time, `built` is never imported, and §9's reachability leaves it out;
+no `emit/` golden moved. A build with the key ships `built` (233 bytes of brotli for the same
+builder written by hand, measured with the probe of #2208) and a descriptor a little larger than
+the HTML it replaces (a js-framework-benchmark row: 108 bytes of brotli against 92). In Chrome the
+first build of a template is no slower than its parse: 4.9 µs against 12–16 µs for the row, about
+43 µs each for a 50-node card with an SVG; a clone costs the same (18.7 µs), since it is the same
+`cloneNode`. Every `browser/dom/` and `browser/tea/` page built with the key forced on gave its
+golden transcript, but for the three refusals and `SvgDrawing`, which gave its
+`.chrome-expected`: happy-dom's parser makes SVG elements inside a `<foreignObject>`, and the
+builder, as Chrome's parser, HTML ones. Pinned by `emit/dom/TrustedTypesTemplates` (the shapes,
+and no `innerHTML`), `browser/dom/TrustedTypesShapes` (a page that puts itself under
+`require-trusted-types-for 'script'; trusted-types 'none'` and then renders every shape; in Chrome
+an ordinary build of it throws `TypeError` at the click), `browser/managed/PolicyMarkupPage`, and
+`build/bad/TrustedTypesRaw`, `TrustedTypesSrcdoc` and `TrustedTypesScript`.
 
 **Controlled inputs** (*amended 2026-10-08*: the owner's decision on research 58 Â§5(c), approved
 for `plans/compile-away.md` slice R2; research 60 Â§3.3 built it by hand). **The promise is
@@ -12357,10 +12938,17 @@ DOM (research 36 Â§2.12, Â§5.5): the same tree, and the same template split,
   printed by the `node` platform's own `foreign render : Html msg -> String`, which reads `.t` â legal
   because `node` names `ssr` (`boundary.md` Â§9.3) â so a `run/` fixture prints a view with
   `Node.printLines [ Node.render (view model) ]`.
+  *(Amended 2026-10-23, #877: `Ssr.render` is beni over `Js` — `Js.get` of `t` under `Js.pure`, in
+  `platforms/node/Ssr.beni` — and `Ssr.js` is gone; reading `.t` is legal for the same reason. Where
+  the sibling's `render` was a function, `.t` is now read at each call, and every `run/Markup*`
+  program is 8–38 brotli bytes smaller in release; `plans/core-in-beni.md`, step 4.)*
 
 *As built, 2026-09-29* (`platforms/node/zig/ssr.zig`, `platforms/node/markup.js`,
 `platforms/html/zig/parser_table.zig`; `tests/corpus/run/Markup*`, `emit/MarkupSsr`). The list above
-holds, with these readings:
+holds, with these readings. *Amended 2026-11-03* (#1810): the runtime is `platforms/node/Rt.beni`,
+a runtime module (`boundary.md` §9.2) that also supplies the program runtime's `run`; `markup.js`
+and `runtime.js` are gone. Each export keeps its contract below; what moved and what it cost is
+`plans/runtime-in-beni.md` step 15.
 
 - **A kind is hoisted and named by its site**, `<Module>$k<inst>` (Â§15.2), after the imports: an
   array of the root's static strings, which the root's block concatenates with its values in
@@ -12942,6 +13530,10 @@ programs, nested, under a user's click and a burst).
   - The handlers that run are those on the target and its ancestors, **innermost first**, each
     node's `$$<name>` once. A node whose `disabled` is true is passed over, its handler not run,
     and the walk goes on past it. A node with no handler is passed over.
+  - *Amended 2026-10-23* (`boundary.md` §9.8.20 (d), #557): while the walk calls a node's handler,
+    and its extractor, the event's `currentTarget` is that node: the walk defines it on the event.
+    The walk removes the definition when it ends, also when a handler throws, so a listener after
+    the walk reads the host's `currentTarget`.
   - A handler whose declaration says `preventDefault` calls it before the handler runs; one that
     says `stopPropagation` runs, calls it, and is **the last to run** â no ancestor's handler runs,
     in this program or a program around it.

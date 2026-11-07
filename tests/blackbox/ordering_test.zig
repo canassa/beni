@@ -385,6 +385,135 @@ test "a top-level record's update lines and summaries are the same reversed" {
     });
 }
 
+// `ownership-v2.md` §2.13.9 (#1310): a stepped recast that keeps its whole
+// inner reads the inner's reach in every declaration order. It shared its
+// node with the plain recast of the same inner, and whichever declaration
+// made it first decided its cells: `lost` as written, `excl π1` reversed.
+test "the checker v2's summaries through a cast are the same reversed" {
+    var s = try Scenario.init("a cast's κ under the checker v2, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const path = "tests/corpus/ownership/core/CastOrder.beni";
+    var reports: [2][]const u8 = undefined;
+    inline for (.{ .written, .reversed }, 0..) |order, i| {
+        try s.w.write("Main.beni", try source(a, path, order));
+        const run = try s.w.runWith(&.{ "dump", "--stage=ownership", "--core", "--ownership=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        reports[i] = try recordLines(a, run.stdout);
+    }
+    try s.finish(.{
+        .green = reports[0].len != 0 and std.mem.eql(u8, reports[0], reports[1]),
+        .signature = if (reports[0].len == 0) "no-summary-lines" else "exit=0 ownership-differs",
+        .detail = try std.fmt.allocPrint(a, "--- written ---\n{s}--- reversed ---\n{s}", .{ reports[0], reports[1] }),
+    });
+}
+
+// `ownership-v2.md` §8, S3b slice 5c (`CallOrderReversed`): a call's
+// verdicts and the summaries it reads are the same whichever declaration
+// the walk meets first, in one module and across modules. `CallOtherPaths`
+// and its imported project, each module's declarations reversed, give the
+// same demands, verdicts and summaries, positions dropped.
+test "the checker v2's call verdicts and summaries are the same reversed" {
+    var s = try Scenario.init("CallOrderReversed: CallOtherPaths under the checker v2, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    var reports: [2][]const u8 = undefined;
+    inline for (.{ .written, .reversed }, 0..) |order, i| {
+        try s.w.write("Main.beni", try source(a, "tests/corpus/ownership/CallOtherPaths.beni", order));
+        const run = try s.w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        reports[i] = try verdictLines(a, run.stdout);
+    }
+    var imported: [2][]const u8 = undefined;
+    inline for (.{ .written, .reversed }, 0..) |order, i| {
+        var p = try Scenario.init("CallOrderReversed: CallOtherPathsImported");
+        defer p.deinit();
+        inline for (.{ "Deep", "Paths", "Main" }) |m|
+            try p.w.write(m ++ ".beni", try source(a, "tests/corpus/ownership/CallOtherPathsImported/" ++ m ++ ".beni", order));
+        const run = try p.w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        imported[i] = try verdictLines(a, run.stdout);
+    }
+    const same = std.mem.eql(u8, reports[0], reports[1]) and std.mem.eql(u8, imported[0], imported[1]);
+    try s.finish(.{
+        .green = reports[0].len != 0 and imported[0].len != 0 and same,
+        .signature = if (reports[0].len == 0 or imported[0].len == 0) "no-verdict-lines" else "exit=0 ownership-differs",
+        .detail = try std.fmt.allocPrint(a, "--- written ---\n{s}{s}--- reversed ---\n{s}{s}", .{ reports[0], imported[0], reports[1], imported[1] }),
+    });
+}
+
+// `ownership-v2.md` §2.11.3, *A virtual call is an evaluation's* (#2166): the order of a
+// frame's lets is the order of its closures' codes, which decides the round a
+// callee's contract gains a label in. Moving `k2` above `k1` turned a nested
+// fold's write from accepted to refused while virtual calls were kept by
+// position.
+test "the checker v2's verdict on a nested fold is the same in either order of its lets" {
+    var s = try Scenario.init("a nested fold's lets under the checker v2, in either order");
+    defer s.deinit();
+    const a = s.arena();
+    const written = try readRepo(a, "tests/corpus/run/SanitiserLabelRounds.beni");
+    const k1 = "    k1 = λv → [ 0 ]\n";
+    const k2 = "    k2 = λv → if List.length v > 0 then v else q\n";
+    const swapped = try std.mem.replaceOwned(u8, a, written, k1 ++ k2, k2 ++ k1);
+    var reports: [2][]const u8 = undefined;
+    for ([_][]const u8{ written, swapped }, 0..) |src, i| {
+        try s.w.write("Main.beni", src);
+        const run = try s.w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        reports[i] = try verdictLines(a, run.stdout);
+    }
+    try s.finish(.{
+        .green = !std.mem.eql(u8, written, swapped) and reports[0].len != 0 and std.mem.eql(u8, reports[0], reports[1]),
+        .signature = if (reports[0].len == 0) "no-verdict-lines" else "exit=0 ownership-differs",
+        .detail = try std.fmt.allocPrint(a, "--- written ---\n{s}--- swapped ---\n{s}", .{ reports[0], reports[1] }),
+    });
+}
+
+/// An ownership report's demand lines and summaries under their module,
+/// every `line:col` in them dropped, sorted.
+fn verdictLines(a: std.mem.Allocator, report: []const u8) ![]const u8 {
+    var kept: std.ArrayList([]const u8) = .empty;
+    var module: []const u8 = "";
+    var it = std.mem.splitScalar(u8, report, '\n');
+    while (it.next()) |line| {
+        if (std.mem.startsWith(u8, line, "module ")) module = line["module ".len..];
+        const t = std.mem.trimStart(u8, line, " ");
+        const demand = t.len != 0 and std.ascii.isDigit(t[0]) and std.mem.indexOfScalar(u8, t, ' ') != null;
+        if (!demand and !std.mem.startsWith(u8, t, "summary ")) continue;
+        var out: std.ArrayList(u8) = .empty;
+        try out.print(a, "{s}: ", .{module});
+        var i: usize = if (demand) std.mem.indexOfScalar(u8, t, ' ').? + 1 else 0;
+        while (i < t.len) {
+            // A position `n:m` in a message (`is read at 29:13`) is dropped too.
+            if (std.ascii.isDigit(t[i]) and (i == 0 or !std.ascii.isAlphanumeric(t[i - 1]))) {
+                var j = i;
+                while (j < t.len and std.ascii.isDigit(t[j])) j += 1;
+                if (j + 1 < t.len and t[j] == ':' and std.ascii.isDigit(t[j + 1])) {
+                    j += 1;
+                    while (j < t.len and std.ascii.isDigit(t[j])) j += 1;
+                    try out.append(a, '_');
+                    i = j;
+                    continue;
+                }
+            }
+            try out.append(a, t[i]);
+            i += 1;
+        }
+        try kept.append(a, out.items);
+    }
+    std.mem.sort([]const u8, kept.items, {}, struct {
+        fn lessThan(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.order(u8, x, y) == .lt;
+        }
+    }.lessThan);
+    var out: std.ArrayList(u8) = .empty;
+    for (kept.items) |l| {
+        try out.appendSlice(a, l);
+        try out.append(a, '\n');
+    }
+    return out.items;
+}
+
 /// An ownership report's `update` lines without their positions, and its
 /// summaries, sorted.
 fn recordLines(a: std.mem.Allocator, report: []const u8) ![]const u8 {

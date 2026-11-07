@@ -1,0 +1,58 @@
+-- ownership: §2.11 item 3 (c)'s evidence is that two folded paths part
+-- below one leaf, through one prefix (#1261's re-review). `f` writes
+-- `(hd p.x)` and answers `hd p.y`; `g l = f { x = l, y = l }` meets the leaf
+-- `l` through `.x` and through `.y`: one value held twice, so the two heads
+-- may be one list, refused, as v1 refuses it. So are one actual given to two
+-- parameters, a choice of such records and a record a call builds; two
+-- distinct lists accept.
+type alias P =
+    x : List (List Int)
+    y : List (List Int)
+
+
+hd : List (List Int) → List Int
+hd ys =
+    case ys of
+        [ a, …_ ] →
+            a
+
+        _ →
+            []
+
+
+f : P → List Int × List Int
+f p = ( List.push (hd p.x) 1, hd p.y )
+
+
+g : List (List Int) → List Int × List Int
+g l = f { x = l, y = l }
+
+
+pub h : List Int → List Int × List Int
+h xs = g [ xs ]
+
+
+pub twoLists : List Int, List Int → List Int × List Int
+twoLists xs ys = f { x = [ xs ], y = [ ys ] }
+
+
+twoParams : List (List Int), List (List Int) → List Int × List Int
+twoParams a b = f { x = a, y = b }
+
+
+pub oneActual : List Int → List Int × List Int
+oneActual xs =
+    l = [ xs ]
+    twoParams l l
+
+
+pub chosen : Bool, List (List Int) → List Int × List Int
+chosen c l = f (if c then { x = l, y = l } else { x = [ [ 1 ] ], y = [ [ 2 ] ] })
+
+
+mk : List (List Int) → P
+mk l = { x = l, y = l }
+
+
+pub viaCalls : List (List Int) → List Int × List Int
+viaCalls l = f (mk l)

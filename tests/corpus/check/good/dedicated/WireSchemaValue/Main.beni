@@ -1,0 +1,30 @@
+-- Plain Schema.Value survives a concrete root and a generic payload helper.
+import Page
+import Schema
+import Worker
+
+
+worker : Worker.Program Schema.Value Schema.Value ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → keep message
+        }
+
+
+keep : a → a
+keep value = value
+
+
+start : ⊤ → ⊤
+start _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle λ_ → Page.text "reply"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start

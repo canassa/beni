@@ -97,7 +97,11 @@ pub const magic = "BENIIFC\x00";
 /// ownership-checker.md §16.7 (c)).
 /// 18: a type row's byte 30 and a hidden row's byte 22 carry the type word,
 /// a constructor row's byte 25 its `failure` mark (ownership-v2.md §2.13.6).
-pub const format_version: u32 = 18;
+/// 19: a vocabulary row's bit 30 marks a refused declaration (checker-v2.md §25.2).
+/// 20: Wire obligations and projected paths.
+/// 21: native realm classes and evaluated realm masks.
+/// 22: realm-only dependencies may name unresolved scheme variables.
+pub const format_version: u32 = 22;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -134,7 +138,7 @@ pub const Column = enum(u32) {
             .values => 12,
             .types => 36,
             .ctors => 28,
-            .schemes => 20,
+            .schemes => 24,
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 16,
@@ -411,12 +415,13 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@backingInt(Column.schemes)]..];
         for (iface.schemes, 0..) |s, i| {
-            const row = out[i * 20 ..][0..20];
+            const row = out[i * 24 ..][0..24];
             std.mem.writeInt(u32, row[0..4], s.quantified_start, .little);
             std.mem.writeInt(u32, row[4..8], s.quantified_count, .little);
             std.mem.writeInt(u32, row[8..12], @backingInt(s.body), .little);
             std.mem.writeInt(u32, row[12..16], s.effects, .little);
-            std.mem.writeInt(u32, row[16..20], @intFromBool(s.total), .little);
+            std.mem.writeInt(u32, row[20..24], s.wire_paths, .little);
+            std.mem.writeInt(u32, row[16..20], @intFromBool(s.total) | (@as(u32, s.eval_realms) << 8), .little);
         }
     }
     if (iface.terms.len != 0) {
@@ -531,13 +536,14 @@ fn readVocab(gpa: Allocator, in: []const u8, n: u32) Allocator.Error![]Interface
 }
 
 /// Whether a vocabulary table's names, `on` ranges and schemes stay inside
-/// their columns, and its facts name only fact words and the pattern bit.
+/// their columns, and its facts name only fact words, the pattern bit and
+/// the refused bit.
 fn verifyVocab(iface: *const Interface, rows: []const Interface.VocabRow) bool {
     const symbols = iface.symbols.len;
     const known: u32 = (@as(u32, 1) << @typeInfo(Bir.FactWord).@"enum".field_names.len) - 1;
     for (rows) |r| {
         if (@backingInt(r.name) >= symbols) return false;
-        if (r.facts & ~(known | Interface.VocabRow.pattern_bit) != 0) return false;
+        if (r.facts & ~(known | Interface.VocabRow.pattern_bit | Interface.VocabRow.refused_bit) != 0) return false;
         if (r.arg.unwrap()) |s| if (@backingInt(s) >= symbols) return false;
         if (r.via.unwrap()) |s| if (@backingInt(s) >= symbols) return false;
         if (r.scheme != .none and @backingInt(r.scheme) >= iface.schemes.len) return false;
@@ -740,14 +746,16 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const schemes = try gpa.alloc(Interface.Scheme, lengths[@backingInt(Column.schemes)]);
         iface.schemes = schemes;
         for (schemes, 0..) |*s, i| {
-            const row = in[i * 20 ..][0..20];
-            if (std.mem.readInt(u32, row[16..20], .little) > 1) return error.BadRecord;
+            const row = in[i * 24 ..][0..24];
+            if (std.mem.readInt(u32, row[16..20], .little) & ~@as(u32, 0x1f01) != 0) return error.BadRecord;
             s.* = .{
                 .quantified_start = std.mem.readInt(u32, row[0..4], .little),
                 .quantified_count = std.mem.readInt(u32, row[4..8], .little),
                 .body = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .effects = std.mem.readInt(u32, row[12..16], .little),
-                .total = std.mem.readInt(u32, row[16..20], .little) == 1,
+                .wire_paths = std.mem.readInt(u32, row[20..24], .little),
+                .total = row[16] == 1,
+                .eval_realms = row[17],
             };
         }
     }
@@ -964,12 +972,27 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
     }
     for (iface.schemes) |s| {
         if (!isTerm(terms, @backingInt(s.body))) return false;
+        if (s.wire_paths != Interface.no_terms) {
+            var at: u64 = s.wire_paths;
+            if (at >= iface.extra.len) return false;
+            const count = iface.extra[@intCast(at)];
+            at += 1;
+            for (0..count) |_| {
+                if (at + 2 > iface.extra.len) return false;
+                if (iface.extra[@intCast(at)] >= s.quantified_count) return false;
+                const len = iface.extra[@intCast(at + 1)];
+                at += 2;
+                if (at + len > iface.extra.len) return false;
+                for (iface.extra[@intCast(at)..][0..len]) |field| if (field >= symbols) return false;
+                at += len;
+            }
+        }
         const block = @as(u64, s.quantified_start) + @as(u64, s.quantified_count) * Interface.Quantified.words;
         if (block > iface.extra.len) return false;
         for (0..s.quantified_count) |i| {
             const at = s.quantified_start + i * Interface.Quantified.words;
             const flag_word = iface.extra[at];
-            if (flag_word & ~@as(u32, 0x7ff) != 0 or flag_word & 0xff > 5) return false;
+            if (flag_word & ~@as(u32, 0x1fff) != 0 or flag_word & 0xff > 5) return false;
             const name = iface.extra[at + 1];
             if (name != std.math.maxInt(u32) and name >= symbols) return false;
             const start = iface.extra[at + 2];

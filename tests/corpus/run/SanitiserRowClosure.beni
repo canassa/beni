@@ -1,0 +1,26 @@
+-- A closure a record carries, kept by a callee's row (`ownership-v2.md` §2.1,
+-- *The row of a record*): a row step matched no field, so the closure's
+-- captures were read as nothing and a write edited what it holds. Refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+main : Program
+main =
+    k = [ 1 ]
+    r = idr { a = [], go = λ⊤ → k }
+    n = List.push k 2
+    Node.print (show n ++ "|" ++ show (r.go ⊤))

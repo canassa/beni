@@ -12,12 +12,6 @@ Err decoding Encoded InvalidSchema / a tagged schema needs a variant
 Err decoding Type InvalidSchema / the recursive schema Early is used before its body is built
 describe: two fields read and write the key "x"
 Err decoding Encoded InvalidSchema / two fields read and write the key "x"
--- no external form
-Err decoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
-Err encoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
-Err decoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
-Ok built
-Ok built
 -- a reference entered again without reading anything
 Err decoding Encoded InvalidSchema / the recursive schema Loop refers to itself without reading into the value
 Ok built

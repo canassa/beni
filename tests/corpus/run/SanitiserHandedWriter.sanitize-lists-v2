@@ -1,0 +1,3 @@
+A callee that hands its own writer to its caller's callback (ownership-v2.md §2.11.3): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses each writer handed so, which escapes at the callback;
+were it to accept one, the sanitised run would show the stale read.

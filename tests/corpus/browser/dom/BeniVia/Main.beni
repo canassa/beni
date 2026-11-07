@@ -1,0 +1,23 @@
+-- A handler typed as taking a beni extractor's `String`: one extractor is
+-- `pub`, one is not. The page shows what each extracted. With the compiler
+-- before, the vocabulary is refused: a `via` had to name a `foreign`.
+import Browser
+import Html exposing (Html)
+
+
+view : String → Html String
+view text =
+    <main>
+        <button id="box" onProbe={λvalue → value}>send</button>
+        <button id="tag" onTagged={λvalue → value}>tag</button>
+        <p id="out">{text}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → "none"
+        , update = λnext _ → next
+        , view = view
+        }

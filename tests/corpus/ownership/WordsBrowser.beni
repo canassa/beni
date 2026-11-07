@@ -5,7 +5,7 @@
 -- `entry` (rejected `payload` while the event could stand for a list).
 -- `Html.Pointer`, a pointer event and its point, is `crossing` too: without
 -- the word, `update`'s summary has the `Pointer` of `Aim` escape. The
--- key of a keyed command is held by the command (`Hosted.keyOf`, `aliased`),
+-- key of a keyed command is held by the command (`Hosted.key`, inferred),
 -- not given to JavaScript: a command built and dropped leaves its key list
 -- unescaped, and `keys` writes it afterwards, accepted. Each program's
 -- entry word selects its direct row, including on browser-tea (§20.2).

@@ -1,0 +1,14 @@
+-- A `via` that names a markup primitive is `unbound_variable` (checker-v2.md
+-- §25.8): an extractor is a `foreign` or an annotated beni value of the
+-- module, and a primitive is neither — its export is the markup runtime's,
+-- which the lowering would otherwise call with the event (11:11).
+pub foreign type Event
+
+
+pub foreign type Html msg
+
+
+pub event "onProbe" name "probe" via text : String
+
+
+pub markup text : String → Html msg

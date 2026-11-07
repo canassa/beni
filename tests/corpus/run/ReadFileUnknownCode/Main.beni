@@ -1,0 +1,22 @@
+-- run: a rejection whose `code` is a name the table does not own —
+-- `toString`, which every object inherits — is not a `FileError`, and so a
+-- defect that ends the program (CLAUDE.md rule 9). The handler reads the
+-- table by its own keys alone; a lookup that walked the prototype would
+-- answer an `Err`, a silent wrong answer. The program must exit 1 with
+-- Node's report of the error and print nothing after it.
+import Debug
+import Fault
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Fault.breakReads ⊤
+    Debug.log "before the read" ⊤
+    case Io.readFile "anything.txt" of
+        Ok _ →
+            Node.print "read it"
+
+        Err _ →
+            Node.print "an error value"

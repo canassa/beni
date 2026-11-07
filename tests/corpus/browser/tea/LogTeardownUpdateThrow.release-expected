@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <p id="n">"0"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- throws click #go
+console.info: Boom's update {"update":"u"}
+console.info: Boom's release {"update":"u"}
+console.info: the body's release {"request":"r1"}
+(threw: Error: TODO: Boom's update threw)
+<body>
+  <main>
+    <p id="n">"1"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>

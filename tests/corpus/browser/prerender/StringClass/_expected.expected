@@ -1,0 +1,67 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <main class="fixed & \"quoted\"">
+      <p id="dynamic" class="cold">"dynamic"</p>
+      <textarea id="control" class="cold" .value=""></textarea>
+      <button id="set">"set"</button>
+      <button id="clear">"clear"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- input #control "edited"
+<body>
+  "\n    "
+  <div id="root">
+    <main class="fixed & \"quoted\"">
+      <p id="dynamic" class="cold">"dynamic"</p>
+      <textarea id="control" class="cold" .value="edited"></textarea>
+      <button id="set">"set"</button>
+      <button id="clear">"clear"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- focus #control
+<body>
+  "\n    "
+  <div id="root">
+    <main class="fixed & \"quoted\"">
+      <p id="dynamic" class="cold">"dynamic"</p>
+      <textarea id="control" class="cold" .value="edited" :focus></textarea>
+      <button id="set">"set"</button>
+      <button id="clear">"clear"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click #set
+<body>
+  "\n    "
+  <div id="root">
+    <main class="fixed & \"quoted\"">
+      <p id="dynamic" class="hot & \"quoted\"">"dynamic"</p>
+      <textarea id="control" class="hot & \"quoted\"" .value="edited" :focus></textarea>
+      <button id="set">"set"</button>
+      <button id="clear">"clear"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click #clear
+<body>
+  "\n    "
+  <div id="root">
+    <main class="fixed & \"quoted\"">
+      <p id="dynamic" class="">"dynamic"</p>
+      <textarea id="control" class="" .value="edited" :focus></textarea>
+      <button id="set">"set"</button>
+      <button id="clear">"clear"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click #clear
+(the DOM did not change)

@@ -1,0 +1,54 @@
+-- ownership (project): see Main.beni. The callees of `QuadChildren`.
+pub type Q
+    = QN Q Q Q Q
+    | QL (List Int)
+
+
+g : Q → Q
+g q =
+    case q of
+        QN _ _ _ _ →
+            QL []
+
+        QL xs →
+            QL (List.push xs 1)
+
+
+h : Q → Q
+h q =
+    case q of
+        QN a b c d →
+            QN (g a) (g b) (g c) (g d)
+
+        QL xs →
+            QL xs
+
+
+pub f : Q → Q
+f q =
+    case q of
+        QN a b c d →
+            QN (h a) (h b) (h c) (h d)
+
+        QL xs →
+            QL (List.push xs 1)
+
+
+pub fTwice : Q → Q
+fTwice q =
+    case q of
+        QN a _ c d →
+            QN (h a) (h a) (h c) (h d)
+
+        QL xs →
+            QL xs
+
+
+pub fSame : Q → Q
+fSame q =
+    case q of
+        QN a _ _ _ →
+            h (QN a a (QL []) (QL []))
+
+        QL xs →
+            QL xs

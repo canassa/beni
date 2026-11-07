@@ -1,0 +1,61 @@
+module Main
+  16:5 call Positions.ctor <literal>[*]#W.0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Positions.ctor writes π1[*]#W.0#Box.0)
+  20:18 call Positions.ctor <literal>[*]#W.0#Box.0: accepted fresh (Positions.ctor writes π1[*]#W.0#Box.0)
+  26:5 call Positions.tuple <literal>[*].0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Positions.tuple writes π1[*].0#Box.0)
+  32:5 call Positions.record <literal>[*].k#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Positions.record writes π1[*].k#Box.0)
+  36:22 call Positions.record <literal>[*].k#Box.0: accepted param (Positions.record writes π1[*].k#Box.0)
+  43:5 call Positions.crossed <literal>[*].k.l: rejected disjoint: another operand of the same operation reaches it (Positions.crossed writes π1[*].k.l)
+  49:5 call Positions.nested <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Positions.nested writes π1[*]#Box.0)
+  53:20 call Positions.nested <literal>[*]#Box.0: accepted fresh (Positions.nested writes π1[*]#Box.0)
+  59:5 call Positions.twoLevels <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Positions.twoLevels writes π1[*]#Box.0)
+  63:23 call Positions.twoLevels <literal>[*]#Box.0: accepted fresh (Positions.twoLevels writes π1[*]#Box.0)
+  69:5 call Positions.each <literal>[*]#W.0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Positions.each writes π1[*]#W.0#Box.0)
+  73:12 call Positions.nested bs[*]#Box.0: accepted param (Positions.nested writes π1[*]#Box.0)
+  79:5 call Main.relay <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Main.relay writes π1[*]#Box.0)
+  summary ctorShared: unused
+  summary ctorDistinct: unused
+  summary tupleShared: unused
+  summary recordShared: unused
+  summary recordDistinct: π1 R, π1#Box.0 W[storage], π2 R, π2#Box.0 W[storage]; xreq excl π1, excl π2, sep π1 π2
+  summary crossedShared: unused
+  summary nestedShared: unused
+  summary nestedDistinct: unused
+  summary twoLevelsShared: unused
+  summary twoLevelsDistinct: unused
+  summary eachShared: unused
+  summary relay: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary relayShared: unused
+  demands 13: accepted 5 (fresh 3, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+module Positions
+  20:13 List.push xs: accepted param
+  27:15 call Positions.kidsBox r#Box.0: accepted param (Positions.kidsBox writes π1#Box.0)
+  41:18 call Positions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Positions.rightLeft writes π1#Pair.1#Box.0)
+  53:18 call Positions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Positions.rightLeft writes π1#Pair.1#Box.0)
+  65:18 call Positions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Positions.rightLeft writes π1#Pair.1#Box.0)
+  77:18 call Positions.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (Positions.rightLeft writes π1#Pair.1#Box.0)
+  98:15 List.push r.l: accepted param
+  105:18 call Positions.rightLeftTwo <PairTwo …>#PairTwo.1.l: accepted param (Positions.rightLeftTwo writes π1#PairTwo.1.l)
+  119:26 call Positions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Positions.rightLeft writes π1#Pair.1#Box.0)
+  136:26 call Positions.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (Positions.rightLeft writes π1#Pair.1#Box.0)
+  155:34 call Positions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Positions.rightLeft writes π1#Pair.1#Box.0)
+  177:34 call Positions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (Positions.rightLeft writes π1#Pair.1#Box.0)
+  195:26 call Positions.kidsBox a#Box.0: accepted param (Positions.kidsBox writes π1#Box.0)
+  195:52 call Positions.kidsBox c#Box.0: accepted param (Positions.kidsBox writes π1#Box.0)
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary rightLeft: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary ctor: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
+  summary tuple: π1 R, π1[*].0 R, π1[*].0#Box.0 RW[storage], π1[*].0#Box.0[*] R; xreq excl π1
+  summary record: π1 R, π1[*].k R, π1[*].k#Box.0 RW[storage], π1[*].k#Box.0[*] R; xreq excl π1
+  summary same: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
+  summary rightLeftTwo: π1 R, π1#PairTwo.0 RA, π1#PairTwo.1.l RAW[storage], π1#PairTwo.1.l[*] A; res .0 condition(fresh2) π1#PairTwo.1.l, .0[*] ~condition(fresh3) ~π1#PairTwo.1.l[*], .1 ~condition(fresh4) π1#PairTwo.0, condition(fresh1){sep π1#PairTwo.0 π1#PairTwo.1.l, sep π1#PairTwo.0 π1#PairTwo.1.l[*]}r{sep π1#PairTwo.0 π1#PairTwo.1.l[*]}
+  summary crossed: π1 R, π1[*].k R, π1[*].k.l RW[storage], π1[*].k.l[*] R, π1[*].k.m R; xreq excl π1
+  summary nested: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary nestedSame: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary twoLevels: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary twoLevelsInner: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary each: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
+  demands 14: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 27: accepted 17 (fresh 3, call 0, param 14, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause disjoint 3
+cause exclusive 7

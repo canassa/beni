@@ -55,12 +55,18 @@
 //! `Emit` numbered them and its module syntax gone. The same four passes,
 //! the same refusals, and one more: `Hoisted.declines` names what keeps a
 //! file in a module of its own.
+//!
+//! **Marks** (`minifyMarked`, and `printHoisted`'s `marks`): for a release
+//! source map, `print` records where each token it prints came from, and
+//! `markNames` the name each mark carries (`backend.md` §11.2, *Hand-written
+//! JavaScript*, amended 2026-11-04). Without them the bytes are the same.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Print = @import("Print.zig");
 const Rename = @import("Rename.zig");
 const Sibling = @import("Sibling.zig");
+const SourceMap = @import("SourceMap.zig");
 
 /// Which of research 40's passes run. `minify` always eliminates and
 /// compacts; the two below are what a release build adds.
@@ -122,6 +128,13 @@ inline fn same(a: []const u8, b: []const u8) bool {
 /// that `keep`'s exports reach when `keep` is given. Null when the file is
 /// refused and must be copied as it is.
 pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, options: Options) Allocator.Error!?[]const u8 {
+    return minifyMarked(arena, source, keep, options, null);
+}
+
+/// `minify`, and with `marks` the source map's marks of what it prints
+/// (`backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04). The
+/// bytes are the same with or without `marks`.
+pub fn minifyMarked(arena: Allocator, source: []const u8, keep: ?[]const []const u8, options: Options, marks: ?*Marks) Allocator.Error!?[]const u8 {
     const tokens = tokenize(arena, source) catch |err| switch (err) {
         error.Unsupported => return null,
         error.OutOfMemory => return error.OutOfMemory,
@@ -132,6 +145,7 @@ pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, o
     const spell = try arena.alloc(?[]const u8, tokens.len);
     @memset(spell, null);
     var block_ends: ?[]const bool = null;
+    var names: ?[]const ?[]const u8 = null;
     if (options.rewrite or options.rename) {
         const s: Structure = try .init(arena, source, tokens);
         // Renaming first: it reads which tokens elimination kept, before
@@ -141,11 +155,99 @@ pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, o
             try rewrite(arena, &s, shown, spell);
             block_ends = try statementBlocks(arena, &s);
         }
+        if (marks != null) names = try markNames(arena, &s, shown, spell);
     }
-    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = block_ends };
-    const out = try print(arena, source, tokens, plan);
+    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = block_ends, .names = names };
+    const out = try print(arena, source, tokens, plan, marks);
     if (std.debug.runtime_safety) try verify(arena, source, tokens, plan, out);
     return out;
+}
+
+/// What `print` records for a source map (`backend.md` §11.2, *Hand-written
+/// JavaScript*, amended 2026-11-04): one mark at each token it prints, from
+/// the token's first byte in the output to its first byte in the source,
+/// and the names those marks carry, as written. In the caller's arena.
+pub const Marks = struct {
+    /// In generated order, which is also source order: compaction never
+    /// moves a token.
+    list: std.ArrayList(SourceMap.Mapping) = .empty,
+    /// The map's `names`, each spelling once, in first-use order.
+    names: std.ArrayList([]const u8) = .empty,
+    index: std.StringHashMapUnmanaged(u32) = .empty,
+
+    fn add(m: *Marks, arena: Allocator, generated: usize, source: u32, name: ?[]const u8) Allocator.Error!void {
+        var at: u32 = SourceMap.Mapping.no_name;
+        if (name) |text| {
+            const slot = try m.index.getOrPut(arena, text);
+            if (!slot.found_existing) {
+                slot.value_ptr.* = @intCast(m.names.items.len);
+                try m.names.append(arena, text);
+            }
+            at = slot.value_ptr.*;
+        }
+        try m.list.append(arena, .{ .generated = @intCast(generated), .source = source, .name = at });
+    }
+};
+
+/// Per token, the name its mark carries (`backend.md` §11.2, *Hand-written
+/// JavaScript*, amended 2026-11-04), or null. A token A2 renamed carries its
+/// spelling as written. A named function's first printed token carries the
+/// function's name as written, renamed or not — a `function` keyword, an
+/// `async` before it, or the first printed token of a declarator's arrow or
+/// function initialiser — because an engine names a stack frame by the
+/// mapping at the start of the enclosing function (§11.1). For the same
+/// reason a parameter that begins an arrow carries no name of its own:
+/// Node would name the frame after the parameter. Read after the rewrites,
+/// so `(a) =>` may begin at `a`.
+fn markNames(arena: Allocator, s: *const Structure, shown: []const bool, spell: []const ?[]const u8) Allocator.Error![]const ?[]const u8 {
+    const tokens = s.tokens;
+    const names = try arena.alloc(?[]const u8, tokens.len);
+    @memset(names, null);
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        const new = spell[i] orelse continue;
+        const old = s.text(i);
+        // `const` → `let` is the one rewrite that respells a word.
+        if (!same(new, old) and !Print.isReservedWord(old)) names[i] = old;
+    }
+    // The first printed token of each arrow: its parameter, its `(`, or the
+    // first token inside the `(` when the rewrites hid it.
+    for (tokens, 0..) |_, k| {
+        if (!s.punct(k, "=>") or k == 0) continue;
+        var first = if (s.punct(k - 1, ")")) s.close[k - 1] else k - 1;
+        if (first > 0 and s.word(first - 1, "async")) first -= 1;
+        while (first < k and !shown[first]) first += 1;
+        names[first] = null;
+    }
+
+    var list: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, k| {
+        if (!shown[k] or !(s.word(k, "const") or s.word(k, "let") or s.word(k, "var"))) continue;
+        list.clearRetainingCapacity();
+        (try s.declarators(arena, k, &list)) orelse continue;
+        for (list.items) |d| {
+            if (!s.name(d) or !s.punct(d + 1, "=")) continue;
+            var init = d + 2;
+            if (s.word(init, "async")) init += 1;
+            const arrow = (s.punct(init, "(") and s.punct(s.close[init] + 1, "=>")) or
+                (init < tokens.len and s.name(init) and s.punct(init + 1, "=>"));
+            // A function expression with a name of its own is named by it.
+            const function = s.word(init, "function") and !(init + 1 < tokens.len and s.name(init + 1));
+            if (!arrow and !function) continue;
+            var first = d + 2;
+            while (first < tokens.len and !shown[first]) first += 1;
+            if (first < tokens.len) names[first] = s.text(d);
+        }
+    }
+    for (tokens, 0..) |_, i| {
+        if (!shown[i] or !s.word(i, "function")) continue;
+        var j = i + 1;
+        if (s.punct(j, "*")) j += 1;
+        if (j >= tokens.len or !s.name(j)) continue;
+        names[i] = s.text(j);
+        if (i > 0 and shown[i - 1] and s.word(i - 1, "async")) names[i - 1] = s.text(j);
+    }
+    return names;
 }
 
 /// What `print` writes: which tokens, and each one's spelling when a pass
@@ -157,6 +259,8 @@ const Plan = struct {
     /// STATEMENT (`statementBlocks`), after which a line terminator is never
     /// automatic semicolon insertion's. Null keeps every such newline.
     block_ends: ?[]const bool = null,
+    /// Per token, the name its source map mark carries (`markNames`).
+    names: ?[]const ?[]const u8 = null,
 
     fn text(p: Plan, source: []const u8, tokens: []const Token, i: usize) []const u8 {
         return p.spell[i] orelse tokens[i].text(source);
@@ -530,7 +634,8 @@ fn needsSpace(a: Token, at: []const u8, b: Token, bt: []const u8) bool {
     return false;
 }
 
-fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan) Allocator.Error![]const u8 {
+/// The shown tokens, and with `marks` a mark at the first byte of each.
+fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan, marks: ?*Marks) Allocator.Error![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.ensureTotalCapacity(arena, source.len / 2);
     var prev: ?usize = null;
@@ -550,6 +655,7 @@ fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan
                 try out.append(arena, ' ');
             }
         }
+        if (marks) |m| try m.add(arena, out.items.len, t.start, if (plan.names) |n| n[i] else null);
         try out.appendSlice(arena, text);
         prev = i;
     }
@@ -1694,6 +1800,591 @@ pub fn hoistableWith(arena: Allocator, source: []const u8, keep: []const []const
     };
 }
 
+/// A name a hand-written file may read from the global object
+/// (`globalReads`), with the literal members read through it.
+pub const GlobalRead = struct {
+    name: []const u8,
+    /// Byte offset and length of the name in the source.
+    offset: u32,
+    len: u32,
+    /// `name.member`, and `name.member.member2`; null when the name is not
+    /// the receiver of a literal member read (it is passed, stored, called
+    /// or indexed with `[`).
+    member: ?[]const u8 = null,
+    member2: ?[]const u8 = null,
+    /// An existence probe, which cannot throw: `typeof` in front of the
+    /// read, or the read (with at most one member) compared with
+    /// `undefined` by `===`, `!==`, `==` or `!=`.
+    probe: bool = false,
+    /// `name.member = …`: a write of one global property, which cannot
+    /// throw.
+    write: bool = false,
+    /// `name.M.bind(name)`: the bare name read only as the `this` of its
+    /// own method `M`; M, or null.
+    bound_to: ?[]const u8 = null,
+    /// `setTimeout` or `setInterval`, bare or a member of `globalThis` or
+    /// `self`, used other than in a call whose first argument is provably
+    /// a function (`Scopes.functionArgument`): it may run a string as code
+    /// (`workers.md` §4, *Dynamic code*).
+    code_string: bool = false,
+};
+
+pub const GlobalReads = struct {
+    reads: []const GlobalRead,
+    /// The byte offset of the first surviving `import` — a statement,
+    /// `import()` or `import.meta` — or null.
+    import: ?u32,
+};
+
+/// What a name is bound to, as far as `setTimeout`'s first argument needs
+/// to know (`workers.md` §4, *Dynamic code*): a function — a function
+/// declaration, a named function expression, or a declarator whose whole
+/// initialiser is a function or an arrow — or anything else.
+const BindingKind = enum { function, other };
+
+/// A name bound in one scope. `scope` is the scope's token — a `{`, a
+/// parameter list's `(`, a `for` head's `(`, a lone arrow parameter — or
+/// `Structure.none` for the module.
+const ScopedName = struct {
+    scope: u32,
+    name: []const u8,
+
+    const Context = struct {
+        pub fn hash(_: Context, k: ScopedName) u64 {
+            return std.hash.Wyhash.hash(k.scope, k.name);
+        }
+        pub fn eql(_: Context, a: ScopedName, b: ScopedName) bool {
+            return a.scope == b.scope and same(a.name, b.name);
+        }
+    };
+};
+
+/// A light lexical scope reading of a hand-written file over `Structure`,
+/// for the realm check of a worker build (`workers.md` §4, *Sibling scopes
+/// and timers*): which scope binds each name, so that a read of a name is
+/// free unless a scope around it binds that name. Function and arrow parameters
+/// (destructuring and defaults included), `var` hoisted to its function,
+/// `let`, `const`, `class` and function declarations scoped to their block,
+/// a `for` head's declarations to the head and its body, a `catch`
+/// parameter, and a named function expression's name. It errs one way only:
+/// where it cannot tell which scope a binding belongs to it binds nothing,
+/// so a read of that name is reported as free — never the other way round.
+const Scopes = struct {
+    s: *const Structure,
+    /// The tokens that survive elimination: a module-scope binding counts
+    /// only when its declaration survives.
+    live: []const bool,
+    /// For a `{` or a `(`: a second scope what it encloses sees — a
+    /// function body's parameter list, a `for` body's head, a `catch`
+    /// body's parameter. `Structure.none` otherwise.
+    link: []u32,
+    /// A `{` that is a function's body or a class's static block: where a
+    /// `var` inside lands.
+    function_body: []bool,
+    /// A `{` that provably opens an object literal (it follows a token after
+    /// which only an expression may stand), or a class body.
+    object: []bool,
+    class_body: []bool,
+    /// Tokens that name a binding where it is made, and property keys of an
+    /// object literal or class body: neither is a read.
+    binder: []bool,
+    key: []bool,
+    /// Scopes with no bracket of their own: a concise arrow body, and the
+    /// body of a `for` without braces. Each covers tokens of one level.
+    ranges: std.ArrayList(Range) = .empty,
+    /// The innermost range around each token, at the token's own level.
+    range_in: []u32,
+    bindings: std.HashMapUnmanaged(ScopedName, BindingKind, ScopedName.Context, std.hash_map.default_max_load_percentage) = .empty,
+
+    const module = Structure.none;
+    const Range = struct { key: u32, start: u32, end: u32, parent: u32 = Structure.none };
+
+    fn init(arena: Allocator, s: *const Structure, live: []const bool) Allocator.Error!Scopes {
+        const n = s.tokens.len;
+        var self: Scopes = .{
+            .s = s,
+            .live = live,
+            .link = try arena.alloc(u32, n),
+            .function_body = try arena.alloc(bool, n),
+            .object = try arena.alloc(bool, n),
+            .class_body = try arena.alloc(bool, n),
+            .binder = try arena.alloc(bool, n),
+            .key = try arena.alloc(bool, n),
+            .range_in = try arena.alloc(u32, n),
+        };
+        @memset(self.link, Structure.none);
+        @memset(self.range_in, Structure.none);
+        for ([_][]bool{ self.function_body, self.object, self.class_body, self.binder, self.key }) |m| @memset(m, false);
+        // Object literals and class bodies first: methods and keys need them.
+        for (0..n) |i| {
+            if (s.punct(i, "{") and !s.block[i] and !self.class_body[i] and i > 0) self.object[i] = self.expressionBefore(i);
+            if (s.word(i, "class")) try self.class(arena, i);
+        }
+        for (0..n) |i| try self.functions(arena, i);
+        for (0..n) |i| try self.declarations(arena, i);
+        // Each range claims its level's tokens; a later start is an inner one.
+        std.mem.sort(Range, self.ranges.items, {}, struct {
+            fn less(_: void, a: Range, b: Range) bool {
+                return a.start < b.start;
+            }
+        }.less);
+        for (self.ranges.items, 0..) |*r, index| {
+            r.parent = self.range_in[r.start];
+            var j: usize = r.start;
+            while (j < r.end) : (j = s.next(j)) self.range_in[j] = @intCast(index);
+        }
+        return self;
+    }
+
+    /// Whether the `{` at `i` stands where only an expression can: after
+    /// `=`, `(`, `,`, `[`, `?`, `...`, `return`, or a `:` inside an object
+    /// literal. Anything else — a block, a `case x: {`, a label's — is not
+    /// claimed.
+    fn expressionBefore(self: *const Scopes, i: usize) bool {
+        const s = self.s;
+        for ([_][]const u8{ "=", "(", ",", "[", "?", "..." }) |p| if (s.punct(i - 1, p)) return true;
+        if (s.word(i - 1, "return")) return true;
+        return s.punct(i - 1, ":") and s.outer[i] != Structure.none and self.object[s.outer[i]];
+    }
+
+    /// `class Name extends X { … }`: the body, and the name, bound in the
+    /// enclosing block for a declaration and in the body for an expression.
+    fn class(self: *Scopes, arena: Allocator, i: usize) Allocator.Error!void {
+        const s = self.s;
+        var j = i + 1;
+        const end: usize = if (s.outer[i] != Structure.none) s.close[s.outer[i]] else s.tokens.len;
+        const name: ?usize = if (j < end and s.tokens[j].kind == .ident and !s.word(j, "extends") and !Print.isReservedWord(s.text(j))) j else null;
+        if (name != null) j += 1;
+        // `{ class: 1 }` and `{ class() {} }` name a key, not a class.
+        if (s.word(j, "extends")) {
+            while (j < end and !s.punct(j, "{")) j = s.next(j);
+        }
+        if (j >= end or !s.punct(j, "{")) return;
+        self.class_body[j] = true;
+        self.object[j] = false;
+        if (name) |at| {
+            self.binder[at] = true;
+            if (self.declarationStart(i)) try self.bindIn(arena, self.lexicalScope(i), at, .other) else try self.bindIn(arena, @intCast(j), at, .other);
+        }
+    }
+
+    /// Function-like scopes: `function`, arrows, methods, `catch`, a `for`
+    /// head and its body, a class's static block, and a class member's
+    /// name, which is a key.
+    fn functions(self: *Scopes, arena: Allocator, i: usize) Allocator.Error!void {
+        const s = self.s;
+        if (s.word(i, "function")) return self.function(arena, i);
+        if (s.punct(i, "=>")) return self.arrow(arena, i);
+        if (s.word(i, "catch") and s.punct(i + 1, "(")) {
+            try self.bindList(arena, i + 1, @intCast(i + 1));
+            if (s.punct(s.close[i + 1] + 1, "{")) self.link[s.close[i + 1] + 1] = @intCast(i + 1);
+            return;
+        }
+        if (s.word(i, "for")) {
+            const head = if (s.word(i + 1, "await")) i + 2 else i + 1;
+            if (!s.punct(head, "(")) return;
+            const after = s.close[head] + 1;
+            if (s.punct(after, "{")) {
+                self.link[after] = @intCast(head);
+            } else if (after < s.tokens.len) {
+                try self.ranges.append(arena, .{ .key = @intCast(head), .start = @intCast(after), .end = @intCast(self.rangeEnd(after, false)) });
+            }
+            return;
+        }
+        const o = s.outer[i];
+        if (o == Structure.none or !(self.object[o] or self.class_body[o])) return;
+        // `m(…) { … }`, `get m() { … }`, `[k](…) { … }` directly in an
+        // object literal or a class body: a method.
+        if (s.punct(i, "(") and i > 0 and s.punct(s.close[i] + 1, "{") and !s.word(i - 1, "function")) {
+            const before = s.tokens[i - 1];
+            if (before.kind == .ident or before.kind == .string or before.kind == .number or s.punct(i - 1, "]")) {
+                if (before.kind == .ident) self.key[i - 1] = true;
+                try self.functionScope(arena, @intCast(i), true);
+            }
+            return;
+        }
+        if (!self.class_body[o]) return;
+        if (s.word(i, "static") and s.punct(i + 1, "{")) {
+            self.function_body[i + 1] = true;
+            return;
+        }
+        // A class member's name: at a member's start, before what follows
+        // a name there. Anything else is read as an expression.
+        if (s.tokens[i].kind != .ident or i == 0) return;
+        const starts = s.punct(i - 1, "{") or s.punct(i - 1, ";") or s.punct(i - 1, "}") or s.punct(i - 1, "*") or
+            s.word(i - 1, "static") or s.word(i - 1, "get") or s.word(i - 1, "set") or s.word(i - 1, "async") or s.word(i - 1, "accessor");
+        const ends = i + 1 >= s.tokens.len or s.tokens[i + 1].nl or s.punct(i + 1, "(") or s.punct(i + 1, "=") or s.punct(i + 1, ";") or s.punct(i + 1, "}");
+        if (starts and ends) self.key[i] = true;
+    }
+
+    /// `function name?(…) { … }`, `function*`, `async function`.
+    fn function(self: *Scopes, arena: Allocator, i: usize) Allocator.Error!void {
+        const s = self.s;
+        var j = i + 1;
+        if (s.punct(j, "*")) j += 1;
+        const name: ?usize = if (j < s.tokens.len and s.tokens[j].kind == .ident and !Print.isReservedWord(s.text(j))) j else null;
+        if (name != null) j += 1;
+        if (!s.punct(j, "(") or !s.punct(s.close[j] + 1, "{")) return;
+        try self.functionScope(arena, @intCast(j), true);
+        const at = name orelse return;
+        self.binder[at] = true;
+        const start = if (i > 0 and s.word(i - 1, "async")) i - 1 else i;
+        if (self.declarationStart(start)) {
+            try self.bindIn(arena, self.lexicalScope(start), at, .function);
+        } else {
+            try self.bindIn(arena, @intCast(j), at, .function);
+        }
+    }
+
+    /// The parameter list at `open` and the body after it.
+    fn functionScope(self: *Scopes, arena: Allocator, open: u32, with_arguments: bool) Allocator.Error!void {
+        const s = self.s;
+        try self.bindList(arena, open, open);
+        if (with_arguments) try self.bindings.put(arena, .{ .scope = open, .name = "arguments" }, .other);
+        const body = s.close[open] + 1;
+        self.link[body] = open;
+        self.function_body[body] = true;
+    }
+
+    /// `(…) => …`, `x => …`, with a block or a concise body.
+    fn arrow(self: *Scopes, arena: Allocator, i: usize) Allocator.Error!void {
+        const s = self.s;
+        if (i == 0 or i + 1 >= s.tokens.len) return;
+        var params: u32 = undefined;
+        if (s.punct(i - 1, ")")) {
+            params = s.close[i - 1];
+            try self.bindList(arena, params, params);
+        } else if (s.tokens[i - 1].kind == .ident and !Print.isReservedWord(s.text(i - 1))) {
+            params = @intCast(i - 1);
+            self.binder[i - 1] = true;
+            try self.bindIn(arena, params, i - 1, .other);
+        } else return;
+        if (s.punct(i + 1, "{")) {
+            self.link[i + 1] = params;
+            self.function_body[i + 1] = true;
+        } else {
+            try self.ranges.append(arena, .{ .key = params, .start = @intCast(i + 1), .end = @intCast(self.rangeEnd(i + 1, true)) });
+        }
+    }
+
+    /// Where a concise arrow body (`arrow`) or a `for` body without braces
+    /// that begins at `start` ends, at most: the first `;`, line terminator
+    /// automatic semicolon insertion may act on, or close of the level, and
+    /// for an arrow also the first `,`, template middle or unmatched `:`.
+    /// Ending early only reports more reads.
+    fn rangeEnd(self: *const Scopes, start: usize, arrow_body: bool) usize {
+        const s = self.s;
+        const end: usize = if (s.outer[start] != Structure.none) s.close[s.outer[start]] else s.tokens.len;
+        var j = start;
+        var prev = start - 1;
+        var questions: u32 = 0;
+        while (j < end) {
+            const t = s.tokens[j];
+            if (j > start and t.nl and !newlineIsInert(s.source, s.tokens[prev], t)) break;
+            if (s.punct(j, ";")) break;
+            if (arrow_body) {
+                if (s.punct(j, ",") or t.kind == .template_middle) break;
+                if (s.punct(j, "?")) questions += 1;
+                if (s.punct(j, ":")) {
+                    if (questions == 0) break;
+                    questions -= 1;
+                }
+            }
+            prev = if (s.opens(j)) s.close[j] else j;
+            j = s.next(j);
+        }
+        return j;
+    }
+
+    /// `let`, `const`, `var` and `import` bindings.
+    fn declarations(self: *Scopes, arena: Allocator, i: usize) Allocator.Error!void {
+        const s = self.s;
+        if (s.word(i, "import") and !s.punct(i + 1, "(") and !s.punct(i + 1, ".") and s.outer[i] == Structure.none) {
+            var j = i + 1;
+            while (j < s.tokens.len and s.tokens[j].kind != .string and !s.punct(j, ";")) : (j += 1) {
+                if (s.tokens[j].kind == .ident) try self.bindIn(arena, module, j, .other);
+            }
+            return;
+        }
+        const is_var = s.word(i, "var");
+        if (!(is_var or s.word(i, "let") or s.word(i, "const"))) return;
+        const scope: ?u32 = if (is_var) self.hoistScope(i) else self.lexicalScope(i);
+        const in_head = s.outer[i] != Structure.none and s.tokens[s.close[s.outer[i]]].head;
+        const end: usize = if (s.outer[i] != Structure.none) s.close[s.outer[i]] else s.tokens.len;
+        var j = i + 1;
+        var prev = i;
+        var at_declarator = true;
+        while (j < end) {
+            const t = s.tokens[j];
+            if (j > i + 1 and t.nl and !newlineIsInert(s.source, s.tokens[prev], t)) break;
+            if (s.punct(j, ";")) break;
+            if (in_head and !at_declarator and (s.word(j, "of") or s.word(j, "in"))) break;
+            if (at_declarator) {
+                if (t.kind == .ident and !Print.isReservedWord(s.text(j))) {
+                    self.binder[j] = true;
+                    try self.bindIn(arena, scope, j, if (self.functionInitialiser(j + 1, end)) .function else .other);
+                } else if (s.punct(j, "[") or s.punct(j, "{")) {
+                    if (scope) |key| try self.bindPattern(arena, j, key);
+                } else break;
+                at_declarator = false;
+            } else if (s.punct(j, ",")) at_declarator = true;
+            prev = if (s.opens(j)) s.close[j] else j;
+            j = s.next(j);
+        }
+    }
+
+    /// Whether `= …` at `eq` is a whole function or arrow, ending the
+    /// declarator.
+    fn functionInitialiser(self: *const Scopes, eq: usize, end: usize) bool {
+        const s = self.s;
+        if (!s.punct(eq, "=")) return false;
+        return self.functionAt(eq + 1, end, true);
+    }
+
+    /// Whether the expression at `a` is a function or arrow expression that
+    /// ends where the list it stands in goes on: at `end`, a `,`, a `;`,
+    /// or (with `newline_ends`) a line terminator ending the statement.
+    fn functionAt(self: *const Scopes, a: usize, end: usize, newline_ends: bool) bool {
+        const s = self.s;
+        if (a >= end) return false;
+        var f = a;
+        if (s.word(f, "async") and f + 1 < end and (s.word(f + 1, "function") or s.punct(f + 1, "(") or (s.tokens[f + 1].kind == .ident and s.punct(f + 2, "=>")))) f += 1;
+        // An arrow is the whole expression: nothing binds tighter after it.
+        if (s.punct(f, "(") and s.punct(s.close[f] + 1, "=>")) return true;
+        if (s.tokens[f].kind == .ident and !Print.isReservedWord(s.text(f)) and s.punct(f + 1, "=>")) return true;
+        if (!s.word(f, "function")) return false;
+        var j = f + 1;
+        if (s.punct(j, "*")) j += 1;
+        if (j < end and s.tokens[j].kind == .ident and !s.punct(j, "(")) j += 1;
+        if (!s.punct(j, "(") or !s.punct(s.close[j] + 1, "{")) return false;
+        const after = s.close[s.close[j] + 1] + 1;
+        if (after >= end) return true;
+        if (s.punct(after, ",") or s.punct(after, ";")) return true;
+        return newline_ends and s.tokens[after].nl and !newlineIsInert(s.source, s.tokens[after - 1], s.tokens[after]);
+    }
+
+    /// The elements of a parameter list or array pattern at `open`.
+    fn bindList(self: *Scopes, arena: Allocator, open: usize, key: u32) Allocator.Error!void {
+        const s = self.s;
+        var j = open + 1;
+        var at_element = true;
+        const end = s.close[open];
+        while (j < end) {
+            if (at_element and !s.punct(j, ",")) {
+                try self.bindTarget(arena, if (s.punct(j, "...")) j + 1 else j, key);
+                at_element = false;
+            }
+            if (s.punct(j, ",")) at_element = true;
+            j = s.next(j);
+        }
+    }
+
+    /// A pattern at `open`, `[` or `{`.
+    fn bindPattern(self: *Scopes, arena: Allocator, open: usize, key: u32) Allocator.Error!void {
+        const s = self.s;
+        if (s.punct(open, "[")) return self.bindList(arena, open, key);
+        var j = open + 1;
+        const end = s.close[open];
+        while (j < end) {
+            const e = j;
+            // The element's end, and its `:` before any default.
+            var colon: ?usize = null;
+            var defaulted = false;
+            while (j < end and !s.punct(j, ",")) : (j = s.next(j)) {
+                if (s.punct(j, "=")) defaulted = true;
+                if (!defaulted and colon == null and s.punct(j, ":")) colon = j;
+            }
+            if (s.punct(e, "...")) {
+                try self.bindTarget(arena, e + 1, key);
+            } else if (colon) |c| {
+                if (s.tokens[e].kind == .ident) self.key[e] = true;
+                try self.bindTarget(arena, c + 1, key);
+            } else try self.bindTarget(arena, e, key);
+            j += 1;
+        }
+    }
+
+    fn bindTarget(self: *Scopes, arena: Allocator, at: usize, key: u32) Allocator.Error!void {
+        const s = self.s;
+        if (at >= s.tokens.len) return;
+        if (s.tokens[at].kind == .ident and !Print.isReservedWord(s.text(at)) and !isProperty(s.tokens, s.source, at)) {
+            self.binder[at] = true;
+            try self.bindIn(arena, key, at, .other);
+        } else if (s.punct(at, "[") or s.punct(at, "{")) try self.bindPattern(arena, at, key);
+    }
+
+    /// Bind the name at `at` in `scope`; nowhere when `scope` is null, and
+    /// in the module only when the declaration survives elimination. A
+    /// second binding of a name in one scope is the weaker kind.
+    fn bindIn(self: *Scopes, arena: Allocator, scope: ?u32, at: usize, kind: BindingKind) Allocator.Error!void {
+        const key = scope orelse return;
+        if (key == module and !self.live[at]) return;
+        const slot = try self.bindings.getOrPut(arena, .{ .scope = key, .name = self.s.text(at) });
+        slot.value_ptr.* = if (slot.found_existing and (slot.value_ptr.* == .other or kind == .other)) .other else kind;
+    }
+
+    /// Whether the statement at `k` begins at a statement's start, so a
+    /// `function` or `class` there declares rather than names an
+    /// expression.
+    fn declarationStart(self: *const Scopes, k: usize) bool {
+        const s = self.s;
+        if (k == 0) return true;
+        if (s.punct(k - 1, ";") or s.punct(k - 1, "}") or s.word(k - 1, "export")) return true;
+        if (s.punct(k - 1, "{") and s.block[k - 1] and !self.class_body[k - 1]) return true;
+        return k >= 2 and s.word(k - 1, "default") and s.word(k - 2, "export");
+    }
+
+    /// Where a `let`, `const`, `class` or function declaration at `i`
+    /// binds: its block, a `for` head, or the module; null when that
+    /// cannot be told.
+    fn lexicalScope(self: *const Scopes, i: usize) ?u32 {
+        const s = self.s;
+        const o = s.outer[i];
+        if (o == Structure.none) return module;
+        if (s.punct(o, "{") and !self.object[o] and !self.class_body[o]) return o;
+        if (s.punct(o, "(") and s.tokens[s.close[o]].head and o > 0 and (s.word(o - 1, "for") or s.word(o - 1, "await"))) return o;
+        return null;
+    }
+
+    /// Where a `var` at `i` binds: its function's body, or the module.
+    fn hoistScope(self: *const Scopes, i: usize) ?u32 {
+        const s = self.s;
+        var o = s.outer[i];
+        while (o != Structure.none) : (o = s.outer[o]) {
+            if (self.function_body[o]) return o;
+        }
+        return module;
+    }
+
+    fn lookup(self: *const Scopes, scope: u32, name: []const u8) ?BindingKind {
+        return self.bindings.get(.{ .scope = scope, .name = name });
+    }
+
+    /// The binding a name read at `i` refers to, or null when no scope
+    /// around it binds the name: a global read.
+    fn resolve(self: *const Scopes, i: usize, name: []const u8) ?BindingKind {
+        const s = self.s;
+        var t = i;
+        while (true) {
+            var r = self.range_in[t];
+            while (r != Structure.none) : (r = self.ranges.items[r].parent) {
+                if (self.lookup(self.ranges.items[r].key, name)) |kind| return kind;
+            }
+            const o = s.outer[t];
+            if (o == Structure.none) return self.lookup(module, name);
+            if (self.lookup(o, name)) |kind| return kind;
+            if (self.link[o] != Structure.none) if (self.lookup(self.link[o], name)) |kind| return kind;
+            t = o;
+        }
+    }
+
+    /// Whether the first argument of the call whose `(` is at `open` is
+    /// provably a function: a function or arrow expression, or a name bound
+    /// to one that nothing in the file assigns (`assigned` null: anything
+    /// may be assigned).
+    fn functionArgument(self: *const Scopes, open: usize, assigned: ?*const Set) bool {
+        const s = self.s;
+        const end = s.close[open];
+        const a = open + 1;
+        if (a >= end) return false;
+        var e = a;
+        while (e < end and !s.punct(e, ",")) e = s.next(e);
+        if (self.functionAt(a, e, false)) return true;
+        if (e != a + 1 or s.tokens[a].kind != .ident or Print.isReservedWord(s.text(a))) return false;
+        const names = assigned orelse return false;
+        if (names.contains(s.text(a))) return false;
+        return self.resolve(a, s.text(a)) == .function;
+    }
+};
+
+/// What the realm check of a worker build (`workers.md` §4) reads of a
+/// hand-written file kept for the exports `keep` names: every name the
+/// surviving code reads that no scope around the read binds (`Scopes`;
+/// `workers.md` §4, *Sibling scopes and timers*), template substitutions
+/// included, with the literal members read through each. A name bound in one
+/// function is still free in another. Null when the tokenizer or
+/// elimination refuses the file, which the check then refuses: it cannot
+/// say what the file reads.
+pub fn globalReads(arena: Allocator, source: []const u8, keep: []const []const u8) Allocator.Error!?GlobalReads {
+    const tokens = tokenize(arena, source) catch |err| switch (err) {
+        error.Unsupported => return null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const c = try cut(arena, source, tokens, keep) orelse return null;
+    const s: Structure = try .init(arena, source, tokens);
+    const scopes: Scopes = try .init(arena, &s, c.mask);
+    const assigned = try assignedNames(arena, &s, null);
+    var import: ?u32 = null;
+    const outside = try arena.alloc(bool, tokens.len);
+    @memset(outside, false);
+    for (c.units, c.live) |u, live| {
+        if (!live) continue;
+        switch (u.kind) {
+            .import => {
+                if (import == null) import = tokens[u.start].start;
+                @memset(outside[u.start..u.end], true);
+            },
+            .export_list => @memset(outside[u.start..u.end], true),
+            .declaration, .function => {},
+        }
+    }
+    const contextual = [_][]const u8{ "of", "as", "from", "get", "set", "async", "target", "meta" };
+    var reads: std.ArrayList(GlobalRead) = .empty;
+    for (tokens, 0..) |t, i| {
+        if (!s.name(i) or !c.mask[i] or outside[i]) continue;
+        const w = s.text(i);
+        if (same(w, "import")) {
+            if (import == null) import = t.start;
+            continue;
+        }
+        if (w[0] == '#' or Print.isReservedWord(w)) continue;
+        if (for (contextual) |x| {
+            if (same(x, w)) break true;
+        } else false) continue;
+        // `{ a: …` and `, a: …` are a key or a label: never a read. Nor is
+        // a binding where it is made, an object's or class's key, or the
+        // label after `break` and `continue`.
+        if (s.punct(i + 1, ":") and i > 0 and (s.punct(i - 1, "{") or s.punct(i - 1, ","))) continue;
+        if (scopes.binder[i] or scopes.key[i]) continue;
+        if (i > 0 and !t.nl and (s.word(i - 1, "break") or s.word(i - 1, "continue"))) continue;
+        if (scopes.resolve(i, w) != null) continue;
+        var read: GlobalRead = .{ .name = w, .offset = t.start, .len = t.end - t.start };
+        if ((s.punct(i + 1, ".") or s.punct(i + 1, "?.")) and i + 2 < tokens.len and tokens[i + 2].kind == .ident) {
+            read.member = s.text(i + 2);
+            if ((s.punct(i + 3, ".") or s.punct(i + 3, "?.")) and i + 4 < tokens.len and tokens[i + 4].kind == .ident) read.member2 = s.text(i + 4);
+        }
+        if (read.member2 == null) {
+            const after = if (read.member != null) i + 3 else i + 1;
+            const compared = for ([_][]const u8{ "===", "!==", "==", "!=" }) |op| {
+                if (s.punct(after, op)) break true;
+            } else false;
+            read.probe = (i > 0 and s.word(i - 1, "typeof")) or (compared and s.word(after + 1, "undefined"));
+        }
+        if (read.member != null and read.member2 == null and s.punct(i + 3, "=")) read.write = true;
+        if (read.member == null and i >= 6 and s.punct(i + 1, ")") and s.punct(i - 1, "(") and isWord(tokens[i - 2], source, "bind") and
+            s.punct(i - 3, ".") and tokens[i - 4].kind == .ident and s.punct(i - 5, ".") and s.name(i - 6) and same(s.text(i - 6), w))
+            read.bound_to = s.text(i - 4);
+        // A timer, bare or a member of the global object, is proved only
+        // called at once with a first argument that is provably a
+        // function. Anything else — another argument, `.call`, `.bind`, an
+        // alias — may hand it a string of code.
+        const bare_timer = isTimer(w);
+        const member_timer = read.member != null and isTimer(read.member.?) and (same(w, "globalThis") or same(w, "self"));
+        if ((bare_timer or member_timer) and !read.probe) {
+            const at = if (bare_timer) i + 1 else i + 3;
+            const proved = s.punct(at, "(") and scopes.functionArgument(at, if (assigned) |*names| names else null);
+            read.code_string = !proved;
+        }
+        try reads.append(arena, read);
+    }
+    return .{ .reads = reads.items, .import = import };
+}
+
+/// The timers that evaluate a string first argument as code.
+fn isTimer(name: []const u8) bool {
+    return same(name, "setTimeout") or same(name, "setInterval");
+}
+
 /// A hoisted file's text: its body, and its `import` statements apart, for
 /// the top of the one file.
 pub const Printed = struct {
@@ -1705,7 +2396,10 @@ pub const Printed = struct {
 /// spelled as `forced` says and every other name renamed by A2 around them:
 /// no `import`, no `export` keyword and no `export { … }` list in the body,
 /// the `import` statements apart. Research 40's rewrites run as in `minify`.
-pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) Allocator.Error!Printed {
+/// With `marks`, the body's marks, as `minifyMarked` records them; the
+/// `import`s get none (`backend.md` §11.2, *Hand-written JavaScript*,
+/// amended 2026-11-04).
+pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced, marks: ?*Marks) Allocator.Error!Printed {
     const tokens = h.tokens;
     const shown = try arena.dupe(bool, h.cut.mask);
     const spell = try arena.alloc(?[]const u8, tokens.len);
@@ -1727,7 +2421,7 @@ pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) 
                 @memset(alone, false);
                 @memset(alone[u.start..u.end], true);
                 const plan: Plan = .{ .shown = alone, .spell = spell };
-                const text = try print(arena, h.source, tokens, plan);
+                const text = try print(arena, h.source, tokens, plan, null);
                 if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, text);
                 try imports.append(arena, text);
                 @memset(shown[u.start..u.end], false);
@@ -1739,8 +2433,13 @@ pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) 
         }
     }
     try rewrite(arena, &h.structure, shown, spell);
-    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = try statementBlocks(arena, &h.structure) };
-    const body = try print(arena, h.source, tokens, plan);
+    const plan: Plan = .{
+        .shown = shown,
+        .spell = spell,
+        .block_ends = try statementBlocks(arena, &h.structure),
+        .names = if (marks != null) try markNames(arena, &h.structure, shown, spell) else null,
+    };
+    const body = try print(arena, h.source, tokens, plan, marks);
     if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, body);
     return .{ .body = body, .imports = imports.items };
 }
@@ -2018,10 +2717,202 @@ test "hoisting: top-level names take the linker's spellings, and the file's modu
     var forced: Forced = .empty;
     try forced.put(arena, "helper", "a");
     try forced.put(arena, "run", "b");
-    const printed = try printHoisted(arena, &h, &forced);
+    var marks: Marks = .{};
+    const printed = try printHoisted(arena, &h, &forced, &marks);
     try testing.expectEqualStrings("import process from\"node:process\";\n", printed.imports[0]);
     // The locals avoid `a` and `b`, which a local would capture.
     try testing.expectEqualStrings("const a=c=>c+1;const b=d=>process.exit(a(d));\n", printed.body);
+    // The body's marks only: the `import` and the `export`s are not in it.
+    try testing.expectEqualStrings((try printHoisted(arena, &h, &forced, null)).body, printed.body);
+    try testing.expectEqualStrings(
+        \\const@36 a@42:helper =@49 c@52:helper =>@59 c@62:value +@68 1@70 ;@71 const@80
+        \\b@86:run =@90 d@93:run =>@96 process@99 .@106 exit@107 (@111 a@112:helper (@118
+        \\d@119:a )@120 )@121 ;@122
+    , try listMarks(arena, h.source, printed.body, &marks));
+}
+
+/// A line of `print`'s marks: each as `<printed token>@<source byte>`, and
+/// `:<name>` when it carries one, ten to a line.
+fn listMarks(arena: Allocator, source: []const u8, out: []const u8, marks: *const Marks) ![]const u8 {
+    var text: std.ArrayList(u8) = .empty;
+    const again = try tokenize(arena, out);
+    const written = try tokenize(arena, source);
+    try testing.expectEqual(again.len, marks.list.items.len);
+    for (marks.list.items, again, 0..) |m, t, k| {
+        try testing.expectEqual(t.start, m.generated);
+        // The mark's source byte begins a token of the source.
+        const begins = for (written) |w| {
+            if (w.start == m.source) break true;
+        } else false;
+        try testing.expect(begins);
+        if (k != 0) try text.append(arena, if (k % 10 == 0) '\n' else ' ');
+        try text.print(arena, "{s}@{d}", .{ t.text(out), m.source });
+        if (m.name != SourceMap.Mapping.no_name) try text.print(arena, ":{s}", .{marks.names.items[m.name]});
+    }
+    return text.items;
+}
+
+test "marks: each printed token maps to its token as written, and a renamed name carries its spelling" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04.
+    // `helper` is renamed: each use carries `helper`, and its arrow's
+    // first token, `b` once the brackets go, carries `helper` and not
+    // `value`. `step` is a function declaration: its keyword carries its
+    // name. `run` is exported and keeps its name, so the name itself has
+    // none, but its `function` carries it all the same: Node names a frame
+    // by the mapping there. The comment and `unused` print nothing.
+    const source =
+        \\// A comment.
+        \\const helper = (value) => value + 1;
+        \\function step(n) { return helper(n) * 2; }
+        \\const unused = () => 0;
+        \\export function run(count) {
+        \\  return step(count);
+        \\}
+        \\
+    ;
+    var marks: Marks = .{};
+    const out = (try minifyMarked(arena, source, &.{"run"}, release, &marks)).?;
+    try testing.expectEqualStrings((try minify(arena, source, &.{"run"}, release)).?, out);
+    try testing.expectEqualStrings("const a=b=>b+1;function c(d){return a(d)*2}export function run(e){return c(e)}\n", out);
+    // One `names` entry for each spelling, after the marks.
+    try testing.expectEqualStrings(
+        \\const@14 a@20:helper =@27 b@30:helper =>@37 b@40:value +@46 1@48 ;@49 function@51:step
+        \\c@60:step (@64 d@65:n )@66 {@68 return@70 a@77:helper (@83 d@84:n )@85
+        \\*@87 2@89 }@92 export@118 function@125:run run@134 (@137 e@138:count )@143 {@145
+        \\return@149 c@156:step (@160 e@161:count )@166 }@169
+        \\names helper,value,step,n,run,count
+    , try std.fmt.allocPrint(arena, "{s}\nnames {s}", .{
+        try listMarks(arena, source, out, &marks),
+        try std.mem.join(arena, ",", marks.names.items),
+    }));
+}
+
+test "globalReads: free names, members, probes and template substitutions" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const source =
+        \\export const f = (document) => document.title + `${globalThis.screen.width}`;
+        \\export const g = () => globalThis.document !== undefined ? typeof parent : Function;
+        \\export const h = () => alert(1);
+        \\
+    ;
+    const found = (try globalReads(arena, source, &.{ "f", "g" })).?;
+    try testing.expect(found.import == null);
+    var names: std.ArrayList(u8) = .empty;
+    for (found.reads) |r| try names.print(arena, "{s}{s}{s}{s} ", .{ r.name, if (r.member) |_| "." else "", r.member orelse "", if (r.probe) "?" else "" });
+    // `document` is a parameter; `h`, not kept, reads nothing; `undefined`
+    // is a global like any other.
+    try testing.expectEqualStrings("globalThis.screen globalThis.document? undefined parent? Function ", names.items);
+    const imported = (try globalReads(arena, "import x from \"pkg\";\nexport const f = () => x;\n", &.{"f"})).?;
+    try testing.expectEqual(@as(?u32, 0), imported.import);
+}
+
+fn expectReads(source: []const u8, keep: []const []const u8, want: []const u8) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const found = (try globalReads(arena, source, keep)).?;
+    var names: std.ArrayList(u8) = .empty;
+    for (found.reads) |r| try names.print(arena, "{s}{s}{s}{s}{s} ", .{ r.name, if (r.member) |_| "." else "", r.member orelse "", if (r.probe) "?" else "", if (r.code_string) "!" else "" });
+    try testing.expectEqualStrings(want, names.items);
+}
+
+test "globalReads: a name bound in one function is still free in another" {
+    try expectReads(
+        \\const shadow = (document) => document.title;
+        \\export const f = () => shadow(document);
+        \\
+    , &.{"f"}, "document ");
+    // A concise body ends where automatic semicolon insertion may end it.
+    try expectReads(
+        \\export function f() {
+        \\  const g = (document) => document
+        \\  return g(document);
+        \\}
+        \\
+    , &.{"f"}, "document ");
+}
+
+test "globalReads: parameters, patterns and defaults" {
+    try expectReads(
+        \\export const f = (a, { b, c: d, e = location }, [g, ...h], ...i) => a + b + d + e + g + h + i + c;
+        \\
+    , &.{"f"}, "location c ");
+    try expectReads(
+        \\export function f({ a: [b = top, { c }] }, d = b) { const { e, f: [g] } = d; let [h, , ...i] = e; return [a, b, c, d, e, f, g, h, i]; }
+        \\
+    , &.{"f"}, "top a ");
+}
+
+test "globalReads: an arrow's parameter without brackets binds its concise body only" {
+    try expectReads(
+        \\export const f = (x) => [document => document, document];
+        \\export const g = (c) => c ? d => d : d;
+        \\export const h = (c) => c ? (d) => d : (e) => [d, e];
+        \\
+    , &.{ "f", "g", "h" }, "document d d ");
+}
+
+test "globalReads: var is its function's, let, const, class and functions their block's" {
+    try expectReads(
+        \\export function f() { if (1) { var document = 1; } return document; }
+        \\export function g() { return document; }
+        \\export function h() { { let a = 1; const b = 2; class C {} function D() {} } return [a, b, C, D]; }
+        \\
+    , &.{ "f", "g", "h" }, "document a b C D ");
+}
+
+test "globalReads: catch parameters, named function expressions and for heads" {
+    try expectReads(
+        \\function use() {}
+        \\export function f() { try { use(); } catch (document) { return document; } return document; }
+        \\export const g = function location() { return location; };
+        \\export const h = () => location;
+        \\export function k(xs) { for (const top of xs) use(top); for (let i = 0; i < 1; i++) { use(i); } return [i, top]; }
+        \\
+    , &.{ "f", "g", "h", "k" }, "document location i top ");
+}
+
+test "globalReads: methods, accessors, fields and keys of classes and objects" {
+    try expectReads(
+        \\export const A = class { document = 1; static x; constructor(location) { this.l = location; } get name() { return location; } m(a) { return a + navigator; } };
+        \\export const o = { document(x) { return x; }, location: 1, get self() { return top; }, [parent](y) { return y; } };
+        \\
+    , &.{ "A", "o" }, "location navigator top parent ");
+}
+
+test "globalReads: a timer is proved only with a function for its first argument" {
+    try expectReads(
+        \\const later = () => 1;
+        \\function named() {}
+        \\let reassigned = () => 1;
+        \\export const r = () => { reassigned = "x"; };
+        \\export const f = (code) => [setTimeout(() => 1, 0), setTimeout(function () {}, 0), globalThis.setTimeout(later, 0), self.setInterval(named, 0), setTimeout(async (x) => x)];
+        \\export const g = (code) => [setTimeout(code, 0), setTimeout("x", 0), self.setTimeout(`x${code}`), globalThis.setInterval(reassigned), setTimeout(function () {} + "", 0), setTimeout()];
+        \\export const h = () => [typeof setTimeout, setTimeout, globalThis.setTimeout.bind(globalThis), setTimeout.call(null, "x")];
+        \\
+    , &.{ "f", "g", "h" }, "setTimeout setTimeout globalThis.setTimeout self.setInterval setTimeout " ++
+        "setTimeout! setTimeout! self.setTimeout! globalThis.setInterval! setTimeout! setTimeout! " ++
+        "setTimeout? setTimeout! globalThis.setTimeout! globalThis setTimeout.call! ");
+}
+
+test "globalReads: a binding whose scope cannot be told binds nothing" {
+    // A method in an object literal the reading cannot prove is one, and a
+    // declaration after `case x:`: both reads are reported.
+    try expectReads(
+        \\export const f = (c) => c ? 0 : { m(document) { return document; } };
+        \\export function g(x) { switch (x) { case 1: { function location() {} } } return location; }
+        \\
+    , &.{ "f", "g" }, "m document document location ");
+    // `class` as a key opens no class body, whose member names would be keys.
+    try expectReads(
+        \\export const o = { class: 1, m: function () { alert(); } };
+        \\
+    , &.{"o"}, "alert ");
 }
 
 test "hoisting: a name read unbound is free, and a key after { or , is not" {
@@ -2124,7 +3015,9 @@ test "every hand-written file that ships in the box is compacted and cut" {
         }
     }
     // A zero would mean the embedding broke and this looked at nothing.
-    try testing.expect(seen >= 10);
+    // #877 moves these files to beni one by one (nine were left when
+    // `WebSocket.js` went), so no higher floor holds for long.
+    try testing.expect(seen > 0);
     // The derived-comparison engine a release build writes (`Emit`), which
     // is hand-written JavaScript too, minified already.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -2166,7 +3059,19 @@ test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
         // spellings, so a rename that broke a token, or a dropped `;` or
         // bracket that changed how the rest lexes, panics here.
         _ = try minify(a.allocator(), buf.items, null, release);
-        _ = try minify(a.allocator(), buf.items, &.{"a"}, release);
+        const plain = try minify(a.allocator(), buf.items, &.{"a"}, release);
+        // A map's marks change no byte, and they are ascending on both
+        // sides (`backend.md` §11.2, *Hand-written JavaScript*, amended
+        // 2026-11-04).
+        var marks: Marks = .{};
+        const marked = try minifyMarked(a.allocator(), buf.items, &.{"a"}, release, &marks);
+        try testing.expectEqual(plain == null, marked == null);
+        if (plain) |bytes| {
+            try testing.expectEqualStrings(bytes, marked.?);
+            for (marks.list.items[0..marks.list.items.len -| 1], marks.list.items[@min(1, marks.list.items.len)..]) |x, y| {
+                try testing.expect(x.generated < y.generated and x.source < y.source);
+            }
+        }
         // A scope-hoisted file: its top-level bindings forced to names no
         // piece spells, and `verify` holding the body to the plan.
         if (try hoistable(a.allocator(), buf.items, &.{"a"})) |h| if (h.declines() == null) {
@@ -2174,7 +3079,9 @@ test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
             for (h.tops, 0..) |top, i| if (top.renamable) {
                 try forced.put(a.allocator(), top.name, try std.fmt.allocPrint(a.allocator(), "Q{d}", .{i}));
             };
-            _ = try printHoisted(a.allocator(), &h, &forced);
+            var hoisted_marks: Marks = .{};
+            const body = (try printHoisted(a.allocator(), &h, &forced, &hoisted_marks)).body;
+            try testing.expectEqualStrings((try printHoisted(a.allocator(), &h, &forced, null)).body, body);
         };
     }
 }

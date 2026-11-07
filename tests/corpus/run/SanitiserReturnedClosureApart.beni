@@ -1,0 +1,179 @@
+-- The safe twins of `SanitiserReturnedClosure` (`ownership-v2.md` §2.11.3,
+-- *a function value in a result*): a closure's answer that is fresh at each
+-- call, whatever it reaches it through, a copy of a capture, a capture
+-- nothing reads again, a list of a closure read before the edit. v2 accepts
+-- each edit in place, and the sanitised run prints the same.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+mk : List Int → (⊤ → List Int)
+mk xs = λ⊤ → xs
+
+
+fresh : ⊤ → (⊤ → List Int)
+fresh ⊤ = λ⊤ → [ 0 ]
+
+
+size : List Int → (⊤ → Int)
+size xs = λ⊤ → List.length xs
+
+
+pick : Bool → (⊤ → List Int)
+pick c =
+    case c of
+        True →
+            λ⊤ → [ 1 ]
+
+        False →
+            λ⊤ → [ 2 ]
+
+
+grow : Int → (⊤ → List Int)
+grow n =
+    if n == 0 then
+        λ⊤ → [ 0 ]
+    else
+        previous = grow (n - 1)
+        λ⊤ → previous ⊤
+
+
+chain : Int, (⊤ → List Int) → (⊤ → List Int)
+chain n f =
+    if n == 0 then
+        λ⊤ → f ⊤
+    else
+        previous = chain (n - 1) f
+        λ⊤ → previous ⊤
+
+
+w0 : ⊤ → (Bool → List Int)
+w0 ⊤ = λ_ → [ 0 ]
+
+
+w1 : ⊤ → (Bool → List Int)
+w1 ⊤ =
+    a = w0 ⊤
+    b = w0 ⊤
+    λflag → if flag then a flag else b flag
+
+
+type alias Box =
+    get : ⊤ → List Int
+    n : Int
+
+
+box : ⊤ → Box
+box ⊤ = { get = λ⊤ → [ 0 ], n = 0 }
+
+
+replace : Box → Box
+replace b = { b | get = λ⊤ → [ 3 ] }
+
+
+freshTwice : ⊤ → String
+freshTwice ⊤ =
+    g = fresh ⊤
+    a = g ⊤
+    b = g ⊤
+    "${show (List.push a 1)} ${show b}"
+
+
+joined : ⊤ → String
+joined ⊤ =
+    g = pick True
+    a = g ⊤
+    b = g ⊤
+    "${show (List.push a 1)} ${show b}"
+
+
+recursive : ⊤ → String
+recursive ⊤ =
+    g = grow 2
+    a = g ⊤
+    b = g ⊤
+    "${show (List.push a 1)} ${show b}"
+
+
+chained : ⊤ → String
+chained ⊤ =
+    g = chain 3 λ⊤ → [ 0 ]
+    a = g ⊤
+    b = g ⊤
+    "${show (List.push a 1)} ${show b}"
+
+
+tower : ⊤ → String
+tower ⊤ =
+    f = w1 ⊤
+    a = f True
+    "${show (List.push a 1)} ${show (f False)}"
+
+
+copied : ⊤ → String
+copied ⊤ =
+    xs = [ 0 ]
+    g = mk xs
+    a = g ⊤
+    "${show (List.push (List.copy a) 1)} ${show a} ${show xs}"
+
+
+lastHolder : ⊤ → String
+lastHolder ⊤ =
+    g = mk [ 0 ]
+    a = g ⊤
+    show (List.push a 1)
+
+
+readBefore : ⊤ → String
+readBefore ⊤ =
+    xs = [ 0 ]
+    g = size xs
+    n = g ⊤
+    "${show (List.push xs n)}"
+
+
+field : ⊤ → String
+field ⊤ =
+    b = box ⊤
+    a = b.get ⊤
+    c = b.get ⊤
+    "${show (List.push a 1)} ${show c}"
+
+
+fieldReplaced : ⊤ → String
+fieldReplaced ⊤ =
+    b = replace (box ⊤)
+    show (List.push (b.get ⊤) 1)
+
+
+local : ⊤ → String
+local ⊤ =
+    r = { f = λ⊤ → [ 1 ], n = 0 }
+    s = { r | f = λ⊤ → [ 2 ] }
+    show (List.push (s.f ⊤) 1)
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ freshTwice ⊤
+            , joined ⊤
+            , recursive ⊤
+            , chained ⊤
+            , tower ⊤
+            , copied ⊤
+            , lastHolder ⊤
+            , readBefore ⊤
+            , field ⊤
+            , fieldReplaced ⊤
+            , local ⊤
+            ]
+            "\n"
+        )

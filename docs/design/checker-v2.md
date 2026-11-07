@@ -1067,6 +1067,59 @@ depth 32 checks at the process floor. Sharing an application is sound for the re
 alias is: one type written twice is one type, and unification would merge the two anyway. A type
 applied to nothing is a leaf and is not memoised. `perf_test.zig` holds the scenario.
 
+*Amended 2026-11-06: an alias is keyed by the arguments its type shows (#1475).* The memo above
+keys an alias by ALL its arguments' roots. In `A{i} a = A{i-1} (A{i-1} a)` the outer
+application's argument is the inner alias variable, which is a new root at every level, so no
+entry ever matched: `type Hidden = Hidden (A64 Int)`, a private constructor nothing calls, expanded
+2^64 bodies though its type is `Int`. Depth 20 cost 7.1 G instructions (ReleaseFast) and depth 24
+did not end in 15 s. An imported chain did the same in `InterfaceTerms`. But an alias's expansion
+is seen only through the end of its chain: `TypeStore.resolved` compresses every chain to its end
+(§7.1, *amended 2026-09-28*), and `Render` prints an alias by its name and arguments. The links of
+the chain, and the arguments only they hold, are part of no type. So `Injective.settle` also
+settles each plain alias's **shape** (`Types.Entry.shape`, `AliasShape`), over the nested aliases'
+shapes. Each parameter is one of three things:
+
+- **forwarded**: the expansion's chain ends at that argument's chain (`type alias Id a = a`, and
+  each `A{i}` above). At most one parameter is, and then none is shown;
+- **shown**: the argument is part of the type that the chain ends at. A printed alias there shows
+  every argument it has;
+- **hidden**: everything else. The argument reaches only links of the chain, or positions that a
+  nested alias drops (`type alias K a = String`).
+
+A read keeps a second entry per finished expansion: the alias and the roots of its SHOWN
+arguments, mapped to the expansion's chain end. A later application with the same shown roots,
+whatever its other arguments are, is a new `alias` variable with its own arguments and no new
+expansion. Its `actual` is its forwarded argument, or the first expansion's chain end. That is
+sound: the two applications are one type, and they print the same expansion, because the type at
+the chain's end is built from the shown arguments alone. A read then costs its distinct shown
+applications, and `A64 Int` costs 64 expansions. The exact entry above still answers first.
+Three things keep the old key, so that nothing changes there:
+
+- **An expansion that is not clean** — one that ran out of depth (`Builder.too_deep`) or met a
+  key-kind issue (§37) — is not entered. Each later application is read again and gets what it
+  got before.
+- **A shape that is not known** keys by every argument: an alias with more than 64 parameters, a
+  recursive one, and one whose expansion names a schema endpoint, a variable that is not a
+  parameter, a type that did not resolve, or a type with the wrong number of arguments (an `err`
+  in a read); and an application with fewer arguments than its shape names, which only an
+  interface record that does not describe itself can hold (`AliasShape.fits`). A schema endpoint
+  is read through the schema state (§11.5), and that read is left as it is.
+- **The key-kind preparation** (`KeyKinds.Preparation`, which notes every application its reads
+  make) does not use the entry.
+
+A hidden argument is still checked at each application. The preparation lifts every key-kind
+requirement in an alias's body, a hidden position's included, to the alias's own parameter, and
+`Builder.apply` checks those before it looks at either entry. So `X (Int → Int)`, with `X a = Y
+(Dict a Int)` and `Y z = Int`, is refused after a clean `X Int` as before
+(`check/bad/AliasSharedHiddenKeyArgument`, and its `Imported` twin across modules).
+
+An application found this way costs one level of the reader's depth, as a hit of the memo above
+does. The interface reader applies the same rule to an alias row, with the row's shape settled
+from its terms (`AliasShape.Rows`), once per reader. `run/AliasDiamondChain` reads three diamonds
+64 deep, in their module and through its interface. `check/bad/AliasSharedByShownArguments` holds
+messages over shared applications, with the golden that the read printed before the change.
+`perf_test.zig` holds the scenario. No corpus output changed.
+
 ### 7.5 Speculation (I14)
 
 `TypeStore.Snapshot` is `{ journal_len, vars, extra, want_links, obl_links, wanteds, obligations,
@@ -5180,7 +5233,8 @@ none of these, and a module that writes markup is then `no_markup_vocabulary`.
 
 **In the vocabulary module itself**, each declaration of `language.md` §11.14 is checked once, as a
 declaration, and **all of them before any of the module's value groups**, since none depends on a
-value but a `via` extractor, whose annotation is all it needs (a `foreign` has one). That is what lets
+value but a `via` extractor, whose annotation is all it needs (a `foreign` has one; a beni extractor
+must, §25.8's amendment of 2026-10-23). That is what lets
 the vocabulary module write markup against its own declarations (`frontend.md` §9.8): its markup
 resolves against rows this module has already checked, read from the module's own record rather than
 an interface.
@@ -5189,7 +5243,7 @@ an interface.
 |---|---|
 | `pub element` | its facts are a set with no repeats, and at most one namespace |
 | `pub attribute` | its annotation reads (the ordinary annotation reader, §6.6), and is one of `String`, `Int`, `Float`, `Bool`, `Maybe String` after aliases; its `on` names are distinct; `classes` and `styles` each require the type `String`, and at most one of the two is present |
-| `pub event` | as `attribute` for `on`; with `via f`, `f` is a `foreign` value of this module whose type is `E -> P` with `E` a `foreign type` and `P` the declared payload type (unified, so an alias is fine); without `via`, the payload type is a `foreign type` |
+| `pub event` | as `attribute` for `on`; with `via f`, `f` is a `foreign` value of this module — *or, since 2026-10-23 (#883), an annotated beni declaration of it* — whose type is `E -> P` with `E` a `foreign type` and `P` the declared payload type (unified, so an alias is fine); without `via`, the payload type is a `foreign type` |
 | `pub markup` | its annotation reads and is a function type that mentions the markup type. That its name does not collide with one of a lowering's own runtime exports is the runtime check's, in `build` and `check --platform` (`boundary.md` §9.4.5) |
 | all four | two declarations of one form whose names tie under the precedence rule (exact, then the longer literal part of a pattern), and whose `on` sets overlap, are `duplicate_declaration`; an event and an attribute of the same name are too; a primitive's name is a value name and meets the module's ordinary `duplicate_declaration` |
 
@@ -5197,6 +5251,39 @@ A failure is reported against the declaration and sets its failure bit (§15.2),
 declaration with its bit set is published as absent, so an importer's markup meets `unknown_element`
 or `unknown_attribute` rather than a half-read row, and a use of a failed primitive the ordinary
 unbound-name path.
+
+*Amended 2026-11-05 (#1096): a refused row is published, and hides the uses of its name.*
+"Published as absent" let a use fall through to a row that does answer the name — a pattern, or
+the wildcard `pub attribute "*" : String` — so `onProbe={λv → v}`, against an event whose `via`
+named nothing, was a `type_mismatch` ("`onProbe` is declared to take: String") at each handler,
+printed before the platform's own `unbound_variable`. With no row to fall to, it was an
+`unknown_element` or `unknown_attribute` whose "did you mean" pointed away from the cause. So:
+
+- **A vocabulary declaration whose failure bit is set is published, marked `refused`**, with the
+  scheme `<error>` (an element has no scheme), in its place in the sorted table. The vocabulary
+  module's own markup reads the same rows (§25.9's *As built*), so a row's index is one index
+  either way. A half-read row is still never read: a refused row's type is `<error>` and its facts
+  answer nothing.
+- **Resolution is unchanged and runs over every row**, refused ones included: exact before
+  pattern, the longer literal part, scoped before unscoped. **A tie that holds a refused row
+  answers the refused row**: two rows that answer one name at one precedence are a
+  `duplicate_declaration`, and which of the two the program meant is what the program cannot know.
+- **A use that resolves to a refused row is no error of the program's.** Its value, or an
+  element's items, are typed as values of their own, as an unknown name's are (§25.3), its
+  children as ever, and nothing is reported: the row's own diagnostic is the one message. That
+  is the rule a failed markup primitive's `<error>` follows (§25.8's *As built*), and a failed
+  value's, whose importers are silent (§14.1, §15.3's *No cascades*); Elm does not check a module
+  whose import failed at all. The owner chose silence over one diagnostic per use that names the
+  refused row (Cesar, 2026-11-05, vocab-refused-row-q1).
+- **"Did you mean" never suggests a refused row**, and neither does `untyped_event_attribute`'s
+  list of typed events: the name is declared, but nothing a program writes with it can check.
+
+Nothing reaches the backend: a refused row is an error the vocabulary module reported, so a build
+that holds one stops before it lowers, and a module that uses one has `dependency_errors` (its
+vocabulary module is a direct import, `frontend.md` §9.8). `tests/corpus/build/bad/VocabRefusedRow/`
+holds six refused rows — an element, an event, an attribute, a pattern, a tie of two attributes and
+a tie of an attribute and an event — each used from `Main.beni`, and one used from the vocabulary
+module's own markup.
 
 **In every platform package of the chain**, a `foreign` value whose declared type mentions the
 markup type (after aliases) is **`markup_type_in_foreign`** unless the package's own manifest names a
@@ -5379,6 +5466,18 @@ published; typing markup against them is the next slice. Where the text left a c
   attribute both `classes` and `styles`, an element named twice after `on`, and two declarations
   that tie are `duplicate_declaration`; a value, payload or primitive type the form does not admit
   is `type_mismatch`; a `via` naming no `foreign` value of the module is `unbound_variable`.
+  *Amended 2026-10-23 (#883):* the extractor may be a `foreign` or an annotated beni declaration of
+  the module — `targetValue e = Js.to (Js.get (Js.get (Js.from e) "target") "value")` — and the
+  scheme read is the annotation's in both cases, which P2 has read before the vocabulary is
+  checked. A `via` naming a declaration with no annotation, or no declaration at all, is
+  `unbound_variable`, the message saying which. Nothing else moves: `extractorFits` reads the
+  same `E -> P`, and a non-`pub` beni extractor is kept, exported and imported as a non-`pub`
+  `foreign` one is (`boundary.md` §9.3). *Amended 2026-10-26 (the review of #925):* **an
+  extractor is held `sync`**, beni or `foreign`: a demand of kind `extractor` on its scheme (§27),
+  checked once the effects are inferred, as `Js.method`'s lambda is; one whose class may suspend —
+  a beni body that waits, or a `foreign suspends` rung — is `sync_boundary` at the event whose `via`
+  names it. A lowering calls the extractor while the event is dispatched, outside any fiber, where
+  a suspension has nothing to resume into and throws (`boundary.md` §9.3).
 - **A tie** is two exact names of one text, or two patterns whose literal parts have one length and
   are prefix- and suffix-compatible (some name matches both); attributes and events share a
   namespace. It is reported at the later declaration, naming the earlier.
@@ -5395,7 +5494,10 @@ published; typing markup against them is the next slice. Where the text left a c
   `property` or event `name` argument, the extractor BY NAME rather than a value index (an extractor
   need not be `pub`), the `on` range and the scheme; 24 bytes on disk. `dump --stage=interface`
   prints `element "input" void`, `attribute "value" on "input" property stateful : String`, and a
-  primitive as `markup value map : …`.
+  primitive as `markup value map : …`. *Amended 2026-11-05 (#1096, §25.2):* bit 30 of the fact
+  word is `refused`, the row of a declaration whose failure bit is set, published with the scheme
+  `<error>`; the dump prints it last among the facts, `attribute "count" refused : <error>`.
+  `iface_bytes.format_version` 18 → 19.
 - **The markup term of the cache key.** Why a module has no vocabulary, and which type is the markup
   type, reach a module that writes markup and the vocabulary module through no import, so both keys
   carry them in their option string (`cache/Key.zig`); every other module's key is unchanged.
@@ -5421,7 +5523,8 @@ region named:
 | `key_not_primitive` | the `keyed` value | the key type and the primitive types |
 | `markup_type_in_foreign` | the `foreign` declaration | the markup type, the lowering the build selects and the one the package names (or that it names none), and the markup primitive as the form that serves every lowering |
 | `untyped_event_attribute` | the quoted name | that a page runs an `on…` attribute as script, and the typed event attributes (the owner's refusal, `language.md` §11.5) |
-| `untyped_srcdoc_attribute` (*added 2026-09-29*) | the quoted name | that a page runs a `srcdoc` document, scripts included, and that a frame's document is loaded from a URL (the owner's decision, `language.md` §11.5) |
+| `untyped_srcdoc_attribute` (*added 2026-09-29*) | the quoted name | that a page runs a `srcdoc` document, scripts included, and that a frame's document is loaded from a URL (the owner's decision, `language.md` §11.5). *Amended 2026-11-05:* and the typed `srcdoc` with a constant `sandbox` without `allow-same-origin` as the first fix |
+| `srcdoc_without_sandbox` (*added 2026-11-05*) | the typed `srcdoc` name | which of the three it is — no `sandbox`, a `sandbox` from a value, a `sandbox` with `allow-same-origin` — that the frame's scripts would then run with the page's origin, and a constant `sandbox` as the fix (the owner's decision, Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2; `language.md` §11.5) |
 | `unkeyed_for` (warning) | the `For` tag | the item type and the two ways to silence it |
 | `raw_markup_attribute` (warning) | the attribute | that the value is written as markup, unescaped |
 
@@ -5432,6 +5535,8 @@ value's shape (`frontend.md` §9.7), with a non-function the unification's `type
 Warnings are reported only for modules of the root package, as `ambiguous_method_receiver` is, and
 are cached and replayed with the entry like every warning (`fast-compiler.md` §8).
 
+*Amended 2026-11-05 (Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2; #2016):* `srcdoc_without_sandbox` is decided from the syntax alone, like a quoted `on…` name (§25.9's *As built*, below). After an element's items, the generator looks for a typed attribute named `srcdoc` that resolved in the vocabulary. When there is one, it reads every item named `sandbox`, typed or quoted, ASCII case folded: an item whose value is not a constant (`frontend.md` §9.7) is a fault, and so is a string constant whose tokens, split on ASCII whitespace, hold `allow-same-origin`, ASCII case folded. No item named `sandbox` is a fault too. Each fault is a `markup_fault` node at the `srcdoc` name, reported when the solver reaches it, one per element. A bare `sandbox` and a number are constants that hold no token: their own fault or `type_mismatch` is the one message. An element the vocabulary does not know, or a `srcdoc` it does not declare there, is that error and nothing more. The rule needs no type, so it adds no obligation.
+
 *As built, 2026-09-29, for §25.3–§25.7 and §25.9* (`src/check/Markup.zig`, `constrain/Markup.zig`,
 `MarkupDecide.zig`, `MarkupTexts.zig`). Markup is typed; §25.8's *As built* bullets "Markup under a
 vocabulary is still stopped" and "Quoted `on*` attribute names … are not refused yet" are
@@ -5441,7 +5546,8 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   vocabulary declarations are checked and before any value group: the vocabulary module's
   published rows, or — in the vocabulary module itself — its interface skeleton's rows less those
   whose declaration failed, so a row's index is its published index either way. A row's type is
-  read once, at rank `generalized`, and every use copies it.
+  read once, at rank `generalized`, and every use copies it. *Amended 2026-11-05 (#1096, §25.2):*
+  not less them: a failed declaration's row is kept, marked refused, as publication keeps it.
 - **What the syntax and the rows decide alone** — an unknown element or attribute, a quoted value
   a row's type does not admit (reported at the value's first token), a bare attribute that is not
   `Bool`, children of a `void` element, a `raw` attribute, a quoted `on…` name — is found by the
@@ -5861,6 +5967,16 @@ pairs or the keys, and generates each pair's value against a fresh variable of i
 `Js.from` argument is, so the values of one object may each have a type of their own. A malformed
 field list is generated as usual and reported once, `invalid_js_object`, by `Module` before any
 group is checked.)*
+
+*(Amended 2026-11-04, `boundary.md` §4.2, the owner's answer A to `runtime-in-beni-q3`: two more.
+`Js.module`'s specifier is a string literal written in place, typed as the others are; one that is
+not a literal, or does not begin with `node:` or `cloudflare:`, is `invalid_js_module`, reported
+once by `Module` as `invalid_js_object` is. `Js.method`'s argument, when it is a lambda written in
+place, is generated against an arrow of the lambda's own count — each parameter a `Js.Value`, the
+result a fresh variable — in place of the declaration's `sync (Value → a)`, and that arrow is
+marked `sync` as the declaration's is (§15.2 item 1), so a body that may suspend is still
+`sync_boundary`; a lambda of one parameter meets the declaration as before, and any other
+argument is generated as usual, which the backend refuses.)*
 
 ## 31. Amendment of 2026-10-02: `Basics.eq` dispatches
 

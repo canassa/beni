@@ -20,10 +20,15 @@ core       Debug.toString        ownership/JsPure.beni           -
 core       Js.from               ownership/core/JsWords.beni     1:returned>-+res:->fresh
 core       Js.to                 ownership/core/JsWords.beni     1:returned>-+res:->fresh
 # unused is the bottom of the order: no word claims less
+core       Js.entryWindow        browser/managed/Network/Main.beni - Http.get
 core       Js.same               ownership/core/JsWords.beni     -
 core       Js.isNull             ownership/core/JsWords.beni     -
 core       Js.isUndefined        ownership/core/JsWords.beni     -
 core       Js.isNullish          ownership/core/JsWords.beni     -
+core       Js.lt                 ownership/core/JsWords.beni     -
+core       Js.gt                 ownership/core/JsWords.beni     -
+core       Js.le                 ownership/core/JsWords.beni     -
+core       Js.ge                 ownership/core/JsWords.beni     -
 core       Js.typeOf             ownership/core/JsWords.beni     -
 core       Js.typeIs             ownership/core/JsWords.beni     -
 core       Js.fingerprint        ownership/core/JsWords.beni     -
@@ -52,7 +57,6 @@ core       String.words          ownership/Words.beni            -
 core       String.lines          ownership/Words.beni            -
 core       String.toList         ownership/Words.beni            -
 core       String.indexes        ownership/Words.beni            -
-browser    Hosted.keyOf          ownership/WordsBrowser.beni     2:aliased>borrowed     Cmd.keyed
 # crossing is the unsafe end already: taking it away claims less
 html       Html.Event            ownership/WordsBrowser.beni     -
 html       Html.Pointer          ownership/WordsBrowser.beni     -

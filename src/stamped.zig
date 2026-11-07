@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Counters = @import("own2/Counters.zig");
 
 /// Every slot any column has made, in the process: the work a column does
 /// in proportion to the highest id it has seen rather than to its entries.
@@ -29,8 +30,10 @@ pub fn Pool(comptime T: type) type {
     return struct {
         all: std.ArrayList(*T) = .empty,
         free: std.ArrayList(*T) = .empty,
+        stats: Counters.PoolS = Counters.zero(Counters.PoolS),
 
         const Self = @This();
+        pub const counter_kind = Counters.Kind.pool;
 
         pub fn deinit(p: *Self, gpa: Allocator) void {
             for (p.all.items) |t| {
@@ -43,9 +46,11 @@ pub fn Pool(comptime T: type) type {
 
         pub fn take(p: *Self, gpa: Allocator) Allocator.Error!*T {
             if (p.free.pop()) |t| {
+                Counters.poolTake(&p.stats, false);
                 t.clear();
                 return t;
             }
+            Counters.poolTake(&p.stats, true);
             try p.all.ensureUnusedCapacity(gpa, 1);
             try p.free.ensureTotalCapacity(gpa, p.all.items.len + 1);
             const t = try gpa.create(T);
@@ -66,9 +71,12 @@ pub fn Column(comptime K: type, comptime V: type) type {
         /// A slot stamped with anything else is empty. Never 0, the stamp
         /// of a slot never written.
         gen: u32 = 1,
+        stats: Counters.Col = Counters.zero(Counters.Col),
 
         const Self = @This();
         const Slot = struct { stamp: u32 = 0, value: V = undefined };
+        pub const Key = K;
+        pub const counter_kind = Counters.Kind.column;
 
         pub const GetOrPut = struct { found_existing: bool, value_ptr: *V };
 
@@ -79,6 +87,7 @@ pub fn Column(comptime K: type, comptime V: type) type {
         /// Every slot empty: one increment, and a pass over the slots once
         /// in four billion.
         pub fn clear(c: *Self) void {
+            Counters.colClear(&c.stats);
             c.gen +%= 1;
             if (c.gen != 0) return;
             for (c.slots.items) |*s| s.stamp = 0;
@@ -89,6 +98,7 @@ pub fn Column(comptime K: type, comptime V: type) type {
             const i = index(k);
             if (i >= c.slots.items.len) return null;
             const slot = &c.slots.items[i];
+            Counters.colRead(&c.stats, slot.stamp == c.gen);
             return if (slot.stamp == c.gen) slot.value else null;
         }
 
@@ -96,22 +106,27 @@ pub fn Column(comptime K: type, comptime V: type) type {
             const i = index(k);
             if (i >= c.slots.items.len) return null;
             const slot = &c.slots.items[i];
+            Counters.colRead(&c.stats, slot.stamp == c.gen);
             return if (slot.stamp == c.gen) &slot.value else null;
         }
 
         pub fn contains(c: *const Self, k: K) bool {
             const i = index(k);
-            return i < c.slots.items.len and c.slots.items[i].stamp == c.gen;
+            const hit = i < c.slots.items.len and c.slots.items[i].stamp == c.gen;
+            Counters.colRead(&c.stats, hit);
+            return hit;
         }
 
         pub fn put(c: *Self, gpa: Allocator, k: K, value: V) Allocator.Error!void {
             const slot = try c.slotOf(gpa, k);
+            Counters.colWrite(&c.stats, slot.stamp == 0);
             slot.* = .{ .stamp = c.gen, .value = value };
         }
 
         pub fn getOrPut(c: *Self, gpa: Allocator, k: K) Allocator.Error!GetOrPut {
             const slot = try c.slotOf(gpa, k);
             const found = slot.stamp == c.gen;
+            Counters.colWrite(&c.stats, slot.stamp == 0);
             slot.stamp = c.gen;
             return .{ .found_existing = found, .value_ptr = &slot.value };
         }

@@ -1,4 +1,4 @@
-//! The toy platform's Zig: one markup lowering, `toy`, written against the
+//! The toy platform's Zig: the markup lowering `toy`, written against the
 //! interface as any lowering outside beni's tree is — `beni_markup`, `std`
 //! and the `html` platform's module, nothing else (docs/design/boundary.md
 //! §9.5). It renders `<p>Hi {name}</p>` as `p["Hi " "you"]`: an element as
@@ -10,7 +10,7 @@ const std = @import("std");
 const m = @import("beni_markup");
 const parser = @import("platform_html").parser_table;
 
-pub const lowerings = [_]m.Lowering{.{
+pub const lowerings = [_]m.Lowering{ .{
     .name = "toy",
     .targets = .{ .major = 1, .minor = 0 },
     .runtime = &.{
@@ -19,7 +19,7 @@ pub const lowerings = [_]m.Lowering{.{
     },
     .module = module,
     .root = root,
-}};
+}, @import("shared.zig").lowering };
 
 /// `wrap`, hoisted once per module: `(tag, inner) => tag + "[" + inner + "]"`.
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {

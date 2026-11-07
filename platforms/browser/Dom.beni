@@ -26,6 +26,7 @@
 --!         ( model, Cmd.perform λsend → send (Entered (Dom.requestFullscreen "arena")) )
 
 import Browser
+import Html
 import Js
 import Listen
 import Sub exposing (Sub)
@@ -69,28 +70,164 @@ pub type alias Viewport =
     height : Float
 
 
+-- Written over `Js` since 2026-10-29 (`plans/runtime-in-beni.md` step 8):
+-- the node is found by id when the call is made, and one that is not in
+-- the page is `NotFound`. No call here documents a failure, so none is
+-- caught.
+
 --| Focus the element with this id.
-pub foreign impure focus : String → Result Error ⊤
+pub focus : String → Result Error ⊤
+focus id = found id λn →
+    _ = Js.call n "focus" []
+    ⊤
 
 
 --| Take the focus away from the element with this id.
-pub foreign impure blur : String → Result Error ⊤
+pub blur : String → Result Error ⊤
+blur id = found id λn →
+    _ = Js.call n "blur" []
+    ⊤
 
 
 --| The box of the element with this id (`getBoundingClientRect`).
-pub foreign impure box : String → Result Error Box
+pub box : String → Result Error Box
+box id = found id λn →
+    r = Js.call n "getBoundingClientRect" []
+    { x = Js.to (Js.get r "x")
+    , y = Js.to (Js.get r "y")
+    , width = Js.to (Js.get r "width")
+    , height = Js.to (Js.get r "height")
+    }
 
 
 --| Scroll the element with this id to `x` and `y`.
-pub foreign impure scrollTo : String, Float, Float → Result Error ⊤
+pub scrollTo : String, Float, Float → Result Error ⊤
+scrollTo id x y = found id λn →
+    _ = Js.call n "scrollTo" [ Js.from x, Js.from y ]
+    ⊤
+
+
+--| Why a text field's selection could not be set: no node in the page has
+--| this id, or the node is not a text field (`Html.targetSelection` names
+--| the ones that are).
+pub type SelectError
+    = NoField String
+    | NotText String
+
+
+--| Select from `start` to `end` in the text field with this id, in code
+--| points as `String` counts them (`Html.Selection`), backward when
+--| `backward` says so. A position past the text is the text's end. It does
+--| not focus the field; `focus` does.
+--|
+--|     Dom.select "editor" { start = 4, end = 9, backward = False }
+pub select : String, Html.Selection → Result SelectError ⊤
+select id selection =
+    node = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    if Js.isNull node then
+        Err (NoField id)
+    else if not (Js.typeIs (Js.get node "selectionStart") "number") then
+        -- `setSelectionRange` throws on an input of a type with no
+        -- selection, and an element that is no field has none: neither is
+        -- called.
+        Err (NotText id)
+    else
+        value = Js.get node "value"
+        from = unitsBefore value selection.start
+        to = unitsBefore value (max selection.start selection.end)
+        direction = if selection.backward then "backward" else "forward"
+        _ = Js.call node "setSelectionRange" [ Js.from from, Js.from to, Js.from direction ]
+        Ok ⊤
+
+
+-- How many UTF-16 units the first `count` code points of the string
+-- `value` take: all of them when it has fewer.
+unitsBefore : Js.Value, Int → Int
+unitsBefore value count =
+    points = Js.call (Js.global "Array") "from" [ value ]
+    first = Js.call points "slice" [ Js.from 0, Js.from (max 0 count) ]
+    Js.to (Js.get (Js.call first "join" [ Js.from "" ]) "length")
 
 
 --| Scroll the page until the element with this id is in view.
-pub foreign impure scrollIntoView : String → Result Error ⊤
+pub scrollIntoView : String → Result Error ⊤
+scrollIntoView id = found id λn →
+    _ = Js.call n "scrollIntoView" []
+    ⊤
+
+
+--| Where `scrollIntoViewWith` puts a node in one direction of each box
+--| that scrolls it: its start edge at the box's start edge, its centre at
+--| the box's centre, its end edge at the box's end edge, or `Nearest`:
+--| only as far as it takes to show the node, and not at all when it is in
+--| view.
+pub type Align
+    = Start
+    | Center
+    | End
+    | Nearest
+
+
+--| Where `scrollIntoViewWith` puts a node: `block` across the lines of
+--| text (up and down, in a page of horizontal text), `inline` along them.
+pub type alias Alignment =
+    block : Align
+    inline : Align
+
+
+--| Scroll the page, and each box that scrolls the element with this id,
+--| until the element is where `alignment` says. `scrollIntoView id` is
+--| `scrollIntoViewWith id { block = Start, inline = Nearest }`. `Nearest`
+--| in both directions shows a tab in a row of tabs that scrolls sideways,
+--| and moves the page up or down only when the tab is not in view:
+--|
+--|     Dom.scrollIntoViewWith "tab-3" { block = Dom.Nearest, inline = Dom.Nearest }
+pub scrollIntoViewWith : String, Alignment → Result Error ⊤
+scrollIntoViewWith id alignment = found id λn →
+    options =
+        Js.object
+            [ ( "block", alignName alignment.block ), ( "inline", alignName alignment.inline ) ]
+    _ = Js.call n "scrollIntoView" [ options ]
+    ⊤
+
+
+-- The name `ScrollIntoViewOptions` gives an alignment (CSSOM View).
+alignName : Align → String
+alignName align =
+    case align of
+        Start →
+            "start"
+
+        Center →
+            "center"
+
+        End →
+            "end"
+
+        Nearest →
+            "nearest"
 
 
 --| The viewport now.
-pub foreign impure viewport : ⊤ → Viewport
+pub viewport : ⊤ → Viewport
+viewport ⊤ =
+    { x = Js.to (Js.global "scrollX")
+    , y = Js.to (Js.global "scrollY")
+    , width = Js.to (Js.global "innerWidth")
+    , height = Js.to (Js.global "innerHeight")
+    }
+
+
+-- `use` of the element with this id, when the page has one: the sibling's
+-- shape, one lookup and one call, so a page that only focuses ships no
+-- `Result.map`.
+found : String, (Js.Value → a) → Result Error a
+found id use =
+    n = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    if Js.isNull n then
+        Err (NotFound id)
+    else
+        Ok (use n)
 
 
 --| Show the element with this id in full screen, and wait until the

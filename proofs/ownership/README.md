@@ -26,13 +26,15 @@ grammar plus 740 targeted programs, required negative controls (including `set-e
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,
 fold accumulators, markup event slots, constructor callbacks and returns-owned
-tagger obligations. Twenty-two holes are required through the seed-independent
+tagger obligations. Twenty-seven holes (`Mutant.enumeratorRequired`) are required through the seed-independent
 targeted enumerator, including the retained-reader-after-append hole. The
 case-lowered withDefault rule also has a required `branch-live` witness.
 The §29 result/capture/fold/callee rules have six independent required holes. Six further holes cover
 Err payloads, recursive payloads, shared initialization, retained entry captures,
 repeated transfer authority and its frame boundary. Two more (`construct-disjoint`,
-`view-alias`) cover constructions and list views. Result, Chain, construction and view fixtures
+`view-alias`) cover constructions and list views, and three (`record-dead`, `update-base`,
+`call-fields`, #1872) cover records written in place. Result, Chain, construction, view and
+record fixtures
 cross the shipping bridge; entry projections remain counted skips. `Sync.lean` and DESIGN.md
 state the projections and their runtime boundaries.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound
@@ -271,6 +273,7 @@ The write diagnostics count actual runtime write events.
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `DictPrograms.lean`, `DictProbes.lean` | the dictionary model's probe programs and their probes: `DictFocus`, `DictValueWritten` and #474 as `#guard`s against `check` and both runs (#522) |
+| `RecordPrograms.lean`, `RecordProbes.lean` | the record model's probe programs and their probes: #316's three two-holder shapes and the update's conditions (`ownership-checker.md` §31) as `#guard`s against `check` and both runs (#316) |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
 | `FlatFragment/` | the first flat fragment: the strengthened relation, records and field paths (`Fields.lean`), its heap frame, the expression cases (`Branch.lean` for `branch`, `ResultCase.lean` for `resultCase`, `ChainCase.lean` for `chainCase`), and the trace corollary, in one import chain |
@@ -319,16 +322,28 @@ They establish no `CallSound.noNewHolders` clause or complete expression-evaluat
 All three general proof obligations remain open.
 
 [FlatFragment/Trace.lean](Ownership/FlatFragment/Trace.lean) proves `accepted_flat_anf_traces_agree`: the main theorem's conclusion for every accepted program whose main expression is in the first flat fragment.
-`FlatANF0` contains atoms, `let`, integer list literals, `push`, `length`, `shared`, the integer primitives `add`, `sub`, `eq` and `lt` on two atoms (`ScalarOp`), since 2026-10-18 (#165) the record constructor, since 2026-10-19 `branch` over two fragment expressions, since 2026-10-20 `ok`, `err` and `resultCase` over two fragment arms, since 2026-10-20 (later that day) `endChain`, `link` and `chainCase` over two fragment arms, and since 2026-10-20 (the third slice of that day) `at`, `set`, `copy` and `prepend`.
-`FlatANF0` puts no condition on an atom: the theorem also needs `check`, and typing fixes every atom to an integer, a variable or a variable under a field path, the literal elements, the push and set items, the `at` index and fallback, the set index and the link and prepend heads to `Int`, the `length`, `push`, `at`, `set`, `copy` and `prepend` receivers to `List Int`, a variable or a variable under a field path (the push receiver since 2026-10-19), the link tail to `Chain Int`, the branch condition to `Int`, a result case's input to a `result`, and a chain case's input to a `Chain Int`.
-A binding holds an integer, an integer list, an integer chain, a record of such values, or a result over them, nested (`FlatType`); the atoms read records through field paths, a push writes through one, a result case binds a result's live payload, and a chain case binds a chain's head and a copy of its tail.
+`FlatANF0` contains atoms, `let`, list literals, `push`, `length`, `shared`, integer primitives, records, branches, result forms, integer-chain forms, `at`, `set`, `copy` and `prepend`.
+A list holds any flat type: integers, lists, integer chains, records or results, with arbitrary nesting.
+Typing fixes integer operands, indexes and branch conditions to `Int`.
+List operations use the receiver's element type.
+Atoms read record fields; writes can use a field path as their receiver.
+A result case binds the active payload; a chain case binds the head and a copy of the tail.
+
 The proof uses no `sorry` and none of the three pinned obligations.
-The generic theorem `flat_preserved` carries the strengthened relation `FlatInvariant` through every fragment expression, in both runtime directions, from the actual acceptance, typing, and shadow runs.
-The fragment excludes lists of lists, calls, closures, views, constructions (`construct`), builders, scopes, the loops (`traverse`), `focus`, and every other primitive. The three general obligations remain open.
+The generic theorem `flat_preserved` carries `FlatInvariant` through every fragment expression, in both runtime directions.
+Its premises use the actual acceptance, typing and shadow checks.
+`FlatInvariant.deepTags` tracks result and chain tags inside arrays at live typed paths.
+Every preservation case supplies deep tags for its result, so binders and later reads retain this evidence.
+`FlatInvariant.heapKinds` types every array at its source type, so a dictionary's array is never a link end (#169).
+Every preservation case supplies this typing for its result.
+
+The fragment excludes calls, closures, `construct`, builders, scopes, `traverse`, `focus`, `dictFocus` and all other primitives.
+It contains `view` since 2026-11-04 (#169): a view of a nonempty list is linked to its source, `push` and `set` write through the link, and the relation keeps the link clauses of `Invariant`.
+The three general obligations remain open.
 
 `Invariant` carries two link clauses since 2026-10-16 (#169, owner decisions q1 and q4): every stored link is valid (`LinksValid`, with the view's contents since 2026-10-17), and linked storage that a live path or an observer protects is named as one array (`LinkNamed`).
 [ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, that the same witness in allocation order fails `LinkNamed` alone, and checks that a builder's `put` leaves a garbage view stale, which is why the contents clause needs #284's hand-over, and that the program whose garbage view went stale that way is refused since `close` hands the builder over.
-[LinkClauses.lean](Ownership/LinkClauses.lean) proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of an array no link names and after a view; `LinkNamed` with the same heap, links and observers; and that a per-link closed naming (`LinkClosed`) gives `LinkNamed`. No theorem uses these lemmas yet.
+[LinkClauses.lean](Ownership/LinkClauses.lean) proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of an array no link names and after a view; `LinkNamed` with the same heap, links and observers; and that a per-link closed naming (`LinkClosed`) gives `LinkNamed`. The flat fragment uses them since 2026-11-04: its relation carries `LinkClosed`, and `push` and `set` are linked writes ([LinkedWriteRun.lean](Ownership/LinkedWriteRun.lean)).
 [LinkedWriteInstance.lean](Ownership/StatementChecks/LinkedWriteInstance.lean) applies it at a reachable state with two link components. [LinkedWriteStep.lean](Ownership/LinkedWriteStep.lean) proves that the naming clause survives a successful demand-guarded linked write of a live receiver with the same naming, for the continuation's uses; [LinkedWriteValid.lean](Ownership/LinkedWriteValid.lean) proves `LinksValid`, its contents clause included, after a linked write that does not shorten the written array; [LinkedWriteValidInstance.lean](Ownership/StatementChecks/LinkedWriteValidInstance.lean) applies it at a chain of two views written through the inner one, where the splice climbs two levels. Both clauses under a call remain open.
 `summary_sound` and `map_summary_sound` carry the written-storage premise `LinkedWritesCovered` (R1): an input array a link connects to an input array at a permitted path is at a permitted path. [LinkSummary.lean](Ownership/StatementChecks/LinkSummary.lean) proves that the R1 pre-state fails it and that, without it, every other premise held there while the conclusion failed. [LinkedCallControl.lean](Ownership/StatementChecks/LinkedCallControl.lean) proves every premise at a reachable call with a link, where the write changes a dead source that no input holds. [CallDerivation.lean](Ownership/CallDerivation.lean) derives it at a first-order call without captures, from the call-site invariant and the call's own demands. [CallDerivationInstance.lean](Ownership/StatementChecks/CallDerivationInstance.lean) applies it at a reachable call with a link. Calls whose arguments are not all variables, calls with captures, calls with function-valued inputs, and the wiring from `inferExpr`'s `.app` case remain open.
 

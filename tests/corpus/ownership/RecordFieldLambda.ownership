@@ -1,0 +1,7 @@
+module RecordFieldLambda
+  9:5 List.push <call>: accepted call
+  15:5 List.push <call>: accepted call
+  summary inField: res [*] ~fresh2, fresh1
+  summary direct: res [*] ~fresh2, fresh1
+  demands 2: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

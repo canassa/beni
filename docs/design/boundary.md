@@ -403,6 +403,16 @@ third rule, *marshal to plain data*, made specific: a list crosses as a plain ar
 arrays*). A **port**'s generated codec (§3.1) follows the same two rules: a list going out is read
 through the protocol, and one coming in is a fresh array the codec built.
 
+*Amended 2026-10-23 (#877):* `platforms/node/Node.js` is gone. `Node.printLines` is beni over
+`String.join`, and tells an empty list apart by `Js.get` of its `length`, which every form of a list
+answers (`backend.md` §4, *Lists are arrays*); `print`, `printLines` and `exitWith` build the
+`Program` object with `Js.object`, whose keys are never renamed, so `runtime.js`'s `run` and
+`Io.js`'s `finish` read the two by name in every build. Its keys are `$c` and `$o` now, where the
+sibling wrote `code` and `out`: a `Js.object` key is a plain property, and a beni record field of
+the same text keeps its source name in every release build (`backend.md` §9, *field spellings*) —
+`code` and `out` are fields of many a program, `Schema`'s `Issue.code` among them, and `$` is in no
+beni identifier (`plans/core-in-beni.md`, step 4).
+
 #### What JavaScript may read of a beni value
 
 **Amended 2026-10-22: field spellings may be reused.** One source field text
@@ -419,10 +429,17 @@ read or which records it may construct.
 fields and gives constructors integer tags wherever no JavaScript can see the difference, so
 "where can JavaScript see it" is now part of this contract. **JavaScript sees the representation
 of exactly the types a `foreign` annotation names, and of the type a `Js.from` or `Js.to` is
-used at** — written records, named types and their bodies, transitively. Those keep their source
+used at, and of the manifest Program handed to a JavaScript platform runtime** —
+written records, named types and their bodies, transitively. Those keep their source
 field names and string tags in every build, and a type of one constructor with one field keeps
 its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
 `backend.md` §9, *A type of one constructor with one field is its field*).
+
+The Program type named by a platform manifest whose runtime is JavaScript is
+also visible, with its body transitively: the runtime receives `main` directly.
+This boundary applies with or without managed worker entries, and remains when
+specialization refines field names. A runtime written in beni uses the ordinary
+typed calls and casts to establish its boundary.
 
 *Amended 2026-10-14 (inert foreign reachability):* absence of tag construction
 is not permission to forget a differently typed result. A foreign can convert
@@ -550,6 +567,15 @@ callers that instantiate it. A value a `Js.to` yields is therefore either one Ja
 which the optimiser already treats as unknown, or one that went in at a `Js.from` and is wild. This
 changes nothing that privileged code may write or must check.
 
+*Amended 2026-10-29 (`backend.md` §9 item 6; the review of #1127):* **a host function given a beni
+function type through `Js.to` must ignore the arguments past the type's arity and `this`.** Under
+`--release` a lambda that forwards its parameters to such a name is printed as the name, so a host
+that calls the value — `map`, `then`, `replaceAll`, a listener — passes the function what it passed
+the lambda: more arguments than the type names, and a receiver. An emitted function reads neither;
+`parseInt` reads a radix and `Object.prototype.toString` reads `this`. A value called through
+`Js.apply` or `Js.call` is a `Js.Value` and under no such duty: item 6 leaves a lambda whose call is
+one as written, and a `const` that holds an import is never its callee.
+
 **A mutable local is a `Js.Ref`** (R47-2; there is no `let mut`):
 
 | declaration | rung | written as |
@@ -627,6 +653,21 @@ and `v instanceof C`. Each is written in place as its operator. `rem` answers `N
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
 guards, as `Int32.rem` does.
 
+**The comparisons, `lt`, `gt`, `le` and `ge`** (pure, specified 2026-10-23, #882; the owner's
+decision of 2026-10-02, `plans/runtime-in-beni.md` step 7) are `a < b`, `a > b`, `a <= b` and
+`a >= b`, each written in place as its operator, as `same` is `===`: `lt : unused a, unused a →
+fresh bool`, both arguments one type variable and the answer a `bool` variable, since this module
+names no core type. Unchecked, as every `Js` declaration is: JavaScript orders two numbers by value
+and two strings by their UTF-16 code units, and nothing else by anything a caller wants: two
+records, two list views or two `Maybe`s are the one text `[object Object]`, so `le` and `ge` are
+both true of them, two arrays compare by their joined text, and a null-prototype object (the kind
+`core/Schema` makes) or a `Symbol` throws `TypeError`. So a caller hands them two numbers or two
+strings (*amended 2026-10-26, the review of #1110*). They exist for `Hosted`'s keys, which order two keys of different types by the
+text of their type identities (§9.8.3): the identities are ASCII, where `<` and `String.compare`
+agree, and beni's `<` on two `String`s would ship `String.compare`'s code-point walk to a page that
+compares no other string. Passed as a value, each is the sibling's function (`backend.md` §4, *The
+comparisons are operators*).
+
 **`fingerprint : k, order → name where k.compare : k, k → order`** (pure, 2026-10-02, the owner's
 decision on keys, §9.8.3) is **the identity of `k`'s type**: a string the compiler writes at the
 call, naming the type with its module, its package and every argument, equal at two calls exactly
@@ -682,7 +723,8 @@ close a cycle:
    (`internal`, as before).
 2. **A literal a `Js` call writes in place mints nothing** (`static-dispatch-spike.md` §6.8,
    amended): a string literal that is the name argument of `global`, `get`, `set` or `call`, either
-   argument of `regExp`, the type name of `typeIs` (*amended 2026-10-02*), and a list literal that
+   argument of `regExp`, the type name of `typeIs` (*amended 2026-10-02*), the specifier of
+   `module` (*amended 2026-11-04*), and a list literal that
    is the argument list of `call`, `apply`, `construct` or `array` — *amended 2026-10-02:* or the
    field list of `object`, with its pairs and their key strings (below). The backend writes each as JavaScript syntax — a property name, a
    regular expression literal, an argument list — so no `String` or `List` value exists at run time,
@@ -702,6 +744,30 @@ is the build's mode*). *(Amended 2026-10-02: it is `development : () -> bool`, w
 `Js.development ()` — `Bool` is a core type `Js` may not name, and a `foreign` value that is not a
 function may not be polymorphic (§4, check 1). The call is written in place as the literal, as the
 value was.)*
+
+### Private entry realm selector (2026-11-06, Part of #2120)
+
+`Js.entryWindow : ⊤ → fresh bool` is pure and has no data inputs. Only core
+and platform packages may import it, through the existing `Js` privilege wall;
+it is not an application API. The result is a fresh Boolean: true for a Window
+entry and false for any other concrete entry. It describes the compilation
+entry, not the mutable JavaScript globals. `Js.global` and existing runtime
+realm probes retain their semantics.
+
+Concrete entry builds write the Boolean in place and eliminate the untaken arm
+of an `if` on the selector before checking kept worker code. No selector call,
+fallback, or runtime realm test is emitted in a page or worker entry, in either
+mode. Only `--library` output may retain an inline `typeof globalThis.document !==
+"undefined"` fallback. Unknown-entry internal cache rows preserve the symbolic
+reference, never a page's or worker's answer. The backend subsection specifies
+per-entry emission and cache reuse. This compiler-only foreign has no sibling
+export: lowering supplies both the concrete answer and the library fallback.
+A nonliteral unit argument is still evaluated for its effects.
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
+
 
 **`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
 object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a
@@ -735,6 +801,41 @@ rely on*) — and the optimiser keeps every object holding one whole, since the 
 writes it through a receiver the optimiser cannot name (`backend.md` §4, *`Js.method` is a
 `function`*). Passed as a value, `Js.js`'s `method f` is `function () { return f(this) }`.
 
+*Amended 2026-11-04 (the owner's answer A to `runtime-in-beni-q3`; #1813, `plans/runtime-in-beni.md`
+step 17): the lambda may take parameters after its receiver.* `Js.method λself a b → body` is
+`function (a, b) { const self = this; return body }`, so `o.m(x, y)` hands `o` to the lambda as
+`self` and `x` and `y` as `a` and `b`; what JavaScript passes beyond them is dropped, as a
+`function` drops it. The declaration keeps its shape, `sync (Value → a) → Value`, and the
+checker types the lambda written in place by its own count (`checker-v2.md` §30): every
+parameter is a `Value`, the result the `a`, and the lambda is held `sync` as the declared
+callback is, so a body that may suspend is `sync_boundary` whatever the count. A lambda of one
+parameter is the form above, unchanged. The first use with parameters is the Durable Object
+class of `cloudflare`'s runtime module (§9.12 (e.11)): its constructor is one, `Js.method λself
+ctx env → …`, where `self.constructor` stands in for `new.target`, and so are `fetch`, `alarm`,
+`$beni` and the three WebSocket hooks.
+
+**`module : specifier → Value`** (impure, *added 2026-11-04*, the owner's answer A to
+`runtime-in-beni-q3`; #1813) is a static import of a host built-in: `Js.module "cloudflare:workers"`
+is the namespace object of `import * as m from "cloudflare:workers";`, so `Js.get (Js.module
+"cloudflare:workers") "DurableObject"` is `m.DurableObject`. The specifier is a string literal
+written in place (rule 2 below), and it names a `node:` or `cloudflare:` built-in — the two
+families `backend.md` §9's *Host imports* lets into the one scope-hoisted file, because a host
+built-in's evaluation is not observable to the program; any other literal is **`invalid_js_module`**,
+at the call, from the checker: a package could run anything when evaluated, and a relative path
+would name a file the output tree does not hold. The emitted module writes one `import * as
+<name> from "<specifier>";` per distinct specifier it calls, first among its statements, bound to
+a name of the module's own (`Rt$$cloudflare_workers` in a development build, a short name under
+`--release`), and every call with that specifier reads the one binding. A build writes the
+import wherever it writes the module; under `--release` the statement moves to the top of the
+one file, once per distinct specifier, beside the hand-written files' host imports (`backend.md`
+§9, *Host imports*, amended this date). `impure`: the import is the host's to evaluate, and a
+built-in the host lacks — a `cloudflare:` module under Node — fails the load in the host's words,
+as a hand-written file's import of it does; the program named it, and no wrapper can make it
+exist. Passed as a value, `Js.js` has no `module`: a static import cannot be a value, so
+`Js.module` is written with its literal or not at all, as `regExp` is. Its first use is
+`cloudflare`'s runtime module, whose Durable Object class is built over `DurableObject`, no global
+of the Worker.
+
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a
 function a platform receives through `Js.from` — an event handler, a render callback — returns
@@ -758,6 +859,8 @@ refusing `main : Tea.Program` where `type alias Program = Browser.Program` prote
 included — `type alias Same a = a` with `main : Same Node.Program` is a program — and compares the
 nominal type it arrives at with the manifest's `program`; `main_not_program` still names the type
 as it was written. Until then the annotation was compared by name, as written.
+A same-named application type is not the platform's Program; `main_not_program`
+names the package mismatch and asks the author to rename the shadowing local module.
 
 **An absence has no token, so `missing_main` underlines nothing** (2026-09-19). It
 is reported against a FILE at `1:1` with no excerpt, the form
@@ -887,9 +990,50 @@ module supplies `run` and every export of §9.4.5's union, and each one it does 
 `pub` value with a body is `foreign_export_mismatch`, reported against the manifest that named the
 module at `1:1` (a markup primitive at its declaration, as with a file) — there is no file to hold
 it instead. A build writes no runtime file, and the entry file imports `run` (and `start`) from the
-module's output. A chain that names neither is refused before a source is read, as before. A chain
-with no `"program"` asks the module for no `run`. `browser` is such a platform since this
+module's output. A chain with neither runtime form nor an `"entryKinds"` row is refused
+before a source is read. A chain with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
+
+**A runtime module without markup** (*specified 2026-11-03, built 2026-11-04*; #1812,
+`plans/runtime-in-beni.md` step 16). A chain that declares no markup `"lowering"` has no
+`"markup".module` to name a runtime module in, so a platform with no markup — `cloudflare` —
+could keep `run` only in a `"runtime"` file. A top-level `"module"` of the package that declares
+`"program"` names a beni module of that package that supplies `run`, and only `run`, since there
+is no lowering to ask for more: the build writes no runtime file, and the entry file imports
+`run` from the module's output, as it does under `"markup".module`. The compiler reaches the
+module with no import, as it reaches `"markup".module` and the module of `"program"`'s type
+(`Session.isPlatformRoot`): a program of an embedded platform need not name it, and `cloudflare`'s
+do not (*found 2026-11-04 while moving its runtime: the first programs of the feature imported
+their module, and a platform read from a directory has every module as a root*). The module is held to §9.2's
+terms: `run` is a `pub` value with a body that takes one parameter and no evidence, or it is
+`foreign_export_mismatch` against the manifest at `1:1`; a name that is no module of the package
+is `foreign_sibling_missing` there. A package that declares both `"runtime"` and `"module"`, or a
+top-level `"module"` in a chain that declares a `lowering` (its runtime module is `"markup"`'s,
+§9.2), is the exit-2 manifest failure, as a key of the wrong JSON type is. Inherited first-found
+down the chain like every field (§9.1). `"exports": "program"` takes such a module: the entry
+file imports `run` from the module's output and holds its result, as §9.12 (c) writes it for a
+runtime file (*amended 2026-11-04*; the markup runtime module still refuses the key, §9.12 (c)).
+The `run/` fixture `ProgramModule`, a program over a platform of its own that declares
+`"program"` and `"module"` and nothing else, proves the shape in both builds; the two refusals
+are tested beside `markup_split`'s (`tests/blackbox/platform_test.zig`); `cloudflare` takes it
+when its `runtime.js` moves (#1813).
+**A platform may select a beni entry runtime with `"entryKinds"`** (added 2026-11-01).
+Each row names a nominal `programType`, `realm`, runtime module in `runtime`, and
+explicit `constructors`, `launches` and `parameters` arrays. Rows combine across
+the platform chain. The top-level `"program"` selects its row by nominal identity;
+`main` may apply that type, for example `main : Start.Program String`, including
+through an alias. `"runtime"` is optional when the chain has an entry-kind row.
+Check and build validate all rows; a program build with no legacy runtime and no
+row for its top Program reports `invalid_entry_kind`. A `--library` build does
+not require a runtime for that top Program and writes no entry file.
+
+The selected module supplies a public beni `run : Program a → ⊤` (with the
+Program's declared type parameters), independent of markup. The entry calls
+`run(main)` synchronously. An invalid row or runtime signature is
+`invalid_entry_kind`; a `run` whose own arrow may suspend is
+`entry_runtime_suspends`. It may start a root fiber whose initialization suspends,
+then return. The full metadata and runtime contract is
+[`workers-entry-implementation.md`](workers-entry-implementation.md).
 
 **Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
 2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the
@@ -929,17 +1073,16 @@ a list on a chain that declares no `"exports"` is the warning `exports_ignored`.
 does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
 contract whole.
 
-**Whether the chain always runs in a page is part of that shape, and it is `"host"`** (*added
-2026-10-24*, the owner's decision on #936). `"host": "page"` says that every program built for
-the chain runs in a page, where `window` is a global, so a release build writes `Js.global
-"window"` as plain `window` (`backend.md` §9, item 8, amended the same day). No other value is
-accepted, and a chain that does not say it gets `globalThis.window`, because a bare `window`
-throws `ReferenceError` where there is no window — under Node, in Workers, in a Web Worker.
-Inherited first-found down the chain like every field (§9.1). `browser` and `browser-inline`
-declare it, so a platform layered on either does as well; `node`, `cloudflare`, `html` and the
-test platforms `page`, `toy`, `entry` and `entry-shape` do not. It is a promise about the host,
-which nothing checks: a chain that declares it and is loaded where there is no window fails at
-the first such read.
+**Each entry has an execution realm, checked by EntryHost** (`workers.md` §4).
+A platform declares its top entry with `"entryHost": "window"` for a page,
+or another realm from the native universe. Each `entryKinds` row supplies its
+own realm. The compiler checks native availability in each entry's execution
+projection before output. A proven Window entry permits a release build to
+write `Js.global "window"` as bare `window`; other entries keep
+`globalThis.window`. A worker projection never inherits the page's proof.
+The old `"host": "page"` promise reports `obsolete_host_promise` and names the
+replacement. The first declared `entryHost` is inherited down the platform
+chain like the other output fields (§9.1).
 
 ### 5.3 One project, several platforms
 
@@ -1076,6 +1219,10 @@ happens once, at construction, and the constructed value is then total. It is th
 conspicuously lacks, and its sanctioned workaround demonstrably reintroduces crashes into the
 virtual-DOM patch. It also establishes the validated-newtype pattern that every later capability
 reuses.
+
+*Amended 2026-11-04:* the time half has its first part, §9.8.21: moments, zones by name (correct
+across DST), the calendar's parts and ISO 8601. Locale formatting (`Intl.DateTimeFormat`,
+`NumberFormat`, `Collator`) is still open.
 
 Then, in rough order of how well the typing is understood: typed arrays and binary data; `fetch` and
 streaming; `localStorage` and structured storage; Web Workers; direct DOM access beyond the virtual
@@ -1345,7 +1492,7 @@ back under its budget: 4 264 M instructions, where the whole platform made it 4 
 ```json
 "markup": { "vocabulary": "Html", "type": "Html.Html" }          -- html
 "markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" }   -- browser: the same file as its "runtime"
-"markup": { "lowering": "ssr", "runtime": "markup.js" }           -- node
+"markup": { "lowering": "ssr", "module": "Rt" }                   -- node (since 2026-11-03; "runtime": "markup.js" before)
 ```
 
 | Field | Is | Checked |
@@ -1370,7 +1517,16 @@ must**: a delegated listener, which the markup runtime installs, has to deliver 
 program's `send`, which the program runtime owns, and a sibling may not import another file
 (`backend.md` §2). So the one file owns the program loop, the render loop and the DOM patching, and
 nothing crosses between two files at run time (`backend.md` §15.11). `node` needs no such sharing — a
-string renderer sends nothing — and keeps `markup.js` beside `runtime.js`.
+string renderer sends nothing — and keeps `markup.js` beside `runtime.js`. *Amended 2026-11-03*
+(#1810, `plans/runtime-in-beni.md` step 15): `node` has no file at all. Its runtime module `Rt`
+supplies `run` and the `ssr` lowering's seven exports and the two primitives, and the manifest
+says `"markup": { "lowering": "ssr", "module": "Rt" }` and no `"runtime"`, the shape
+`browser` has had since 2026-10-02 (§5.2, *`"runtime"` is optional when the runtime module is the
+whole runtime*). `markup.js` and `runtime.js` are deleted. The module name `Rt` is `node`'s now,
+as it is `browser`'s: a platform over either that names a runtime module of its own gives it
+another name, or the build is `duplicate_module` (`build/bad/RuntimeModule`'s is `Views`); and
+one that names `ssr` with a markup file of its own declares its program `"runtime"` too, since
+`node` has no file to lend it (the three `build/bad/MarkupRuntime*` fixtures).
 
 **A runtime module: the markup runtime written in beni** (*added 2026-10-02*, `plans/browser-
 decisions.md` R47-1; research 47 §6 item 1). A fifth field, `"module"`, names a module of the
@@ -1382,7 +1538,7 @@ package that declares `"runtime"`:
 
 | Field | Is | Checked |
 |---|---|---|
-| `module` | a beni module of the package that declares `runtime`, whose `pub` values stand in for runtime exports | when `lowering` is checked: a name that is no module of that package is `foreign_sibling_missing` against the manifest; one of another package is the exit-2 `markup_split` failure `lowering` and `runtime` already have |
+| `module` | a beni module of the package that declares `runtime`, whose `pub` values stand in for runtime exports | when `lowering` is checked: a name that is no module of that package is `foreign_sibling_missing` against the manifest; one of another package is the exit-2 `markup_split` failure `lowering` and `runtime` already have. *Amended 2026-11-03* (#1810): `module` is read from the package that declares the chain's first `lowering`, so a lower package's `module` is shadowed with its `lowering` and `runtime` — a platform over `node` that names `ssr` with a `runtime` file of its own sees nothing of `node`'s `Rt` (`build/bad/MarkupRuntimeArity`) |
 
 - **Which exports it supplies.** Every name of §9.4.5's union — a lowering's declared export, one
   per markup primitive of the vocabulary, and `run` when the markup runtime is also the program
@@ -1452,6 +1608,26 @@ name. A build that reaches the event imports that name, or writes it in the voca
 itself, and the vocabulary module exports the declaration, as it exports a core-private value.
 The runtime's `identity` stays the extractor of an event with no `via`.
 
+*Amended 2026-10-23 (#883; `plans/core-in-beni.md`, step 4).* **A payload extractor may be a beni
+declaration** of the vocabulary module instead of a `foreign`: annotated, and written over `Js` as
+any platform value is — `targetValue e = Js.to (Js.get (Js.get (Js.from e) "target") "value")`.
+Everything above holds of it unchanged: its type is `E -> P` with `E` a `foreign type`
+(`checker-v2.md` §25.2); it may be `pub` or not; every lowering calls it synchronously while the
+event is dispatched (below); reachability keeps a non-`pub` one for an event that names it, and the
+vocabulary module exports it when it is live, exactly as for a non-`pub` `foreign`
+(`Reach.privateExtractor`). A declaration with no annotation is refused as a `via` that names
+nothing is (`unbound_variable`). Its result is read by the lowering's listener and by no module's
+code, so it is never a function whose result nothing reads (`backend.md` §4, amended 2026-11-03,
+#1806). **An extractor is `sync`** (*amended 2026-10-26*, the review of
+#925): every lowering calls it while the event is dispatched, outside any fiber, so one that may
+suspend — a beni body that waits, or a `foreign suspends` rung — is `sync_boundary` at the event
+whose `via` names it (`checker-v2.md` §25.8), checked once the effects are inferred, as the sync
+step above checks a function the sibling may call. What changes is that `html`'s extractors need
+no sibling, so `Html.js` goes the way the rest of the platforms' JavaScript goes (#877).
+*Done 2026-11-03*: the three extractors are beni declarations of `Html.beni`, `targetValue` and
+`targetChecked` `pub`, `pointer` not, each `Event → …` or `Dispatched → Pointer` over `Js.get`,
+and `Html.js` is deleted (`plans/runtime-in-beni.md` step 14).
+
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
 **the build's markup runtime** — whichever lowering's runtime that is. It is held to the four checks
@@ -1493,7 +1669,13 @@ in a listener higher up — under `dom`, the document's (`backend.md` §15.3, *E
 `onInput`'s and `onChange`'s `targetValue` and `onCheck`'s `targetChecked` run — so it must not read
 `currentTarget`. An extractor may read what is true only during the dispatch — the pointer events'
 reads `currentTarget` and its box — so a lowering that queues an event and extracts later breaks it
-(issue #559).
+(issue #559). *Amended 2026-10-23* (§9.8.20 (d), #557): a lowering that runs a `delegated` event's
+extractor in a walk defines the event's `currentTarget` as the node whose handler runs, while that
+handler and its extractor run, and removes the definition when the walk ends. So under every
+lowering that runs the extractor during the dispatch, an extractor reads, in `currentTarget`, the
+element that has the handler. `dom`'s walk
+does (`backend.md` §15.11, *One walk finds the handlers and their program*). `browser-inline`
+attaches every listener to its element, where `currentTarget` is that element already.
 
 *As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
 The smallest readings, and what waits for the lowering interface:
@@ -2015,8 +2197,9 @@ none of the four fields below is handed exactly what 1.5 hands it. S0 builds wha
 `cx.reads`, `cx.conflicts`, `cx.site`, `cx.carriers`, `cx.literal`) are added by the slices that
 consume them, each as a minor version of its own.
 
-- **`Lowering.programs`**, the program constructors the lowering compiles whole, each a `foreign`
-  of its platform named by module and value (`Tea.sandbox`). The compiler finds **every call** of
+- **`Lowering.programs`**, the program constructors the lowering compiles whole, each a declaration
+  of its platform named by module and value (`Tea.sandbox`; a `foreign` until 2026-10-29,
+  `plans/runtime-in-beni.md` step 9). The compiler finds **every call** of
   one in a surviving declaration before any declaration is lowered. A use of one that is not the
   callee of a call — `List.map apps Tea.sandbox` — makes programs whose `view`s are known only at
   run time, and is **`view_not_compiled`** at the use. An entry may carry **`refused`**, a message:
@@ -2317,7 +2500,11 @@ of the same date own selection and verification.
 **Version 1.14** (*amended 2026-10-17*, additive, gated on nothing; `browser-inline.md`): what a
 program lowering needs to compile a program's effects and its placement away.
 - `Lowering.constructs`: a program constructor's call is compiled as the mount alone, for a
-  platform whose `Program` is the mount.
+  platform whose `Program` is the mount. *Amended 2026-11-06 (#1232):* the constructor's own body
+  is then never called, and a call that reaches it is a call the lowering did not compile — a bug
+  in beni, not a value (`CLAUDE.md` rule 9). Such a platform writes the body as a throw of an
+  `Error` that names the constructor and says so, never as a value of its `Program` type;
+  `browser-inline`'s four do (`browser-inline.md` §10.5).
 - `Program.Code.program_shape`: a `programReport` refusal by a language rule (`browser-inline.md` §5, class 3), reported as the `program_shape` code, whose title says no "yet".
 - `Lowering.places`: a call of a `first` placement whose first argument is a program constructor's
   call and whose second a string literal is compiled as the program call alone, and the hook is
@@ -2558,6 +2745,22 @@ be written against it; they are 1.0's contract:
 - **A module whose only survivors are markup primitives** — `html`'s `Html` when a program calls
   `Html.text` and nothing else of it — is not written: its primitives are the runtime's exports and
   nothing imports the module.
+
+*Amended 2026-11-07 (the owner's decision on #2208; interface 1.24).* **Trusted Types is a build
+option, and a second code a lowering may raise.** `Build.trusted_types` is true when the project's
+`beni.json` says `"trustedTypes": true` (`frontend.md` §10.1). A lowering that honours it declares
+`Lowering.trusted_types = true`, and then writes no HTML-parsing sink into the page; a build whose
+chain's lowering does not declare it is refused before any module is lowered (exit 2, the message
+`frontend.md` §10.1 gives), because a page whose markup reaches a sink would stop on its first
+render, which the key exists to prevent. `dom` declares it (`backend.md` §15.3, *Templates under
+Trusted Types*), and so does `ssr`, which writes strings and no DOM; `inline` does not, since its
+runtime writes rows with `insertAdjacentHTML`. `cx.reportTrustedTypes(node, message)` reports
+**`trusted_types_sink`**, an error at the markup node, for markup that would reach a sink however it
+were lowered — `dom`'s `raw`, `srcdoc` and `<script>` — and is reported as `markup_restructured`
+is: during `build`, before a byte is written. The code is the lowering's because only the lowering
+knows what its runtime writes through a sink; `check` does not read the key, and no check result
+depends on it (§9.6). The key reaches the lowering as an option, never through the cache: no emitted
+byte is cached (§9.6).
 
 ### 9.5 How a lowering is compiled into beni
 
@@ -3029,7 +3232,7 @@ arrival and departure (the driver's `flush` takes several selectors, each clicke
 one task); each of the three fails against a listener that adds itself or sends at once, or that
 starts after its key left.
 
-*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js`, `Sub.beni`,
+*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js` (gone 2026-10-26, below), `Sub.beni`,
 `Browser/Events.beni`, `Browser/Navigation.beni`; `platforms/browser-tea/Tea.beni`;
 `core/Task.beni`'s `onShutdown`; `tests/browser/driver.mjs`'s `--fiber-page`), as specified.
 A page whose subscriptions all wait pays a little for the split (`bench/size.mjs`'s `every`, a
@@ -3049,9 +3252,49 @@ may send, which queues the next flush.
 `Dom.blur`, `Dom.box`, `Dom.scrollTo`, `Dom.scrollIntoView` (`Err (NotFound id)` for a node that is
 not in the page) and `Dom.viewport`. Called outside phase (2) they are still correct — a measurement
 forces a layout, which is slow and right. Research 17 §4.7's `suspends` capabilities are withdrawn.
+
+*Amended 2026-11-04 (issue #1900, a gap of #142, `playground.md` §10.10): a text field's
+selection.* The playground's beni editor indents the selected lines with Tab and selects a
+diagnostic's span, so a page must read and set a selection:
+
+```text
+-- Html (the html platform)
+pub type alias Selection = { start : Int, end : Int, backward : Bool }
+pub targetSelection : Event → Maybe Selection
+-- Dom
+pub type SelectError = NoField String | NotText String
+pub select : String, Html.Selection → Result SelectError ⊤   -- impure
+```
+
+- Both count code points, as `String` does. The host counts UTF-16 units, so each wrapper converts
+  with the field's value: a character past U+FFFF is one position, and a host offset inside one
+  counts that character. A position past the text is its end.
+- A text field is a `textarea`, or an `input` of a type that has a selection. On any other target
+  `selectionStart` is `null` or absent: `targetSelection` is `Nothing`, and `select` is
+  `Err (NotText id)` without a call of `setSelectionRange`, which throws `InvalidStateError` on an
+  input of a type with no selection (CLAUDE.md rule 9: the documented failure is not reached).
+  A node that is not in the page is `Err (NoField id)`.
+- `select` does not focus the field; `Dom.focus` does. `backward` sets the direction, so a history
+  that records a selection gives it back as the person made it.
+- `SelectError` is a type of its own, not two constructors more of `Dom.Error`, so every existing
+  match of `Dom.Error` stays exhaustive.
+- Pinned by `tests/corpus/browser/tea/TextFieldSelection`, the same transcript in happy-dom and in
+  Chrome.
 **`Dom.rendered : () -> ()`** suspends: at once when no render and no after-render work is queued,
 otherwise until the next flush's after-render phase begins; its fiber goes on at the scheduler's
 next drain, before paint.
+
+*As built 2026-10-29 (`plans/runtime-in-beni.md` step 8).* The six capabilities are beni over `Js`
+and `Dom.js` is gone: the node is `Js.call (Js.global "document") "getElementById"
+[ Js.from id ]`, `Js.isNull` on it is `NotFound id`, the node's method is called through `Js.call`,
+and `viewport` reads the four window properties with `Js.global`. None of these calls documents a
+failure, so none is caught (`CLAUDE.md` rule 9). `Error`, `Box` and `Viewport` no longer cross the
+boundary, so a release build gives `Result` integer tags and writes `NotFound id` as `id`, a type
+of one constructor with one field being its field (`backend.md` §9). The two records keep their
+field names where `box` is live: it reads the host rectangle's `x`, `y`, `width` and `height` with
+`Js.get`, and a field name the build also writes as a plain property is never renamed
+(`backend.md` §9 item 4's closed list); a page that never measures a node renames them, since no
+JavaScript reads these records. `emit/release/tea/DomCapabilities` pins both.
 
 **`Browser.flush : () -> ()`**, `impure`, renders every program with a message waiting now, then runs
 phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,
@@ -3093,6 +3336,33 @@ sends `fullscreenElement ⊤`: the id of the element in full screen (`Just ""` f
 or `Nothing`. Only the unprefixed API is used; a host that has only `webkitRequestFullscreen` is
 `Unsupported`.
 
+*Amended 2026-11-04 (issue #1896, a gap of #142, `playground.md` §10.6): where a node scrolls to.*
+`Dom.scrollIntoView id` gives the host no options, so the node goes to the start of each box
+that scrolls it, the page included. A row of tabs that scrolls sideways then moves the whole page.
+`Dom` adds the options of CSSOM View's `ScrollIntoViewOptions`:
+
+```text
+pub type Align = Start | Center | End | Nearest
+pub type alias Alignment = { block : Align, inline : Align }
+pub scrollIntoViewWith : String, Alignment → Result Error ⊤   -- impure
+```
+
+- `block` aligns the node across the lines of text, and `inline` along them. `Start`, `Center` and
+  `End` put the node's start edge, centre or end edge at the same place of each box that scrolls
+  it. `Nearest` scrolls only as far as it takes to show the node, and not at all when the node is
+  in view.
+- `scrollIntoView id` is `scrollIntoViewWith id { block = Start, inline = Nearest }`, the host's
+  default for a call with no options. It does not change.
+- There is no `behavior`: the scroll is instant, or smooth where the page's `scroll-behavior`
+  says so, as for a call with no options.
+- Failures: `Err (NotFound id)` for a node that is not in the page, as for every capability of
+  this section. `scrollIntoView` documents no other failure for an element in the document, so
+  nothing is caught (CLAUDE.md rule 9).
+- Pinned by `tests/corpus/browser/tea/DomScrollIntoViewWith`: in Chrome (`test-browser`),
+  `Nearest` both ways scrolls a row of tabs and leaves the page where it is, and `Start` across
+  the lines also scrolls the page. happy-dom lays nothing out, so there the fixture pins the calls
+  and the `NotFound` answer only.
+
 #### 9.8.7 The low-level form: `Browser.hosted` and `Hosted`
 
 ```elm
@@ -3133,9 +3403,17 @@ fiber (`suspends`), for the test hook `fibered`.
 over a `pure` `foreign keyOf : String, k → Key where k.compare : k, k → Order`, and a `Key`
 compares by identity, then by its type's `compare` — no longer "by value".
 
-A function the platform hands a body — every `Send` — is `impure` because the `foreign` that hands
-it is (P2 §14.3 rule 6), so a release build never drops a send. `retap` trusts that every tap it is
-given sends what the relay's first did; §9.8.3 says what keeps that true and what does not.
+*Amended 2026-10-26 (#877, after `Js.lt` #882):* the keys are beni, and `Hosted.js` is gone. `key`
+builds `{ t, c, v }` with `Js.object` — the identity, the type's `compare` as a lambda over the
+`where` clause (`comparer`), the value — and `compare` orders two keys of different types by their
+identities with `Js.lt` (§4.2), under `Js.pure` as the sibling was `foreign pure`; two keys of one
+type go through the stored `compare` with `Js.apply`, read back at `Order`.
+
+A function the platform hands a body — every `Send` — is `impure`, so a release build never
+drops a send. When `Hosted` is written in beni, a typed adapter calls the supplied send through
+`Js.apply` before erasing the body to `Js.Value`: that call gives the callback its impure rung.
+The earlier `foreign` constructors supplied that rung through P2 §14.3 rule 6.
+`retap` trusts that every tap it is given sends what the relay's first did; §9.8.3 says what keeps that true and what does not.
 **A sibling may not import another file**, so `Browser.js` reaches the render loop by value: every
 mount a `Browser` constructor makes carries a function of that file, and `run` hands it the loop
 before mounting anything; `flush` and `onRendered` call it. The platform's runtime file gains no
@@ -3169,6 +3447,11 @@ operation and returns its canceller (P2 §16.5); one that never parks is `impure
 
 `getJson`/`postJson` send and accept `application/json` and answer the body's text once it parses
 as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`schema.md`).
+
+*As built 2026-10-29 (`plans/runtime-in-beni.md` step 9).* `Browser.Events.size` and the
+`hidden` that `visibility` reads are beni over `Js` — `Js.global "innerWidth"`/`"innerHeight"`,
+and `document.visibilityState === "hidden"` through `Js.same` — and `Browser/Events.js` is gone;
+nothing is caught, since neither read can fail.
 **Still owed** from R45 §5: `Http.send` with a request record and a streaming body, `Time.here`,
 `Browser.nextFrame` and `onAnimationFrame`/`onKeyDown`/`onWindow`, `Random`, `Storage`, `Nav` and
 `Tea.application`, `Ws`, and core's `Queue` (W52 settles its handle rule, below).
@@ -4370,6 +4653,18 @@ after it; each is deterministic, ordered by creation and by the scheduler's FIFO
 4. **Leftovers outside any fiber.** Finalisers a throw left on the outside-any-fiber record — a
    `bracket` whose use threw in `soon` work or in `init` — run last first, in one fiber the teardown
    starts for them after the sweep, under the same rules.
+   *(Amended 2026-10-23, #811: each of them starts with the slots that the outside-any-fiber record
+   has at that moment, in the fiber that runs them. The exception is the scheduler slot, which stays
+   the program's, because the fiber is the teardown's. A finaliser reads the slots of the fiber
+   that runs it. A scoped change's restore among the leftovers puts back the record's slots, so the
+   next finaliser reads the slots from before that change. So each one has the log context and the
+   clock that it would have had in a fiber of its own: a body with no fiber runs "exactly where its
+   fiber would have started" (§9.8.11), and a scoped change is put back "as an `onExit` finaliser
+   would" (proposal §17.5). Before, the fiber had no slots, and the release of a `bracket` in a
+   command body with no fiber logged with the default context. Cost: the teardown makes the change
+   only when `slotted` is set, in a statement of its own, so a release build in which nothing sets a
+   slot keeps none of it. Measured on 632 builds: in release only the 7 pages that set a slot change,
+   by +120 raw (−18 to +47 brotli); development +345 raw.)*
 5. **Nothing new runs.** A fiber spawned while *stopping* — by a finaliser, `spawnIn` a closed root,
    `start` — is cancelled before it runs, as a fiber spawned into a closed root scope is today
    (§9.8.7). `Task.soon` queues nothing. A `send` does nothing (`dead`); `Browser.flush` does nothing;
@@ -4643,7 +4938,8 @@ calling fiber's clock; `Time.now` reads `Clock.now`. `Http`'s `timeout : Maybe D
 page's signatures are unchanged, and a page that never calls `Clock.run` still runs on the host's
 `setTimeout` and `Date`, so the test driver's virtual clock governs it as before. `node`'s
 `Io.sleep : Int → ()` keeps its signature as `Task.sleep (Duration.millis ms)`, and `Io.js`'s
-`startTimer` is deleted.
+`startTimer` is deleted. *Amended 2026-11-04 (§9.8.21 (a)):* `Time.Posix` is an alias of core's
+`Date.Posix`, and `Time.toMillis`, `Time.fromMillis` and `Time.now` call `Date`'s.
 
 **(b) The log moves into core** (§17.11). `platforms/browser/Log.beni` is removed; core's `Log`
 keeps `info`, `warn` and `error : String → ()` with the same output on a page (the default sink is
@@ -4674,6 +4970,16 @@ process exits 1 — the ending §9.8.14 (k) gives Node's defects. **When `Io.run
 its output and exit code, `Io.js` calls `Task.shutdown` with a deadline of 1 000 ms, so a fiber
 still running — a `Task.spawnDetached` one — is cancelled and cleaned up rather than keeping the
 process alive. A page is not affected: it is alive while it is open.
+
+*As built 2026-10-29 (`plans/runtime-in-beni.md` step 10).* `finish` and
+`startRead` are beni over `Js` in `Io.beni`. The newer `startReadDir` stays in `Io.js`. *Amended
+2026-11-03*: `startReadDir` is beni over `Js` as well, and `Io.js` is gone (`plans/runtime-in-beni.md`
+step 14).
+A beni platform module reaches a Node built-in
+module through `process.getBuiltinModule` (`Js.call (Js.global "process") "getBuiltinModule"
+[ Js.from "node:fs/promises" ]`), asked at each call so that a replaced export is seen; the
+rejection handler of a read names the canceller's `AbortError` and the twelve `code`s of
+`FileError`, and throws everything else again (§4.1, `CLAUDE.md` rule 9).
 
 **Nothing else moves.** `Tea`'s command table and policies, `Sub.listen`, `Dom.rendered` and the
 teardown of §9.8.14 are unchanged; the combinators of §17.7 cancel and wait exactly as
@@ -4863,9 +5169,25 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   restore of them into the fiber's list, under `update`'s finalisers. At the teardown, `update`'s
   finalisers run with `update`'s context, and then the caller's finalisers, such as the release of
   a body's `bracket`, run with the caller's, as an `onExit` finaliser would (proposal §17.5). When
-  `update` throws and leaves no finaliser, the old slots go back at once. (For a body with no
-  fiber, the teardown runs the finalisers in a fiber with no slots, so they have the default
-  context: #811.)
+  `update` throws and leaves no finaliser, the old slots go back at once. (A body with no fiber
+  gets the same: §9.8.14 (d) step 4, amended 2026-10-23, #811.)
+  *(Amended 2026-10-24, #859: the caller can go on before the teardown. A throw out of an event
+  handler does not reach the code that fired the event: the DOM reports it, and the call returns.
+  A body that calls `Dom.focus` or `Dom.blur` thus goes on after the handler's `update` throws.
+  For a caller that has a log context, the old slots go back at once, also when `update` leaves
+  finalisers. Then one more entry goes on top of them, which sets the slots that `update` had at
+  the throw. When the body closes nothing after the throw, the teardown runs that entry first,
+  then `update`'s finalisers with `update`'s context, then the restore of the old slots, then the
+  caller's finalisers. The rest of the body has the body's context. Not covered: a scope that the
+  body closes after the throw, such as a `bracket` or the end of a body's kept context, takes the
+  entry on top off the list, not its own entry. So at the teardown `update`'s finalisers run with
+  the slots of that time, and the body's own release runs again (#921). A body in a fiber that
+  ends after the throw drops `update`'s finalisers, and they never run (#1154). Not covered: a
+  body with no log context of its own. `send` calls `withoutLogContext` only when
+  `Task.hasLogContext` is true, so `update`'s `annotate` writes the body's slots, and after the
+  throw the rest of the body has `update`'s context (#1153). Cost, measured on
+  634 builds: in release only the 8 pages that set a slot change, by +29 raw bytes (−49 to +11
+  brotli); development +89 raw.)*
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
   set, each message reads the slot, and a message sent inside a context copies the slot record
@@ -4880,6 +5202,40 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
 - **Not covered:** `browser-inline` (#751). *Amended 2026-10-25 (#751):* it will need nothing: a
   message a body sends there is queued, and its `update` runs after the body has returned, outside
   the body's context, with the program's.
+
+*Amended 2026-11-06 (#1153): after each `update`, `send` puts back the slots of its caller, also of a
+caller that has no log context of its own.* The amendment of 2026-10-24 names this case "Not
+covered". A body with no log context did not get `withoutLogContext`. So `update`'s `annotate` wrote
+the body's slots, and after a throw that the DOM reports, the rest of the body had `update`'s
+context. The issue's first possible fix (`withoutLogContext` whenever a slot is set) does not fix
+the issue's own probe: there `update` sets the first slot of the page, so when `send` runs, no slot
+is set and no record holds the slots.
+
+- **Where.** `send` runs every `update` in a `Js.finally`. Before the call, `Task.beginUpdate` finds
+  the record that holds the slots: the calling fiber, or the record outside any fiber. When a slot
+  is set and the record exists, it keeps the record, its slots and the number of its finalisers.
+  When the caller also has a log context, it sets the slot to the default, as `withoutLogContext`
+  did. After the call, returned or thrown, `Task.endUpdate` puts the kept slots back at once, and
+  after a throw it edits the list as the amendment of 2026-10-24 says. When no slot was set, or no
+  record existed, as `update` began, every slot of the caller was at its default. Then `endUpdate`
+  sets the record's slots to the defaults, and when `update` threw and left finalisers, it puts one
+  entry on top of them, which sets `update`'s slots of the throw again for the teardown. No restore
+  of the old slots is needed under them, because the old slots are the defaults. `Task.beginUpdate`
+  and `Task.endUpdate` replace `Task.hasLogContext` and `Task.withoutLogContext`.
+- **What a program sees.** A program that has no defect sees no change: an `update` that returns
+  has put back every slot that it set. After a throw that the DOM reports, the rest of the body has
+  its own context, also when it has none (`browser/tea/LogBareBodyAfterReportedThrow` and its
+  three siblings).
+- **Cost.** Both functions read `slotted` first. In a build in which nothing sets a slot, they fold
+  away, and the `finally` is then empty. The specialiser writes a `try` that has no `catch` and an
+  empty `finally` as its guarded statements (`backend.md` §9, amended 2026-11-06). So the release
+  build of a page that sets no slot is byte for byte the build of before. Where a slot is set, each
+  message reads the record, counts its finalisers and makes one small record, and a message sent
+  inside a context copies the slot record once, as before. A development build folds nothing, so
+  each page ships both functions.
+- **Not covered**, as before: a scope that the body closes after the throw takes the wrong entry
+  off the list (#921), and a body in a fiber that ends after the throw drops `update`'s finalisers
+  (#1154).
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
@@ -5298,7 +5654,7 @@ and each reader as the DOM names the property it reads.
 
 | | Is |
 |---|---|
-| `onPointerDown`, `onPointerMove`, `onPointerUp`, `onPointerCancel`, `onPointerEnter`, `onPointerLeave` | the DOM event of the lower-cased name, `via pointer : Pointer`, **not** `delegated` |
+| `onPointerDown`, `onPointerMove`, `onPointerUp`, `onPointerCancel`, `onPointerEnter`, `onPointerLeave` | the DOM event of the lower-cased name, `via pointer : Pointer`, **not** `delegated`. *Amended 2026-10-23* (#557, (d)): the first four are `delegated`, and `onPointerEnter` and `onPointerLeave` are not |
 | `Pointer` | `pub crossing foreign type`: the event, and its position in its handler's element, made by the extractor `pointer`, (d) |
 | `pointerId : Pointer → Int` | the pointer's identity, the same from its `pointerdown` to its `pointerup` or `pointercancel` |
 | `pointerType : Pointer → String` | `"mouse"`, `"pen"` or `"touch"`; `""` when the browser cannot say |
@@ -5351,6 +5707,32 @@ first render wrote. A delegated event's walk is one turn and one render. The `.s
 untrusted events, which are no turn, so no fixture sees the difference yet. #557 takes Solid's
 choice, or specifies the turn per listener.
 
+*Amended 2026-10-23* (#557): **the four pointer events that bubble are `delegated`, as Solid's
+are.** `onPointerDown`, `onPointerMove`, `onPointerUp` and `onPointerCancel` are `delegated`.
+`onPointerEnter` and `onPointerLeave` do not bubble, so each keeps a listener on its element. Each
+element's enter or leave is its own event and its own turn, so nested enter or leave handlers
+render once for each element, and an inner one runs with the view that the outer one's render
+wrote. A
+user's pointer event is then one walk, one turn and one render, as a click is (`backend.md` §15.11,
+*One walk finds the handlers and their program*): every handler of the walk runs with the view that
+was on the page when the event came, and nested handlers give one render. **While the walk calls a
+node's handler, the event's `currentTarget` is that node.** The `dom` runtime defines
+`currentTarget` on the event before it calls the handler, and removes the definition when the walk
+ends, so the listeners after the walk read the host's `currentTarget` again. Solid's walk defines
+it in the same way (dom-expressions `packages/runtime/src/client.js`, `eventHandler`). Solid also
+delegates `pointerover` and `pointerout`, which beni does not expose yet, and does not delegate
+`pointercancel`. beni delegates it, because it bubbles and a game ends a pointer's steering on it
+as on `pointerup` ((e)). Three consequences under `dom` (`browser-inline` attaches every listener to
+its element, as before):
+
+- A pointer handler on a node whose `disabled` is true does not run, as a delegated `onClick` there
+  does not. Before, the control's own listener called the handler for each event that the browser
+  dispatched to it.
+- A `For` of a thousand rows with a pointer handler on each row attaches no listener. The page has
+  one listener for each delegated name that its build uses.
+- Every `pointermove` that reaches the document is a walk from its target up, also where no element
+  has a handler. The *As built* note below has the measurement.
+
 The position is taken by `pointer`, the events' extractor and a `foreign` of `Html` (§9.3), while
 the event is dispatched. After the dispatch `currentTarget` is null and the box can have moved, so
 a reader that ran later — in `update`, on a `Pointer` that a message carries — would read nothing,
@@ -5372,9 +5754,13 @@ dispatch that runs: then only the send of what it read is queued. *Amended 2026-
 the extractor was called inside the handler, so a send made while another ran was queued with its
 raw event and the extractor ran after the dispatch, where `pointer` threw `TypeError`. A command
 body that dispatches a pointer event shows it (`browser/inline/PointerInSend`). A throw of the
-extractor while its send waits stops the page, as any defect does. **The type is the guarantee**, given that obligation: a `Pointer`
-comes only from the listener of a pointer event on its own element, so `localX` of every `Pointer`
-is a point in its handler's element, under every lowering and at any time after. The other readers
+extractor while its send waits stops the page, as any defect does. *Amended 2026-10-23* (#557): for a `delegated` pointer event, the
+lowering calls the extractor in the walk of its delegated listener, with `currentTarget` defined as
+the node whose handler runs. `dom` does: `bubble` defines it, then calls `fire`. `browser-inline`
+reads no `delegated` flag and attaches every listener to its element, as before. **The type is the
+guarantee**, given that obligation: a `Pointer` comes only from the listener of a pointer event on
+its own element, or from the walk's call for that element, so `localX` of every `Pointer` is a point
+in its handler's element, under every lowering and at any time after. The other readers
 read properties of the event, which do not change after the dispatch. **The second wall is `Js`**:
 `Js.to : Value → a` can make a value of any type, so a package that may import `Js` can make a
 `Dispatched` and call `pointer` on any event. *Amended 2026-10-22* (#696): only `Html` can call
@@ -5385,6 +5771,9 @@ import `Js` (`js_outside_platform`, §4.2), so only a platform package can, whic
 The cost is one listener for each element that has a pointer handler, not one for each page: a
 `For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
 surface is one element. A delegated form waits for a page that needs it and a measurement (rule 8).
+*Amended 2026-10-23* (#557): the four delegated events cost one listener for each name and a walk
+for each event, and `onPointerEnter` and `onPointerLeave` still cost one listener for each element.
+The *As built* note below has the measurement.
 The extractor also reads the element's box on every event. **Measured** (2026-10-20, the review of
 PR #548: headless Chrome, synthetic `pointermove` on an arena, the median of 5 × 2 000 events, µs per
 event):
@@ -5449,7 +5838,21 @@ the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot
 pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
 a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
 *Amended 2026-10-22* (#696): the first is refused with `private_name`, because `pointer` is not
-`pub`.
+`pub`. *Amended 2026-10-23* (#558): under happy-dom, an element that an allow list places has the
+box that Chrome gives it, and every other element has the box at 0. The list: the document has no
+style sheet; the element is a `div` or a `span` whose inline style sets `position: absolute` or
+`fixed` and `left`, `top`, `width` and `height` as `Npx` or `0`, with no negative size; each
+ancestor is an `html`, `body`, `main`, `div` or `span`; the element and each ancestor name no
+inline property but those and `touch-action`, read from the `style` attribute's text and from each
+`setProperty`, because happy-dom drops a property that it does not know; and none is hidden
+(`tests/corpus/README.md`, *layout*, has the whole list). So the gates see the
+conversion of (c) in `browser/tea/PointerInput` and `browser/dom/PointerEvents`: a reader that drops the subtraction, or subtracts the target's box,
+fails them. `browser/inline/PointerPoint` has no such element, because `browser-inline` compiles no
+`style` yet, so only Chrome sees its conversion. *Amended 2026-10-23* (#557): the `pointer` step's `trusted` sends a user's mouse move
+(Chrome: `Input.dispatchMouseEvent`), and `browser/dom/PointerNested` pins nested handlers under
+`press` and under a trusted move: one turn and one render for each event, with the outer handler
+running with the view of before the event. It also pins that a pointer handler on a disabled button
+does not run.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
@@ -5467,7 +5870,11 @@ specified, with these findings:
 - **The extractor's key is `ev`, not `e`.** A first version returned `{ e, x, y }`. The release
   minifier keeps the spelling of a name that stands where a property name can, anywhere in the file
   (`src/js/Minify.zig`, *A2*), so the parameter `e` of `targetValue` and `targetChecked` kept its
-  name, and TodoMVC's release file changed.
+  name, and TodoMVC's release file changed. *Amended 2026-11-03*: the extractors are beni over `Js`
+  (`plans/runtime-in-beni.md` step 14). The key stays `ev`, since `pointerEvent` reads it; the
+  minifier no longer sees the extractors, and the release renamer gives their parameters its
+  own short names (`backend.md` §9). No parameter is called `event`, the window's global, so a
+  development build's body shadows nothing.
 - **`browser-inline`** needed no change. It compiles neither a `style` attribute nor a lambda
   handler yet (`browser-inline.md` §5), so `browser/inline/PointerPoint` has constructors as its
   handlers and no style.
@@ -5480,6 +5887,185 @@ specified, with these findings:
   DOM Standard and MDN's compatibility data, and four were corrected — the events after a
   `pointercancel`, the mouse events a prevented `pointerdown` stops, Safari's `user-select`, and
   iOS's double-tap zoom.
+
+*As built, 2026-10-23* (#557; `platforms/html/Html.beni`, `platforms/browser/Rt.beni`,
+`tests/browser/driver.mjs`), as amended in (d), with these findings:
+
+- **`currentTarget`.** The walk's first handler defines `currentTarget` on the event, once, with
+  `Object.defineProperty`: configurable, and a getter over `at`, the walk's node, which `bubble`
+  writes before each handler, as Solid's walk does. A `Js.finally` around the walk removes it with
+  `Reflect.deleteProperty` when the walk defined it, and a walk that met no handler removes
+  nothing. Chrome and happy-dom 20.14.5 both keep `currentTarget` as an accessor on
+  `Event.prototype`, so the event's own property hides it, and the removal shows it again: a
+  listener on the window after the walk reads the window. *Amended 2026-10-23* (the review of
+  #862): the first version defined a value for each handler and removed it after every walk; the
+  measurement below has both.
+- **The removal is pinned.** The driver's prelude listens on the window, in both DOMs, for the
+  four delegated pointer events, and records an error for an event that reaches it with an own
+  `currentTarget` or with a `currentTarget` that is not the window. A runtime that does not remove
+  the definition fails `PointerNested` under happy-dom and in Chrome.
+- **Before and after.** `browser/dom/PointerNested` fails without the change, in both DOMs, with
+  the same lines: the outer handler of a `press` or of a trusted move reads the count that the
+  inner handler made (`the handler saw n=1, the model has n=1`), and the handler on the disabled
+  button runs. With the change, the outer handler reads the count of before the event
+  (`n=0` and `n=1` for the `press`, `n=2` for the trusted move), and the disabled button's handler does not run. The untrusted steps give the
+  same lines before and after.
+- **The trusted move.** Chrome dispatches a mouse move at a frame, not when
+  `Input.dispatchMouseEvent` returns, so the step waits for the move's `mousemove` on the window,
+  for at most 5 s of the page's real clock.
+- **Measured** (`bench/ui/pointer.mjs` on `bench/ui/apps/pointer/Main.beni` and its Solid 2
+  twin `bench/ui/apps/solid2/src/pointer.jsx`; headless Chrome 153; 7 fresh pages for each build,
+  in turn; untrusted events, µs per event, the median of 7 × 5 samples of 2 000; the mount in ms,
+  the median of 7, to the end of the render):
+
+  | | before (a listener for each element) | the first walk | the walk as built | Solid 2 |
+  |---|---|---|---|---|
+  | a move on a target 8 elements below the handler's element | 5.70 | 7.15 | 7.16 | 8.37 |
+  | a move on a target 8 elements deep, no handler above it | 3.25 | 4.57 | 4.55 | 6.33 |
+  | a `pointerdown` on row 500 of 1 000 rows, its handler runs | 5.66 | 6.83 | 6.78 | 6.00 |
+  | a `pointermove` on row 500, no move handler on the rows | 3.05 | 4.14 | 4.08 | 5.64 |
+  | a click that renders the 1 000 rows, each with `onPointerDown` | 4.15 ms | 2.84 ms | 2.96 ms | 3.22 ms |
+
+  Per event, the walk costs 1.0 to 1.5 µs more than a listener on each element: the document's
+  listener, the walk to the document, and the definition and removal of `currentTarget`. A build
+  of the first walk without the removal gave 0.4 to 0.6 µs less when a handler ran, and about 0.1
+  µs less when none did (the review of #862). The walk as built is the same as the first walk
+  within the noise. Against Solid 2, whose walk is the same design, beni is faster on four of the
+  five shapes, and Solid 2 is faster on the `pointerdown` of a row that has a handler: 6.00 against
+  6.78 µs. Chrome sends `pointermove` at most once a frame for each pointer, so at 60 frames a
+  second 1.5 µs is less than 0.01 % of a frame. A page that renders many rows with a pointer handler
+  mounts faster, because no row adds a listener: 1.2 ms less for 1 000 rows. Untrusted events are
+  no turn in either beni build, so the table compares the listeners, not the turn. The owner
+  accepted this cost (Cesar, on #862 on 2026-10-23, and on the dashboard question `pointer-q1`:
+  "Accept the walk.").
+- **Size** (`bench/size.mjs --pages-only`, the compiler before and after the change). A page that
+  delegates an event carries the longer walk: 131 bytes raw more under `--release`, and 22 to 46
+  bytes brotli (TodoMVC 8 966 → 9 008, Conduit 27 910 → 27 949, `ApiAndRoutes` 14 484 → 14 506,
+  `sternhalma` 7 428 → 7 474). `examples/steer` delegated no event before, so its build had
+  `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
+  brotli. A page that delegates no event is the same bytes.
+
+#### 9.8.21 Dates: the calendar, time zones and ISO 8601 (2026-11-04)
+
+*Added 2026-11-04, #1912, for #239; built the same day (`core/Date.beni`,
+`run/DateCalendar`). **Decided 2026-11-04 by the owner (Cesar, dashboard `conduit-fixes-q1`):**
+a new core module, for every platform, as (a) says. The other answer was the browser's `Time`,
+as in Elm, which gives only pages a calendar.*
+
+A program can print a moment as a date only if it can parse the text that a server sends, know the
+reader's time zone, and get the year, the month and the day of the moment in that zone. Core and the
+platforms gave none of the three. Elm gives the second and the third in `elm/time`, and
+`rtfeldman/elm-iso8601-date-strings` gives the first. Only a platform can write `foreign`
+(CLAUDE.md rule 6), so the gap is filled here, inside the wall (rule 7).
+
+**(a) Core's `Date`** holds it, for every platform. `Posix` moves into it from the browser's `Time`,
+and `Time.Posix` becomes an alias, as `Time.Duration` became an alias of `Duration.Duration`
+(§9.8.15 (a)). `Time.toMillis`, `Time.fromMillis`, `Time.now` and `Time.every` keep their
+signatures. A core module cannot be named `Time`, because the browser's `Time` shadows a core module
+of its name (§9.8.11 (a)).
+
+```text
+-- core/Date.beni
+pub type Posix = Posix Int                         -- milliseconds since the Unix epoch
+pub toMillis : Posix → Int
+pub fromMillis : Int → Posix
+pub now : ⊤ → Posix                                -- impure: Clock.now
+
+pub opaque type Zone                               -- `Utc` or a name; `==` compares names
+pub utc : Zone
+pub here : ⊤ → Zone                                -- impure: the host's zone
+pub named : String → Maybe Zone                    -- an IANA name that the host knows
+pub name : Zone → String                           -- "UTC", or the IANA name
+
+pub type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
+pub type Weekday = Mon | Tue | Wed | Thu | Fri | Sat | Sun
+pub type alias Parts =
+    year : Int
+    month : Month
+    day : Int                                      -- 1 to 31
+    weekday : Weekday
+    hour : Int                                     -- 0 to 23
+    minute : Int
+    second : Int
+    millis : Int
+    offset : Int                                   -- minutes east of UTC, in this zone at this moment
+pub toParts : Posix, Zone → Parts
+
+pub fromIso8601 : String → Maybe Posix
+pub toIso8601 : Posix → String                     -- UTC, `2016-02-18T03:22:56.637Z`
+```
+
+**(b) A zone is a name, never a fixed offset.** Elm's `Time.here` builds a zone from
+`getTimezoneOffset()` with no eras, so a moment on the other side of a DST change is one hour wrong
+(research 13 §5): a silent wrong answer. Here a zone is `utc` or a host-known IANA name, and the host's
+time zone database gives the offset for each moment.
+
+- `here ⊤` is `named` of the name that `Intl.DateTimeFormat().resolvedOptions().timeZone`
+  gives. A host that gives no name, or a name it does not know, gives `utc`.
+- `named "UTC"` is `utc`. `named s` makes the host's formatter for `s` once, with `timeZone: s`
+  and `timeZoneName: "longOffset"`, and the zone is the name that the formatter resolves `s` to
+  (`resolvedOptions().timeZone`). So a name in any case and an old link are one zone
+  (`us/eastern` is `America/New_York`), `Etc/UTC` is `utc`, and an offset name (`+01:00`), which
+  ECMA-402 accepts, is `Nothing`: an offset is not a name of the database. The canonical name is
+  the host's: Node 24 resolves `Asia/Kolkata` to `Asia/Calcutta`, as ICU does, and an engine
+  that keeps the link's name gives `Asia/Kolkata`. *Added 2026-11-05, from the review of #1929.* ECMA-402 throws a `RangeError` for a name it does not know;
+  that one error is `Nothing`, and every other error is thrown again (rule 9). `Date` keeps one
+  formatter per name, made on the first `named` of it, so `toParts` makes none. A `Zone` is plain
+  data (`Utc` or a name), so `eq` and `compare` derive: two zones are `==` when their names are. A
+  `pub eq` for `Zone` is not possible, because a module's `pub eq` is the `eq` of every type it
+  declares (`static-dispatch-spike.md` §11), here `Posix`, `Month` and `Weekday` too.
+- `toParts t utc` is arithmetic in beni (Howard Hinnant's `civil_from_days`). `toParts t z` for a
+  named zone asks the zone's formatter for one part, the offset at `t` (`GMT`, `GMT+01:00`, or with
+  seconds, `GMT+00:53:28`, for a local mean time; a text of another form is a defect, never an
+  offset of 0), through `Js.pure`, and then does the same
+  arithmetic on `t` plus the offset. The answer depends only on `t`, the name and the host's
+  database. The offset is asked of the host because only the host has the database; the
+  calendar is not, so the parts of every moment come from one piece of code.
+- **The host's range.** A JavaScript `Date` holds ±8.64 × 10¹⁵ ms (ECMA-262 §21.4.1.1). Outside
+  it, a formatter throws. `toParts` of a moment outside the range uses the zone's offset at the
+  nearer end of the range, so it is total.
+
+**(c) `fromIso8601` is one pattern and range checks, never `Date.parse`.** `Date.parse` gives
+`NaN` or an implementation-defined answer for text outside ECMAScript's own format (ECMA-262
+§21.4.3.2). `fromIso8601` matches the text with one `RegExp` (`Js.regExp`, whose `\d` is ASCII's
+ten digits), and beni checks each field's range. The pattern is 359 bytes of brotli smaller in
+Conduit's release build than the same parser written over `String` (29,110 against 29,469), and
+it gives the same answers on `run/DateCalendar`. It accepts exactly:
+
+- a date, `YYYY-MM-DD`, which is that day's midnight UTC; the year is four digits, or a sign
+  and six digits (`+275760`, never `-000000`), the form `toIso8601` writes outside 0 to 9999;
+- a date, `T` (or `t`, or one space), and a time `HH:MM`, `HH:MM:SS` or `HH:MM:SS.f…` with one to
+  nine digits of fraction, truncated to milliseconds; a fraction needs the seconds, and its mark
+  is `.`;
+- after a time, `Z` (or `z`), `±HH:MM`, `±HHMM` or `±HH`. A time with no offset is UTC.
+
+Each field must be in range: month 1–12, the day valid for its month and year (leap years by the
+Gregorian rule), hour 0–23, minute 0–59, second 0–59 (a leap second, `60`, is refused), an offset
+hour 0–23 and minute 0–59; and the moment must be inside the host's range. Anything else is
+`Nothing`: there is no partial answer. These are the
+forms of RFC 3339 §5.6 and of `elm-iso8601-date-strings`' `toTime`, which elm-spa-example decodes
+dates with.
+
+`toIso8601 t` is `t`'s UTC parts as `YYYY-MM-DDTHH:MM:SS.sssZ`, as `Date.prototype.toISOString`
+writes them; a year outside 0–9999 is written `±YYYYYY`, as that method writes it. So
+`fromIso8601 (toIso8601 t) == Just t` for every `t` in the host's range.
+
+**(d) No names, no locale.** `Date` gives `Month` and `Weekday` as types, not as English words.
+A program writes its own names (elm-spa-example's `Timestamp.format` does), and formatting by
+locale is the `Intl` capability of §6, specified on its own.
+
+**(e) The test harness pins `TZ=UTC`.** The harness started every program with an empty
+environment (`tests/blackbox/world.zig`), and Chrome with its own, so a program read the
+machine's zone: Europe/Berlin on one machine, UTC on CI. A program that calls `here` printed a
+different date on each. Every child of the harness, Chrome included, now gets `TZ=UTC`
+(`world.time_zone`). A DST case is tested with `named`, not with `here`.
+
+*Tests:* `run/DateCalendar` parses and print each accepted form and refuse each malformed one (a day
+31 of April, 29 February of 2100, hour 24, a leap second, an offset of `+24:00`, trailing text);
+round-trips moments at both ends of the host's range; gives the parts of moments on each side of the
+2026 DST changes in `America/New_York` (8 March) and `Europe/Berlin` (29 March, 25 October); and
+refuses an unknown zone name. Its last line is `here`, which is `UTC` under (e). The
+Conduit pages show their dates through it (`Article.timestamp`).
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
@@ -5598,6 +6184,27 @@ it is worth compiling.
   `mi`, `mo`, `mn`, `ms`, `mtext` and `annotation-xml` as its integration points, written when its
   vocabulary is.
 
+*Amended 2026-11-05* (#1074). **`<feOffset>` takes `dx` and `dy`**, which the list above left on `text`
+and `tspan` only. Without them the standard drop-shadow recipe (`feGaussianBlur`, `feOffset`, `feMerge`)
+needs the quoted escape `"dy"="3"`, a `String` the build never checks. **`<feDropShadow>` is declared**,
+the first element that elm/svg does not have. It is Filter Effects 1's (§9.12), and every current
+browser draws it. The facts, each from Filter Effects 1 (W3C Working Draft, 18 December 2018):
+
+- `feDropShadow` is an element `svg`, as the other filter primitives are.
+- It is in the `on` lists of `x`, `y`, `width`, `height` and `result`, the attributes of every filter
+  primitive (§9.2), and of `in`, which its attribute list names (§9.12).
+- `dx` and `dy` are on `feOffset` (§9.18) and `feDropShadow` (§9.12), added to the `on` list of the one
+  `dx` and `dy` declarations of `text` and `tspan`. `stdDeviation` is on `feGaussianBlur` (§9.14) and
+  `feDropShadow` (§9.12).
+- `flood-color` and `flood-opacity` apply to `feFlood` and `feDropShadow` (§9.13.1, §9.13.2). They are
+  presentation attributes, which (c) declares for every element, so they need no change.
+- Every value is a `String`, as (b) says of every SVG attribute. The type of each copies the declaration
+  it joins. The specification's types are `<number>` for `dx` and `dy`, `<number-optional-number>` for
+  `stdDeviation` (`"1.5 3"`) and `<alpha-value>` for `flood-opacity`. A `Float` would refuse the
+  second number of `stdDeviation` and a percentage `flood-opacity`.
+
+The element count of (g) is 59, and the count of attribute declarations does not change.
+
 **(h) What it costs.** A page without SVG does not move a byte: no runtime changed, and every `emit/`
 golden and `run/` record is what it was. A markup program reads a vocabulary of 410 declarations where it
 read 180, and **pays for it linearly**. Two quadratic costs were found and removed. The type table gave every
@@ -5616,7 +6223,7 @@ leaving the check's wall time within the noise of the compiler before SVG.
 took the three decisions of #331 on 2026-10-17 (dashboard `node-http-q1` to `q3`, recorded in
 (i)): a defect in a handler stops the process, the server lives in the `node` platform, and the
 API shape below is the contract.* The `node` platform gains one module,
-**`Http.Server`** (`platforms/node/Http/Server.beni`, its sibling `Server.js`). It wraps
+**`Http.Server`** (`platforms/node/Http/Server.beni`; its sibling `Server.js` moved to beni on 2026-11-01, *The sibling, moved* below). It wraps
 `node:http`'s server as `Io.readFile` wraps `fs.promises.readFile` (§4.1, `CLAUDE.md` rule 9):
 each failure Node documents is one constructor of a typed error, a cancelled fiber releases what
 it holds, and any other error is thrown again and is a defect.
@@ -5923,8 +6530,8 @@ rows of (e):
 `socket:<code>`, or with `socket:errno=<name>` for an error that carries only the number;
 §9.11, *As built, the server*.)*
 
-Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
-page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
+Each build's verdict goes to the run-hash cache (`run_hash.digestWith`, as a `browser/` page's
+does): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
 — and the driver's bytes, the preload's bytes and the script, so a verified build runs no Node. Every case stays under the
 budget of 4 300 million instructions: a case costs two builds, two driver processes and two
 program processes, and no fixture sleeps for real.
@@ -5941,7 +6548,7 @@ fourth made (h) the one list of fixtures, with the rows that have none and why.
 - Decision 1, a defect in a handler (`node-http-q1`): **stop the process**. Rule 9 does not
   change; (f) has the rule.
 - Decision 2, where the code lives (`node-http-q2`): **extend the `node` platform**.
-  `Http.Server` is `platforms/node/Http/Server.beni` with its sibling `Server.js`, beside `Io`;
+  `Http.Server` is `platforms/node/Http/Server.beni`, beside `Io` (its sibling `Server.js` is gone, §9.10 *The sibling, moved*);
   one platform for command-line and server programs.
 - Decision 3, the API shape (`node-http-q3`): **accept the shape** of (a)–(d). The choices it
   settles: `method` is a `String` and not a union, since Node fixes the set and a program matches
@@ -5959,6 +6566,36 @@ TLS, HTTP/2, an API for WebSocket and `upgrade` and for `100-continue` (today No
 by itself, (c)), trailers, a Unix socket address and configuring Node's timeouts (#340). Raw `node:net`, routing, command-line arguments, environment
 variables and file writes are #331's later slices. *(Amended 2026-10-20: the WebSocket part of #340 — `upgrade`, and an API
 for a WebSocket — is §9.11.)*
+
+**The sibling, moved (2026-11-01).** `Server.js` is written in beni over `Js` in `Server.beni`,
+one declaration per former export, and the file is deleted (`plans/runtime-in-beni.md` step 12;
+the bar is `plans/core-in-beni.md` R47-3). Nothing a program sees changes: (a)–(j) hold as
+written, (e)'s table is the same list of codes, and every `run/` fixture that drives a server
+prints what it printed. What the move fixes in place:
+
+- **The two `catch`es stay two, and name what they named.** `invalid` runs Node's
+  `validateHeaderName` inside `Js.catchIf`, taking a `TypeError` whose `code` is
+  `ERR_INVALID_HTTP_TOKEN`, and `validateHeaderValue` inside a second, taking a `TypeError` whose
+  `code` is `ERR_INVALID_CHAR` or `ERR_HTTP_INVALID_HEADER_VALUE`; each answers the text (d)
+  gives, and `Js.catchIf` throws everything else again (§4.2, rule 9).
+- **The three error handlers that filter by code** — `listen`'s (e) table, a request's
+  `ECONNRESET`, a socket's `gone` codes and `ENETRESET` by number — end in `Js.throw` for an
+  error they do not name, as `Io.beni`'s rejection handler does: an unknown error crashes.
+- **`Handle` stays a `foreign type`** with no sibling, as the `cloudflare` platform's types do
+  (§4). The handle is a `Js.object` the callbacks write with `Js.set`.
+- **`Request` and `Response` cross no `foreign` any more**, so a release build may rename their
+  fields (`backend.md` §9 item 4); `WebSocket.js` reads none of them, only the upgrade record's
+  `waiting` and `goAway` (item 26 as amended). For that the `Request` is built in `requestOf`,
+  once per request, from the host's `IncomingMessage` and the body the record holds as a string:
+  a beni record stored through `Js.from` would keep its field names (§4, *What JavaScript may
+  read of a beni value*).
+- **The host door** is `process.getBuiltinModule` for `node:http`, `node:buffer` and `node:os`,
+  as `Io.beni` opens `node:fs/promises`; `TextDecoder`, `Date`, `JSON`, `Number` and `Set` are
+  globals, and the handshake key's pattern is `Js.regExp`.
+- **Speed is measured, not assumed**: a request runs three loops in beni that were JavaScript
+  (`requestFrom` over `rawHeaders`, `invalid` and `write` over the response's headers, `tokens`
+  over the `upgrade` and `connection` values), and the pull request's body carries their timings
+  beside master's, both builds, two processes each.
 
 ### 9.11 WebSocket, in a page and on the `node` server (2026-10-20)
 
@@ -6300,8 +6937,9 @@ are the first bytes of the connection.
 fiber of the upgrade. The common surface works on `socket` as (a) says; the codes that the
 server may send with `close` are 1000 to 1003, 1007 to 1014 *(amended: no 1010, item 3 below)* and 3000 to 4999 (RFC 6455 §7.4 and
 the IANA registry), and `close` with any other code is `Err (InvalidCode code)`. The platform
-reads and writes RFC 6455 frames itself in `WebSocket.js`, a sibling of `node`'s `WebSocket`
-module, with `node:crypto` for the handshake and no package:
+reads and writes RFC 6455 frames itself in `node`'s `WebSocket` module (in beni over `Js` since
+2026-11-03, *The sibling, moved* below; its sibling `WebSocket.js` before), with `node:crypto` for the
+handshake and no package:
 
 - It sends each message as one unmasked frame. It joins a fragmented message from the client
   before `read` sees it, and it answers each ping with a pong that carries the ping's data.
@@ -6377,17 +7015,19 @@ never calls `read` sees no close from its client until a `write` fails: the conn
 A defect in `upgrade` or in a session stops the process, as a defect in a handler does (§9.10
 (f)).
 
-*As built, 2026-10-20, the server* (`platforms/node/WebSocket.beni` and its sibling
-`WebSocket.js`; `Http/Server.beni` and `Server.js`; `tests/serve/driver.mjs` and `preload.mjs`),
+*As built, 2026-10-20, the server* (`platforms/node/WebSocket.beni` (and its sibling
+`WebSocket.js`, since moved to beni); `Http/Server.beni` (and `Server.js`, since moved to beni); `tests/serve/driver.mjs` and `preload.mjs`),
 as (e)–(i) and the amendment's items 14–28 say, with these readings:
 
-- **The two siblings meet by value** (item 26). `Server.js` makes the upgrade's record —
-  `{ handle, req, socket, head, waiting, goAway, request }` — when the `upgrade` event comes, adds
+- **The two siblings meet by value** (item 26; since the move, `Server.beni` makes it). `Server.js` makes the upgrade's record —
+  `{ handle, req, res, socket, head, waiting, goAway, body }` (item 26 as amended: `body` is the
+  raw string, and `Server.beni` builds the `Request` from `req` and `body` in `requestOf`) — when
+  the `upgrade` event comes, adds
   its `error` listener (`waiting`) and checks the handshake there, and queues it for the accept
   loop as it queues a request. `Server.beni` calls the program's `upgrade` in a fiber of the
   server's scope, and for an accept calls `WebSocket.upgraded`, a `pub` function that takes the
   record as a `Js.Value` (a program has no `Js.Value` to give it) and answers the socket and the
-  function the session's end calls. `WebSocket.js` takes the socket over: it checks first that
+  function the session's end calls. `WebSocket.beni`'s `fromUpgrade` takes the socket over: it checks first that
   the socket is alive, and a socket that is not keeps `waiting` and starts no session; then it
   removes `waiting`, writes the 101, and sets `goAway`, which `Server.close` calls for the 1001.
 - **A refusal is written by hand** on a socket that Node gave up: the status line with Node's
@@ -6714,7 +7354,14 @@ renumbered.
 26. **The siblings meet by value.** `Server.js` and `WebSocket.js` cannot import each other
     (`backend.md` §2): the upgrade's record, which `Server.js` makes and `WebSocket.js` takes,
     carries the socket, the `head` bytes and the functions each side gives the other, as
-    `Browser.js` reaches the render loop (§9.8.7).
+    `Browser.js` reaches the render loop (§9.8.7). *Amended 2026-11-01*: `Server.js` is
+    beni now (§9.10 *The sibling, moved*), and the record is a `Js.object` of the same eight
+    names — `handle`, `req`, `res`, `socket`, `head`, `waiting`, `goAway`, `body` — which
+    `Js.object` never renames (§4.2), so `WebSocket.js` reads and writes it as before: it
+    takes `req`, `socket`, `head` and `handle`, reads `waiting` and writes `goAway`. *Amended
+    2026-11-03*: `WebSocket.js` is beni too (*The sibling, moved*, below), and the record stays a
+    `Js.object` of those eight names: `Server.beni` queues a request and an upgrade alike as a
+    `Js.Value`, and `upgraded` takes it as one. Typing the record is a later step, not this one.
 27. **One state, one encoding.** A server frame is not masked, so one state sent to every player
     is the same bytes. The platform keeps one cache for the whole process, not one per socket: the
     last text that `write` framed, and its frame. A `write` of the same text to any socket reuses
@@ -6795,6 +7442,51 @@ and (j) say, with these readings:
   event's string reaches `update` as it is, with no copy. A constant state is cheaper, about 3.5
   µs, only because the view then has no text to write.
 
+**The sibling, moved (2026-11-03).** `WebSocket.js` is written in beni over `Js` in `WebSocket.beni`,
+one declaration per former export, and the file is deleted (`plans/runtime-in-beni.md` step 13;
+the bar is `plans/core-in-beni.md` R47-3). Nothing a program sees changes: (a)–(j) hold as
+written, the amendment's items 14–28 hold, and every `run/WebSocket*` fixture prints what it
+printed. What the move fixes in place:
+
+- **`Socket` stays a `foreign type`** with no sibling, as `Http.Server`'s `Handle` (§9.10 *The
+  sibling, moved*). A connection's state is a `Js.object` of the sibling's names (`raw`, `state`,
+  `queue`, `sizes`, `queued`, `readers`, `end`, `drainers`, `chunks`, `bytes`, `frame`, `parts`,
+  `partBytes`, `max`, `protocol`, `timer`, `paused`, `done`, `writes`, `flushed`, `pendingPong`,
+  `path`), read with `Js.get` and written with `Js.set`, which a build writes as the property
+  read and the assignment the sibling wrote: the frame parser touches a dozen of them per frame.
+- **The frames are built and unmasked over the host buffer.** A header byte is `Js.setAt`, the
+  lengths are `Buffer`'s `writeUInt16BE`/`writeUInt32BE` and `readUInt16BE`/`readUInt32BE` by
+  `Js.call`, and the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and
+  `Js.bitXor`, which the tail-call loop (`backend.md` §8) writes as the sibling's `for`. The
+  parser is one self-recursive tail function, `parse`, which the same loop writes as the
+  sibling's `while`: a chunk of ten thousand tiny frames runs in constant stack. It was two
+  functions calling each other at first — mutual recursion, which §8 leaves out — and a peer's
+  64 KiB write of empty pong frames overflowed the stack and exited the process (#1801).
+- **One cache for the whole process stays** (item 27): the last text framed and its frame are two
+  top-level `Js.ref`s, made at module load as `Rt.beni`'s `spaces` is.
+- **The one handler that filters by code** — the socket's `error` listener, `isGone` over the
+  table of item 15 and `ENETRESET` by number — ends in `Js.throw` for an error it does not name
+  (rule 9). The table is the same list as `Server.beni`'s; the two modules keep one each, since
+  `Server.beni` imports `WebSocket.beni` and not the reverse. A write callback's error ends
+  nothing here, as before (item 14): the callback ignores its argument.
+- **`Result` crosses no `foreign` any more.** The sibling's `next` built `{ $: "Ok", a: text }`
+  and `{ $: "Err", a: { code, reason } }` by hand, so `foreign next`'s
+  `Resume (Result Close String)` pinned `Result`'s string tags in every release build that serves
+  a WebSocket (§4, *What JavaScript may read of a beni value*). A waiting reader is a host
+  function now, `Js.from` of a lambda typed `Js.Value → ⊤` that holds the typed `Resume` and
+  builds the `Result` from the text or the end object it is given — a `Js.to` typed
+  `Resume (Result Close String)` would pin it again, and work after `Task.callback` in `read`
+  would cost a continuation per read — so `read` stays one `Task.callback`, and a release build
+  gives `Result` integer tags where nothing else pins them. `Close` keeps `code` and `reason`: one
+  source field text has one spelling everywhere (§4, *amended 2026-10-22*), `code` is the host
+  property `isGone` reads of an `Error`, and `reason` is the end object's key.
+- **The host door** is `process.getBuiltinModule` for `node:buffer` (`Buffer`, `isUtf8`),
+  `node:crypto` (`createHash`) and `node:os` (`ENETRESET`), as `Server.beni` opens `node:http`;
+  `setTimeout`, `clearTimeout`, `Math` and `process` are globals.
+- **Speed is measured, not assumed**: (m)'s load (`bench/websocket/load.mjs`, the arena server,
+  100 players) runs against master, release build, and the pull request's body carries the
+  server's CPU time and instructions per message beside master's.
+
 ### 9.12 The `cloudflare` platform: Workers and Durable Objects (2026-10-20)
 
 *Added 2026-10-20, for issue #526. Status: specified, not built. Three decisions are the owner's
@@ -6842,7 +7534,9 @@ alarm at a time, delivered to `alarm()` at least once, and retried on an uncaugh
 has a synchronous key-value store, `ctx.storage.kv`
 ([storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)); its key and
 value together may hold 2 MB ([limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
-Each of these is one piece of the API below, and nothing else of the host is reached.
+Each of these is one piece of the API below, and nothing else of the host is reached. *Amended
+2026-11-04: the platform also reaches `ctx.storage.sql`, for one table of its own that keeps the
+program's alarm time while the wake shares the host alarm ((e.5)); the program reaches no SQL.*
 
 **(b) The package.** `platforms/cloudflare/`, embedded like `node` (§5.3): a fifth platform in
 the binary, beside §9.1's four (*amended 2026-10-20, L5*; §5.1 and §9.1 carry a dated line each).
@@ -6853,7 +7547,7 @@ Its manifest:
   "platform": true,
   "name": "cloudflare",
   "program": "Worker.Program",
-  "runtime": "runtime.js",
+  "module": "Rt",
   "entry": "_worker.mjs",
   "exports": "program"
 }
@@ -6881,7 +7575,12 @@ entry file exports, one per `Worker.Object.define`, each a subclass of `DurableO
 `cloudflare:workers` whose methods hand every event to beni. Everything else is beni over `Js`
 and siblings of §4's shape. A sibling reaches `Response`, `WebSocketPair` and the other host
 globals that §5.1's common set does not list through `globalThis`, as `platforms/browser/Dom.js`
-reaches `document`; check 3 is lexical and that is the edge it makes visible.
+reached `document` until its move to beni (2026-10-29, §9.8.6: `Js.global` now); check 3 is
+lexical and that is the edge it makes visible. *As built
+2026-10-29 (`plans/runtime-in-beni.md` step 11):* the platform has no sibling of §4's shape left —
+`Worker.js`, `Worker/Object.js` and `Worker/Storage.js` are beni over `Js.catchIf` and a walk —
+and `runtime.js` is its one file of JavaScript; a beni module reaches those globals through
+`Js.global`. *As built 2026-11-04 (step 17; #1813, the owner's answer A to `runtime-in-beni-q3`):* `runtime.js` is gone too. Its `run` is `platforms/cloudflare/Rt.beni`, the chain's runtime module without markup (§5.2, the manifest above), and the Durable Object class is built there over `Js.method` with parameters and `Js.module "cloudflare:workers"` (§4.2): no file of the platform is JavaScript, and `core/Js.js` is the one hand-written file a build of it copies.
 
 **(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
 compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
@@ -6904,7 +7603,10 @@ key; this is its whole contract.
   in Node 24 as `SyntaxError: Duplicate export of 'flush'`; the refusal is static, the same in
   both builds, where a test of the runtime's exports would follow reachability and differ between
   them; `stop` is not refused, because only a runtime module supplies it and this key refuses a
-  runtime module*); otherwise
+  runtime module*; *amended 2026-11-04: a runtime module without markup, §5.2, supplies `run`
+  alone, so the key takes it — the entry file imports `run` from the module's output, `import {
+  Rt$run as $run } from "./_platform/Rt.mjs";`, and the rest of the file is as below; a markup
+  runtime module, which may supply `stop`, is still refused*); otherwise
   `invalid_entry_export`, a diagnostic of the build reported during emit against the app's
   manifest at `1:1`, naming the entry, as `invalid_entry_file` is (exit 1; a `"exports"` that is
   not a list of strings is the manifest's exit-2 failure, as any key of the wrong JSON type is,
@@ -7267,9 +7969,9 @@ pub name : Context msg → Maybe String    -- `ctx.id.name`, when the object was
 pub sockets : Context msg → List Socket  -- every accepted socket still open, `ctx.getWebSockets()`
 pub socketsTagged : Context msg, String → List Socket
 
-pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set
+pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set; shared with the wake, (e.5)
 pub alarmIn : Context msg, Duration → ⊤  -- `alarmAt` of `Clock.now ⊤` plus the duration
-pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`
+pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`, unless the wake holds the host alarm, (e.5)
 
 -- The socket operations that need the object ((g) has their meaning):
 pub accept : Context msg, Request, List String → Result AcceptError (Socket × Response)
@@ -7401,11 +8103,100 @@ inside a handler queues it behind the events already waiting ((e.10)).
   hold is documented**: the lifecycle page says "Each operation prevents eviction until it
   completes or for up to 15 minutes from when it starts", so one timer holds the object for at
   most 15 minutes from when it was armed, and a fiber parked longer is #864 (re-arm the hold, or
-  accept the limit). Local workerd hibernates an idle object too: the review of #860 ran the
+  accept the limit). ***Measured 2026-10-29 at the edge (#864; the owner's answer to
+  `cf-workers-q14` was to re-arm every 14 minutes and measure):*** the hold does not last 15
+  minutes, nor 2. A plain-JavaScript probe Worker (`beni-probe-864`, deployed to the account's
+  `workers.dev` and deleted after; compatibility date 2026-05-18) with three Durable Object
+  classes and no socket: one with no timer, one with the platform's hold — one
+  `setTimeout(…, 2147483647)` armed in a request — and one with a 14-minute timer whose firing
+  arms the next and writes the time to storage. After 16 minutes with no request all three were
+  new instances, and the renewing one had written nothing: it was gone before its first renewal.
+  The long timer then kept its object for 60 s (the same instance, its count continued) and not
+  for 120 s (a new one), and a 14-minute timer did not keep its object for 8 minutes; the object
+  with no timer was new after 13 s, and the renewing object armed a second time had written no
+  renewal 14 minutes later either. So a pending timer keeps an object from hibernating (the
+  10 s) but not from the eviction of an idle object: the lifecycle page says "after 70-140
+  seconds of inactivity (no incoming requests or events)", and a timer's callback is not an
+  incoming event. Thus at the edge the guarantee above — a parked fiber is never stranded —
+  holds for a spawned fiber for at least 60 s and less than 120 s after the object's last event,
+  and a renewal every 14 minutes never runs. A fiber that waits inside its handler keeps that
+  handler's request open, an operation the page lets keep the object for up to 15 minutes; the
+  probe did not measure it. Whether a timer that fires — a renewal every 30 s, say — resets the
+  idle clock was not measured, since the deployed code had no short period; by the page's words
+  it does not, and an alarm, which is an incoming event, would. The next form is the owner's
+  decision (`cf-workers-q15`, #864). ***Measured 2026-11-03 and 2026-11-04 at the edge (#864;
+  Jayson's answer to `cf-workers-q15`, 2026-10-31: "A: a platform alarm every 60 s while a fiber
+  lives, plus one more probe"):*** two plain-JavaScript probe Workers, each deployed to the
+  account's `workers.dev` and deleted after, compatibility date 2026-05-18. The first
+  (`beni-probe-864b`) had an alarm alone: two objects whose `alarm()` arms the next alarm 60 s
+  ahead ran 15 alarms each in 15 minutes, on time, each alarm in a new instance, and reads at 3
+  and at 16 minutes found a new instance; an object with no alarm was new after 2 minutes. So
+  an alarm alone does not keep an object in memory: with no pending timer the object hibernates
+  between two alarms, and each alarm starts a new instance. The second (`beni-probe-864c`) had
+  the pair that A needs: the platform's hold, one `setTimeout(…, 2147483647)`, and an alarm
+  that `alarm()` arms again 60 s ahead. Two objects with the pair were the same instance after 3
+  minutes and after 10 minutes, their counts continued, and each ran its 9 alarms in that one
+  instance, on time; an object with the timer alone was new after 3 minutes, as in the first
+  probe. So the timer stops the hibernation between two alarms, and each alarm, an incoming
+  event, starts the idle period again: the pair keeps the object in memory, measured for 10
+  minutes. That it keeps the object past 15 minutes is *owed*: q15 asked for a read after 16
+  minutes, and this probe read at 10.
+  ***Amended 2026-11-04: the wake (q15's A).*** While the scope has a live fiber beside the
+  consumer, the platform holds the host timer as above and also keeps the object's one host alarm
+  at most 60 s ahead: the **wake**. 60 s is less than the 70 s that the lifecycle page gives as
+  the shortest idle period before an eviction. The program's alarm and the wake share the one
+  host alarm:
+  - **The program's time is durable and the platform's own.** `alarmAt`, `alarmIn` and
+    `cancelAlarm` write the program's time, or its absence, into a table of the platform's in the
+    object's SQLite database, `beni_alarm`, and then set the host alarm. `ctx.storage.kv` does
+    not see the table, so neither does `Worker.Storage` (*measured* under the pinned Miniflare:
+    the table stands beside `_cf_KV`, and `kv.list()` lists the program's keys only). The time
+    must be durable, because the wake of an evicted instance fires in a new one, which must not
+    take it for the program's alarm. This is the platform's one use of `ctx.storage.sql`; SQL for
+    the program stays (j)'s.
+  - **The host alarm is the earlier of the program's time and the wake.** The wake is set to
+    60 s from now when the count rises above the consumer while no wake is pending, and at each
+    firing of the host alarm while a fiber lives; each firing drops the wake it was. The platform
+    calls `setAlarm` or `deleteAlarm` only when that earlier time changes.
+  - **The program sees only its own alarm.** At each firing, the `alarm` event goes into the
+    mailbox only when the program's time has come, and the platform clears that time in the same
+    event. A firing that is only the wake puts nothing in the mailbox. If the `alarm` handler
+    has a defect, the abort discards the event's writes ((e.6)) and the host retries the alarm,
+    which finds the program's time still there.
+  - **When the last fiber ends**, the timer is released at once, as before, and the wake is not
+    taken back: it fires at most 60 s later, finds no live fiber, and sets the host alarm back to
+    the program's time, or to none. So a run of short fibers costs at most one `setAlarm` and
+    one firing, not a write each time a fiber starts or ends.
+  - **At each wake the platform arms the host timer again**, so no pending timer is older than
+    about one period. The 15 minutes that the lifecycle page gives each operation is then never
+    reached; whether it applies to a timer at all is not measured.
+  - **What the wake does not cover.** A deploy, a reset or a restart of the host still ends the
+    instance and loses its fibers ((e.6), *Eviction is a process kill*). The wake stops only
+    the eviction of an idle object. An object that is not SQLite-backed has no
+    `ctx.storage.sql`: the platform throws (h)'s configuration error the first time it needs the
+    table.
+  - **Under `--test-hooks`** no host alarm is set: the platform keeps in memory the host alarm it
+    would set, and two paths drive it ((k)). `/__beni/host-alarm` is the firing of the host
+    alarm, and `/__beni/alarms` answers which alarm the host would hold — `none`, `program` or
+    `wake` — and whether the program has a time.
+  Local workerd hibernates an idle object too: the review of #860 ran the
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
   this fact once the driver has a step that idles 15 s, past (k)'s 5 s step limit — that fixture
-  is what #593 stays open for.
+  is what #593 stays open for. ***Measured in the corpus 2026-10-23 (#593 closed):***
+  `workers/ObjectHibernate`, with the driver's `idle` step (16 s, past the 5 s step limit; (k)):
+  workerd evicts an idle object after a fixed 10 s of inactivity (`server.c++:2766`), and the
+  review of #905 measured the turn between 9.5 and 10 s, so 16 s is about 6 s past it.
+  Two objects of one class, one hibernatable socket each with a seat in its attachment, each
+  counting its requests in memory. After 16 s with no event, the object with no live fiber
+  answered as a new instance: `restore` ran again with the two sockets the host kept, its count
+  started at 1 again, one socket's attachment read back its seat and the other's its own id, the
+  same as `WebSocket.id` after the wake, and `/__beni/hold` said `free` before and after. The
+  object whose handler had parked a fiber on a `Deferred` — a gate no host
+  timer backs, so the platform's live-fiber timer alone kept it — answered as the same instance,
+  its count continued at 3, `held` before and after, and `free` once the gate opened and the
+  fiber ended. A peer's close after the wake reached the new instance's `closed`. Both builds,
+  under the pinned Miniflare (workerd 1.20260518.1).
 - **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
   `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
   marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
@@ -7604,7 +8395,20 @@ pub type AskError
   returns — the kernel reports an end, never a start, so the first fiber a handler spawns is seen
   there — and at each end through `onSchedulerCount`. `ObjectIsolation` reads it through the
   `--test-hooks` path `/__beni/hold` (`held` or `free`). That the timer prevents hibernation is
-  #593's probe, still owed, so #550 stays open until it settles.
+  #593's probe, still owed, so #550 stays open until it settles. *2026-10-29: at the edge it
+  prevents hibernation but not the idle eviction, 60 s kept and 120 s not ((e.5), measured,
+  #864).*
+- **The wake** ((e.5), 2026-11-04, #864) is built in `Object.beni`. `counted` sets it when the
+  count rises above the consumer while none is pending. `hostAlarmed` is the class's `alarm()`:
+  it drops the wake and sets it again, with a new hold timer, while a fiber lives, and it
+  delivers the program's `alarm` only at the program's time. `alarmRan` clears that time after
+  the handler, unless the handler set another. `realarm` calls `setAlarm` or `deleteAlarm` only
+  when the earlier of the two times changes. The program's time is the one row of `beni_alarm`,
+  read once per instance. `workers/ObjectWake` shows each rule through `/__beni/host-alarm` and
+  `/__beni/alarms`: no alarm on a firing that is only the wake, the program's alarm once when it
+  is due while a fiber lives, the next alarm an `alarm` handler sets, the wake that stays after
+  the fiber ends and then gives the host alarm back, and, after a hibernation, a new instance
+  that finds the program's time in the table and runs no alarm.
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
@@ -7614,7 +8418,8 @@ pub type AskError
   timer is one host `setTimeout`, re-armed as (e.5) says; under `--test-hooks` no host timer is
   armed and `/__beni/tick` is its firing ((k)).
 - **`post` and `ask` on the wire** ((e.10)): `post` to `self` goes into the mailbox with the ids of
-  the `Reply`s the message holds (a walk of its records and lists, `Object.js`); to another object
+  the `Reply`s the message holds (a walk of its records and lists, `Object.beni`'s `repliesIn`
+  since 2026-10-29, `Object.js` before); to another object
   it is `POST /__beni/post` on the stub with `x-beni-chain`, answered 204 after `received` ran.
   `ask` is `POST /__beni/ask` with `x-beni-ask: <uuid>`; the receiver keeps the pending ask by that
   id, `reply` prints the value with the schema captured at parse time and answers it 200, and the
@@ -7947,7 +8752,22 @@ fixture `workers/ObjectSocket`).*
   `dispatchFetch` with `upgrade: websocket` answers a `Response` whose `webSocket` is the client's
   end, accepted and listened to; the steps are `socket`, `send`, `close` and `receive`
   (`tests/corpus/README.md`, *A Worker*). The `sec-websocket-accept` answers Miniflare's random
-  key and is shown as `(the key)`. Hibernation itself is not driven: #593.
+  key and is shown as `(the key)`. Hibernation itself is not driven: #593. *2026-10-23: it is,
+  by the `idle` step ((k)), and `ObjectHibernate` holds what follows.*
+- **After hibernation** (*measured 2026-10-23, `workers/ObjectHibernate`; #724 closed*): the
+  sockets accepted here stay open while the object is gone. At the next event the new instance's
+  `restore` sees them in `Object.sockets ctx` (two, where two were accepted), a message on one
+  reaches `message` with the socket's attachment, id, tags and protocol as they were — the id
+  attached before the idle equals `WebSocket.id` after it, the subprotocol `v1` answers
+  `protocol`, the tag names the room in `closed` — and a peer's close after the wake reaches
+  `closed` with its code and reason. The done-when of #724 is complete: the upgrade with tags and
+  a subprotocol, one refused, messages both ways, a close with a code and a reason from each
+  side, the attachment read back after a restart, `autoReply` without an event, the sockets
+  closed by a defect, and the client steps the platform's fixtures needed — `socket` with
+  protocols, `send` of text and binary, `close` with a code or a raw frame, `drop`, `receive`
+  one or a count, `idle`. Of §9.11 (l)'s list the raw frame for each fault of (f), stop reading,
+  ping and the flow-control steps drive workerd's own frame parser, not the platform, and are
+  not built: #917.
 
 **(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
 SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
@@ -8007,7 +8827,7 @@ pub type PutError
   byte per unit for a one-byte string and two for a two-byte one. Beni's ceiling of 2 000 000
   bytes at two per unit, about 1 000 000 units of key and text, stays under it for every string;
   an ASCII value could go to about 2 200 000 characters before the host refuses it*); `Full` is
-  `kvPut`'s one caught text; a read
+  `kvPut`'s one caught text (a `Js.catchIf` in `Storage.beni` since 2026-10-29); a read
   with another schema is `Err` with its issues; what one instance put, the instance after its
   abort reads in `restore`.
 
@@ -8107,13 +8927,14 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   `wrangler.jsonc` as (i) writes it, `_expected.steps` — and two cases, the development build and
   the `--release --allow-debug` build, each one Miniflare start (the shape *The budget* set;
   #744 removed the per-test budgets on 2026-10-22, and the split stays as the kind's shape), each with a
-  record file of its own (`_expected.run-hash`, `_expected.release-run-hash`), so neither case
-  writes the other's. The driver takes Miniflare's entry file as `--miniflare=`, from
+  digest of its own in the run-hash cache (the record files `_expected.run-hash` and
+  `_expected.release-run-hash` left git on 2026-10-23, #881). The driver takes Miniflare's entry file as `--miniflare=`, from
   `BENI_MINIFLARE` (`nix develop .#workers`, #698) or `-Dminiflare=`, because a program the harness
   spawns gets an empty environment; it maps `compatibility_date`, `compatibility_flags`, `vars`
   and `durable_objects` with `migrations` to Miniflare's options, passes `cf: false`, listens on
   127.0.0.1 and disposes at the end. `zig build test-workers` runs the kind; it is not a gate, and
-  no CI job runs it yet (#697). The transcript prints each request, its answer with the headers
+  no CI job runs it yet (#697; *2026-11-03: CI's `workers` job runs it on every pull request, and
+  `check` needs it*). The transcript prints each request, its answer with the headers
   sorted as the host keeps them, and the Worker's console lines after each step. The script's
   steps in this slice: a request, `detach`/`answer`, and `abort`. **Two facts measured under
   Miniflare 4.20260518.0**: a client that leaves — through `dispatchFetch`'s signal or a raw
@@ -8132,11 +8953,20 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   object, a path ending in `/__beni/tick` is the timer's firing — a `ticked` event, answered 204
   once it ran, or 409 when `tick` names no timer — and one ending in `/__beni/alarm` an `alarm`
   event, answered 204; under the flag no host timer is armed, so the transcript is the steps'
-  alone. The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
+  alone. *2026-11-04, the wake ((e.5)): under the flag no host alarm is set either. A path ending
+  in `/__beni/host-alarm` is the host alarm's firing, answered 204 once the platform has decided
+  (and once the program's `alarm` ran, when its time had come), and one ending in
+  `/__beni/alarms` answers `host <none|program|wake>, program <none|set>`. `/__beni/alarm`
+  stays the program's alarm coming due: it clears the program's time and puts the `alarm` event
+  in the mailbox.* The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
   hibernation needs more than the 10 s delay, and a step is limited to 5 s. *2026-10-23: the fact
   is measured by a deployed probe, (e.5), and local workerd hibernates an idle object too (the
   review of #860: a new instance after 15 s and 25 s under Miniflare), so the corpus can hold it
-  once the driver has a step that idles 15 s; #593 stays open for that fixture. `wrangler dev
+  once the driver has a step that idles 15 s; #593 stays open for that fixture. 2026-10-23: the
+  driver has it, `{"idle": <ms>}`, no event, a script's idles summing to at most 60 000 ms under
+  the case's 120 s hang guard, and `workers/ObjectHibernate` holds the fact ((e.5), #593 closed):
+  workerd's eviction is a fixed 10 s of inactivity (`server.c++:2766`), measured by the review of
+  #905 as a turn between 9.5 and 10 s. `wrangler dev
   --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of the edge is
   measured by a deployed probe Worker on the owner's account, deleted after the measurement, where
   the local host differs — the client's disconnect, (d) — and by the corpus where it does not.*
@@ -8207,6 +9037,338 @@ the part of the section it settles keeps its text.
   file; `wrangler dev --remote` first and a deploy only where it cannot show the fact, the probe
   Worker deleted after. It replaced q11's token proposal and is how (e.5) and (d) were measured.
 - No question of this section is open.
+
+### 9.13 Host APIs that a page lacks: the playground's inventory (2026-11-04)
+
+*Specified 2026-11-04, issue #142; not built.* The playground's page code becomes beni
+([`playground.md`](playground.md) §10). Its inventory (§10.6 there) found host APIs that no module
+of `core/` or of a platform wraps on `master` `99355536bc`. This section names each one that a
+platform or `core/` must give, its proposed home, and the failures that its wrapper must type
+(CLAUDE.md rule 9: each documented failure is caught by name and returned as a typed error, and
+everything else crashes). Each issue's pull request adds the signatures to this section as a
+dated amendment, before the code (rule 1).
+
+| API | Home | Failures to type | Issue |
+|---|---|---|---|
+| WebAssembly: compile from bytes, instantiate with beni imports, exports, memory, call | `core/`, next to `Binary` | `CompileError`; `LinkError`; a trap (`RuntimeError`); the engine's stack exhaustion, by the messages of `playground.md` §3 rule 7; `Memory.grow`'s `RangeError` | #1883 |
+| UTF-8 between `String` and bytes | `core/` | decode: bytes that are not UTF-8 (the fatal decoder's `TypeError`) | #1884 |
+| Base64 and base64url | `core/` | decode: a character outside the alphabet, a bad length | #1885 |
+| Compress and inflate bytes | `browser`, `node` | inflate: data not in the format (the stream's `TypeError`), output past the limit | #1886 |
+| A response body as bytes | `Http` (§9.8.12) | the failures that `Http` maps now | #1887 |
+| Random bytes | `browser`, `node` | none: the wrapper splits a request into calls of 65 536 bytes, so `QuotaExceededError` cannot happen | #1888 |
+| A monotonic clock | `core/Clock` | none | #1889 |
+| `sandbox` on `iframe` (*amended 2026-11-04*: `srcdoc` is not needed, below; *amended 2026-11-05*: `srcdoc` comes with a rule, below) | `html` (§9.3) | none: `sandbox` takes the standard's tokens as a type | #1890 |
+| Messages between a page and its frame | `browser` | a message that its `Schema` refuses; a frame that is not in the document | #1891 |
+| The clipboard | `browser` | no clipboard (an insecure page); `NotAllowedError` | #1892 |
+| A scroll into view with `block` and `inline` options | `Dom` (§9.8.6) | the failures of `Dom.scrollIntoView` now | #1896 |
+| The selection of a text field, read and set, in code points | `Html`, `Dom` (§9.8.6) | an element that is not a text field; a missing id | #1900 |
+
+Bytes, `DataView` and 64-bit word pairs are `Binary`'s (#1278, [`webgpu.md`](webgpu.md) §3.1), and
+a Web Worker is `Browser.Worker`'s (#1297, `workers-api.md` §1 on PR #1304). The playground's own
+platform (`playground.md` §10.4) wraps the frame runner's host parts (#1894); no other program
+uses them.
+
+*Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard questions `playground-beni-q3`
+and `q4`, 19:00 UTC): "replace CodeMirror with a simple editor written in beni itself"
+(`playground.md` §10.10). This section named two more decisions, an element whose inside a library
+owns (#1881) and a third-party ES module from beni (#1882), and the CodeMirror binding (#1893). The
+three are closed as not planned. The selection row (#1900) came with the beni editor. If the owner
+takes the browser's undo for it (`playground-beni-q8`, which replaces `q5`), one more row comes:
+text inserted with `execCommand("insertText")`, whose `false` answer is a typed error.
+
+*Amended 2026-11-04:* the `srcdoc` half of the `iframe` row meets the owner's rule of 2026-09-29
+that closed `srcdoc` as a script sink (`language.md` §11.5, `untyped_srcdoc_attribute`). It waits
+for `playground-beni-q6`: a frame loaded from a URL that gets its files by `postMessage` needs only
+`sandbox`, and a typed `srcdoc` needs a rule that it comes only with a `sandbox` that has no
+`allow-same-origin`. *Amended 2026-11-04, the owner's decision* (Cesar Canassa,
+`playground-beni-q6`, 19:31:35 UTC): the frame loads from a URL and gets its files by
+`postMessage(…, "*")`; each side checks `event.source`, never `event.origin`, and each run has an
+id (`playground.md` §10.3). So `html` gets only `sandbox`, and the rule of 2026-09-29 stays.
+`playground-beni-q8` (19:32:46 UTC) took a history in beni for the editor and dropped
+`execCommand`, so the `insertText` row does not come.
+
+*As built, 2026-11-04 (#1890):* `pub attribute "sandbox" on "iframe" : String`, as `rel`, `type`
+and `autocomplete` are. The issue asked for the standard's tokens as a type, but the vocabulary
+has no form for a set of tokens (§9.3), and no guarantee needs one: a token that the browser does
+not know lifts no restriction, so a misspelt one keeps the frame restricted. A frame takes its
+restrictions when it navigates, so the attribute's doc comment asks for text when `src` comes from
+a hole; #1911 checks the order of the two holes. Pinned by `tests/corpus/browser/tea/IframeSandbox`.
+
+*Amended 2026-11-05, the owner's decision* (Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2; #2016): `html` declares `srcdoc` on `iframe` as a `String`, for a program that shows a document it builds. The checker refuses it unless the same element has a constant `sandbox` without `allow-same-origin` (`srcdoc_without_sandbox`, `language.md` §11.5). The frame's origin is then opaque, so its scripts, when `allow-scripts` lets them run, cannot reach the page, and the rule of 2026-09-29 stays true. `sandbox` stays a `String` (q2), for the reason above. The quoted `"srcdoc"` stays `untyped_srcdoc_attribute`. Both lowerings write the value as an attribute value, so the text never becomes markup of the page: `dom` bakes a constant into the template with `&`, `<` and `"` escaped and writes a hole with `setAttribute`, and `ssr` escapes `&`, `<`, `"` and CR. A constant `sandbox` is in the template, so the frame has it before its document loads. Pinned by `tests/corpus/browser/dom/IframeSrcdoc` (in Chrome, a frame without `allow-scripts` runs no script and one with it does), `tests/corpus/run/MarkupSrcdoc`, `tests/corpus/emit/dom/DomIframeSrcdoc`, and `tests/corpus/check/bad/markup/SrcdocWithoutSandbox` with `check/good/markup/SrcdocWithSandbox`.
+
+### 9.14 The `node` platform runs a program (2026-11-05)
+
+*Added 2026-11-05, for issue #2015. Status: normative for the first slice, output captured whole.
+Three choices are the owner's, asked on the dashboard as `node-process-spawn-q1` (the shape of
+(a)), `q2` (the environment, (b)) and `q3` (the kill policy, (d)). All three are decided as
+recommended (Jayson, 2026-11-05); (i) records the answers.* A `node` program cannot start
+another program today. Rex web (`jaysonsantos/rex-web`) must call the installed `rex` CLI (`rex ls
+--json`, `rex api call …`) from a beni server. The `node` platform gains one module,
+**`ChildProcess`** (`platforms/node/ChildProcess.beni`), beni over `Js` with no sibling, as `Io` and
+`Http.Server` are. It wraps `node:child_process`'s `spawn` as `Io.readFile` wraps
+`fs.promises.readFile` (§4.1, `CLAUDE.md` rule 9): each failure Node documents is one constructor
+of a typed error, a cancelled fiber stops its child, and any other error is thrown again and is a
+defect.
+
+**(a) The API.** *(The shape — one record with a constructor, not separate functions — is the
+owner's decision `node-process-spawn-q1`, (i).)* A program describes the child with a record, starts it with `run`, and waits on
+its fiber until the child has exited and its output has ended.
+
+```elm
+module ChildProcess
+
+pub type alias Command =
+    { program : String       -- a path ("/usr/bin/rex", "./tool"), or a name looked up in PATH ("rex")
+    , args : List String     -- each one argument, as it is: no shell reads it
+    , cwd : Maybe String     -- the child's working directory; Nothing: the program's own
+    , env : Environment      -- the child's environment, (b)
+    , killAfter : Duration   -- the grace between SIGTERM and SIGKILL, (d); 1 s by default
+    , maxOutput : Int        -- the most bytes kept of standard output, and of standard error; 16 MiB by default
+    }
+
+pub type Environment
+    = Inherit                             -- the program's own environment, as it is
+    | Extend (List (String × String))     -- the program's own, with these variables set
+    | Only (List (String × String))       -- these variables, and no other
+
+pub type alias Output =
+    { status : Status
+    , stdout : String        -- standard output, decoded as UTF-8
+    , stderr : String        -- standard error, decoded as UTF-8
+    }
+
+pub type Status
+    = Exited Int             -- the child exited with this code, 0 to 255
+    | Signalled String       -- a signal ended the child: its name, "SIGTERM", "SIGSEGV", …
+
+pub type RunError
+    = NotFound | PermissionDenied | NotADirectory | ArgumentsTooLong | NameTooLong
+    | SymlinkLoop | FileBusy | BadExecutable | TooManyOpenFiles | TooManyProcesses
+    | OutOfMemory | InvalidArgument | OutputTooLarge     -- (e)
+
+pub command : String, List String → Command    -- the program and its arguments, every other field its default
+pub run : Command → Result RunError Output      -- suspends until the child has exited and its output has ended
+```
+
+The canonical program:
+
+```elm
+main : Program
+main = Io.run λ⊤ →
+    case ChildProcess.run (ChildProcess.command "rex" [ "ls", "--json" ]) of
+        Err error →
+            Node.exitWith "cannot run rex" 1
+
+        Ok output →
+            case output.status of
+                ChildProcess.Exited 0 →
+                    Node.print output.stdout
+
+                _ →
+                    Node.exitWith output.stderr 1
+```
+
+A program changes a default with record update: `{ ChildProcess.command "make" [] | cwd = Just
+"build" }`. `command` gives `cwd = Nothing`, `env = Inherit`, `killAfter = Duration.seconds 1` and
+`maxOutput = 16 777 216`. A field a later slice adds gets a default in `command`, so a program that
+builds its `Command` with `command` does not change.
+
+**There is no shell, and there is no string form.** `run` calls `spawn(program, args, { shell:
+false })`: the operating system starts `program` with exactly `args`, and no character of any
+argument has a meaning. A program that builds a command line from strings and hands it to a shell
+(`exec`, `shell: true`) runs whatever an attacker puts in those strings: that is command
+injection, and this module has no way to write it. A program that wants a shell starts one by
+name, as any other program — `ChildProcess.command "/bin/sh" [ "-c", script ]` — and the script is
+then its own text, written on purpose.
+
+- **The program** is a path when it holds a `/`, and a relative path is resolved from the child's
+  working directory (`cwd`, else the program's). Without a `/`, it is looked up in the `PATH` of
+  the **child's** environment, (b): under `Only` with no `PATH`, the operating system's default
+  path is searched (`/bin:/usr/bin` on Linux and macOS; measured on Node 24.19).
+- **Standard input** is `/dev/null` (Node's `"ignore"`): a child that reads it gets an end of
+  file at once and never waits for a terminal. Input to the child is a later slice, (j).
+- **The output** of each stream is kept whole, then decoded as UTF-8 when the child has ended;
+  an invalid sequence decodes to U+FFFD, and a byte order mark is kept, as the bytes are. More
+  than `maxOutput` bytes on either stream is `Err OutputTooLarge`, (e); `maxOutput` is the bound a
+  program sets, by rule 7, and is never more than the longest string the engine can hold
+  (`buffer.constants.MAX_STRING_LENGTH`): a larger one is taken as that, and a negative one as 0.
+- **When `run` returns.** On Node's `close` event: the child has exited and both of its output
+  pipes have reached their end. A descendant of the child that keeps a pipe open (`sh -c "server
+  &"`) keeps `run` waiting until it closes the pipe or exits (measured: `sh -c "sleep 1 &"` took one
+  second) — Node's `execFile` and Effect's `ChildProcessSpawner.string` wait the same way. A
+  program that starts a daemon redirects the daemon's output.
+- **A non-zero exit and a signal are values, not errors.** `run` answers `Ok` whenever the child
+  started and ended: `Exited 3` is how the child said it failed, and a program reads `stderr` to
+  learn why. `Signalled` keeps the output too, which is why it is a `Status` and not a
+  `RunError`: a child that crashes with `SIGSEGV` often explains itself on standard error first.
+  Effect makes a signal fail `exitCode`; here the output survives it.
+- **A timeout is a cancellation.** There is no `timeout` field: `Task.timeout (Duration.seconds 5)
+  λ⊤ → ChildProcess.run cmd` cancels the fiber at the deadline, and (d) stops the child.
+
+**(b) The environment.** *(The owner's decision `node-process-spawn-q2`, (i).)* `Inherit` passes `process.env` as it is when `run` is called. `Extend
+pairs` passes a copy of it with each pair set, in order, so a later pair of the same name wins.
+`Only pairs` passes the pairs and nothing else. A name that is empty or holds `=` is `Err
+InvalidArgument` and Node is not called: Node passes `A=B` as the variable `A` with the value
+`B=x` (measured), a silent wrong answer, so beni checks it first, as `Http.Server` checks
+`InvalidPort`. The default is `Inherit` because the typical child is a tool found on `PATH`;
+Node's and Effect's `env` replace the whole environment, and Effect's own documentation warns
+that the child then has no `PATH` (`ChildProcess.ts:383-396`). Reading the program's own
+environment as a value is #357's.
+
+**(c) The lifetime: the fiber that calls `run` owns the child.** `run` starts the child at once,
+inside the call, and parks its fiber on `Task.callback`. Nothing else holds the child: there is no
+handle to leak, and the child's end is the call's end. One fiber runs at a time (§17.1 item 3 of
+`transparent-effects-proposal.md`), so several fibers that each call `run` run their children at
+the same time, and each is answered when its own child ends.
+
+**(d) Cancellation, and the kill policy.** *(The signals, the grace and the process group are the
+owner's decision `node-process-spawn-q3`, (i).)* A fiber cancelled while its child runs (by
+`Task.cancel`, a `Task.timeout`, a lost `Task.race`, the end of its scope, or `Io.run`'s end) must
+not leave the child behind:
+
+1. The wait's canceller sends **`SIGTERM`** to the child, and arms a host timer of `killAfter`.
+   The bracket's release does the same when the canceller has not: an interrupt latched before
+   the wait — a fiber cancelled while masked, then restored around `run` — makes `Task.callback`
+   unwind without calling its function, so no canceller exists (`run/ChildProcessCancelledLatched`;
+   found by the review of #2044). Sending is done once, whichever comes first.
+2. The fiber's cleanup (a `Task.bracket` release) **waits until the child has exited**. When the
+   timer fires first, it sends **`SIGKILL`**, which no process can ignore, and the wait goes on to
+   the exit. So `Task.cancel` returns only after the child is gone, as Effect's scope release
+   waits for it, and a program that starts the same child again does not meet the first one.
+3. When the child has exited, the platform closes its ends of the two pipes, so a descendant that
+   holds them keeps nothing of beni waiting, and drops what was captured: a cancelled fiber gets
+   no value.
+
+The signal goes to the child's own process, not to a process group: the child is not `detached`
+and stays in beni's process group, so the terminal's Ctrl-C reaches it with the program. A
+descendant the child started is the child's to stop; a child that leaves descendants running
+when it gets `SIGTERM` leaves them running. Effect makes the child a group leader and signals the
+group instead; that waits for beni's own signal handling (#338), since a detached child does not
+get the terminal's Ctrl-C and a beni program cannot yet catch it to pass it on.
+
+At the end of `Io.run`, `Task.shutdown` gives cleanup 1 000 ms (§9.8.15 (c)), which is the default
+`killAfter`. A cleanup past that deadline is cut short at its wait, but the host timer is not a
+fiber's: it still sends `SIGKILL`, and Node's handle on the child keeps the process alive until the
+child has exited. So a program never exits leaving a child it started, unless it **crashes**: a
+defect ends Node at once (§16.5 *A defect on Node*), no cleanup runs, and a running child is left
+to the operating system, as an open socket is.
+
+**(e) Every failure Node documents, and what it becomes.** `spawn` reports a failure in one of
+two ways, and the platform handles both by the error's `code`: `EACCES`, `EAGAIN`, `EMFILE`,
+`ENFILE` and `ENOENT` arrive as the child's `error` event, and every other code is thrown from the
+`spawn` call itself (Node's `ChildProcess.prototype.spawn`; measured). The thrown ones are caught
+with `Js.catchIf`, which takes an `Error` whose `code` is in the table and throws everything else
+again. **One table serves both routes**: which route a code takes is Node's choice and can move
+between versions, and what the code means does not, so a named code is the same `RunError` by
+either. The names are the reader's, as `Io.FileError`'s are; where a name is `FileError`'s, it
+means the same.
+
+| Node's failure | Becomes |
+|---|---|
+| `ENOENT`, an `error` event: no such program (on `PATH`, or at its path), or no such working directory | `Err NotFound` |
+| `EACCES`, an `error` event: the program is not executable or is a directory, or the working directory may not be entered | `Err PermissionDenied` |
+| `EPERM`, thrown: the system forbids it (a set-user-ID file on a `nosuid` mount, a sandbox) | `Err PermissionDenied` |
+| `ENOTDIR`, thrown: the working directory, or a directory on a path, is a file | `Err NotADirectory` |
+| `E2BIG`, thrown: the arguments and the environment are longer than the system takes | `Err ArgumentsTooLong` |
+| `ENAMETOOLONG`, thrown: a path, or a name on it, is too long | `Err NameTooLong` |
+| `ELOOP`, thrown: a path has too many symbolic links to follow | `Err SymlinkLoop` |
+| `ETXTBSY`, thrown: the program's file is open for writing | `Err FileBusy` |
+| `ENOEXEC`, thrown: the file is in no format the system can run, and no shell took it | `Err BadExecutable` |
+| `EMFILE` or `ENFILE`, an `error` event: no file descriptor to spare for the pipes | `Err TooManyOpenFiles` |
+| `EAGAIN`, an `error` event: the user's or the system's process limit is reached | `Err TooManyProcesses` |
+| `ENOMEM`, thrown: no memory for a new process | `Err OutOfMemory` |
+| `ERR_INVALID_ARG_VALUE`, a thrown `TypeError`: the program is `""`, or a NUL character is in the program, an argument, `cwd` or the environment | `Err InvalidArgument` |
+| an environment name that is empty or holds `=` | `Err InvalidArgument`, checked in beni, (b); Node is not called |
+| more than `maxOutput` bytes on standard output or standard error | `Err OutputTooLarge`: the platform stops the child as (d) does — `SIGTERM`, `SIGKILL` after `killAfter` — and answers when it has exited |
+| any other code, thrown or as an `error` event before the child started | thrown again, whether or not a fiber still waits |
+| an `error` event after the child started (Node's `kill` failed with `EPERM`, say) | thrown again: nothing names it |
+| an `error` event of an output pipe | no listener: Node throws it, a defect |
+
+A file with no `#!` line and no format the system knows is run by `/bin/sh` on Linux (`execvp`'s
+`ENOEXEC` rule; measured: a file of bad bytes exits 126, `Ok (Exited 126)`), so `BadExecutable`
+comes only where the system's spawn has no such rule. After an `error` event Node still emits
+`close`, with a negative code and no `exit` (measured); the platform answers once, at the error.
+
+`NotFound` names a missing program and a missing working directory alike, and `PermissionDenied`
+a program that may not run and a directory that may not be entered: the child changes directory
+and then executes the program, and libuv reports either failure with the same errno and nothing
+else (measured: `cwd = "/nonexistent"` is `spawn /bin/echo ENOENT`). Effect checks `cwd` with a
+`stat` first; a check before the start can race the start, so this slice does not split them.
+
+**(f) Effect v4 parity.** Research 48 has no row for a child process; this is it. Effect's
+`unstable/process` (`ChildProcess.ts`, `ChildProcessSpawner.ts`, the Node spawner in
+`platform/node-shared`, at `4.0.0-rc.116`) builds a `Command` value (`make(cmd, args, options)`,
+`setCwd`, `setEnv`, `pipeTo`) and runs it with a scoped handle (`spawn`: `pid`, `exitCode`,
+`isRunning`, `kill`, `stdin`, `stdout`, `stderr`, `all`, extra descriptors, `unref`) or with a
+collector (`string`, `lines`, `exitCode`, `streamString`, `streamLines`). Copied: the command as a
+value with options (a); `cwd` and `env`; argv with no shell; each errno as a typed failure (Effect's
+`PlatformError` by `handleErrnoException`, here one constructor each); cancellation that stops the
+child and waits for its exit (d); `string`'s meaning for the output, waiting for the pipes' end.
+Changed (the first by `q2`, the second and third by `q3`, (i)): the environment inherits by default and extends by a case, (b), not by a second
+`extendEnv` field; `SIGKILL` follows `SIGTERM` by default, not only when `forceKillAfter` is set,
+because a child that ignores `SIGTERM` would otherwise outlive the fiber that owns it; the child is
+not a group leader, (d); a signal exit is a `Status`, (a). Left out of this slice, each later: a
+handle with streaming output and input (beni has no `Stream`, §17 decision 17); `pipeTo`, which a
+program writes as two `run`s or one `sh -c`; `shell`, by design; `detached`, `unref` and extra
+descriptors; a template-string command, which is a parser of command lines by another name.
+
+**(g) Order and determinism.** What a program observes depends on the children it starts and on
+the scheduler's FIFO, never on a pid or a timer: `run` gives no pid, the output is whole, and two
+children's answers reach their fibers in the order their `close` events arrive, which is the order
+they end. A fixture prints what its children wrote, never when.
+
+**(h) The fixtures**, by the rows of (e) and the parts above. Every child is `/bin/sh`, which
+Linux, macOS and NixOS all have at that path, or a name it finds on `PATH` (`sh`, `sleep`);
+none uses `/bin/echo`, which NixOS lacks.
+
+- (a), (b), (c): `ChildProcessRun` (standard output, standard error and an exit code; a program
+  found on `PATH`; `cwd`; each case of `Environment`, the later pair winning; a signal exit;
+  invalid UTF-8; two children at once).
+- (e), the failures a program can arrange: `ChildProcessErrors` (a missing program, at a path and
+  on `PATH`; a missing `cwd`; the fixture's own `.beni` file, which is not executable; a
+  directory; a `cwd` that is a file; a path through a file; an argument of 3 000 000 bytes; a
+  5 000-byte path; `""`; a NUL in the program, an argument, `cwd`, an environment value and an
+  environment name; an environment name with `=`, and an empty one; output over `maxOutput` on
+  each stream, output of exactly `maxOutput`, and a child that writes forever, which is stopped).
+- (e), the failures a program cannot arrange: `ChildProcessFaults`, whose test platform replaces
+  `child_process.spawn` with one that fails with the code named, by the route Node takes for it
+  (`ENOENT`, `EACCES`, `EAGAIN`, `EMFILE`, `ENFILE` as an event, with no pipes; `EPERM`, `ENOTDIR`,
+  `E2BIG`, `ENAMETOOLONG`, `ELOOP`, `ETXTBSY`, `ENOEXEC`, `ENOMEM` thrown);
+  `ChildProcessUnknownCode` (`EIO`, thrown) and `ChildProcessUnknownEvent` (`toString`, a key every
+  object inherits, as an event): each a defect, with a `.crash` golden.
+- (d): `ChildProcessCancelled` (a child that traps `SIGTERM` writes a file and exits; the file is
+  there when `Task.cancel` returns, and is not when the release does not wait — checked by hand
+  on the emitted JavaScript; then a `Task.timeout` ends a child that sleeps); `ChildProcessKillAfter` (a child that ignores `SIGTERM` is
+  killed after a `killAfter` of 50 ms; without `SIGKILL` the case would run into its hang
+  guard); `ChildProcessShutdown` (`Io.run` ends while a child sleeps 1 000 seconds; the program
+  exits at once); `ChildProcessCancelledLatched` (a cancellation latched while masked reaches
+  `run`'s wait, and the release alone signals the child; without that, a hang).
+- The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
+  is no test); an `error` event after the start (no program can make Node's `kill` fail); an
+  output pipe's `error` (left to Node).
+
+**(i) The owner's decisions**, taken on the dashboard.
+
+- `node-process-spawn-q1`, the shape of (a): **one record, a constructor with defaults** (Jayson,
+  2026-11-05 15:57:41 UTC). `ChildProcess.command program args` gives a `Command` with defaults, a
+  program changes fields with record update, and `run` takes the record. Separate functions per
+  setting were offered and declined. The error type is named `RunError`, as `Io` names
+  `FileError` and `Http.Server` names `ListenError`.
+- `node-process-spawn-q2`, the environment of (b): **one field, three cases, inherit by default**
+  (Jayson, 2026-11-05 15:58:15 UTC): `env : Environment` with `Inherit`, `Extend pairs` and `Only
+  pairs`. Effect's `env` plus `extendEnv` was offered and declined.
+- `node-process-spawn-q3`, the kill policy of (d): **`SIGTERM`, then `SIGKILL` after a grace
+  period** (Jayson, 2026-11-05 15:58:44 UTC). `SIGTERM` to the child's own process; `SIGKILL` if it
+  has not exited after `killAfter`, a field of the command, 1 s by default. The child stays in
+  beni's process group, so Ctrl-C reaches it; process groups wait for #338. Effect's policy, a
+  group signal with no `SIGKILL` unless the program asks, was offered and declined. The capture of the output whole, with streaming later, is the issue's own scope and the
+coordinator's instruction of 2026-11-05.
+
+**(j) Not in this slice.** Standard input, a `String` written and closed, then a stream (#2023);
+streaming output and a handle (`pid`, `kill`, line by line), which waits for a `Stream` (§17
+decision 17; #2024); process groups and the signals they need (#338); output as bytes (with
+#335's bytes). Windows is not a target of the `node` platform's tests today: its signals are
+emulated and its `PATH` lookup has its own rules, and this section says nothing of it.
 
 ## Appendix — what is deliberately not done
 

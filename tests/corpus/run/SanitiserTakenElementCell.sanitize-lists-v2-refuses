@@ -1,0 +1,7 @@
+# A list element of a cell that may hold one object twice: the store made the contents escape, or a slot the frame names nothing at is unknown (§2.13.7, *The contents relation*).
+35:5 list_may_be_shared Ref.update
+44:5 list_still_used Ref.update
+48:5 list_may_be_shared SanitiserTakenElementCell.viaParam
+57:5 list_still_used Ref.update
+61:5 list_still_used Ref.update
+61:5 list_may_be_shared Ref.update

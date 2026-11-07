@@ -1,0 +1,158 @@
+-- Queued cancellation cannot wait behind an active handler. A winning reply
+-- stays terminal; graceful close waits for an active handler's finalizers.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Probe
+import Task
+
+
+type Request
+    = Wait Int
+    | Echo String
+
+
+type Event
+    = Started Int
+    | Cleaned Int
+
+
+type alias Protocol =
+    Worker.Protocol Request String ⊥ String Event ⊥
+
+
+worker : Worker.Program ⊤ ⊤ Protocol
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λcontext _ request →
+                case request of
+                    Echo text →
+                        Ok text
+                    Wait index →
+                        Task.bracket
+                            (λ⊤ →
+                                _ = Worker.emit context (Started index)
+                                ⊤
+                            )
+                            (λ_ _ →
+                                Task.yieldNow ⊤
+                                _ = Worker.emit context (Cleaned index)
+                                ⊤
+                            )
+                            λ_ → Task.never ⊤
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+submit : Worker.Handle Protocol, Request → Maybe (Worker.Ticket String String)
+submit handle request =
+    case Worker.prepare request of
+        Ok prepared →
+            case Worker.send handle prepared of
+                Ok ticket →
+                    Just ticket
+                Err _ →
+                    Nothing
+        Err _ →
+            Nothing
+
+
+nextEvent : Events.Stream Worker.TransportError Event → Event
+nextEvent stream =
+    case Events.next stream of
+        Ok (Events.Item chunk) →
+            Events.take chunk
+        _ →
+            Cleaned (-1)
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    Probe.install ⊤
+    case Worker.open owned worker ⊤ Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            pushed = Worker.events handle
+            active = submit handle (Wait 1)
+            first = nextEvent pushed
+            queued = submit handle (Wait 2)
+            queuedCleanup =
+                case queued of
+                    Just ticket →
+                        Worker.cancel ticket
+                    Nothing →
+                        Worker.Abandoned
+            activeCleanup =
+                case active of
+                    Just ticket →
+                        Worker.cancel ticket
+                    Nothing →
+                        Worker.Abandoned
+            ordered = Probe.trace ⊤ == "1,2"
+            finalizer = nextEvent pushed
+            echo = submit handle (Echo "won")
+            won =
+                case echo of
+                    Just ticket →
+                        reply = Worker.await ticket
+                        cleanup = Worker.cancel ticket
+                        case reply of
+                            Ok "won" →
+                                cleanup == Worker.Confirmed
+                            _ →
+                                False
+                    Nothing →
+                        False
+            lastTicket = submit handle (Wait 3)
+            last = nextEvent pushed
+            closed = Worker.close handle
+            closeFinalizer = nextEvent pushed
+            lastCleanup =
+                case lastTicket of
+                    Just ticket →
+                        Worker.cancel ticket
+                    Nothing →
+                        Worker.Abandoned
+            if
+                ordered
+                    && first == Started 1
+                    && queuedCleanup == Worker.Confirmed
+                    && activeCleanup == Worker.Confirmed
+                    && finalizer == Cleaned 1
+                    && won
+                    && last == Started 3
+                    && closed == Worker.Confirmed
+                    && closeFinalizer == Cleaned 3
+                    && lastCleanup == Worker.Confirmed
+            then
+                "cancellation passed"
+            else
+                "cancellation failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

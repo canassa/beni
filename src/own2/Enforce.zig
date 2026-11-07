@@ -1,4 +1,4 @@
-//! L14: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
+//! L13: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
 //! §3.7, §8 S3a): the per-module inputs built from the session, the
 //! `dump --stage=ownership --ownership=v2` report, and the Driver's hook,
 //! all behind the hidden `--ownership=v2`.
@@ -22,21 +22,33 @@ const Groups = @import("Groups.zig");
 const Ownership = @import("Ownership.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
+const Hoists = @import("Hoists.zig");
+const Block = @import("Block.zig");
+const Interface = @import("../resolve/Interface.zig");
 
 /// What every module's check reads from the session, built once before
 /// the DAG starts and read-only after.
 pub const Inputs = struct {
     birs: []*const Bir,
     names: [][]const u8,
+    /// Per module, whether it is in the core package (`Session.fileIsCore`):
+    /// its comparisons compose their evidence (§2.13.13).
+    core: []bool = &.{},
     /// Per global symbol its rank in text order, and per rank its symbol.
     ranks: []u32,
     rank_names: []InternPool.Symbol,
+    /// Per module installed from the checked core, its pack's v2 block
+    /// (§3.6 *The checked core*), read in place of the interface's v1 block;
+    /// written by the worker that installs it, before its importers run.
+    from_pack: []?[]const u8 = &.{},
 
     pub fn deinit(i: *Inputs, gpa: Allocator) void {
         gpa.free(i.birs);
         gpa.free(i.names);
+        gpa.free(i.core);
         gpa.free(i.ranks);
         gpa.free(i.rank_names);
+        gpa.free(i.from_pack);
     }
 };
 
@@ -45,13 +57,17 @@ pub fn inputs(gpa: Allocator, session: *const Session) Allocator.Error!Inputs {
     var out: Inputs = .{
         .birs = try gpa.alloc(*const Bir, n),
         .names = try gpa.alloc([]const u8, n),
+        .core = try gpa.alloc(bool, n),
+        .from_pack = try gpa.alloc(?[]const u8, n),
         .ranks = &.{},
         .rank_names = &.{},
     };
+    @memset(out.from_pack, null);
     for (0..n) |i| {
         const f = session.graph.moduleFile(@fromBackingInt(@intCast(i)));
         out.birs[i] = session.artifacts.bir(f);
         out.names[i] = session.store.moduleName(f);
+        out.core[i] = session.fileIsCore(f);
     }
     // Every symbol by its text, once (§3.8: steps order by text, never by
     // a session id).
@@ -158,8 +174,143 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .provenance = session.resolution.provenance,
         .dispatch = if (m < t.dispatch.len) &t.dispatch[m] else null,
         .ranks = ins.ranks,
+        .core = ins.core,
+        .interner = &session.interner,
     };
 }
+
+/// An importer's read of another module's block (§3.6, §8 S3b slice 3):
+/// the envelope `Ownership.publish` writes, its names resolved in this
+/// session (no session id is in the bytes), its classes built in the
+/// importer's tables by `BlockRead.read`. Only an import is read, whose
+/// interface the Driver published before this module's check began.
+const ImportReader = struct {
+    session: *const Session,
+    ins: *const Inputs,
+    types: *const Types,
+    interfaces: []const Interface,
+    /// Blocks this run computed itself, by module, read in place of the
+    /// interface's: under `--ownership-both` the interface carries v1's
+    /// block (#1398).
+    blocks: ?[]const ?[]const u8 = null,
+
+    fn imports(r: *ImportReader) Groups.Imports {
+        return .{ .ctx = r, .read = read };
+    }
+
+    fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]u32 {
+        const r: *ImportReader = @ptrCast(@alignCast(ctx));
+        if (m >= r.interfaces.len) return null;
+        const from_pack = if (m < r.ins.from_pack.len) r.ins.from_pack[m] else null;
+        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else from_pack orelse r.interfaces[m].ownership;
+        if (bytes.len == 0 or bytes.len % 4 != 0) return null;
+        const gpa = mod.gpa;
+        const words = try gpa.alloc(u32, bytes.len / 4);
+        defer gpa.free(words);
+        @memcpy(std.mem.sliceAsBytes(words), bytes);
+        var e: Envelope = .{ .r = r, .mod = mod, .m = m };
+        defer e.texts.deinit(gpa);
+        const body = (try e.parse(gpa, words)) orelse return null;
+        var contracts: std.ArrayList(u32) = .empty;
+        defer contracts.deinit(gpa);
+        const remap: Block.Remap = .{ .ctx = &e, .field = Envelope.field, .decl = Envelope.declOfString };
+        // A block that does not decode, or does not encode again to its own
+        // words, is unknown (R-5.7.4): never a guess.
+        Block.read(gpa, body, &mod.contracts, &mod.slots, &mod.places, mod.account, remap, &contracts) catch |err| switch (err) {
+            error.BadBlock => return null,
+            else => |x| return x,
+        };
+        if (e.oom) return error.OutOfMemory;
+        if (e.failed or contracts.items.len * 2 != e.dir.len) return null;
+        const bir = r.ins.birs[m];
+        const out = try gpa.alloc(u32, bir.decls.len);
+        @memset(out, @import("Ids.zig").none_int);
+        for (contracts.items, 0..) |c, k| {
+            if (e.dir[2 * k + 1] != 1) continue;
+            const di = e.declOf(m, e.dir[2 * k]) orelse {
+                gpa.free(out);
+                return null;
+            };
+            out[di] = c;
+        }
+        return out;
+    }
+
+    /// The envelope's string table and directory, and the remap over them:
+    /// a name this session cannot resolve makes the block unknown.
+    const Envelope = struct {
+        r: *ImportReader,
+        mod: *Groups.Module,
+        m: u32,
+        texts: std.ArrayList([]const u8) = .empty,
+        dir: []const u32 = &.{},
+        failed: bool = false,
+        oom: bool = false,
+
+        /// The block's words after the string table and the directory, or
+        /// null when the envelope is malformed.
+        fn parse(e: *Envelope, gpa: Allocator, words: []const u32) Allocator.Error!?[]const u32 {
+            var at: usize = 1;
+            if (words.len < 1) return null;
+            for (0..words[0]) |_| {
+                if (at >= words.len) return null;
+                const len = words[at];
+                const n = (@as(usize, len) + 3) / 4;
+                if (words.len - at - 1 < n) return null;
+                try e.texts.append(gpa, std.mem.sliceAsBytes(words[at + 1 ..][0..n])[0..len]);
+                at += 1 + n;
+            }
+            if (at >= words.len or (words.len - at - 1) / 2 < words[at]) return null;
+            e.dir = words[at + 1 ..][0 .. 2 * @as(usize, words[at])];
+            return words[at + 1 + e.dir.len ..];
+        }
+
+        fn text(e: *Envelope, s: u32) ?[]const u8 {
+            if (s < e.texts.items.len) return e.texts.items[s];
+            e.failed = true;
+            return null;
+        }
+
+        fn symbol(e: *Envelope, t: []const u8) ?InternPool.Symbol {
+            return e.r.session.interner.find(t) orelse {
+                e.failed = true;
+                return null;
+            };
+        }
+
+        fn field(ctx: *anyopaque, s: u32) ?u32 {
+            const e: *Envelope = @ptrCast(@alignCast(ctx));
+            const sym = e.symbol(e.text(s) orelse return null) orelse return null;
+            if (@backingInt(sym) < e.r.ins.ranks.len) return e.r.ins.ranks[@backingInt(sym)];
+            e.failed = true;
+            return null;
+        }
+
+        /// `Module.name` (the writer's `Strings.decl`) → `(module, declaration)`;
+        /// a module name two modules share is unknown.
+        fn declOfString(ctx: *anyopaque, s: u32) ?[2]u32 {
+            const e: *Envelope = @ptrCast(@alignCast(ctx));
+            const t = e.text(s) orelse return null;
+            const dot = std.mem.lastIndexOfScalar(u8, t, '.') orelse return null;
+            var module: ?u32 = null;
+            for (e.r.ins.names, 0..) |n, i| if (std.mem.eql(u8, n, t[0..dot])) {
+                if (module != null) return null;
+                module = @intCast(i);
+            };
+            const di = e.declOf(module orelse return null, (e.symbol(t[dot + 1 ..]) orelse return null)) orelse return null;
+            return .{ module.?, di };
+        }
+
+        /// The value declaration of module `m` a directory or `shared` name
+        /// names (a string, or a symbol), or null.
+        fn declOf(e: *Envelope, m: u32, name: anytype) ?u32 {
+            const sym: InternPool.Symbol = if (@TypeOf(name) == u32) e.symbol(e.text(name) orelse return null) orelse return null else name;
+            const bir = e.r.ins.birs[m];
+            for (bir.decls, 0..) |d, di| if (d.kind.isValue() and bir.symbol(d.name) == sym) return @intCast(di);
+            return null;
+        }
+    };
+};
 
 pub const DumpOptions = struct { totals_only: bool = false };
 
@@ -176,6 +327,18 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
     var reports: std.ArrayList(Report.Module) = .empty;
     defer reports.deinit(gpa);
     var nc: NameCtx = .{ .session = session, .ins = &ins, .types = &session.checked.types, .arena = arena };
+    // No check of this session ran v2 (`--ownership-both`): the interfaces
+    // hold v1's blocks, so each module is checked after the modules it
+    // imports and the blocks it publishes are what an importer reads, as
+    // `checkModule` publishes them in the module DAG (#1398).
+    const own_blocks = try gpa.alloc(?[]const u8, session.graph.count());
+    defer gpa.free(own_blocks);
+    @memset(own_blocks, null);
+    const done = try gpa.alloc(Done, session.graph.count());
+    defer gpa.free(done);
+    @memset(done, .{});
+    var reader: ImportReader = .{ .session = session, .ins = &ins, .types = &session.checked.types, .interfaces = session.resolution.interfaces, .blocks = own_blocks };
+    var run: DumpRun = .{ .gpa = gpa, .arena = arena, .session = session, .ins = &ins, .nc = &nc, .reader = &reader, .mods = &mods, .blocks = own_blocks, .done = done, .totals_only = options.totals_only };
     for (targets) |m| {
         // The session's check ran v2 on the module and kept its report
         // (#1193): print it, never run v2 again.
@@ -187,18 +350,74 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
             try reports.append(gpa, .{ .module = m, .checked = false });
             continue;
         }
-        const mi = moduleInput(gpa, session, &ins, .{ .modules = session.checked.modules, .types = &session.checked.types, .dispatch = session.checked.dispatch }, m) orelse {
-            try reports.append(gpa, .{ .module = m, .checked = false });
-            continue;
-        };
-        try mods.append(gpa, mi);
-        const token = session.profile.begin();
-        defer session.profile.end(0, token, .ownership2_module, @backingInt(session.graph.moduleFile(@fromBackingInt(m))), 0);
-        const one = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = mods.items[mods.items.len - 1 ..], .format_summaries = !options.totals_only });
-        try reports.appendSlice(gpa, one);
+        if (try run.module(m)) |one| try reports.appendSlice(gpa, one) else try reports.append(gpa, .{ .module = m, .checked = false });
     }
     try Report.write(w, reports.items, ins.names, .{ .totals_only = options.totals_only });
 }
+
+/// The checked core's v2 blocks (§3.6 *The checked core*;
+/// `core_pack_main.zig`): every module of `session` outside the application,
+/// in dependency order, as `dump` runs them; one installed from the session's
+/// pack reads the pack's block. `out[m]` is null where v2 published none (a
+/// limit). Blocks live in `arena` or the pack.
+pub fn packBlocks(gpa: Allocator, arena: Allocator, session: *Session, out: []?[]const u8) (Allocator.Error || std.Io.Writer.Error)!void {
+    var ins = try inputs(gpa, session);
+    defer ins.deinit(gpa);
+    var mods: std.ArrayList(Groups.Input) = .empty;
+    defer mods.deinit(gpa);
+    var nc: NameCtx = .{ .session = session, .ins = &ins, .types = &session.checked.types, .arena = arena };
+    @memset(out, null);
+    const done = try gpa.alloc(Done, session.graph.count());
+    defer gpa.free(done);
+    @memset(done, .{});
+    var reader: ImportReader = .{ .session = session, .ins = &ins, .types = &session.checked.types, .interfaces = session.resolution.interfaces, .blocks = out };
+    var run: DumpRun = .{ .gpa = gpa, .arena = arena, .session = session, .ins = &ins, .nc = &nc, .reader = &reader, .mods = &mods, .blocks = out, .done = done, .totals_only = true };
+    for (0..session.graph.count()) |m| {
+        if (session.graph.modulePackage(@fromBackingInt(@intCast(m))) != .app) _ = try run.module(@intCast(m));
+    }
+}
+
+/// Module `m`'s block in the session's checked core, under its entry's key.
+pub fn packedBlock(session: *const Session, m: Graph.Index) ?[]const u8 {
+    if (!session.keys.isCacheable(m)) return null;
+    return session.pack.find(.own2, session.keys.of(m));
+}
+
+const Done = struct { started: bool = false, reports: ?[]const Report.Module = null };
+
+/// The dump's own run of v2 over a module and, first, the modules it imports.
+const DumpRun = struct {
+    gpa: Allocator,
+    arena: Allocator,
+    session: *Session,
+    ins: *Inputs,
+    nc: *NameCtx,
+    reader: *ImportReader,
+    mods: *std.ArrayList(Groups.Input),
+    blocks: []?[]const u8,
+    done: []Done,
+    totals_only: bool,
+
+    fn module(r: *DumpRun, m: u32) (Allocator.Error || std.Io.Writer.Error)!?[]const Report.Module {
+        if (m >= r.done.len) return null;
+        if (r.done[m].started) return r.done[m].reports;
+        r.done[m].started = true;
+        for (r.session.graph.dependencies(@fromBackingInt(m))) |dep| _ = try r.module(dep.int());
+        var mi = moduleInput(r.gpa, r.session, r.ins, .{ .modules = r.session.checked.modules, .types = &r.session.checked.types, .dispatch = r.session.checked.dispatch }, m) orelse {
+            // Installed from the checked core: its pack's block (§3.6).
+            r.blocks[m] = packedBlock(r.session, @fromBackingInt(m));
+            return null;
+        };
+        mi.imports = r.reader.imports();
+        try r.mods.append(r.gpa, mi);
+        const token = r.session.profile.begin();
+        defer r.session.profile.end(0, token, .ownership2_module, @backingInt(r.session.graph.moduleFile(@fromBackingInt(m))), 0);
+        const one = try Ownership.run(r.gpa, r.arena, .{ .names = r.nc.names(), .modules = r.mods.items[r.mods.items.len - 1 ..], .publish = true, .format_summaries = !r.totals_only });
+        if (one[0].block) |b| r.blocks[m] = b;
+        r.done[m].reports = one;
+        return one;
+    }
+};
 
 /// Read-only session metadata prepared before the DAG starts.
 pub const Context = struct {
@@ -213,7 +432,9 @@ pub const Context = struct {
 pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocator.Error!void {
     const session = ctx.session;
     const gpa = d.gpa;
-    const mi = moduleInput(gpa, session, ctx.ins, .{ .modules = d.kept, .types = d.types, .dispatch = d.dispatch }, m.int()) orelse return;
+    var mi = moduleInput(gpa, session, ctx.ins, .{ .modules = d.kept, .types = d.types, .dispatch = d.dispatch }, m.int()) orelse return;
+    var reader: ImportReader = .{ .session = session, .ins = ctx.ins, .types = d.types, .interfaces = d.interfaces };
+    mi.imports = reader.imports();
     const token = session.profile.begin();
     defer session.profile.end(tid, token, .ownership2_module, @backingInt(session.graph.moduleFile(m)), 0);
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
@@ -222,7 +443,16 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     var nc: NameCtx = .{ .session = session, .ins = ctx.ins, .types = d.types, .arena = arena };
     const one = [_]Groups.Input{mi};
     const kept = session.options.ownership_v2_dump;
-    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false });
+    // §3.7's lowering channel, the module's slot. Core and the platforms
+    // authorise no write (§7.3); their clean bit says whether a caller
+    // there was checked.
+    var channel = [1]Hoists.Table{.empty};
+    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .below = if (kept) |k| k.below else false, .channels = &channel });
+    if (session.graph.modulePackage(m) != .app) {
+        gpa.free(channel[0].writes);
+        channel[0].writes = &.{};
+    }
+    if (m.int() < d.channels.len) d.channels[m.int()] = channel[0] else channel[0].deinit(gpa);
     // The dump's report, from this run (#1193): one slot per module, written
     // by the worker that checked it.
     if (kept != null and m.int() < session.ownership2_reports.len) session.ownership2_reports[m.int()] = try Report.Kept.of(gpa, reports[0]);
@@ -255,6 +485,7 @@ fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module,
             const code: @import("diagnostic").Code = switch (l.cause) {
                 .top_level => .top_level_list_changed,
                 .read_only => .view_changes_model,
+                .comparison => .comparison_changes_value,
                 .limit => .ownership_limit,
                 else => if (l.approx) .list_may_be_shared else .list_still_used,
             };
@@ -263,7 +494,7 @@ fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module,
                 l.base,
                 Facts.causeText(l.cause),
                 if (l.detail.len != 0) try std.fmt.allocPrint(arena, ": {s}", .{l.detail}) else "",
-                if (l.approx) "This is a limit of the checker, not proof of sharing." else "This is sharing the checker can see.",
+                if (l.approx) "This is a limit of the checker, not proof of sharing." else if (l.cause == .comparison) "This is a rule of the language: `==` and `<` call a type's `eq` and `compare`, which only read. Change a copy (`List.copy`)." else "This is sharing the checker can see.",
             });
             try dest.append(gpa, .{ .ownership = true, .code = code, .module = @fromBackingInt(r.module), .region = @fromBackingInt(0), .token = l.token, .message = message });
         }

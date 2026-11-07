@@ -1,0 +1,58 @@
+-- ownership (project): see Main.beni. `incAll` and `incList` push onto
+-- every kids list of a `Rose`; `same`, `sharedOr`, `depthOr` and
+-- `distinctOr` choose between built values.
+pub type Rose
+    = Rose (List Rose)
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+pub incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub same : Bool, Rose → Rose
+same c x =
+    if c then
+        Rose [ x ]
+    else
+        Rose [ x ]
+
+
+pub twoDepths : List Rose → Rose
+twoDepths k = Rose [ Rose k, Rose [ Rose k ] ]
+
+
+pub sharedOr : Bool, List Rose → Rose
+sharedOr c k =
+    if c then
+        twoDepths k
+    else
+        Rose [ Rose k ]
+
+
+pub depthOr : Bool, List Rose → Rose
+depthOr c k =
+    if c then
+        Rose [ Rose k ]
+    else
+        Rose [ Rose [ Rose k ] ]
+
+
+pub distinctOr : Bool, List Rose, List Rose → Rose
+distinctOr c a b =
+    if c then
+        Rose [ Rose a, Rose [] ]
+    else
+        Rose [ Rose [], Rose [ Rose b ] ]

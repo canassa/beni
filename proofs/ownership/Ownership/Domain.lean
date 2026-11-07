@@ -268,6 +268,11 @@ def atomUses : Atom → Live
 
 def atomsUses (xs : List Atom) : Live := xs.flatMap atomUses
 
+/-- The uses of fields `fs` of the record object `a`: the object's element,
+    then the field. A record object is a one-slot array (`Ty.object`). -/
+def fieldUses (a : Atom) (fs : List Nat) : Live :=
+  (atomUses a).flatMap fun (v, p) => fs.map fun f => (v, p ++ [.element, .field f])
+
 def removeVars (xs : List Var) (l : Live) : Live := l.filter fun (v, _) => !xs.contains v
 
 /-- The captures of the closures an expression creates along its let chain
@@ -285,6 +290,8 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool :
   | .letE v rhs rest => union (usesArms nonzero armClosures prependRead rhs) (removeVars [v] (usesArms nonzero armClosures prependRead rest))
   | .prim .prepend [x, base] => if prependRead then atomsUses [x, base] else atomUses x
   | .prim .close (x :: _) => atomUses x
+  -- A field read uses the object's field, not the object (§31.4 item 5).
+  | .prim (.get i) [x] => fieldUses x [i]
   | .prim _ xs | .recur xs => atomsUses xs
   | .closure _ xs => atomsUses xs
   | .app f xs => union (atomUses f) (atomsUses xs)
@@ -308,6 +315,9 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool :
     union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures prependRead body))
   | .focus src i x body | .dictFocus src i x body =>
     union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures prependRead body))
+  -- An update reads the fields it keeps (§7.1), and its new values.
+  | .assign width fields base values =>
+    union (fieldUses base ((List.range width).filter (!fields.contains ·))) (atomsUses values)
 
 def uses (e : Expr) : Live := usesArms true true true e
 
@@ -394,6 +404,12 @@ structure Summary where
   result : Abstract := .bottom
   reads : List Origin := []
   writes : List Origin := []
+  /-- `W{F}` (`ownership-checker.md` §31.7, #1872): a written record object
+      whose every write in `writes` is an update of the fields `F`, keyed by
+      the cell's base. `writes` still names the cell, so a reader that does
+      not read this row takes the write as whole. A cell written whole, or
+      through a row that has no field set, has no entry. -/
+  fieldWrites : List (Origin × List Nat) := []
   escapes : List Origin := []
   requiresExclusive : List Origin := []
   requiresSpine : List Origin := []
@@ -413,11 +429,26 @@ def mergeCalls (combine : Nat → Nat → Nat) (a b : List (Nat × Nat)) : List 
     | some m => xs.map fun (i, k) => if i == j then (i, min 2 (combine m n)) else (i, k)
     | none => xs ++ [(j, min 2 n)]) a
 
+/-- `s` writes a cell whose base is `c`. -/
+def Summary.wroteBase (s : Summary) (c : Origin) : Bool := s.writes.any (·.base == c)
+
+/-- The `W{F}` rows of a join: a cell keeps a field set only where every side
+    that writes it has one, and the sets join. A side that writes the cell
+    whole makes it whole. -/
+def joinFieldWrites (a b : Summary) : List (Origin × List Nat) :=
+  (union (a.fieldWrites.map Prod.fst) (b.fieldWrites.map Prod.fst)).filterMap fun c =>
+    match a.fieldWrites.lookup c, b.fieldWrites.lookup c with
+    | some f, some g => some (c, union f g)
+    | some f, none => if b.wroteBase c then none else some (c, f)
+    | none, some g => if a.wroteBase c then none else some (c, g)
+    | none, none => none
+
 /-- The fixpoint join: the more pessimistic of two summaries. -/
 def Summary.join (a b : Summary) : Summary := {
   result := a.result.join b.result
   reads := union a.reads b.reads
   writes := union a.writes b.writes
+  fieldWrites := joinFieldWrites a b
   escapes := union a.escapes b.escapes
   requiresExclusive := union a.requiresExclusive b.requiresExclusive
   requiresSpine := union a.requiresSpine b.requiresSpine

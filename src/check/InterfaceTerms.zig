@@ -10,12 +10,16 @@
 //! module's store held. Each `(row, argument roots)` is expanded once per
 //! read and shared by every term that names it, as `Types.Builder.aliases`
 //! shares an annotation's, so a read costs its distinct applications and
-//! never its tree.
+//! never its tree. A later application of a row whose SHOWN arguments an
+//! expansion in the read had too is not expanded again (`AliasShape`,
+//! checker-v2.md §7.4 as amended 2026-11-06), with the row's shape settled
+//! from its terms.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
+const AliasShape = @import("AliasShape.zig");
 const Var = TypeStore.Var;
 
 pub const Error = Allocator.Error;
@@ -137,11 +141,14 @@ pub const Reader = struct {
     shallow: bool = false,
     depth: u32 = 0,
     expansions: Expansions = .empty,
+    /// The shapes of the rows this read applied to arguments.
+    rows: AliasShape.Rows = .{},
 
     pub fn deinit(r: *Reader) void {
         var keys = r.expansions.keyIterator();
         while (keys.next()) |k| r.scratch.free(k.*);
         r.expansions.deinit(r.scratch);
+        r.rows.deinit(r.scratch);
     }
 
     pub fn read(r: *Reader, index: Interface.TermIndex) Error!Var {
@@ -213,12 +220,36 @@ pub const Reader = struct {
         }
         errdefer r.scratch.free(key);
         const body = r.iface.aliasBody(ref);
-        const actual = if (r.shallow or body == .none)
+        // Expanded already in this read with the same shown arguments: a
+        // variable of its own arguments over the first one's chain end.
+        const expands = !r.shallow and body != .none;
+        const row_shape: AliasShape = if (expands and args.len != 0 and ref & AliasShape.tag == 0) try r.rows.of(r.iface, ref, r.scratch, max_depth) else .{};
+        const shape: AliasShape = if (row_shape.fits(args.len)) row_shape else .{};
+        const shape_key: ?[]u32 = if (shape.known) try shape.key(r.store, ref, args, r.scratch) else null;
+        // Ours until the memo takes it.
+        var owned = shape_key;
+        defer if (owned) |k| r.scratch.free(k);
+        if (shape_key) |k| if (r.expansions.get(k)) |end| {
+            const v = try r.store.fresh(.{ .alias = .{ .type = r.typeId(ref), .args = try r.store.addVars(args), .actual = shape.actualOf(args, end) } }, r.rank);
+            try r.expansions.put(r.scratch, key, v);
+            return v;
+        };
+        const actual = if (!expands)
             try r.store.freshErr(r.rank)
         else
             try r.readBody(body, args);
         const v = try r.store.fresh(.{ .alias = .{ .type = r.typeId(ref), .args = try r.store.addVars(args), .actual = actual } }, r.rank);
-        try r.expansions.put(r.scratch, key, v);
+        // Both entries or neither, so `key`'s `errdefer` never frees a key
+        // the memo holds.
+        try r.expansions.ensureUnusedCapacity(r.scratch, 2);
+        r.expansions.putAssumeCapacity(key, v);
+        if (shape_key) |k| {
+            const slot = r.expansions.getOrPutAssumeCapacity(k);
+            if (!slot.found_existing) {
+                slot.value_ptr.* = shape.endOf(r.store, actual);
+                owned = null;
+            }
+        }
         return v;
     }
 

@@ -131,8 +131,9 @@ define className schema restore handlers =
 -- The instance record (`Context msg`): the host's state object (`ctx`), the
 -- bindings, the definition's parts, the state once restored, the mailbox
 -- of events waiting, the consumer's wait, the scheduler, the trampoline,
--- the running handler's chain id, the asks pending here, the timer, and
--- the test hooks. Made by the class's constructor, through `runtime.js`.
+-- the running handler's chain id, the asks pending here, the timer, the
+-- live-fiber hold, the wake and the program's alarm time, and the test
+-- hooks. Made by the class's constructor, through `runtime.js`.
 start : String, Schema e msg, (Context msg → state), Handlers state msg, V, V, V → V
 start className schema restore handlers ctx bindings worker =
     d = Js.call (Js.global "Promise") "withResolvers" []
@@ -153,18 +154,23 @@ start className schema restore handlers ctx bindings worker =
             , chain = Js.null
             , ctx = ctx
             , env = bindings
+            , firing = Js.null
             , hold = Js.null
+            , hostAt = Js.undefined
             , mailbox = Js.array []
             , name = Js.from className
             , pending = Js.array []
+            , programAt = Js.undefined
             , restored = False
             , running = Js.null
             , schedulerOf = Js.from s
             , schema = Js.from schema
+            , sql = Js.null
             , started = False
             , state = Js.null
             , timer = Js.null
             , waiter = Js.null
+            , wakeAt = Js.null
             , worker = worker
             }
     Js.set t "instance" instance
@@ -178,7 +184,7 @@ start className schema restore handlers ctx bindings worker =
     Task.onSchedulerCount s λn → counted instance n
     arm t
     Js.from
-        { alarm = Js.from λ⊤ → deliver instance (Js.from { kind = "alarm" })
+        { alarm = Js.from λ⊤ → hostAlarmed instance
         , fetch = Js.from λrequest → arrived instance request
         , rpc =
             Js.from λchain kind correlation text → rpcArrived instance chain kind correlation text
@@ -340,7 +346,23 @@ classify instance request text resolve reject =
             else
                 deliverThen instance (Js.from { kind = "ticked" }) (noContent resolve)
         else if endsWith path "/__beni/alarm" then
-            deliverThen instance (Js.from { kind = "alarm" }) (noContent resolve)
+            -- The program's alarm coming due: its time is cleared after it ran.
+            deliverThen
+                instance
+                (Js.from { at = programAt instance, kind = "alarm" })
+                (noContent resolve)
+        else if endsWith path "/__beni/host-alarm" then
+            -- The host alarm's firing ((e.5), the wake): 204 once the
+            -- platform has decided, and once the program's alarm ran.
+            _ = Js.call (hostAlarmed instance) "then" [ noContent resolve ]
+            ⊤
+        else if endsWith path "/__beni/alarms" then
+            Js.to
+                (Js.apply resolve
+                    [ Js.construct (Js.global "Response")
+                        [ Js.from (alarmsText instance), Js.from { status = 200 } ]
+                    ]
+                )
         else if endsWith path "/__beni/hold" then
             -- Whether the live-fiber timer is held ((e.5)).
             Js.to
@@ -487,7 +509,10 @@ recount instance =
 -- with the consumer alone left, the pending asks are settled ((e.10),
 -- `NoReply` with no next event needed) and the live-fiber timer is
 -- released; with any fiber beside it, the timer is held, so the host does
--- not hibernate the object under a parked fiber ((e.5)).
+-- not hibernate the object under a parked fiber, and the wake is set when
+-- none is pending, so the host does not evict it either ((e.5)). The wake
+-- is not taken back here: it fires, finds no fiber, and gives the host
+-- alarm back to the program.
 counted : V, Int → ⊤
 counted instance n =
     hold = Js.get instance "hold"
@@ -499,12 +524,16 @@ counted instance n =
             _ = Js.apply (Js.global "clearTimeout") [ hold ]
             Js.set instance "hold" Js.null
     else if Js.isNull hold then
-        Js.set
-            instance
-            "hold"
-            (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → ⊤, Js.from 2147483647 ])
+        Js.set instance "hold" (holdTimer ⊤)
+        if Js.isNull (Js.get instance "wakeAt") then armWake instance else ⊤
     else
         ⊤
+
+
+-- The live-fiber timer: one host timer of the longest delay the host
+-- takes, which keeps the object from hibernating ((e.5)).
+holdTimer : ⊤ → V
+holdTimer _ = Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → ⊤, Js.from 2147483647 ]
 
 
 -- The consumer's start: a detached fiber under the object's scheduler.
@@ -574,6 +603,7 @@ handle instance h event =
 
         "alarm" →
             Js.set instance "state" (Js.from (h.alarm ctx (Js.to state)))
+            alarmRan instance (Js.get event "at")
             Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
 
         "ticked" →
@@ -725,6 +755,170 @@ fired instance ms =
     ⊤
 
 
+-- ---- The wake and the program's alarm ((e.5)) -------------------------------
+
+-- The object's one host alarm is the earlier of the program's time and
+-- the wake, which is at most this far ahead while a fiber lives: less
+-- than the 70 s of no event after which the host evicts an idle object.
+wakePeriod : Int
+wakePeriod = 60000
+
+
+-- The wake, a period from now, and the host alarm with it.
+armWake : V → ⊤
+armWake instance =
+    Js.set
+        instance
+        "wakeAt"
+        (Js.from (Js.to (Js.call (Js.global "Date") "now" []) + wakePeriod))
+    realarm instance
+
+
+-- The host's `alarm()`. The wake it may have been is dropped, and set
+-- again, with a new live-fiber timer, while a fiber lives. The program's
+-- `alarm` event goes into the mailbox only when the program's time has
+-- come; that time stays in the table until the handler returns, so a
+-- defect leaves it for the host's retry, and until then it is not the
+-- host alarm (`firing`).
+hostAlarmed : V → V
+hostAlarmed instance =
+    Js.set instance "hostAt" Js.null
+    Js.set instance "wakeAt" Js.null
+    program = programAt instance
+    due = not (Js.isNull program) && Js.le program (Js.call (Js.global "Date") "now" [])
+    if due then Js.set instance "firing" program
+    hold = Js.get instance "hold"
+    if Js.isNull hold then
+        realarm instance
+    else
+        _ = Js.apply (Js.global "clearTimeout") [ hold ]
+        Js.set instance "hold" (holdTimer ⊤)
+        armWake instance
+    if due then
+        deliver instance (Js.from { at = program, kind = "alarm" })
+    else
+        Js.call (Js.global "Promise") "resolve" [ Js.null ]
+
+
+-- After the program's `alarm` handler: the time it ran for is cleared,
+-- unless the handler set another.
+alarmRan : V, V → ⊤
+alarmRan instance at =
+    Js.set instance "firing" Js.null
+    if not (Js.isNull at) && Js.same (programAt instance) at then setProgramAt instance Js.null
+    realarm instance
+
+
+-- The host alarm, set again when its time changes: the earlier of the
+-- program's time, except one in delivery, and the wake. A `--test-hooks`
+-- build only keeps it, and `/__beni/host-alarm` is its firing ((k)).
+realarm : V → ⊤
+realarm instance =
+    program = programAt instance
+    target =
+        earlier
+            (if Js.same program (Js.get instance "firing") then Js.null else program)
+            (Js.get instance "wakeAt")
+    if Js.same target (Js.get instance "hostAt") then
+        ⊤
+    else
+        Js.set instance "hostAt" target
+        if Js.testHooks ⊤ then
+            ⊤
+        else
+            store = Js.get (Js.get instance "ctx") "storage"
+            if Js.isNull target then
+                Js.to (Js.call store "deleteAlarm" [])
+            else
+                Js.to (Js.call store "setAlarm" [ target ])
+
+
+earlier : V, V → V
+earlier a b =
+    if Js.isNull a then
+        b
+    else if Js.isNull b then
+        a
+    else if Js.lt b a then
+        b
+    else
+        a
+
+
+-- The program's time: read from the platform's table once per instance,
+-- then kept here; `null` for none.
+programAt : V → V
+programAt instance =
+    known = Js.get instance "programAt"
+    if Js.isUndefined known then
+        rows =
+            Js.call
+                (Js.call (alarmTable instance) "exec" [ Js.from "SELECT at FROM beni_alarm" ])
+                "toArray"
+                []
+        at = if Js.to (Js.get rows "length") == 0 then Js.null else Js.get (Js.at rows 0) "at"
+        Js.set instance "programAt" at
+        at
+    else
+        known
+
+
+setProgramAt : V, V → ⊤
+setProgramAt instance at =
+    table = alarmTable instance
+    _ =
+        if Js.isNull at then
+            Js.call table "exec" [ Js.from "DELETE FROM beni_alarm" ]
+        else
+            Js.call table "exec"
+                [ Js.from "INSERT OR REPLACE INTO beni_alarm (id, at) VALUES (0, ?)", at ]
+    Js.set instance "programAt" at
+
+
+-- `ctx.storage.sql`, with the platform's one table made: the program's
+-- time, which no `Worker.Storage` call sees. A namespace that is not
+-- SQLite-backed has none: (h)'s configuration error.
+alarmTable : V → V
+alarmTable instance =
+    known = Js.get instance "sql"
+    if Js.isNull known then
+        sql = Js.get (Js.get (Js.get instance "ctx") "storage") "sql"
+        if Js.isNullish sql then
+            Js.throw
+                (Js.construct (Js.global "Error")
+                    [ Js.from
+                        "the object's storage is not SQLite-backed: give the class \"storage\": \"sqlite\" in the Wrangler configuration (boundary.md §9.12 (h), (i))"
+                    ]
+                )
+        else
+            _ =
+                Js.call sql "exec"
+                    [ Js.from
+                        "CREATE TABLE IF NOT EXISTS beni_alarm (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)"
+                    ]
+            Js.set instance "sql" sql
+            sql
+    else
+        known
+
+
+-- `/__beni/alarms`: the host alarm the platform holds, and whether the
+-- program has a time.
+alarmsText : V → String
+alarmsText instance =
+    host = Js.get instance "hostAt"
+    program = programAt instance
+    hostWord =
+        if Js.isNullish host then
+            "none"
+        else if Js.same host program then
+            "program"
+        else
+            "wake"
+    programWord = if Js.isNull program then "none" else "set"
+    "host ${hostWord}, program ${programWord}"
+
+
 -- ---- The socket ((g)) -------------------------------------------------------
 
 --| Why an upgrade was not accepted: no `upgrade: websocket` header or a
@@ -868,8 +1062,13 @@ utf8Bytes text =
 
 
 --| `setAlarm`: the alarm at that epoch millisecond, replacing the one set.
+--| While a fiber waits, the platform keeps the host alarm at most 60 s
+--| ahead, and the `alarm` handler still runs only at this time.
 pub alarmAt : Context msg, Int → ⊤
-alarmAt ctx at = Js.to (Js.call (storage ctx) "setAlarm" [ Js.from at ])
+alarmAt ctx at =
+    instance = Js.from ctx
+    setProgramAt instance (Js.from at)
+    realarm instance
 
 
 --| The alarm after the duration, from now.
@@ -877,13 +1076,13 @@ pub alarmIn : Context msg, Duration → ⊤
 alarmIn ctx d = alarmAt ctx (Js.to (Js.call (Js.global "Date") "now" []) + Duration.toMillis d)
 
 
---| `deleteAlarm`.
+--| `deleteAlarm`: no alarm. While a fiber waits, the platform keeps its
+--| own host alarm.
 pub cancelAlarm : Context msg → ⊤
-cancelAlarm ctx = Js.to (Js.call (storage ctx) "deleteAlarm" [])
-
-
-storage : Context msg → V
-storage ctx = Js.get (hostState ctx) "storage"
+cancelAlarm ctx =
+    instance = Js.from ctx
+    setProgramAt instance Js.null
+    realarm instance
 
 
 -- The host's `DurableObjectState`.
@@ -1226,8 +1425,69 @@ replySchema inner =
 
 -- The ids of the replies a value holds, by a walk of its records and
 -- lists: for a message posted to `self`, which holds them until its own
--- `received` returns ((e.10)).
-foreign impure repliesIn : Js.Value → Js.Value
+-- `received` returns ((e.10)). A handle is `{ id, instance, schema }` whose
+-- `instance` is an object record (`ask`); the walk stops at a host object,
+-- which a beni value never holds, and at anything seen before.
+repliesIn : Js.Value → Js.Value
+repliesIn value =
+    ids = Js.array []
+    seen = Js.construct (Js.global "Set") []
+    walkReplies ids seen (Js.array [ value ])
+    ids
+
+
+-- The walk, over a work list it pops from, so that a value's depth costs
+-- it nothing (a value nested 5 000 deep is walked; the recursive form fell
+-- at about 4 050 levels): a container's children are pushed in reverse,
+-- so the ids come out in the order a depth-first walk gives them.
+walkReplies : Js.Value, Js.Value, Js.Value → ⊤
+walkReplies ids seen work =
+    if Js.same (Js.get work "length") (Js.from 0) then
+        ⊤
+    else
+        v = Js.call work "pop" []
+        if Js.isNull v || not (Js.typeIs v "object") || Js.to (Js.call seen "has" [ v ]) then
+            ⊤
+        else
+            _ = Js.call seen "add" [ v ]
+            instance = Js.get v "instance"
+            if
+                Js.typeIs (Js.get v "id") "string"
+                    && not (Js.isUndefined instance)
+                    && not (Js.isUndefined (Js.get v "schema"))
+                    && not (Js.isNull instance)
+                    && Js.typeIs instance "object"
+                    && isArray (Js.get instance "mailbox")
+            then
+                _ = Js.call ids "push" [ Js.get v "id" ]
+                ⊤
+            else if isArray v then
+                pushReversed work v
+            else
+                proto = Js.call (Js.global "Object") "getPrototypeOf" [ v ]
+                if Js.same proto (Js.get (Js.global "Object") "prototype") || Js.isNull proto then
+                    pushReversed work (Js.call (Js.global "Object") "values" [ v ])
+        walkReplies ids seen work
+
+
+-- Push an array's elements onto the work list, last first: an index loop
+-- from the end, as `core/Task`'s `pushBack`, so the array is neither
+-- copied nor turned.
+pushReversed : Js.Value, Js.Value → ⊤
+pushReversed work elements = pushFrom work elements (Js.to (Js.get elements "length") - 1)
+
+
+pushFrom : Js.Value, Js.Value, Int → ⊤
+pushFrom work elements i =
+    if i < 0 then
+        ⊤
+    else
+        _ = Js.call work "push" [ Js.at elements i ]
+        pushFrom work elements (i - 1)
+
+
+isArray : Js.Value → Bool
+isArray v = Js.to (Js.call (Js.global "Array") "isArray" [ v ])
 
 
 -- ---- A defect ((f)) ---------------------------------------------------------

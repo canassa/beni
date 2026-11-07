@@ -1,0 +1,4 @@
+# v2 refuses the edit of one join while the other is read: a join is a loan of the fiber's contents (§2.13.7).
+29:10 list_still_used List.push
+# and through a helper that joins.
+38:10 list_may_be_shared List.push

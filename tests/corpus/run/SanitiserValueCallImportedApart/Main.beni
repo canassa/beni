@@ -1,0 +1,134 @@
+-- `SanitiserValueCallImported`'s twins (#2132): the same calls of a value of
+-- another module, with no write of what the value was handed.
+import Lib exposing (Box)
+import List
+import Mid
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apply : a, b, (a, b → c) → c
+apply u v f = f u v
+
+
+ctor : ⊤ → String
+ctor ⊤ =
+    k = [ 1 ]
+    x = (Lib.ctor [] k).a
+    "${show k} ${show x}"
+
+
+lam : ⊤ → String
+lam ⊤ =
+    k = [ 1 ]
+    x = (Lib.lam [] k).a
+    "${show k} ${show x}"
+
+
+choice : ⊤ → String
+choice ⊤ =
+    x = (Lib.choice [] [ 1 ]).a
+    k = [ 1 ]
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+called : ⊤ → String
+called ⊤ =
+    x = (Lib.called [] [ 1 ]).a
+    k = [ 1 ]
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+chain : ⊤ → String
+chain ⊤ =
+    x = (Mid.again [] [ 1 ]).a
+    k = [ 1 ]
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+method : ⊤ → String
+method ⊤ =
+    x = ((Box []).meth [ 1 ]).a
+    k = [ 1 ]
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+handed : ⊤ → String
+handed ⊤ =
+    x = (apply [] [ 1 ] Lib.ctor).a
+    k = [ 1 ]
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+copied : ⊤ → String
+copied ⊤ =
+    k = [ 1 ]
+    x = List.copy (Lib.lam [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+pushed : ⊤ → String
+pushed ⊤ =
+    k = [ 1 ]
+    x = (Lib.lam [] k).a
+    n = List.push x 2
+    "${show n}"
+
+
+unrelated : ⊤ → String
+unrelated ⊤ =
+    k = [ 1 ]
+    p = Lib.ctor [] []
+    n = List.push k 2
+    "${show n} ${show p.a}"
+
+
+unrelatedLoop : Int, List Int, Lib.Pt → List Int
+unrelatedLoop i acc p =
+    if i == 0 then acc else unrelatedLoop (i - 1) (List.push acc (List.length p.a)) p
+
+
+loop : ⊤ → String
+loop ⊤ = show (unrelatedLoop 3 [] (Lib.called [] []))
+
+
+compared : ⊤ → String
+compared ⊤ =
+    k = [ 1 ]
+    u = Lib.wrap k
+    v = Lib.wrap [ 2 ]
+    same = u == v
+    n = List.push k 2
+    answer = if same then "y" else "n"
+    "${show n} ${answer}"
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ ctor ⊤
+            , lam ⊤
+            , choice ⊤
+            , called ⊤
+            , chain ⊤
+            , method ⊤
+            , handed ⊤
+            , copied ⊤
+            , pushed ⊤
+            , unrelated ⊤
+            , loop ⊤
+            , compared ⊤
+            ]
+            ";"
+        )

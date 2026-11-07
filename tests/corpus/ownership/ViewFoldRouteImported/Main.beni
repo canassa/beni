@@ -1,0 +1,62 @@
+-- ownership (project): `ViewFoldRoute` with the recursive writer and the
+-- builders in another module (ownership-v2.md Appendix B, V×F, the S3b
+-- half with a group writer; R-4.7.1, R-5.7.1; #1129). The verdicts are
+-- the same-module fixture's: the writer over a view of `xs` with `xs` read
+-- after is refused, directly and through `ident`, and accepted with `xs`
+-- dead; a shallow copy is refused; a fresh subtree is accepted, and two
+-- levels down v2 refuses it (#1501).
+import Roses exposing (Rose)
+
+
+pub viewRead : List Rose → Rose × List Rose
+viewRead xs =
+    case xs of
+        [ _, …rest ] →
+            ( Roses.incAll (Roses.deep rest), xs )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub viewIdent : List Rose → Rose × List Rose
+viewIdent xs =
+    case xs of
+        [ _, …rest ] →
+            ( Roses.incAll (Roses.ident (Roses.deep rest)), xs )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub viewDead : List Rose → Rose
+viewDead xs =
+    case xs of
+        [ _, …rest ] →
+            Roses.incAll (Roses.deep rest)
+
+        [] →
+            Rose []
+
+
+pub copyRead : List Rose → Rose × List Rose
+copyRead xs =
+    case xs of
+        [ _, …rest ] →
+            ( Roses.incAll (Roses.deep (List.copy rest)), xs )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub freshRead : List Rose → Rose × List Rose
+freshRead xs =
+    case xs of
+        [ _, …rest ] →
+            ( Roses.incAll (Roses.ident (Roses.deep [ Rose [] ])), rest )
+
+        [] →
+            ( Rose [], xs )
+
+
+pub freshDeeper : ⊤ → Rose
+freshDeeper ⊤ = Roses.incAll (Roses.deeper [ Rose [] ])

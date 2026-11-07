@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"waiting"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "object,local,own"
+<body>
+  <output>"object,local,own"</output>
+  <button>"launch"</button>
+</body>

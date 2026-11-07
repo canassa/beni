@@ -1,318 +1,1223 @@
-//! L9: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
-//! a declaration's body walked once by `Transfer`, its uses indexed
-//! (`Liveness`), its demands resolved in evaluation order (`Demands`), and
-//! its class read off. S3a walks declarations one at a time, without groups
-//! (S3b), and a declaration with a construct not built yet gets the
-//! pessimistic class (`Summary.unknown`) and reports no demand (§8).
+//! L6: one walk of one code (`docs/design/ownership-v2.md` §2.6, §2.7).
 //!
-//! **The read-off** (§2.10): `use(i)` marks `R` at every path the body
-//! reads a parameter at, `W` (and `S` for a deep demand) where a demand's
-//! base is a parameter's, `E` where an escape reaches one, `A` where the
-//! result holds one; `res` is the body's value with this activation's
-//! objects renumbered `fresh k` in the order they are met, widened, its κ
-//! carried over the relabelling; `xreq` what the demands and calls relied
-//! on.
+//! **The walk** goes over a code's instructions once, in their order (the
+//! BIR numbers an operand before its consumer): a rule per tag (§2.6) gives
+//! each instruction its value (§2.3.3), records the uses of locals at their
+//! consumers (§2.7), the pending operands, the escapes, the demands of
+//! constructions and `++` chains, and every call as a record whose result is
+//! a root of its own. Nothing the walk does reads a callee's contract: a
+//! call's leaves are expanded only by an evaluation (`Eval`). So a recursive
+//! group's members are walked once each (§2.12), whatever their candidates.
 //!
-//! Obligations kept here: O5's read-off half (`res`, `W`, `E`, `A` and `R`
-//! cover the body), O11 (a refusal of the account stops the walk; nothing
-//! partial is published).
+//! Obligations kept here: O2's use half (a use is recorded at its consumer,
+//! at its path, with its kind).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
-const Cell = @import("Cell.zig");
-const Shape = @import("Shape.zig");
-const Cond = @import("Cond.zig");
-const Summary = @import("Summary.zig");
+const Slots = @import("Slots.zig");
+const Contract = @import("Contract.zig");
+const Value = @import("Value.zig");
+const Relation = @import("Relation.zig");
 const Regions = @import("Regions.zig");
 const Liveness = @import("Liveness.zig");
-const Demands = @import("Demands.zig");
-const Transfer = @import("Transfer.zig");
+const Prepass = @import("Prepass.zig");
 const Bir = @import("../bir/Bir.zig");
+const WalkContext = @import("WalkContext.zig");
+const Called = @import("Called.zig");
+const Construction = @import("Construction.zig");
 
-pub const ClassId = Ids.ClassId;
-pub const NodeId = Ids.NodeId;
-pub const CellId = Ids.CellId;
-pub const SetId = Ids.SetId;
+pub const Error = Ids.ChargeError;
 pub const PathId = Ids.PathId;
 pub const PlaceId = Ids.PlaceId;
-pub const CondId = Ids.CondId;
-pub const Env = Summary.Env;
-pub const Error = Ids.ChargeError;
-pub const none: u32 = Ids.none_int;
+const Inst = Bir.Inst;
+const Step = Place.Step;
+const Cond = Contract.Cond;
+const none: u32 = Ids.none_int;
 
-pub const Input = struct {
-    env: Env,
-    sums: *Summary.Table,
-    ctx: Transfer.Context,
-    bir: *const Bir,
+pub const fixed_bit = Contract.fixed_bit;
+
+pub const Callee = WalkContext.Callee;
+pub const Context = WalkContext.Context;
+
+/// What `Groups` hands a walk: the code and its frame of instructions.
+pub const Code = struct {
+    /// The declaration the code is in, and its index.
     decl: Bir.Decl,
-    prepass: ?*const Facts.Prepass = null,
-    phase: Ids.Phase = .inference,
-    /// The places of the parameters and the result, for a pessimistic class.
+    decl_index: u32,
+    /// The lambda's or local function's instruction; `none` for the body.
+    inst: u32,
+    /// The code's parameter patterns.
+    params: []const Inst.Index,
+    /// Its parameters' places (the declaration's scheme for a body).
     param_places: []const PlaceId,
+    /// Its captures' locals, after its own parameters.
+    captures: []const u32,
+    /// Its body instruction.
+    body: u32,
     result_place: PlaceId,
-};
+    /// A called code's walk: the body, then a call of its result (§2.11.3).
+    called: ?Called.Input = null,
 
-/// One reported demand: what a line names (§6, R-7.15).
-pub const Line = struct {
-    demand: Demands.Demand,
-    outcome: Demands.Outcome,
-    /// The holder's local and kind (or the pending instruction).
-    holder: ?Demands.Holder = null,
-    /// The token of the holder's later use, `none` when there is none.
-    use_token: u32 = none,
-};
-
-pub const Result = struct {
-    class: ClassId,
-    /// The first instruction not built, or `none` when the walk built all.
-    unbuilt: u32,
-    lines: []Line,
-
-    pub fn deinit(r: *Result, gpa: Allocator) void {
-        gpa.free(r.lines);
+    /// The parameters of its contract.
+    pub fn arity(c: Code) u32 {
+        const all: u32 = @intCast(c.params.len + c.captures.len);
+        return if (c.called) |cd| @as(u32, @intCast(cd.own_places.len)) + all + 1 else all;
     }
 };
 
-/// Walk declaration `in.decl` (§8 S3a).
-pub fn walk(in: Input) Error!Result {
-    const env = in.env;
-    const gpa = env.gpa;
-    var regions = try Regions.build(gpa, env.account(), in.phase, in.bir, in.decl, in.prepass);
-    defer regions.deinit(gpa);
-    var frame: Transfer.Frame = .{ .gpa = gpa, .env = env, .sums = in.sums, .ctx = in.ctx, .bir = in.bir, .decl = in.decl, .regions = &regions, .param_places = in.param_places };
-    defer frame.deinit();
-    try frame.walk();
-    if (frame.unbuilt != none) {
-        const class = try pessimistic(in);
-        return .{ .class = class, .unbuilt = frame.unbuilt, .lines = &.{} };
+/// A demand made by the walk or by an evaluation (§2.8): what `Resolve` judges and `Message` says.
+pub const Demand = struct {
+    point: u32,
+    kind: Facts.DemandKind,
+    token: u32,
+    /// The instruction whose value is the base, its text's root.
+    base_inst: u32,
+    /// The path below the base the write is at, for the text: with
+    /// `write_rel`, its root, those steps replayed when it is printed.
+    write_path: PathId = .none,
+    write_rel: u32 = 0,
+    callee_inst: u32 = none,
+    /// A `once` demand's written capture: the base is this local, not `base_inst` (`none` otherwise).
+    base_local: u32 = none,
+    /// The written objects: a run of `Walk.leaf_runs`.
+    targets: Ids.Range = .{},
+    deep: bool = false,
+    /// The other operands: a run of `Walk.value_runs`.
+    operands: Ids.Range = .{},
+    /// The operand stack's clock at the point (`Walk.entries`; `none`: none).
+    pending: u32 = none,
+    /// What the callee's write relies on, instantiated on the arguments
+    /// once the group's facts are delivered (`finishDemands`).
+    relies: Cond = .{},
+    /// The call whose callee writes (`none` for the walk's own demands),
+    /// and the argument written.
+    call: u32 = none,
+    /// A call whose escapes do not refuse this demand, beside `call` (`Contents.moved`).
+    beside: u32 = none,
+    arg: u32 = none,
+    /// A virtual call's write: the written slot of its argument `arg` (`Outward.finishDemands` reads the labels it is supplied through).
+    wslot: u32 = none,
+    /// A construction's base value: its storage, the targets, is read again
+    /// by each evaluation (a prepend's re-cons reads the calls' contracts).
+    base_value: u32 = none,
+    /// The relied condition failed on the argument's own other paths.
+    other_paths: bool = false,
+    /// A callback's write (§2.11.3): accepted `callback-param`.
+    callback: bool = false,
+    /// A label's kept slot is written: refused `call`.
+    kept: bool = false,
+    /// A `once` code's capture written where it may run again: refused `once`.
+    many: bool = false,
+    /// A cell operation on a `◆` slot (`Eval.cellWrite`): never `once`.
+    cell: bool = false,
+    /// A write grafted at the frame's parameter (`Graft`, §2.11.2): its
+    /// `(j, slot, tree)`, what the read-off adds; `j` is `none` otherwise.
+    graft: [3]u32 = .{ none, 0, 0 },
+    /// The other routes a grouped demand covers (`Graft`), named in its line: steps from `write_path`, as `write_rel`.
+    also: []const u32 = &.{},
+};
+
+/// A local's binding.
+pub const Binding = struct { value: u32 = none, point: u32 = none, token: u32 = none };
+
+/// An escape (§2.4): a leaf at a point.
+/// `read`: the code that runs a function object only reads its answer (§2.11.3).
+pub const Escape = struct { leaf: u32, point: u32, call: u32 = none, read: bool = false };
+
+/// An operand on the stack (§2.4), its values a run of `pending_runs`: pending at clock `T` when `push <= T < gone`.
+pub const Entry = struct { inst: u32, vals: Ids.Range, push: u32, gone: u32 = none };
+
+/// A call's walk-time facts beside `Value.Call`.
+pub const CallSite = struct {
+    /// The operand stack's clock at the call (`Walk.entries`).
+    pending: u32,
+    /// The call's arguments read through a footprint: the uses to filter.
+    foot: Ids.Range,
+};
+
+/// A closure made in the frame (§2.11.4): its code, value and point.
+pub const Closure = struct { code: u32, value: u32, point: u32, inst: u32 };
+
+/// The residue of one walk: every table an evaluation reads.
+pub const Walk = struct {
+    f: Value.Frame,
+    code: Code,
+    bir: *const Bir,
+    bindings: []Binding,
+    uses: std.ArrayList(Facts.Use) = .empty,
+    /// Per footprint (`use_node`): one call and argument; calls of one callee and arity share it (§2.7).
+    foots: std.ArrayList([2]u32) = .empty,
+    foot_of: Ids.FixedDict(4) = .{},
+    /// The local each `.local` read was of, per use (for texts).
+    demands: std.ArrayList(Demand) = .empty,
+    escapes: std.ArrayList(Escape) = .empty,
+    sites: std.ArrayList(CallSite) = .empty,
+    closures: std.ArrayList(Closure) = .empty,
+    /// `(value, point)`: a function value called as unknown code (§2.11.3).
+    runs: std.ArrayList([2]u32) = .empty,
+    pending_runs: std.ArrayList(u32) = .empty,
+    entries: std.ArrayList(Entry) = .empty,
+    value_runs: std.ArrayList(u32) = .empty,
+    leaf_runs: std.ArrayList(u32) = .empty,
+    result: u32 = none,
+    /// Per root: the local whose parameter pattern it is, for texts.
+    regions: *const Regions.Tree,
+    index: Liveness.Index = .{},
+    /// A derived label's identity `(j, slot, origin)` → its `cbs` record, a
+    /// name that holds across evaluations; which of them pass on is each
+    /// evaluation's. Virtual calls are too (§2.11.3).
+    derived: Ids.FixedDict(5) = .{},
+    /// The calls and labels the walk made, before any evaluation's.
+    walk_calls: u32 = 0,
+    /// A called code: where its last call begins (`Called.Last`).
+    last: Called.Last = .{},
+
+    pub fn deinit(w: *Walk) void {
+        const gpa = w.f.gpa;
+        w.f.deinit();
+        gpa.free(w.bindings);
+        inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries, &w.runs }) |l| l.deinit(gpa);
+        inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.derived }) |l| l.deinit(gpa);
     }
-    var index = try Liveness.Index.build(gpa, env.account(), in.phase, env.places, &regions, frame.uses.items);
-    defer index.deinit(gpa);
-    // A binding lives to its local's last use.
-    for (frame.holders.items) |*h| if (h.kind == .binding) {
-        const last = index.lastUse(h.who);
-        h.end = if (last == none or last < h.start) h.start else last;
-    };
-    const outcomes = try gpa.alloc(Demands.Outcome, frame.demands.items.len);
-    defer gpa.free(outcomes);
-    try Demands.resolve(env, .{
-        .demands = frame.demands.items,
-        .operands = frame.operands.items,
-        .holders = frame.holders.items,
-        .escapes = frame.escapes.items,
-        .index = &index,
-        .regions = &regions,
-        .bindings = frame.binding,
-    }, outcomes);
-    const lines = try gpa.alloc(Line, outcomes.len);
-    errdefer gpa.free(lines);
-    var xreq = try env.conds.flat(gpa, env.charge, if (Cond.Table.fails(frame.xreq)) Cond.yes else frame.xreq);
-    for (frame.demands.items, outcomes, lines) |d, o, *l| {
-        l.* = .{ .demand = d, .outcome = o };
-        if (o.holder != none) l.holder = frame.holders.items[o.holder];
-        if (o.use != .none) l.use_token = frame.use_tokens.items[index.get(o.use).atom];
-        if (o.verdict == .accepted and o.xreq != .none) xreq = try env.conds.atoms.unionWith(gpa, env.charge, xreq, o.xreq);
+
+    pub fn leavesOfRun(w: *const Walk, r: Ids.Range) []const u32 {
+        return w.leaf_runs.items[r.start..][0..r.len];
     }
-    const class = try readOff(in, &frame, xreq);
-    return .{ .class = class, .unbuilt = none, .lines = lines };
-}
+    pub fn valuesOfRun(w: *const Walk, r: Ids.Range) []const u32 {
+        return w.value_runs.items[r.start..][0..r.len];
+    }
+    pub fn pendingOfRun(w: *const Walk, r: Ids.Range) []const u32 {
+        return w.pending_runs.items[r.start..][0..r.len];
+    }
+};
 
-/// `⊤call` over the declaration's places: every parameter read, kept,
-/// escaped and written deeply, the result `⊤` (O10).
-fn pessimistic(in: Input) Error!ClassId {
-    return in.sums.unknown(in.env, in.param_places, &.{}, in.result_place);
-}
+// ===========================================================================
+// The walk
+// ===========================================================================
 
-const ReadOff = struct {
-    env: Env,
-    /// A frame cell → its `fresh k` (k from 1, first-sight order).
-    fresh: Ids.FixedDict(1) = .{},
-    /// Each `apart` group → its image's aggregate (`Cond.apartImage`).
-    apart_images: Ids.FixedDict(1) = .{},
+/// What an instruction evaluated to: its value, and the local and path it
+/// reads when it is a local or a field chain over one.
+const Res = struct { v: u32 = none, local: u32 = none, path: PathId = .none };
 
-    fn relabel(r: *ReadOff, s: SetId) Error!SetId {
-        if (s == .none) return .none;
-        const cells = r.env.cells;
-        var out: SetId = .none;
-        var it = cells.sets.iterate(s);
-        while (it.next()) |e| {
-            const c: CellId = .from(e.key);
-            var src = c;
-            var approx = e.value;
-            if (cells.origin(c).isRefinement()) {
-                // A refinement is its canonical cell's image (§2.2: `elem(π1·ι)`
-                // is `π1[*]`); over a concrete base, the base's, approximate.
-                if (try cells.unrefined(r.env.gpa, r.env.account(), r.env.places, c)) |u| src = u else {
-                    src = cells.base(c);
-                    approx = 1;
+const Walker = struct {
+    /// Walking a called code's last call: the call's result has the code's place.
+    in_last: bool = false,
+    w: *Walk,
+    ctx: Context,
+    contracts: *const Contract.Table,
+    bir: *const Bir,
+    prepass: *const Facts.Prepass,
+    gpa: Allocator,
+    /// Per instruction of the declaration: its result in this walk.
+    res: []Res,
+    consumer: []u32,
+    /// A `let_pattern`'s value instruction → its pattern.
+    binds: []u32,
+    /// A case arm's pattern root → its scrutinee.
+    matches: []u32,
+    /// Spread chains by root, and the instructions a chain absorbed.
+    chain: []u32,
+    absorbed: []bool,
+    /// The operand stack (§2.4): instructions evaluated, consumer not yet run, with their push
+    /// clock and entry (the first `made` have one). The clock ticks at a removal.
+    stack: std.ArrayList([3]u32) = .empty,
+    made: usize = 0,
+    clock: u32 = 0,
+    atom: *u32,
+    scratch: std.ArrayList(Inst.Index) = .empty,
+    early: std.ArrayList(Early) = .empty,
+    module: u32 = 0,
+
+    pub fn f(k: *Walker) *Value.Frame {
+        return &k.w.f;
+    }
+    fn tag(k: *const Walker, i: u32) Inst.Tag {
+        return k.bir.instTag(@fromBackingInt(i));
+    }
+    fn data(k: *const Walker, i: u32) Inst.Data {
+        return k.bir.instData(@fromBackingInt(i));
+    }
+    fn rel(k: *const Walker, i: u32) u32 {
+        return i - k.w.code.decl.inst_start.int();
+    }
+    pub fn token(k: *const Walker, i: u32) u32 {
+        return k.bir.insts.items(.main_token)[i];
+    }
+    pub fn placeOf(k: *Walker, i: u32) Error!PlaceId {
+        return k.ctx.placeOfInst(k.ctx.ctx, i);
+    }
+    fn callPlace(k: *Walker, i: u32) Error!PlaceId {
+        return if (k.in_last) k.w.code.result_place else k.placeOf(i);
+    }
+    fn args(k: *const Walker, c: u32) []const Inst.Index {
+        return k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.data(c).rhs)), Inst.Index);
+    }
+    fn charge(k: *Walker, cat: Ids.Category, n: u32) Error!void {
+        try k.w.f.account.reserve(cat, n);
+    }
+
+    /// Whether instruction `i` belongs to this code's frame.
+    fn mine(k: *const Walker, i: u32) bool {
+        const fr = k.prepass.enclosing_frame[i];
+        return fr == k.w.code.inst;
+    }
+
+    pub fn valueOf(k: *Walker, i: u32) Error!u32 {
+        const r = k.res[k.rel(i)];
+        if (r.v == none) return k.f().scalar();
+        return r.v;
+    }
+
+    // ---- uses ---------------------------------------------------------------
+
+    fn use(k: *Walker, operand: u32, point: u32, kind: Facts.UseKind, foot: [2]u32, callee: [3]u32) Error!void {
+        const r = k.res[k.rel(operand)];
+        if (r.local == none or r.path == .none) return;
+        if (@import("Mutate.zig").on(.walker_no_call_use) and kind == .call) return;
+        try k.charge(.use, 1);
+        var node: Ids.NodeId = .none;
+        if (kind == .call) {
+            const got = try k.w.foot_of.getOrPut(k.gpa, .{ callee[0], callee[1], callee[2], foot[1] });
+            if (!got.found_existing) got.value_ptr.* = @intCast(k.w.foots.items.len);
+            if (!got.found_existing) try k.w.foots.append(k.gpa, foot);
+            node = .from(got.value_ptr.*);
+        }
+        k.atom.* += 1;
+        try k.w.uses.append(k.gpa, .{ .local = r.local, .path = r.path, .point = point, .kind = kind, .region = k.w.regions.regionOf(point), .use_node = node, .atom = k.atom.* });
+    }
+
+    pub fn consume(k: *Walker, operand: u32, point: u32) Error!void {
+        try k.use(operand, point, .whole, .{ none, none }, .{ none, none, none });
+        k.pop(operand);
+    }
+
+    fn pop(k: *Walker, operand: u32) void {
+        var at = k.stack.items.len;
+        while (at > 0) : (at -= 1) if (k.stack.items[at - 1][0] == operand) break;
+        if (at == 0) return;
+        const x = k.stack.orderedRemove(at - 1);
+        k.clock += 1;
+        if (x[2] != none) k.w.entries.items[x[2]].gone = k.clock;
+        if (at - 1 < k.made) k.made -= 1;
+    }
+
+    /// The pending operands at a call (§2.4), as the clock: the stack's entries are made once
+    /// each (resolution filters them by the call's point), never a copy of the stack a call.
+    pub fn pendingRun(k: *Walker) Error!u32 {
+        while (k.made < k.stack.items.len) : (k.made += 1) {
+            const x = &k.stack.items[k.made];
+            const i = x[0];
+            const v = k.res[k.rel(i)].v;
+            const start: u32 = @intCast(k.w.pending_runs.items.len);
+            x[2] = @intCast(k.w.entries.items.len);
+            try k.w.entries.ensureUnusedCapacity(k.gpa, 1);
+            defer k.w.entries.appendAssumeCapacity(.{ .inst = i, .vals = .{ .start = start, .len = @intCast(k.w.pending_runs.items.len - start) }, .push = x[1] });
+            if (v == none) continue;
+            // A record update's base waits for a consumer that touches it
+            // at every field but the updated ones (§2.6's `record_update`
+            // row, §2.8 *Dead*): it holds only those fields' values.
+            const c = k.consumer[k.rel(i)];
+            if (c != none and k.bir.instTag(@fromBackingInt(c)) == .record_update and k.bir.instData(@fromBackingInt(c)).lhs == i) {
+                const fields = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.bir.instData(@fromBackingInt(c)).rhs)), Bir.Field);
+                for (k.f().places.steps(try k.placeOf(c)).steps) |st| {
+                    if (!st.inRow()) continue;
+                    const updated = st.kind == .field and for (fields) |fl| {
+                        if (k.ctx.fieldRank(k.ctx.ctx, fl.name) == st.payload) break true;
+                    } else false;
+                    if (updated) continue;
+                    try k.w.pending_runs.append(k.gpa, try k.project(v, .plain, st.word(), 0));
                 }
+                continue;
             }
-            const x = cells.get(src);
-            const m: CellId = switch (x.origin) {
-                .site, .result => blk: {
-                    try r.env.charge.reserve(r.env.gpa, .inspection, 1);
-                    const got = try r.fresh.getOrPut(r.env.gpa, .{src.int()});
-                    if (!got.found_existing) got.value_ptr.* = r.fresh.count();
-                    break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, got.value_ptr.*, x.place, x.kind);
+            try k.w.pending_runs.append(k.gpa, v);
+        }
+        return k.clock;
+    }
+
+    // ---- binding ------------------------------------------------------------
+
+    fn bindLocal(k: *Walker, local: u32, v: u32, point: u32, tok: u32) Error!void {
+        if (local >= k.w.bindings.len) return;
+        try k.charge(.shape, 1);
+        k.w.bindings[local] = .{ .value = v, .point = point, .token = tok };
+    }
+
+    fn placeOfLocal(k: *Walker, local: u32) Error!PlaceId {
+        return k.ctx.placeOfLocal(k.ctx.ctx, local);
+    }
+
+    /// Bind pattern `pat` to value `v` at `point`.
+    fn bind(k: *Walker, pat0: u32, v0: u32, point: u32) Error!void {
+        var stack: std.ArrayList([2]u32) = .empty;
+        defer stack.deinit(k.gpa);
+        try stack.append(k.gpa, .{ pat0, v0 });
+        while (stack.pop()) |it| {
+            const pat = it[0];
+            const v = it[1];
+            try k.charge(.inspection, 1);
+            const d = k.data(pat);
+            const tok = k.token(pat);
+            switch (k.tag(pat)) {
+                .pat_var => try k.bindLocal(d.lhs, v, point, tok),
+                .pat_as => {
+                    try k.bindLocal(d.rhs, v, point, tok);
+                    try stack.append(k.gpa, .{ d.lhs, v });
                 },
-                .esc => try cells.result(r.env.gpa, r.env.account(), .esc, .none, x.b, x.place, x.kind),
-                else => src,
-            };
-            out = try cells.sets.insert(r.env.gpa, r.env.charge, out, m.int(), approx);
+                .pat_ctor => {
+                    const c = k.ctx.ctorOf(k.ctx.ctx, d.lhs) orelse continue;
+                    for (k.args(pat), 0..) |a, n| {
+                        const st = if (k.ctx.ctorField(k.ctx.ctx, d.lhs, @intCast(n))) |r| try Step.field(k.f().account, r) else try k.f().places.ctorStep(k.gpa, k.f().account, c[0], @intCast(n));
+                        try stack.append(k.gpa, .{ a.int(), try k.project(v, .plain, st.word(), 0) });
+                    }
+                },
+                .pat_tuple => for (k.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |a, n| {
+                    const st = try Step.index(k.f().account, @intCast(n));
+                    try stack.append(k.gpa, .{ a.int(), try k.project(v, .plain, st.word(), 0) });
+                },
+                .pat_record => for (k.bir.extraSlice(Bir.inlineRange(d), u32)) |local| {
+                    const sym = k.bir.locals[k.w.code.decl.locals_start + local].name;
+                    const st = try Step.field(k.f().account, k.ctx.fieldRank(k.ctx.ctx, sym));
+                    try k.bindLocal(local, try k.project(v, .plain, st.word(), 0), point, tok);
+                },
+                .pat_list => {
+                    const items = k.bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                    var spread: ?usize = null;
+                    for (items, 0..) |a, n| if (k.tag(a.int()) == .pat_spread) {
+                        spread = n;
+                    };
+                    for (items, 0..) |a, n| {
+                        const kind: Value.PKind, const x: u32, const y: u32 = if (spread) |sp|
+                            (if (n < sp) .{ .front, @as(u32, @intCast(n)), 0 } else if (n == sp) .{ .slice, @as(u32, @intCast(sp)), @as(u32, @intCast(items.len - 1 - sp)) } else .{ .back, @as(u32, @intCast(items.len - 1 - n)), 0 })
+                        else
+                            .{ .front, @as(u32, @intCast(n)), 0 };
+                        const kv = try k.project(v, kind, x, y);
+                        const inner = if (k.tag(a.int()) == .pat_spread) k.data(a.int()).lhs else a.int();
+                        try stack.append(k.gpa, .{ inner, kv });
+                    }
+                },
+                .pat_spread => try stack.append(k.gpa, .{ d.lhs, v }),
+                else => {},
+            }
         }
-        return out;
     }
 
-    /// One cell's image in the class (as `relabel` maps each member).
-    fn image(r: *ReadOff, c: CellId) Error!CellId {
-        const set = try r.relabel(try r.env.cells.sets.insert(r.env.gpa, r.env.charge, .none, c.int(), 0));
-        var it = r.env.cells.sets.iterate(set);
-        return .from(it.next().?.key);
-    }
+    // ---- projection of a value by one step -------------------------------------
 
-    /// A condition of the frame's in the class's cells: the frame's own
-    /// cells (a split's refinements, its sites) never reach a class (§2.10),
-    /// so every atom is rebuilt over their images and decided again.
-    fn atom(ctx: *anyopaque, t: *Cond.Table, gpa: Allocator, charge: Ids.Charge, a: Cond.Cond) Error!CondId {
-        const r: *ReadOff = @ptrCast(@alignCast(ctx));
-        const cells = r.env.cells;
-        switch (a.atom) {
-            .excl => return t.excl(gpa, charge, try r.image(.from(a.a))),
-            .sep => return t.sep(gpa, charge, cells, r.env.places, try r.image(.from(a.a)), try r.image(.from(a.b)), false, null),
-            // Each group from its predecessor's image (§2.9, #1121): a tower's
-            // groups share their cells, and so do their images.
-            .apart => return t.apartImage(gpa, charge, cells, r.env.places, .from(a.a), &r.apart_images, r, image),
-            .within => return t.within(gpa, charge, .from(a.a)),
-            .keep => return t.keep(gpa, charge, a.a),
-            .writes => return t.writes(gpa, charge, a.a),
+    /// Value `v` projected by a step (§2.3.3): a literal's part, a position.
+    pub fn project(k: *Walker, v: u32, kind: Value.PKind, a: u32, b: u32) Error!u32 {
+        try k.charge(.inspection, 1);
+        const fr = k.f();
+        const x = fr.val(v);
+        switch (x.kind) {
+            .scalar, .bot, .top, .shared, .host => return v,
+            .ref => {
+                if (x.family != Slots.empty) {
+                    const sw: Step = if (kind == .plain) Step.fromWord(a) else Step.elem;
+                    var objs: std.ArrayList(u32) = .empty;
+                    defer objs.deinit(k.gpa);
+                    for (fr.slots.items(x.family)) |t| {
+                        if (kind == .slice) {
+                            try objs.append(k.gpa, t);
+                            continue;
+                        }
+                        const at = (try fr.places.extend(k.gpa, fr.gc(), .from(t), sw)) orelse continue;
+                        try objs.append(k.gpa, at.int());
+                    }
+                    if (objs.items.len == 0) return fr.scalar();
+                    // A family's slots stay paths (not only object slots): it
+                    // is projected further.
+                    const set = try fr.slots.sorted(k.gpa, fr.account, objs.items);
+                    return fr.mk(.{ .kind = .ref, .root = x.root, .pos = x.pos, .family = set });
+                }
+                // A step a place cannot name: a fold's `var`, a record row a template
+                // dropped, a schema member. Unknown, not nothing (§2.1); `cross` holds no object.
+                if (@import("Mutate.zig").on(.walker_project_scalar)) if (try fr.child(x.pos, kind, a, b) == null) return fr.scalar();
+                const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .cross) fr.scalar() else fr.mk(.{ .kind = .top, .site = v });
+                return fr.mk(.{ .kind = .ref, .root = x.root, .pos = p, .place = fr.places.pathPlace(fr.pos.items[p].slot) });
+            },
+            .built => {
+                const ks = fr.kidsOf(x);
+                switch (x.form) {
+                    .tuple, .ctor => {
+                        if (kind != .plain) return fr.scalar();
+                        const st = Step.fromWord(a);
+                        switch (st.kind) {
+                            .index => if (x.form == .tuple and st.payload < ks.len) return ks[st.payload],
+                            .ctor_arg => {
+                                const ca = fr.places.ctorArgOf(st);
+                                if (x.form == .ctor and ca[0] == x.head and ca[1] < ks.len) return ks[ca[1]];
+                            },
+                            .row => return if (@import("Mutate.zig").on(.walker_row_scalar)) fr.scalar() else fr.mk(.{ .kind = .top, .site = v }),
+                            else => {},
+                        }
+                        return fr.scalar();
+                    },
+                    .record => {
+                        if (kind != .plain) return fr.scalar();
+                        return fr.recordKid(v, Step.fromWord(a));
+                    },
+                    .list => switch (kind) {
+                        .front, .back => {
+                            // A spread kid has a length not known: the index
+                            // may land on it or on any kid after it.
+                            const flags = fr.wordsOf(x.extra);
+                            if (flags.len == 0) {
+                                if (a >= ks.len) return fr.bot();
+                                return if (kind == .front) ks[a] else ks[ks.len - 1 - a];
+                            }
+                            var cands: std.ArrayList(u32) = .empty;
+                            defer cands.deinit(k.gpa);
+                            var exact = true;
+                            var idx: u32 = 0;
+                            for (0..ks.len) |n0| {
+                                const n = if (kind == .front) n0 else ks.len - 1 - n0;
+                                if (flags[n] != 0) {
+                                    exact = false;
+                                    try cands.appendSlice(k.gpa, &.{ @intCast(n), ks[n] });
+                                } else if (!exact) {
+                                    try cands.appendSlice(k.gpa, &.{ @intCast(n), ks[n] });
+                                } else {
+                                    if (idx == a) return ks[n];
+                                    idx += 1;
+                                }
+                            }
+                            if (cands.items.len == 0) return fr.bot();
+                            if (cands.items.len == 2) return cands.items[1];
+                            return fr.mk(.{ .kind = .alt, .head = if (x.site != none) 0x8000_0000 | x.site else 0xC000_0000 | (x.head & 0x3fff_ffff), .kids = try fr.mkKids(cands.items) });
+                        },
+                        .slice => {
+                            // With spreads, a kid before the first spread stands at its
+                            // own index and one after the last at its own from the back,
+                            // so the view drops those it skips; past a spread it may hold
+                            // any kid (#1956).
+                            const flags = fr.wordsOf(x.extra);
+                            if (flags.len != 0) {
+                                var lo: usize = 0;
+                                while (lo < a and lo < ks.len and flags[lo] == 0) lo += 1;
+                                var hi = ks.len;
+                                while (ks.len - hi < b and hi > lo and flags[hi - 1] == 0) hi -= 1;
+                                if (lo == 0 and hi == ks.len) return v;
+                                return fr.mk(.{ .kind = .built, .form = .list, .head = x.head, .site = x.site, .place = x.place, .kids = try fr.mkKids(ks[lo..hi]), .extra = try fr.mkWords(flags[lo..hi]) });
+                            }
+                            const lo = @min(a, ks.len);
+                            const hi = ks.len - @min(b, ks.len - lo);
+                            // A view: the same storage, fewer elements.
+                            return fr.mk(.{ .kind = .built, .form = .list, .site = x.site, .place = x.place, .kids = try fr.mkKids(ks[lo..hi]) });
+                        },
+                        .plain => {
+                            if (Step.fromWord(a).kind != .elem) return fr.scalar();
+                            if (ks.len == 0) return fr.bot();
+                            if (ks.len == 1) return ks[0];
+                            const arms = try k.gpa.alloc(u32, ks.len * 2);
+                            defer k.gpa.free(arms);
+                            for (ks, 0..) |kv, n| {
+                                arms[2 * n] = @intCast(n);
+                                arms[2 * n + 1] = kv;
+                            }
+                            // One element at a time: a choice keyed by the literal.
+                            return fr.mk(.{ .kind = .alt, .head = 0x8000_0000 | x.site, .kids = try fr.mkKids(arms) });
+                        },
+                    },
+                    .closure, .opaque_ => return v,
+                }
+            },
+            .alt => {
+                const ks = fr.kidsOf(x);
+                var arms: std.ArrayList(u32) = .empty;
+                defer arms.deinit(k.gpa);
+                var i: usize = 0;
+                while (i < ks.len) : (i += 2) {
+                    const p = try k.project(ks[i + 1], kind, a, b);
+                    if (fr.val(p).kind == .bot) continue;
+                    try arms.appendSlice(k.gpa, &.{ ks[i], p });
+                }
+                if (arms.items.len == 0) return fr.bot();
+                return fr.mk(.{ .kind = .alt, .head = x.head, .kids = try fr.mkKids(arms.items) });
+            },
         }
     }
 
-    fn cond(r: *ReadOff, k: CondId) Error!CondId {
-        return r.env.conds.instantiate(r.env.gpa, r.env.charge, k, .{ .ctx = r, .atom = atom });
+    // ---- the rules ----------------------------------------------------------
+
+    fn literalPlace(k: *Walker, i: u32) Error!PlaceId {
+        return k.placeOf(i);
+    }
+
+    fn built(k: *Walker, i: u32, form: Value.Form, head: u32, site: u32, kids: []const u32, extra: []const u32) Error!u32 {
+        return k.f().mk(.{ .kind = .built, .form = form, .head = head, .site = site, .extra = extra, .place = try k.literalPlace(i), .kids = try k.f().mkKids(kids) });
+    }
+
+    /// The rule of instruction `i` (§2.6).
+    fn eval(k: *Walker, i: u32) Error!Res {
+        const d = k.data(i);
+        const fr = k.f();
+        switch (k.tag(i)) {
+            .local => {
+                const b = if (d.lhs < k.w.bindings.len) k.w.bindings[d.lhs] else Binding{};
+                if (b.value == none) return .{ .v = try fr.top() };
+                const at = try k.placeOfLocal(d.lhs);
+                return .{ .v = b.value, .local = d.lhs, .path = try fr.places.rootPath(k.gpa, at) };
+            },
+            .field_access, .tuple_index => {
+                const target = k.res[k.rel(d.lhs)];
+                const st = if (k.tag(i) == .field_access) try Step.field(fr.account, k.ctx.fieldRank(k.ctx.ctx, @fromBackingInt(d.rhs))) else try Step.index(fr.account, d.rhs);
+                const v = try k.project(try k.valueOf(d.lhs), .plain, st.word(), 0);
+                k.pop(d.lhs);
+                if (target.local != none) {
+                    if (try fr.places.extend(k.gpa, fr.gc(), target.path, st)) |p| return .{ .v = v, .local = target.local, .path = p };
+                    try k.use(d.lhs, i, .whole, .{ none, none }, .{ none, none, none });
+                }
+                return .{ .v = v };
+            },
+            .top, .ext_value, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => {
+                try k.evidence(i);
+                if (k.isCallee(i)) return .{};
+                if (k.ctx.sharedOf(k.ctx.ctx, i)) |md| {
+                    if (md[0] == none) return .{ .v = if (md[1] == 0) try fr.mk(.{ .kind = .host }) else try fr.scalar() };
+                    if (Slots.holdsAny(fr.places, try fr.places.rootPath(k.gpa, try k.placeOf(i)))) return .{ .v = try fr.mk(.{ .kind = .shared, .head = md[0], .site = md[1] }) };
+                    return .{ .v = try fr.scalar() };
+                }
+                if (try k.ctx.funcRef(k.ctx.ctx, i)) |code| return .{ .v = try k.closureOf(i, code, &.{}) };
+                return .{ .v = try fr.top() };
+            },
+            .ctor, .ext_ctor => {
+                if (k.isCallee(i)) return .{};
+                const c = k.ctx.ctorOf(k.ctx.ctx, i) orelse return .{ .v = try fr.top() };
+                if (c[1] == 0) return .{ .v = try fr.mk(.{ .kind = .built, .form = .ctor, .head = c[0], .place = try k.placeOf(i) }) };
+                if (try k.ctx.funcRef(k.ctx.ctx, i)) |code| return .{ .v = try k.closureOf(i, code, &.{}) };
+                return .{ .v = try fr.top() };
+            },
+            .int, .float, .char, .string, .chunk, .unit => return .{ .v = try fr.scalar() },
+            .interp => {
+                for (k.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |p| try k.consume(p.int(), i);
+                return .{ .v = try fr.scalar() };
+            },
+            .@"error" => return .{ .v = try fr.top() },
+            .list => {
+                const items = k.bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                var ks: std.ArrayList(u32) = .empty;
+                defer ks.deinit(k.gpa);
+                for (items) |e| {
+                    try ks.append(k.gpa, try k.valueOf(e.int()));
+                    try k.consume(e.int(), i);
+                }
+                return .{ .v = try k.built(i, .list, 0, i, ks.items, &.{}) };
+            },
+            .tuple => {
+                var ks: std.ArrayList(u32) = .empty;
+                defer ks.deinit(k.gpa);
+                for (k.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |e| {
+                    try ks.append(k.gpa, try k.valueOf(e.int()));
+                    try k.consume(e.int(), i);
+                }
+                return .{ .v = try k.built(i, .tuple, 0, none, ks.items, &.{}) };
+            },
+            .record => {
+                const fields = k.bir.extraSlice(Bir.inlineRange(d), Bir.Field);
+                return .{ .v = try k.record(i, fields, null) };
+            },
+            .record_update => {
+                // A record built from the base's fields and the new values
+                // (§2.11.5): no storage of the base is written.
+                const fields = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(d.rhs)), Bir.Field);
+                return .{ .v = try k.record(i, fields, d.lhs) };
+            },
+            .call => {
+                try k.evidence(i);
+                if (k.ctx.isListAppend(k.ctx.ctx, i) and k.args(i).len == 2) return .{ .v = try k.appendChain(i) };
+                var all: std.ArrayList(u32) = .empty;
+                defer all.deinit(k.gpa);
+                for (k.args(i)) |a| try all.append(k.gpa, a.int());
+                return .{ .v = try k.call(i, d.lhs, all.items) };
+            },
+            .method_call => {
+                try k.evidence(i);
+                const m = k.bir.extraData(@fromBackingInt(d.rhs), Bir.MethodCall);
+                var all: std.ArrayList(u32) = .empty;
+                defer all.deinit(k.gpa);
+                try all.append(k.gpa, d.lhs);
+                for (k.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index)) |a| try all.append(k.gpa, a.int());
+                return .{ .v = try k.call(i, none, all.items) };
+            },
+            .type_dispatch => {
+                const t = k.bir.extraData(@fromBackingInt(d.rhs), Bir.TypeDispatch);
+                for (k.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index)) |a| {
+                    try k.escapeValue(try k.valueOf(a.int()), i);
+                    try k.consume(a.int(), i);
+                }
+                return .{ .v = try fr.top() };
+            },
+            .lambda => {
+                const code = k.ctx.codeOf(k.ctx.ctx, i) orelse return .{ .v = try fr.top() };
+                return .{ .v = try k.closureOf(i, code, k.ctx.capturesOf(k.ctx.ctx, code)) };
+            },
+            .let => return k.res[k.rel(d.rhs)],
+            .let_def => {
+                const def = k.bir.extraData(@fromBackingInt(d.lhs), Bir.LetDef);
+                if (def.params_end != def.params_start) {
+                    const code = k.ctx.codeOf(k.ctx.ctx, i) orelse return .{};
+                    const v = try k.closureOf(i, code, k.ctx.capturesOf(k.ctx.ctx, code));
+                    try k.bindLocal(def.local, v, i, k.token(i));
+                }
+                return .{};
+            },
+            .let_pattern => return .{},
+            .let_stmt => {
+                try k.consume(d.rhs, i);
+                return .{};
+            },
+            .branch => {
+                try k.consume(d.rhs, i);
+                return .{ .v = try k.valueOf(d.rhs) };
+            },
+            .case => {
+                const branches = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index);
+                var arms: std.ArrayList(u32) = .empty;
+                defer arms.deinit(k.gpa);
+                for (branches, 0..) |b, n| {
+                    const v = try k.valueOf(b.int());
+                    k.pop(b.int());
+                    if (fr.val(v).kind == .bot) continue;
+                    try arms.appendSlice(k.gpa, &.{ @intCast(n), v });
+                }
+                if (arms.items.len == 0) return .{ .v = try fr.bot() };
+                if (arms.items.len == 2) return .{ .v = arms.items[1] };
+                return .{ .v = try fr.mk(.{ .kind = .alt, .head = i, .kids = try fr.mkKids(arms.items) }) };
+            },
+            .@"try" => {
+                // The success payload; the failure's is a returned alternative
+                // of the definition it returns from (§2.11.5).
+                const scrut = try k.valueOf(d.lhs);
+                k.pop(d.lhs);
+                try k.use(d.lhs, i, .whole, .{ none, none }, .{ none, none, none });
+                const shape = k.ctx.tryShape(k.ctx.ctx, i) orelse return .{ .v = try fr.top() };
+                var payload: u32 = none;
+                if (shape[2] != 0) {
+                    const st = try fr.places.ctorStep(k.gpa, fr.account, shape[1], 0);
+                    payload = try k.project(scrut, .plain, st.word(), 0);
+                }
+                try k.early.append(k.gpa, .{ .v = payload, .ord = shape[1], .arg = 0, .target = d.rhs, .inst = i });
+                const st = try fr.places.ctorStep(k.gpa, fr.account, shape[0], 0);
+                return .{ .v = try k.project(scrut, .plain, st.word(), 0) };
+            },
+            .markup => {
+                // An opaque value holding every embedded value (§2.11.5).
+                k.scratch.clearRetainingCapacity();
+                try k.bir.markupValues(k.gpa, @fromBackingInt(d.lhs), &k.scratch);
+                var ks: std.ArrayList(u32) = .empty;
+                defer ks.deinit(k.gpa);
+                for (k.scratch.items) |e| {
+                    if (!k.mine(e.int())) continue;
+                    try ks.append(k.gpa, try k.valueOf(e.int()));
+                    try k.consume(e.int(), i);
+                }
+                return .{ .v = try k.built(i, .opaque_, 0, i, ks.items, &.{}) };
+            },
+            else => return .{},
+        }
+    }
+
+    fn isCallee(k: *const Walker, i: u32) bool {
+        const c = k.consumer[k.rel(i)];
+        return c != none and (k.tag(c) == .call or k.tag(c) == .pat_ctor) and k.data(c).lhs == i;
+    }
+
+    /// A record literal, or an update's copy (`base` its base instruction).
+    fn record(k: *Walker, i: u32, fields: []const Bir.Field, base: ?u32) Error!u32 {
+        const fr = k.f();
+        var ranks: std.ArrayList(u32) = .empty;
+        defer ranks.deinit(k.gpa);
+        var ks: std.ArrayList(u32) = .empty;
+        defer ks.deinit(k.gpa);
+        for (fields) |fl| {
+            try ranks.append(k.gpa, k.ctx.fieldRank(k.ctx.ctx, fl.name));
+            try ks.append(k.gpa, try k.valueOf(fl.value.int()));
+            try k.consume(fl.value.int(), i);
+        }
+        if (base) |b| {
+            // The untouched fields: the base's, each a `field` use of it.
+            const bv = try k.valueOf(b);
+            const at = try k.placeOf(i);
+            const pr = fr.places.steps(at);
+            for (pr.steps) |st| {
+                if (!st.inRow()) continue;
+                if (std.mem.indexOfScalar(u32, ranks.items, st.kidWord()) != null) continue;
+                try ranks.append(k.gpa, st.kidWord());
+                try ks.append(k.gpa, try k.project(bv, .plain, st.word(), 0));
+                const r = k.res[k.rel(b)];
+                if (r.local != none) if (try fr.places.extend(k.gpa, fr.gc(), r.path, st)) |p| {
+                    k.atom.* += 1;
+                    try k.w.uses.append(k.gpa, .{ .local = r.local, .path = p, .point = i, .kind = .field, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
+                };
+            }
+            k.pop(b);
+        }
+        return k.recordOf(i, ranks.items, ks.items);
+    }
+
+    /// The record `ranks` name, of values `ks`: fields in rank order, as the place's steps.
+    fn recordOf(k: *Walker, i: u32, ranks: []const u32, ks: []const u32) Error!u32 {
+        const fr = k.f();
+        const n = ranks.len;
+        const order = try k.gpa.alloc(u32, n);
+        defer k.gpa.free(order);
+        for (order, 0..) |*o, x| o.* = @intCast(x);
+        std.mem.sort(u32, order, ranks, struct {
+            fn lt(r: []const u32, x: u32, y: u32) bool {
+                return r[x] < r[y];
+            }
+        }.lt);
+        var sr: std.ArrayList(u32) = .empty;
+        defer sr.deinit(k.gpa);
+        var sk: std.ArrayList(u32) = .empty;
+        defer sk.deinit(k.gpa);
+        for (order) |o| {
+            try sr.append(k.gpa, ranks[o]);
+            try sk.append(k.gpa, ks[o]);
+        }
+        return k.built(i, .record, 0, i, sk.items, try fr.mkWords(sr.items));
+    }
+
+    /// A closure value of `code` (or a fixed contract) holding the values
+    /// of `captures` (§2.11.4).
+    fn closureOf(k: *Walker, i: u32, code: u32, captures: []const u32) Error!u32 {
+        var ks: std.ArrayList(u32) = .empty;
+        defer ks.deinit(k.gpa);
+        for (captures) |l| {
+            const b = if (l < k.w.bindings.len) k.w.bindings[l] else Binding{};
+            try ks.append(k.gpa, if (b.value == none) try k.f().top() else b.value);
+            // A capture is read at the closure's creation.
+            if (b.value != none) try k.captureUse(l, i);
+        }
+        const v = try k.built(i, .closure, code, if (code & fixed_bit == 0) i else none, ks.items, &.{});
+        if (code & fixed_bit == 0) try k.w.closures.append(k.gpa, .{ .code = code, .value = v, .point = i, .inst = i });
+        return v;
+    }
+
+    /// The declarations a dispatch site passes as evidence: function values
+    /// handed to code the checker does not see, so each escapes at the
+    /// site (§2.11.4), and a parameter it writes is refused there.
+    fn evidence(k: *Walker, i: u32) Error!void {
+        var codes: std.ArrayList(u32) = .empty;
+        defer codes.deinit(k.gpa);
+        try k.ctx.evidenceCodes(k.ctx.ctx, i, &codes);
+        for (codes.items) |c| try k.escapeValue(try k.closureOf(i, c, &.{}), i);
+    }
+
+    fn captureUse(k: *Walker, l: u32, i: u32) Error!void {
+        const at = try k.placeOfLocal(l);
+        k.atom.* += 1;
+        try k.w.uses.append(k.gpa, .{ .local = l, .path = try k.f().places.rootPath(k.gpa, at), .point = i, .kind = .whole, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
+    }
+
+    fn escapeValue(k: *Walker, v: u32, point: u32) Error!void {
+        var ev: Relation.Eval = .{ .f = k.f(), .contracts = undefined, .arena = k.f().arena };
+        defer ev.deinit();
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(k.gpa);
+        try ev.leavesOf(v, 0, &ls);
+        for (ls.items) |l| try k.w.escapes.append(k.gpa, .{ .leaf = l, .point = point });
+    }
+
+    // ---- calls --------------------------------------------------------------
+
+    /// A call at `i` of the callee instruction `head` (`none` for a method
+    /// call) with argument instructions `arg_insts`.
+    fn call(k: *Walker, i: u32, head: u32, arg_insts: []const u32) Error!u32 {
+        const fr = k.f();
+        var vals: std.ArrayList(u32) = .empty;
+        defer vals.deinit(k.gpa);
+        for (arg_insts) |a| try vals.append(k.gpa, try k.valueOf(a));
+        const callee = try k.ctx.callee(k.ctx.ctx, i, arg_insts);
+        switch (callee) {
+            .harmless => {
+                for (arg_insts) |a| try k.consume(a, i);
+                // A function value called reads what its closure holds.
+                if (head != none) {
+                    try k.use(head, i, .whole, .{ none, none }, .{ none, none, none });
+                    k.pop(head);
+                }
+                return fr.scalar();
+            },
+            .ctor => |c| {
+                for (arg_insts) |a| try k.consume(a, i);
+                var ranks: std.ArrayList(u32) = .empty;
+                defer ranks.deinit(k.gpa);
+                for (0..vals.items.len) |n| if (k.ctx.ctorField(k.ctx.ctx, k.data(i).lhs, @intCast(n))) |r| try ranks.append(k.gpa, r);
+                if (ranks.items.len != 0) return k.recordOf(i, ranks.items, vals.items);
+                return k.built(i, .ctor, c[0], none, vals.items, &.{});
+            },
+            .code => |c| {
+                var caps: std.ArrayList(u32) = .empty;
+                defer caps.deinit(k.gpa);
+                for (k.ctx.capturesOf(k.ctx.ctx, c)) |l| {
+                    const b = if (l < k.w.bindings.len) k.w.bindings[l] else Binding{};
+                    try caps.append(k.gpa, if (b.value == none) try fr.top() else b.value);
+                    // The call reads the captures it runs with (§2.11.4).
+                    if (b.value != none) try k.captureUse(l, i);
+                }
+                return k.codeCall(i, c, null, arg_insts, vals.items, caps.items);
+            },
+            .contract => |c| return k.codeCall(i, none, c, arg_insts, vals.items, &.{}),
+            .field => {
+                const name = k.bir.extraData(@fromBackingInt(k.data(i).rhs), Bir.MethodCall).name;
+                const fv = try k.project(vals.items[0], .plain, (try Step.field(fr.account, k.ctx.fieldRank(k.ctx.ctx, name))).word(), 0);
+                try k.consume(arg_insts[0], i);
+                return k.valueCall(i, fv, arg_insts[1..], vals.items[1..], 0);
+            },
+            .value => {
+                const fv = if (head != none) try k.valueOf(head) else try fr.top();
+                if (head != none) {
+                    try k.use(head, i, .whole, .{ none, none }, .{ none, none, none });
+                    k.pop(head);
+                }
+                return k.valueCall(i, fv, arg_insts, vals.items, 0);
+            },
+        }
+    }
+
+    /// A call of function value `fv` (§2.11.3–4).
+    fn valueCall(k: *Walker, i: u32, fv: u32, arg_insts: []const u32, vals: []const u32, depth: u32) Error!u32 {
+        const fr = k.f();
+        const x = fr.val(fv);
+        switch (x.kind) {
+            .built => if (x.form == .closure) {
+                const r = if (x.head & fixed_bit != 0) try k.codeCall(i, none, x.head & ~fixed_bit, arg_insts, vals, fr.kidsOf(x)) else try k.codeCall(i, x.head, null, arg_insts, vals, fr.kidsOf(x));
+                fr.calls.items[fr.calls.items.len - 1].callee_val = fv;
+                return r;
+            },
+            .alt => if (depth < 8) {
+                const ks = fr.kidsOf(x);
+                var arms: std.ArrayList(u32) = .empty;
+                defer arms.deinit(k.gpa);
+                var n: usize = 0;
+                while (n < ks.len) : (n += 2) try arms.appendSlice(k.gpa, &.{ ks[n], try k.valueCall(i, ks[n + 1], arg_insts, vals, depth + 1) });
+                if (depth == 0) for (arg_insts) |a| k.pop(a);
+                return fr.mk(.{ .kind = .alt, .head = x.head, .kids = try fr.mkKids(arms.items) });
+            },
+            // A callback call (§2.11.3): a label of the frame, of a parameter's
+            // function slot or of a value that is one by the contracts settled
+            // now (`g = pick f 0`, #1773).
+            .ref => if (if (fr.roots.items[x.root].kind == .param and x.family == Slots.empty) .{ fr.roots.items[x.root].a, try fr.slots.relOf(k.gpa, fr.account, fr.places, fr.pos.items[x.pos].slot) } else try k.ctx.settledParam(k.ctx.ctx, fr, fv)) |js| {
+                const slot = js[1];
+                const at = try k.callPlace(i);
+                const cbi: u32 = @intCast(fr.cbs.items.len);
+                const root = try fr.addRoot(.cb, cbi, at);
+                for (arg_insts) |a| try k.consume(a, i);
+                const offset = i - k.w.code.decl.inst_start.int() | if (k.in_last) Called.last_origin else 0;
+                try fr.cbs.append(k.gpa, .{ .j = js[0], .slot = slot, .origin = .{ k.module, k.w.code.decl_index, offset }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
+                return fr.refRoot(root);
+            } else if (try Called.value(fr, k.ctx, k.contracts, fv)) |cv| return k.valueCall(i, cv, arg_insts, vals, depth),
+            else => {},
+        }
+        // Unknown code: its answer is unknown, what it is handed escapes,
+        // and so does the function value, which it runs (§2.11.3).
+        for (vals) |v| try k.escapeValue(v, i);
+        try k.w.runs.append(k.gpa, .{ fv, i });
+        if (depth == 0) for (arg_insts) |a| try k.consume(a, i);
+        return fr.top();
+    }
+
+    /// A call of a code or a fixed contract; `captures` follow the arguments.
+    fn codeCall(k: *Walker, i: u32, code: u32, fixed: ?Contract.Id, arg_insts: []const u32, vals: []const u32, captures: []const u32) Error!u32 {
+        const fr = k.f();
+        const ci: u32 = @intCast(fr.calls.items.len);
+        // Arguments read through the callee's footprint (§2.7).
+        for (arg_insts, 0..) |a, n| {
+            // A callee may run a function value, and no footprint says so: what a value of the
+            // frame holds is read here (#2048). A parameter's is its caller's, through the label.
+            const v = fr.val(vals[n]);
+            const local = v.kind != .ref or fr.roots.items[v.root].kind != .param;
+            const runs = local and fr.places.holds(try k.placeOf(a)).closure;
+            try k.use(a, i, if (runs) .whole else .call, .{ ci, @intCast(n) }, .{ code, fixed orelse none, @intCast(vals.len + captures.len) });
+            k.pop(a);
+        }
+        var all: std.ArrayList(u32) = .empty;
+        defer all.deinit(k.gpa);
+        try all.appendSlice(k.gpa, vals);
+        try all.appendSlice(k.gpa, captures);
+        var insts: std.ArrayList(u32) = .empty;
+        defer insts.deinit(k.gpa);
+        try insts.appendSlice(k.gpa, arg_insts);
+        for (0..all.items.len - insts.items.len) |_| try insts.append(k.gpa, none);
+        const at = try k.callPlace(i);
+        const root = try fr.addRoot(.call, ci, at);
+        const head: u32 = if (k.tag(i) == .call) k.data(i).lhs else i;
+        try fr.calls.append(k.gpa, .{ .inst = i, .head = head, .point = i, .args = try fr.mkKids(all.items), .arg_insts = try fr.mkWords(insts.items), .root = root, .code = code, .contract = if (fixed) |c| c else none });
+        try k.w.sites.append(k.gpa, .{ .pending = try k.pendingRun(), .foot = .{} });
+        // A settled callee (a contract at the walk: never the group's own) whose result is argument j's whole
+        // subtree answers that value itself, read and written as usual (§2.11.2, *the identity control*).
+        if (fixed orelse k.ctx.contractOf(k.ctx.ctx, code)) |c| if (k.contracts.identityOf(c)) |j| if (j < arg_insts.len and try k.placeOf(arg_insts[j]) == at) return vals[j];
+        if (!Slots.holdsAny(fr.places, fr.roots.items[root].path)) return fr.scalar();
+        return fr.refRoot(root);
+    }
+
+    // ---- constructions --------------------------------------------------------
+
+    /// A `++` chain: one `append` demand on the leftmost base (R-2.2).
+    fn appendChain(k: *Walker, i: u32) Error!u32 {
+        var items: std.ArrayList(u32) = .empty;
+        defer items.deinit(k.gpa);
+        var at = i;
+        while (true) {
+            const a = k.args(at);
+            try items.append(k.gpa, a[0].int());
+            const rhs = a[1].int();
+            if (k.tag(rhs) == .call and k.ctx.isListAppend(k.ctx.ctx, rhs) and k.args(rhs).len == 2 and k.absorbed[k.rel(rhs)]) {
+                at = rhs;
+                continue;
+            }
+            try items.append(k.gpa, rhs);
+            break;
+        }
+        return Construction.of(k, i, items.items, .append, items.items[0], null);
+    }
+
+    /// A spread chain (§2.13.2): a prepend, or a construction over its base.
+    fn spreadChain(k: *Walker, i: u32, s: Bir.Spread) Error!u32 {
+        const its = k.bir.spreadItems(s);
+        var items: std.ArrayList(u32) = .empty;
+        defer items.deinit(k.gpa);
+        var first_spread: ?usize = null;
+        const spread = try k.f().arena.alloc(bool, its.len);
+        for (its, 0..) |it, n| {
+            try items.append(k.gpa, it[0]);
+            spread[n] = it[1] != 0;
+            if (it[1] != 0 and first_spread == null) first_spread = n;
+        }
+        const sp = first_spread orelse return k.literalOf(i, items.items);
+        if (sp == its.len - 1 and its.len >= 1) {
+            // `[ x₁…xₖ, …xs ]`: a prepend — fresh storage, the fronts and xs's elements.
+            return k.prepend(i, items.items[0..sp], items.items[sp]);
+        }
+        return Construction.of(k, i, items.items, .construction, items.items[sp], spread);
+    }
+
+    fn literalOf(k: *Walker, i: u32, items: []const u32) Error!u32 {
+        var ks: std.ArrayList(u32) = .empty;
+        defer ks.deinit(k.gpa);
+        for (items) |e| {
+            try ks.append(k.gpa, try k.valueOf(e));
+            try k.consume(e, i);
+        }
+        return k.built(i, .list, 0, i, ks.items, &.{});
+    }
+
+    /// `[ x₁…xₖ, …xs ]`: a new list whose elements are the fronts and xs's.
+    fn prepend(k: *Walker, i: u32, fronts: []const u32, rest: u32) Error!u32 {
+        var ks: std.ArrayList(u32) = .empty;
+        defer ks.deinit(k.gpa);
+        for (fronts) |e| {
+            try ks.append(k.gpa, try k.valueOf(e));
+            try k.consume(e, i);
+        }
+        const xs = try k.valueOf(rest);
+        try k.consume(rest, i);
+        try ks.append(k.gpa, try k.project(xs, .plain, Step.elem.word(), 0));
+        // The elements of `xs` are the last kid as a family, not a literal element.
+        const flags = try k.f().arena.alloc(u32, ks.items.len);
+        @memset(flags, 0);
+        flags[flags.len - 1] = 1;
+        // Its storage is fresh, or `xs`'s base re-consed (§2.13.6, `prepended`).
+        return k.built(i, .list, xs + 1, i, ks.items, flags);
     }
 };
 
-/// The parameter a cell names, and its path: a refinement's at its
-/// canonical position (`elem(π1·ι)` is `π1[*]`, §2.2), not its base's.
-fn paramOf(env: Env, c: CellId) Error!?struct { u32, PathId } {
-    const u = (try env.cells.unrefined(env.gpa, env.account(), env.places, c)) orelse return null;
-    const x = env.cells.get(u);
-    if (x.origin != .param) return null;
-    return .{ x.a, .from(x.b) };
+const Early = struct { v: u32, ord: u32, arg: u32, target: u32, inst: u32 };
+
+fn concat(gpa: Allocator, a: []const u32, b: []const u32) Allocator.Error![]u32 {
+    const out = try gpa.alloc(u32, a.len + b.len);
+    @memcpy(out[0..a.len], a);
+    @memcpy(out[a.len..], b);
+    return out;
 }
 
-fn stepsOf(places: *const Place.Table, p: PathId, gpa: Allocator, out: *std.ArrayList(Place.Step)) Allocator.Error!void {
-    out.clearRetainingCapacity();
-    var at = p;
-    while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try out.append(gpa, places.pathStep(at));
-    std.mem.reverse(Place.Step, out.items);
-}
-
-fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
-    const env = in.env;
-    const gpa = env.gpa;
-    const n = in.param_places.len;
-    const uses = try gpa.alloc(NodeId, n);
-    defer gpa.free(uses);
-    @memset(uses, .none);
-    var steps: std.ArrayList(Place.Step) = .empty;
-    defer steps.deinit(gpa);
-    const Mark = struct {
-        fn at(e: Env, us: []NodeId, places: []const PlaceId, k: u32, path: PathId, m: Summary.Marks, st: *std.ArrayList(Place.Step)) Error!void {
-            if (k >= us.len or e.places.kind(places[k]) == .cross) return;
-            // A path read in another place graph than the parameter's (a
-            // recast on the way) marks the parameter whole.
-            var root = path;
-            while (e.places.pathParent(root) != .none) root = e.places.pathParent(root);
-            if (e.places.pathPlace(root) != places[k]) {
-                us[k] = try Summary.Table.markUse(e, us[k], places[k], &.{}, m, &.{});
-                return;
-            }
-            try stepsOf(e.places, path, e.gpa, st);
-            // The canonical path, `⟲` included: a write below a level is at
-            // that level (`π1#Rose.0⟨List⟩`), never the outer object's storage.
-            us[k] = try Summary.Table.markUse(e, us[k], places[k], st.items, m, &.{});
-        }
+/// Walk `code` once (§2.12): its residue, in `w`.
+pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Place.Table, slots: *Slots.Table, regions: *const Regions.Tree, prepass: *const Facts.Prepass, bir: *const Bir, module: u32, ctx: Context, contracts: *const Contract.Table, code: Code, atom: *u32, w: *Walk) Error!void {
+    const d = code.decl;
+    const n = d.inst_end.int() - d.inst_start.int();
+    const nl = d.locals_end - d.locals_start;
+    w.* = .{
+        .f = .{ .gpa = gpa, .arena = arena, .account = account, .places = places, .slots = slots },
+        .code = code,
+        .bir = bir,
+        .bindings = try gpa.alloc(Binding, nl),
+        .regions = regions,
     };
-    // R: the body's reads of a local that names a parameter's object — the
-    // parameter itself, or a part a pattern bound (`count ( _, ( b, _ ) )`
-    // reads `π1.1.0`): at the cell's path, the use's own path below it.
-    var use_steps: std.ArrayList(Place.Step) = .empty;
-    defer use_steps.deinit(gpa);
-    for (frame.uses.items) |u| {
-        if (u.local >= frame.locals.len or !frame.bound[u.local]) continue;
-        const v = frame.locals[u.local];
-        if (v.node == .none) continue;
-        try stepsOf(env.places, u.path, gpa, &use_steps);
-        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, v.node));
-        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
-            try env.charge.reserve(gpa, .inspection, 1);
-            var at = pq[1];
-            for (use_steps.items) |s| at = (try env.places.extend(gpa, env.charge, at, s)) orelse break;
-            try Mark.at(env, uses, in.param_places, pq[0], at, .{ .r = true }, &steps);
-        };
+    @memset(w.bindings, .{});
+    var k: Walker = .{
+        .w = w,
+        .ctx = ctx,
+        .contracts = contracts,
+        .bir = bir,
+        .prepass = prepass,
+        .gpa = gpa,
+        .res = try gpa.alloc(Res, n),
+        .consumer = try gpa.alloc(u32, n),
+        .binds = try gpa.alloc(u32, n),
+        .matches = try gpa.alloc(u32, n),
+        .chain = try gpa.alloc(u32, n),
+        .absorbed = try gpa.alloc(bool, n),
+        .atom = atom,
+        .module = module,
+    };
+    defer {
+        gpa.free(k.res);
+        gpa.free(k.consumer);
+        gpa.free(k.binds);
+        gpa.free(k.matches);
+        gpa.free(k.chain);
+        gpa.free(k.absorbed);
+        k.stack.deinit(gpa);
+        k.scratch.deinit(gpa);
+        k.early.deinit(gpa);
     }
-    // W: a demand's base cells that are a parameter's.
-    for (frame.demands.items) |d| {
-        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node));
-        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
-            try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
-        };
+    @memset(k.res, .{});
+    @memset(k.consumer, none);
+    @memset(k.binds, none);
+    @memset(k.matches, none);
+    @memset(k.chain, none);
+    @memset(k.absorbed, false);
+    // Consumers, `let` patterns, case arms' pattern roots.
+    var i = d.inst_start.int();
+    while (i < d.inst_end.int()) : (i += 1) {
+        k.scratch.clearRetainingCapacity();
+        try bir.operands(gpa, @fromBackingInt(i), &k.scratch);
+        for (k.scratch.items) |o| {
+            if (o.int() < d.inst_start.int() or o.int() >= d.inst_end.int()) continue;
+            k.consumer[k.rel(o.int())] = i;
+        }
+        switch (bir.instTag(@fromBackingInt(i))) {
+            .let_pattern => k.binds[k.rel(bir.instData(@fromBackingInt(i)).rhs)] = bir.instData(@fromBackingInt(i)).lhs,
+            .case => {
+                const dd = bir.instData(@fromBackingInt(i));
+                for (bir.extraSlice(bir.subRange(@fromBackingInt(dd.rhs)), Inst.Index)) |b| k.matches[k.rel(bir.instData(b).lhs)] = dd.lhs;
+            },
+            else => {},
+        }
     }
-    // E: escaped parameter cells; A: the result's.
-    for (frame.escapes.items) |esc| {
-        var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, esc.node));
-        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
-            try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .e = true }, &steps);
-        };
-    }
-    var ro: ReadOff = .{ .env = env };
-    defer ro.fresh.deinit(gpa);
-    defer ro.apart_images.deinit(gpa);
-    // The frame's reliance in the class's cells; one that fails there
-    // (a split's atom no caller could discharge) is no class at all.
-    var class_xreq: SetId = .none;
-    if (xreq != .none) {
-        const k = try ro.cond(try env.conds.ofSet(gpa, env.charge, xreq));
-        if (Cond.Table.fails(k)) return pessimistic(in);
-        class_xreq = try env.conds.flat(gpa, env.charge, k);
-    }
-    const result = frame.result();
-    var res: NodeId = undefined;
-    var kappa: Cond.Kappas = .none;
-    if (result.node == .none) {
-        res = try env.shapes.nothing(gpa, env.account(), in.result_place);
-    } else {
-        var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, result.node));
-        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
-            try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .a = true }, &steps);
-        };
-        const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
-        // The value's κ, carried over the relabelling: each entry's node
-        // relabelled, its path unchanged (§2.9).
-        const Carry = struct {
-            ro: *ReadOff,
-            fn node(ctx: *anyopaque, x: NodeId) ?NodeId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.env.shapes.memo_map.get(x);
+    // Spread chains and the calls they absorbed; `++` chains.
+    for (bir.spreads(d), 0..) |s, si| {
+        if (s.root < d.inst_start.int() or s.root >= d.inst_end.int()) continue;
+        k.chain[k.rel(s.root)] = @intCast(si);
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        var items: std.ArrayList(u32) = .empty;
+        defer items.deinit(gpa);
+        for (bir.spreadItems(s)) |it| try items.append(gpa, it[0]);
+        try stack.append(gpa, s.root);
+        while (stack.pop()) |c| {
+            if (std.mem.indexOfScalar(u32, items.items, c) != null) continue;
+            if (c != s.root) k.absorbed[k.rel(c)] = true;
+            switch (bir.instTag(@fromBackingInt(c))) {
+                .call => {
+                    k.absorbed[k.rel(bir.instData(@fromBackingInt(c)).lhs)] = true;
+                    for (k.args(c)) |a| try stack.append(gpa, a.int());
+                },
+                .list => for (bir.extraSlice(Bir.inlineRange(bir.instData(@fromBackingInt(c))), Inst.Index)) |e| try stack.append(gpa, e.int()),
+                else => {},
             }
-            fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.cond(k);
-            }
-        };
-        var carry: Carry = .{ .ro = &ro };
-        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
-        // Widened, its κ carried onto the image with each folded class's
-        // path-multiset obligation (§2.9, #1128).
-        const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
-        res = widened.node;
-        kappa = widened.kappas;
+        }
     }
-    return in.sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = class_xreq, .origin = .inferred });
+    i = d.inst_start.int();
+    while (i < d.inst_end.int()) : (i += 1) {
+        if (bir.instTag(@fromBackingInt(i)) != .call or !ctx.isListAppend(ctx.ctx, i)) continue;
+        const a = k.args(i);
+        if (a.len != 2) continue;
+        const inner = a[1].int();
+        if (bir.instTag(@fromBackingInt(inner)) == .call and ctx.isListAppend(ctx.ctx, inner) and k.args(inner).len == 2) {
+            k.absorbed[k.rel(inner)] = true;
+            k.absorbed[k.rel(bir.instData(@fromBackingInt(inner)).lhs)] = true;
+        }
+    }
+    // Parameters, then captures: the roots.
+    // A called code's own parameters come first, as a closure's do (§2.11.3).
+    const own = if (code.called) |cd| cd.own_places else &.{};
+    var own_vals: std.ArrayList(u32) = .empty;
+    defer own_vals.deinit(gpa);
+    for (own, 0..) |at, j| {
+        const root = try w.f.addRoot(.param, @intCast(j), at);
+        try own_vals.append(gpa, if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar());
+    }
+    for (code.params, 0..) |p, j| {
+        const at = code.param_places[j];
+        const root = try w.f.addRoot(.param, @intCast(own.len + j), at);
+        const v = if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar();
+        try k.bind(p.int(), v, p.int());
+    }
+    for (code.captures, 0..) |l, c| {
+        const at = try ctx.placeOfLocal(ctx.ctx, l);
+        const root = try w.f.addRoot(.param, @intCast(own.len + code.params.len + c), at);
+        const v = if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar();
+        // Bound where the parameters are, before every point of the
+        // body: a capture written and read again later is `later-use`.
+        w.bindings[l] = .{ .value = v, .point = if (code.params.len != 0) code.params[0].int() else code.body, .token = none };
+    }
+    // The instructions of this frame, in order.
+    i = d.inst_start.int();
+    while (i < d.inst_end.int()) : (i += 1) {
+        if (!k.mine(i)) continue;
+        const r = k.rel(i);
+        const t = bir.instTag(@fromBackingInt(i));
+        if (k.matches[r] != none) {
+            try k.bind(i, try k.valueOf(k.matches[r]), i);
+            continue;
+        }
+        if (k.absorbed[r]) continue;
+        if (t.isType() or t.isPattern()) continue;
+        if (code.inst != none and i == code.inst) continue;
+        try account.reserve(.inspection, 1);
+        if (k.chain[r] != none) {
+            k.res[r] = .{ .v = try k.spreadChain(i, bir.spreads(d)[k.chain[r]]) };
+        } else k.res[r] = try k.eval(i);
+        const c = k.consumer[r];
+        if (c != none and bir.instTag(@fromBackingInt(c)) == .let_def and bir.instData(@fromBackingInt(c)).rhs == i) {
+            const def = bir.extraData(@fromBackingInt(bir.instData(@fromBackingInt(c)).lhs), Bir.LetDef);
+            if (def.params_end == def.params_start) {
+                try k.consume(i, i);
+                try k.bindLocal(def.local, try k.valueOf(i), i, k.token(c));
+            }
+            continue;
+        }
+        if (k.binds[r] != none) {
+            try k.consume(i, i);
+            try k.bind(k.binds[r], try k.valueOf(i), i);
+            continue;
+        }
+        if (c != none and bir.instTag(@fromBackingInt(c)) == .case and bir.instData(@fromBackingInt(c)).lhs == i) {
+            try k.consume(i, i);
+            continue;
+        }
+        if (k.res[r].v != none and c != none) try k.stack.append(gpa, .{ i, k.clock, none });
+    }
+    // The result: the body's value, with the early returns of `try`.
+    const body = code.body;
+    try k.use(body, body, .whole, .{ none, none }, .{ none, none, none });
+    var result = try k.valueOf(body);
+    var arms: std.ArrayList(u32) = .empty;
+    defer arms.deinit(gpa);
+    for (k.early.items) |e| {
+        const target = if (e.target == none) none else e.target;
+        if (target != code.inst and !(target == none and code.inst == none)) continue;
+        const v = try w.f.mk(.{ .kind = .built, .form = .ctor, .head = e.ord, .place = if (code.called) |cd| cd.body_result else code.result_place, .kids = try w.f.mkKids(if (e.v == none) &.{} else &.{e.v}) });
+        try arms.appendSlice(gpa, &.{ @intCast(arms.items.len / 2 + 1), v });
+    }
+    if (arms.items.len != 0) {
+        try arms.appendSlice(gpa, &.{ 0, result });
+        result = try w.f.mk(.{ .kind = .alt, .head = 0x4000_0000 | body, .kids = try w.f.mkKids(arms.items) });
+    }
+    // A called code: the rest of the walk is the call of what the body answered.
+    if (code.called) |cd| {
+        w.last = .{ .calls = @intCast(w.f.calls.items.len), .demands = @intCast(w.demands.items.len), .escapes = @intCast(w.escapes.items.len), .runs = @intCast(w.runs.items.len), .uses = @intCast(w.uses.items.len), .cbs = @intCast(w.f.cbs.items.len) };
+        k.in_last = true;
+        var fv = result;
+        for (cd.words) |wd| fv = try k.project(fv, .plain, wd, 0);
+        result = try k.valueCall(body, fv, &.{}, own_vals.items, 0);
+    }
+    w.result = result;
+    w.walk_calls = @intCast(w.f.calls.items.len);
+    w.index = try Liveness.Index.build(gpa, account, .inference, places, regions, w.uses.items);
 }

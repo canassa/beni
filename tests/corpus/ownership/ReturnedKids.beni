@@ -1,0 +1,50 @@
+-- ownership: a write into the kids list of a tree a recursive writer
+-- returned (#1483). `incAll` builds each level's node over `Leaf`, one
+-- interned value at every level; the returned root's `xs` is its own, so
+-- `returnedKids` pushes into it and is accepted `param`. Its twins are
+-- refused: `readAfter` reads `xs` after the push, and `rootBelow` hands
+-- `incAll` one list at the root and in the right subtree.
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+pub returnedKids : Tree → Tree
+returnedKids t =
+    case incAll t of
+        Node l xs r →
+            Node l (List.push xs 2) r
+
+        Leaf →
+            Leaf
+
+
+pub readAfter : Tree → Int
+readAfter t =
+    case incAll t of
+        Node _ xs _ →
+            ys = List.push xs 2
+            List.length xs + List.length ys
+
+        Leaf →
+            0
+
+
+pub rootBelow : List Int → Tree
+rootBelow xs =
+    case incAll (Node Leaf xs (Node Leaf xs Leaf)) of
+        Node l ys r →
+            Node l (List.push ys 2) r
+
+        Leaf →
+            Leaf

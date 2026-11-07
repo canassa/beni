@@ -1,0 +1,49 @@
+-- ownership (project): `FoldSymbolicCall` with the recursive group and its
+-- middle functions in another module (ownership-v2.md §8, slice 4's plan,
+-- 4a; #1199, #1196, #1394). The verdicts are the same-module fixture's:
+-- `sharedA` and `sharedB` hand the middle functions one list twice and are
+-- refused, `distinctA` and `distinctB` are accepted; `probeShared` puts
+-- `k` below one element and at the next one's kids and is refused,
+-- `probeDistinct` is accepted. Under v2 the middle functions' own calls of
+-- `incT` and `probeDistinct` are refused until #1253, and `lengths`'s
+-- `incTs kids` is accepted (R-4.3.5; known entries).
+import Folds exposing (R2, T)
+
+
+pub sharedA : T
+sharedA =
+    k = [ T [] ]
+    Folds.midA (T k) k
+
+
+pub distinctA : T
+distinctA =
+    k1 = [ T [] ]
+    k2 = [ T [] ]
+    Folds.midA (T k1) k2
+
+
+pub sharedB : T
+sharedB =
+    kids = [ T [] ]
+    Folds.midB kids kids
+
+
+pub distinctB : T
+distinctB =
+    p = [ T [] ]
+    q = [ T [] ]
+    Folds.midB p q
+
+
+pub probeShared : Int
+probeShared =
+    k = [ T [] ]
+    Folds.deepThenShallow (R2 [ T [ T k ], T k ])
+
+
+pub probeDistinct : Int
+probeDistinct =
+    k1 = [ T [] ]
+    k2 = [ T [] ]
+    Folds.deepThenShallow (R2 [ T [ T k1 ], T k2 ])

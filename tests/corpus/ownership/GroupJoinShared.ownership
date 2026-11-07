@@ -1,0 +1,13 @@
+module GroupJoinShared
+  12:9 List.push <call GroupJoinShared.build>: accepted call
+  20:26 List.push a: rejected call: b may hold it through the call at 18:10, and is read at 20:43 (approx)
+  31:9 List.push <call GroupJoinShared.oddB>: accepted call
+  43:26 List.push a: rejected call: b may hold it through the call at 41:10, and is read at 43:43 (approx)
+  summary build: π1 RA; res [*] ~condition(fresh2) ~fresh2{lost} ~fresh3{lost} ~fresh4{lost} ~π1, fresh1{lost} fresh3{lost} ~fresh4{lost}
+  summary readB: unused
+  summary evenB: π1 RA; res [*] ~condition(fresh2) ~fresh2{lost} ~fresh3{lost} ~π1, fresh1{lost} ~fresh3{lost}
+  summary oddB: π1 RA; res [*] ~condition(fresh3) ~fresh2{lost} ~fresh4{lost} ~π1, fresh1 fresh2{lost} ~fresh4{lost}
+  summary readE: unused
+  demands 4: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause call 2

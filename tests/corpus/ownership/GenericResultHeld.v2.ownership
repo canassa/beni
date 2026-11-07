@@ -1,0 +1,12 @@
+module GenericResultHeld
+  33:10 List.push l0: rejected later-use: l0 is read again at 34:5
+  40:10 List.push l0: rejected later-use: l0 is read again at 41:5
+  47:12 construction l0: rejected later-use: l0 is read again at 48:5
+  54:10 List.push l0: rejected later-use: l0 is read again at 55:5
+  61:12 construction l0: rejected later-use: l0 is read again at 62:5
+  68:10 List.push l0: rejected later-use: l0 is read again at 69:5
+  75:10 List.push l0: rejected later-use: l0 is read again at 81:13
+  87:5 List.push l0: accepted fresh
+  demands 8: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 8: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause later-use 7

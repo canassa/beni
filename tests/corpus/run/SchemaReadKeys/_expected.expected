@@ -4,4 +4,8 @@ undefined y: 5, missing
 undefined x: 1 issue
 inherited toString: 1 issue
 own toString: own
+runtime getters: 3, 4
+runtime tag getter: own
+compiled payload: 7/3
+compiled nested extra: /nested/kind
 polluted prototype: 9, 7

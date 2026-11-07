@@ -1,0 +1,34 @@
+-- A runtime catch for `Task.timeout`'s answer (`ownership-v2.md` §2.13.6):
+-- `timeout : borrowed Duration, once aliased (⊤ → a) → fresh Maybe a`. The
+-- `Just` holds what the work answers, and that is any object the work
+-- reaches, here its capture `k`. The `fresh` result was read as wholly
+-- fresh, so `List.push a 4` ran in place on `k`, which is read again; the
+-- sanitised run trapped. Refused now.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+run : ⊤ → String
+run ⊤ =
+    k = [ 1 ]
+    a =
+        case Task.timeout (Duration.seconds 5) λ⊤ → k of
+            Just v →
+                v
+
+            Nothing →
+                []
+    a2 = List.push a 4
+    "${show a2} ${show k}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.print (run ⊤)

@@ -1,0 +1,58 @@
+-- ownership (project): see Main.beni. The callees of `CallOtherPaths`, and
+-- `viaLeft`, whose class rests on an imported call of `Deep.twoDepths`.
+import Deep exposing (Leaf, Node, Tree)
+
+
+pub type alias R =
+    a : List Int
+    b : List Int
+
+
+pub keepAll : Tree → List Int × Tree
+keepAll t =
+    case t of
+        Node _ xs _ →
+            ( List.push xs 1, t )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub pushA : R → List Int × List Int
+pushA r = ( List.push r.a 1, r.b )
+
+
+pub elems : List (List (List Int)) → List (List Int) × List Int
+elems ys =
+    case ys of
+        [ a, b ] →
+            case b of
+                [ c ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub type alias P =
+    x : List Int
+    y : List Int
+
+
+pub twoPaths : P → List Int × List Int
+twoPaths p = ( List.push p.x 1, p.y )
+
+
+-- Its own left subtree to `Deep.twoDepths`, where both written paths fold
+-- into one, so it owes their distinctness (`excl`) to its caller.
+pub viaLeft : Tree → Int
+viaLeft t =
+    case t of
+        Node l _ _ →
+            Deep.twoDepths l
+
+        Leaf →
+            0

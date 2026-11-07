@@ -1,0 +1,14 @@
+module CallFieldStepCycles
+  46:9 List.push xs: rejected alias: t#T.0⟨T⟩#T.0.v holds it and is read at 47:5
+  95:9 List.push xs: rejected alias: a#A.1#B.1⟨B⟩#B.0 holds it and is read at 96:5
+  summary readKid: π1.kid R, π1.kid#Just.0#T.0.v R
+  summary viaT: π1 R, π1#T.0.kid R, π1⟨T⟩⁺#T.0.v R
+  summary inlineT: π1 R, π1#T.0.kid R, π1⟨T⟩⁺#T.0.v R
+  summary kidVia: π1 RW[storage], π1[*] R
+  summary readBB: π1 R, π1#B.1#Just.0#A.1 R, π1⟨B⟩⁺#B.0 R
+  summary viaA: π1 R, π1#A.1⟨B⟩⁺#B.0 R, π1⟨A⟩#A.1 R
+  summary inlineA: π1 R, π1⟨A⟩#A.1 R, π1⟨A⟩⁺#A.1#B.0 R
+  summary mutualVia: π1 RW[storage], π1[*] R
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 2

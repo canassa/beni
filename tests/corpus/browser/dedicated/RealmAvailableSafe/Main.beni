@@ -1,0 +1,35 @@
+-- Globals on DedicatedWorkerGlobalScope stay accepted by the allow-list:
+-- `location.href`, `navigator.userAgent`, `location.toString` and animation
+-- frames (#2206, `workers.md` §4).
+import Page
+import RealmJs
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → RealmJs.available ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ =
+    Page.text "waiting"
+    Page.button launch
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle Page.text
+            Worker.send handle "go"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start

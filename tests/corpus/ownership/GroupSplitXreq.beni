@@ -1,0 +1,50 @@
+-- ownership: #1409 through a recursive group (#1408's review). `bumpR`
+-- writes its head's elements (`inner ys`) and recurses on the rest: two
+-- calls on split positions of one list (#1409). Each call relies on its
+-- argument's elements being exclusive, so `bumpR` publishes `xreq
+-- excl π1[*][*]` and `useR`'s doubled literal is refused `exclusive`, as by
+-- v1. `evenR`/`oddR` are the mutual twin.
+inner : List (List Int) → List (List Int)
+inner ys =
+    case ys of
+        [] →
+            []
+
+        [ l, …rest ] →
+            [ List.push l 1, …inner rest ]
+
+
+bumpR : List (List (List Int)) → List (List (List Int))
+bumpR xs =
+    case xs of
+        [] →
+            []
+
+        [ ys, …rest ] →
+            [ inner ys, …bumpR rest ]
+
+
+evenR : List (List (List Int)) → List (List (List Int))
+evenR xs =
+    case xs of
+        [] →
+            []
+
+        [ ys, …rest ] →
+            [ inner ys, …oddR rest ]
+
+
+oddR : List (List (List Int)) → List (List (List Int))
+oddR xs = evenR xs
+
+
+g : List (List Int), List Int → List (List Int)
+g acc x = List.push (List.push acc x) x
+
+
+pub useR : List (List (List Int))
+useR = bumpR [ g [] [ 3 ] ]
+
+
+pub useE : List (List (List Int))
+useE = evenR [ g [] [ 3 ] ]

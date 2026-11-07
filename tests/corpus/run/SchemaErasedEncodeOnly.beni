@@ -1,0 +1,22 @@
+-- Erased encode selects the declaration write worker without any Schema.write call.
+import Node
+import Schema
+
+
+schema Point =
+    x : Int
+
+
+main : Node.Program
+main =
+    case Schema.encode (Schema.erased (Point.schema ⊤)) { x = 2 } of
+        Ok raw →
+            case Schema.print Schema.value raw of
+                Ok text →
+                    Node.print text
+
+                Err _ →
+                    Node.print "not JSON"
+
+        Err _ →
+            Node.print "refused"

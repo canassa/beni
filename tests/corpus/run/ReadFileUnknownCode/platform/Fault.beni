@@ -1,0 +1,6 @@
+--! A test platform's one capability: make every later file read reject
+--! with an error whose `code` is `toString`, a name every object inherits
+--! and no failure Node documents (`plans/runtime-in-beni.md` step 10).
+
+--| From now on, every `fs.promises.readFile` rejects with code `toString`.
+pub foreign impure breakReads : ⊤ → ⊤

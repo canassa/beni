@@ -1,0 +1,58 @@
+-- The measurement page of `bench/ui/pointer.mjs` (#557): a pointer
+-- handler eight elements above its target, a target eight elements deep
+-- with no handler above it, and a list of a thousand rows with a pointer
+-- handler on each.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Moved Float
+    | Pressed Int
+    | Make
+
+
+type alias Model =
+    x : Float
+    pressed : Int
+    rows : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Moved x →
+            { model | x = x }
+
+        Pressed i →
+            { model | pressed = i }
+
+        Make →
+            { model | rows = List.range 1 1000 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div id="pad" onPointerMove={λp → Moved (Html.localX p)}>
+            <div>
+                <div>
+                    <div><div><div><div><div><span id="leaf">x</span></div></div></div></div></div>
+                </div>
+            </div>
+        </div>
+        <div id="away">
+            <div>
+                <div>
+                    <div><div><div><div><div><span id="far">y</span></div></div></div></div></div>
+                </div>
+            </div>
+        </div>
+        <button id="make" onClick={Make}>make</button>
+        <ul><For each={model.rows}>{λi → <li onPointerDown={λ_ → Pressed i}>{i}</li>}</For></ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = λ⊤ → { x = 0, pressed = 0, rows = [] }, update = update, view = view }

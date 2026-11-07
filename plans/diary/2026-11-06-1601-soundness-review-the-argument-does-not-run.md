@@ -1,0 +1,5 @@
+## 2026-11-06 16:01 CET — Soundness review: the argument does not run
+
+**What I did.** Answered the review of #2150 in the text only. Rewrote F1, G5, Lemma E's `cycle` row and O3 around `C11foldTwo`. Corrected I3, O6, `overlapRaw`, `keeping`, G6, the round cap, the `below` name, `Walker.eval` and G7. Added the ends of the recursion, the Theorem's hypotheses split into world, program and checker, order sensitivity, and the review's verdict.
+
+**What I learned.** My entry two hours ago said the memo "could not be made to fail" and called a clean ledger evidence. I reasoned only about arrival order, and the review found the failure through a dead field's harmless `may`, with two labels supplying the order. A green ledger measured the corpus, not the claim. Also: I named pins from amendments' sentences, and five of eight mutations failed none of them. And I read #2104 and #2134 as fitting because I read their specs and not their probes. An argument with "see G2" in it cannot tell a fix from a regression. So the section now says what it can't claim.

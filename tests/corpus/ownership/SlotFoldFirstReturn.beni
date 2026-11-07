@@ -1,0 +1,48 @@
+-- ownership: a fold (`⟲`) is replayed only at a first return to its
+-- place (#1685's requirement 4). `h2` puts a node's list again one level
+-- down; replayed at a path that is not a first return, the prototype
+-- named a path no type has and the second placement escaped the check.
+-- `incAll` writes the list of every node at every depth: over `h2`'s
+-- answer it is refused (`dup`), over `h1`'s, which moves the list down
+-- once, accepted (`moved`).
+type T
+    = T (List Int) (List T)
+
+
+incAll : T → T
+incAll t =
+    case t of
+        T ns kids →
+            T (List.push ns 1) (incList kids)
+
+
+incList : List T → List T
+incList ts =
+    case ts of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+h2 : T → T
+h2 t =
+    case t of
+        T ns kids →
+            T ns [ T ns kids ]
+
+
+h1 : T → T
+h1 t =
+    case t of
+        T ns kids →
+            T [] [ T ns kids ]
+
+
+pub dup : ⊤ → T
+dup ⊤ = incAll (h2 (T [ 1 ] []))
+
+
+pub moved : ⊤ → T
+moved ⊤ = incAll (h1 (T [ 1 ] []))

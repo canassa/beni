@@ -9,6 +9,34 @@ one arrow: `List a, (a → b) → List b`. A `where` clause names the methods a 
 needs. Effects are inferred and never written; a value whose result reaches the host or may
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
+module ChildProcess
+  alias Command
+    Command
+  type Environment
+    Inherit
+    Extend
+    Only
+  alias Output
+    Output
+  type RunError
+    NotFound
+    PermissionDenied
+    NotADirectory
+    ArgumentsTooLong
+    NameTooLong
+    SymlinkLoop
+    FileBusy
+    BadExecutable
+    TooManyOpenFiles
+    TooManyProcesses
+    OutOfMemory
+    InvalidArgument
+    OutputTooLarge
+  type Status
+    Exited
+    Signalled
+  value command : String, List String → Command
+  value run : Command → Result RunError Output  -- suspends
 module Http.Server
   alias Address
     Address
@@ -29,7 +57,7 @@ module Http.Server
   opaque type Upgrade
   value accept : (Socket → ⊤) → Upgrade
   value acceptWith : { maxMessage : Int, protocol : Maybe String }, (Socket → ⊤) → Upgrade
-  value address : Server → Address
+  value address : Server → Address  -- impure
   value close : Server → ⊤  -- impure
   value header : Request, String → Maybe String
   value listen : Address, (Request → Response) → Result ListenError Server  -- suspends
@@ -71,24 +99,35 @@ module Prerender
 module Random
   alias Generator a
   alias Seed
-  value andThen : (Generator a), (a → Generator b) → Generator b
+  value andThen : Generator a, (a → Generator b) → Generator b
   value constant : a → Generator a
   value float : Float, Float → Generator Float
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
   value lazy : (⊤ → Generator a) → Generator a
-  value list : (Generator a), Int → Generator (List a)
-  value map : (Generator a), (a → b) → Generator b
-  value map2 : (Generator a), (Generator b), (a, b → c) → Generator c
-  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → Generator d
+  value list : Generator a, Int → Generator (List a)
+  value map : Generator a, (a → b) → Generator b
+  value map2 : Generator a, Generator b, (a, b → c) → Generator c
+  value map3 : Generator a, Generator b, Generator c, (a, b, c → d) → Generator d
   value maxInt : Int
   value minInt : Int
-  value pair : (Generator a), (Generator b) → Generator (a × b)
-  value step : (Generator a), Seed → a × Seed
+  value pair : Generator a, Generator b → Generator (a × b)
+  value step : Generator a, Seed → a × Seed
   value uniform : a, List a → Generator a
-  value value : (Generator a) → a  -- impure
+  value value : Generator a → a  -- impure
   value weighted : Float × a, List (Float × a) → Generator a
+module Rt
+  value classes : Value → Value  -- impure
+  value escape : Value → Value  -- impure
+  value escapeAttr : Value → Value  -- impure
+  value list : Value, Value, Value → Value  -- impure
+  value map : Value, Value → Value
+  value rawText : Value, Value → Value  -- impure
+  value run : Value → ⊤  -- impure
+  value safeUrl : Value → Value  -- impure
+  value styles : Value → Value  -- impure
+  value text : Value → Value  -- impure
 module Ssr
   value render : Html msg → String
 module WebSocket

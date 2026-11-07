@@ -9,6 +9,8 @@ one arrow: `List a, (a → b) → List b`. A `where` clause names the methods a 
 needs. Effects are inferred and never written; a value whose result reaches the host or may
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
+module Rt
+  value run : Program → Value  -- impure
 module WebSocket
   type AttachError
     TooLarge
@@ -107,7 +109,7 @@ module Worker.Object
   value none : Handlers state msg
   value post : Ref msg, msg → ⊤  -- impure
   value reply : Reply a, a → ⊤  -- impure
-  value replySchema : Schema e a → Schema String (Reply a)  -- impure
+  value replySchema : Schema e a → Schema String (Reply a)
   value self : Context msg → Ref msg  -- impure
   value sockets : Context msg → List Socket  -- impure
   value socketsTagged : Context msg, String → List Socket  -- impure

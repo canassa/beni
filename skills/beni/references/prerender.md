@@ -146,7 +146,7 @@ throws fails the build (`prerender_failed`), with the route.
   (`seed = Clock.now ⊤`) is `prerender_impure`, also in a called function or a lambda.
 - A function with no parameters whose body is not a lambda (`stamp = Clock.now`) has no body that
   a call runs: write the parameter (`start ⊤ = initial ⊤`), or a call of it can be refused.
-- A method call or an operator that may be impure is `prerender_impure`.
+- A method call or an operator is checked in the function it calls: `<` in the type's `compare`.
 
 ## What `init` gets
 

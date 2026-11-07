@@ -1,0 +1,18 @@
+module ViewBranchJoin
+  10:15 List.push xs: accepted param
+  38:15 call ViewBranchJoin.pushList xs: rejected alias: v holds it and is read at 38:13 (ViewBranchJoin.pushList writes π1)
+  47:7 call ViewBranchJoin.pushList xs: rejected alias: v holds it and is read at 47:5 (ViewBranchJoin.pushList writes π1)
+  55:15 call ViewBranchJoin.pushList xs: accepted param (ViewBranchJoin.pushList writes π1)
+  64:7 call ViewBranchJoin.pushList xs: accepted param (ViewBranchJoin.pushList writes π1)
+  71:36 call ViewBranchJoin.pushList xs: accepted param (ViewBranchJoin.pushList writes π1)
+  summary pushList: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary restOrSelf: π2 RA; res π2
+  summary copies: π2 R, π2[*] RA; res [*] π2[*], fresh1{lost}
+  summary joinedHere: π2 RAW[storage], π2[*] RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 fresh5 ~condition(fresh4) π2, condition(fresh1){shared}
+  summary joinedByCall: π2 RAW[storage], π2[*] RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 ~condition(fresh4) π2, condition(fresh1){shared}
+  summary copiesHere: π2 RAW[storage], π2[*] RA; res .0 condition(fresh3) π2, .0[*] ~condition(fresh4) ~π2[*], .1 fresh1{lost}, .1[*] ~condition(fresh5) π2[*], condition(fresh2){lost}r{lost}
+  summary copiesByCall: π2 RAW[storage], π2[*] RA; res .0 condition(fresh3) π2, .0[*] ~condition(fresh4) ~π2[*], .1 fresh1{lost}, .1[*] ~condition(fresh5) π2[*], condition(fresh2){lost}r{lost}
+  summary siblingArm: π2 RW[storage], π2[*] R
+  demands 6: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 2

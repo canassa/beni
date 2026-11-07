@@ -1,0 +1,25 @@
+-- `t2` and its wrappers in another module: their blocks carry the join's κ
+-- through each call.
+pub type Rose
+    = Rose (List Rose)
+
+
+t2 : Bool, Rose → Rose
+t2 c x =
+    r1 = if c then Rose [ x ] else x
+    if c then Rose [ r1, r1 ] else r1
+
+
+pub wrap : Bool, Rose → Rose
+wrap c x = t2 c x
+
+
+pub wrap2 : Bool, Rose → Rose
+wrap2 c x = wrap c x
+
+
+pub size : Rose → Int
+size r =
+    case r of
+        Rose kids →
+            List.length kids

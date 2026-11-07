@@ -1,0 +1,58 @@
+-- ownership: two place builds could give one cycle component id (#1452).
+-- In `holdL1`, `w1 l` writes the list of `l`'s left child while `a`, `l`'s
+-- own list, is read after the call: two distinct positions. With the
+-- collision v2 refused `alias`; it accepts now. v1 refuses it as `level`
+-- (approx). A caller that puts one list at both positions is refused by
+-- both (`shared`); distinct lists are accepted (`distinct`).
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+touch : List Int → Int
+touch xs = List.length (List.push xs 1)
+
+
+w0 : Tree → Int
+w0 t =
+    case t of
+        Leaf →
+            0
+
+        Node _ a _ →
+            touch a
+
+
+w1 : Tree → Int
+w1 t =
+    case t of
+        Leaf →
+            0
+
+        Node l _ _ →
+            w0 l
+
+
+pub holdL1 : Tree → Int
+holdL1 t =
+    case t of
+        Leaf →
+            0
+
+        Node l _ _ →
+            case l of
+                Leaf →
+                    0
+
+                Node _ a _ →
+                    w1 l + List.length a
+
+
+pub distinct : Int → Int
+distinct k = holdL1 (Node (Node (Node Leaf [ k ] Leaf) [ k ] Leaf) [] Leaf)
+
+
+pub shared : Int → Int
+shared k =
+    xs = [ k ]
+    holdL1 (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)

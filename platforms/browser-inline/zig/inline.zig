@@ -60,6 +60,9 @@ pub const lowering: m.Lowering = .{
         // The bindings and the listener (`browser-inline.md` §8.2).
         .{ .name = "text", .arity = 2 },
         .{ .name = "prop", .arity = 3 },
+        // `(url)`: the value a URL binding writes, `""` for a script URL
+        // (§10.5, amended 2026-11-05).
+        .{ .name = "safeUrl", .arity = 1 },
         .{ .name = "when", .arity = 2 },
         .{ .name = "on", .arity = 4 },
         // `on` for a handler inside eager arms, apart so that a page with
@@ -637,6 +640,12 @@ const Ctx = struct {
 /// One part of a text binding: text written as it is, or a hole's value.
 const Part = union(enum) { text: []const u8, value: m.Value.Index };
 
+/// What a property or attribute binding writes: a hole's value, or a
+/// constant — a URL whose check turns on a character outside ASCII, which
+/// the runtime's `safeUrl` decides (§10.5, amended 2026-11-05). A constant
+/// reads nothing and evaluates nothing.
+const Operand = union(enum) { value: m.Value.Index, text: []const u8 };
+
 /// One write of the page (§8.2), on an element: `null` is the unit's top
 /// element, any other number its descendant of that place in document
 /// order.
@@ -647,10 +656,15 @@ const Write = struct {
     groups: []const u32,
     what: union(enum) {
         text: []const Part,
-        /// `key` null: the control's `value`. `attribute`: its name as the
+        /// `key` null without `attribute_only`: the control's `value`.
+        /// `attribute_only` writes a scalar String class via native attributes,
+        /// including empty strings. `attribute`: its name as the
         /// markup writes it, and `boolean`, whether its value is a `Bool`:
-        /// what the string form writes it as (`prerender.md` §4.1).
-        prop: struct { value: m.Value.Index, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false },
+        /// what the string form writes it as (`prerender.md` §4.1). `url`
+        /// (with `attribute_only`): the attribute holds a URL, and the
+        /// binding and the string form write `safeUrl(value)` (§10.5,
+        /// amended 2026-11-05).
+        prop: struct { value: Operand, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false, attribute_only: bool = false, url: bool = false },
         /// Hidden while the branch at `node` takes another arm than `shown`.
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
@@ -1242,29 +1256,56 @@ const Page = struct {
         }
         const name = tree.string(it.name);
         var stateful = false;
+        var attribute_only = false;
         var property: ?[]const u8 = null;
         if (it.attribute != .none) {
             const f = tree.attributeFacts(it.attribute);
-            if (f.raw or f.classes or f.styles) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
+            attribute_only = f.classes and it.class == .string;
+            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
             if (f.property) |prop| property = tree.string(prop);
             stateful = f.stateful;
         }
-        // A constant URL is checked here, by `safeUrl`'s rule (`backend.md`
-        // §15, the `dom` lowering's table), and written into the markup —
-        // as nothing for a script URL (§10.5). One whose answer turns on a
-        // character outside ASCII, and a URL that changes, are not compiled
-        // yet: the runtime has no `safeUrl`.
+        // A URL (§10.5, amended 2026-11-05). A constant one, and one `init`
+        // bakes, is checked here, by `safeUrl`'s rule (`backend.md` §15.3,
+        // the `dom` lowering's table), and written into the markup — as
+        // nothing for a script URL. Any other is a binding of the attribute
+        // whose value is `safeUrl(value)`: one that changes, and a constant
+        // or a baked one whose answer turns on a character outside ASCII,
+        // which `\s` may match — the runtime decides it, as `browser`'s does.
         if (it.url) {
-            if (it.value.kind != .constant) return later(cx, n, "an attribute that holds a URL and whose value changes");
-            const c = it.value.constant;
-            switch (c.kind) {
-                .string => {
-                    const script = scriptUrl(tree.string(c.text)) orelse return later(cx, n, "a URL whose first characters are outside ASCII");
-                    try writeValue(pg.a(), out, name, if (script) "" else tree.string(c.text));
-                    return null;
+            // `setAttribute` gives no attribute a namespace (`xlink:href`).
+            const plain = std.mem.indexOfScalar(u8, name, ':') == null;
+            switch (it.value.kind) {
+                .constant => {
+                    const c = it.value.constant;
+                    switch (c.kind) {
+                        .string => {
+                            const text = tree.string(c.text);
+                            if (scriptUrl(text)) |script| {
+                                try writeValue(pg.a(), out, name, if (script) "" else text);
+                                return null;
+                            }
+                            if (!plain) return later(cx, n, "a URL whose first characters are outside ASCII, in an attribute with a namespace prefix");
+                            // It reads nothing: the first pass alone writes it.
+                            try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = &.{}, .what = .{ .prop = .{ .value = .{ .text = text }, .key = null, .attribute = name, .attribute_only = true, .url = true } } });
+                            return null;
+                        },
+                        .number => {
+                            try writeAttribute(pg.a(), out, name, c, tree);
+                            return null;
+                        },
+                        else => return later(cx, n, "an attribute that holds a URL"),
+                    }
                 },
-                .number => {
-                    try writeAttribute(pg.a(), out, name, c, tree);
+                .dynamic => {
+                    if (it.class != .string) return later(cx, n, "an attribute that holds a URL, whose value changes and is not a `String`");
+                    if (!plain) return later(cx, n, "an attribute with a namespace prefix that holds a URL and whose value changes");
+                    const facts = try pg.known(n, cx.programHole(.{ .item = index }));
+                    if (facts.bake) |b| if (scriptUrl(b)) |script| {
+                        try writeValue(pg.a(), out, name, if (script) "" else b);
+                        return null;
+                    };
+                    try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = .{ .value = it.value.dynamic.? }, .key = null, .attribute = name, .attribute_only = true, .url = true } } });
                     return null;
                 },
                 else => return later(cx, n, "an attribute that holds a URL"),
@@ -1290,13 +1331,13 @@ const Page = struct {
         };
         // A boolean attribute whose DOM property has its name, or a
         // property: written through it (§8.2).
-        const key: ?[]const u8 = if (property) |prop|
+        const key: ?[]const u8 = if (attribute_only) null else if (property) |prop|
             (if (std.mem.eql(u8, prop, "value")) null else prop)
         else if (it.class == .bool and isBoolProperty(name))
             name
         else
             return later(cx, n, "an attribute that is not a DOM property and whose value changes");
-        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = v, .key = key, .attribute = name, .boolean = it.class == .bool } }, .stateful = stateful });
+        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = .{ .value = v }, .key = key, .attribute = name, .boolean = it.class == .bool, .attribute_only = attribute_only } }, .stateful = stateful });
         return null;
     }
 
@@ -2248,7 +2289,10 @@ const Page = struct {
                 .value => |v| try out.append(pg.a(), v),
                 else => {},
             },
-            .prop => |x| try out.append(pg.a(), x.value),
+            .prop => |x| switch (x.value) {
+                .value => |v| try out.append(pg.a(), v),
+                .text => {},
+            },
             .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
             .observe => |n| try out.append(pg.a(), pg.tree.hole(n).value),
             .event => {},
@@ -2638,7 +2682,10 @@ const Page = struct {
                     .value => |v| try values.append(pg.a(), v),
                     else => {},
                 },
-                .prop => |x| try values.append(pg.a(), x.value),
+                .prop => |x| switch (x.value) {
+                    .value => |v| try values.append(pg.a(), v),
+                    .text => {},
+                },
                 .event => {},
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
                 .observe => |n| try reads.append(pg.a(), pg.tree.hole(n).value),
@@ -2800,9 +2847,12 @@ const Page = struct {
                         };
                         break :value if (w.string) text else try js.template(&.{.{ .expr = text }});
                     },
-                    .prop => |x| value: {
-                        try cx.rootValues(into, r, &.{x.value});
-                        break :value try cx.value(x.value);
+                    .prop => |x| switch (x.value) {
+                        .value => |v| value: {
+                            try cx.rootValues(into, r, &.{v});
+                            break :value try cx.value(v);
+                        },
+                        .text => |t| try js.string(t),
                     },
                     .event => |ei| try pg.capturedArguments(ei, p.call_args.items),
                     .observe => |n| try p.branch(into, ctx, n),
@@ -2819,6 +2869,24 @@ const Page = struct {
             }
         }
     };
+
+    /// A scalar String class is an HTML attribute. Keep its binding compare
+    /// and evaluate
+    /// its target and desired value exactly once, including effectful helpers.
+    /// A URL's desired value is `safeUrl(value)` (§10.5, amended 2026-11-05).
+    fn writeStringAttribute(pg: *Page, blk: m.Block, target: m.Expr, attribute: []const u8, value: m.Expr, url: bool) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const node = try cx.fresh("attributeNode");
+        const desired = try cx.fresh("attributeValue");
+        try js.constant(blk, node, target);
+        try js.constant(blk, desired, if (url) try js.call(try js.name(try cx.runtime("safeUrl")), &.{value}) else value);
+        const current = try js.call(try js.member(try js.name(node), "getAttribute"), &.{try js.string(attribute)});
+        const changed = try js.binary(.strict_ne, current, try js.name(desired));
+        const write = try js.block();
+        try js.expression(write, try js.call(try js.member(try js.name(node), "setAttribute"), &.{ try js.string(attribute), try js.name(desired) }));
+        try js.@"if"(blk, changed, write, null);
+    }
 
     fn writePrepared(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
@@ -2867,7 +2935,9 @@ const Page = struct {
                     }
                 },
                 .text => try js.expression(into, try js.call(try js.name(try cx.runtime("text")), &.{ node, ready.value })),
-                .prop => |x| if (x.key) |key| {
+                .prop => |x| if (x.attribute_only) {
+                    try pg.writeStringAttribute(into, node, x.attribute, ready.value, x.url);
+                } else if (x.key) |key| {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value, try js.string(key) }));
                 } else {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
@@ -2940,7 +3010,10 @@ const Page = struct {
                         .value => |v| if (cx.valueSafe(v)) try own.append(pg.a(), v),
                         else => {},
                     },
-                    .prop => |x| if (cx.valueSafe(x.value)) try own.append(pg.a(), x.value),
+                    .prop => |x| switch (x.value) {
+                        .value => |v| if (cx.valueSafe(v)) try own.append(pg.a(), v),
+                        .text => {},
+                    },
                     .when, .event, .observe => {},
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
@@ -2964,8 +3037,13 @@ const Page = struct {
                         try js.expression(blk, try js.call(try js.name(try cx.runtime("text")), &.{ node, shown }));
                     },
                     .prop => |x| {
-                        const value = try cx.value(x.value);
-                        if (x.key) |key| {
+                        const value = switch (x.value) {
+                            .value => |v| try cx.value(v),
+                            .text => |t| try js.string(t),
+                        };
+                        if (x.attribute_only) {
+                            try pg.writeStringAttribute(blk, node, x.attribute, value, x.url);
+                        } else if (x.key) |key| {
                             try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value, try js.string(key) }));
                         } else try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value }));
                     },
@@ -3394,9 +3472,12 @@ const Render = struct {
                 };
                 break :v if (w.string) shown else try js_.template(&.{.{ .expr = shown }});
             },
-            .prop => |x| v: {
-                try cx.rootValues(blk, root_, &.{x.value});
-                break :v try cx.value(x.value);
+            .prop => |x| switch (x.value) {
+                .value => |pv| v: {
+                    try cx.rootValues(blk, root_, &.{pv});
+                    break :v try cx.value(pv);
+                },
+                .text => |t| try js_.string(t),
             },
             else => unreachable,
         };
@@ -3430,9 +3511,9 @@ const Render = struct {
             at = d.at;
             const x = pg.writes.items[d.write].what.prop;
             const v = try r.value(blk, c, d.write);
-            if (x.key == null and std.mem.eql(u8, n.name, "textarea")) {
+            if (!x.attribute_only and x.key == null and std.mem.eql(u8, n.name, "textarea")) {
                 content = v;
-            } else if (x.key == null and std.mem.eql(u8, n.name, "select")) {
+            } else if (!x.attribute_only and x.key == null and std.mem.eql(u8, n.name, "select")) {
                 chosen = v;
             } else if (x.boolean) {
                 // A boolean attribute: present when true.
@@ -3440,7 +3521,7 @@ const Render = struct {
                 const yes = try js_.block();
                 try js_.assign(yes, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), try js_.string(try std.fmt.allocPrint(pg.a(), " {s}", .{x.attribute}))));
                 try js_.@"if"(blk, v, yes, null);
-            } else try r.quoted(blk, x.attribute, v);
+            } else try r.quoted(blk, x.attribute, if (x.url) try r.runtime("safeUrl", v) else v);
         }
         try r.text(n.attributes[at..]);
         // An option whose value is the `select`'s: the first such is

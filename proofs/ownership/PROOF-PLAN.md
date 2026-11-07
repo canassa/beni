@@ -131,7 +131,7 @@ As built (2026-10-16): `Invariant` has the clauses `linksValid : LinksValid hs` 
 `LinksValid` records the link structure every reachable state has: the view is allocated after its source, both exist, the source is nonempty, and no view has two sources.
 `LinkNamed` is the narrowed clause: for every array a live path or a permanent observer protects, every array in its link component has exactly its origins.
 The clause is conditional on protection, not on a write. At a read-only split such as `readBoth(rest, xs)` both sides are live, so the clause names the view and its source alike; that is possible because the checker's view rule gives a view its source's origins and a fresh site (`Checker.lean`, `primitive`, `.view`). Distinct canonical names for the two sides exist only in a callee frame, where `Invariant` does not apply, so R1 states its premise on written storage. A component that nothing protects is unconstrained.
-`LinkClauses.lean` proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that the per-link closure `LinkClosed` gives `LinkNamed` and survives a naming that keeps old origins and names a new view by its source's origins. No theorem uses these lemmas yet.
+`LinkClauses.lean` proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that the per-link closure `LinkClosed` gives `LinkNamed` and survives a naming that keeps old origins and names a new view by its source's origins. Since 2026-11-04 the flat fragment uses them (*First fragment*, below).
 `Invariant` does not give `LinkClosed`: a dead split admits distinct names. So the step must keep `LinkNamed` itself: a component that nothing protects before a step becomes protected only through an operand, which the pre-state protects already; and the post-naming keeps the old arrays' origins and names a new view by its source's origins. `LinkClosed` is available in the main context only because of the view rule; it is a sufficient condition, not a clause.
 The first bullet's contents fact is the fourth clause of `LinksValid` since 2026-10-17 (`contents`: every view holds `viewOf front source`). It needs #284's hand-over: the model's `put` writes with `write`, not `writeLinked`, so before #284 the garbage view of a closed and viewed builder went stale in an accepted program (`ViewLinks.lean`, *A stale garbage view*); with the hand-over that program is refused, a builder is never linked, and every write that reaches a linked array in an accepted program is a `writeLinked`. A protected view is never stale: its cells include its source's, so the demand on the source fails. `LinkSummary.lean` checks that the falsifier's `linksValidB` reports the stale state. As decided on 2026-10-17, the clause went in together with the proof of `LinksValid` after a linked write, because its preservation needs the same contents arithmetic of the splice and the refresh.
 `StatementChecks/ViewLinks.lean` proves that the #169 pre-state admits no naming under the clauses.
@@ -386,7 +386,7 @@ The internal relation `FlatInvariant` extends `Invariant` as the internal statem
 Each case derives its frame from the actual checker run. The push case uses the real default demand; no alias prohibition or permission oracle enters.
 The modules form one import chain, because the audit rejects an equation lemma that two modules realize (#182).
 `FlatInvariant` has four flat-only clauses, and each next step replaces one of them:
-`heapInts` (every array holds integers) goes with records and nested literals, which put references into arrays;
+`heapInts` (every array holds integers) goes with records and nested literals, which put references into arrays (it went earlier, on 2026-10-23, with slice 2a of #522, *Dictionaries* below: the shape carries its array's contents);
 `types` (`FlatType`: `int` or `list int`) goes with field atoms and records, which bind record types;
 `abstractShapes` (`FlatAbstract`: a scalar or a flat list with empty element cells) goes with the same step, because a record abstract has fields and a nested list has element cells;
 `links = []` goes with views, and it is where the #169 link invariant enters: the clause becomes the link clauses of `Invariant`.
@@ -402,7 +402,7 @@ The case keeps all four flat-only clauses, `heapInts`, `types`, `abstractShapes`
 The probe `arith` checks the four primitives at build time.
 As built (2026-10-18, #165): `FlatANF0` admits every atom where it admitted an integer or a variable, except the push receiver, which stayed a variable until 2026-10-19; and it contains the record constructor. `FlatANF0` puts no condition on an atom: the theorem also needs `check`, and typing fixes each atom to an integer, a variable or a variable under a field path.
 `types` and `abstractShapes` are not replaced but widened: `FlatType`, `FlatAbstract` and `AllocatedFlatValue` get a record constructor, indexed field by field, so a binding holds an integer, an integer list, or a record of such values, nested. `heapInts` and `links = []` stay.
-`Fields.lean`, between `Reach` and `Frame`, holds the path lemmas: an atom's root variable and field path (`atomRoot`), the type at a path (`tyAt`), the evaluation of an atom from its root binding through `projectObs` and `projectVal` on both sides and `Abstract.atPath` in the checker, records in `Corresponds`, `obsTyped`, `ValueTyped` and `Describes` field by field, and the frame of a flat value by induction on its structure (`corresponds_flat_frame`, `describes_flat_frame`, `arrayAt_flat`).
+`Fields.lean`, between `Reach` and `Frame`, holds the path lemmas: an atom's root variable and field path (`atomRoot`), the type at a path (`tyAt`), the evaluation of an atom from its root binding through `projectObs` and `projectVal` (`projectHeap` since 2026-11-05) on both sides and `Abstract.atPath` in the checker, records in `Corresponds`, `obsTyped`, `ValueTyped` and `Describes` field by field, and the frame of a flat value by induction on its structure (`corresponds_flat_frame`, `describes_flat_frame`, `arrayAt_flat`).
 The invariant's `bindings` and `described` clauses at the live path `(x, p)` give an atom's correspondence and description directly; the let binder's live paths are typed field paths (`flat_uses_typed` replaces the empty-path lemma `FlatLive`); the heap frame's separation hypothesis speaks of every array at every path of a live projected value, which the literal case discharges by the heap bound and the push case by the Dead test through `inv.named` at the full path and the live cells (`live_path_apart`).
 A `shared` of a value deeper than `observationDepth` fails on both sides at the observer epilogue (`shared_deep_failure`); the first fragment never met this, because its values were shallow. No program `check` accepts at its default inference fuel reaches the case (each `let` costs one unit of 200 and a record adds at most one level, so a shared value is at most 199 deep, 197 records over a list, and a final value can reach 200; the reviews of PRs #375 and #422 measured it), but `flat_preserved` is generic in the fuel, so the lemma is needed.
 `Record.record_preserved` (`Primitives.lean`) and the record arm of `flat_static` (`Static.lean`) prove the constructor; the probe `recordOps` checks a record of two lists and an integer, field reads and a push onto a field bound to a variable at build time.
@@ -444,6 +444,41 @@ As built (2026-10-20, #165, `at`, `set`, `copy`, `prepend`): `FlatANF0` contains
 `at` is `length` with a result: both runtimes read the element at the index, or the fallback for a negative or out-of-range index (`atResult`), and record it; the checker returns the join of the element abstract and the fallback's. `set` is `push` with the list after the write (`setResult`), unchanged for a negative or out-of-range index, when the counter does not move; its demand and frame are the push's (`primitive_set_demand_run`, `primitive_set_result`). `copy` is the literal case at the receiver's contents. `prepend` is the literal case with a read of the base on both sides (`valuePrepended`, `heapPrepended`, `prepend_post_invariant`) and a result the checker names by the fresh site root and the base's origins. A dead receiver returns bottom in the checker (`primitive_at_bottom_run` and its siblings), as the push does.
 The probes `atOps`, `setOps`, `setAlias`, `copyOps`, `prependOps` and `prependAlias` check them at build time.
 What stays out: lists of lists and nested literals (the real exclusivity certificates through nested arrays), constructions, builders and views.
+
+As built (2026-11-04, #169, the first of the pull requests for views): a heap typing in the flat relation.
+The views step must show that `dictRemove`, the one writer that shortens an array (`dictDrop`), never writes a linked array: `linksValid_after_writeLinked` asks for a write that does not shorten, and a source with one entry would become empty.
+Only `view` makes a link, at a list type, so no accepted program links a dictionary's array.
+But the relation types values at their representation (`entryType`), where a dictionary of `t` and a list of `{Int, t}` records have one shape, and the naming cannot carry the kind either (`shared` adds `.shared` to lists and dictionaries alike).
+So `FlatInvariant` gets the clause `heapKinds`: a map `kinds : Nat → Option Ty` under which every typed array holds values of its element type, every binding has its declared type, and both ends of a link are lists of one type (`StateKinded`; the value relation `Kinded` reads no heap).
+`Preserved` concludes `KindsAt`, the same map for the state after the step and for its result.
+An allocation extends the map at the new address (`StateKinded.of_alloc`), a write keeps it (`StateKinded.of_write`), a step that keeps the heap keeps it (`FlatInvariant.kindsAt_of`), and an atom has its type (`kinded_atom`).
+`StateKinded.dict_unlinked` gives the fact the views step needs.
+The clause `links = []` stays until the next pull request.
+
+As built (2026-11-04, #169, the second of the pull requests for views): the link clauses in the flat relation.
+`FlatInvariant` replaces `links = []` with `linkClosed : LinkClosed hs.links gamma`, the sufficient condition of `LinkClauses.lean`; `Invariant.linkNamed` follows from it (`linkNamed_of_closed`), and `Invariant.linksValid` is now a real obligation of every case.
+`LinkedWriteValid.lean` moves before the flat fragment in the import chain, and the new module `LinkedWriteRun.lean` follows it.
+`LinkedWriteRun.lean` proves what a counted write of a list does on a state with valid links (`writeCounted_linked`).
+It succeeds: `spliceUp` climbs to smaller addresses and `refreshDown` descends to larger ones, so the fuel `size + 1` suffices.
+The written array holds the stored list: the splice makes each link on the path to the top consistent (`spliceUp_chain`), and the refresh recomputes those links from the top (`writeLinked_root`).
+Only the written array's link component changes, and its new elements come from the stored list or the component's old arrays (`writeLinked_contents`).
+A write of an array that no link names is a plain write (`writeCounted_unlinked_run`).
+The review of PR #273 named three obligations of the step cases. This pull request discharges two of them:
+- No writer shortens a linked array. `push` appends and `set` keeps the length, so `linksValid_after_writeLinked` applies. `dictInsert` and `dictRemove` write an array that the heap typing types as a dictionary, which no link names; so `dictRemove`, which shortens, never writes a linked array.
+- The post-naming keeps every old array's origins: every case keeps the naming or extends it at a fresh address, so `linkClosed_of_old` keeps the closure.
+The third, the view step's split on the source's emptiness and its naming (`linkClosed_viewed`), comes with `view`.
+`push` and `set` frame the whole component: `linkClosed` gives every array of it the receiver's origins, so the Dead test (`live_path_apart`), the Unescaped test (`demand_success_observer_footprint`) and the Disjoint test (`value_apart_root`, for the old elements and the item) exclude every live path, observer and stored value from it.
+`flatInvariant_heap_frame` takes the changed arrays as a set (`inside`), and the bound on the arrays a binding reaches comes from the heap typing (`StateKinded.reach_bound`), not from the contents of one hole.
+No program of the fragment makes a link yet, so `accepted_flat_anf_traces_agree` covers the same programs.
+
+As built (2026-11-04, #169, the third of the pull requests for views): `view` in the flat fragment.
+`FlatANF0.view front` (`Support.lean`); `View.lean`, between `Dictionary` and `Trace`, proves `view_preserved`.
+The heap side allocates `viewOf front ys` at the next address and links it to the source when the source is nonempty; an empty source gives a fresh `[]` with no link. So the step splits on the source's emptiness: `linksValid_push` without a link, `linksValid_viewed` with one (its `lookup` and `nonempty` come from the run). This is the third obligation of the review of PR #273.
+The post-naming adds the new address to every origin that names the source (`view_naming`): it keeps every old array's origins and names the view by exactly its source's origins, so `linkClosed_viewed` keeps the closure, and the view's root is named by a root of its abstract, `union roots [fresh]`.
+The view's elements are a sublist of the source's (`viewOf_sublist`), so the source's exclusivity and spine certificates carry over (`representsMany_sublist_merge`, `view_footprint_nodup`, `view_footprint_once`), and the view's array gets the source's type in the heap typing (`view_kinds`).
+The probes `viewWrite`, `viewReadSource`, `viewReadBoth`, `viewEmpty`, `viewWriteLive` and `viewSourceWriteLive` (`Trace.lean`) check an accepted linked write through a view after the source's last use, reads of both sides (the `readBoth` shape), an empty source, and the two write-while-live directions, which the Dead test refuses.
+`accepted_flat_anf_traces_agree` keeps its statement and covers the larger fragment.
+Open on #169, and outside the flat fragment: both clauses under a call, captures, function-valued inputs, non-variable arguments, the `.app` wiring and R2. They need #165 step 3.
 
 ## Complete case inventory
 
@@ -532,12 +567,28 @@ that is part of #165 and of #522. (1) The model: syntax, typing, both
 interpreters, the checker rules and the probes as `#guard`s against the real
 `check` and both runs; the COVERAGE rows T32, T44 and T51 say what is checked;
 a verdict that differs from the Zig checker gets its own issue. (2) The flat
-relation over arrays of flat values (lists of lists): `heapInts` generalised to
-"every array holds flat values", an element shape in `AllocatedFlatValue.list`,
-`Describes` of an array through `namesAt`'s `.element` step, and real
-exclusivity certificates (`CertifiedExclusive` through the stored values, which
-the checker's `storeExclusive` and `storeSpines` must imply); the existing
-fragment theorems keep their statements. (3) The dictionary forms in
+relation over arrays of flat values (lists of lists), in two PRs (refined on
+2026-10-23, after slice 1). (2a) The fragment reads its array shapes from the
+types: the heap clause `heapInts` ("every array holds integers") goes, the
+shape `AllocatedFlatValue.list`/`chain` carries the array's integer contents,
+which `allocated_of_typed` takes from the binding's typed expansion, and
+`IntegerFrame` (the next heap keeps every address, with its old contents or new
+integer contents) replaces the pair "flat next heap, size" in every frame
+lemma; `FlatType`, `FlatAbstract` and `FlatANF0` stay, the public theorem,
+`flat_preserved` and the case theorems keep their statements (fourteen lemma
+headers and the two constructors change), and `flat_preserved` and the case
+theorems take a weaker hypothesis (an array no binding holds may hold
+anything; the public theorem starts from the empty heap and admits no new
+heap). (2b) Arrays of flat
+values: `FlatType.list t` for every flat `t` (`chainInt` stays), `FlatAbstract.list`
+with a flat element abstract, `AllocatedFlatValue.list root t` with elements
+typed through `ValueTyped`, the tags through elements; the reading forms (`at`
+through `namesAt`'s `.element` step, `length`, `shared`, `copy`, `prepend`) and
+the writing forms (`push`, `set`) for nested items, with the first proved
+exclusivity certificate: `storeExclusive`/`storeSpines` with the invariant's
+`named` and `separating` give `CertifiedExclusive` after the write; `literal`
+stays at `Int` elements. `FlatANF0` cannot exclude a form by its type, so 2b is
+one PR. (3) The dictionary forms in
 `FlatANF0` and `flat_preserved`: the five primitives as primitive cases and
 `dictFocus` as a binder case like the list focus; the rows say what is proved.
 `accepted_flat_anf_traces_agree` keeps its statement throughout.
@@ -552,3 +603,286 @@ the aliasing and diagnostic interpreters, the oracle's shrinker, the
 falsifier's walkers, the bridge's printer and parser and `obsTyped` have the
 new forms. `DictPrograms.lean` holds eleven probe programs, `DictProbes.lean` their `#guard`s.
 No theorem changed; no theorem names a dictionary form yet.
+
+As built (2026-10-23, #522, slice 2a): `FlatHeap` and the field `heapInts` are
+gone from `Support.lean`; `AllocatedFlatValue.list root integers` and `chain`
+carry `heap[root]? = some (heapInts integers)` (`Runtime.lean`);
+`allocated_of_typed` reads the integers off the typed expansion
+(`integers_of_represented`, `obsTyped_list_elements`, `obsTyped_chain_elements`,
+`Fields.lean`); `IntegerFrame heap next` with `integerFrame_after_write` and
+`integerFrame_after_allocation` (`Runtime.lean`) replaces the flat-next-heap
+premise of `allocated_frame` (was `allocated_mono`), `valueTyped_after_flat_heap`,
+`bindingsTyped_after_flat_heap`, `describes_flat_frame`, `described_flat_frame`,
+`named_flat_frame` and `flatInvariant_heap_frame`; `arrayAt_flat`, `reaches_flat`,
+`corresponds_ref_frame`, `corresponds_flat_frame`, `named_cellsAt_of_covers`,
+`describes_mapOrigins_shared`, `describes_join` and `valueTyped_of_allocated`
+lost their heap premise; `counted_write_preserves_binding_types` and
+`literal_preserves_binding_types`, which nothing used, are deleted (the review
+of #884). No statement of `flat_preserved`, of a case theorem or of
+`accepted_flat_anf_traces_agree` changed; `flat_preserved` and the case
+theorems have a weaker hypothesis, the public theorem starts from the empty
+heap and admits no new heap; no program is admitted or refused that was not
+before.
+
+As built (2026-10-24, #522, slice 2b): `ElementType` (an integer, a record of
+element types or a list of element types) and `FlatType.list t` over it
+(`Support.lean`); `FlatAbstract.list` holds no unknown root;
+`AllocatedFlatValue.list root ws t` types the elements; `FlatANF0.literal t`
+over an element type, since no other fragment form builds a list of lists (the
+plan's "literal stays at `Int`" would have left the slice without a program).
+Lists of results and lists of chains are #932: the checker reads an element's
+result tag from the list's element abstract, and the invariant has no clause
+for an element's tags. The invariant types and shapes a binding at its live
+paths (`bindingsTyped`, with the shape) and bounds the arrays of every binding
+(`bindingsBounded`); the plan's `shaped` over every binding, its `arrayTypes`
+and the write step are not needed, since a dead alias of a written array keeps
+no type. `flatInvariant_heap_frame` takes the hole's contents with their bound
+(`reaches_split_at_hole`); `Preserved.success` and every case theorem conclude
+the result's shape, and `flatInvariant_bind` takes it. The list forms over
+values: `at` (the join with the fallback; the result's tags from the
+fallback's, `resultTags_element` and `chainTags_element`), `length`, `shared`,
+`copy`, `prepend`, `push`, `set` and the literal (`Primitives.lean`). The
+certificate after a store, the first proved one: `inserted_footprint_nodup` and
+`inserted_footprint_once` (an item inserted into `as ++ mid ++ bs`: a push, a
+set, a prepend), `fresh_footprint_nodup` and `fresh_footprint_once` (a literal),
+from `storeExclusive_facts`, `storeSpines_facts` and their many-items forms,
+`nodup_of_deepExclusive` (a deeply exclusive, path-separated item repeats no
+array), `once_of_separated` (a container array once:
+`count_le_one_of_container_unique`), `mem_namesAt_of_arrayAt`,
+`demand_success_disjoint` and `list_described_of_elements` (`Fields.lean`).
+`accepted_flat_anf_traces_agree` keeps its statement; `flat_preserved` and the
+case theorems conclude one more fact (the shape). Probes `nestedPush`,
+`nestedAlias`, `nestedSet`, `nestedItemAlias` and `nestedRecord` (`Trace.lean`).
+
+
+As built (2026-11-03, #932, #522): lists now admit every `FlatType`, including
+results and integer chains. `ElementType` and its tag helpers are gone.
+`FlatANF0.literal` takes a flat element type.
+
+- `TagsDeep heap t a w` follows arrays, records and active result payloads.
+  Each array element has `ResultTags` and `ChainTags` for every corresponding observation.
+- `FlatInvariant.deepTags` requires this relation at each live typed path.
+  Dead aliases retain their existing rules.
+- `tagsDeep_of_agree` preserves the clause across the heap frame.
+  `tagsDeep_project`, `tagsDeep_mapOrigins` and the join lemmas preserve its structural cases.
+- `Preserved.success` and each case theorem conclude `TagsDeep` for the result.
+  `flatInvariant_bind` projects that conclusion to the new binding's live paths.
+- `at` takes tags from the selected element or the fallback, then joins the abstracts.
+  Literals, writes, copies and prepends carry the elements' tags into the new array.
+- `resultElements` checks both result arms and fallback reads.
+  `chainElements` checks empty chains, nonempty chains and fallback reads.
+  `resultElementStores` checks push, set, copy, prepend and shared values.
+  `nestedResultElements` checks tags through two array levels.
+  Each program has a fragment-scope theorem and build-time runtime checks in `Trace.lean`.
+
+`accepted_flat_anf_traces_agree` keeps its statement and covers the expanded fragment.
+The checker, interpreters and three general proof obligations do not change.
+Dictionary forms remain the next step in item 3.
+
+As built (2026-11-03, #1796): the relation through the type. Slice 3 found
+that no naming covered an accepted dictionary of lists: the checker's element
+is the value's abstract, and the runtime stores the value at field 1 of an
+entry record (`StatementChecks/DictEntryPaths.lean`, `no_cover`). The owner
+decided (Jayson, `ownership-proofs-q7`): an abstract dictionary element step
+is the concrete entry's element step and field 1, in the coverage and the
+certificate clauses; the checker, the interpreters and path-by-path coverage
+stay.
+
+- `entryPath` and `entryAbstract` (`Soundness.lean`). `Covers`,
+  `CertifiedExclusive` and `Describes` keep their definitions; a clause reads
+  `entryAbstract ds t a`.
+- `Invariant` takes the declarations and the type environment. `CallSound`
+  and `LinkedWritesCovered` take the input types (and `CallSound` the result
+  type). `summary_sound`, `map_summary_sound` and `invariant_preserved` are
+  restated with the types; they keep their `sorry`, and the pinned set does
+  not change.
+- `CallDerivation.mem_namesAt_entryPath` (the bridge at a first-order
+  abstract), `root_paths_entryAbstract` and
+  `LinkedWriteStep.mem_paths_entryAbstract` (the typed abstract holds the
+  abstract's cell lists) carry the proved call and linked-write lemmas over.
+- The flat fragment: see slice 3 below.
+
+A closure's captures are typed by its declaration, which `Ty.fn` does not
+name; `entryAbstract` reads them through `ds`, and `entryPath` keeps a capture
+step as it is, since a canonical path of a function input is `[]` or `[.env]`.
+
+As built (2026-11-03, #522 slice 3, with #1796 in one pull request): the
+dictionary forms in the flat fragment.
+
+- `DictFree` (`Support.lean`). `FlatType.list t` and `FlatType.dict t` ask
+  `DictFree t`: a list element and a dictionary's value hold no dictionary.
+  A record or a result can hold one. No type that the fragment admitted
+  before leaves it. A list of dictionaries and a dictionary of dictionaries
+  stay outside the fragment (#522; lifted by #1840, below). `FlatANF0` gets `dictEmpty t` (with `DictFree t`),
+  `dictInsert`, `dictRemove`, `dictGet` and `dictSize`; `literal t` also asks
+  `DictFree t`.
+- `FlatInvariant` keeps its static clauses at the source type and states its
+  heap clauses at the representation: `entryType t` (a dictionary of `t` is a
+  list of records `[Int, t]`) and `entryAbstract ds t a`. `AllocatedFlatValue`,
+  `TagsDeep`, `ResultTags` and `ChainTags` do not change. Where a type holds no
+  dictionary both are the identity (`entryType_of_dictFree`,
+  `entryAbstract_of_dictFree`). `Preserved` concludes at the representation;
+  the cases with no dictionary operand convert at the end
+  (`success_of_dictFree`), and the cases that can see one (atom, let, branch,
+  the two cases, record, ok, err, shared) carry it (`flat_atom_entry`,
+  `entryAbstract_join`, `flatAbstract_entry`).
+- The five cases (`FlatFragment/Dictionary.lean`): the empty dictionary is a
+  fresh empty array; the size is a length; a lookup is an element read
+  (`dictFind_corresponds`); a remove filters the entries in place, and the
+  kept footprint is a sublist of the old one (`filtered_footprint_nodup`,
+  `filtered_footprint_once`); an insert is a push or an in-place set of one
+  entry (`dictPut_split`), with the push's certificate lemmas and the store
+  tests on the value read through the entry's field 1.
+- Probes `dictOps`, `dictValueWritten`, `dictBranch`, `dictInRecord`
+  (`Trace.lean`); the #1796 witness is in the fragment
+  (`DictEntryPaths.program_flat`, `program_traces_agree`).
+- `dictFocus` stays out: the checker summarises its body with `inferScope`
+  and `applyScope` (canonical origins), as for the list focus; its proof needs
+  #165 step 3. `accepted_flat_anf_traces_agree` keeps its statement.
+
+As built (2026-11-04, #1840, part of #522): nested dictionaries. A list
+element and a dictionary's value can be a dictionary; `DictFree` stays only as
+a property of a type, which `success_of_dictFree` reads for a result type
+with no dictionary.
+
+- `FlatType.list t`, `FlatType.dict t`, `FlatANF0.literal t` and
+  `FlatANF0.dictEmpty t` ask only `FlatType t` (`Support.lean`).
+- `flat_atom_list_path` and `flat_atom_dict_path` give an element's heap
+  facts at its representation: `entryType t` and `entryAbstract ds t a`.
+- The list cases (`literal`, `push`, `at`, `set`, `copy`, `prepend`) and the
+  dictionary cases (`dictEmpty`, `dictInsert`, `dictRemove`, `dictGet`)
+  conclude at the result's representation, as `Preserved` asks.
+  `flat_preserved` no longer converts their results.
+- The checker runs its tests on the source abstracts. `entryAbstract` keeps
+  every cell list of a flat abstract, in order, with its container kind
+  (`pathKinds_entryAbstract`, `Fields.lean`), and deep exclusivity. So the
+  store tests give the same answers on the representations
+  (`storeExclusive_entry`, `storeSpines_entry`, `storeCertificate_entry`), and
+  the runtime part of each case is the proof it had, at the representation.
+- `ValueTyped` of a list result comes from `Corresponds` and `obsTyped` at the
+  source type (`valueTyped_of_corresponds`), since the shape is at the
+  representation.
+- Probes `listOfDicts`, `listOfDictsAlias`, `dictOfDicts`,
+  `dictOfDictsAlias`, `dictListDicts` and `dictListDictsAlias`
+  (`Trace.lean`); `listOfDicts_traces_agree` and `dictOfDicts_traces_agree`
+  apply `accepted_flat_anf_traces_agree`.
+- The checker, both interpreters, `Covers`, `CertifiedExclusive`,
+  `Describes`, `FlatInvariant`, `Preserved` and the statement of
+  `accepted_flat_anf_traces_agree` do not change. `dictFocus` stays out
+  (#165 step 3).
+
+## Records written in place (#316)
+
+The plan, written before the Lean (#316, 2026-11-04). `ownership-checker.md`
+§31 makes a beni record an object that an update writes in place (#315). The
+oracle models it in slices, each a pull request that is part of #316 and of
+#165, as the dictionary slices of #522 did.
+
+1. The model: syntax, typing, both interpreters, the checker rules and the
+   probes as `#guard`s against the real `check` and both runs. A record object
+   is a one-slot array whose element is the record, at all three levels, so
+   every list rule and every heap relation applies to it unchanged. The new
+   rule is the update's Dead per field. No theorem changes.
+2. The objects in the flat fragment (#1871): `FlatType.object`, `FlatAbstract` and
+   `AllocatedFlatValue` for an object, the four forms in `FlatANF0`, and their
+   cases in `flat_preserved`. The new proof step is the heap frame of a write
+   through an object whose kept fields stay live: a live path goes through the
+   written array (`live_path_apart` does not hold there), and the frame must
+   show that the value at a kept field is the same before and after.
+3. The summaries and the bridge (#1872): `W{F}` and per-field reads through calls
+   (§31.7), the bridge's spelling of an object as a beni record, and record
+   verdicts in the comparison; the generator, the targeted enumerator and
+   mutation controls for the record rules.
+
+The hoist (§31.14): Jayson decided on 2026-11-04 (#316) to refuse, with no
+hoist. This core refuses a later read of a written field, every theorem keeps
+its statement, and the hoist stays tested by the Zig side only.
+
+As built (2026-11-04, #316, slice 1): `Ty.object`, `Prim.object`, `Prim.get`,
+`Prim.recordCopy` and `Expr.assign` in `Syntax.lean` (`assignFields`, shared by
+both interpreters and the checker); both interpreters (`list [record fields]`
+on the value side, a heap array `[record fields]` and a counted write in
+place); the checker (`recordLiveCells` and the update's demand in `inferExpr`,
+the three primitives in `primitive`, the type helpers); the frozen per-call
+checker refuses the record forms as a limit; the aliasing and diagnostic
+interpreters, the shrinker, the falsifier's walkers, the bridge's printer and
+parser, and `obsTyped`, `entryPath`, `entryAbstract`, `fieldType` read the new
+forms. `fieldUses` (`Domain.lean`) gives a field read and an update's base use
+their paths. The flat fragment's representation lemmas gained the object case
+(`entryType`, `DictFree.object`); `FlatANF0`, `FlatType` and every theorem
+statement did not change. `RecordPrograms.lean` holds 30 probe programs,
+`RecordProbes.lean` their `#guard`s.
+
+As built (2026-11-05, #316, slice 2, #1871): the four forms are in `FlatANF0`
+and `flat_preserved` proves them (`FlatFragment/Objects.lean`:
+`object_preserved`, `get_preserved`, `recordCopy_preserved`;
+`FlatFragment/ObjectUpdate.lean`: `assign_preserved`). The finding: `Invariant.bindings` read a live path with
+`projectVal`, which stops at an `.element` step, so no `Invariant` held while a
+field read of a bound object was still to come. Cesar decided on 2026-11-04
+(`own-record-flat-q1`, option A): fix the relation. `projectHeap` replaces
+`projectVal` and reads an `.element` step only through an array `[.record xs]`,
+a record object's one slot; `projectObs` reads only `.list [.record xs]`
+(`projectHeap_element_inv`, `projectObs_element_inv`). `Invariant.described`,
+`Protected` and the falsifier read the same way. `tyAt` takes one object step
+(`.element`, then a field path of the record). The flat relation gets
+`observationsTyped`, `objectsCertified` (the certificate of an object over the
+fields that a live use reads through its slot) and `liveTags`.
+`flatInvariant_heap_frame` takes `projected` (every live projection reads the
+same value in the next heap); `projected_of_route` gives it for the old cases,
+`assign_projected` for the update. The heap typing gives an object's array
+exactly one slot and no link (`ContentsKinded.object`,
+`StateKinded.object_unlinked`), so an update is a plain counted write
+(`heap_assign_success`). `linkNamed_after_writeLinked` (`LinkedWriteStep.lean`)
+takes the route premise. The statements of `accepted_flat_anf_traces_agree`
+and `accepted_traces_agree` did not change, and the pinned `sorryAx` set did
+not change. Probes (`Trace.lean`): `fieldRead` and ten accepted programs of
+`RecordPrograms.lean` with trace theorems, and seven refused controls.
+
+As built (2026-11-05, #316, slice 3, #1872): `Summary.fieldWrites` (`W{F}`,
+§31.7) refines `writes` with the fields that a record write updates; `writes`
+still names every written cell, so `CallSound.writes` and every other reader
+are unchanged. The update records its fields (`recordDemand`, which differs
+from `demand` only in what it records: `recordDemand_success`); `demand` drops
+the entry of a cell it writes whole; `joinFieldWrites` and `normalized` keep
+the row in step. At a call, `rowDemand` demands a `W{F}` row with the update's
+Dead per field. `applyCall_demands` now says that each row passed its tests
+against some live set, which is all that `linkedWritesCovered_of_applyCall`
+reads (its Disjoint part). The assign case of the flat fragment's
+`assignStep` names `recordDemand`; `assign_preserved` reads the whole demand
+from the same state (`Push.demand_run_none`). `accepted_traces_agree` and
+`accepted_flat_anf_traces_agree` keep their statements, `summary_sound` claims
+more (below), and the pinned `sorryAx` set did not change. The
+probes: `calleeKept`, `layersKept` and `eitherKept` are accepted and their runs
+agree; `updateThenCallee`, `calleeTwice`, `layersWritten` and `eitherWritten`
+are refused and their runs differ; `callbackKept` is refused although its runs
+agree (a consume row has no field set). The bridge compares record verdicts
+(`BRIDGE.md`; counts in `RECORD-BRIDGE-RESULTS.md`); generator v7 and the
+targeted product draw record objects; the
+controls `record-dead`, `update-base` and `call-fields` have fixed witnesses
+(`Sync.holes`).
+
+**`CallSound` claims more** (Jayson, 2026-11-05 12:35 UTC, dashboard question
+`own-record-bridge-q1`, option A: "Add the clause"). The call case of
+`invariant_preserved` reads a `W{F}` row per field, so it needs the callee to
+keep every field outside `F`, and clauses 1–3 do not say how a written array
+changes. `CallSound` gets clause 4, `fields`: where an input's array at a
+canonical path holds one record before the call and the summary's row for that
+path has the field set `F` (`fieldRow`), it holds one record after the call,
+as long, with the same values outside `F`. `summary_sound` and
+`map_summary_sound` conclude it and stay `sorry`; the pinned `sorryAx` set
+does not change, and `accepted_traces_agree` and
+`accepted_flat_anf_traces_agree` keep their statements. The two statement
+checks that refute `CallSound` (`LinkSummary.no_call_sound`,
+`SummaryObservers.no_call_sound`) read clause 1 and are unchanged. The
+falsifier checks clause 4 (`Falsify.fieldsClause`) on every checked call of a
+generator v7 campaign, whose programs hold record objects, and requires that
+it applies to some of them. The mutual induction proves clause 4 at an
+update from `assignFields` (as `assign_projected` does in the flat fragment)
+and at a call from the callee's own clause 4.
+
+#704 (the pairwise-apart construction atom) is not in slice 1. This core has
+no summary atom vocabulary: it tests a construction's separation once, with
+`separatedValues` and `separatedPaths`, and `separatedPaths_iff_pairwise`
+states that test as the pairwise expansion. The record condition (`rexcl`,
+`rsep`, §31.4 item 6) is the list certificate of the box here. #704 becomes
+concrete in the slice that splits the record condition from the list one.

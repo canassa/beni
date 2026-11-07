@@ -1,0 +1,128 @@
+-- ownership: a call's result at a type variable's place, when it is a
+-- view, stands at its actual's place wherever it goes next
+-- (ownership-v2.md §2.11 *Re-rooting at a parameter*, #1350). Each
+-- reads `g.x.c` exactly, so a push of the list it holds, with `g` read
+-- later, is refused `alias`: a view handed to `choose` (`viewActual`), a
+-- `choose` inside a `choose`, two views, a bound view, a `choose` in a
+-- record handed to `ans`, a write through a chosen view (`writtenView`:
+-- `g.x.c` refused `alias`, `g.y.c` `disjoint`), and a view stored in a
+-- record literal and projected (`storedChoice`, `storedSelector`,
+-- `storedBound`).
+choose b l r =
+    if b then
+        l
+    else
+        r
+
+
+ans r = r.b
+
+
+a1 g = List.length (choose True (ans { b = g.x }) g.y).c
+
+
+pub viewActual : List Int → Int
+viewActual xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a1 g + List.length p
+
+
+a2 g = List.length (choose True g.y (choose False g.y g.x)).c
+
+
+pub chooseInChoose : List Int → Int
+chooseInChoose xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a2 g + List.length p
+
+
+a3 g = List.length (choose True (ans { b = g.x }) (ans { b = g.y })).c
+
+
+pub twoViews : List Int → Int
+twoViews xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a3 g + List.length p
+
+
+a4 g =
+    v = ans { b = g.x }
+    List.length (choose True v g.y).c
+
+
+pub boundView : List Int → Int
+boundView xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a4 g + List.length p
+
+
+a5 g = List.length (ans { b = choose True g.y g.x }).c
+
+
+pub chooseInRecord : List Int → Int
+chooseInRecord xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    a5 g + List.length p
+
+
+wv g =
+    v = choose True (ans { b = g.x }) g.y
+    List.push v.c 1
+
+
+pub writtenView : List Int → Int
+writtenView xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = wv g
+    List.length xs + List.length p
+
+
+b1 g =
+    v = { b = choose True g.y g.x }
+    List.length v.b.c
+
+
+pub storedChoice : List Int → Int
+storedChoice xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    b1 g + List.length p
+
+
+b2 g =
+    v = { b = ans { b = g.x } }
+    List.length v.b.c
+
+
+pub storedSelector : List Int → Int
+storedSelector xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    b2 g + List.length p
+
+
+b3 g =
+    v = ans { b = g.x }
+    w = { b = v }
+    List.length w.b.c
+
+
+pub storedBound : List Int → Int
+storedBound xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    b3 g + List.length p

@@ -1,0 +1,40 @@
+-- Appendix B's `LoanCopyDepth`, the `List` half (`ownership-v2.md` §2.13.7,
+-- *Copy depth and diagnostics*): `List.copy` copies one level, and the
+-- lists inside are still the cell's. An edit of one is refused, and the
+-- refusal says to copy each level; `inner` does, and edits in place.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+lists : List (List Int) → String
+lists xs = String.join (List.map xs λl → String.join (List.map l String.fromInt) ",") ";"
+
+
+outer : ⊤ → String
+outer ⊤ =
+    r = Ref.make [ [ 0 ] ]
+    c = List.copy (Ref.get r)
+    d = List.map c λl → List.push l 1
+    "${lists d} ${lists (Ref.get r)}"
+
+
+filtered : ⊤ → String
+filtered ⊤ =
+    r = Ref.make [ [ 0 ], [] ]
+    c = List.filter (Ref.get r) λl → List.length l > 0
+    d = List.map c λl → List.push l 1
+    "${lists d} ${lists (Ref.get r)}"
+
+
+inner : ⊤ → String
+inner ⊤ =
+    r = Ref.make [ [ 0 ] ]
+    c = List.map (Ref.get r) List.copy
+    d = List.map c λl → List.push l 1
+    "${lists d} ${lists (Ref.get r)}"
+
+
+main : Program
+main = Node.printLines [ outer ⊤, filtered ⊤, inner ⊤ ]

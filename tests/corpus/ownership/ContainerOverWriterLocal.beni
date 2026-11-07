@@ -1,0 +1,19 @@
+-- ownership (v2): a container's comparison is handed `Key`'s own, which
+-- writes the list it is handed (ownership-v2.md §2.13.13). `[ Key xs ] < []`
+-- writes `xs`, so keeping `xs` beside it is refused.
+type Key
+    = Key (List Int)
+
+
+pub compare : Key, Key → Order
+compare a b =
+    case a of
+        Key l →
+            if List.length (List.push l 1) > 0 then
+                LT
+            else
+                GT
+
+
+pub viaListLt : List Int → Bool × List Int
+viaListLt xs = ( [ Key xs ] < [], xs )

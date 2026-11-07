@@ -1,0 +1,1 @@
+The control of SanitiserSplitInClosure (#1956): a local loop stores each head once, so v1 accepts the edit and the sanitised run prints the golden.

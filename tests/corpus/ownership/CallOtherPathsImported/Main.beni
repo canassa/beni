@@ -1,0 +1,58 @@
+-- ownership (project): `CallOtherPaths` with every callee in another module
+-- (ownership-v2.md §2.11 item 3, §8 S3b slice 3): a call of an imported
+-- declaration applies the class its module's block publishes, exactly as a
+-- call of one of this module, so each of the three rules keeps its twins.
+-- (a) `keepAll` answers its tree after pushing a list of it: refused over
+-- one list in both subtrees; `pushA` answers a sibling list: accepted.
+-- (b) `elems` writes one element and answers an element of another:
+-- refused over `[ em, [ em ] ]`, accepted over distinct lists. (c)
+-- `twoPaths` writes `.x` and answers `.y`: refused over `{ x = xs, y = xs
+-- }`, accepted over two lists. And through `⟲`, across two blocks:
+-- `Paths.viaLeft` owes `Deep.twoDepths`' `excl` to its caller, refused over
+-- one list at both depths, accepted over two.
+import Deep exposing (Leaf, Node)
+import Paths
+
+
+pub keepShared : ⊤ → Int
+keepShared ⊤ =
+    xs = [ 1 ]
+    ( l, _ ) = Paths.keepAll (Node Leaf xs (Node Leaf xs Leaf))
+    List.length l
+
+
+pub siblingFresh : ⊤ → Int
+siblingFresh ⊤ =
+    ( l, _ ) = Paths.pushA { a = [ 1 ], b = [ 2 ] }
+    List.length l
+
+
+pub elemsShared : ⊤ → Int
+elemsShared ⊤ =
+    em = []
+    ( l, _ ) = Paths.elems [ em, [ em ] ]
+    List.length l
+
+
+pub elemsDistinct : ⊤ → Int
+elemsDistinct ⊤ =
+    ( l, _ ) = Paths.elems [ [ [ 1 ] ], [ [ 2 ] ] ]
+    List.length l
+
+
+pub sameParam : List Int → List Int × List Int
+sameParam xs = Paths.twoPaths { x = xs, y = xs }
+
+
+pub twoParams : List Int, List Int → List Int × List Int
+twoParams xs ys = Paths.twoPaths { x = xs, y = ys }
+
+
+pub depthsShared : ⊤ → Int
+depthsShared ⊤ =
+    xs = [ 0 ]
+    Paths.viaLeft (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub depthsDistinct : ⊤ → Int
+depthsDistinct ⊤ = Paths.viaLeft (Node (Node (Node Leaf [ 1 ] Leaf) [ 2 ] Leaf) [] Leaf)

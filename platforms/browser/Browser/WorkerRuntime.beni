@@ -1,0 +1,7 @@
+import Browser.Worker as Worker
+
+
+pub run :
+      Worker.Program config state protocol
+    → ⊤
+run definition = Worker.run definition

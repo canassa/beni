@@ -1,0 +1,15 @@
+module LoanNamesValue
+  9:11 call List.map ls[*]: accepted param (<lambda> writes what List.map supplies it)
+  9:28 List.push l: accepted callback-param (List.map supplies it owned)
+  15:5 call LoanNamesValue.edit r[*]: rejected unknown: the list came from JavaScript (LoanNamesValue.edit writes π1[*]) (approx)
+  22:5 call LoanNamesValue.edit r[*]: rejected unknown: the list came from JavaScript (LoanNamesValue.edit writes π1[*]) (approx)
+  32:5 call LoanNamesValue.edit r[*]: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (LoanNamesValue.edit writes π1[*]) (approx)
+  38:5 call LoanNamesValue.edit r[*]: rejected unknown: the list came from JavaScript (LoanNamesValue.edit writes π1[*]) (approx)
+  summary edit: π1 R, π1[*] AW[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*], [*][*] ~condition(fresh2) ~π1[*][*], fresh3{excl π1}; xreq spine π1[*]
+  summary byCore: π1 R, π1[*]#Ref.0 E; res [*] ~condition(fresh1) ~fresh1{lost} ~⊤{lost}r{lost}, [*][*] ~condition(fresh2) ~fresh2{lost} ~⊤{lost}r{lost}, fresh3{lost}
+  summary byLocal: π1 R, π1[*]#Ref.0 E; res [*] ~condition(fresh1) ~fresh1{lost} ~⊤{lost}r{lost}, [*][*] ~condition(fresh2) ~fresh2{lost} ~⊤{lost}r{lost}, fresh3{lost}
+  summary byAlias: π1 R, π1[*] RAw[storage]; res [*] ~condition(fresh1) ~fresh1{lost} ~⊤call{lost}r{lost}, [*][*] ~condition(fresh2) ~fresh2{lost} ~⊤call{lost}r{lost}, [*][*]⋆ ~condition(fresh3) ~condition(fresh5) ~π1[*], [*]⋆ ~condition(fresh3) ~condition(fresh4) ~π1[*], fresh6{lost}
+  summary byLambda: π1 R, π1[*]#Ref.0 E; res [*] ~condition(fresh1) ~fresh1{lost} ~⊤{lost}r{lost}, [*][*] ~condition(fresh2) ~fresh2{lost} ~⊤{lost}r{lost}, fresh3{lost}
+  demands 6: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause unknown 4

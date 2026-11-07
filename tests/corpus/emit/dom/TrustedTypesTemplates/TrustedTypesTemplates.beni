@@ -1,0 +1,53 @@
+-- Templates under Trusted Types (backend.md §15.3, *Templates under
+-- Trusted Types*; #2208). The project's beni.json says
+-- `"trustedTypes": true`, so no template is parsed through `innerHTML`:
+-- each is `Rt.built`, handed the nodes the page's parser would make of
+-- the HTML `template` would have been handed, with the same flags. A
+-- string is a text node, `0` an empty comment, `[name, attributes,
+-- …children]` an element, its attributes `0` or `[name, value, …]` with
+-- references decoded. The walks and patches are the ones of an ordinary
+-- build. Shown: a template with no flag; a custom element (flag 1); an
+-- SVG element wrapped in `<svg>` and taken off (2); several nodes (4);
+-- several nodes among which an SVG element stands (2 and 4); a `<!>`
+-- marker; escaped text and attribute values; escapable raw text; and HTML
+-- inside a `<foreignObject>`. No `innerHTML`, `template` or `templateOf`
+-- is written. The fixture carries a platform layered on `browser` only so
+-- that the build reads its beni.json, as an application's build does.
+import Html exposing (Html)
+
+
+pub plain : String → Html msg
+plain name =
+    <div class="a &amp; b" title="say &quot;hi&quot;">
+        <p>x &lt; y &amp; z</p>
+        <textarea>a &lt; b</textarea>
+        <span>{name}</span>
+    </div>
+
+
+pub custom : Html msg
+custom = <my-widget id="w">inside</my-widget>
+
+
+pub shape : String → Html msg
+shape fill = <rect width="2" height="2" fill={fill} />
+
+
+pub several : String, String → Html msg
+several a b = <>{a}<b>between</b>{b}</>
+
+
+pub drawing : String → Html msg
+drawing label =
+    <>
+        <circle r="1" />
+        <text>{label}</text>
+    </>
+
+
+pub picture : String → Html msg
+picture link =
+    <svg viewBox="0 0 10 10">
+        <use xlink:href="#a" />
+        <foreignObject><div class="in">{link}</div></foreignObject>
+    </svg>

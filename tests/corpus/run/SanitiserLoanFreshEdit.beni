@@ -1,0 +1,32 @@
+-- A runtime check of an edit in place while a loan of a list is live
+-- (`ownership-v2.md` §2.8 step 5, *made after*). A loan (`Deferred.wait`,
+-- `Task.join`) is `⊤`, so v2 read it as a holder of every list, and refused
+-- every edit in place while it lived, even of a list made after it. A loan of
+-- plain data cannot come to hold an object made after it, so a list literal
+-- or a copy made after the loan is edited in place. Each line is the edited
+-- list, then the loan.
+import Deferred
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+main : Program
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
+    _ = Deferred.complete d [ 1, 2, 3 ]
+    a = Deferred.wait d
+    a2 = List.push [ 9 ] 4
+    f = Task.spawn λ⊤ → [ 5, 6 ]
+    b = Task.join f
+    c = Task.join f
+    b2 = List.push (List.copy b) 7
+    Node.printLines [ "${ints a2} ${ints a}", "${ints b2} ${ints c}" ]

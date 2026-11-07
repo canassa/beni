@@ -1,0 +1,19 @@
+-- `Js.module` is a static namespace import (`boundary.md` §4.2; `backend.md`
+-- §9, *Host imports*): one `import * as M$$node_path from "node:path";`
+-- first among the module's statements, every call of that specifier
+-- reading the one binding, and a second specifier its own statement.
+-- Under `--release` the statements move to the top of the one file.
+-- Built with `--core`, which is what lets a root-package module import `Js`.
+import Js
+
+
+pub base : String → String
+base p = Js.to (Js.call (Js.module "node:path") "basename" [ Js.from p ])
+
+
+pub ext : String → String
+ext p = Js.to (Js.call (Js.module "node:path") "extname" [ Js.from p ])
+
+
+pub cwd : ⊤ → String
+cwd ⊤ = Js.to (Js.call (Js.get (Js.module "node:process") "default") "cwd" [])

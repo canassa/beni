@@ -1,0 +1,57 @@
+-- ownership (v2; ownership-v2.md §2.11 item 3, rule (a), #1546): `dup`
+-- answers its child `l` beside the recursive call `dup l`, which writes
+-- `l`'s list. The body is refused at that call (`later-use`): the result
+-- would hold `l`'s list twice, once written. `drive` passes one tree at
+-- both children, `dup (N [] t t)`, and is accepted at `#N.1#N.0`: it gives
+-- up `t`, and the copy at `#N.2` is not read by `dup` (its class has no
+-- mark there), so no other path of the argument sees the write. `second`
+-- also writes the result's `#N.1#N.0` and is accepted. Run with copies
+-- and with these verdicts in place, `drive (N [ 5 ] (N [ 6 ] L L) L)` is
+-- the same; only the refused writes in `dup` change it. `kept` reads `t`
+-- after the call, refused `alias`. `other` answers its second child,
+-- which the argument fills with the same tree, refused `disjoint`.
+type T
+    = N (List Int) T T
+    | L
+
+
+dup : T → T
+dup t =
+    case t of
+        N v l _ →
+            N (List.push v 1) (dup l) l
+
+        L →
+            L
+
+
+pub drive : T → T
+drive t = dup (N [] t t)
+
+
+pub second : T → List Int
+second t =
+    case dup (N [] t t) of
+        N _ (N b _ _) _ →
+            List.push b 9
+
+        _ →
+            []
+
+
+pub kept : T → T × T
+kept t = ( dup (N [] t t), t )
+
+
+other : T → T
+other t =
+    case t of
+        N v l r →
+            N (List.push v 1) (other l) r
+
+        L →
+            L
+
+
+pub otherDrive : T → T
+otherDrive t = other (N [] t t)

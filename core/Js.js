@@ -16,6 +16,10 @@ export const same = (a, b) => a === b;
 export const isNull = (v) => v === null;
 export const isUndefined = (v) => v === undefined;
 export const isNullish = (v) => v == null;
+export const lt = (a, b) => a < b;
+export const gt = (a, b) => a > b;
+export const le = (a, b) => a <= b;
+export const ge = (a, b) => a >= b;
 export const bitAnd = (a, b) => a & b;
 export const bitOr = (a, b) => a | b;
 export const bitXor = (a, b) => a ^ b;
@@ -30,6 +34,12 @@ export const instanceOf = (v, c) => v instanceof c;
 // literal*); passed as a value, the two strings make the same expression.
 export const regExp = (pattern, flags) => new RegExp(pattern, flags);
 export const global = (name) => globalThis[name];
+// A call is always written as a static import of its literal (boundary.md
+// §4.2, *`module`*); a static import cannot be a value, so passed as a value
+// it is a defect.
+export const module = (specifier) => {
+  throw new Error(`Js.module is written with its specifier literal, "${specifier}", where the build imports the module; it is not a value`);
+};
 export const get = (o, name) => o[name];
 export const set = (o, name, v) => {
   o[name] = v;

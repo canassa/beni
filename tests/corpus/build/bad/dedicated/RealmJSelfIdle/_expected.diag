@@ -1,0 +1,1 @@
+[{"code":"worker_realm_violation","severity":"error","span":{"file":"Main.beni","start":{"line":8,"col":1},"end":{"line":8,"col":7}},"title":"WORKER REALM VIOLATION","message":"`RealmJs.selfIdle` uses JavaScript access `self.requestIdleCallback`, which is\nnot proved available in entry realm `dedicatedWorker`."}]

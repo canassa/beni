@@ -1,0 +1,12 @@
+pub type Holder a
+    = Holder (⊤ → a)
+
+
+pub make : (⊤ → a) → Holder a
+make init = Holder init
+
+
+pub invoke : Holder a → ⊤
+invoke (Holder init) =
+    _ = init ⊤
+    ⊤

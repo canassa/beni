@@ -1,0 +1,140 @@
+-- Initialization may suspend, typed init failure confirms cleanup, and abort
+-- reports abandoned cleanup to every outstanding ticket.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Task
+
+
+worker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init =
+            λ_ config →
+                Task.yieldNow ⊤
+                if config == "bad" then Err "unavailable" else Ok config
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ state request →
+                if request == "wait" then
+                    Task.never ⊤
+                else if request == "bad" then
+                    Err "rejected"
+                else
+                    Ok (state ++ request)
+        }
+
+
+closingWorker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+closingWorker =
+    Worker.program
+        { init =
+            λ_ _ →
+                child = Task.spawn λ⊤ → Task.never ⊤
+                Task.cancel child
+                Task.join child
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → Ok "unreachable"
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    closedOwner = Task.openRoot ⊤
+    Task.closeRoot closedOwner
+    closedGood =
+        case Worker.open closedOwner worker "state:" Worker.options of
+            Err { reason, cleanup } →
+                case reason of
+                    Worker.ClosedBeforeReady →
+                        cleanup == Worker.Confirmed
+                    _ →
+                        False
+            Ok leaked →
+                _ = Worker.abort leaked
+                False
+    early = Worker.open owned closingWorker "" Worker.options
+    earlyGood =
+        case early of
+            Err { reason, cleanup } →
+                case reason of
+                    Worker.ClosedBeforeReady →
+                        cleanup == Worker.Confirmed
+                    _ →
+                        False
+            Ok _ →
+                False
+    failed = Worker.open owned worker "bad" Worker.options
+    initGood =
+        case failed of
+            Err { reason, cleanup } →
+                case reason of
+                    Worker.InitializationFailed "unavailable" →
+                        cleanup == Worker.Confirmed
+                    _ →
+                        False
+            Ok _ →
+                False
+    case Worker.open owned worker "state:" Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            reply = Worker.call handle "bad"
+            failureGood =
+                case reply of
+                    Err (Worker.Application "rejected") →
+                        True
+                    _ →
+                        False
+            pending =
+                case Worker.prepare "wait" of
+                    Ok prepared →
+                        Worker.send handle prepared
+                    Err _ →
+                        Err Worker.ChannelClosed
+            abandoned = Worker.abort handle
+            pendingGood =
+                case pending of
+                    Ok ticket →
+                        case Worker.await ticket of
+                            Err (Worker.Transport Worker.CleanupAbandoned) →
+                                True
+                            _ →
+                                False
+                    Err _ →
+                        False
+            if
+                closedGood
+                    && earlyGood
+                    && initGood
+                    && failureGood
+                    && pendingGood
+                    && abandoned == Worker.Abandoned
+            then
+                "lifecycle passed"
+            else
+                "lifecycle failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

@@ -1,0 +1,41 @@
+-- ownership: a recursive forwarding helper answers its argument's subtree
+-- by reference (ownership-v2.md Appendix B, RecursiveCallView; §8 S3b slice
+-- 4). `leftmost` is a recursive group. Writing the subtree it answers while
+-- the whole tree is read after is refused: the tree reaches that subtree.
+-- With a second tree read after instead, the write is accepted.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+leftmost : Tree → Tree
+leftmost t =
+    case t of
+        Node l _ _ →
+            case l of
+                Leaf →
+                    t
+
+                _ →
+                    leftmost l
+
+        Leaf →
+            t
+
+
+pushRoot : Tree → List Int
+pushRoot t =
+    case t of
+        Node _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []
+
+
+refused : Tree → List Int × Tree
+refused t = ( pushRoot (leftmost t), t )
+
+
+accepted : Tree, Tree → List Int × Tree
+accepted t u = ( pushRoot (leftmost t), u )

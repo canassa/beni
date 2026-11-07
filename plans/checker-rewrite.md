@@ -480,7 +480,8 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     operands from one stack (`JsIr.pushOperands`). Past the limit the only recursion left is an
     `arrow`'s block body. Bench (ReleaseFast, `--generate=100000`, medians of 7 interleaved): emit
     52.23 ms against 52.21 on 7fd409e. Every `run/`, `emit/` and `emit/release/` golden is
-    byte-identical without re-blessing.
+    byte-identical without re-blessing. *Amended 2026-11-04 (#1171, the owner's decision):* the
+    limit is 112 levels, not 256 (CK-81's amendment has the numbers).
   - Running, not only building, at 60 000 fields took two more changes. First,
     `static-dispatch-spike.md` §9.2's **wide form** (spec amended first; A.87): past 4 096
     evidence parameters a derived function of any shape takes one array `$m`, and every caller

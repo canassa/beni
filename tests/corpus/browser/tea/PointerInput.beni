@@ -1,6 +1,9 @@
 -- Pointer input (boundary.md §9.8.20): each of the six pointer events hands
--- its handler a `Html.Pointer`. The arena is laid out at 40, 30, so in
--- Chrome a point's `clientX` is 40 more than its `localX`, and the
+-- its handler a `Html.Pointer`. The arena's inline style places it at
+-- 40, 30, so a point's `clientX` is 40 more than its `localX`, in Chrome
+-- and under happy-dom, whose driver gives such an element Chrome's box
+-- (`tests/corpus/README.md`, *layout*). So the gates fail this page when
+-- the extractor subtracts no box, or the box of the target. The
 -- transcript shows only the local point, the same in both DOMs. `Down`
 -- carries the `Pointer` itself, and `update` reads its point after the
 -- dispatch, when `currentTarget` is null: the extractor took the point

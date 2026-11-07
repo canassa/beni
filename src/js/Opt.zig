@@ -1,5 +1,6 @@
 //! `backend.md` §9's release optimiser, **item 1**: local dead bindings, and
-//! the single use that follows them. One pass over `JsIr`, per function body,
+//! the single use that follows them, and **item 6**: a forwarding lambda
+//! printed as its callee (`eta`). One pass over `JsIr`, per function body,
 //! between `Lower.lower` and `Print.print` and under `--release` only.
 //!
 //! `Reach` decided which declarations exist; this decides what is left inside
@@ -53,6 +54,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsIr = @import("JsIr.zig");
+const small_stack = @import("../small_stack.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -64,7 +66,9 @@ pub const Plan = struct {
     /// One bit per node index: a `const_decl` or `let_decl` the printer skips.
     dropped: []const u32 = &.{},
     /// One slot per NODE index: for the `ident` that is a binding's single
-    /// use, the node whose value takes its place.
+    /// use, the node whose value takes its place; for the `arrow` item 6
+    /// reduces (`eta`), the `ident` of its callee, which the printer writes
+    /// where the arrow stood.
     ///
     /// **Keyed by the use site and not by the name**, and that is not a
     /// detail. A local's `NameIndex` is shared across the whole module —
@@ -170,6 +174,13 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .binds = try arena.alloc(u32, ir.names.len),
         .assigned = try arena.alloc(bool, ir.names.len),
         .rebound = try arena.alloc(bool, ir.names.len),
+        .let_bound = try arena.alloc(bool, ir.names.len),
+        .func_bound = try arena.alloc(bool, ir.names.len),
+        .initialised = try arena.alloc(bool, ir.names.len),
+        .value_of = try arena.alloc(Node.OptionalIndex, ir.names.len),
+        .top_stable = try arena.alloc(bool, ir.names.len),
+        .top_value = try arena.alloc(Node.OptionalIndex, ir.names.len),
+        .imported = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .pinned = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
@@ -182,6 +193,24 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.dropped, 0);
     @memset(o.pinned, 0);
     @memset(o.inlined, .none);
+    @memset(o.top_stable, false);
+    @memset(o.top_value, .none);
+    @memset(o.imported, false);
+    // Item 6's callee may be a name this file binds at the top level by a
+    // `const` or a function, which nothing emitted assigns. A top-level
+    // `let` (a `Js.Ref` of the module) is not one, and neither is a name
+    // this module's `import` binds — a sibling's export, aliased, which the
+    // printer would veto anyway (`Print.resolve`).
+    for (ir.extraSlice(ir.body, Index)) |top| {
+        const d = ir.data(top);
+        switch (ir.tag(top)) {
+            .const_decl, .func_decl, .gen_decl => if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |i| {
+                if (i < o.top_stable.len) o.top_stable[i] = true;
+                if (ir.tag(top) == .const_decl and i < o.top_value.len) o.top_value[i] = @as(Index, @fromBackingInt(@intCast(d.rhs))).toOptional();
+            },
+            else => {},
+        }
+    }
     // A statement that runs a store of a record update written in place
     // is the update, never an unused pure value (`ownership-checker.md`
     // §31.10, *The optimiser barrier*).
@@ -244,6 +273,40 @@ const Opt = struct {
     /// itself — `x = v`, not `x.p = v`: what `copy` asks, since writing a
     /// property of a binding's object leaves the binding the same name.
     rebound: []bool,
+    /// Whether a `let_decl` in this declaration binds the name: a `Js.Ref`,
+    /// a `case` result filled by its arms, a loop's slot. Item 6 never
+    /// reduces to one, since the lambda read it when called and the name
+    /// would be read where the lambda was made.
+    let_bound: []bool,
+    /// Whether a `func_decl` or `gen_decl` in this declaration binds the
+    /// name: hoisted, so bound at every statement of its list, before or
+    /// after (item 6 needs no order for one).
+    func_bound: []bool,
+    /// Whether the `const_decl` that binds the name in this declaration has
+    /// been planned: the name is bound at every statement after it. Item
+    /// 6's local callee must be one (`backend.md` §9 item 6, amended
+    /// 2026-10-29): a `const` is bound at its statement, so an arrow
+    /// evaluated before it would read the name before its initialisation.
+    initialised: []bool,
+    /// The value of the one `const_decl` binding the name in this
+    /// declaration, or `none`: what item 6 follows to refuse a `const`
+    /// that holds an import (`eta`'s alias walk).
+    value_of: []Node.OptionalIndex,
+    /// One slot per name, for the whole module: bound at the top level of
+    /// this file by a `const` or a function, which nothing emitted assigns
+    /// (`countStmt` asserts it). Item 6's callee may be one; a name this
+    /// module's `import` binds is not one.
+    top_stable: []bool,
+    /// The value of a top-level `const_decl` of this file, or `none`:
+    /// `value_of` for the module's own level.
+    top_value: []Node.OptionalIndex,
+    /// One slot per name, for the whole module: bound by a specifier of an
+    /// `import_stmt` — a sibling's export, the runtime's, or under
+    /// `--release` another beni module's emitted function. Item 6 never
+    /// reduces to a `const` that holds one: the printer's veto sees only
+    /// the name written, and a hand-written function may read what an
+    /// emitted one never does.
+    imported: []bool,
     dropped: []u32,
     /// One bit per node: a statement a call was moved into (`readsBefore`'s
     /// rule), never dropped for want of a read, though, unlike a `kept` one,
@@ -292,6 +355,10 @@ const Opt = struct {
         o.binds[i] = 0;
         o.assigned[i] = false;
         o.rebound[i] = false;
+        o.let_bound[i] = false;
+        o.func_bound[i] = false;
+        o.initialised[i] = false;
+        o.value_of[i] = .none;
     }
 
     fn use(o: *Opt, n: NameIndex) void {
@@ -320,6 +387,12 @@ const Opt = struct {
         return @field(o, field)[i];
     }
 
+    /// A per-declaration flag, false for a slot this declaration never touched.
+    fn flagOf(o: *Opt, i: u32, comptime field: []const u8) bool {
+        if (o.stamp[i] != o.current) return false;
+        return @field(o, field)[i];
+    }
+
     /// One walk of a top-level declaration's statements. Every name-carrying
     /// slot is either a DECLARATION (the name slot of a declaration
     /// statement), a PROPERTY (a `member`'s key, a `property`'s key, the
@@ -333,22 +406,39 @@ const Opt = struct {
         switch (o.ir.tag(stmt)) {
             .import_stmt => {
                 const imp = o.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
-                for (o.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| o.declare(spec.local);
+                for (o.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                    o.declare(spec.local);
+                    if (spec.local.unwrap()) |i| if (i < o.imported.len) {
+                        o.imported[i] = true;
+                    };
+                }
             },
             .export_stmt => for (o.ir.extraSlice(JsIr.inlineRange(d), NameIndex)) |n| o.use(n),
             .const_decl => {
                 try o.binders.append(o.arena, stmt);
-                o.declare(@fromBackingInt(@intCast(d.lhs)));
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                o.declare(n);
+                if (n.unwrap()) |i| if (i < o.value_of.len) {
+                    o.value_of[i] = @as(Index, @fromBackingInt(@intCast(d.rhs))).toOptional();
+                };
                 try o.countExpr(@fromBackingInt(@intCast(d.rhs)));
             },
             .let_decl => {
                 try o.binders.append(o.arena, stmt);
-                o.declare(@fromBackingInt(@intCast(d.lhs)));
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                o.declare(n);
+                if (n.unwrap()) |i| if (i < o.let_bound.len) {
+                    o.let_bound[i] = true;
+                };
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try o.countExpr(v);
             },
             .func_decl, .gen_decl => {
                 try o.binders.append(o.arena, stmt);
-                o.declare(@fromBackingInt(@intCast(d.lhs)));
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                o.declare(n);
+                if (n.unwrap()) |i| if (i < o.func_bound.len) {
+                    o.func_bound[i] = true;
+                };
                 try o.countFunc(@fromBackingInt(@intCast(d.rhs)));
             },
             .assign_stmt => {
@@ -356,6 +446,10 @@ const Opt = struct {
                 if (o.ir.tag(@fromBackingInt(@intCast(d.lhs))) == .ident) if (@as(NameIndex, @fromBackingInt(@intCast(o.ir.data(@fromBackingInt(@intCast(d.lhs))).lhs))).unwrap()) |i| if (i < o.rebound.len) {
                     o.touch(i);
                     o.rebound[i] = true;
+                    // Item 6 rests on it: no emitted statement rebinds a
+                    // top-level `const` or function (a `const` cannot be
+                    // assigned; module state is a `let`).
+                    std.debug.assert(!o.top_stable[i]);
                 };
                 try o.countExpr(@fromBackingInt(@intCast(d.lhs)));
                 try o.countExpr(@fromBackingInt(@intCast(d.rhs)));
@@ -501,7 +595,15 @@ const Opt = struct {
     fn planStmt(o: *Opt, stmt: Index) Allocator.Error!void {
         const d = o.ir.data(stmt);
         switch (o.ir.tag(stmt)) {
-            .const_decl => try o.planExpr(@fromBackingInt(@intCast(d.rhs))),
+            // Planned, the `const` is bound at every statement after it
+            // (`initialised`); an arrow in its own value, or in an earlier
+            // statement, is evaluated before it is.
+            .const_decl => {
+                try o.planExpr(@fromBackingInt(@intCast(d.rhs)));
+                if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |i| if (i < o.initialised.len and o.stamp[i] == o.current) {
+                    o.initialised[i] = true;
+                };
+            },
             .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try o.planExpr(v),
             .func_decl, .gen_decl => try o.planFunc(@fromBackingInt(@intCast(d.rhs))),
             .assign_stmt => {
@@ -560,10 +662,116 @@ const Opt = struct {
         while (o.stack.items.len > base) {
             const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
-                .arrow => try o.planFunc(@fromBackingInt(@intCast(o.ir.data(node).lhs))),
+                .arrow => {
+                    const record: JsIr.ExtraIndex = @fromBackingInt(@intCast(o.ir.data(node).lhs));
+                    try o.planFunc(record);
+                    if (o.ir.data(node).rhs == Node.arrow_plain) o.eta(node, record);
+                },
                 else => try o.ir.pushOperands(o.arena, &o.stack, node),
             }
         }
+    }
+
+    /// §9 item 6: a plain arrow whose body is exactly `return f(p₁, …, pₙ)`
+    /// over its own parameters, in order, each once, is printed as `f` when
+    /// `f` denotes the same function at every call of the arrow as where the
+    /// arrow was made — a parameter, a local `const` or a top-level `const`
+    /// or function of this file, or another module's export, that no
+    /// `assign_stmt` targets. A name the build imports from a hand-written
+    /// file — a sibling's export, the runtime — is the printer's to veto
+    /// (`Print.resolve`), since only the join knows the imports: a sibling
+    /// may read `arguments` or `this` where emitted code never does. Beni
+    /// has no function identity, so the
+    /// two objects the lambda gave and the one `f` is are told apart by no
+    /// program. Decided after the arrow's own lists were planned, and after
+    /// every list that encloses the arrow (`planList` plans a list's
+    /// bindings before it descends into their statements), so a callee item
+    /// 1 substitutes is already recorded and is read through the plan:
+    /// `const g = f; … λa b → g a b` reduces to `f`, with the tests run on
+    /// `f`, the name the printer writes; a callee whose substitution is not
+    /// a name (a function made once and used here) is left as written. A
+    /// substitution's target is never itself substituted (`compress`) and an
+    /// arrow's replacement is always an `ident`, so `Print.resolve` ends in
+    /// two steps.
+    fn eta(o: *Opt, arrow: Index, record: JsIr.ExtraIndex) void {
+        const f = o.ir.extraData(record, JsIr.Func);
+        const body = o.ir.extraSlice(f.body(), Index);
+        if (body.len != 1 or o.ir.tag(body[0]) != .return_stmt) return;
+        const call = @as(Node.OptionalIndex, @fromBackingInt(@intCast(o.ir.data(body[0]).lhs))).unwrap() orelse return;
+        if (o.ir.tag(call) != .call) return;
+        // A `Js.apply`: the callee is a host value by type, which may read
+        // the arguments a host passes past the lambda's, or `this`.
+        if (o.ir.host(call)) return;
+        const cd = o.ir.data(call);
+        const callee: Index = @fromBackingInt(@intCast(cd.lhs));
+        if (o.ir.tag(callee) != .ident) return;
+        const params = o.ir.extraSlice(f.params(), NameIndex);
+        const args = o.ir.extraSlice(o.ir.subRange(@fromBackingInt(@intCast(cd.rhs))), Index);
+        if (args.len != params.len) return;
+        const written: NameIndex = @fromBackingInt(@intCast(o.ir.data(callee).lhs));
+        if (written == .none) return;
+        for (params, args, 0..) |pn, arg, i| {
+            if (o.ir.tag(arg) != .ident) return;
+            if (@as(NameIndex, @fromBackingInt(@intCast(o.ir.data(arg).lhs))) != pn) return;
+            if (pn == written) return;
+            for (params[0..i]) |q| if (q == pn) return;
+        }
+        // The name the printer writes: item 1's substitution of the callee
+        // when it has one and it is a name, else the callee itself.
+        var target = callee;
+        if (o.inlined[callee.int()].unwrap()) |r| {
+            if (o.ir.tag(r) != .ident or o.inlined[r.int()] != .none) return;
+            target = r;
+        }
+        const name: NameIndex = @fromBackingInt(@intCast(o.ir.data(target).lhs));
+        const i = name.unwrap() orelse return;
+        if (i >= o.uses.len) return;
+        for (o.mutable) |m| if (m == name) return;
+        if (o.flagOf(i, "assigned")) return;
+        const bound_here = o.readOf(i, "binds");
+        if (bound_here == 0) {
+            // Not a binding of this declaration: a top-level `const` or
+            // function of this file, or another module's export (a
+            // qualified name; a sibling's is the printer's to veto), or
+            // nothing this pass may rely on — the module's own top-level
+            // `let`, or a name this module's `import` binds.
+            if (!(o.top_stable[i] or o.ir.name(name).module != .none)) return;
+        } else {
+            // Bound once here: a parameter (no declaration), a local
+            // `const` or an inner function (one declaration). Never a `let`,
+            // and never a name bound twice, whose one `NameIndex` would
+            // then mean two bindings. A local `const` only once its
+            // statement is planned: bound at the arrow's evaluation, not
+            // merely in scope there (an inner function is hoisted).
+            if (bound_here != 1 or o.readOf(i, "decls") > 1 or o.flagOf(i, "let_bound")) return;
+            if (o.readOf(i, "decls") == 1 and !o.flagOf(i, "func_bound") and !o.flagOf(i, "initialised")) return;
+        }
+        // The name's value: a `const` that holds a name an `import` binds,
+        // directly or through `const` aliases, holds a function this pass
+        // knows nothing of — a sibling's, which may read `arguments` or
+        // `this` — and the printer's veto sees only the name written. A
+        // `const` whose value is anything else, a parameter, a `let` and a
+        // function end the walk: what they hold is an emitted function, a
+        // `Js.Value` only a marked `Js.apply` calls, or a value a `Js.to`
+        // cast, whose writer answers for it (`boundary.md` §4.2).
+        var j = i;
+        var steps: u32 = 0;
+        while (steps < 64) : (steps += 1) {
+            const value = (if (o.readOf(j, "binds") != 0)
+                (if (o.readOf(j, "decls") == 1 and !o.flagOf(j, "let_bound")) o.value_of[j] else Node.OptionalIndex.none)
+            else if (o.top_stable[j]) o.top_value[j] else Node.OptionalIndex.none).unwrap() orelse break;
+            if (o.ir.tag(value) != .ident) break;
+            const held: NameIndex = @fromBackingInt(@intCast(o.ir.data(value).lhs));
+            const k = held.unwrap() orelse break;
+            if (k >= o.uses.len) break;
+            if (o.imported[k] or o.ir.name(held).module != .none) return;
+            j = k;
+        }
+        // At the bound the chain is not known to end in an emitted
+        // function: refuse, the safe exit. Unreachable today — an earlier
+        // pass folds a chain of `const` aliases to one — and kept so.
+        if (steps == 64) return;
+        o.inlined[arrow.int()] = target.toOptional();
     }
 
     fn list(o: *Opt, range: JsIr.SubRange) Allocator.Error!void {
@@ -840,7 +1048,7 @@ const Opt = struct {
             const d = o.ir.data(n);
             switch (o.ir.tag(n)) {
                 .ident => return @fromBackingInt(@intCast(d.lhs)),
-                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return .none,
+                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => return .none,
                 .member => n = @fromBackingInt(@intCast(d.lhs)),
                 else => return null,
             }
@@ -934,6 +1142,22 @@ const Opt = struct {
 
     const Before = enum { clean, dirty, found_clean, found_dirty };
 
+    /// `JsIr.pushOperands` behind a call, for `mayWriteIn` and `height`,
+    /// which recurse once per level. It is `inline` for the walks that keep
+    /// their own stack. Inlined into a walk that recurses, its whole switch
+    /// took space in every level's frame: in the Debug test binary
+    /// (self-hosted x86_64, 2026-11-04) a `mayWriteIn` level was 4 128 B and
+    /// a `height` level 4 224 B, so `height` at its cap needed more than
+    /// `small_stack.size` (#1843). Behind the call each level is 384 B. The
+    /// margin tests ("…'s levels take at most half of the small stack")
+    /// hold them; `noinline` keeps an optimiser from undoing it.
+    noinline fn operands(o: *Opt, kids: *std.ArrayList(Index), node: Index) Allocator.Error!void {
+        return o.ir.pushOperands(o.arena, kids, node);
+    }
+
+    /// The levels `mayWriteIn` recurses before it answers `dirty`.
+    const may_write_in_cap: u32 = 128;
+
     /// Whether `site` is reached in statement `stmt`'s own expressions, in
     /// evaluation order, before anything that may write.
     fn cleanBefore(o: *Opt, stmt: Index, site: Index) bool {
@@ -974,12 +1198,16 @@ const Opt = struct {
     /// deep counts as a write, so the fold is declined.
     fn mayWriteIn(o: *Opt, node: Index, site: ?Index, depth: u32) Before {
         if (site) |u| if (node == u) return .found_clean;
-        if (depth > 128) return .dirty;
+        if (depth > may_write_in_cap) {
+            // Where the recursion stops, for the margin test; empty outside tests.
+            small_stack.mark();
+            return .dirty;
+        }
         const tag = o.ir.tag(node);
         if (tag == .arrow) return .clean;
         var dirty = false;
         var kids: std.ArrayList(Index) = .empty;
-        o.ir.pushOperands(o.arena, &kids, node) catch return .dirty;
+        o.operands(&kids, node) catch return .dirty;
         // `pushOperands` pushes in reverse, so the last is evaluated first.
         var k = kids.items.len;
         while (k > 0) {
@@ -1032,6 +1260,9 @@ const Opt = struct {
 
     const Reads = enum { clean, found, bad };
 
+    /// The levels `readsTo` recurses before it answers `bad`.
+    const reads_to_cap: u32 = 128;
+
     /// Walk `node` in evaluation order toward `site`: `found` when it is
     /// reached having evaluated nothing but reads (`unchangedName`, a literal,
     /// a field read, an index read, a function made), always; `clean` when
@@ -1039,7 +1270,10 @@ const Opt = struct {
     /// operator that may convert, or `site` where it may not be evaluated.
     fn readsTo(o: *Opt, node: Index, site: Index, depth: u32) Reads {
         if (node == site) return .found;
-        if (depth > 128) return .bad;
+        if (depth > reads_to_cap) {
+            small_stack.mark();
+            return .bad;
+        }
         const d = o.ir.data(node);
         switch (o.ir.tag(node)) {
             .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk => return .clean,
@@ -1143,7 +1377,7 @@ const Opt = struct {
                 const r = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
                 if (r != .clean) return r;
                 return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                    .not, .type_of => .clean,
+                    .not, .type_of, .worker_definition_type => .clean,
                     else => .bad,
                 };
             },
@@ -1168,7 +1402,10 @@ const Opt = struct {
     /// it is never less than what `Builder.measure` would find.
     fn height(o: *Opt, node: Index, depth: u32) u32 {
         const n = JsIr.nesting;
-        if (depth > n.spill) return n.spill + 1;
+        if (depth > n.spill) {
+            small_stack.mark();
+            return n.spill + 1;
+        }
         const tag = o.ir.tag(node);
         if (tag == .ident) if (o.inlined[node.int()].unwrap()) |v| return o.height(v, depth + 1);
         if (tag == .arrow) return n.arrow;
@@ -1182,7 +1419,7 @@ const Opt = struct {
             else => 1,
         };
         var kids: std.ArrayList(Index) = .empty;
-        o.ir.pushOperands(o.arena, &kids, node) catch return n.spill + 1;
+        o.operands(&kids, node) catch return n.spill + 1;
         var most: u32 = 0;
         for (kids.items) |k| {
             most = @max(most, o.height(k, depth + 1));
@@ -1283,7 +1520,7 @@ const Opt = struct {
             .unary => {
                 const shape = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
                 return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                    .not, .type_of => .primitive,
+                    .not, .type_of, .worker_definition_type => .primitive,
                     .neg => if (shape == .primitive) .primitive else null,
                     .yield => null,
                 };
@@ -1424,8 +1661,6 @@ test "the empty plan drops nothing and substitutes nothing" {
     try testing.expectEqual(@as(?Index, null), p.replacement(@fromBackingInt(@intCast(9999))));
 }
 
-const small_stack = @import("../small_stack.zig");
-
 /// Twice the depth a walk that recursed once per link fails at on
 /// `small_stack.size`: a `countExpr` that recursed into each `&&`'s operands
 /// finished 2 000 links on the Debug test binary and overflowed at 5 000.
@@ -1460,12 +1695,7 @@ fn planDeepChain() !void {
     const ret = try testNode(&b, .return_stmt, chain.int(), 0);
     const params = try b.addNames(&.{a});
     const stmts = try b.addRange(&.{ bind, ret });
-    const func = try b.addRecord(JsIr.Func{
-        .params_start = params.start,
-        .params_end = params.end,
-        .body_start = stmts.start,
-        .body_end = stmts.end,
-    });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1480,6 +1710,134 @@ fn planDeepChain() !void {
 
 fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {
     return b.addNode(.{ .tag = tag, .pos = Node.no_pos, .data = .{ .lhs = lhs, .rhs = rhs } });
+}
+
+// ---- The capped walks' margins (#1171 item 2, #1843) ----------------------
+//
+// `mayWriteIn`, `readsTo` and `height` recurse once per level down to a
+// depth cap, and each marks the frame where it stops (`small_stack.mark`).
+// A margin test drives one walk to its cap on `small_stack` and fails when
+// the levels, with the entry frames above them, take more than half of the
+// stack: the other half is for what runs below the deepest level, such as
+// `testing.allocator`'s stack-trace capture under an allocation. A frame
+// that grows then fails a test, and does not overflow a depth test, which is
+// found only as a crash (#1171).
+//
+// In the Debug test binary (self-hosted x86_64, 2026-11-04), with about
+// 22 KB of entry frames above the first level:
+//
+//   - `mayWriteIn`: 129 levels of 384 B, 71 872 B in all, 6.9 %;
+//   - `readsTo`: 129 levels of 2 368 B, 327 776 B, 31.3 %;
+//   - `height`: 257 levels of 384 B, 120 544 B, 11.5 %.
+//
+// Before `operands`, `mayWriteIn` took 554 848 B (52.9 %) and `height`
+// more than the whole stack; `readsTo` does not call it. LLVM's Debug
+// frames are about the same size; its ReleaseSafe ones take at most 3.4 %.
+
+/// More links than any of the three caps: `height`'s is `nesting.spill`.
+const past_caps = 2 * JsIr.nesting.spill;
+
+const Walk = enum { may_write_in, reads_to, height };
+
+/// `function f(c, h, k, a) { const d = …; … }`, where `walk` meets a
+/// left-nested `&&` chain of `links` names, and whether `d`'s binding was
+/// folded away:
+///
+///   - `may_write_in`: `const d = c.x; const e = a && … && a; return d;`.
+///     `d` reads a field, so it moves past `e` only if `e`'s binding can
+///     write nothing (`writeFree`).
+///   - `reads_to`: `const d = h(c); return d && a && … && a;`. `d` moves into
+///     the return only if nothing but reads comes before it there
+///     (`readsBefore`).
+///   - `height`: `const d = h(a && … && a); return k(d);`. `d` moves into the
+///     return only if the two together are no taller than `nesting.spill`.
+fn walkCase(gpa: Allocator, walk: Walk, links: u32) !bool {
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const c = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const h = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const k = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const d = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const e = try b.intern(.local(@fromBackingInt(@intCast(5))));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(6))));
+    const x = try b.intern(.{ .module = .none, .base = @fromBackingInt(@intCast(7)), .tag = JsIr.Name.field });
+    const helpers = struct {
+        fn call(bb: *JsIr.Builder, callee: NameIndex, args: []const Index) !Index {
+            const record = try bb.addRecord(try bb.addRange(args));
+            return testNode(bb, .call, (try testNode(bb, .ident, callee.int(), 0)).int(), @backingInt(record));
+        }
+        /// `first && a && … && a`, `count` operands in all.
+        fn chain(bb: *JsIr.Builder, first: Index, operand: NameIndex, count: u32) !Index {
+            var link = first;
+            for (1..count) |_| {
+                const pair = try bb.addRecord(JsIr.Binary{ .left = link, .right = try testNode(bb, .ident, operand.int(), 0) });
+                link = try testNode(bb, .binary, @backingInt(pair), @backingInt(JsIr.BinaryOp.logical_and));
+            }
+            return link;
+        }
+    };
+    const a_read = try testNode(&b, .ident, a.int(), 0);
+    const d_use = try testNode(&b, .ident, d.int(), 0);
+    var body: [3]Index = undefined;
+    const stmts: []const Index = switch (walk) {
+        .may_write_in => blk: {
+            const read = try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), x.int());
+            body[0] = try testNode(&b, .const_decl, d.int(), read.int());
+            body[1] = try testNode(&b, .const_decl, e.int(), (try helpers.chain(&b, a_read, a, links)).int());
+            body[2] = try testNode(&b, .return_stmt, d_use.int(), 0);
+            break :blk body[0..3];
+        },
+        .reads_to => blk: {
+            body[0] = try testNode(&b, .const_decl, d.int(), (try helpers.call(&b, h, &.{try testNode(&b, .ident, c.int(), 0)})).int());
+            body[1] = try testNode(&b, .return_stmt, (try helpers.chain(&b, d_use, a, links)).int(), 0);
+            break :blk body[0..2];
+        },
+        .height => blk: {
+            body[0] = try testNode(&b, .const_decl, d.int(), (try helpers.call(&b, h, &.{try helpers.chain(&b, a_read, a, links)})).int());
+            body[1] = try testNode(&b, .return_stmt, (try helpers.call(&b, k, &.{d_use})).int(), 0);
+            break :blk body[0..2];
+        },
+    };
+    const params = try b.addNames(&.{ c, h, k, a });
+    const range = try b.addRange(stmts);
+    const func = try b.addFunc(params, range);
+    const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try run(arena_state.allocator(), &ir);
+    return plan.isDropped(stmts[0]);
+}
+
+/// On `small_stack`: `walk` folds `d` under its cap and marks nothing, and
+/// declines past it, where its levels must take at most half of the stack.
+fn walkMargin(walk: Walk, cap: u32) !void {
+    try testing.expect(try walkCase(testing.allocator, walk, 8));
+    try testing.expectEqual(@as(usize, 0), small_stack.deepest());
+    try testing.expect(!try walkCase(testing.allocator, walk, past_caps));
+    const used = small_stack.deepest();
+    try testing.expect(used != 0);
+    if (used > small_stack.size / 2) {
+        std.debug.print("`{t}` at its cap of {d} levels took {d} B of the {d} B small stack, more than half\n", .{
+            walk, cap, used, small_stack.size,
+        });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "mayWriteIn's levels take at most half of the small stack" {
+    try small_stack.run(walkMargin, .{ Walk.may_write_in, Opt.may_write_in_cap });
+}
+
+test "readsTo's levels take at most half of the small stack" {
+    try small_stack.run(walkMargin, .{ Walk.reads_to, Opt.reads_to_cap });
+}
+
+test "height's levels take at most half of the small stack at nesting.spill" {
+    try small_stack.run(walkMargin, .{ Walk.height, JsIr.nesting.spill });
 }
 
 test "a binding nothing reads is kept when it writes a record in place" {
@@ -1503,12 +1861,7 @@ test "a binding nothing reads is kept when it writes a record in place" {
     const ret = try testNode(&b, .return_stmt, (try testNode(&b, .null_lit, 0, 0)).int(), 0);
     const params = try b.addNames(&.{r});
     const stmts = try b.addRange(&.{ drop_y, keep_x, ret });
-    const func = try b.addRecord(JsIr.Func{
-        .params_start = params.start,
-        .params_end = params.end,
-        .body_start = stmts.start,
-        .body_end = stmts.end,
-    });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1549,7 +1902,7 @@ fn nextStatementCase(gpa: std.mem.Allocator, call_first: bool, between: bool) !b
     const body: []const Index = if (between) &.{ write, bind, g_stmt, ret } else &.{ write, bind, ret };
     const params = try b.addNames(&.{ c, g, k });
     const stmts = try b.addRange(body);
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1625,7 +1978,7 @@ fn readsCase(gpa: std.mem.Allocator, shape: ReadsShape, listed: bool) !bool {
     };
     const params = try b.addNames(&.{ c, g, k, h, e, t });
     const stmts = try b.addRange(&.{ bind, next });
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1684,7 +2037,7 @@ test "an alias of a moved call is not moved again where the call may not go" {
     const ret = try testNode(&b, .return_stmt, cond.int(), 0);
     const params = try b.addNames(&.{ c, h, t });
     const stmts = try b.addRange(&.{ bind, alias, ret });
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);

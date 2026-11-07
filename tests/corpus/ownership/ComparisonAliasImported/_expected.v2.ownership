@@ -1,0 +1,27 @@
+module Helpers
+  account always: source 7, baseline 17, growth 0 of 65536, total 17, continuation 9 of 7168, demands 1, direct_data lanes 2, transfer_settlement lanes 8
+  crossing: reads 0, redone 0, base moves 0
+  summary always: unused
+  block: 188 bytes, hash b088a5b305e41b8c
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Inner
+  9:39 List.push a: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  account sameLength: source 20, baseline 293, growth 0 of 65536, total 293, continuation 191 of 20480, demands 28, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 21, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary sameLength: π1#T.0 RW, π2#T.0 R
+  unchecked compare: lines 16-17 (not built: ext_value)
+  account compare: source 5, baseline 33, growth 0 of 65536, total 33, continuation 29 of 5120, demands 0, transfer_settlement lanes 6
+  summary compare: not built: ext_value (pessimistic)
+  block: 724 bytes, hash d10a3a4b3dd4ba40
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+module Main
+  12:14 Inner.sameLength x#T.0: accepted param
+  account same: source 9, baseline 214, growth 0 of 65536, total 214, continuation 137 of 9216, demands 36, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 10, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary same: π1 R, π1#T.0 RW, π2 R, π2#T.0 R
+  account less: source 9, baseline 118, growth 0 of 65536, total 118, continuation 32 of 9216, demands 1, direct_data lanes 2, liveness_index lanes 2, call_view lanes 1, transfer_settlement lanes 10
+  summary less: π1 R, π2 R
+  block: 672 bytes, hash 78e617f7374cf177
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause comparison 1

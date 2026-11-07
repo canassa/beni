@@ -1,0 +1,21 @@
+import Js
+
+
+-- A foreign factory whose returned function calls its callback.
+pub foreign impure mkRecv : ⊤ → (sync (⊤ → ⊤) → ⊤)
+
+
+pub type alias Ref a =
+    Js.Ref a
+
+
+pub jsRef : (⊤ → ⊤) → Ref (⊤ → ⊤)
+jsRef = Js.ref
+
+
+pub jsRead : Ref (⊤ → ⊤) → (⊤ → ⊤)
+jsRead = Js.read
+
+
+pub jsWrite : Ref (⊤ → ⊤), (⊤ → ⊤) → ⊤
+jsWrite = Js.write

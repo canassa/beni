@@ -1,0 +1,23 @@
+-- `SanitiserLabelRounds` with `k0` first (`ownership-v2.md` §2.11.3, *A virtual
+-- call is an evaluation's*, #2166): a declaration's place decides neither the labels'
+-- rounds nor the verdict.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    k0 = λv → v
+    k1 = λv → [ 0 ]
+    k2 = λv → if List.length v > 0 then v else q
+    r = List.foldl [ 1, 2, 3, 4, 5, 6 ] ( [], [], [] ) λi acc →
+        ( k0 acc.2, List.foldl [ 1, 2 ] acc.1 λj s → k1 s, k2 acc.0 )
+    w = ( r.0, r.1, r.2 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.0)

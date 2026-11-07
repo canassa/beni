@@ -1,0 +1,8 @@
+# v2 refuses each writer: a run of a `⊤` runs what its origin holds (§2.3.4, #2069).
+111:10 list_may_be_shared SanitiserTopOrigin.inRecord
+113:10 list_may_be_shared SanitiserTopOrigin.inLiteral
+115:10 list_still_used SanitiserTopOrigin.inRow
+117:10 list_may_be_shared SanitiserTopOrigin.supplied
+119:10 list_may_be_shared SanitiserTopOrigin.inCell
+121:10 list_may_be_shared SanitiserTopOrigin.captured
+123:10 list_may_be_shared SanitiserTopOrigin.returned

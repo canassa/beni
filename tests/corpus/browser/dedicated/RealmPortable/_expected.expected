@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"native page"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "8"
+<body>
+  <output>"8"</output>
+  <button>"launch"</button>
+</body>

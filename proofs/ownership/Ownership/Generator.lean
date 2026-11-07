@@ -38,6 +38,8 @@ def tNN : Ty := .list tN
 def fNN : Ty := .fn [tN] tN
 def fIN : Ty := .fn [.int] tN
 def fIR : Ty := .fn [.int] tR
+/-- A record object `{ n : Int, items : List Int }` (#316; generator v7). -/
+def tO : Ty := .object [.int, tL]
 
 /-- Declaration indices used by the moves below. -/
 def mapLL := 0
@@ -494,6 +496,8 @@ def handedOver (callee : Var → Option Nat) : Expr → List Var
     positions.filterMap fun i => args[i]? >>= atomRoot
   | .closure d caps => if d == capPush then caps.filterMap atomRoot else []
   | .branch _ a b => handedOver callee a ++ handedOver callee b
+  -- An update writes its base's object in place (v7 only).
+  | .assign _ _ base _ => (atomRoot base).toList
   | _ => []
 
 /-- After a move, each variable it handed over leaves the pool with probability
@@ -605,6 +609,8 @@ def valueOf (fresh : Bool) (next : Nat) (env : Env) (t : Ty) : Gen (List (Expr �
   if !fresh && !xs.isEmpty && (← draw 3) != 0 then return ([], ← pickRecent xs)
   let bs ← if t == tN then nestedBindings next env
     else if t == tR then do pure [(.prim .record [← anyList env, ← anyList env], tR)]
+    -- A record object (v7 only: no earlier table has one).
+    else if t == tO then do pure [(.prim .object [← number env, ← anyList env], tO)]
     else do pure [(← litList env, tL)]
   return (bs, .var (next + bs.length - 1))
 
@@ -1165,7 +1171,8 @@ def generatedTable : Gen Table := do
 /-- Generator v5's general families: 1–12 moves, including conditionals over
     moves; with `declarations`, after a generated table the moves may call. -/
 def generalV5 (declarations : Bool) (extra : List (String × Move) := [])
-    (table : Gen Table := generatedTable) : Gen (List String × Program) := do
+    (table : Gen Table := generatedTable)
+    (tableMoves : Table → List (String × Move) := fun _ => []) : Gen (List String × Program) := do
   let t ← if declarations then table else pure []
   -- With a table, chains are shorter (1–6 moves): the table is what the
   -- family is for, and a long chain mostly adds unrelated rejections.
@@ -1193,7 +1200,9 @@ def generalV5 (declarations : Bool) (extra : List (String × Move) := [])
       next := next + more.length
       bs := bs ++ more
     return ([], wrap (next - bs.length) bs (← finishV5 env))
-  let (names, rest) ← chainWith (movesFor t ++ extra) true fin (length + 1) 1 [(.var 0, tL)]
+  -- `tableMoves` is empty for v5 and v6, so their move lists, and so their
+  -- streams, are unchanged.
+  let (names, rest) ← chainWith (movesFor t ++ extra ++ tableMoves t) true fin (length + 1) 1 [(.var 0, tL)]
   return (names, { declarations := decls ++ t.map Prod.snd, main := .letE 0 first rest })
 
 /-! ## Generator v6: constructions, views and record updates (2026-10-15)
@@ -1290,6 +1299,106 @@ def generatedTableV6 : Gen Table := do
   if (← draw 2) == 0 then
     let i := decls.length + t.length
     return t ++ [(i, ← constructDecl s!"writer-construct{i}")]
+  return t
+
+/-! ## Generator v7: record objects (2026-11-05, #1872)
+
+v5 and v6 never draw these, so their streams are unchanged. v7 adds record
+objects (`tO`, `ownership-checker.md` §31) to the main chain's moves: a literal,
+an update of one field or of both, a field read, a read then an update (the read
+used after, as a hoist by hand, or a read through the old holder after the
+write), two updates through one holder, `Record.copy`, a write of the list a
+field holds, and an update through a positional record's field. Its table may
+hold a declaration that writes or reads its object parameter, so a call writes
+the caller's object (`W{F}`, §31.7). -/
+
+/-- An object from the pool (2/3, preferring recent ones) or a fresh one
+    bound first. -/
+def anyObject (next : Nat) (env : Env) : Gen (List (Expr × Ty) × Atom) := do
+  let os := ofTy env tO
+  if !os.isEmpty && (← draw 3) != 0 then return ([], ← pickRecent os)
+  return ([(.prim .object [← number env, ← anyList env], tO)], v next)
+
+/-- A value for field `f` of `tO`. -/
+def objectField (env : Env) (f : Nat) : Gen Atom :=
+  if f == 0 then number env else anyList env
+
+def objectMoves : List (String × Move) := [
+  ("object", fun _ env => do pure [(.prim .object [← number env, ← anyList env], tO)]),
+  ("object-update", fun next env => do
+    let (bs, o) ← anyObject next env
+    let rhs ← match ← draw 3 with
+      | 0 => do pure (Expr.assign 2 [0] o [← number env])
+      | 1 => do pure (Expr.assign 2 [1] o [← anyList env])
+      | _ => do pure (Expr.assign 2 [0, 1] o [← number env, ← anyList env])
+    pure (bs ++ [(rhs, tO)])),
+  ("object-read", fun next env => do
+    let (bs, o) ← anyObject next env
+    if (← draw 2) == 0 then pure (bs ++ [(.prim (.get 0) [o], .int)])
+    else pure (bs ++ [(.prim (.get 1) [o], tL)])),
+  ("object-read-write", fun next env => do
+    let (bs, o) ← anyObject next env
+    let k := next + bs.length
+    let after ← match ← draw 3 with
+      | 0 => pure (Expr.prim .add [v k, .int 1])
+      | 1 => pure (Expr.prim (.get 0) [o])
+      | _ => pure (Expr.prim (.get 0) [v (k + 1)])
+    pure (bs ++ [(.prim (.get 0) [o], .int), (.assign 2 [0] o [← number env], tO), (after, .int)])),
+  ("object-twice", fun next env => do
+    let (bs, o) ← anyObject next env
+    let f ← draw 2
+    let g ← draw 2
+    pure (bs ++ [(.assign 2 [f] o [← objectField env f], tO), (.assign 2 [g] o [← objectField env g], tO)])),
+  ("object-copy", fun next env => do
+    let (bs, o) ← anyObject next env
+    pure (bs ++ [(.prim .recordCopy [o], tO)])),
+  ("object-items", fun next env => do
+    let (bs, o) ← anyObject next env
+    let k := next + bs.length
+    pure (bs ++ [(.prim (.get 1) [o], tL), (.prim .push [v k, ← number env], tL)])),
+  ("object-payload", fun next env => do
+    let (bs, o) ← anyObject next env
+    let k := next + bs.length
+    pure (bs ++ [(.prim .record [o, ← number env], .record [tO, .int]),
+      (.assign 2 [0] (.field (v k) 0) [← number env], tO)]))]
+
+/-- Writes or reads its object parameter: an update of `n` from its old value
+    (a read of the written field inside the callee), a new list at `items`, a
+    push onto the list that `items` holds, or an update of `n` from the length
+    of `items`. Returns the object. -/
+def objectDecl (name : String) : Gen Decl := do
+  let env := bodyEnv [tO]
+  let body ← match ← draw 4 with
+    | 0 => pure (Expr.letE 2 (.prim (.get 0) [v 0]) <| .letE 3 (.prim .add [v 2, .int 1]) <|
+        .assign 2 [0] (v 0) [v 3])
+    | 1 => do pure (Expr.letE 2 (.prim (.literal .int) [← number env]) <| .assign 2 [1] (v 0) [v 2])
+    | 2 => pure (Expr.letE 2 (.prim (.get 1) [v 0]) <| .letE 3 (.prim .push [v 2, .int 1]) <| .atom (v 0))
+    | _ => pure (Expr.letE 2 (.prim (.get 1) [v 0]) <| .letE 3 (.prim .length [v 2]) <|
+        .assign 2 [0] (v 0) [v 3])
+  return { name, parameters := [tO], result := tO, body := .letE 1 (.prim (.literal .int) []) body }
+
+/-- A call of a table declaration that takes an object, then a read of a
+    field of the object it was handed, through the old holder: refused where
+    the declaration writes that field, accepted where it keeps it (`W{F}`,
+    §31.7). -/
+def objectCallMoves (table : Table) : List (String × Move) :=
+  let takesObject := table.filter fun (_, d) => d.parameters == [tO] && d.captures.isEmpty
+  if takesObject.isEmpty then [] else
+  List.replicate 3 ("object-call-read", fun next env => do
+    let (i, d) ← pick takesObject (0, default)
+    let (bs, o) ← anyObject next env
+    let k := next + bs.length
+    let f ← draw 2
+    pure (bs ++ [(.closure i [], fnTy d), (.app (v k) [o], tO),
+      (.prim (.get f) [o], if f == 0 then .int else tL)]))
+
+/-- v5's table, then with probability 1/2 a declaration that writes or reads
+    its object parameter. -/
+def generatedTableV7 : Gen Table := do
+  let t ← generatedTable
+  if (← draw 2) == 0 then
+    let i := decls.length + t.length
+    return t ++ [(i, ← objectDecl s!"writer-object{i}")]
   return t
 
 end Ownership.Generator

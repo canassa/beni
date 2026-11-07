@@ -1,0 +1,24 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"low"</output>
+      <p>"0 m"</p>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"high"</output>
+      <p>"1 m"</p>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

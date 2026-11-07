@@ -1,0 +1,97 @@
+-- ownership: choices between built recursive values, answered by calls and
+-- written by a recursive writer (ownership-v2.md Appendix B, J×F, the S3b
+-- half with a group writer; R-4.2.1, R-4.7.5). `incAll` pushes onto the
+-- kids list of every `Rose` at every depth, and `incList` walks a list of
+-- `Rose`; they are one group. `same c x` chooses `Rose [ x ]` or
+-- `Rose [ x ]`: one `x` in either arm, so the choice invents no second
+-- occurrence, accepted (`sameArms`). `twoDepths` stores one kids list
+-- `k` at two coexisting depths and is refused (`twoDepthsShared`), and so
+-- is a choice with that value in one arm (`sharedArm`). A choice between
+-- `k` at one depth or the other is accepted (`depthArms`), and so is a
+-- choice between two distinct inner lists at different depths
+-- (`distinctArms`); v2 refuses both over a fresh literal, known entries
+-- (#1502).
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+same : Bool, Rose → Rose
+same c x =
+    if c then
+        Rose [ x ]
+    else
+        Rose [ x ]
+
+
+pub sameArms : Bool → Rose
+sameArms c = incAll (same c (Rose [ Rose [] ]))
+
+
+twoDepths : List Rose → Rose
+twoDepths k = Rose [ Rose k, Rose [ Rose k ] ]
+
+
+pub twoDepthsShared : ⊤ → Rose
+twoDepthsShared ⊤ =
+    k = [ Rose [] ]
+    incAll (twoDepths k)
+
+
+sharedOr : Bool, List Rose → Rose
+sharedOr c k =
+    if c then
+        twoDepths k
+    else
+        Rose [ Rose k ]
+
+
+pub sharedArm : Bool → Rose
+sharedArm c =
+    k = [ Rose [] ]
+    incAll (sharedOr c k)
+
+
+depthOr : Bool, List Rose → Rose
+depthOr c k =
+    if c then
+        Rose [ Rose k ]
+    else
+        Rose [ Rose [ Rose k ] ]
+
+
+pub depthArms : Bool → Rose
+depthArms c =
+    k = [ Rose [] ]
+    incAll (depthOr c k)
+
+
+distinctOr : Bool, List Rose, List Rose → Rose
+distinctOr c a b =
+    if c then
+        Rose [ Rose a, Rose [] ]
+    else
+        Rose [ Rose [], Rose [ Rose b ] ]
+
+
+pub distinctArms : Bool → Rose
+distinctArms c =
+    a = [ Rose [] ]
+    b = [ Rose [] ]
+    incAll (distinctOr c a b)

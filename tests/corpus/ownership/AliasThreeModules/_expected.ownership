@@ -1,0 +1,15 @@
+module Lib
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  11:13 call Mid.priv xs: rejected later-use: xs is read again at 11:11 (Mid.priv writes π1)
+  15:12 call Mid.priv xs: accepted param (Mid.priv writes π1)
+  summary kept: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary owned: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+module Mid
+  2:11 List.push xs: accepted param
+  6:6 value Mid.priv: pending: it is returned
+  summary priv: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 0
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+cause later-use 1

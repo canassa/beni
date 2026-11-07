@@ -1,0 +1,73 @@
+-- ownership (project): `ApartPathsBound` with the callees in another module
+-- (ownership-v2.md §2.11 item 3, rule (c), as amended for #1385). A value
+-- bound by a pattern on the caller's own parameter, passed at two unrelated
+-- paths of an imported callee that found them apart, is refused, as v1
+-- refuses it: `g`, `b7`, `a7`. The `Maybe Box` control and the distinct
+-- twins keep their verdicts.
+import Parts exposing (Box, Br, Leaf, Pair, Tree)
+
+
+pub g : Pair → Int × Int
+g p =
+    case p of
+        Pair _ x →
+            case Parts.rightLeft (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, Parts.sizeBox l )
+
+
+pub fromMaybe : Maybe Box → Int × Int
+fromMaybe m =
+    case m of
+        Just x →
+            case Parts.rightLeft (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, Parts.sizeBox l )
+
+        Nothing →
+            ( 0, 0 )
+
+
+pub gDistinct : Pair → Int × Int
+gDistinct p =
+    case p of
+        Pair a b →
+            case Parts.rightLeft (Pair a b) of
+                ( ys, l ) →
+                    ( List.length ys, Parts.sizeBox l )
+
+
+pub b7 : Tree → Int × Int
+b7 t =
+    case t of
+        Br _ _ r →
+            case Parts.rightLeftT (Br r [] r) of
+                ( ys, l ) →
+                    ( List.length ys, Parts.size l )
+
+        Leaf →
+            ( 0, 0 )
+
+
+pub a7 : Tree → Int × Int
+a7 t =
+    case t of
+        Br _ _ r →
+            case Parts.rightLeftT (Br (Br r [] Leaf) [] r) of
+                ( ys, l ) →
+                    ( List.length ys, Parts.size l )
+
+        Leaf →
+            ( 0, 0 )
+
+
+pub b7Distinct : Tree → Int × Int
+b7Distinct t =
+    case t of
+        Br l _ r →
+            case Parts.rightLeftT (Br l [] r) of
+                ( ys, l2 ) →
+                    ( List.length ys, Parts.size l2 )
+
+        Leaf →
+            ( 0, 0 )

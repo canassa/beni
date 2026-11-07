@@ -1,0 +1,106 @@
+-- ownership (project): see Main.beni. The callees: each pushes one of its
+-- list's elements onto the list, matches the list again and answers through
+-- `collect`; `inF` edits the answer in its own frame.
+pub collect : List (List Int × Int), List (List Int) → List (List Int)
+collect rs acc =
+    case rs of
+        [] →
+            acc
+
+        [ ( v, _ ), …more ] →
+            collect more (List.push acc v)
+
+
+pub twin : List (List Int × Int) → List (List Int)
+twin xs =
+    case xs of
+        [ _, el, …_ ] →
+            case List.push xs el of
+                [ _, …rest ] →
+                    collect rest []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub twinSpread : List (List Int × Int) → List (List Int)
+twinSpread xs =
+    case xs of
+        [ _, el, …_ ] →
+            case [ …xs, el ] of
+                [ _, …rest ] →
+                    collect rest []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub twinHead : List (List Int × Int) → List (List Int)
+twinHead xs =
+    case xs of
+        [ el, …_ ] →
+            case List.push xs el of
+                [ ( a, _ ), …rest ] →
+                    collect rest [ a ]
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub inF : List (List Int × Int) → List (List Int)
+inF xs =
+    case xs of
+        [ _, el, …_ ] →
+            case List.push xs el of
+                [ _, …rest ] →
+                    case collect rest [] of
+                        [ f, …r ] →
+                            [ List.push f 9, …r ]
+
+                        [] →
+                            []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub prepend : List (List Int × Int) → List (List Int)
+prepend xs =
+    case xs of
+        [ _, el, …_ ] →
+            case [ el, …xs ] of
+                [ _, …rest ] →
+                    collect rest []
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+pub pairUp : List (List Int × Int) → List (List Int)
+pairUp xs =
+    case xs of
+        [ p, …_ ] →
+            case List.set xs 1 p of
+                [ ( a, _ ), ( b, _ ), …_ ] →
+                    [ a, b ]
+
+                _ →
+                    []
+
+        _ →
+            []

@@ -1,0 +1,69 @@
+-- ownership: a K-shaped join whose kids list two coexisting levels share
+-- (`t2`), returned through one and two wrappers (#1459's review). A caller
+-- that writes one level's kids while the other is read is refused at each
+-- depth of wrapping, as by v1.
+type Rose
+    = Rose (List Rose)
+
+
+t2 : Bool, Rose → Rose
+t2 c x =
+    r1 = if c then Rose [ x ] else x
+    if c then Rose [ r1, r1 ] else r1
+
+
+wrap : Bool, Rose → Rose
+wrap c x = t2 c x
+
+
+wrap2 : Bool, Rose → Rose
+wrap2 c x = wrap c x
+
+
+size : Rose → Int
+size r =
+    case r of
+        Rose kids →
+            List.length kids
+
+
+pub local : Bool → Int
+local c =
+    x = Rose []
+    r1 = if c then Rose [ x ] else x
+    case (if c then Rose [ r1, r1 ] else r1) of
+        Rose [ Rose kids, other ] →
+            List.length (List.push kids (Rose [])) + size other
+
+        _ →
+            0
+
+
+pub direct : Bool → Int
+direct c =
+    case t2 c (Rose []) of
+        Rose [ Rose kids, other ] →
+            List.length (List.push kids (Rose [])) + size other
+
+        _ →
+            0
+
+
+pub viaWrap : Bool → Int
+viaWrap c =
+    case wrap c (Rose []) of
+        Rose [ Rose kids, other ] →
+            List.length (List.push kids (Rose [])) + size other
+
+        _ →
+            0
+
+
+pub viaWrap2 : Bool → Int
+viaWrap2 c =
+    case wrap2 c (Rose []) of
+        Rose [ Rose kids, other ] →
+            List.length (List.push kids (Rose [])) + size other
+
+        _ →
+            0

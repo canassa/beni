@@ -1,0 +1,85 @@
+-- Nested pointer handlers (boundary.md §9.8.20 (d), amended 2026-10-23,
+-- #557). The four pointer events that bubble are delegated, so a user's
+-- event on an element inside another, each with a handler for it, is one
+-- walk, one turn and one render, as a click is. The inner handler counts,
+-- and the outer one logs the count that its closure holds, which is the
+-- view's, beside the model's: the outer handler runs with the view of
+-- before the event. `press` sends a user's `pointerdown` and `pointerup`,
+-- and a `trusted` `pointer` step sends a user's `pointermove`. The
+-- untrusted steps after them are no turn and give the same answer.
+-- `onMouseDown` on the outer element is a delegated mouse event, which
+-- runs after the render. The moves go to a second pair, `#pad` and
+-- `#knob`, so a move that Chrome sends with the press reaches no move
+-- handler. A pointer handler on a disabled button does not run, as a
+-- click handler on it does not.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Counted String
+    | Saw String Int
+
+
+type alias Model =
+    n : Int
+    log : List String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Counted name →
+            n = model.n + 1
+            { model | n = n, log = model.log ++ [ "inner ${name}: n=${String.fromInt n}" ] }
+
+        Saw name seen →
+            line =
+                "outer ${name}: the handler saw n=${String.fromInt seen}, the model has n=${String.fromInt model.n}"
+            { model | log = model.log ++ [ line ] }
+
+
+view : Model → Html Msg
+view model =
+    n = model.n
+    <main>
+        <div
+            id="outer"
+            onPointerDown={λ_ → Saw "pointerdown" n}
+            onPointerUp={λ_ → Saw "pointerup" n}
+            onMouseDown={λ_ → Saw "mousedown" n}
+        >
+            <div
+                id="inner"
+                onPointerDown={λ_ → Counted "pointerdown"}
+                onPointerUp={λ_ → Counted "pointerup"}
+            >
+                inner
+            </div>
+        </div>
+        <div
+            id="pad"
+            onPointerMove={λ_ → Saw "pointermove" n}
+            onPointerCancel={λ_ → Saw "pointercancel" n}
+        >
+            <div
+                id="knob"
+                onPointerMove={λ_ → Counted "pointermove"}
+                onPointerCancel={λ_ → Counted "pointercancel"}
+            >
+                knob
+            </div>
+        </div>
+        <button
+            id="off"
+            disabled={True}
+            onPointerDown={λ_ → Counted "pointerdown on the disabled button"}
+        >
+            off
+        </button>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { n = 0, log = [] }, update = update, view = view }

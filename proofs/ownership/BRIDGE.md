@@ -26,9 +26,12 @@ node scripts/bridge-mutants.mjs [control…]    # opt-in, isolated Zig source ed
 
 `--no-build` uses an existing compiler; `--compiler=/absolute/path` selects it.
 `--input=...jsonl` replays an export. `--out=...` isolates artifacts. The default
-long seeds are 17, 20261011 and 314159. CI uses all 937 fixed programs,
-enumeration bound 1, and 128 programs of each generator (v5, `generator`, and v6,
-`generator6`: constructions, views and record updates) at seed 17. Runs use at most eight
+long seeds are 17, 20261011 and 314159. CI uses all 1,065 fixed programs
+(2026-11-05: the record probes are the `record` family, and the targeted
+product's record part is targeted 740–795), enumeration bound 1, and 128
+programs of each generator (v5, `generator`; v6, `generator6`: constructions,
+views and record updates; v7, `generator7`: record objects, CI only until
+#2010) at seed 17. Runs use at most eight
 workers, with each compiler child on one thread. On Linux pin the parent with
 `taskset -c 0-7` to bound its entire process tree. Never rebuild the oracle
 executable while a campaign is spawning its exporter or reducer.
@@ -73,7 +76,13 @@ or a spread literal when every operand is a spread, and as a literal otherwise
 unannotated declaration or lambda it would be generic, dispatched through evidence
 and no construction. A view is `case xs of [ _, …v ] → v; [] → []` (or
 `[ …v, _ ]`). A record whose fields are a typed record's other fields is printed
-as an update, `{ r | f1 = y }`. List traversals with unused indices use `List.foldl`; range
+as an update, `{ r | f1 = y }`. A record object (#316, #1872) is a beni record: `object`
+is a literal `{ f0 = x, f1 = y }`, `get i` is `r.fi`, `recordCopy` is `Record.copy r`, and an
+update written in place (`Expr.assign`) is `{ r | f1 = y }`. The update target is a plain name
+(`language.md` §6.3), so a base that is a field of a positional record is bound to a local
+first, which holds the object as the field does. The oracle observes an object as its one-slot
+array; the value check reads it as the record, at the paths that the main expression's
+exported type gives. List traversals with unused indices use `List.foldl`; range
 traversals fold over `List.range 0 (n-1)`. Ordinary library initialize, fold and
 update declarations, and map across different representations, are recognized
 by their exact typed bodies and use their public counterparts.
@@ -147,12 +156,32 @@ fail during a long tail of explicitly skipped programs.
 
 The dump parser rejects unfamiliar lines. The in-place platform's `check`
 diagnostics must match exactly the dump's deduplicated rejected/pending source
-spans, with no unexpected diagnostic code or abnormal exit. The parser skips the
-record update demands (the `update` lines of #391) until #316 lands: the Lean
-oracle has no record field assignment, so it has no verdict for such a site, and
-the compiler reports a record demand without enforcing it, so a rejected one has
-no diagnostic to match. The parser checks that the skipped lines of a module
-equal its `records` count and the kept demand lines its `demands` count.
+spans, with no unexpected diagnostic code or abnormal exit. Since 2026-10-23 the
+compiler enforces a record line (the `update` lines of #391; §31.9's codes,
+`69abd4568`), and the two outputs of the compiler must agree there: the batch
+check matches the record codes' diagnostics (`record_still_used`,
+`top_level_record_changed`, `record_may_be_shared`) against the dump's
+non-accepted `update` lines by position, and a non-accepted record line refuses
+the program for the Zig side, as a refused list demand does (#887, #900).
+
+Since #1872 (2026-11-05) the oracle has record objects (#316), and the bridge
+compares the record lines' verdicts. An `update` line is the demand of an update
+or of a call that writes a record argument (`Main.d0 writes it`); it joins the
+demands of its source site, and the site's Zig verdict accepts only when every
+line there accepts. `recordSites` counts the sites that hold a record line, a
+subset of `sites`. Two differences are on purpose and show in these counts: the
+oracle has no hoist, so it refuses a later read of a written field that Zig
+hoists (a lead, `writtenRead`); and it reads an update's base as the fields the
+update keeps, where Zig reads it whole (a precision difference, `sameFieldTwice`).
+A record that the core holds as a positional value (`Ty.record`) and that the
+translation spells as an update writes in place in beni and in no oracle run:
+the oracle's site has no demand, so it accepts. Record soundness also rests on
+the corpus, the record mutation controls (`tests/record-mutations.mjs`) and the
+differential test that #316 names; #913 adds an in-place run of each accepted
+program that holds a record update, since a too-weak record rule gives a wrong
+in-place value that the `browser-tea` value check cannot see (the review of
+#900, job D). The parser checks that the `update` lines of a module equal its
+`records` count and the other demand lines its `demands` count.
 
 ## Runtime boundary and historical minimization
 

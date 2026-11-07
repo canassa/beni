@@ -1,0 +1,60 @@
+-- ownership: the words and names of v2's refusal messages. A hold below
+-- the levels of `Tree` is written with `Tree`'s name though `Node` is
+-- the module's first type (`onTree`, #1371): a level stays at the record
+-- inside the constructor, a place with no name of its own. A call with
+-- one operand that writes a list the same argument holds at a second
+-- field says "another path of the same argument" (`wx`, `onePath`,
+-- #1380), not "another operand". A chain of two calls of `g3` over a
+-- list held twice is refused `disjoint` at both calls, as `g3`'s result
+-- holds it twice (`chainedTwice`, #1405): v1 words the outer refusal
+-- `call` (approximate) and names the call, a word v2 does not have,
+-- since condition 4 (`ownership-v2.md` §2.8) has one cause for every
+-- other path that reaches the base, exact or not.
+type Node
+    = Node { label : List Int }
+
+
+type Tree
+    = Tree { v : List Int, kids : List Tree }
+
+
+idl : List Tree → List Tree
+idl x = x
+
+
+pub onTree : Int → Int
+onTree n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString (idl r.kids)) + List.length p
+
+
+wx : { x : List Int, y : List Int } → Int
+wx r = List.length (List.push r.x 1) + List.length r.y
+
+
+pub onePath : Int → Int
+onePath n =
+    l = [ n ]
+    wx { x = l, y = l }
+
+
+type alias Three =
+    top : List Int
+    kept : List (List Int)
+    extra : List (List Int)
+
+
+g3 : Int, Three → Three
+g3 i s =
+    if i ≥ 10 then
+        s
+    else
+        { top = s.top, kept = List.push s.kept s.top, extra = [] }
+
+
+pub chainedTwice : Int, List Int, List (List Int) → Three
+chainedTwice i top kept = g3 i (g3 0 { top = top, kept = kept, extra = kept })

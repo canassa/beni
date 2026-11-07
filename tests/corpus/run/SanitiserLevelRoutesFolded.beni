@@ -1,0 +1,51 @@
+-- A level below one route folds onto another route's arrival (`ownership-v2.md` §2.1, #2192). One
+-- slot read twice would be two objects at one write, and `disjoint` would refuse a program that
+-- holds `k` once.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap Lp
+    | P T Int
+
+
+type Lp
+    = L1 T
+    | L2 Lp Int
+    | L3 Lp T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrM u
+        P u _ →
+            wr u
+
+
+wrM : Lp → Int
+wrM u =
+    case u of
+        L1 t →
+            wr t
+        L2 v _ →
+            wrM v
+        L3 v t →
+            wrM v + wr t
+
+
+g : Lp → Int
+g m = wr (P (Wrap m) 0)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (L3 (L2 (L1 (Leaf [])) 0) (Leaf k))
+    Node.print (String.fromInt a)

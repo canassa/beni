@@ -1,0 +1,30 @@
+-- The controls of `SanitiserCellStoredCapture` (`ownership-v2.md` §2.13.7,
+-- #1955): a cell callback that answers a list it makes, then an edit in
+-- place through the cell; and a callback that stores a captured list the
+-- caller only reads afterwards. v2 accepts each, and the sanitised run
+-- prints the golden.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+fresh : ⊤ → Int
+fresh ⊤ =
+    r = Ref.make [ 0 ]
+    Ref.update r λ_ → [ 8 ]
+    Ref.update r λxs → List.push xs 1
+    List.length (Ref.get r)
+
+
+readOnly : ⊤ → Int
+readOnly ⊤ =
+    put = [ 7 ]
+    r = Ref.make [ 0 ]
+    Ref.update r λ_ → put
+    n = List.length put
+    n * 10 + List.length (Ref.get r)
+
+
+main : Program
+main = Node.print (String.join (List.map [ fresh ⊤, readOnly ⊤ ] String.fromInt) " ")

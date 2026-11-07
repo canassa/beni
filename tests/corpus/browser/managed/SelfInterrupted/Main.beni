@@ -1,0 +1,72 @@
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ request →
+                if request == "self" then
+                    cancelled = Task.spawn λ⊤ → Task.never ⊤
+                    Task.cancel cancelled
+                    Task.join cancelled
+                else
+                    Task.never ⊤
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : Hosted.Outlet Msg → String
+exercise outlet = Task.scope λowned →
+    case Worker.open owned worker ⊤ Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            prepared = Worker.prepare "self"
+            case prepared of
+                Err _ →
+                    "prepare failed"
+                Ok value →
+                    case Worker.send handle value of
+                        Err _ →
+                            "send failed"
+                        Ok ticket →
+                            awaiting = Task.spawn λ⊤ → Worker.await ticket
+                            result = Task.wait awaiting
+                            _ = Worker.close handle
+                            case result of
+                                Task.Cancelled →
+                                    "interrupted"
+                                _ →
+                                    "not cancelled"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise outlet))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel →
+                <main>
+                    <button id="launch" onClick={Launch}>launch</button><output>{model}</output><p id="stage">waiting</p>
+                </main>
+        }

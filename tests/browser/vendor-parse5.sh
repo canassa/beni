@@ -12,8 +12,9 @@
 # Solid setup, where npm installed them), and their versions are checked
 # against the pins below. Run it by hand to move the pin, then update
 # `parser_id` and `parser_sha256` in tests/blackbox/browser.zig with what
-# it prints, run `zig build test-run-hashes` (every browser record changes)
-# and commit them together. The same packages give the same bytes.
+# it prints and commit them together; every browser page then runs under
+# Node once, since its digest covers the parser. The same packages give the
+# same bytes.
 set -euo pipefail
 
 PARSE5=7.3.0

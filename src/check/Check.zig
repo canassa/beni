@@ -112,6 +112,7 @@ pub const Module = struct {
 const Effects = @import("Effects.zig");
 const TypeKeys = @import("TypeKeys.zig");
 const Hoists = @import("../own/Hoists.zig");
+const Channel = @import("../own2/Hoists.zig");
 
 /// Owned. The session-wide type table.
 types: Types,
@@ -136,6 +137,9 @@ type_keys: []TypeKeys.Artifact,
 plans: []SchemaPlan,
 /// Owned module-local ownership facts, beside dispatch, including cache hits.
 hoists: []Hoists.Table = &.{},
+/// Owned: v2's lowering channel per module (`own2/Hoists.zig`), beside
+/// `hoists`; every slot empty unless the check ran `--ownership=v2`.
+channels: []Channel.Table = &.{},
 counters: Counters,
 
 pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .type_keys = &.{}, .plans = &.{}, .counters = .{} };
@@ -143,6 +147,8 @@ pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{
 pub fn deinit(check: *Check, gpa: Allocator) void {
     for (check.hoists) |*t| t.deinit(gpa);
     gpa.free(check.hoists);
+    for (check.channels) |*t| t.deinit(gpa);
+    gpa.free(check.channels);
     check.types.deinit(gpa);
     for (check.diagnostics) |d| gpa.free(d.message);
     gpa.free(check.diagnostics);
@@ -158,6 +164,8 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
 }
 
 pub const Options = struct {
+    entry_constructors: []const []const u8 = &.{},
+    entry_kinds: []const @import("../js/Manifest.zig").EntryKind = &.{},
     /// Where the per-module `constrain` and `solve` events go (checker.md
     /// §9). The two halves are timed separately because the
     /// constraint/solve split is the architecture (research/02 §1), and a
@@ -359,6 +367,8 @@ pub fn run(
     check.dispatch = dispatch;
     check.hoists = try gpa.alloc(Hoists.Table, modules);
     @memset(check.hoists, .empty);
+    check.channels = try gpa.alloc(Channel.Table, modules);
+    @memset(check.channels, .empty);
     const type_keys = try gpa.alloc(TypeKeys.Artifact, modules);
     @memset(type_keys, .empty);
     check.type_keys = type_keys;
@@ -411,6 +421,7 @@ pub fn run(
         .counters = counters,
         .kept = kept.items,
         .hoists = check.hoists,
+        .channels = check.channels,
         .dispatch = dispatch,
         .type_keys = type_keys,
         .plans = plans,

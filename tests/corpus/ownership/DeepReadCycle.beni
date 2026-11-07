@@ -1,0 +1,136 @@
+-- ownership: a deep read at a path whose place is on a cycle of the place
+-- graph covers the `⟲` paths its descendants fold into (ownership-v2.md
+-- §2.7, §2.10, *A deep read on a cycle*, #1345). `inlineField` reads
+-- `r.kids` deeply (`Debug.toString`) after a push of a list that a tree two
+-- levels down holds: its canonical path is `r⟲.v`, which `r.kids` is not a
+-- prefix of, but every tree below the root is reached through `r.kids[*]`,
+-- so the push is refused `alias`, as v1 refuses it. The same through a
+-- helper (`viaHelper`, `showKids` reads `π1#Rose.1` deeply), of mutually
+-- recursive types (`mutual`: `Leaf`'s forest is a `Wood`, whose trees are
+-- `Leaf`s), and with the deep read two levels below the cycle's entry
+-- (`twoBelow`: `π1#Leaf.1#Wood.0`). `outside` holds the list at the root's
+-- own `v`, which is not below `r.kids` and is folded into no `⟲`: accepted,
+-- as v1 accepts it. A whole use and a callee's `⟲` read below.
+type Tree
+    = Tree { v : List Int, kids : List Tree }
+
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+type Leaf
+    = Leaf (List Int) Wood
+
+
+type Wood
+    = Wood (List Leaf)
+
+
+pub inlineField : Int → Int
+inlineField n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString r.kids) + List.length p
+
+
+showKids : Rose → String
+showKids t =
+    case t of
+        Rose _ kids →
+            Debug.toString kids
+
+
+pub viaHelper : Int → Int
+viaHelper n =
+    l = [ n ]
+    t = Rose [] [ Rose l [] ]
+    p = List.push l 5
+    String.length (showKids t) + List.length p
+
+
+showWood : Leaf → String
+showWood t =
+    case t of
+        Leaf _ w →
+            Debug.toString w
+
+
+pub mutual : Int → Int
+mutual n =
+    l = [ n ]
+    t = Leaf [] (Wood [ Leaf [] (Wood [ Leaf l (Wood []) ]) ])
+    p = List.push l 5
+    String.length (showWood t) + List.length p
+
+
+showLeaves : Leaf → String
+showLeaves t =
+    case t of
+        Leaf _ (Wood leaves) →
+            Debug.toString leaves
+
+
+pub twoBelow : Int → Int
+twoBelow n =
+    l = [ n ]
+    t = Leaf [] (Wood [ Leaf l (Wood []) ])
+    p = List.push l 5
+    String.length (showLeaves t) + List.length p
+
+
+pub outside : Int → Int
+outside n =
+    l = [ n ]
+    t = Tree { v = l, kids = [ Tree { v = [], kids = [] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString r.kids) + List.length p
+
+
+-- A whole use of `r.kids` on the cycle reads the levels below it as well:
+-- `scrutinee` matches it and reads the stale `k.v`. A callee's read can
+-- leave the argument's path on the cycle without being deep: `grand`
+-- reads `π1⟲[*]#Tree.0.v`, which at the caller's `r.kids` is `r⟲.v`.
+pub scrutinee : Int → Int
+scrutinee n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            case r.kids of
+                [ Tree k ] →
+                    List.length k.v + List.length p
+
+                _ →
+                    0
+
+
+grand : List Tree → Int
+grand ts =
+    case ts of
+        [ Tree a ] →
+            case a.kids of
+                [ Tree b ] →
+                    List.length b.v
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub viaGrand : Int → Int
+viaGrand n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            grand r.kids + List.length p

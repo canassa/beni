@@ -1,0 +1,35 @@
+module SplitCallSupply
+  22:16 List.push x: accepted param
+  26:15 call SplitCallSupply.keeper x: accepted param (SplitCallSupply.keeper writes π1)
+  33:13 call SplitCallSupply.keeper x: rejected disjoint: another operand of the same operation reaches it (SplitCallSupply.keeper writes π1)
+  43:13 call SplitCallSupply.keeper x: rejected disjoint: another operand of the same operation reaches it (SplitCallSupply.keeper writes π1)
+  53:13 call SplitCallSupply.keeper x: rejected disjoint: another operand of the same operation reaches it (SplitCallSupply.keeper writes π1)
+  63:13 call SplitCallSupply.wrapper x: rejected disjoint: another operand of the same operation reaches it (SplitCallSupply.wrapper writes π1)
+  73:13 call SplitCallSupply.wrapper x: rejected disjoint: another operand of the same operation reaches it (SplitCallSupply.wrapper writes π1)
+  81:16 call SplitCallSupply.restAndElem <literal>[*]: accepted fresh (SplitCallSupply.restAndElem writes π1[*])
+  88:16 call SplitCallSupply.restAndElem <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (SplitCallSupply.restAndElem writes π1[*])
+  93:16 List.push p.x: accepted param
+  102:21 call SplitCallSupply.twoPaths <record>.x: accepted param (SplitCallSupply.twoPaths writes π1.x)
+  115:13 call SplitCallSupply.twoPaths <record>.x: accepted param (SplitCallSupply.twoPaths writes π1.x)
+  125:13 call SplitCallSupply.twoPaths <record>.x: rejected disjoint: another operand of the same operation reaches it (SplitCallSupply.twoPaths writes π1.x)
+  133:16 call SplitCallSupply.headAndNext <literal>[*]: accepted fresh (SplitCallSupply.headAndNext writes π1[*])
+  140:16 call SplitCallSupply.headAndNext <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (SplitCallSupply.headAndNext writes π1[*])
+  summary keeper: π1 RAW[storage], π1[*] A, π2 RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π2, condition(fresh1){sep π1 π2, sep π1[*] π2}
+  summary wrapper: π1 RAW[storage], π1[*] RA, π2 RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π2, condition(fresh1){sep π1 π2, sep π1[*] π2}
+  summary wholeAndElem: π1 RA, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh2) fresh2 π1[*]{excl π1}, .0[*] ~condition(fresh3) ~π1[*][*]{excl π1}, .1 ~condition(fresh4) π1, condition(fresh1){lost}; xreq excl π1
+  summary restAndElem: π1 RA, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh3) fresh3 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh1{lost} ~condition(fresh5) π1, .1[*] ~condition(fresh6) π1[*], condition(fresh2){lost}; xreq excl π1
+  summary viewAndElem: π1 RA, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh2) fresh2 π1[*]{excl π1}, .0[*] ~condition(fresh3) ~π1[*][*]{excl π1}, .1 ~condition(fresh4) π1, condition(fresh1){lost}; xreq excl π1
+  summary viaWrapper: π1 RA, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh3) fresh3 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh1{lost} ~condition(fresh5) π1, .1[*] ~condition(fresh6) π1[*], condition(fresh2){lost}; xreq excl π1
+  summary wholeViaWrapper: π1 RA, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh2) fresh2 π1[*]{excl π1}, .0[*] ~condition(fresh3) ~π1[*][*]{excl π1}, .1 ~condition(fresh4) π1, condition(fresh1){lost}; xreq excl π1
+  summary restDistinct: unused
+  summary restShared: unused
+  summary twoPaths: π1.x RAW[storage], π1.x[*] A, π1.y RA; res .0 condition(fresh2) π1.x, .0[*] ~condition(fresh3) ~π1.x[*], .1 ~condition(fresh4) π1.y, condition(fresh1){sep π1.x π1.y, sep π1.x[*] π1.y}
+  summary headAndNext: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 condition(fresh1) fresh1 π1[*]{excl π1}, .0[*] ~condition(fresh2) ~π1[*][*]{excl π1}, .1 condition(fresh3) fresh3 ~condition(fresh5) π1[*]{excl π1}, condition(fresh4){sep π1[*] π1[*], sep π1[*] π1[*][*]}; xreq excl π1
+  summary twoHeads: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 condition(fresh1) fresh1 π1[*]{excl π1}, .0[*] ~condition(fresh2) ~π1[*][*]{excl π1}, .1 condition(fresh3) fresh3 ~condition(fresh5) π1[*]{excl π1}, condition(fresh4){sep π1[*] π1[*], sep π1[*] π1[*][*]}; xreq excl π1
+  summary oneHeadTwice: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 condition(fresh1) fresh1 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 condition(fresh2) fresh2 ~condition(fresh5) π1[*]{excl π1}, condition(fresh3){shared}; xreq excl π1
+  summary nextDistinct: unused
+  summary nextShared: unused
+  demands 15: accepted 7 (fresh 2, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 15: accepted 7 (fresh 2, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause disjoint 6
+cause exclusive 2

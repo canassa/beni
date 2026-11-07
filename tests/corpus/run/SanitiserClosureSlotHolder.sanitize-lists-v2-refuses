@@ -1,0 +1,3 @@
+# v2 refuses each call whose edit meets what a function in the same tuple reads (§2.9.1, #1956).
+19:5 list_may_be_shared f
+29:13 list_may_be_shared SanitiserClosureSlotHolder.g

@@ -28,13 +28,13 @@ rebuilds.
   old code. **Unicode notation** (the owner, 2026-10-01; landed 2026-10-02):
   `→ ← ≠ ≤ ≥ ▷ ◁ …` replace `-> <- /= <= >= |> <| ...`, a tuple type is
   `Int × String` (`a × b × c` a flat 3-tuple), and a column counts code
-  points; the ASCII is refused and `beni fmt --migrate-unicode` rewrites old
+  points; both spellings are accepted and `beni fmt --to-unicode` converts ASCII
   code (`language.md` §12.7–§12.9). **`⊤` and `⊥`** (the owner, 2026-10-02;
   landed the same day): `⊤` is the unit type and its value — `log : String
-  → ⊤`, `λ⊤ → e`, `key ⊤` — and `⊥` the empty type; `()` and `Never` are
-  refused. An `if` whose `then` branch is `⊤` may leave out its `else`, and
+  → ⊤`, `λ⊤ → e`, `key ⊤` — and `⊥` the empty type; `()` and prelude `Never` are
+  accepted synonyms. An `if` whose `then` branch is `⊤` may leave out its `else`, and
   a `_ =` in front of a `⊤` is the warning `unit_discarded`: write the line
-  as a statement. `beni fmt --migrate-top` rewrites old code
+  as a statement. `beni fmt --to-unicode` converts spellings; `beni fmt --migrate-top` performs structural rewrites
   (`language.md` §12.10).
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
@@ -75,7 +75,7 @@ changes whether a program checks or what it prints (`ordering_test.zig`).
 [`schema.md`](docs/design/schema.md) records the fork — an inspectable description
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
-`core/Schema` under the same engine-owned context contract and differential tests.
+`core/Schema` compiled workers under the same engine-owned context contract and behavior tests.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
 The parser accepts both brace and aligned declaration bodies, the formatter
 emits nonempty record bodies and tagged variants as layout, and unresolved
@@ -83,11 +83,11 @@ schema plans survive in AST/BIR dumps and the frontend cache. The checker
 resolves schema namespaces and both endpoint types, publishes
 member/constructor schemes, and caches an immutable resolved plan.
 `core/Schema` supplies the public type surface and, since 2026-10-02, the
-library interpreter (builders, runners, `describe`; `schema.md` §5, §16 slice S3). **Since 2026-10-02 `build` compiles a `schema` declaration** to its own
+compiled builder workers and inspection metadata (`schema.md` §5, A.14). **Since 2026-10-02 `build` compiles a `schema` declaration** to its own
 parse and print (`schema.md` §6 *The specialised path*, §16 *As built — S4*): faster than the
 library interpreter on every workload and ahead of Valibot, Zod and Effect, each direction
-reachable on its own; the corpus builds every schema `run/` fixture compiled and through the
-library (hidden `--schema-library`) against one golden. A.6 owns interface v2, frontend artifact v3 (now
+reachable on its own; schema `run/` fixtures execute compiled in dev and release against
+independent expected answers. The interpreter and forced-library flag are removed (A.14). A.6 owns interface v2, frontend artifact v3 (now
 v4: a new token and a wider exposed row), cache entry v2 (now v3) and the
 unhashed plan v1. Remaining decisions lead the document; H4 remains open. The
 incrementality-first schema work schema.md A.2–A.4 records has landed.
@@ -158,7 +158,7 @@ in beni and checks them against published vectors.
 **Markup runs** (2026-09-29): the markup lowering interface
 (`src/markup/Interface.zig`, imported by a lowering as `beni_markup`;
 [`boundary.md`](docs/design/boundary.md) §9.4–§9.5) and the `node`
-platform's `ssr` lowering (`platforms/node/zig/`, runtime `markup.js`;
+platform's `ssr` lowering (`platforms/node/zig/`, runtime `Rt.beni` since 2026-11-03, `markup.js` before;
 [`backend.md`](docs/design/backend.md) §15.6). A platform's Zig is compiled
 into beni through a registry `build.zig` generates; `-Dplatform=<dir>` adds
 one, and `test-blackbox` proves it with `tests/platforms/toy`. A program
@@ -313,12 +313,13 @@ zig build fmt-check       # zig fmt --check
 zig build beni-fmt-check  # .beni formatting is gated: beni fmt --check, exemptions in tests/fmt-exempt.txt
 zig build test-pending    # red fixtures of open findings (tests/pending/); not a gate
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
-zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
+zig build test-own2-mutations  # each rule of ownership v2 broken on purpose (`src/own2/Mutate.zig`): which fixture catches it; not a gate
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
-zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#workers); not a gate
+zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#workers); not a gate, CI runs it
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
 zig build test-playground # that wasm against the native beni, byte for byte, on the corpus; not a gate, CI runs it
 zig build test-playground-page  # the playground in headless Chrome (nix develop .#browser); not a gate
+zig build test-pages      # the examples' site and its 404 stand-in at deep paths in headless Chrome (nix develop .#browser); not a gate, CI runs it
 zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
 zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
 zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
@@ -403,6 +404,16 @@ three LLVM ReleaseSafe compiles, which run in parallel and each hold an LLVM
 compile's memory, so check `free -g` first. `test-perf` and `bench` always
 time a ReleaseFast LLVM beni.
 
+**The safety allocator is off by default** (the owner, 2026-11-01: "I don't see a
+reason to turn on the safety allocator unless we are running into memory
+issues"). Every beni, the tests' ReleaseSafe one included, runs on
+`std.heap.smp_allocator` (`c_allocator` with libc, `wasm_allocator` on wasm),
+chosen in `src/main.zig`, not by the build mode as `std/start.zig` would. The
+safety allocator cost 15-20% of CPU (#1586). `-Dsafe-allocator=true` turns it
+on in every beni the build makes, to debug memory issues: it catches leaks,
+double frees and use-after-free. Run `zig build gates -Dsafe-allocator=true`
+for that.
+
 **Zig's two caches.** Each worktree keeps its own LOCAL cache, `.zig-cache`.
 Never share one between git worktrees: a worktree was handed a stale binary
 built from another worktree's sources (commit `bfc234325`). Zig's GLOBAL cache
@@ -427,12 +438,23 @@ performance belongs to `test-perf` and `bench`, outside the gates.
 as well as Linux. Test binaries use the ordinary native target by default.
 
 **Node runs only on unverified JavaScript.** Each program a test runs has a
-recorded SHA-256 of its emitted output, its expected result and the Node
-version (`tests/corpus/run/*.run-hash`, `tests/blackbox/run-hashes.txt`);
-when it matches, Node is skipped, otherwise the program runs as before. After
-changing the emitter, the runtime, `core/`, a `run/` golden or an expected
-output, or upgrading Node, run `zig build test-run-hashes` and commit the
-updated hashes; the gates print a line when programs ran for want of one.
+digest: a SHA-256 of its emitted output, its expected result and the Node
+version (and, for a page, the DOM, the driver and the steps). The digests of
+the runs that passed live in a cache outside git — one empty file per digest
+in the directory `BENI_RUN_HASH_DIR` names; the dev shells set
+`~/.cache/beni-run-hashes`, one directory for every worktree, and empty
+means no cache. When a program's digest is there, Node is skipped; otherwise
+the program runs, and a run that exits as expected and matches its golden
+writes its digest. A run that fails writes nothing. Nothing is committed and
+nothing records on demand — there is no `test-run-hashes` and no
+`BENI_RUN_HASHES` (the owner, 2026-10-23, #875): after a change to the
+emitter, the runtime, `core/`, a golden or an expected output, or a Node
+upgrade, the affected programs run once, and the gates print a line saying
+how many did. CI keeps the directory in `actions/cache`, saved from master
+and restored into every run under a key that hashes the test harness too;
+a pull request writes only in its own scope (`tests/blackbox/run_hash.zig`).
+A branch that changes the harness runs with a `BENI_RUN_HASH_DIR` of its
+own, because one directory serves every worktree.
 
 **Programs in a page** are `tests/corpus/browser/`: a program built for the
 `tests/platforms/page` test platform (or a platform of its own), loaded into
@@ -440,7 +462,10 @@ a DOM, driven by a `.steps` script of clicks, input and keys, and compared as
 a transcript of the page after each step. The gates run it under happy-dom
 in Node — one vendored, checksummed file, `tests/browser/happy-dom.mjs`, no
 network — with run hashes like `run/`'s; `zig build test-browser` runs the
-same fixtures in headless Chrome. On Linux, run it as `nix develop .#browser
+same fixtures in headless Chrome, every page every time, with no run hash
+(the owner, 2026-10-28). Every `browser/tea/` page is also a value-fuzz
+case unless `tests/corpus/browser/tea/no-value-fuzz.txt` names it with a
+reason (the owner, 2026-10-28). On Linux, run it as `nix develop .#browser
 -c zig build test-browser`. The shell's Chromium is the flake's own, and it
 ignores the caller's `LD_LIBRARY_PATH`. Thus a host library directory on
 that path, such as an `alsa-lib` for a newer glibc, cannot stop it. A
@@ -673,8 +698,7 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
 (`canassa/beni`); nothing is pushed to `master` directly.
 
 1. Branch from an up-to-date `origin/master`, one slice per branch, named for
-   what it does. Run `zig build gates` green before opening the PR (rule 4). A branch that
-   rebased past a run-hash change re-records its hashes first.
+   what it does. Run `zig build gates` green before opening the PR (rule 4).
 2. Open the PR with `gh pr create`. The body names its issue (`Closes #N` or
    `Part of #N`), says what changes and why, the
    measurements a claim rests on, any known debt accepted on purpose, and

@@ -1,0 +1,7 @@
+module EmptyRunFrontierOrder
+  16:16 List.push v: accepted param
+  16:32 call EmptyRunFrontierOrder.ins lt#N.0: accepted param (EmptyRunFrontierOrder.ins writes π1#N.0)
+  16:32 call EmptyRunFrontierOrder.ins lt#N.1⟨T⟩#N.0: accepted param (EmptyRunFrontierOrder.ins writes π1#N.1⟨T⟩#N.0)
+  summary ins: π1 R, π1#N.0 RAW[storage], π1#N.0[*] A, π1#N.1 R, π1#N.1⟨T⟩#N.0 RAW[storage], π1#N.1⟨T⟩#N.0[*] RA, π1#N.1⟨T⟩#N.1 R, π1#N.1⟨T⟩#N.2 RA, π1#N.2 RA; res #N.0 condition(fresh2) fresh2 ~condition(fresh10) π1#N.0, #N.0[*] ~condition(fresh4) ~π1#N.0[*], #N.1 condition(fresh11){lost}r{lost} condition(fresh5){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh7) ~condition(fresh6) ~fresh6{lost}r{lost} ~π1#N.1⟨T⟩#N.0{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh9) ~π1#N.1⟨T⟩#N.0[*]{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh11){lost}r{lost}, #N.1⟨T⟩#N.2 ~condition(fresh8) π1#N.1⟨T⟩#N.2{excl π1#N.1}r{lost}, #N.2 ~condition(fresh3) π1#N.2, condition(fresh1){apart [π1#N.0 π1#N.0[*]] [π1#N.1⟨T⟩#N.0 π1#N.1⟨T⟩#N.0[*] π1#N.1⟨T⟩#N.2] [π1#N.2], sep π1#N.0 π1#N.2, sep π1#N.2 π1#N.0[*]}r{apart [π1#N.0[*]] [π1#N.1⟨T⟩#N.0 π1#N.1⟨T⟩#N.0[*] π1#N.1⟨T⟩#N.2] [π1#N.2], sep π1#N.2 π1#N.0[*]}; xreq excl π1#N.1
+  demands 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

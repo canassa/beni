@@ -1,0 +1,258 @@
+-- A write below a non-regular type's fold (`ownership-v2.md` §2.1, *A step past
+-- a fold*): `T (List a)` folds onto `T` with a `var` argument, so the place of
+-- `Wrap`'s payload names no step below `Leaf`. The step read as a scalar, no
+-- demand was made, and the build emitted a copying push, the silent fallback
+-- the language has none of. Each write here is of a list another holder
+-- reads, and is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+one : T (List Int) → Int
+one t =
+    case t of
+        Wrap (Leaf [ ys ]) →
+            List.length (List.push ys 1)
+
+        _ →
+            0
+
+
+two : T (List Int) → Int
+two t =
+    case t of
+        Wrap (Wrap (Leaf [ [ ys ] ])) →
+            List.length (List.push ys 1)
+
+        _ →
+            0
+
+
+held : T (List Int) → Int × T (List Int)
+held t =
+    case t of
+        Wrap (Leaf [ ys ]) →
+            ( List.length (List.push ys 1), t )
+
+        _ →
+            ( 0, t )
+
+
+both : T (List Int) → Int
+both t =
+    case t of
+        Wrap (Leaf [ a, b ]) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pick : T (List Int) → List (List Int)
+pick t =
+    case t of
+        Wrap (Leaf ys) →
+            ys
+
+        _ →
+            []
+
+
+handedBack : T (List Int) → T (List (List Int))
+handedBack t =
+    case t of
+        Wrap u →
+            u
+
+        Leaf _ →
+            Leaf []
+
+
+below : T a, a → a
+below t d =
+    case t of
+        Wrap (Leaf [ x ]) →
+            x
+
+        _ →
+            d
+
+
+mk : List Int → T (List Int)
+mk xs = Wrap (Leaf [ xs ])
+
+
+viaCall : List Int → List (List Int)
+viaCall xs =
+    case mk xs of
+        Wrap (Leaf ys) →
+            ys
+
+        _ →
+            []
+
+
+wide : T (List Int), Bool → T (List Int)
+wide t c =
+    if c then
+        t
+    else
+        Leaf []
+
+
+type Pr a
+    = PL a
+    | PW (Pr (List a)) (List a)
+
+
+second : Pr (List Int) → List (List Int)
+second t =
+    case t of
+        PW (PW _ x) _ →
+            List.concat x
+
+        _ →
+            []
+
+
+throughWide : T (List Int) → List Int
+throughWide t =
+    case pick t of
+        [ y ] →
+            List.push y 2
+
+        _ →
+            []
+
+
+either : T (List Int), T (List Int), Bool → List (List Int)
+either a b c =
+    pick
+        (if c then
+            a
+         else
+            b
+        )
+
+
+three : T (List Int) → List (List (List (List Int)))
+three t =
+    case t of
+        Wrap (Wrap (Wrap (Leaf ys))) →
+            ys
+
+        _ →
+            []
+
+
+cps : Int, a, (T a → r) → r
+cps n x k =
+    if n == 0 then
+        k (Leaf x)
+    else
+        cps (n - 1) [ x ] λt → k (Wrap t)
+
+
+useCps : List Int → Int
+useCps xs = cps 2 xs λt →
+    case t of
+        Wrap (Wrap (Leaf [ [ ys ] ])) →
+            List.length (List.push ys 1) + List.length xs
+
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    k2 = [ 1 ]
+    k3 = [ 1 ]
+    k4 = [ 1 ]
+    k5 = [ 1 ]
+    k6 = [ 1 ]
+    k7 = [ 1 ]
+    k8 = [ 1 ]
+    k9 = [ 1 ]
+    k10 = [ 1 ]
+    k11 = [ 1 ]
+    k12 = [ [ [ [ 1 ] ] ] ]
+    deepest = List.push (three (Wrap (Wrap (Wrap (Leaf k12))))) []
+    chosen =
+        case either (Leaf []) (Wrap (Leaf [ k11 ])) False of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    widened =
+        case pick (wide (Wrap (Leaf [ k8 ])) True) of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    stepped =
+        case second (PW (PW (PL []) [ [ k9 ] ]) []) of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    param = throughWide (wide (Wrap (Leaf [ k10 ])) True)
+    called =
+        case viaCall k7 of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    leaving =
+        case below (Wrap (Leaf [ [ k6 ] ])) [] of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    ( n, _ ) = held (Wrap (Leaf [ [ 1 ] ]))
+    picked =
+        case pick (Wrap (Leaf [ k4 ])) of
+            [ ys ] →
+                List.push ys 2
+
+            _ →
+                []
+    back =
+        case handedBack (Wrap (Leaf [ k5 ])) of
+            Leaf [ ys ] →
+                List.push ys 2
+
+            _ →
+                []
+    lines =
+        [ String.fromInt (one (Wrap (Leaf [ k ]))) ++ show k
+        , String.fromInt (two (Wrap (Wrap (Leaf [ [ k2 ] ])))) ++ show k2
+        , String.fromInt n
+        , String.fromInt (both (Wrap (Leaf [ k3, k3 ])))
+        , String.fromInt (useCps [ 1 ])
+        , show picked ++ show k4
+        , show back ++ show k5
+        , show leaving ++ show k6
+        , show called ++ show k7
+        , show widened ++ show k8
+        , show stepped ++ show k9
+        , show param ++ show k10
+        , show chosen ++ show k11
+        , String.fromInt (List.length deepest + List.length k12)
+        ]
+    Node.print (String.join lines "\n")

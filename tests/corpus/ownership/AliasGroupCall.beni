@@ -1,0 +1,33 @@
+-- ownership (v2; R-5.5.6, ownership-v2.md §8 S3b slice 5e): an alias whose
+-- target is in a recursive group. `pushN` and `pushOdd` call each other
+-- (an alias cannot be inside the group: a value defined in terms of
+-- itself), and `again` names `pushN`, so a call of `again` applies the
+-- group's settled class of `pushN`. `kept` reads `xs` after the call:
+-- `later-use`, as a call of `pushN` would be; `owned` reads nothing after
+-- and is accepted.
+pushN : Int, List Int → List Int
+pushN n xs =
+    if n ≤ 0 then
+        xs
+    else
+        pushOdd (n - 1) (List.push xs n)
+
+
+pushOdd : Int, List Int → List Int
+pushOdd n xs =
+    if n ≤ 0 then
+        xs
+    else
+        pushN (n - 1) (List.push xs 0)
+
+
+again : Int, List Int → List Int
+again = pushN
+
+
+pub kept : List Int → List Int × List Int
+kept xs = ( again 3 xs, xs )
+
+
+pub owned : List Int → List Int
+owned xs = again 3 xs

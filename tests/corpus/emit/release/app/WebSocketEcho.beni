@@ -1,0 +1,67 @@
+-- `WebSocket` under `--release` once `WebSocket.js` is gone
+-- (plans/runtime-in-beni.md step 13, boundary.md §9.11 *The sibling,
+-- moved*): the frame header written by index, the unmask loop as a `for`,
+-- the parser's fault table, the close handshake, the readers and the
+-- drainers over host arrays, and the one process-wide frame cache; `Close`
+-- and `Result` cross no `foreign`, so a reader's answer has short names.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+echo : Deferred ⊤, Socket → ⊤
+echo stop socket =
+    case WebSocket.read socket of
+        Ok text →
+            case WebSocket.write socket text of
+                Ok ⊤ →
+                    WebSocket.drain socket
+                    echo stop socket
+
+                Err _ →
+                    ⊤
+
+        Err close →
+            if close.code == 4000 && close.reason == "stop" then
+                _ = Deferred.complete stop ⊤
+                ⊤
+
+
+upgrade : Deferred ⊤, Request → Upgrade
+upgrade stop request =
+    case Server.protocols request of
+        [ first, …_ ] →
+            Server.acceptWith { maxMessage = 65536, protocol = Just first } (echo stop _)
+
+        [] →
+            Server.accept (echo stop _)
+
+
+handle : Deferred ⊤, Request → Response
+handle stop request =
+    case request.path of
+        "/stop" →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 "bye"
+
+        _ →
+            Server.text 404 "no"
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = handle stop _, upgrade = upgrade stop _ }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print "stopped"

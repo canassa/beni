@@ -1,0 +1,4 @@
+-- An ASCII bind before a number suggests spacing a negative comparison.
+f =
+    x <-1
+    x

@@ -1,0 +1,21 @@
+-- The accepted twin of `SanitiserPairCycleFold`: the same cycle, whose second
+-- function answers a list it makes, so no field of the fold's answer holds `q`,
+-- and `push` writes it in place (§2.9.2, *The fixed point of the pairs*, #2146).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    k1 = λv → v
+    k2 = λv → if List.length v > 5 then v else [ 7 ]
+    r = List.foldl [ 1, 2, 3 ] ( [], [] ) λi acc → ( k1 acc.1, k2 acc.0 )
+    w = ( r.0, r.1 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.0)

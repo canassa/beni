@@ -1,0 +1,12 @@
+> (socket a) GET /a
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) 24000 empty frames of opcode 10
+> (socket a) "still here"
+< (socket a) "still here"
+> (signal SIGTERM)
+--- stdout ---
+--- stderr ---
+--- exit signal SIGTERM ---

@@ -1,0 +1,29 @@
+masked: s busy: True
+masked: t has the permit: ⊤
+masked: stop done, cut: 0
+masked: u has the permit: ⊤
+masked: t: "Cancelled"
+masked: u: "Done"
+masked: available: 1
+returned: s busy: True
+returned: t has the permit: ⊤
+returned: stop done, cut: 0
+returned: u has the permit: ⊤
+returned: t: "Cancelled"
+returned: u: "Done"
+returned: available: 1
+cut: t release waits: ⊤
+cut: stop done, cut: 1
+cut: s busy: False
+cut: t: "Cancelled"
+cut: u has the permit: ⊤
+cut: u: "Done"
+cut: available: 1
+long: t release waits: ⊤
+long: s busy: True
+long: t has the permit: ⊤
+long: stop done, cut: 0
+long: u has the permit: ⊤
+long: t: "Cancelled"
+long: u: "Done"
+long: available: 1

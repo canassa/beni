@@ -1,0 +1,66 @@
+-- Imported open rows need the same known-field names in both realms. Page-only
+-- fields compete for short names; both known fields contain List rest views.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import List
+import Task
+import Workers exposing (Box)
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    page = { a = "a", b = "b", c = "c", d = "d", e = "e", f = "f", g = "g", h = "h" }
+    tail = List.drop [ 0, 1, 2 ] 1
+    input =
+        { known = Box tail
+        , keep = tail
+        , extra = page.a ++ page.c ++ page.e ++ page.g
+        , more = page.b ++ page.d ++ page.f ++ page.h
+        }
+    case Worker.open owner Workers.rowv ⊤ Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            reply = Worker.call handle input
+            closed = Worker.close handle
+            case reply of
+                Err _ →
+                    "call failed"
+                Ok value →
+                    (Box nested) = value.known
+                    if
+                        value.keep == [ 1, 2 ]
+                            && nested == [ 1, 2 ]
+                            && value.extra == "aceg"
+                            && value.more == "bdfh"
+                            && closed == Worker.Confirmed
+                    then
+                        "open row passed"
+                    else
+                        "open row failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

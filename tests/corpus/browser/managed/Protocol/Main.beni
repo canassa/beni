@@ -1,0 +1,125 @@
+-- Records and unions round-trip, pushed events are buffered before events is read,
+-- and terminal replies follow request and root finalizers in both build modes.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Html exposing (Html)
+import Task
+
+
+type Request
+    = Echo { text : String, count : Int }
+    | Waiting
+
+
+type Event
+    = Started
+    | Cleaned String
+
+
+type alias Reply =
+    text : String
+    count : Int
+
+
+type alias Protocol =
+    Worker.Protocol Request Reply ⊥ String Event ⊥
+
+
+worker : Worker.Program String String Protocol
+worker =
+    Worker.program
+        { init =
+            λcontext config →
+                Task.defer (Worker.scope context) λ_ →
+                    _ = Worker.emit context (Cleaned "root")
+                    ⊤
+                Ok config
+        , start =
+            λcontext _ →
+                _ = Worker.emit context Started
+                ⊤
+        , handle =
+            λcontext state request →
+                case request of
+                    Echo input →
+                        Ok { text = state ++ input.text, count = input.count + 1 }
+                    Waiting →
+                        Task.bracket
+                            (λ⊤ →
+                                _ = Worker.emit context Started
+                                ⊤
+                            )
+                            (λ_ _ →
+                                _ = Worker.emit context (Cleaned "handler")
+                                ⊤
+                            )
+                            λ_ → Task.never ⊤
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+nextEvent : Events.Stream Worker.TransportError Event → Event
+nextEvent stream =
+    case Events.next stream of
+        Ok (Events.Item chunk) →
+            Events.take chunk
+        _ →
+            Cleaned "missing"
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    case Worker.open owned worker "hello:" Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            pushed = Worker.events handle
+            initial = nextEvent pushed
+            reply = Worker.call handle (Echo { text = "worker", count = 40 })
+            replyGood =
+                case reply of
+                    Ok value →
+                        value == { text = "hello:worker", count = 41 }
+                    Err _ →
+                        False
+            waiting = Task.spawn λ⊤ → Worker.call handle Waiting
+            _ = nextEvent pushed
+            Task.cancel waiting
+            cleaned = nextEvent pushed
+            closed = Worker.close handle
+            root = nextEvent pushed
+            if
+                initial == Started
+                    && replyGood
+                    && cleaned == Cleaned "handler"
+                    && root == Cleaned "root"
+                    && closed == Worker.Confirmed
+            then
+                "protocol passed"
+            else
+                "protocol failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

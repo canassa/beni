@@ -1,0 +1,53 @@
+-- Appendix B's `LoanStoredInCell` (`ownership-v2.md` §2.13.7): a loan
+-- stored behind another cell's `◆` is refused at the store, the copy of
+-- what is stored is accepted, and a copy of an outer list that holds the
+-- loan does not separate it.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+setLoan : ⊤ → String
+setLoan ⊤ =
+    r1 = Ref.make [ 0 ]
+    r2 = Ref.make []
+    Ref.set r2 (Ref.get r1)
+    Ref.update r1 λxs → List.push xs 1
+    ints (Ref.get r2)
+
+
+makeLoan : ⊤ → String
+makeLoan ⊤ =
+    r1 = Ref.make [ 0 ]
+    r2 = Ref.make (Ref.get r1)
+    Ref.update r1 λxs → List.push xs 1
+    ints (Ref.get r2)
+
+
+setCopy : ⊤ → String
+setCopy ⊤ =
+    r1 = Ref.make [ 0 ]
+    r2 = Ref.make []
+    Ref.set r2 (List.copy (Ref.get r1))
+    Ref.update r1 λxs → List.push xs 1
+    ints (Ref.get r2)
+
+
+outerCopy : ⊤ → String
+outerCopy ⊤ =
+    r1 = Ref.make [ 0 ]
+    r2 = Ref.make []
+    Ref.set r2 (List.copy [ Ref.get r1 ])
+    Ref.update r1 λxs → List.push xs 1
+    String.join (List.map (Ref.get r2) ints) ";"
+
+
+main : Program
+main = Node.printLines [ setLoan ⊤, makeLoan ⊤, setCopy ⊤, outerCopy ⊤ ]

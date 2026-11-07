@@ -18,11 +18,16 @@
 //!    `Demands` and `Rows` compare no name to a string literal unless the
 //!    line is allowlisted with a reason; `Facts.Cause` declares exactly
 //!    R-6.3's causes in its order.
-//! 4. **Records.** Every `MultiArrayList(T)` in `own2/` has its `T` under
-//!    `Ids.assertRecord`, so no table's record can pass 16 words (§4.1).
+//! 4. **Records.** Every table is an `Ids.Columns(T)`, which puts its `T` under
+//!    `Ids.assertRecord`, so no table's record can pass 16 words (§4.1), and
+//!    reads it through plain column slices: no other `MultiArrayList`, and
+//!    no `items(.f)` but on the BIR's instructions.
 //! 5. **Obligations.** Every production file's header says which of §2.14's
 //!    obligations it keeps (`Obligations kept here:`), or that it keeps
 //!    none.
+//! 6. **Mutations.** Every rule `Mutate.zig` names to break has a site.
+//! 7. **Registered.** A file with tests is named in `src/beni.zig`'s `own2`:
+//!    an import alone compiles no test of the file into `unit_test`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -31,56 +36,265 @@ const Entry = struct { file: []const u8, layer: u8, max_lines: u32 };
 
 /// §5's table. A new file is added here by the slice that adds it.
 const layers = [_]Entry{
+    // The slot domain (#1685) replaced the shape files: a file it added has
+    // its production lines with headroom as its target, set with it; a file
+    // master had keeps its target.
     // §5 says 600; the lane-charging forms, named limits and charge targets
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 750 },
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1000 },
-    // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
-    // and a refinement's canonical position (`unrefined`) Demands reads.
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 960 },
-    // §5 says 350 since S3a: the report's text line and its two spellings.
+    // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
+    // 900 since #1646 and the counters: `Columns`, a table with its columns hoisted.
+    // 1 000 since #1646: `IdColumn`, a memo keyed by one dense id.
+    // 1 120 since #1646: `Index` and `Interned`, open addressing over entry indices.
+    // #1685: an account's first reads of the module tables (§4.1, #1714);
+    // the chunks, the task queue and their ids, which nothing used, cut.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
+    .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
+    // Its lines are its table: a line for each rule broken, and its comment.
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 420 },
+    .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
+    .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
+    .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
+    // §5 says 1 100 since #1345: the fold targets and levels of a read on a
+    // cycle, memoised per path.
+    // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
+    // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
+    // 1 220 since #1646: `path_index` reads its keys from the paths.
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
+    .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
+    // A leaf's base keys as sets shared with its kids' (#1714).
+    .{ .file = "KeySets.zig", .layer = 1, .max_lines = 160 },
+    // The tags and routes of a leaf set (#1714), split from `Leaves`.
+    .{ .file = "Routes.zig", .layer = 1, .max_lines = 680 },
+    // Whether route sets hold together, split from `Routes` (#1714).
+    .{ .file = "Coexist.zig", .layer = 2, .max_lines = 240 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
-    .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 1960 },
-    .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
-    // §5 says 1 805 since #1112: the observable-position frontier every κ
-    // reader walks, exact propagation states, the snapshot trie (its
-    // links, merges, folds and relabelling) and the one-alternative link.
-    // 2 550 since #1128: the path-multiset primitive (arrivals, aggregates by
-    // destination class, the fold conditions), which §3.4 puts in Cond.
-    // 2 700 since #1199: the read's summaryExcl and the cell set per key.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 2700 },
-    // §5 says 1 500 since the write-back effects: the normal-form encoder, the
-    // κ-owning join, v1's print grammar and the funs' write-backs.
-    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
-    .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
-    .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
-    .{ .file = "Demands.zig", .layer = 6, .max_lines = 1280 },
-    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
-    // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
-    // S3b's worklist and propagation raise it with their design commit.
-    .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
-    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
-    // §5 says 1 100 since S3a: the source and signature adapters.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1200 },
-    .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
-    // §5 says 500 since #1065: exact ranks, the counted refinement grouped
-    // by threaded lists, its labelled graph and the reserving meter.
-    .{ .file = "Refine.zig", .layer = 10, .max_lines = 500 },
-    // §5 says 1 660 since #1073 (1 650 since #1065/#1066): positions with their read κ, closed under the
-    // map's entries, and the shared format; the reader is `BlockRead`, the
-    // refinement `Refine`; the tiers ranked exactly, every step reserved on
-    // the codec's lane, and each class's growth counted alone.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1680 },
-    .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
-    .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
-    .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
-    // §5 says 950 since #1073: a snapshot rebuilt from its positions.
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 970 },
-    .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
-    .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
+    // Holds read by their tags (#1714).
+    .{ .file = "TagTree.zig", .layer = 2, .max_lines = 250 },
+    // What a place graph says below a path, split from `Subtree` (#1714).
+    .{ .file = "PlaceBelow.zig", .layer = 2, .max_lines = 70 },
+    .{ .file = "LevelCycle.zig", .layer = 2, .max_lines = 35 },
+    // One step of a position, the step relation and the index protocol the pairs and the indices share (#1963).
+    .{ .file = "Steps.zig", .layer = 2, .max_lines = 190 },
+    // A place graph's encoding and equality, split from `Place` (#1714).
+    .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
+    .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
+    .{ .file = "Replay.zig", .layer = 2, .max_lines = 130 },
+    .{ .file = "SlotWords.zig", .layer = 2, .max_lines = 110 },
+    // A contract's result trees, hash-consed by node (#1714, §2.10).
+    .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
+    // The readers and the union of result trees, below the contracts (#1714).
+    // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
+    .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
+    .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
+    .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
+    // The identity tree's one normal form, below `Contract` (#1714).
+    .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
+    .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
+    // Conditions, split from `Contract` (#1714).
+    .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
+    // The answers occurrence (§2.11.3).
+    .{ .file = "AnsOcc.zig", .layer = 4, .max_lines = 35 },
+    .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
+    // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
+    .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
+    // How large `below(p)` is, split from `Subtree` (#1714).
+    .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
+    .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },
+    // A selection in its one spelling of a subtree (#1714).
+    .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
+    // A set met against a run of slots in one pass, for `Descent` (#1714).
+    .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
+    // The environment rows are read in, split from `Rows` (#1752).
+    .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
+    .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
+    .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
+    // `within`, split from `Contract` (#1991).
+    .{ .file = "Within.zig", .layer = 5, .max_lines = 140 },
+    // A value's leaf set (#1714): made with the value, read by `Relation`.
+    .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
+    .{ .file = "ValueTypes.zig", .layer = 5, .max_lines = 170 },
+    // Worded contracts by declaration and places, one footprint a callee (#1714).
+    .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
+    .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
+    .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
+    // A code's summary lines, its called contracts' after it (#2028).
+    .{ .file = "SummaryText.zig", .layer = 6, .max_lines = 35 },
+    // §5 says 750 since #1214: a path's uses grouped for a filter, and a
+    // child's range found by its one step.
+    // #1685: a holder's deepest use; the pair ancestry split to `Ancestry`.
+    .{ .file = "Liveness.zig", .layer = 6, .max_lines = 750 },
+    // Compatibility for one pair of points, split from `Liveness` (#1685).
+    .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
+    .{ .file = "Pairs.zig", .layer = 6, .max_lines = 215 },
+    // A reference read by steps, by every route of a `⟲`, split from `Relation` (#2192).
+    .{ .file = "RefRead.zig", .layer = 6, .max_lines = 90 },
+    .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
+    .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
+    .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
+    .{ .file = "HeldBy.zig", .layer = 7, .max_lines = 50 },
+    // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
+    .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
+    // The atoms a result holds open already, for the read-off (#1716).
+    .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
+    // A call's subtree of atoms read as the callee's node (#1714).
+    .{ .file = "AtomGraft.zig", .layer = 7, .max_lines = 70 },
+    // The entries' inline order by jump pointers, for `Chains` (#1714).
+    .{ .file = "Jumps.zig", .layer = 7, .max_lines = 60 },
+    // One walk of a value along several paths by route sets, below
+    // `Distinct` (#1714, §2.11.2); `⟲` one of its shared steps, split
+    // from `Routed` (#1714, §2.3.5 *a key's leaf*).
+    .{ .file = "RouteWalk.zig", .layer = 8, .max_lines = 450 },
+    // A selection's apart and plain occurrences, split from `Distinct` (#1714).
+    .{ .file = "ApartPlain.zig", .layer = 8, .max_lines = 130 },
+    // A write onto a caller's parameter stops there, its targets read off
+    // the callee's tree (#1714, §2.11.2).
+    .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
+    .{ .file = "OneSet.zig", .layer = 8, .max_lines = 40 },
+    // A callee's tree and condition taken as the caller's at a call whose
+    // arguments are its parameters whole (#1225, #1714, §2.10).
+    .{ .file = "CallGraft.zig", .layer = 8, .max_lines = 170 },
+    // A holder DAG's items under united route sets, for the descent (#1714).
+    .{ .file = "DagRoutes.zig", .layer = 8, .max_lines = 170 },
+    // A value's leaves at their slots, split from `Relation` (#1714).
+    .{ .file = "Parts.zig", .layer = 8, .max_lines = 70 },
+    // What the distinct check reads of its rounds, split from `Distinct` (#1714).
+    .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
+    // A chain of calls handing one object on, split from `Relation` (#1714).
+    .{ .file = "Ends.zig", .layer = 8, .max_lines = 40 },
+    // A call's leaf's atoms, for the distinct check (#1714).
+    .{ .file = "AtomSets.zig", .layer = 8, .max_lines = 240 },
+    // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
+    // values, the distinct check reads a call's instantiation.
+    // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
+    .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
+    .{ .file = "CellEdit.zig", .layer = 8, .max_lines = 65 },
+    // A label's answer handed back to it, and its `fed` occurrence (#1713).
+    .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
+
+    // The sources a frame's escapes reach, for the read-off's `host` (#1744).
+    .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
+    // A callee's `fed` occurrence at a call, split from `Fed` (#1721).
+    .{ .file = "FedCall.zig", .layer = 8, .max_lines = 105 },
+    // A label's answers read, and their occurrence decided (§2.11.3).
+    .{ .file = "Answers.zig", .layer = 8, .max_lines = 190 },
+    // An answers occurrence decided at a caller.
+    .{ .file = "AnswerCall.zig", .layer = 8, .max_lines = 120 },
+    // What a check's plain slots may hold, split from `Distinct`.
+    .{ .file = "PlainReach.zig", .layer = 8, .max_lines = 120 },
+    // An entry of the distinct check expanded, split from `Distinct`.
+    .{ .file = "EntryExpand.zig", .layer = 8, .max_lines = 30 },
+    // The module's services a walk reads, split from `Walk` (#1758).
+    .{ .file = "WalkContext.zig", .layer = 8, .max_lines = 75 },
+    // The labels a virtual call's supply comes through, outward, split
+    // from `Eval` (#1758, #1760, #1721).
+    .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
+    // What a traversal's supply says, below the labels' chain's readers.
+    .{ .file = "Each.zig", .layer = 8, .max_lines = 120 },
+    // A closure's captures in what holds it, beside `Routed` (#1772).
+    .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
+    // A function value in a result: its called code (#2028).
+    .{ .file = "Called.zig", .layer = 8, .max_lines = 70 },
+    // A construction over its base, split from `Walk` (#2028).
+    .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
+    // A demand says whether it is a cell operation (#1727).
+    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
+    // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
+    .{ .file = "FnRun.zig", .layer = 9, .max_lines = 250 },
+    .{ .file = "AnswerRead.zig", .layer = 9, .max_lines = 40 },
+    // One entry of many objects; an answer apart from nothing (#1710,
+    // #1711); what an answer may hold (§2.9.2 step 7).
+    .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
+    .{ .file = "MovedReq.zig", .layer = 9, .max_lines = 75 },
+    // A call's writes projected by the walk, and a set written out (#1714).
+    .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
+    // A virtual call's record, from `Eval` (#2166).
+    .{ .file = "Virtual.zig", .layer = 9, .max_lines = 70 },
+    // What a callee holds across a run of a known code it is handed (#1955).
+    .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
+    // What a cell callback's write-back makes escape, from `Eval` (#1729, #1955).
+    .{ .file = "Stored.zig", .layer = 9, .max_lines = 65 },
+    // A cell callback's label, and what it answers: a loan of the cell or
+    // `modify`'s owned `.0` (#1977).
+    .{ .file = "Loans.zig", .layer = 9, .max_lines = 135 },
+    // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
+    // A closure's cell operations on its captures, at its creation (#1727).
+    .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
+    // Demands judged once for their twins (#1714).
+    .{ .file = "Twins.zig", .layer = 10, .max_lines = 90 },
+    // What resolution reads of the leaves: base keys, the escape index (#1714).
+    .{ .file = "Holders.zig", .layer = 10, .max_lines = 700 },
+    // The holder index and its sweep, split from `Holders` (#1714): holds
+    // listed once a holder, buckets by next use, the aggregated holders.
+    // A holder's later uses, split from `Resolve` for the best-hold descent (#1714).
+    .{ .file = "Later.zig", .layer = 10, .max_lines = 180 },
+    .{ .file = "Sweep.zig", .layer = 10, .max_lines = 720 },
+    // The paths at which a hold holds a target, split from `Descent` (#1714).
+    .{ .file = "HoldAt.zig", .layer = 10, .max_lines = 140 },
+    // The pending operands by clock and key, split from the walk's copies (#1714).
+    .{ .file = "Stack.zig", .layer = 10, .max_lines = 380 },
+    // A write of a fold's accumulator, by its slot (§2.11.3).
+    .{ .file = "FedWrite.zig", .layer = 10, .max_lines = 100 },
+    // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
+    // A supply part judged by its known objects too (#1712).
+    // The read-off, split from `Eval` (#1714).
+    // Where the read-off puts what it describes, split from `ReadOff` (#1714).
+    .{ .file = "Put.zig", .layer = 11, .max_lines = 170 },
+    // The best-hold descent over a holder DAG, below Resolve (#1714).
+    .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
+    .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
+    // A callee's hand-back is an escape too (#1709).
+    .{ .file = "ClosureAnswers.zig", .layer = 11, .max_lines = 110 },
+    .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
+    // A store that may hold one object twice escapes the cell's contents (#1984).
+    .{ .file = "Contents.zig", .layer = 11, .max_lines = 140 },
+    // A group's judgements kept across its rounds (§2.12, #1714).
+    .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
+    // What the labels outward of a virtual call add to its demands and to
+    // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
+    .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
+    // What a closure's creation asks of its writes, split from `Eval` (#2028).
+    .{ .file = "Once.zig", .layer = 11, .max_lines = 60 },
+    // What a called code says of what its creation made (#2028).
+    .{ .file = "Made.zig", .layer = 11, .max_lines = 55 },
+    .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
+    // A traversal's supply, derived from the walk (§2.11.3).
+    .{ .file = "Traversal.zig", .layer = 11, .max_lines = 230 },
+    // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
+    .{ .file = "LaterFunctions.zig", .layer = 11, .max_lines = 40 },
+    .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
+    // A label's answer in another label's supply (§2.11.3, #2013).
+    .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
+    .{ .file = "ClosureRuns.zig", .layer = 12, .max_lines = 85 },
+    .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
+    .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
+    // The conditions of a contract, split from `ReadOff` (#2028).
+    .{ .file = "CondsOff.zig", .layer = 12, .max_lines = 120 },
+    // Nested codes' captures, split from `Groups` (#2028).
+    .{ .file = "CodeCaps.zig", .layer = 12, .max_lines = 90 },
+    // A parameter annotated with a type variable, split from `Groups` (#2028).
+    .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
+    // A module's codes and one declaration's answer, split from `Groups` (#1758).
+    .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
+    .{ .file = "BlockWords.zig", .layer = 12, .max_lines = 70 },
+    .{ .file = "Callees.zig", .layer = 12, .max_lines = 290 },
+    // Evidence terms as function values (#1708).
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    // A refused loan's text, split from `Message` (#1991).
+    .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
+    // How a block names what is local to a module, split from `Block` (#1991).
+    .{ .file = "BlockNames.zig", .layer = 13, .max_lines = 30 },
+    // A contract's called contracts in a block (#2028).
+    .{ .file = "BlockCalled.zig", .layer = 13, .max_lines = 35 },
+    .{ .file = "BlockStep.zig", .layer = 13, .max_lines = 60 },
+    .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
+    .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
+    .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
+    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 170 },
+    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 340 },
+    .{ .file = "Enforce.zig", .layer = 16, .max_lines = 510 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -122,7 +336,109 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Rows.zig" };
+/// `std.mem`'s compares, by the start of their names: a run of words compared with
+/// another, or searched, whatever the spelling.
+const mem_compares = [_][]const u8{ "eql", "startsWith", "endsWith", "order", "lessThan", "indexOf", "lastIndexOf", "find", "containsAtLeast", "count" };
+/// Files whose runs of words are no slot's: an event log, a block's words, interned
+/// runs, a place's name set, route sets, a caller's capture ids, a type's places, a site's codes.
+const no_slot_words = [_][]const u8{ "Block.zig", "Callees.zig", "CodeCaps.zig", "Counters.zig", "Enforce.zig", "Groups.zig", "Ids.zig", "Kept.zig", "Ownership.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Routes.zig", "RowSets.zig", "Runs.zig", "Twins.zig", "WordRun.zig" };
+/// A line of a file with slots that compares something else, by a needle on the line.
+const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
+    // Parameter, code, value and leaf ids in small lists.
+    .{ .file = "Answers.zig", .needle = "ids, c.code" },
+    .{ .file = "Closures.zig", .needle = "cl.value" },
+    .{ .file = "Distinct.zig", .needle = "js.items, j" },
+    .{ .file = "MovedReq.zig", .needle = "js.items, Contract.occParam(o)" },
+    .{ .file = "Routed.zig", .needle = "js.items, x.j" },
+    .{ .file = "Contract.zig", .needle = "js.items, e.j" },
+    .{ .file = "Value.zig", .needle = "m.items, q" },
+    .{ .file = "Walk.zig", .needle = "items.items, c" },
+    // A record's kid ranks, and a row's names: these read one name, no slot.
+    .{ .file = "Walk.zig", .needle = "ranks.items, st.kidWord()" },
+    .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
+    // Tarjan's stack of places.
+    .{ .file = "Place.zig", .needle = "stack.items" },
+    .{ .file = "Place.zig", .needle = "PlaceId, kids" },
+    // The canonical order's keys, which rank and name, and tell no slot from another's row.
+    .{ .file = "Slots.zig", .needle = "t.keyOf(a)" },
+    // Whole selections and runs compared as stored: equal words, the same facts, a miss
+    // only says "changed".
+    .{ .file = "Conds.zig", .needle = "a.sel, b.sel" },
+    .{ .file = "Contract.zig", .needle = "t.occsOf(a)" },
+    .{ .file = "Contract.zig", .needle = "t.readsOf(x.reads)" },
+    // A `[*]` among a slot's words: one step, which no row stands for.
+    .{ .file = "Each.zig", .needle = "Place.Step.elem.word()" },
+    .{ .file = "Traversal.zig", .needle = "relWords(a.slot), elem" },
+    // Two arrivals by their slots' ids: one answer run's, one frame's.
+    .{ .file = "Traversal.zig", .needle = "src.?, pass.?" },
+    // The keys are read only with no row among them: `SlotWords.meetsKey` reads the others (§2.1).
+    .{ .file = "PlainReach.zig", .needle = "sliceAsBytes(key" },
+};
+/// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
+/// needed is in each (§2.1, *One rule per reader*). `Forest.at`'s nothing is no reading:
+/// `AtomGraft` and `Relation` read the row by `Forest.atSlot` and `rowKid` beside it.
+const kid_readers = [_][]const u8{ "AtomGraft.zig", "Deliver.zig", "Descent.zig", "Eval.zig", "Forest.zig", "Graft.zig", "Later.zig", "ReadOff.zig", "Relation.zig", "Trees.zig", "Within.zig" };
+
+fn lineAround(text: []const u8, at: usize) []const u8 {
+    const start = if (std.mem.lastIndexOfScalar(u8, text[0..at], '\n')) |nl| nl + 1 else 0;
+    const end = std.mem.indexOfScalarPos(u8, text, at, '\n') orelse text.len;
+    return text[start..end];
+}
+
+fn notSlots(name: []const u8, line: []const u8) bool {
+    for (not_slots) |x| if (std.mem.eql(u8, x.file, name) and std.mem.indexOf(u8, line, x.needle) != null) return true;
+    return false;
+}
+
+/// Refuses a compare of `std.mem` on anything but bytes, however it is spelled, an alias
+/// of `std.mem` or of one of its compares, `std.meta.eql`, and a slice of words as bytes,
+/// which hashes or compares a slot by its words. A fixed key (`&x`) is no slot (§2.1).
+fn refuse(bad: *usize, quiet: bool, comptime fmt: []const u8, args: anytype) void {
+    if (quiet) bad.* += 1 else fail(bad, fmt, args);
+}
+
+fn wordCompares(name: []const u8, text: []const u8, bad: *usize, quiet: bool) void {
+    if (isListed(&no_slot_words, name)) return;
+    for ([_][]const u8{ "std.mem;", "std.mem\n", "\").mem;", "\").mem\n", "std.meta.eql" }) |needle| {
+        var from: usize = 0;
+        while (std.mem.indexOfPos(u8, text, from, needle)) |at| {
+            from = at + needle.len;
+            if (!isComment(lineAround(text, at)) and !notSlots(name, lineAround(text, at))) refuse(bad, quiet, "{s}: `{s}` hides a compare of words from this rule: slots go through `SlotWords` (§2.1)", .{ name, needle });
+        }
+    }
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, text, from, "sliceAsBytes(")) |at| {
+        from = at + 1;
+        const line = lineAround(text, at);
+        if (!isComment(line) and !notSlots(name, line)) refuse(bad, quiet, "{s}: words as bytes: slots go through `SlotWords` (§2.1)", .{name});
+    }
+    from = 0;
+    while (std.mem.indexOfPos(u8, text, from, "mem.")) |at| {
+        from = at + 4;
+        if (at != 0 and (std.ascii.isAlphanumeric(text[at - 1]) or text[at - 1] == '_')) continue;
+        var e = from;
+        while (e < text.len and (std.ascii.isAlphanumeric(text[e]) or text[e] == '_')) e += 1;
+        const known = for (mem_compares) |c| {
+            if (std.mem.startsWith(u8, text[from..e], c)) break true;
+        } else false;
+        const line = lineAround(text, at);
+        if (!known or isComment(line)) continue;
+        if (e >= text.len or text[e] != '(') {
+            refuse(bad, quiet, "{s}: an alias of `mem.{s}`: slots go through `SlotWords` (§2.1)", .{ name, text[from..e] });
+            continue;
+        }
+        const comma = std.mem.indexOfScalarPos(u8, text, e, ',') orelse continue;
+        if (std.mem.eql(u8, text[e + 1 .. comma], "u8") or std.mem.startsWith(u8, text[comma..], ", &") or notSlots(name, line)) continue;
+        refuse(bad, quiet, "{s}: `mem.{s}` on {s}: slots go through `SlotWords` (§2.1)", .{ name, text[from..e], text[e + 1 .. comma] });
+    }
+}
+
+fn isListed(list: []const []const u8, name: []const u8) bool {
+    for (list) |x| if (std.mem.eql(u8, x, name)) return true;
+    return false;
+}
+
+const no_name_compare = [_][]const u8{ "Eval.zig", "Relation.zig", "Resolve.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
 /// a text of its line, with why. An entry nothing matches fails too.
@@ -133,7 +449,7 @@ const literal_allowlist = [_]Allowed{};
 const causes = [_][]const u8{
     "unknown",   "escaped",  "top_level", "captured_edit", "disjoint", "held_operand", "later_use",
     "alias",     "captured", "element",   "call",          "supply",   "need",         "limit",
-    "exclusive", "once",     "payload",   "read_only",     "level",
+    "exclusive", "once",     "payload",   "read_only",     "level",    "comparison",   "loan",
 };
 
 const test_marker = "\nconst testing = std.testing;";
@@ -195,6 +511,7 @@ fn importVerdict(file: []const u8, target: []const u8, in_tests: bool) ?[]const 
     const me = layerOf(file) orelse return "not in §5's table";
     if (std.mem.indexOf(u8, target, "own/") != null) return "v1 (src/own/) is frozen and no v2 file reads it";
     if (std.mem.indexOfScalar(u8, target, '/') == null and std.mem.endsWith(u8, target, ".zig")) {
+        if (std.mem.eql(u8, target, "Counters.zig") or std.mem.eql(u8, target, "Mutate.zig")) return null;
         const other = layerOf(target) orelse return "not in §5's table";
         if (other.layer >= me.layer) return "imports go to strictly lower layers (§5)";
         return null;
@@ -287,8 +604,8 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
     for (sources.items) |s| {
         if (std.mem.eql(u8, s.name, "rules_test.zig")) continue;
         // Only `Cell` defines `alias`.
-        if (!std.mem.eql(u8, s.name, "Cell.zig") and std.mem.indexOf(u8, s.text, "fn alias(") != null) {
-            fail(&bad, "{s} defines `alias`: only Cell.alias compares cells (§5)", .{s.name});
+        if (!std.mem.eql(u8, s.name, "Distinct.zig") and std.mem.indexOf(u8, s.text, "fn overlap(") != null) {
+            fail(&bad, "{s} defines `overlap`: only Distinct.overlap relates leaves (§2.9.2)", .{s.name});
         }
         // The normal form's words are build-local (§3.5: this module's
         // place ids, union sides in id order): only `Summary` makes them
@@ -316,6 +633,13 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
                 if (!allowed) fail(&bad, "{s}:{d}: a name compared to a string literal in a fenced file (§5)", .{ s.name, n });
             }
         }
+        // A slot's words are compared in `WordRun`/`SlotWords` alone (§2.1).
+        wordCompares(s.name, production(s.text), &bad, false);
+        // A tree's kid by a caller's word: each of these files is decided, and a new one
+        // decides too, by `rowKid` or by saying why an exact kid will do (§2.1).
+        for ([_][]const u8{ ".kidAt(", "Forest.at(" }) |needle| if (std.mem.indexOf(u8, production(s.text), needle) != null and !isListed(&kid_readers, s.name)) {
+            fail(&bad, "{s} reads a tree's kid: take `Trees.rowKid` too, or add it to `kid_readers` (§2.1)", .{s.name});
+        };
         // `Facts.Cause` is exactly R-6.3's list, in its order.
         if (std.mem.eql(u8, s.name, "Facts.zig")) {
             members.clearRetainingCapacity();
@@ -327,23 +651,95 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
                 fail(&bad, "Facts.zig: `Cause` has `{s}` where R-6.3's order has `{s}`", .{ m, c });
             };
         }
-        // Every table's record type is asserted.
+        // Every table is an `Ids.Columns`, which asserts its record (§4.1: at
+        // most 16 words) and keeps its columns as plain slices in step with
+        // every growth: `MultiArrayList`'s `items(.f)` and `get(i)` recompute
+        // every column's address per call, a third of the checker's cycles
+        // under Zig's own backend. Only `Ids.Columns` holds one.
         var from: usize = 0;
         while (std.mem.indexOfPos(u8, s.text, from, "MultiArrayList(")) |at| {
             from = at + 1;
             const line_start = if (std.mem.lastIndexOfScalar(u8, s.text[0..at], '\n')) |nl| nl + 1 else 0;
             if (isComment(s.text[line_start..at])) continue;
-            const open = at + "MultiArrayList(".len;
-            const close = std.mem.indexOfScalarPos(u8, s.text, open, ')') orelse continue;
-            const ty = s.text[open..close];
-            if (std.mem.indexOfScalar(u8, ty, '.') != null) continue; // another file's record, asserted there
-            var needle_buf: [128]u8 = undefined;
-            const needle = std.fmt.bufPrint(&needle_buf, "assertRecord({s})", .{ty}) catch continue;
-            if (std.mem.indexOf(u8, s.text, needle) == null) fail(&bad, "{s}: `{s}` is a table's record and has no `Ids.assertRecord({s})` (§4.1: at most 16 words)", .{ s.name, ty, ty });
+            if (std.mem.eql(u8, s.name, "Ids.zig") and std.mem.startsWith(u8, s.text[at..], "MultiArrayList(T)")) continue;
+            fail(&bad, "{s}: a `MultiArrayList` table: make it an `Ids.Columns` and read it through `col`", .{s.name});
+        }
+        // Only the BIR's instructions, another module's list, are read
+        // through `items`; and only `Ids.Columns` touches its own `list`,
+        // which a write past `col` would leave out of step.
+        var lines = std.mem.splitScalar(u8, production(s.text), '\n');
+        var n: u32 = 0;
+        while (lines.next()) |line| {
+            n += 1;
+            if (isComment(line)) continue;
+            if (!std.mem.eql(u8, s.name, "Ids.zig") and std.mem.indexOf(u8, line, ".list.") != null) {
+                fail(&bad, "{s}:{d}: an `Ids.Columns`' `list` reached from outside `Ids.zig`: use its methods and `col`", .{ s.name, n });
+            }
+            if (std.mem.indexOf(u8, line, ".items(.") == null) continue;
+            if (std.mem.indexOf(u8, line, "bir.insts.items(.") != null) continue;
+            fail(&bad, "{s}:{d}: a column read through `items`: read the table's `col`", .{ s.name, n });
         }
     }
     for (literal_allowlist, used) |a, u| {
         if (!u) fail(&bad, "rules_test.zig: the allowlist entry for {s} (`{s}`) matches nothing: remove it", .{ a.file, a.needle });
+    }
+    try testing.expectEqual(@as(usize, 0), bad);
+}
+
+test "a file with tests is registered, or its tests never run" {
+    const gpa = testing.allocator;
+    var sources: std.ArrayList(Source) = .empty;
+    defer {
+        for (sources.items) |x| {
+            gpa.free(x.name);
+            gpa.free(x.text);
+        }
+        sources.deinit(gpa);
+    }
+    try readSources(gpa, testing.io, &sources);
+    const root = try std.Io.Dir.cwd().readFileAlloc(testing.io, "src/beni.zig", gpa, .limited(1 << 22));
+    defer gpa.free(root);
+    var bad: usize = 0;
+    for (sources.items) |x| {
+        if (!std.mem.startsWith(u8, x.text, "test \"") and std.mem.indexOf(u8, x.text, "\ntest \"") == null and std.mem.indexOf(u8, x.text, "\ntest {") == null) continue;
+        const named = try std.fmt.allocPrint(gpa, "@import(\"own2/{s}\")", .{x.name});
+        defer gpa.free(named);
+        if (std.mem.indexOf(u8, root, named) == null) fail(&bad, "{s} has tests, and `src/beni.zig`'s `own2` does not name it: `unit_test` never compiles them", .{x.name});
+    }
+    try testing.expectEqual(@as(usize, 0), bad);
+}
+
+test "every mutation has a site" {
+    const gpa = testing.allocator;
+    var sources: std.ArrayList(Source) = .empty;
+    defer {
+        for (sources.items) |x| {
+            gpa.free(x.name);
+            gpa.free(x.text);
+        }
+        sources.deinit(gpa);
+    }
+    try readSources(gpa, testing.io, &sources);
+    // Each file read once: a site's name, and how many sites it has.
+    var sites: std.StringHashMapUnmanaged(u32) = .empty;
+    defer sites.deinit(gpa);
+    const mark = ".on(.";
+    for (sources.items) |x| {
+        if (std.mem.eql(u8, x.name, "rules_test.zig") or std.mem.eql(u8, x.name, "Mutate.zig")) continue;
+        var at: usize = 0;
+        while (std.mem.indexOfPos(u8, x.text, at, mark)) |i| {
+            at = i + mark.len;
+            const end = std.mem.indexOfScalarPos(u8, x.text, at, ')') orelse break;
+            const got = try sites.getOrPutValue(gpa, x.text[at..end], 0);
+            got.value_ptr.* += 1;
+        }
+    }
+    var bad: usize = 0;
+    for (std.enums.values(@import("Mutate.zig").Name)) |m| {
+        const name = @tagName(m);
+        if (m == .none or std.mem.startsWith(u8, name, "word_")) continue;
+        const n = sites.get(name) orelse 0;
+        if (n == 0) fail(&bad, "mutation {s}: no site (`src/own2/Mutate.zig`)", .{name});
     }
     try testing.expectEqual(@as(usize, 0), bad);
 }
@@ -353,25 +749,47 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 26), layers.len);
-    try testing.expectEqual(@as(usize, 19), causes.len);
+    try testing.expectEqual(@as(usize, 136), layers.len);
+    try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
 test "the import verdict refuses back doors and accepts the base layer" {
-    try testing.expect(importVerdict("Cell.zig", "../beni.zig", false) != null);
-    try testing.expect(importVerdict("Cell.zig", "../beni.zig", true) != null);
-    try testing.expect(importVerdict("Cell.zig", "../own/Ownership.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "../beni.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "../beni.zig", true) != null);
+    try testing.expect(importVerdict("Slots.zig", "../own/Ownership.zig", false) != null);
     try testing.expect(importVerdict("Prepass.zig", "../check/TypeKeys.zig", false) != null);
     try testing.expect(importVerdict("Prepass.zig", "../check/Module.zig", false) != null);
-    try testing.expect(importVerdict("Cell.zig", "../check/TypeStore.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "../check/TypeStore.zig", false) != null);
     try testing.expect(importVerdict("Place.zig", "../check/TypeStore.zig", false) == null);
     try testing.expect(importVerdict("Prepass.zig", "../check/Scc.zig", false) == null);
     try testing.expect(importVerdict("Prepass.zig", "../bir/Lower.zig", false) != null);
     try testing.expect(importVerdict("Prepass.zig", "../bir/Lower.zig", true) == null);
-    try testing.expect(importVerdict("Cell.zig", "Ids.zig", false) == null);
-    try testing.expect(importVerdict("Ids.zig", "Cell.zig", false) != null);
-    try testing.expect(importVerdict("Cell.zig", "Facts.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "Ids.zig", false) == null);
+    try testing.expect(importVerdict("Ids.zig", "Slots.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "Facts.zig", false) != null);
     try testing.expect(importVerdict("Shape.zig", "Nowhere.zig", false) != null);
+}
+
+test "a plain compare of words is refused however it is spelled" {
+    const refused = [_][]const u8{
+        "const mem = std.mem;\nfn f(a: []const u32) bool { return mem.startsWith(u32, a, a); }\n",
+        "fn f(a: []const u32) ?usize { return std.mem.indexOfDiff(u32, a, a); }\n",
+        "fn f(a: []const u32) std.math.Order { return std.mem.order(u32, a, a); }\n",
+        "const same = std.mem.eql;\n",
+        "const m = @import(\"std\").mem;\n",
+        "fn f(a: []const u32) bool { return std.mem.endsWith(u32, a, a); }\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(u8, std.mem.sliceAsBytes(a), std.mem.sliceAsBytes(a)); }\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(Step, a, a); }\n",
+        "fn f(a: []const u32) bool { return std.meta.eql(a, a); }\n",
+    };
+    for (refused) |text| {
+        var bad: usize = 0;
+        wordCompares("Probe.zig", text, &bad, true);
+        try testing.expect(bad != 0);
+    }
+    var ok: usize = 0;
+    wordCompares("Probe.zig", "fn f(x: [2]u32) bool { return std.mem.eql(u32, &x, &x) or std.mem.eql(u8, \"a\", \"b\"); }\nconst A = std.mem.Allocator;\n", &ok, true);
+    try testing.expectEqual(@as(usize, 0), ok);
 }
 
 test "the enum member reader is exact: extras, order and words inside words fail" {

@@ -915,6 +915,9 @@ value holds closures or top-level functions, or of a function parameter — whos
      translated: its `calls`, its `need`, its `seen`, and its supply entries, each provenance instantiated
      through this call (item 6) and each `owned` kept only if the cells it now names pass the four
      conditions at this call — a *probe*, a demand that is resolved but not printed;
+     A class the callee runs with that parameter hands it on as well: when a callback instantiated here is handed
+     the caller's own function parameter, a `need`, record `need`, conditional `need` or send of the callback's
+     `fun` reaches the caller's `fun`, whatever its `calls` and `seen` (#1751);
    - when `S.fun(j)` is not `seen`, an actual that writes a parameter is `pending` (§16.5).
 5. **Returns owned** (thesis §3.7, *A callback's result is owned only when the rules show it*): the
    actual's class returns owned when every provenance of its `res` is some `fresh_k`, a parameter path
@@ -3280,6 +3283,15 @@ the condition that two arguments share no cell, and an atom about a callback the
 class's result — `sep cb_j cb_j` holds when every provenance of it is `fresh_k`, or the element the callee
 hands it destructively (each call gets another position).
 
+*Amended 2026-11-05 (#1956).* A cell does not tell a pattern's rest from the list it split, because a rest is a
+view of the same cells. So a split element is apart from its container's element cell only until something other
+than that pattern's own bindings reaches that cell: a read of any other local, or an operand evaluated before the
+match and still waiting. In a lambda both sides are read as the frames that bind them hold them, a read of a binding
+not made yet reaches every element, and a capture's lost condition is the list's too, because the lambda's summary
+does not carry it out. A local group's next round starts from the state before the round. From there the pair is `lost`. `[ …l, p ]`, `List.push l p` and `List.reverse l` beside
+`p` hold one list twice and are refused; `[ …rest, p ]` is not. The price: `[ el, …xs ]` followed by its tail holds
+each element once, and is refused too, as are an alias of the rest and a read of `l`'s length beside `[ …rest, p ]`.
+
 A callee's `xreq` that fails at a call is reported on the call-site demand of the argument it names; an
 `xreq` is recorded only beside a write of that parameter, so the line exists.
 
@@ -3358,6 +3370,13 @@ The write inside it is then **accepted `once`** (a new acceptance kind) or rejec
 demand's own cause, or the cause **`once`** ("it is handed to `List.map`, which may call it more than
 once"). `captured-edit` is left for a write of a capture the walk cannot place in a closure.
 
+*Amended 2026-11-05 (#1956).* A write of a capture also meets, in the closure's own body, every later read of
+what holds that list outside: a local, a function value that captured it, or a lambda made there, whose captures
+of enclosing frames are reads where it is made. The list is one capture cell inside the closure, which no other
+local names, so the check looks each local up in the frame that binds it. An enclosing frame's locals are asked once
+the walk is done, because a local function's body is walked before its block's other bindings; the frame's own are
+asked at the demand, because one bound later may hold the write's result.
+
 ### 18.9 Capture paths of function parameters
 
 A call of the declaration's function parameter `πⱼ` inside a lambda is recorded with the lambda, its
@@ -3368,6 +3387,10 @@ supplies the lambda (or the call passes), owned when the lambda's probe, the cal
 the call all pass. A lambda's class names such a result `cb_j` of the enclosing declaration. A lambda that
 leaves the walk's sight takes `πⱼ` out of sight with it. So `Set.foldl`'s callback, handed to `Dict.foldl`
 inside a lambda, is supplied `Dict.foldl`'s accumulator owned.
+
+*Amended 2026-11-05 (#1959).* A supply that rests on a destructive one (§18.5) also keeps that supply's list and
+record conditions. The deep condition of the element says nothing about its siblings, so `List.update rs 1 λv → f v`
+owes `excl π1`, as `List.update rs 1 f` does.
 
 ### 18.10 The report
 
@@ -3972,7 +3995,7 @@ rejected `escaped` (`T29`; `browser/tea/SyncCommandOrder` pins the order at run 
 ### 23.9 The trusted surface
 
 §20.9 gains, approved by the manager on 2026-10-12 on condition that each row names the runtime code that
-justifies it. The browser runtime is beni over `Js` (`platforms/browser/Hosted.js` holds only the keys), so the
+justifies it. The browser runtime is beni over `Js` (`platforms/browser/Hosted.js` held only the keys, and since 2026-10-26 is gone), so the
 references are to its beni functions:
 
 | Row (§23.3) | What it asserts | Justified by |
@@ -4218,7 +4241,7 @@ that declaration moves it — not an edit elsewhere in the file, not a change to
 which would move every BIR hash at once and train editors to update pins without reading; folding whitespace lets
 the formatter re-lay a body without a false alarm, while a changed comment inside it still alarms, on the safe
 side. A `crossing` type has no body and is not pinned. The helpers a body calls in its own file are pinned beside
-it — `Js.js`'s `args`, `Node.js`'s `spine`, `String`'s `elements`, `Debug`'s `logAs` and `toStringAs` — but not
+it — `Js.js`'s `args`, `String`'s `elements`, `Debug`'s `logAs` and `toStringAs` (`Node.js`'s `spine` until the sibling went, 2026-10-23) — but not
 transitively: the schema engine behind `Schema`'s four, and `Debug`'s printer below `toStringAs`, move no pin, and a
 change there relies on review.
 
@@ -4249,6 +4272,9 @@ names the fixture that pins each (§24.6).
 |---|---|---|
 | `Js.from`, `Js.to` | `returned a → Value`, `returned Value → a` | `Js.js`: `(v) => v`, compiled to nothing |
 | `Js.same`, `isNull`, `isUndefined`, `isNullish` | `unused` arguments, `fresh` result | `a === b`, `v === null`, `v == null`: a reference compared, nothing dereferenced, a boolean made |
+| `Js.entryWindow` (private, 2026-11-06; Part of #2120) | no data inputs or writes, `fresh` Boolean result | `Lower.entryWindowValue` returns a Boolean literal per entry, or a library-only `typeof` comparison: no argument or reference is retained. The foreign signature and the generator body are both pinned; there is no sibling export. `browser/managed/Network` exercises the row through Http; no unsafe flip applies to a fresh primitive Boolean. |
+| `Browser.Worker.runDefinition` (P-sync helper pin, 2026-11-06 review) | retains transport listeners and peer state; no borrowed/pure shortcut | Removed only the stored global-self endpoint. Root lifetime, boot, queue/control listeners, cancellation and final close were reread and remain unchanged; `workers.md` records the retention justification. |
+| `Js.lt`, `gt`, `le`, `ge` (2026-10-23, #882) | `unused` arguments, `fresh` result | `a < b` and its three siblings: two values compared, neither kept, a boolean made |
 | `Js.typeOf`, `Js.typeIs` | `unused Value` (`borrowed name`), `fresh` | `typeof v` reads the value's tag, not its contents |
 | `Js.fingerprint` | `unused k, unused order → fresh name` | the compiler writes the type's identity in place; `x` is evaluated and not read (its doc comment) |
 | `Js.array`, `Js.object` | `aliased … → fresh Value` | `args(xs)`, `Object.fromEntries(…)`: a new array or object holding the elements or field values |
@@ -4260,15 +4286,21 @@ names the fixture that pins each (§24.6).
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
 | `String.join`, `String.fromList` | `borrowed List …` | `Array.prototype.join` on the list's array or its `$plain()`, which keeps nothing |
 | `String.split`, `words`, `lines`, `toList`, `indexes` | `→ fresh exclusive List …` | `split`, `Array.from`, `filter` and a `Js.array` the body fills make a new array of strings or numbers, which no cell is held twice in |
-| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do. Re-read 2026-10-19: `print` builds its options with `defaultOptions ⊤`, a new record per call (§31.16), which reads neither argument |
+| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do. Re-read 2026-10-19: `print` builds its options with `defaultOptions ⊤`, a new record per call (§31.16), which reads neither argument. Re-read 2026-11-06 (#1789): both generated and composed schemas select compiled encoding workers through `compiledPrintReady`; they build the output, and stringify reads it. Construction checks cache only schema metadata, never the program value. Results remain fresh wrappers, with the supplied value aliased only by reported issues; no ownership word changes |
 | `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5). Re-read 2026-10-15: a compiled schema's decoding worker also returns its conversions' answers, so the answer is still unknown |
 | `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
-| `Hosted.keyOf` | `String, aliased k → fresh Key` | `Hosted.js`: `({ t: type, c: compare, v: value })`, a new object holding the value |
+| ~~`Hosted.keyOf`~~ | — | *Withdrawn 2026-10-26 (#877): the keys are beni over `Js` (`Hosted.key`, no words: `Js.from k` is `returned` and `Js.object` holds its fields `aliased`, so the checker reads the value as held by the key), and `Hosted.js` is gone. |
 | `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
-| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.js`: `({ code, out })`, a new object of a number and a string |
-| `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
-| `Ssr.render` | `borrowed Html msg → String` | `Ssr.js`: `html.t`, the markup's text |
+| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.beni` (2026-10-23, #877): `Js.object [ ( "$c", code ), ( "$o", out ) ]`, a new object of a number and a string |
+| `Node.printLines` | `borrowed List String → fresh Program` | `Node.beni`: `Js.get` of the list's `length`, then `String.join` on it, which keeps nothing |
+| `Ssr.render` | `borrowed Html msg → String` | `Ssr.beni`: `Js.get (Js.from html) "t"`, the markup's text |
+| `List.builder` (re-read 2026-11-05, #990) | `unused Int → fresh exclusive Builder a` | `List.beni`: `new Array(n)`, an array made for the call with no elements. `n` is a number, read as a length and not kept. The body was `new Array(n > 0 ? n : 0)` until #990: every caller now gives a whole number from 0 up, so the test went and the words stay |
+
+*Amended 2026-11-03 (#1736):* `Task.spawn`, `spawnIn`, `spawnDetached` (`escaped` work and scope, `cellempty Fiber
+a`) and `Task.join` (`cellread Fiber a → lent a`) have v2 words. `ownership-v2.md` §2.13.7, *the fiber rows*, has their
+reading: `fork` makes a new record with an empty `outcome` and only queues it, and `complete` alone writes the
+`outcome`, with the work's answer or `Cancelled`. Their bodies and the 103 helpers of `Task` they run are pinned.
 
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
@@ -4283,8 +4315,9 @@ the platforms' `Dom`, `Browser.Events` and `Html.targetValue`/`targetChecked` (s
 event) — has nothing a word could say. Each whose honest row is the thesis's — `Js.global`, `get`, `set`, `call`,
 `apply`, `construct`, `at`, `setAt`, `instanceOf`, `method` (a getter, a method or a constructor of the host may keep
 what it is handed), `Io.finish` and `Io.startRead` (kept by the runtime) — keeps the default, which is that row.
-`Hosted.compareKeys` only reads, but only the runtime's own key comparisons reach it, where every key has already
-escaped with its command (§20.4): no verdict depends on its row, so it keeps the default, which is the safe side. `core/List`'s primitives, `Dict.focus`, `Hosted`'s send positions and the program constructors
+`Hosted.compareKeys` only read (a `foreign` until 2026-10-26; since then the comparison is beni, `Hosted.compare`, its
+row inferred from `Js` reads that keep the default), and only the runtime's own key comparisons reach it, where every
+key has already escaped with its command (§20.4): no verdict depends on its row, and the default is the safe side. `core/List`'s primitives, `Dict.focus`, `Hosted`'s send positions and the program constructors
 keep their rows in the checker (§24.5).
 
 *Entry-word audit, 2026-10-22 (#750).* The entry word is a protocol, not a
@@ -4300,6 +4333,12 @@ The constructor bodies and the browser and page runtime helpers are pinned in
 word-bodies.txt. Entry declarations print an entry line marked (words), separate
 from their inferred summaries. Removing entry in a flip exposes the callback
 writers as pending; the hosted and ordinary-program fixtures pin that boundary.
+*Amended 2026-11-06 (#1232):* browser-inline's four constructors are beni declarations, not
+`foreign` ones (since 2026-10-29, `plans/runtime-in-beni.md` step 9), and each body now reads
+nothing of its record and throws a named defect (`browser-inline.md` §10.5). No call reaches a
+body, since the `inline` lowering compiles each call as the program's mount. The bodies were read
+again: a body that keeps and writes nothing of its record meets the entry protocol, so the `entry`
+words stand, and word-bodies.txt pins the new bodies.
 
 ### 24.9 The decoder in `Expect`
 
@@ -4712,7 +4751,7 @@ with §16.4's amendment of the same day it is zero.
 | The re-cons rule (§3.2, *Not demands*): a list rebuilt in the shape a pattern matched is an alias | `reconsed` | a rebuilt `[ h, …t ]` taken to be fresh while it is the scrutinee's array, then written. The core's views alias their source, but no construction is ever read as a re-cons. |
 | The multi-item prepend `[ a, b, …xs ]` (§3.2, §25.2) | `prepended` | as the single prepend's row below. The core's prepend takes one item. |
 | A `++` on a generic type, dispatched through hidden evidence | dispatch identities, conservative call | none found: the checker reads it as a conservative call that escapes its operands (`appendable`), not as a construction, and the bridge spells `++` only where its operands are known lists. If slice 5 lowered an evidence-dispatched append in place, this row would become unsound. |
-| Record field assignment (§31; *rewritten 2026-10-17*, the owner) | `evalRecordUpdate` and §31's `update` demand, in `src/own/` | two holders of one record, one assigned in place. It is judged by the checker on every platform, and every record update consumes its base (§31.3–§31.8). Its evidence is the generated differential test, the stale-read sanitiser and the mutation controls of §31.12. It is not modelled by this oracle; #316 (Jayson) models it later. Until then the bridge's confirmed-unsafe count says nothing of records. |
+| Record field assignment (§31; *rewritten 2026-10-17*, the owner) | `evalRecordUpdate` and §31's `update` demand, in `src/own/` | two holders of one record, one assigned in place. It is judged by the checker on every platform, and every record update consumes its base (§31.3–§31.8). Its evidence is the generated differential test, the stale-read sanitiser and the mutation controls of §31.12. It is not modelled by this oracle; #316 (Jayson) models it later. Until then the bridge's confirmed-unsafe count says nothing of records. *Amended 2026-11-04 (#316, slice 1):* the oracle models record objects and the update's demand in a body — Known, Unescaped, Disjoint and Dead per field — and checks them on #316's three two-holder shapes with `#guard`s against its checker and both runs (`proofs/ownership/RecordProbes.lean`; `DESIGN.md`, *Records written in place*). Nothing about records is proved. The oracle does not judge the hoist (§31.14): it refuses a later read of a written field, by Jayson's decision of 2026-11-04 on #316 ("refuse, no hoist"), so no theorem changes and the hoist stays tested by the Zig side only. It does not judge `W{F}` through calls (§31.7: a callee's write is a write of the whole object), sends and the entry (§31.6, §31.8), and the bridge compares no record verdict yet. So the row stays. *Amended 2026-11-05 (#1872, slice 3 of #316):* the oracle's summaries publish `W{F}` (`Summary.fieldWrites`), and a call's Dead test reads the caller's later uses per field; a call argument stays a whole use, so the oracle does not read an argument at the paths the callee's summary reads (§31.4 item 5). `CallSound`, the statement of `summary_sound`, gains the clause that a call keeps every field outside `F` (Jayson, 2026-11-05, `own-record-bridge-q1`); it is unproved. The bridge compares the record lines' verdicts (`proofs/ownership/BRIDGE.md`), generator v7 and the targeted product draw record objects, and the controls `record-dead`, `update-base` and `call-fields` are required. Sends, the entry and the hoist stay unjudged, and nothing about records through calls is proved. So the row stays. |
 | A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible. Copying prepend and conservative backing provenance are modelled; offset views and the re-cons identity optimization are absent, so made-after precision cannot be tested faithfully. |
 | Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see. The core has no foreign declarations or JavaScript sibling validation. |
 | The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it. No decoder/opaque carrier syntax; captures are tested as ordinary closures only. |
@@ -6508,6 +6547,12 @@ so a function value with no class that returns a list somebody else holds is wri
 
 ### 30.10 What a schema's run answers (the owner, 2026-10-16; issue #218)
 
+*Amended 2026-11-06 (#1789).* Removing interpretation does not prove a runtime
+mapping's result fresh. The existing maker-slot rule follows the replacement
+`composed` maker instead of the removed `box`: its unfollowed adapters still put
+`⊤` in both outcome slots. No ownership exemption or budget changes. Ownership
+summary blocks advance to version 39 so older maker facts cannot be reused.
+
 *Amends §24.8 (`Schema.parse`, `parseWith`), §24.5's list of rows the checker asserts, §26.7 and §30.9's
 "What O1 does not clear". Sections 1–30.9 keep their text.*
 
@@ -6545,7 +6590,7 @@ its row with the mark unread, which is `⊤`.
 | `converted s c` | `s`'s and `c`'s | `s`'s and `c`'s |
 | `conversion forward backward` | what `forward` may return that its call did not make and that is not its argument: what it captured, a top-level value, `⊤` for a function the walk cannot place; nothing when the target `a` holds no list | the same of `backward`, except that its argument is the program's value: what it returns of it is the input mark; nothing when the source `b` holds no list |
 | `S.schema a₁ … aₙ`, a declaration's | the arguments' and the declaration's own (below) | the same |
-| an interpreting builder (`record`, `tagged`, `recursive`, `flip`, `typeOnly`, `encodedOnly`: whatever calls `box`) | `⊤` | `⊤` |
+| a runtime-composed builder (`record`, `tagged`, `recursive`: whatever calls `composed`) whose adapters are not followed | `⊤` | `⊤` |
 | `derived ⊤`, `structural ⊤`, and `Json`'s runs | the codec its `where a.codec` evidence names at the call (below); `⊤` where the evidence is a parameter | the same |
 
 `list`, `nullable`, `erased` and `converted` branch on their argument's engine at run time, and their
@@ -7118,6 +7163,24 @@ and their later additions. No cause is new: a record demand is rejected for the 
 - **Two positions, one record.** `[ { item | doc = left }, { item | doc = right }, …rest ]`
   (`bench/corpus/PrettyPrinter.beni:125`) writes `item` twice while the first result waits in the list: the
   second demand is `held-operand`, exact. In place, both items would be one object holding `right`.
+- **A record handed to a function, and what it holds** (*amended 2026-11-06, #1000, #1001*). A callee's supply of
+  records is owned only where the caller can no longer reach them, and a failed probe leaves it borrowed for
+  §16.4's keep edge to judge. The probe asks more than the object at the root of what is handed over:
+  - when the value has a record at its root, every record it holds outside a closure is probed, so `f [ r ]` and
+    `f { w = r }` ask about `r`. A value with none at its root is a probe on nothing, which fails;
+  - a read of any field after the call is a use, written or not: a callback writes when it runs, so §31.14's
+    hoist has no place to go, and `b = f r` then `r.x` is refused where `f` may write `r`;
+  - a local that holds a record inside the supplied one is a holder of it, bound before the call or after it:
+    `i = o.inner` then a write of `i` reaches what `f` kept of `o`. A list's probe reads the same holders.
+
+  The keep edge reads two more things. A record counts as written when another function the callee hands it to
+  may write it, or may answer it for the callee to write. And a capture of a closure counts as kept by any
+  function it is handed to, because no result of that function names it.
+
+  This is a coarsening, accepted because a failed probe refuses only where the callee writes the supply or the
+  function writes or keeps it: a read in one arm and the write in another arm of the callee are refused together,
+  as #999's order is, and `Record.copy` is the fix. An open record written through a named function reaches no
+  `rsupply` row, so this rule does not see it.
 
 ### 31.6 Closures, messages and commands
 
@@ -7182,6 +7245,25 @@ and their later additions. No cause is new: a record demand is rejected for the 
   exact.
 - **The model's exclusivity invariant** (§28's dated amendment) covers record cells as it covers list cells. An
   arm that stores one record at two model paths refutes it.
+
+**Deep escape at type-erasing stores (2026-11-04, owner decision; #1853, ported to master by #2179).**
+A value stored where its type is erased escapes every record and list it can reach, including the
+environments of closures it contains. The holder may read any of those parts later, and the checker
+cannot recover that read from its type. This is the existing `escaped` contract, not a new word or a
+new storage design. A deep escape must survive summary read-off, imported summaries, callbacks and
+entry instantiation even when the value's type contains records but no lists. In particular, it must
+not be narrowed to `bit_k` (the record object alone) merely because the type contains no list. Only
+an explicitly object-only cell (`c ∖ All`) has that shallow meaning. Visible typed captures and their
+known field paths retain §31.6's precision.
+
+The type-erasing stores are the `Js.Value` storage operations `Js.set`, `Js.setAt`, `Js.call`,
+`Js.apply` and `Js.construct` (including host calls that retain arguments); `Js.ref` and `Js.write`
+(whose reads return unknown provenance); and retained foreign callbacks and unworded foreign
+parameters. `Js.throw` also hands its value to an unseen holder. Typed host bindings with `escaped`
+parameters follow the same deep rule. `Js.from` and `Js.to` are alias-preserving casts, not stores;
+`Js.array` and `Js.object` retain aliases in their result, so storing that result must escape its
+reachable contents. Lost in-place writes from that conservative boundary are accepted by this
+decision.
 
 *As built (2026-10-19, slice R2c of #315), §31.7 and this section.* A summary carries a record's facts in
 bits no list's fact reads: `bit_f`, the write, with its field set (`W{f, g}`; `W{}` read back from a block

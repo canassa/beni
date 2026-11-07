@@ -1,0 +1,55 @@
+-- ownership (project): a component whose comparison writes below its first
+-- field (ownership-v2.md §2.13.13). `Outer2.eq` writes `#Outer2.1#Inner.0`,
+-- `Outer3.eq` one level further, so a derived comparison over them writes that
+-- deep, in a list, a tuple and a fresh value around a parameter, and every
+-- function that keeps the list it was handed is refused.
+import Inner
+import Mid
+import Outer2
+import Outer3
+
+
+pub listOf : List Outer2.Outer2 → Bool
+listOf os = os == []
+
+
+pub callerList : List Outer2.Outer2 → Bool × List Outer2.Outer2
+callerList os = ( listOf os, os )
+
+
+pub nestedLeft : List Int → Bool × List Int
+nestedLeft xs =
+    ( ( Outer2.Outer2 1 (Inner.Inner xs), 0 ) == ( Outer2.Outer2 1 (Inner.Inner []), 0 ), xs )
+
+
+pub nestedRight : List Int → Bool × List Int
+nestedRight xs =
+    ( ( Outer2.Outer2 1 (Inner.Inner []), 0 ) == ( Outer2.Outer2 1 (Inner.Inner xs), 0 ), xs )
+
+
+pub nestedParam : Outer2.Outer2 → Bool × Outer2.Outer2
+nestedParam o = ( ( o, 0 ) == ( o, 1 ), o )
+
+
+pub viaFn2 : List Int → Bool
+viaFn2 xs = ( Outer2.Outer2 1 (Inner.Inner xs), 0 ) == ( Outer2.Outer2 1 (Inner.Inner []), 0 )
+
+
+pub callerViaFn2 : List Int → Bool × List Int
+callerViaFn2 xs = ( viaFn2 xs, xs )
+
+
+pub listOf3 : List Outer3.Outer3 → Bool
+listOf3 os = os == []
+
+
+pub callerList3 : List Outer3.Outer3 → Bool × List Outer3.Outer3
+callerList3 os = ( listOf3 os, os )
+
+
+pub nested3 : List Int → Bool × List Int
+nested3 xs =
+    ( ( Outer3.Outer3 1 (Mid.Mid 1 (Inner.Inner xs)), 0 )
+        == ( Outer3.Outer3 1 (Mid.Mid 1 (Inner.Inner [])), 0 )
+    , xs
+    )

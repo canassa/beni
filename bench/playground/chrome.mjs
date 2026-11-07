@@ -43,7 +43,7 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const todomvc = readFileSync(join(repo, "bench/todomvc/apps/beni/Sandbox.beni"), "utf8");
 const printing = readFileSync(join(repo, "playground/samples/node/Print.beni"), "utf8");
 
-const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".beni": "text/plain; charset=utf-8" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".beni": "text/plain; charset=utf-8" };
 const root = resolve(site);
 const server = createServer((req, res) => {
   const path = normalize(join(root, req.url === "/" ? "index.html" : decodeURIComponent(req.url.split("?")[0])));

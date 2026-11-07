@@ -1,0 +1,53 @@
+-- ownership (project): `CombinePositions` with `combine` and `combineHelp`
+-- in another module (ownership-v2.md §2.9 *Two positions of one image*,
+-- #1472): their blocks publish that the answer's elements are apart under
+-- `excl π1[*]#Ok.0`, so `bump` edits the first in place. Refused: payloads
+-- shared through the list, the second list holding a payload of the first,
+-- one element twice, and a payload also held outside.
+import Combine exposing (combine, combineHelp)
+
+
+pub bump : List (Result String (List Int)) → Result String (List (List Int))
+bump rs =
+    case combine rs of
+        Ok lists →
+            case lists of
+                [ first, …rest ] →
+                    Ok [ List.push first 1, …rest ]
+
+                [] →
+                    Ok []
+
+        Err why →
+            Err why
+
+
+pub distinct : List Int, List Int → Result String (List (List Int))
+distinct x y = bump [ Ok x, Ok y ]
+
+
+pub aliased : List Int → Result String (List (List Int))
+aliased b = bump [ Ok b, Ok b ]
+
+
+pub mixed : List Int → Result String (List (List Int))
+mixed b =
+    case combineHelp [ Ok b ] [ b ] of
+        Ok lists →
+            case lists of
+                [ first, …rest ] →
+                    Ok [ List.push first 1, …rest ]
+
+                [] →
+                    Ok []
+
+        Err why →
+            Err why
+
+
+pub twice : Result String (List Int) → Result String (List (List Int))
+twice r = bump [ r, r ]
+
+
+pub held : List Int → Result String (List (List Int)) × List Int
+held b = ( bump [ Ok b ], b )

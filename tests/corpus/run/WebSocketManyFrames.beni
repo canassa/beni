@@ -1,0 +1,35 @@
+-- run: a chunk of many tiny frames (issue #1801). A peer sends thousands of
+-- empty pong frames in one write, 6 bytes each, so one `data` chunk holds
+-- about 10 900 frames; the parser reads them in constant stack, as the
+-- sibling's `while` did, and the next message is echoed. Before the fix
+-- the parser recursed twice per frame and the process died of a
+-- `RangeError` in the `data` listener.
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+echo : Socket → ⊤
+echo socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket text
+            echo socket
+
+        Err _ →
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = λ_ → Server.text 404 "no", upgrade = λ_ → Server.accept echo }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

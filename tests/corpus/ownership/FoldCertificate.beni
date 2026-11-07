@@ -1,0 +1,375 @@
+-- ownership: the fold certificate (ownership-v2.md §8 slice 4, *The fold
+-- certificate, specified*, and *The two walls of #1485*; §2.9 rule 4;
+-- §2.11 item 3 (d)). `same` rebuilds a tree, so its result is one view of
+-- a certified class. Its certificate at `#Node.1` holds the lists of the
+-- argument, each once, and owes `excl` at the lists below its first
+-- returns. The witnesses read it: one view of `t` is accepted, two views
+-- of one tree are refused, and a producer that puts one list at two
+-- positions (`unroll`, `dupL`, `shareL`) is refused. The near-miss rows
+-- are the spec's table, one declaration each (`rowN`).
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+type P
+    = P Tree Tree
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+incRoot : Tree → Tree
+incRoot t =
+    case t of
+        Node l xs r →
+            Node l (List.push xs 1) r
+
+        Leaf →
+            Leaf
+
+
+incP : P → P
+incP p =
+    case p of
+        P a b →
+            P (incAll a) (incAll b)
+
+
+same : Tree → Tree
+same t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (same l) xs (same r)
+
+
+unroll : Tree → Tree
+unroll t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (Node (unroll l) xs Leaf) xs (unroll r)
+
+
+swap : Tree → Tree
+swap t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (swap r) xs (swap l)
+
+
+dupL : Tree → Tree
+dupL t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs _ →
+            Node (dupL l) xs (dupL l)
+
+
+shareL : Tree → Tree
+shareL t =
+    case t of
+        Node l xs r →
+            case l of
+                Node _ ys _ →
+                    Node (same l) ys (same r)
+
+                Leaf →
+                    Node Leaf xs (same r)
+
+        Leaf →
+            Leaf
+
+
+deeper : Tree → Tree
+deeper t =
+    case t of
+        Node l xs r →
+            case l of
+                Node ll ys lr →
+                    Node (deeper ll) xs (Node (deeper lr) ys (deeper r))
+
+                Leaf →
+                    Node Leaf xs (deeper r)
+
+        Leaf →
+            Leaf
+
+
+both : Tree, Tree → P
+both a b = P (same a) (same b)
+
+
+wrapR : Int, Tree → Tree
+wrapR n t =
+    if n == 0 then
+        same (Node t [] Leaf)
+    else
+        wrapR (n - 1) t
+
+
+wrapL : Int, Tree, List Int → Tree
+wrapL n t ys =
+    if n == 0 then
+        same (Node t ys Leaf)
+    else
+        wrapL (n - 1) t ys
+
+
+h2 : Int, Tree → Tree
+h2 n t =
+    if n == 0 then
+        case t of
+            Node l _ _ →
+                case l of
+                    Node _ ys _ →
+                        Node (same (Node t [] Leaf)) ys Leaf
+
+                    Leaf →
+                        Leaf
+
+            Leaf →
+                Leaf
+    else
+        h2 (n - 1) t
+
+
+g2 : Int, Tree, Tree → Tree
+g2 n a b =
+    if n == 0 then
+        Node (same a) [] (h2 0 b)
+    else
+        g2 (n - 1) a b
+
+
+-- The witnesses.
+pub twoViews : Tree → P
+twoViews t = incP (P (same t) (same t))
+
+
+pub twoTrees : Tree, Tree → P
+twoTrees t t2 = incP (P (same t) (same t2))
+
+
+pub oneView : Tree → Tree
+oneView t = incAll (same t)
+
+
+pub rootOfView : Tree → Tree
+rootOfView t = incRoot (same t)
+
+
+pub rootOfUnroll : Tree → Tree
+rootOfUnroll t = incRoot (unroll t)
+
+
+pub unrolled : Tree → Tree
+unrolled t = incAll (unroll t)
+
+
+pub viewTwice : Tree → P
+viewTwice t =
+    w = same t
+    incP (P w w)
+
+
+-- The near misses (rows 1–10, 14, 18, 19; 15 and 17 are below).
+pub row1 : Tree → Tree
+row1 t = incAll (swap t)
+
+
+pub row2 : Tree → Tree
+row2 t = incAll (dupL t)
+
+
+pub row3 : Tree → Tree
+row3 t = incAll (shareL t)
+
+
+pub row4 : Tree → Tree
+row4 t = incAll (deeper t)
+
+
+pub row5 : Tree, List Int → Tree
+row5 t xs = incAll (Node (same t) xs (same t))
+
+
+pub row6 : Tree, Tree, List Int → Tree
+row6 t t2 xs = incAll (Node (same t) xs (same t2))
+
+
+pub row7 : Tree, List Int → Tree
+row7 a xs = incAll (same (Node a xs a))
+
+
+pub row8 : Tree, Tree, List Int → Tree
+row8 a b xs = incAll (same (Node a xs b))
+
+
+pub row9 : Bool, Tree, Tree → Tree
+row9 c t t2 = incAll (if c then same t else same t2)
+
+
+pub row10 : Tree → P
+row10 t = incP (both t t)
+
+
+pub row14 : Int, Tree → Tree
+row14 n t =
+    case t of
+        Node l _ _ →
+            case l of
+                Node ll _ _ →
+                    incAll (wrapR n ll)
+
+                Leaf →
+                    Leaf
+
+        Leaf →
+            Leaf
+
+
+pub row14List : Int, Tree, List Int → Tree
+row14List n t ys =
+    case t of
+        Node l _ _ →
+            case l of
+                Node ll _ _ →
+                    incAll (wrapL n ll ys)
+
+                Leaf →
+                    Leaf
+
+        Leaf →
+            Leaf
+
+
+pub row18 : Int, Tree → Tree
+row18 n t =
+    case t of
+        Node l _ _ →
+            incAll (h2 n l)
+
+        Leaf →
+            Leaf
+
+
+pub row19 : Int, Tree, Tree → Tree
+row19 n s t =
+    case t of
+        Node l _ _ →
+            incAll (g2 n s l)
+
+        Leaf →
+            Leaf
+
+
+-- Row 15: the list one constructor down, on no cycle.
+type Box
+    = Box (List Int)
+
+
+type TreeB
+    = NodeB TreeB Box TreeB
+    | LeafB
+
+
+type PB
+    = PB TreeB TreeB
+
+
+incAllB : TreeB → TreeB
+incAllB t =
+    case t of
+        NodeB l (Box xs) r →
+            NodeB (incAllB l) (Box (List.push xs 1)) (incAllB r)
+
+        LeafB →
+            LeafB
+
+
+incPB : PB → PB
+incPB p =
+    case p of
+        PB a b →
+            PB (incAllB a) (incAllB b)
+
+
+sameB : TreeB → TreeB
+sameB t =
+    case t of
+        LeafB →
+            LeafB
+
+        NodeB l b r →
+            NodeB (sameB l) b (sameB r)
+
+
+pub row15 : TreeB → PB
+row15 t =
+    w = sameB t
+    incPB (PB w w)
+
+
+-- Row 17: two constructors down, the read map's twin.
+type Wrap
+    = Wrap Box
+
+
+type TreeW
+    = NodeW TreeW Wrap TreeW
+    | LeafW
+
+
+type PW
+    = PW TreeW TreeW
+
+
+incAllW : TreeW → TreeW
+incAllW t =
+    case t of
+        NodeW l (Wrap (Box xs)) r →
+            NodeW (incAllW l) (Wrap (Box (List.push xs 1))) (incAllW r)
+
+        LeafW →
+            LeafW
+
+
+incPW : PW → PW
+incPW p =
+    case p of
+        PW a b →
+            PW (incAllW a) (incAllW b)
+
+
+sameW : TreeW → TreeW
+sameW t =
+    case t of
+        LeafW →
+            LeafW
+
+        NodeW l w r →
+            NodeW (sameW l) w (sameW r)
+
+
+pub row17 : TreeW → PW
+row17 t =
+    w = sameW t
+    incPW (PW w w)

@@ -1,0 +1,36 @@
+module CallTyvarViews
+  28:9 List.push xs: rejected alias: g.x.c holds it and is read at 29:5
+  39:9 List.push xs: rejected alias: g.x.c holds it and is read at 40:5
+  50:9 List.push xs: rejected alias: g.x.c holds it and is read at 51:5
+  63:9 List.push xs: rejected alias: g.x.c holds it and is read at 64:5
+  74:9 List.push xs: rejected alias: g.x.c holds it and is read at 75:5
+  80:5 List.push v.c: accepted param
+  87:9 call CallTyvarViews.wv g.x.c: rejected call: xs holds it and is read at 88:5; the callee writes it only through an approximate step (CallTyvarViews.wv writes π1.x.c) (approx)
+  87:9 call CallTyvarViews.wv g.y.c: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (CallTyvarViews.wv writes π1.y.c) (approx)
+  100:9 List.push xs: rejected alias: g.x.c holds it and is read at 101:5
+  113:9 List.push xs: rejected alias: g.x.c holds it and is read at 114:5
+  127:9 List.push xs: rejected alias: g.x.c holds it and is read at 128:5
+  summary choose: π2 RA, π3 RA; res π2 π3
+  summary ans: π1.b RA; res π1.b
+  summary a1: π1.x R, π1.y R
+  summary viewActual: π1 RW[storage], π1[*] R
+  summary a2: π1.x R, π1.y R
+  summary chooseInChoose: π1 RW[storage], π1[*] R
+  summary a3: π1.x R, π1.y R
+  summary twoViews: π1 RW[storage], π1[*] R
+  summary a4: π1.x R, π1.y R
+  summary boundView: π1 RW[storage], π1[*] R
+  summary a5: π1.x R, π1.y R
+  summary chooseInRecord: π1 RW[storage], π1[*] R
+  summary wv: π1.x R, π1.x.c RAw[storage], π1.x.c[*] A, π1.y R, π1.y.c RAw[storage], π1.y.c[*] A; res [*] ~condition(fresh1) ~π1.x.c[*] ~π1.y.c[*], ~π1.x.c ~π1.y.c
+  summary writtenView: π1 Rw[storage], π1[*] R
+  summary b1: π1.x R, π1.x.c R, π1.y R, π1.y.c R
+  summary storedChoice: π1 RW[storage], π1[*] R
+  summary b2: π1.x R, π1.x.c R
+  summary storedSelector: π1 RW[storage], π1[*] R
+  summary b3: π1.x R, π1.x.c R
+  summary storedBound: π1 RW[storage], π1[*] R
+  demands 11: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 11: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause alias 8
+cause call 2

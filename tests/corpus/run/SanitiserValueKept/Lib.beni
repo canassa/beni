@@ -1,0 +1,53 @@
+import Debug
+import Io
+import List
+import Task
+
+
+pub type alias Pt =
+    xs : List Int
+    a : List Int
+
+
+keep : List Int, List Int → Pt
+keep u v =
+    _ = Task.spawnDetached λ⊤ →
+        Io.sleep 5
+        Debug.log "kept" (List.length v)
+    { xs = u, a = [] }
+
+
+pick : List Int, List Int → Pt
+pick u v = { xs = u, a = v }
+
+
+flag : Bool
+flag = True
+
+
+pub mk : List Int, List Int → Pt
+mk = if flag then keep else pick
+
+
+build : ⊤ → (List Int, List Int → Pt)
+build _ = keep
+
+
+pub made : List Int, List Int → Pt
+made = build ⊤
+
+
+hold : List (List Int) → ⊤
+hold ls =
+    _ = Task.spawnDetached λ⊤ →
+        Io.sleep 5
+        Debug.log "held" (List.length ls)
+    ⊤
+
+
+holdOf : ⊤ → (List (List Int) → ⊤)
+holdOf _ = hold
+
+
+pub held : List (List Int) → ⊤
+held = holdOf ⊤

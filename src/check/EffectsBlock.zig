@@ -42,10 +42,9 @@ pub fn write(
     defer gpa.free(worth);
     @memset(worth, false);
     for (classes, 0..) |c, i| {
-        if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
-        for (s.depsOf(c)) |d| worth[d] = true;
+        if (c.rung != .pure or c.realms != 0 or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
+        for (s.depsOf(c)) |d| worth[d & ~Interface.EffectBlock.realm_only] = true;
     }
-    if (std.mem.indexOfScalar(bool, worth, true) == null) return Interface.no_terms;
 
     var sites: std.ArrayList(BlockSite) = .empty;
     defer sites.deinit(gpa);
@@ -56,6 +55,18 @@ pub fn write(
     roots[0] = v;
     @memcpy(roots[1..], where_types);
     try walkSites(e, roots, &sites, &steps, context, symbol_index);
+
+    // A constructor can join a callback arrow and a nominal result without
+    // adding a rung or dependency. Keep that relationship at imported uses.
+    const seen = try gpa.alloc(bool, classes.len);
+    defer gpa.free(seen);
+    @memset(seen, false);
+    for (sites.items) |site| {
+        const c = s.classIndex(decl, site.node) orelse continue;
+        if (seen[c]) worth[c] = true;
+        seen[c] = true;
+    }
+    if (std.mem.indexOfScalar(bool, worth, true) == null) return Interface.no_terms;
 
     // Classes numbered by first site.
     const number = try gpa.alloc(u32, classes.len);
@@ -83,10 +94,11 @@ pub fn write(
         const class = classes[c];
         deps.clearRetainingCapacity();
         for (s.depsOf(class)) |d| {
-            if (number[d] != none) try deps.append(gpa, number[d]);
+            const index = d & ~Interface.EffectBlock.realm_only;
+            if (number[index] != none) try deps.append(gpa, number[index] | (d & Interface.EffectBlock.realm_only));
         }
         std.mem.sort(u32, deps.items, {}, std.sort.asc(u32));
-        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
+        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (@as(u32, class.realms) << 16) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
         try extra.append(extra_gpa, @intCast(deps.items.len));
         try extra.appendSlice(extra_gpa, deps.items);
     }
@@ -104,7 +116,7 @@ pub fn write(
 /// §14.6's walk: from each root in turn, depth first, parameters before
 /// the result, arguments and elements in order, a record's fields by name
 /// text then its extension, an alias's expansion; each variable once. Every
-/// function type and function-holding application is a site, with the path
+/// function type, function-holding application and unknown realm source is a site, with the path
 /// that reached it first.
 fn walkSites(
     e: *Effects,
@@ -131,7 +143,7 @@ fn walkSites(
             const r = store.find(f.v);
             if (store.mark(r) == mark) continue;
             store.setMark(r, mark);
-            if (e.carries(r)) {
+            if (e.realmCarrier(r)) {
                 // A variable the graph never met is in no class a summary has.
                 if (e.solved.nodeIfAny(r)) |id| {
                     const steps_start: u32 = @intCast(steps.items.len);

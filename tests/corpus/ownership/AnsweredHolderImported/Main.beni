@@ -1,0 +1,51 @@
+-- ownership (project): `AnsweredHolder` with the callees in another module
+-- (ownership-v2.md §2.11 item 3, rule (a), as amended for #1367). A call
+-- of an imported declaration applies the class its block publishes: the
+-- answered record holds the written list as that list itself, so `f`,
+-- `viaParam`, `once`, `nested` and `chained` are accepted, as v1 accepts
+-- them; `twice`, `nestedTwice` and `innerTwice` hold the list at a second
+-- field, refused `disjoint`; `readAfter` reads the old record after the
+-- call, refused `later-use`.
+import Holder exposing (Deep, Outer, Stack, Three)
+
+
+pub f : Int, Stack → Stack
+f i s =
+    top = [ i, …s.top ]
+    kept = List.push s.kept top
+    Holder.g (i + 1) { top = top, kept = kept }
+
+
+pub viaParam : Stack → Stack
+viaParam s = Holder.g 0 s
+
+
+pub readAfter : Int, List Int, List (List Int) → Int
+readAfter i top kept =
+    r = { top = top, kept = kept }
+    out = Holder.g (i + 1) r
+    List.length out.kept + List.length r.kept
+
+
+pub twice : Int, List Int, List (List Int) → Three
+twice i top kept = Holder.g3 (i + 1) { top = top, kept = kept, extra = kept }
+
+
+pub once : Int, List Int, List (List Int) → Three
+once i top kept = Holder.g3 (i + 1) { top = top, kept = kept, extra = [] }
+
+
+pub nested : Int, List Int, List (List Int) → Outer
+nested i top kept = Holder.h i { inner = { top = top, kept = kept }, other = [] }
+
+
+pub nestedTwice : Int, List Int, List (List Int) → Outer
+nestedTwice i top kept = Holder.h i { inner = { top = top, kept = kept }, other = kept }
+
+
+pub innerTwice : Int, List Int, List (List Int) → Deep
+innerTwice i top kept = Holder.h3 i { inner = { top = top, kept = kept, extra = kept }, other = [] }
+
+
+pub chained : Int, List Int, List (List Int) → Stack
+chained i top kept = Holder.g i (Holder.g 0 { top = top, kept = kept })

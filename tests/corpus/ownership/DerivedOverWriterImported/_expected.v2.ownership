@@ -1,0 +1,10 @@
+module Key
+  9:29 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  19:26 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+module Main
+  11:26 Key.compare <Key …>#Key.0: rejected alias: xs holds it and is read at 11:13
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause alias 1
+cause comparison 2

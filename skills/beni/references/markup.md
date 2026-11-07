@@ -12,6 +12,8 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
   `name={True}`. Character references in text and quoted values are decoded.
 - Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument
   in parentheses.
+- `value` on `<progress>`, `<meter>` and `<output>` takes a `String`. Use
+  `String.fromInt` to show an integer value.
 - A child is text, a hole `{expr}`, or more markup. A hole holds a `String`, `Int`, `Float`,
   `Bool` or `Char` (rendered as text), an `Html msg`, a `Maybe (Html msg)` or a `List (Html msg)`
   (matched by position). Anything else is `child_not_renderable`. `if` and `case` are expressions,
@@ -20,6 +22,13 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
 - `<>…</>` is a fragment.
 - `class={[ ( "row", True ), ( "danger", isLate ) ]}` is a class list; `style={[ ( "--gap", "4px" ) ]}`
   a style list. A plain `String` works on both.
+- `<iframe sandbox="" srcdoc={page} />` shows a document from HTML text. The value is escaped, so
+  it never becomes markup of your page. The frame runs the document's scripts only when `sandbox`
+  holds `allow-scripts`. An element with `srcdoc` must have a constant `sandbox` without
+  `allow-same-origin`: with that token, or with no `sandbox`, the frame's scripts can read and
+  change your page. Anything else is the error `srcdoc_without_sandbox`: no `sandbox`, a `sandbox`
+  from a value, or a `sandbox` with `allow-same-origin`. A quoted `"srcdoc"` is the error
+  `untyped_srcdoc_attribute`.
 
 ```beni platform=html
 import Html exposing (Html)
@@ -37,6 +46,16 @@ view rows =
             {λrow → <tr class={[ ( "row", True ), ( "late", row.late ) ]}><td>{row.label}</td></tr>}
         </For>
     </table>
+```
+
+A `sandbox` from a value is refused, because the compiler cannot see its tokens:
+
+```beni platform=html refused=srcdoc_without_sandbox
+import Html exposing (Html)
+
+
+pub frame : String, String → Html msg
+frame mode page = <iframe sandbox={mode} srcdoc={page} />
 ```
 
 ## Events
@@ -94,6 +113,14 @@ The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `o
 - `Html.pointerEvent p` is the same event as an `Html.Event`, for `Html.preventDefault` and the
   modifier keys.
 - A `Pointer` stays correct after the dispatch, so a message can carry it into `update`.
+- When an element and an element inside it both have a handler for the same pointer event, both
+  handlers run for one event, the inner one first, as for `onClick`. On the `browser` and
+  `browser-tea` platforms the page renders once after them, so each handler runs with the view that
+  was on the page when the event came. `onPointerEnter` and `onPointerLeave` do not bubble: each
+  element gets its own enter or leave event, so nested enter or leave handlers render once for each
+  element, and an inner handler runs with the view that the outer one's render wrote.
+- On the `browser` and `browser-tea` platforms, a pointer handler on a disabled control does not
+  run, as an `onClick` there does not.
 - The pointer events name their extractor `pointer` (`via pointer`). It is private to `Html`, so
   a program cannot call it.
 - To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
@@ -168,11 +195,34 @@ done />` is `TodoItem.view { todo = t, done = True }`. `<Card.header title="x" /
 - Every markup form has a plain-call form with the same type; markup is the one the formatter
   keeps.
 
+## Trusted Types
+
+Set `"trustedTypes": true` in `beni.json` when the page's Content Security Policy has
+`require-trusted-types-for 'script'`. On `browser` and `browser-tea`:
+
+- The build makes each template with DOM calls, not with `innerHTML`. The page needs no Trusted
+  Types policy for its markup, so `trusted-types 'none'` is enough. A build without the key is not
+  changed.
+- These are refused with the error `trusted_types_sink`, because the policy refuses them: a raw
+  attribute (`innerHTML`), `srcdoc`, and `<script>`. Take them out of the program.
+- `browser-inline` does not support the key: `build` stops with exit 2.
+- A worker needs a policy of its own; see `worker-messages.md`, *Trusted Types*.
+
+```text
+{ "trustedTypes": true }
+Content-Security-Policy: require-trusted-types-for 'script'; trusted-types beni-workers
+```
+
 ## Why a render is cheap
 
 A render clones a template once and patches only the holes whose values changed, by identity. A
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
+
+## String classes on `browser-inline`
+
+Scalar String `class` values may be constant or change with the model. Empty strings retain
+an empty attribute. Class-list syntax and style lists remain compiler limits on this platform.
 
 ## Helpers on `browser-inline`
 
@@ -189,4 +239,4 @@ effect and that only an event reads is evaluated when its binding is refreshed, 
 not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
 the markup-value diagnostic, and it never drops the export silently.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3; `platforms/html/Html.beni`.
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.4.7, §9.8.20; `docs/design/frontend.md` §10.1; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.

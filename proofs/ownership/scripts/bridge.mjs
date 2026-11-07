@@ -48,11 +48,18 @@ function run(command, args, cwd = root, timeout = 120000) {
   });
 }
 const must = async (...args) => { const r = await run(...args); if (r.status) throw Error(`${args[0]} failed (${r.status}):\n${r.stderr}\n${r.stdout}`); return r; };
-if (!options['no-build']) await must('zorg', ['build', `-j${jobs}`]);
+// The compiler build is not what the bridge measures: a cold cache under load
+// takes more than `run`'s two minutes (a `zorg killed: SIGKILL` on 2026-10-23,
+// with two heavy jobs beside it), so it gets thirty.
+if (!options['no-build']) await must('zorg', ['build', `-j${jobs}`], root, 1800000);
 const inputs = [];
 if (options.input) inputs.push(resolve(options.input));
 else {
-  const suites = options.suite ? [options.suite] : ['fixtures','enumerate','generator','generator6'];
+  // Generator v7 (record objects, #1872) runs in CI only: the long
+  // campaign's recorded baseline (`bridge-coverage.json`) has no v7 stream
+  // yet, and a long run that added one would fail that check (#2010).
+  const suites = options.suite ? [options.suite] :
+    ['fixtures','enumerate','generator','generator6', ...(options.ci ? ['generator7'] : [])];
   for (const suite of suites) {
     const seeds = suite.startsWith('generator') ? String(options.seeds ?? (options.ci ? '17' : '17,20261011,314159')).split(',') : ['0'];
     for (const seed of seeds) {
@@ -70,6 +77,7 @@ if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-read-sel
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
     ambiguousAgreement:0,ambiguousPrecision:0 },
+  recordSites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0, hoistLead: 0 },
   skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, precisionPrograms: {}, precisionExamples: {}, cases: [], jobs,
   minimization: options['no-minimize'] ? 'disabled; original checks and paired executions unchanged' : 'historical persistent-runtime relation',
   environment:{node:process.version,platform:inPlace,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
@@ -86,6 +94,25 @@ let firstFailure;
 // Record fields compared by name: JavaScript orders `f10` before `f2`.
 const canonical = x => Array.isArray(x) ? x.map(canonical) : x && typeof x === 'object' ?
   Object.fromEntries(Object.keys(x).sort().map(k => [k, canonical(x[k])])) : x;
+// The oracle observes a record object as its one-slot array, `[ {f0, …} ]`
+// (DESIGN.md, *Records written in place*); beni's value is the record. The
+// exported type of the main expression says where an object is. A value
+// whose type holds no object is returned as it is.
+const holdsObject = t => Array.isArray(t) && (t[0] === 'object' ||
+  (t[0] === 'record' ? t[1].some(holdsObject) : t[0] === 'fn' ? false : t.slice(1).some(holdsObject)));
+function beniValue(t, x) {
+  if (!holdsObject(t)) return x;
+  switch (t[0]) {
+    case 'object':
+      if (!Array.isArray(x) || x.length !== 1) throw Error('oracle object observation is not one slot');
+      return beniValue(['record', t[1]], x[0]);
+    case 'record': return Object.fromEntries(t[1].map((u, i) => [`f${i}`, beniValue(u, x[`f${i}`])]));
+    case 'list': case 'chain': return x.map(y => beniValue(t[1], y));
+    case 'result': return {f0: x.f0, f1: beniValue(t[1], x.f1), f2: beniValue(t[2], x.f2)};
+    default: throw Error(`no beni value for an oracle ${t[0]} that holds an object`);
+  }
+}
+const expectedValue = record => beniValue(record[12], record[11]);
 async function confirmation(p, dir) {
   const result = {};
   for (const platform of ['browser-tea',inPlace]) {
@@ -105,7 +132,7 @@ async function confirmation(p, dir) {
     result[platform] = ran;
   }
   return { status: Object.values(result).some(r => r.status !== 0) ? 'execution-error' :
-    JSON.stringify(canonical(JSON.parse(result['browser-tea'].stdout).result)) !== JSON.stringify(canonical(p.record[11])) ? 'translation-mismatch' :
+    JSON.stringify(canonical(JSON.parse(result['browser-tea'].stdout).result)) !== JSON.stringify(canonical(expectedValue(p.record))) ? 'translation-mismatch' :
     result['browser-tea'].stdout === result[inPlace].stdout ? 'unconfirmed' : 'confirmed', runs: result };
 }
 // Check fidelity for the whole translated population, including agreements and
@@ -118,7 +145,7 @@ async function checkValues(programs, dir) {
     throw Error(`value build failed: ${dir}`);
   }
   const driver=resolve(dir,'value-driver.mjs');
-  const cases=programs.map(p=>[resolve(target,`${p.module}.mjs`),`${p.module}$run`,p.record[11],p.record[2]]);
+  const cases=programs.map(p=>[resolve(target,`${p.module}.mjs`),`${p.module}$run`,expectedValue(p.record),p.record[2]]);
   await writeFile(driver,`${normalizer}\nfor(const [path,name,expected,id] of ${JSON.stringify(cases)}){const mod=await import(path);const actual=normalize(mod[name]());if(JSON.stringify(actual)!==JSON.stringify(normalize(expected)))throw Error(JSON.stringify({id,expected,actual}));}\n`);
   const ran=await run(process.execPath,[driver],root,30000);
   if(ran.status) {
@@ -207,13 +234,13 @@ async function minimize(original, dir, outcome) {
 }
 function parseDump(text, programs) {
   const byModule = new Map(programs.map(p => [p.module, []])); let current = null;
-  // #391's count lines check the partition: every `update` line skipped below
-  // is one of the module's `records N`, and every demand line kept is one of
-  // its `demands N`. A module without demands prints neither line.
+  // #391's count lines check the partition: every `update` line kept apart
+  // below is one of the module's `records N`, and every list demand line is
+  // one of its `demands N`. A module without demands prints neither line.
   const close = () => {
     if (!current) return;
-    const skipped = current.skippedUpdates ?? 0, records = current.records ?? 0, demands = current.demands ?? 0;
-    if (skipped !== records) throw Error(`skipped ${skipped} update lines in ${current.name}, but it reports records ${records}`);
+    const updates = (current.updates ?? []).length, records = current.records ?? 0, demands = current.demands ?? 0;
+    if (updates !== records) throw Error(`read ${updates} update lines in ${current.name}, but it reports records ${records}`);
     if (current.length !== demands) throw Error(`kept ${current.length} demand lines in ${current.name}, but it reports demands ${demands}`);
   };
   for (const line of text.split('\n')) {
@@ -227,14 +254,21 @@ function parseDump(text, programs) {
     }
     m = line.match(/^  (\d+):(\d+) (.+?): (accepted|rejected|pending)(?:(?: |: ?)(.*))?$/);
     if (m && current) {
-      // A record update (`{ r | F = … }`) is a demand line since #391, with
-      // the operation `update` (`List.update` prints as `List.update`, so the
-      // bare word is the record one). The Lean oracle has no record field
-      // assignment (#316), so it has no verdict for the site; and the
-      // compiler reports the demand without enforcing it (`Enforce.zig`,
-      // until §31.9's codes land), so a rejected one has no diagnostic to
-      // match either. Skipped until #316 lands.
-      if (m[3].startsWith('update ')) { current.skippedUpdates = (current.skippedUpdates ?? 0) + 1; continue; }
+      // A record update (`{ r | F = … }`), or a call that writes a record
+      // argument, is a demand line since #391, with the operation `update`
+      // (`List.update` prints as `List.update`, so the bare word is the
+      // record one). Since #1872 the oracle has record objects, so the line
+      // is compared at its site like a list demand (`updates`). Since §31.9's
+      // codes landed (69abd4568) the compiler enforces the line: its
+      // non-accepted ones are also kept in `rejectedUpdates`, where
+      // `checkBatch` matches the record diagnostics against them and counts
+      // them in the Zig verdict (#887).
+      if (m[3].startsWith('update ')) {
+        const d = { row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '', record:true };
+        (current.updates ??= []).push(d);
+        if (m[4] !== 'accepted') (current.rejectedUpdates ??= []).push(d);
+        continue;
+      }
       current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue;
     }
     m = line.match(/^  (demands|records) (\d+):/);
@@ -265,7 +299,25 @@ async function checkBatch(programs, n) {
   const enforced = await run(compiler, ['check',`--platform=${inPlace}`,'--no-cache','--jobs=1','--diagnostics=json',dir]);
   if (![0,1].includes(enforced.status)) throw Error(`unexpected enforcement exit ${enforced.status}: ${enforced.stderr}`);
   const diagnostics = JSON.parse(enforced.stderr || '[]');
-  const errors = diagnostics.filter(d => d.severity === 'error');
+  const allErrors = diagnostics.filter(d => d.severity === 'error');
+  // A record update (`{ r | F = … }`) is enforced since §31.9's codes landed
+  // (69abd4568, R4 of #315). Its demand is an `update` line, which `parseDump`
+  // keeps apart from the list demands until #316 gives the oracle a record
+  // field assignment: the oracle has no verdict for such a site. The two
+  // outputs of the compiler still have to agree there, so its diagnostics are
+  // matched against the dump's non-accepted `update` lines by position, and
+  // a record refusal refuses the program for the Zig side (#887). A record's
+  // `view_changes_model` shares the lists' code; no translated program has a
+  // `view`, so one would be an unmatched list site, and a finding.
+  const recordCodes = ['record_still_used','top_level_record_changed','record_may_be_shared'];
+  const recordErrors = allErrors.filter(d => recordCodes.includes(d.code));
+  const errors = allErrors.filter(d => !recordCodes.includes(d.code));
+  const predictedRecord = new Set(programs.flatMap(p=>(reports.get(p.module).rejectedUpdates ?? []).map(d=>`${p.module}:${d.row}:${d.col}`)));
+  const actualRecord = new Set(recordErrors.map(d=>`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`));
+  if (predictedRecord.size !== actualRecord.size || [...predictedRecord].some(k => !actualRecord.has(k))) {
+    await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
+    throw Error(`dump/enforcement record mismatch: ${dir}`);
+  }
   const permitted = ['list_still_used','list_may_be_shared','top_level_list_changed','view_changes_model','ownership_limit'];
   if (errors.some(d => !permitted.includes(d.code))) {
     await writeFile(resolve(dir,'enforce-error.json'), JSON.stringify(enforced,null,2));
@@ -300,20 +352,21 @@ async function checkBatch(programs, n) {
         (spans.get(a).end.col - spans.get(a).start.col) - (spans.get(b).end.col - spans.get(b).start.col));
     if (covering.length) unmatched.delete(covering[0]); else uncovered++;
   }
-  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0) !== (enforced.status === 0)) {
+  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0 && predictedRecord.size === 0) !== (enforced.status === 0)) {
     await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
     throw Error(`dump/enforcement mismatch: ${dir}`);
   }
   await checkValues(programs,dir);
   for (const p of programs) {
-    const demands = reports.get(p.module), limits = demands.limits ?? [], visited = new Set(p.record[6]), failed = p.record[7];
+    const demands = reports.get(p.module), limits = demands.limits ?? [], records = demands.rejectedUpdates ?? [], visited = new Set(p.record[6]), failed = p.record[7];
     const multiplicity=new Map();
     for(const m of p.translation.markers) multiplicity.set(m.key,(multiplicity.get(m.key)??0)+1);
     const groups=new Map();
-    for (const d of demands) {
+    // List demands and record lines (#1872) group by site alike.
+    for (const d of [...demands, ...(demands.updates ?? [])]) {
       d.site=siteAt(p.translation.markers,d.row);
-      if(!d.site){total.sites.extra++;continue;}
-      if(d.verdict==='pending')total.sites.pending++;
+      if(!d.site){total.sites.extra++;if(d.record)total.recordSites.extra++;continue;}
+      if(d.verdict==='pending'){total.sites.pending++;if(d.record)total.recordSites.pending++;}
       if(!groups.has(d.site))groups.set(d.site,[]);
       groups.get(d.site).push(d);
     }
@@ -329,20 +382,30 @@ async function checkBatch(programs, n) {
         total.sites[zig?'ambiguousAgreement':'ambiguousPrecision']++;
         lean=null;
       }
-      if(lean===null)total.sites.unknown++;
-      else if(lean===zig)total.sites.agreement++;
-      else if(lean)total.sites.precision++;
-      else {total.sites.lead++;siteLeads.push(site);}
+      const kind=lean===null?'unknown':lean===zig?'agreement':lean?'precision':'lead';
+      total.sites[kind]++;
+      // A site with a record line (#1872): an update or a call that writes a
+      // record argument. Its counts are a subset of the sites'.
+      if(ds.some(d=>d.record))total.recordSites[kind]++;
+      // A lead whose Zig record line hoists a read before its write: the
+      // oracle has no hoist and refuses that read on purpose (DESIGN.md,
+      // *Records written in place*).
+      if(kind==='lead'&&ds.some(d=>d.record&&/\[hoisted \d+\]/.test(d.detail)))total.recordSites.hoistLead++;
+      if(kind==='lead')siteLeads.push(site);
     }
-    const zig = demands.every(d=>d.verdict === 'accepted') && limits.length === 0, lean = p.record[5];
+    // A non-accepted record line refuses the program (§31.9), as a list
+    // demand does, and since #1872 its site is compared above.
+    const zig = demands.every(d=>d.verdict === 'accepted') && limits.length === 0 && records.length === 0, lean = p.record[5];
     const category = zig === lean ? 'agreements' : lean ? 'precision' : 'leads';
     total[category]++; bump(total.families[p.record[1]], category); bump(p.stream,category);
     if (category === 'precision') {
       const refused = demands.filter(d=>d.verdict !== 'accepted');
       for (const d of refused) bump(total.precisionPatterns, `${d.operation.split(' ')[0]}: ${d.detail.split(':')[0]}`);
       for (const l of limits) bump(total.precisionPatterns, `limit: ${l.kind}`);
-      // One pattern per program: its first refused demand's, or its first limit's.
-      const first = refused.length ? `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}` : `limit: ${limits[0].kind}`;
+      for (const r of records) bump(total.precisionPatterns, `update: ${r.detail.split(':')[0]}`);
+      // One pattern per program: its first refused demand's, its first limit's, or its first record refusal's.
+      const first = refused.length ? `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}` :
+        limits.length ? `limit: ${limits[0].kind}` : `update: ${records[0].detail.split(':')[0]}`;
       bump(total.precisionPrograms, first);
       (total.precisionExamples[first] ??= []).length < 5 && total.precisionExamples[first].push(p.record[2]);
     }
@@ -352,7 +415,7 @@ async function checkBatch(programs, n) {
       const originalRuntime = zig ? await confirmation(p,evidence) : {status:"blocked-by-other-refusals"};
       const reduction = !options['no-minimize'] && ["unconfirmed","confirmed"].includes(originalRuntime.status) ? await minimize(p,evidence,originalRuntime) : null;
       const runtime = reduction?.runtime ?? originalRuntime;
-      const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, limits, originalRuntime, runtime, reduction };
+      const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, updates:demands.updates ?? [], limits, originalRuntime, runtime, reduction };
       await writeFile(resolve(evidence,'evidence.json'),JSON.stringify({ ...report, record:p.record, declarations:p.ds },null,2));
       total.cases.push(report);
       console.log(`bridge lead ${p.record[2]}: ${runtime.status}`);
@@ -416,7 +479,8 @@ if(options.ci) {
   for(const [family,floor] of Object.entries({fixture:85,sync:61,targeted:548,enumerate:139,
     general:8,declarations:28,'branch-traversal':3,'fresh-tower':2,captures:4,
     'once-many-wrappers':3,'indexed-chain':5,'recursive-higher-order-limit':5,
-    recursion:1,'fresh-nested':2,constructions:26,'construct-declarations':30})) {
+    recursion:1,'fresh-nested':2,constructions:26,'construct-declarations':30,
+    record:34,objects:37,'object-declarations':27})) {
     if((total.families[family]?.translated??0)<floor) throw Error(`CI translation coverage fell below ${family} floor ${floor}`);
   }
   if(total.translated*4<total.programs) throw Error('CI translation coverage fell below 25%');
