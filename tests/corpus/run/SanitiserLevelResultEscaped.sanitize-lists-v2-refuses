@@ -1,0 +1,2 @@
+# v2 refuses a write at a fold of what a closure run last let escape (§2.1, #2195)
+72:8 list_may_be_shared SanitiserLevelResultEscaped.wr

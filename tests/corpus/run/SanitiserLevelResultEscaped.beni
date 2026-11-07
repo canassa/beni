@@ -1,0 +1,84 @@
+-- An escape found after the result was read off reaches the folds as well (`ownership-v2.md` §2.1, #2195): `go`
+-- hands a closure over `b` to a label, whose run comes last, so `host` arrived at `#P.0#Wrap.0[*]` and not at
+-- `#P.0⟲`, the read said fresh, and `rn` edited a list the stored closure reads.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap (List Box)
+    | P T Int
+
+
+type Box
+    = Bx T T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrL u 0
+        P u _ →
+            wr u
+
+
+wrL : List Box, Int → Int
+wrL u a =
+    case u of
+        [ Bx p q, …r ] →
+            wrL r (a + wr p + wr q)
+        _ →
+            a
+
+
+rd : T → Int
+rd t =
+    case t of
+        Leaf xs →
+            List.length xs
+        Wrap u →
+            rdL u 0
+        P u _ →
+            rd u
+
+
+rdL : List Box, Int → Int
+rdL u a =
+    case u of
+        [ Bx p q, …r ] →
+            rdL r (a + rd p + rd q)
+        _ →
+            a
+
+
+mkB : Int → Box
+mkB i = Bx (Leaf [ i ]) (Leaf [])
+
+
+go : ((⊤ → List Box) → ⊤) → T
+go f =
+    b = List.map [ 1 ] mkB
+    f λ⊤ → b
+    P (Wrap b) 0
+
+
+rn : ((⊤ → List Box) → ⊤) → Int
+rn f = wr (go f)
+
+
+nil : ⊤ → List Box
+nil _ = []
+
+
+main : Program
+main =
+    r = Ref.make nil
+    a = rn λc → Ref.set r c
+    d = (Ref.get r) ⊤
+    Node.print (String.fromInt (a * 10 + rdL d 0))

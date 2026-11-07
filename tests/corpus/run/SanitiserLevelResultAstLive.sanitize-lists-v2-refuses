@@ -1,0 +1,2 @@
+# v2 refuses a live list of a real tree at its fold (§2.1, #2195)
+116:33 list_may_be_shared SanitiserLevelResultAstLive.pipeline
