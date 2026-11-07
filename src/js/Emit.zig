@@ -487,7 +487,6 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
-    allow_unchecked_workers: bool = false,
     /// `--test-hooks`, the hidden test-only flag (`src/Cli.zig`): what
     /// `Js.testHooks ()` is (`backend.md` §4, *`Js.testHooks` is the
     /// build's test hooks*); a platform's test hooks are in the build only
@@ -869,7 +868,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     try e.checkEntryKinds();
     // Entry reachability is needed only when this check can reach a worker
     // launch. Ordinary checks keep their existing declaration-only path.
-    if (!e.hasErrors() and !options.allow_unchecked_workers and session.entry_plan.launches.len != 0) {
+    if (!e.hasErrors() and session.entry_plan.launches.len != 0) {
         var entry: ?Emitter.Entry = null;
         var multiple = false;
         for (0..e.graph().count()) |mi| {
@@ -1817,10 +1816,6 @@ const Emitter = struct {
                             const launch = plan.launches.get(li);
                             if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
                             allowed[mi][data.lhs] = true;
-                            if (!e.options.allow_unchecked_workers) {
-                                try e.report(.invalid_entry_kind, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches are gated during the workers landing; validation builds require --allow-unchecked-workers.", .{});
-                                continue;
-                            }
                             if (e.options.library) {
                                 try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
                                 continue;
