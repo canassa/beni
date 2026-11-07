@@ -36,3 +36,5 @@ word_builderdone open #2188
 word_lentoptional open #2188
 word_prepended open #2188
 word_unused open #2188: precision only
+family_split_heads equivalent #2214: two payloads of one family have one set of steps, each back to itself, so they read alike
+payload_prefix_off redundant #2214: PastPayload.read answers the same read; both off is payload_read_off, killed
