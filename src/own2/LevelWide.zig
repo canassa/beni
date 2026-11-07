@@ -11,7 +11,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Replay = @import("Replay.zig");
-const StepsTo = @import("StepsTo.zig");
+const PathsTo = @import("PathsTo.zig");
 const Trees = @import("Trees.zig");
 const LevelTargets = @import("LevelTargets.zig");
 
@@ -20,10 +20,10 @@ const PathId = Ids.PathId;
 pub const Said = struct { at: PathId, a: Trees.Arrival };
 
 /// What arrival `a`, open at result slot `q`, says at each fold target above
-/// `q`: at target `t`, the arrival's slot by every route to `t`'s place, and
-/// by the levels below each, replayed from `a`'s path as a reference's read is
-/// (`RefRead.levels`): a third lap is a slot of the path's own folds, never new
-/// words, and two routes that fold together are said once.
+/// `q`: at target `t`, each canonical path a walk from `a`'s own path first
+/// reaches `t`'s place on (`PathsTo`), and the levels below each. The walk
+/// starts at the path, so a third lap is one of its folds, and a slot routes
+/// fold onto is met once.
 pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId, a: Trees.Arrival, out: *std.ArrayList(Said)) Ids.ChargeError!void {
     const pl = f.places;
     if (!LevelTargets.hasMiddle(pl, pl.pathPlace(q)) or @import("Mutate.zig").on(.level_wide_off)) return;
@@ -31,8 +31,6 @@ pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId,
     try LevelTargets.of(f, g, arena, q, &ts);
     var seen: Ids.FixedDict(1) = .{};
     defer seen.deinit(g);
-    var w: std.ArrayList(u32) = .empty;
-    defer w.deinit(g);
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(g);
     for (ts.items) |t| {
@@ -42,23 +40,18 @@ pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId,
             continue;
         }
         if (std.debug.runtime_safety) std.debug.assert(pl.pathPlace(.from(a.path)) == pl.pathPlace(q));
-        var routes: std.ArrayList([]const u32) = .empty;
-        try StepsTo.of(g, arena, f.account, pl, try pl.rootPath(g, pl.pathPlace(q)), pl.pathPlace(t), &routes);
         seen.clearRetainingCapacity();
-        for (routes.items) |to| for ([_]bool{ false, true }) |level| {
-            w.clearRetainingCapacity();
-            try w.appendSlice(g, to);
-            if (level) try w.append(g, Place.Step.level.word());
-            ps.clearRetainingCapacity();
-            try Replay.replay(g, f.account, pl, .from(a.path), w.items, &ps);
-            for (ps.items) |p| {
-                if ((try seen.getOrPut(g, .{p})).found_existing) continue;
-                var x = a;
-                x.slot = try f.slots.relOf(g, f.account, pl, .from(p));
-                x.path = p;
-                try out.append(arena, .{ .at = t, .a = x });
-            }
-        };
+        ps.clearRetainingCapacity();
+        try PathsTo.of(g, f.account, pl, .from(a.path), pl.pathPlace(t), &ps);
+        const arrivals = ps.items.len;
+        for (0..arrivals) |i| try Replay.replay(g, f.account, pl, .from(ps.items[i]), &.{Place.Step.level.word()}, &ps);
+        for (ps.items) |p| {
+            if ((try seen.getOrPut(g, .{p})).found_existing) continue;
+            var x = a;
+            x.slot = try f.slots.relOf(g, f.account, pl, .from(p));
+            x.path = p;
+            try out.append(arena, .{ .at = t, .a = x });
+        }
     }
 }
 
