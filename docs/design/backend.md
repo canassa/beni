@@ -748,6 +748,20 @@ constructor (`<Module>$<Ctor>`), a multi-file build and a development build are 
 S1 seed 1 this is one `{$:1,a:null}` in place of one per widget module: −2.6 B per widget from
 N = 64 to 256 (`emit/release/app/NullaryShared`).
 
+*Amended 2026-11-07 (#2177, first written for #1856): the kept literal covers every copy.* Release
+field pruning can leave two modules' copies of one constant with different fields: a copy used only
+for identity may be `{}`. "Every one is the same object literal" therefore does not hold, and
+dropping a later copy for an earlier, pruned one loses fields a later reader needs. The link step
+groups the copies by name and takes one of those with the most fields (on a tie, the
+lexicographically first module name, so the bytes do not depend on encounter order or on
+`--jobs`). It shares the group only when that literal covers every copy: each field of each copy
+is present in it with exactly the same literal value, the tag included. The first declaration in
+the file's order receives the covering literal, so no earlier use reads a later uninitialised
+constant. A group with no covering copy, or with conflicting values, stays separate. A safety
+build asserts that the kept literal covers every dropped copy. `run/NullaryCoverage` pins it: an
+early identity-only `Nothing` was pruned to `{}` and shared with two later host readers, which
+printed `{}` for `{"$":"Nothing","a":null}`.
+
 Fixtures: `emit/NullaryConstant` (local and imported constants, a top-level use, uses inside
 functions), `run/NullaryIdentity/` (`refEq` through a test platform, dev and `--release`, as Â§15.8's),
 `browser/dom/NullaryHelperSkip` (`button "run" Run` called once, at mount).
