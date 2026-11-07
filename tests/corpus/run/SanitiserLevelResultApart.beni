@@ -1,0 +1,62 @@
+-- A list a `⟲` at a result does not hold stays out of it (`ownership-v2.md` §2.1, #2195): `k` is dead after its
+-- write, and `j` is another argument.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap Box
+    | P T Int
+
+
+type Box
+    = Bx T T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrB u
+        P u _ →
+            wr u
+
+
+wrB : Box → Int
+wrB u =
+    case u of
+        Bx p q →
+            wr p + wr q
+
+
+rd : T → Int
+rd t =
+    case t of
+        Leaf xs →
+            List.length xs
+        Wrap (Bx p q) →
+            rd p + rd q
+        P u _ →
+            rd u
+
+
+hg : T → T
+hg t0 =
+    case t0 of
+        P (Wrap m) _ →
+            P (Wrap m) 0
+        _ →
+            Leaf []
+
+
+main : Program
+main =
+    j = [ 2 ]
+    k = [ 1 ]
+    a = wr (hg (P (Wrap (Bx (Leaf k) (Leaf []))) 0))
+    b = hg (Leaf j)
+    Node.print (String.fromInt (a + rd b + List.length j))

@@ -13,6 +13,7 @@ const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
 const FnRun = @import("FnRun.zig");
+const LevelWide = @import("LevelWide.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -62,6 +63,9 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
     try f.charge(.edge, 1);
     if (try Contract.Draft.addWide(list, s.arena, r, a)) {
         if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, true, a, 0);
+        var said: std.ArrayList(LevelWide.Said) = .empty;
+        try LevelWide.of(f, s.e.gpa(), s.arena, q, a, &said);
+        for (said.items) |x| try arriveWide(s, x.at, x.a, out);
     }
 }
 
