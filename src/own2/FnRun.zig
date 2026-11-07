@@ -142,7 +142,7 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
                 // A subtree held whole (`↓p`) that may hold a closure keeps
                 // the leaf whole: more than its function objects escape.
                 const whole = for (f.slots.elems(l.slots)) |s| {
-                    if (Slots.isSub(s) and f.places.holds(f.places.pathPlace(Slots.pathOf(s))).closure) break true;
+                    if (Slots.isSub(s) and (f.places.holds(f.places.pathPlace(Slots.pathOf(s))).closure or (want.fold and f.places.holds(f.places.pathPlace(Slots.pathOf(s))).any))) break true;
                     if (want.whole or (want.fold and f.places.kind(f.places.pathPlace(Slots.pathOf(s))) == .@"var")) break true;
                     if (s & (Slots.sub_bit | Slots.not_bit) == 0 and f.places.kind(f.places.pathPlace(.from(s))) == .closure) try fs.append(gpa, s);
                 } else false;

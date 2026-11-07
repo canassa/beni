@@ -1,0 +1,52 @@
+-- The twin of `SanitiserFamilyDepthRun`, the row half: the list written is the record's own
+-- field and nothing else holds it, so the write is accepted. The `run` half has no such twin:
+-- a function at a payload that runs escapes what it is given, whatever it is.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type F a
+    = FL a
+    | FW (F (⊤ → a))
+
+
+type Rc a
+    = RL a
+    | RW (Rc { v : a, n : Int })
+
+
+rRec : Rc a, a → a
+rRec r d =
+    case r of
+        RL x →
+            x
+
+        RW u →
+            (rRec u { v = d, n = 0 }).v
+
+
+updQ : { r | q : List Int } → { r | q : List Int }
+updQ r = { r | q = [ 4 ] }
+
+
+low : F a, a → a
+low v d =
+    case v of
+        FL x →
+            x
+
+        _ →
+            d
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = { p = FL (RL [ 2 ]), q = [ 3 ] }
+    w = low (updQ v).p (RL [ 7 ])
+    Node.print (show (List.push (rRec w [ 7 ]) 9) ++ "|" ++ show k)
