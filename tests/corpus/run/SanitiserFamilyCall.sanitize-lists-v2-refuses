@@ -1,0 +1,2 @@
+# A payload's level read whole past a call: v2 refuses (§2.1, The exit rule)
+34:33 list_still_used SanitiserFamilyCall.pick

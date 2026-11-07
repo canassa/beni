@@ -163,7 +163,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             if (l.kind == .site and !(try s.described.getOrPut(e.gpa(), try Put.describedKey(s, li, q, out))).found_existing) for (e.w.closures.items) |cl| if (cl.inst == l.atom) for (f.kidsOf(f.val(cl.value))) |k| try describe(s, k, q, out);
         },
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
-        // Unknown here, unknown below: no step of it is fresh (§2.1, a fold).
+        // Unknown here, unknown below: no step of it is fresh (§2.1, *A family*).
         .top, .loan => {
             for ([_]bool{ false, true }) |wide| if (wide) try Put.arriveWide(s, q, .{ .kind = .top }, out) else try Put.arrive(s, q, .{ .kind = .top }, out);
             try describeOrigin(s, l, q, out);
@@ -223,7 +223,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
                     }
                 }
                 try describeOne(s, l, r, sl, at, out);
-                // Past a fold (§2.1): no slot below a concrete `at` names it.
+                // Out of a family (§2.1, *The exit rule*): no slot below a concrete `at` names it.
                 if (mapped and unnamed(f, .from(sl)) and f.places.kind(f.places.pathPlace(at)) != .@"var") {
                     // A parameter's by its slot; any other root's contract names no such slot.
                     if (r.kind == .param) try Put.arriveWide(s, at, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = true, .path = sl }, out) else try Put.arriveWide(s, at, .{ .kind = .top }, out);
@@ -814,7 +814,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                     if (Slots.isNot(sl)) continue;
                     var eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, Slots.pathOf(sl)), .deep = deep or Slots.isSub(sl) };
                     // An edit in place of what a cell holds is deep at its `◆`: never a cell operation (§2.13.7).
-                    // So is a write below a non-regular type's fold, a `var` place no step can name.
+                    // So is a write at a family's payload: a `var` whose base no step can name.
                     eff.deep = eff.deep or (out == .writes and ((!l.at_pos and Cells.endsInContents(f.slots, eff.slot)) or f.places.kind(f.places.pathPlace(Slots.pathOf(sl))) == .@"var"));
                     if (try Contract.Draft.addEffect(Put.effList(s, out), s.arena, eff)) if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
                 }

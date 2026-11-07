@@ -1,8 +1,7 @@
 //! L2: the place a `⟲` of a path means on a built value
-//! (`docs/design/ownership-v2.md` §2.1, *A step past a fold*). A built value's
-//! own place can be another instantiation than the slot's: a non-regular type's
-//! never repeat, and a literal's place leads to the type's fold. The path's own
-//! steps from the value it starts at name the place (#2062).
+//! (`docs/design/ownership-v2.md` §2.1, *A family*). A built value's own place
+//! can be another instantiation than the slot's. The path's own steps from the
+//! value it starts at name the place (#2062).
 //!
 //! Obligations kept here: none of §2.14's directly.
 

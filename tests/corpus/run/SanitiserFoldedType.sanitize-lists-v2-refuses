@@ -1,6 +1,7 @@
 # v2 refuses each write below a non-regular type's fold another holder reads (§2.1, A step past a fold).
 45:28 list_still_used List.push
 167:13 list_may_be_shared SanitiserFoldedType.cps
+167:13 list_may_be_shared SanitiserFoldedType.cps
 190:15 list_still_used List.push
 194:17 list_still_used List.push
 201:17 list_still_used List.push
