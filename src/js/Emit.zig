@@ -2228,7 +2228,7 @@ const Emitter = struct {
     /// manifest failure is an exit-2 line naming the path
     /// (`src/platform.zig`), and this is the same honesty inside a
     /// diagnostic.
-    fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
+    pub fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
         return e.reportInFileAs(code, .@"error", at, fmt, args);
     }
 
@@ -2259,7 +2259,7 @@ const Emitter = struct {
     /// wrong*: an `At` covering `length` bytes of `source` from `offset`,
     /// which is what `js/Sibling.zig` hands back for every export,
     /// reference and specifier it reads.
-    fn inSibling(path: []const u8, source: []const u8, offset: u32, length: u32) Session.At {
+    pub fn inSibling(path: []const u8, source: []const u8, offset: u32, length: u32) Session.At {
         return .{
             .path = path,
             .start = positionIn(source, offset),
@@ -7488,6 +7488,7 @@ const Emitter = struct {
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
                 .page = e.options.platform.page,
+                .realm = e.options.platform.entry_host,
                 .fields = if (e.field_table) |*table| table else null,
                 .marks = if (mapped) &marks else null,
                 .footer = if (mapped and !e.hoisted) slot.map_footer else "",
@@ -10455,7 +10456,7 @@ const Emitter = struct {
 
     /// Where a module's sibling JavaScript is READ from: next to the source,
     /// under its own name. `core/Basics.beni` becomes `core/Basics.js`.
-    fn siblingPath(e: *Emitter, source_path: []const u8) ![]const u8 {
+    pub fn siblingPath(e: *Emitter, source_path: []const u8) ![]const u8 {
         return std.fmt.allocPrint(e.scratch, "{s}.js", .{stripExtension(source_path, SourceStore.extension)});
     }
 
@@ -10488,7 +10489,7 @@ const Emitter = struct {
 
     /// The bytes of an asset: the embedded copy when the compiler carries
     /// one, else the file on disk.
-    fn readAsset(e: *Emitter, path: []const u8) ?[]const u8 {
+    pub fn readAsset(e: *Emitter, path: []const u8) ?[]const u8 {
         for (e.options.embedded) |asset| {
             if (std.mem.eql(u8, asset.path, path)) return asset.bytes;
         }

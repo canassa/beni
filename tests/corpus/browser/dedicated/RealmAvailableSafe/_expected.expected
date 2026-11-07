@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"waiting"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "href,agent,string,function,function"
+<body>
+  <output>"href,agent,string,function,function"</output>
+  <button>"launch"</button>
+</body>

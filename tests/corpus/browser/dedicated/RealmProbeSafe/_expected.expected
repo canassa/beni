@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"waiting"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "no document,no storage,no idle,href,object"
+<body>
+  <output>"no document,no storage,no idle,href,object"</output>
+  <button>"launch"</button>
+</body>

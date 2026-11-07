@@ -1800,6 +1800,106 @@ pub fn hoistableWith(arena: Allocator, source: []const u8, keep: []const []const
     };
 }
 
+/// A name a hand-written file may read from the global object
+/// (`globalReads`), with the literal members read through it.
+pub const GlobalRead = struct {
+    name: []const u8,
+    /// Byte offset and length of the name in the source.
+    offset: u32,
+    len: u32,
+    /// `name.member`, and `name.member.member2`; null when the name is not
+    /// the receiver of a literal member read (it is passed, stored, called
+    /// or indexed with `[`).
+    member: ?[]const u8 = null,
+    member2: ?[]const u8 = null,
+    /// An existence probe, which cannot throw: `typeof` in front of the
+    /// read, or the read (with at most one member) compared with
+    /// `undefined` by `===`, `!==`, `==` or `!=`.
+    probe: bool = false,
+    /// `name.member = …`: a write of one global property, which cannot
+    /// throw.
+    write: bool = false,
+    /// `name.M.bind(name)`: the bare name read only as the `this` of its
+    /// own method `M`; M, or null.
+    bound_to: ?[]const u8 = null,
+};
+
+pub const GlobalReads = struct {
+    reads: []const GlobalRead,
+    /// The byte offset of the first surviving `import` — a statement,
+    /// `import()` or `import.meta` — or null.
+    import: ?u32,
+};
+
+/// What the realm check of a worker build (`workers.md` §4) reads of a
+/// hand-written file kept for the exports `keep` names: every name the
+/// surviving code reads that neither the file (`facts`) nor check 3's
+/// reading of it (`bound`, `Sibling.Scan.bound`) binds anywhere, template
+/// substitutions included, with the literal members read through each.
+/// Like check 3 it has no scopes: a name bound anywhere in the file is the
+/// file's own everywhere. Null when the tokenizer or elimination refuses
+/// the file, which the check then refuses: it cannot say what the file
+/// reads.
+pub fn globalReads(arena: Allocator, source: []const u8, keep: []const []const u8, bound: *const std.StringHashMapUnmanaged(void)) Allocator.Error!?GlobalReads {
+    const tokens = tokenize(arena, source) catch |err| switch (err) {
+        error.Unsupported => return null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const c = try cut(arena, source, tokens, keep) orelse return null;
+    const s: Structure = try .init(arena, source, tokens);
+    const f = try facts(arena, &s, c.mask);
+    var import: ?u32 = null;
+    const outside = try arena.alloc(bool, tokens.len);
+    @memset(outside, false);
+    for (c.units, c.live) |u, live| {
+        if (!live) continue;
+        switch (u.kind) {
+            .import => {
+                if (import == null) import = tokens[u.start].start;
+                @memset(outside[u.start..u.end], true);
+            },
+            .export_list => @memset(outside[u.start..u.end], true),
+            .declaration, .function => {},
+        }
+    }
+    const contextual = [_][]const u8{ "of", "as", "from", "get", "set", "async", "target", "meta" };
+    var reads: std.ArrayList(GlobalRead) = .empty;
+    for (tokens, 0..) |t, i| {
+        if (!s.name(i) or !c.mask[i] or outside[i]) continue;
+        const w = s.text(i);
+        if (same(w, "import")) {
+            if (import == null) import = t.start;
+            continue;
+        }
+        if (Print.isReservedWord(w)) continue;
+        if (for (contextual) |x| {
+            if (same(x, w)) break true;
+        } else false) continue;
+        // `{ a: …` and `, a: …` are a key or a label: never a read.
+        if (s.punct(i + 1, ":") and i > 0 and (s.punct(i - 1, "{") or s.punct(i - 1, ","))) continue;
+        const binds = bound.contains(w) or if (f) |ff| ff.bound.contains(w) or ff.imported.contains(w) else false;
+        if (binds) continue;
+        var read: GlobalRead = .{ .name = w, .offset = t.start, .len = t.end - t.start };
+        if ((s.punct(i + 1, ".") or s.punct(i + 1, "?.")) and i + 2 < tokens.len and tokens[i + 2].kind == .ident) {
+            read.member = s.text(i + 2);
+            if ((s.punct(i + 3, ".") or s.punct(i + 3, "?.")) and i + 4 < tokens.len and tokens[i + 4].kind == .ident) read.member2 = s.text(i + 4);
+        }
+        if (read.member2 == null) {
+            const after = if (read.member != null) i + 3 else i + 1;
+            const compared = for ([_][]const u8{ "===", "!==", "==", "!=" }) |op| {
+                if (s.punct(after, op)) break true;
+            } else false;
+            read.probe = (i > 0 and s.word(i - 1, "typeof")) or (compared and s.word(after + 1, "undefined"));
+        }
+        if (read.member != null and read.member2 == null and s.punct(i + 3, "=")) read.write = true;
+        if (read.member == null and i >= 6 and s.punct(i + 1, ")") and s.punct(i - 1, "(") and isWord(tokens[i - 2], source, "bind") and
+            s.punct(i - 3, ".") and tokens[i - 4].kind == .ident and s.punct(i - 5, ".") and s.name(i - 6) and same(s.text(i - 6), w))
+            read.bound_to = s.text(i - 4);
+        try reads.append(arena, read);
+    }
+    return .{ .reads = reads.items, .import = import };
+}
+
 /// A hoisted file's text: its body, and its `import` statements apart, for
 /// the top of the one file.
 pub const Printed = struct {
@@ -2203,6 +2303,28 @@ test "marks: each printed token maps to its token as written, and a renamed name
         try listMarks(arena, source, out, &marks),
         try std.mem.join(arena, ",", marks.names.items),
     }));
+}
+
+test "globalReads: free names, members, probes and template substitutions" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const source =
+        \\export const f = (document) => document.title + `${globalThis.screen.width}`;
+        \\export const g = () => globalThis.document !== undefined ? typeof parent : Function;
+        \\export const h = () => alert(1);
+        \\
+    ;
+    const scan = try @import("Sibling.zig").scan(arena, source);
+    const found = (try globalReads(arena, source, &.{ "f", "g" }, &scan.bound)).?;
+    try testing.expect(found.import == null);
+    var names: std.ArrayList(u8) = .empty;
+    for (found.reads) |r| try names.print(arena, "{s}{s}{s}{s} ", .{ r.name, if (r.member) |_| "." else "", r.member orelse "", if (r.probe) "?" else "" });
+    // `document` is a parameter; `h`, not kept, reads nothing; `undefined`
+    // is a global like any other.
+    try testing.expectEqualStrings("globalThis.screen globalThis.document? undefined parent? Function ", names.items);
+    const imported = (try globalReads(arena, "import x from \"pkg\";\nexport const f = () => x;\n", &.{"f"}, &scan.bound)).?;
+    try testing.expectEqual(@as(?u32, 0), imported.import);
 }
 
 test "hoisting: a name read unbound is free, and a key after { or , is not" {

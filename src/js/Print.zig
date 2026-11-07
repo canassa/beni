@@ -40,6 +40,8 @@ const Fields = @import("Fields.zig");
 const SourceMap = @import("SourceMap.zig");
 const small_stack = @import("../small_stack.zig");
 const Join = @import("Join.zig");
+const RealmCheck = @import("RealmCheck.zig");
+const Realm = @import("../entry/Plan.zig").Realm;
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -154,6 +156,12 @@ pub const Options = struct {
     /// §5.2): `Rename.page_globals` are written bare too (`backend.md` §9,
     /// item 8, amended 2026-10-24).
     page: bool = false,
+    /// The realm the build's entry runs in. In a browser worker a host
+    /// global is written bare only when it is on that realm's global object
+    /// (`RealmCheck.onWorkerGlobal`): a bare `document` there throws
+    /// `ReferenceError` where `globalThis.document` reads `undefined`
+    /// (`workers.md` §4, *The worker global allow-list*).
+    realm: Realm = .unknown,
     /// `--release`: a record field's short spelling, by the field's text
     /// (`backend.md` §9, *Item 4, taken up*; `Fields.Table`). A field name
     /// with no entry is pinned and printed as its text. Null prints every
@@ -195,6 +203,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .bare_globals = options.bare_globals,
         .bare_blocked = options.bare_blocked,
         .page = options.page,
+        .realm = options.realm,
         .fields = options.fields,
         .marks = options.marks,
         .spelled = scratch,
@@ -549,6 +558,8 @@ const Printer = struct {
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
     page: bool = false,
+    /// `Options.realm`.
+    realm: Realm = .unknown,
     /// `Options.marks`.
     marks: ?*SourceMap.Marks = null,
     /// Each name's entry in the map's `names` (`mapName`), by `NameIndex`;
@@ -2075,6 +2086,7 @@ const Printer = struct {
     fn bareName(p: *Printer, text: []const u8) bool {
         if (!Rename.isBareGlobal(text)) return false;
         if (!p.page and Rename.isPageGlobal(text)) return false;
+        if (RealmCheck.isWorker(p.realm) and !RealmCheck.onWorkerGlobal(text, p.realm)) return false;
         for (p.bare_blocked) |b| {
             if (std.mem.eql(u8, b, text)) return false;
         }

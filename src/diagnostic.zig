@@ -532,6 +532,9 @@ pub const Code = enum {
     obsolete_host_promise,
     entry_runtime_suspends,
     worker_entry_not_static,
+    /// A kept `importScripts` in a module worker (`workers.md` §4 and §6),
+    /// appended 2026-11-07.
+    module_worker_import_scripts,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -637,6 +640,7 @@ pub fn title(code: Code) []const u8 {
         .invalid_entry_kind => "INVALID ENTRY KIND",
         .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
         .worker_realm_violation => "WORKER REALM VIOLATION",
+        .module_worker_import_scripts => "IMPORTSCRIPTS IN A MODULE WORKER",
         .invalid_native_binding => "INVALID NATIVE BINDING",
         .obsolete_host_promise => "OBSOLETE HOST PROMISE",
         .worker_entry_not_static => "WORKER ENTRY NOT STATIC",

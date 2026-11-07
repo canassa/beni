@@ -1,0 +1,22 @@
+-- `self.frames` is a Window member. The worker realm check is an allow-list (#2206, `workers.md` §4).
+import Page
+import RealmJs
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → RealmJs.selfFrames ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤
