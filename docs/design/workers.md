@@ -787,6 +787,23 @@ presented as the same native object operation.
 See [workers-api.md](workers-api.md) for every public signature and
 [workers-example.md](workers-example.md) for complete page/worker lifecycles.
 
+*Amended 2026-11-07 (#2129).* `Worker.cancelStream` on an unsolicited events
+stream closes that event channel, discards unread events and waits for an
+`EventsClosed` control acknowledgment. Later `emit` returns `EventChannelClosed`.
+Calls and worker-root work remain alive; `Worker.close` owns root cleanup. A
+response stream instead interrupts its request-scoped producer and waits for its
+finalizers. Both cancellation paths bypass data credits and retain typed cleanup
+status; neither claims remote cleanup after a lost-peer transition.
+
+Each response stream uses one chunk credit and the configured `queuedBytes`
+bound per chunk. The event channel retains its separate `queuedEvents` and byte
+budget. A received chunk's lease is acknowledged only by release/take, never by
+receipt or `next`. Producer completion follows its finalizers; already-received
+values belong to the receiver and are not reclaimed from a held chunk on remote
+completion. Cancellation discards unread chunks. Chunk operations retain their
+ownership-checker-v2 consumed/borrowed contract; unchecked duplicate release or
+use after release defects instead of emitting a second acknowledgment.
+
 ## 10. Verification and measurements owed
 
 No implementation or browser performance claim is made by this document.
