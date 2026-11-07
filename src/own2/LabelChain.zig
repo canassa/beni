@@ -44,6 +44,7 @@ pub fn labelAt(c: Chain, o: [2]u32) Contract.Label {
 /// Whether call `q` is a known code's run by a label that calls it many
 /// times (`calls` many), at any level outward (§2.11.3, #1721).
 pub fn outwardMany(c: Chain, q: u32) bool {
+    if (@import("Mutate.zig").on(.outward_many_off)) return false;
     var cur = q;
     while (c.f.calls.items[cur].virtual) {
         const o = virtualOuter(c, cur) orelse return false;
@@ -51,7 +52,7 @@ pub fn outwardMany(c: Chain, q: u32) bool {
         if (lab.calls == .many) return true;
         // Labels of one function slot add up: `two h = ( h ⊤, h ⊤ )`.
         for (c.contracts.labelsOf(c.contracts.head(c.f.calls.items[o[0]].contract).labels), 0..) |x, li| {
-            if (li != o[1] and x.j == lab.j and x.slot == lab.slot and x.calls != .none) return true;
+            if (li != o[1] and x.j == lab.j and x.slot == lab.slot and x.calls != .none and !@import("Mutate.zig").on(.labels_add_up_off)) return true;
         }
         cur = o[0];
     }

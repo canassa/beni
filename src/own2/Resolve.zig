@@ -352,7 +352,7 @@ const Resolver = struct {
             fx.join(try r.keys.factsOf(r.ev(), t));
         }
         // A host object escaped, or JavaScript made it (§2.10, *host objects*).
-        if ((fx.unknown and !r.ev().keeping) or fx.host or targets.len == 0) {
+        if ((fx.unknown and !r.ev().keeping and !@import("Mutate.zig").on(.unknown_accepted)) or fx.host or (targets.len == 0 and !@import("Mutate.zig").on(.targets_empty_accepted))) {
             refuse(o, if (fx.loan != none) .loan else if (fx.unknown or targets.len == 0) .unknown else .escaped);
             if (fx.loan != none) o.loan = Holders.calleeAndCell(fr, fx.loan) else if (targets.len != 0) o.exactness = .approximate;
             return line;
@@ -361,7 +361,7 @@ const Resolver = struct {
         // object relies on the callers, anything this activation allocated
         // (here or in a callee) is fresh.
         const ground: Facts.Verdict.Accepted = if (fx.param) .param else .fresh;
-        if (fx.shared[0] != none) {
+        if (fx.shared[0] != none and !@import("Mutate.zig").on(.shared_writable)) {
             refuse(o, .top_level);
             o.exactness = .position;
             o.shared = fx.shared;
@@ -372,19 +372,19 @@ const Resolver = struct {
         relied.no = d.relies.no;
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
-        for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied) and (d.beside == none or try r.escaped(t, d.point, d.beside, &relied))) {
+        if (!@import("Mutate.zig").on(.unescaped_off)) for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied) and (d.beside == none or try r.escaped(t, d.point, d.beside, &relied))) {
             refuse(o, .escaped);
             return line;
         };
         // Disjoint: the callee's own reliance, then the other operands.
-        if (relied.no) {
+        if (relied.no and !@import("Mutate.zig").on(.disjoint_off)) {
             refuse(o, .disjoint);
             o.other_paths = d.kind == .writer or d.kind == .consumed;
             o.exactness = .approximate;
             return line;
         }
         // A kept supply written by a known code.
-        if (d.kept or d.many) {
+        if ((d.kept and !@import("Mutate.zig").on(.kept_write_off)) or (d.many and !@import("Mutate.zig").on(.many_write_off))) {
             refuse(o, if (d.many) .once else .call);
             return line;
         }
@@ -400,6 +400,7 @@ const Resolver = struct {
             if (by_call) {
                 if (try r.ops.judged(r.ev(), &r.keys, d.call, d.arg, t, &relied, &ols)) try writes.append(g, .{ d.call, d.arg, t });
             } else for (w.valuesOfRun(d.operands)) |v| try r.ev().leavesOf(v, 0, &ols);
+            if (@import("Mutate.zig").on(.other_operands_off)) continue;
             for (ols.items) |l| {
                 const ov = try Distinct.overlap(r.ev(), l, t, true);
                 switch (ov.kind) {
@@ -475,8 +476,9 @@ const Resolver = struct {
                 const hds = r.live.holdsOf(hi);
                 try r.heldAt(hi, try r.tags.meeting(g, r.account(), &fr.sets.tags, hi, hds.len, HoldTags{ .f = fr, .hs = hds }, fr.leafAt(t).tags), t, d.point, visit);
             }
-            if (aggregating and best == null) try r.aggregated(t, d.point, &relied, &done_holds, &dones);
+            if (aggregating and best == null and !@import("Mutate.zig").on(.aggregated_off)) try r.aggregated(t, d.point, &relied, &done_holds, &dones);
         };
+        if (@import("Mutate.zig").on(.live_holders_off)) best = null;
         if (best) |bh| {
             const clos = fr.val(w.bindings[bh.h].value);
             refuse(o, if (bh.h == base_local) .later_use else if (clos.kind == .built and clos.form == .closure) .captured else .alias);
@@ -488,7 +490,7 @@ const Resolver = struct {
         }
         // Exclusive: what the write relied on is the frame's to ask of its
         // callers; a condition that cannot hold refuses.
-        if (relied.no) {
+        if (relied.no and !@import("Mutate.zig").on(.exclusive_off)) {
             refuse(o, .exclusive);
             o.exactness = .approximate;
             return line;

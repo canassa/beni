@@ -84,6 +84,7 @@ pub fn groupRecurses(evals: anytype, ids: []const u32) bool {
 /// costs `n`, doubling with the depth of a wrapper (`w f = ( v f, v f )`).
 pub fn allMade(e: *Eval, call: u32) Error!bool {
     const c = e.contractOf(call) orelse return false;
+    if (@import("Mutate.zig").on(.all_made_true)) return true;
     const h = e.contracts.head(c);
     if (!h.res_cond.no or h.res_read.no) return false;
     const rc = try e.contracts.resCond(e.arena, c, true);

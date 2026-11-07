@@ -540,7 +540,7 @@ fn walk(kind: Kind) !void {
     // `BENI_CORPUS_ONLY`: the fixtures whose path holds the text, and none
     // of this kind's when none does — but a filter that matches no fixture
     // of ANY kind fails, so a mistyped one cannot pass by running nothing.
-    const fixtures = if (cfg.only) |text| blk: {
+    var fixtures = if (cfg.only) |text| blk: {
         if (!try anyFixtureMatches(arena, &cfg, text)) {
             std.debug.print("BENI_CORPUS_ONLY (-Dcorpus) `{s}` matches no fixture under {s}\n", .{ text, cfg.root });
             return error.CorpusFilterMatchesNothing;
@@ -551,6 +551,18 @@ fn walk(kind: Kind) !void {
         }
         break :blk kept.items;
     } else all;
+    // `BENI_CORPUS_EXCEPT`: fixtures left out, and the net stays on (`only` turns it off).
+    if (cfg.except) |list| {
+        var kept: std.ArrayList(Fixture) = .empty;
+        for (fixtures) |fixture| {
+            var it = std.mem.splitScalar(u8, list, ',');
+            const out = while (it.next()) |text| {
+                if (try fixture.matches(arena, text)) break true;
+            } else false;
+            if (!out) try kept.append(arena, fixture);
+        }
+        fixtures = kept.items;
+    }
     if (fixtures.len == 0) return;
 
     // Pending mode never blesses: a golden there is the CORRECT output,
@@ -1069,6 +1081,11 @@ const Config = struct {
     /// runs, or null for every part. `test-blackbox` runs each part in its
     /// own process, in parallel.
     part: ?Part,
+    /// `BENI_NO_V2_PARITY` (`zig build -Dno-v2-parity`): no v1/v2 parity net, so a
+    /// mutant is judged by what a fixture says and not by v1 (`test-own2-mutations`).
+    no_parity: bool = false,
+    /// `BENI_CORPUS_EXCEPT` (`zig build -Dcorpus-except=<a,b>`): fixtures left out.
+    except: ?[]const u8 = null,
     /// `BENI_CORPUS_ONLY` (`zig build -Dcorpus=<text>`): run only the
     /// fixtures whose repo-relative path contains the text, or every
     /// fixture when null. Strict and pending mode alike.
@@ -1180,6 +1197,8 @@ const Config = struct {
             .root = std.mem.trimEnd(u8, root, "/"),
             .part = part,
             .only = envOr(arena, "BENI_CORPUS_ONLY"),
+            .no_parity = envOr(arena, "BENI_NO_V2_PARITY") != null,
+            .except = envOr(arena, "BENI_CORPUS_EXCEPT"),
             .is_default_root = std.mem.eql(u8, std.mem.trimEnd(u8, root, "/"), default_root),
             .mode = mode,
             .timeout_ms = timeout_ms,
@@ -1203,7 +1222,7 @@ const Config = struct {
     /// in pending mode. A harness test's corpus in a temporary root is about
     /// the harness, not about either checker.
     fn v2Net(cfg: *const Config) bool {
-        return cfg.mode != .pending and std.mem.eql(u8, cfg.root, default_root);
+        return cfg.mode != .pending and std.mem.eql(u8, cfg.root, default_root) and !cfg.no_parity;
     }
 
     /// Whether this process runs `part`.

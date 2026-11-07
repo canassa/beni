@@ -34,23 +34,23 @@ pub fn finishDemands(e: *Evaluation) Error!void {
     const req_of = try e.ev.arena.alloc(?Cond, f.calls.items.len);
     @memset(req_of, null);
     for (e.demands.items) |*d| {
-        if (d.call == none) continue;
+        if (d.call == none or @import("Mutate.zig").on(.relies_off)) continue;
         const call = f.calls.items[d.call];
         const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
         if (req_of[d.call] == null) req_of[d.call] = (try MovedReq.of(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
         d.relies = req_of[d.call].?;
         const held = e.contracts.head(call.contract).flags.taken_write;
-        if (held and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
+        if (held and !@import("Mutate.zig").on(.taken_mark_off) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
         if (!call.virtual or d.wslot == none) continue;
         var lvs: std.ArrayList(LabelChain.Level) = .empty;
         defer lvs.deinit(e.gpa());
         try LabelChain.supplyLevels(e.chain(), d.call, d.arg, f.slots.relWords(d.wslot), &lvs);
         for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
             const es = try Eval.entriesOf(e, su.res_root);
-            if (lv.lab.calls == .many and CellEdit.ofElement(es, f.places, f.slots, lv.words) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
+            if (lv.lab.calls == .many and !@import("Mutate.zig").on(.taken_mark_off) and CellEdit.ofElement(es, f.places, f.slots, lv.words) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
             for (try FedWrite.relies(&e.ev, e.chain(), lv.lab, su, lv.call, lv.words, d.deep)) |x| d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, x);
             if (su.each) continue;
-            if (lv.lab.origin[2] & RowEnv.taken_origin != 0) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
+            if (lv.lab.origin[2] & RowEnv.taken_origin != 0 and !@import("Mutate.zig").on(.taken_occs_off)) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
                 d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, os), lv.call));
             };
         };

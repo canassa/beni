@@ -47,6 +47,7 @@ pub fn containerRoot(f: *const Value.Frame, contracts: *const Contract.Table, l:
 /// Which of `x`, `t` is a taken element whose container's root the other
 /// is a reference of: 0 for `x`, 1 for `t`; else null.
 pub fn side(f: *const Value.Frame, contracts: *const Contract.Table, x: Leaf, t: Leaf) ?u1 {
+    if (@import("Mutate.zig").on(.taken_side_off)) return null;
     if (t.kind == .ref and containerRoot(f, contracts, x) == t.root) return 0;
     if (x.kind == .ref and containerRoot(f, contracts, t) == x.root) return 1;
     return null;

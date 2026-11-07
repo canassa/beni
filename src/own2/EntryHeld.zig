@@ -19,6 +19,7 @@ const none: u32 = Ids.none_int;
 /// A refused demand at each `entry` call handed a marked function; a call
 /// handed a parameter's value marks the frame `entry` in its turn.
 pub fn demands(e: *Eval.Evaluation) Error!void {
+    if (@import("Mutate.zig").on(.entry_held_off)) return;
     const f = e.fr();
     for (f.calls.items, 0..) |call, q| {
         if (call.virtual or call.contract == none or !e.contracts.head(call.contract).flags.entry) continue;
@@ -42,7 +43,7 @@ pub fn demands(e: *Eval.Evaluation) Error!void {
                     while (n < ks.len) : (n += 2) try todo.append(e.gpa(), ks[n + 1]);
                 },
                 .ref => if (f.roots.items[x.root].kind == .param) {
-                    e.marks.entry = true;
+                    e.marks.entry = !@import("Mutate.zig").on(.entry_mark_off);
                 },
                 else => {},
             }

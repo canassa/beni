@@ -53,6 +53,7 @@ pub const Visit = struct {
 /// the order of their paths (a node before its kids, kids in order), so the
 /// first hold handed over at a use is at the least path that use reads.
 pub fn descend(uses: *Later.Uses, live: *const Sweep.Live, hi: u32, met: []const u32, t: u32, point: u32, visit: Visit) Error!void {
+    if (@import("Mutate.zig").on(.descent_off)) return;
     const ev = uses.ev;
     const fr = ev.f;
     const g = fr.gpa;

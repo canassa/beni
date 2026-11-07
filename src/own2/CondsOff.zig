@@ -46,7 +46,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts, recursive: bool) 
             _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = true });
         };
     }
-    d.req = try Graft.fold(&e.ev, v.req);
+    d.req = if (@import("Mutate.zig").on(.contract_no_req)) Contract.Cond.yes else try Graft.fold(&e.ev, v.req);
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
         if (cb.inst == none) continue;
         const at = try Put.labelIndex(s, @intCast(ci));

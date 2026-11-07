@@ -115,6 +115,7 @@ pub const Uses = struct {
     /// Whether a use reads the hold at `q` (§2.7): a whole or field use does;
     /// a call use does where its callee's footprint reaches `q`.
     fn footprintReads(u: *Uses, x: Facts.Use, q: PathId) Error!bool {
+        if (@import("Mutate.zig").on(.later_footprint_none)) return false;
         if (x.kind != .call or x.use_node == .none) return true;
         const fr = u.f();
         const foot = u.w.foots.items[x.use_node.int()];

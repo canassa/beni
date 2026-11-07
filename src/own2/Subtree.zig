@@ -28,7 +28,7 @@ const empty = Slots.empty;
 /// them (a type variable's or an opaque place). A plain one is as it is.
 pub fn readAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId, open: bool) Trees.Arrival {
     var x = a;
-    if (open) x.deep = switch (places.kind(places.pathPlace(slot))) {
+    if (@import("Mutate.zig").on(.read_at_shallow)) x.deep = false else if (open) x.deep = switch (places.kind(places.pathPlace(slot))) {
         .@"var" => true,
         .@"opaque" => a.deep,
         else => false,
@@ -189,6 +189,7 @@ pub fn without(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.
 /// other at or below which something holds an object. Never by writing
 /// out `below(p)`. An exclusion is read against explicit slots only.
 pub fn meetIn(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, a: SetId, b: SetId) Error!bool {
+    if (@import("Mutate.zig").on(.meet_in_never)) return false;
     if (!symbolic(t, a) and !symbolic(t, b)) return t.meet(account, a, b);
     if (a == empty or b == empty) return false;
     if (a == b) return true;

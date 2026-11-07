@@ -24,6 +24,7 @@ const baseOf = Graft.baseOf;
 /// distinct check finds no pair the callee's own selection did not have.
 /// Null otherwise.
 pub fn of(ev: *Relation.Eval, call: Value.Call, c: Contract.Cond) Error!?Contract.Cond {
+    if (@import("Mutate.zig").on(.moved_req_yes)) return Contract.Cond.yes;
     if (c.no or c.sel.len == 0) return null;
     for (c.sel) |o| if (Contract.isFed(o)) return null;
     const g = ev.gpa();

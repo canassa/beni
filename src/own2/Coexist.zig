@@ -25,6 +25,7 @@ const none: u32 = Ids.none_int;
 /// earliest one (no later node can name it), so a state `(a, b, list)`
 /// is met once. One inspection a state.
 pub fn setsMeet(t: *Table, gpa: Allocator, account: *Ids.Account, ta: u32, ra: u32, tb: u32, rb: u32) Error!bool {
+    if (@import("Mutate.zig").on(.sets_meet_never)) return false;
     if (ra == none or rb == none) return false;
     const p0 = (try t.merge(gpa, account, ta, tb)) orelse return false;
     if (ra == 0 and rb == 0) return true;

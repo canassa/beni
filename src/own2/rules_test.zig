@@ -25,6 +25,9 @@
 //! 5. **Obligations.** Every production file's header says which of §2.14's
 //!    obligations it keeps (`Obligations kept here:`), or that it keeps
 //!    none.
+//! 6. **Mutations.** Every rule `Mutate.zig` names to break has a site.
+//! 7. **Registered.** A file with tests is named in `src/beni.zig`'s `own2`:
+//!    an import alone compiles no test of the file into `unit_test`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -47,6 +50,8 @@ const layers = [_]Entry{
     // the chunks, the task queue and their ids, which nothing used, cut.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
+    // Its lines are its table: a line for each rule broken, and its comment.
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 420 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -502,7 +507,7 @@ fn importVerdict(file: []const u8, target: []const u8, in_tests: bool) ?[]const 
     const me = layerOf(file) orelse return "not in §5's table";
     if (std.mem.indexOf(u8, target, "own/") != null) return "v1 (src/own/) is frozen and no v2 file reads it";
     if (std.mem.indexOfScalar(u8, target, '/') == null and std.mem.endsWith(u8, target, ".zig")) {
-        if (std.mem.eql(u8, target, "Counters.zig")) return null;
+        if (std.mem.eql(u8, target, "Counters.zig") or std.mem.eql(u8, target, "Mutate.zig")) return null;
         const other = layerOf(target) orelse return "not in §5's table";
         if (other.layer >= me.layer) return "imports go to strictly lower layers (§5)";
         return null;
@@ -677,12 +682,70 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
     try testing.expectEqual(@as(usize, 0), bad);
 }
 
+test "a file with tests is registered, or its tests never run" {
+    const gpa = testing.allocator;
+    var sources: std.ArrayList(Source) = .empty;
+    defer {
+        for (sources.items) |x| {
+            gpa.free(x.name);
+            gpa.free(x.text);
+        }
+        sources.deinit(gpa);
+    }
+    try readSources(gpa, testing.io, &sources);
+    const root = try std.Io.Dir.cwd().readFileAlloc(testing.io, "src/beni.zig", gpa, .limited(1 << 22));
+    defer gpa.free(root);
+    var bad: usize = 0;
+    for (sources.items) |x| {
+        if (!std.mem.startsWith(u8, x.text, "test \"") and std.mem.indexOf(u8, x.text, "\ntest \"") == null and std.mem.indexOf(u8, x.text, "\ntest {") == null) continue;
+        const named = try std.fmt.allocPrint(gpa, "@import(\"own2/{s}\")", .{x.name});
+        defer gpa.free(named);
+        if (std.mem.indexOf(u8, root, named) == null) fail(&bad, "{s} has tests, and `src/beni.zig`'s `own2` does not name it: `unit_test` never compiles them", .{x.name});
+    }
+    try testing.expectEqual(@as(usize, 0), bad);
+}
+
+test "every mutation has a site" {
+    const gpa = testing.allocator;
+    var sources: std.ArrayList(Source) = .empty;
+    defer {
+        for (sources.items) |x| {
+            gpa.free(x.name);
+            gpa.free(x.text);
+        }
+        sources.deinit(gpa);
+    }
+    try readSources(gpa, testing.io, &sources);
+    // Each file read once: a site's name, and how many sites it has.
+    var sites: std.StringHashMapUnmanaged(u32) = .empty;
+    defer sites.deinit(gpa);
+    const mark = ".on(.";
+    for (sources.items) |x| {
+        if (std.mem.eql(u8, x.name, "rules_test.zig") or std.mem.eql(u8, x.name, "Mutate.zig")) continue;
+        var at: usize = 0;
+        while (std.mem.indexOfPos(u8, x.text, at, mark)) |i| {
+            at = i + mark.len;
+            const end = std.mem.indexOfScalarPos(u8, x.text, at, ')') orelse break;
+            const got = try sites.getOrPutValue(gpa, x.text[at..end], 0);
+            got.value_ptr.* += 1;
+        }
+    }
+    var bad: usize = 0;
+    for (std.enums.values(@import("Mutate.zig").Name)) |m| {
+        const name = @tagName(m);
+        if (m == .none or std.mem.startsWith(u8, name, "word_")) continue;
+        const n = sites.get(name) orelse 0;
+        if (n == 0) fail(&bad, "mutation {s}: no site (`src/own2/Mutate.zig`)", .{name});
+    }
+    try testing.expectEqual(@as(usize, 0), bad);
+}
+
 test "the layering table has each file once and every layer below the next" {
     for (layers, 0..) |a, i| {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 133), layers.len);
+    try testing.expectEqual(@as(usize, 134), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

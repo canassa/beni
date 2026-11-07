@@ -391,7 +391,7 @@ pub const Eval = struct {
                     }
                     const ks = e.f.kidsOf(x);
                     var i: usize = 0;
-                    while (i < ks.len) : (i += 2) {
+                    while (i < ks.len and (i == 0 or !@import("Mutate.zig").on(.project_alt_first))) : (i += 2) {
                         const t = (try e.f.mergeTags(it.tags, try e.f.internTags(&.{.{ x.head, try e.f.armOf(ks[i]) }}))) orelse continue;
                         try stack.append(e.gpa(), .{ .v = ks[i + 1], .at = it.at, .tags = t, .route = it.route });
                     }
@@ -408,7 +408,7 @@ pub const Eval = struct {
                     for (tops) |t| {
                         const before = all.items.len;
                         try Replay.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
-                        if (all.items.len == before and rest.len != 0) {
+                        if (all.items.len == before and rest.len != 0 and !@import("Mutate.zig").on(.unnamed_step_empty)) {
                             const k = e.places().kind(e.places().pathPlace(.from(t)));
                             if (k == .@"opaque" or k == .@"var") {
                                 // A call's result read on past its place: through what arrives there.
@@ -634,11 +634,11 @@ pub const Eval = struct {
             for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, Subtree.readAt(e.places(), a, slot, hit.open), words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
-            try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+            if (!@import("Mutate.zig").on(.inst_no_contract_empty)) try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
         }
         const start: u32 = @intCast(e.inst_leaves.items.len);
         try e.inst_leaves.appendSlice(e.gpa(), acc.items);
-        const keep = e.min_cut >= depth;
+        const keep = e.min_cut >= depth or @import("Mutate.zig").on(.inst_memo_under_cut);
         if (e.min_cut == depth) e.min_cut = std.math.maxInt(usize);
         if (keep) try e.inst_memo.put(e.gpa(), key, @intCast(e.inst_runs.items.len));
         try e.inst_runs.append(e.gpa(), .{ start, @intCast(acc.items.len) });
@@ -701,7 +701,7 @@ pub const Eval = struct {
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
             for (hits.items) |hit| for (hit.arrivals) |a| try e.feed(ki, a, hit.depth, hit.open);
-        } else try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
+        } else if (!@import("Mutate.zig").on(.inst_live_no_contract_empty)) try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
         e.cur_sub = sub;
         e.inst_depth -= 1;
         // What the queue adds now is in the run returned; the consumer
@@ -773,7 +773,7 @@ pub const Eval = struct {
                 };
                 n = on orelse break;
             }
-        } else try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
+        } else if (!@import("Mutate.zig").on(.inst_below_no_contract_empty)) try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
         e.keys.items[ki].filling = false;
         e.inst_depth -= 1;
         if (e.inst_depth == 0) if (e.live) |lv| try lv.pump(lv.ctx);
@@ -1133,14 +1133,14 @@ pub const Eval = struct {
             .top, .host => try out.append(e.gpa(), try e.f.leaf(.{ .kind = if (a.kind == .host) .host else .top })),
             .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot })),
             .param, .lent => {
-                if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+                if (a.j >= cl.args.len) return if (@import("Mutate.zig").on(.arrival_no_arg_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
                 if (out.items.len == start and words.items.len != 0 and !SlotWords.excluded(e.places(), words.items)) try FoldRead.read(e, cl.args[a.j], words.items, out);
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {
                 if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep, words.items, out) else {
-                    const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+                    const fl = e.label_map.get(.{ call, a.j }) orelse return if (@import("Mutate.zig").on(.arrival_no_label_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                     try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
                 }
                 if (e.lent.get(.{ call, a.j })) |i| if (e.lent_cells.items[i][0] < cl.args.len) try e.lend(out, start, .{ cl.args[e.lent_cells.items[i][0]], e.lent_cells.items[i][1] }, call);
@@ -1154,7 +1154,7 @@ pub const Eval = struct {
     /// A loan's `extra` is the call that lent it.
     fn lend(e: *Eval, out: *std.ArrayList(u32), start: usize, cell: ?[2]u32, call: u32) Error!void {
         if (cell) |c| try e.routed(e, c[0], e.f.slots.relWords(c[1]), true, none, out);
-        if (out.items.len == start) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+        if (out.items.len == start) return if (@import("Mutate.zig").on(.lend_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
         for (out.items[start..]) |*x| switch (e.f.leafAt(x.*).kind) {
             .top, .host, .loan => {},
             else => x.* = try e.f.leaf(.{ .kind = .loan, .atom = x.*, .extra = call, .tags = e.f.leafAt(x.*).tags }),
@@ -1180,7 +1180,7 @@ pub const Eval = struct {
                 try e.hitsAt(e.contracts.head(vcc).res_root, words, &hits);
                 for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, va, words[hit.depth..], out);
             }
-            if (out.items.len == start) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+            if (out.items.len == start and !@import("Mutate.zig").on(.known_answer_empty)) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
             return;
         }
         // The known code's call, read where its leaves are wanted (deep: its subtree).

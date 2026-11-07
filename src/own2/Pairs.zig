@@ -42,7 +42,7 @@ pub const Ov = struct {
     pub fn join(arena: Allocator, account: *Ids.Account, a: Ov, b: Ov) Ids.ChargeError!Ov {
         if (a.kind == .may or b.kind == .may) return may;
         if (a.kind == .no) return b;
-        if (b.kind == .no) return a;
+        if (b.kind == .no or @import("Mutate.zig").on(.ov_join_left)) return a;
         const c = try Cond.conj(arena, account, a.cond, b.cond);
         return if (c.no) may else .{ .kind = .under, .cond = c };
     }
@@ -148,7 +148,7 @@ pub const Queries = struct {
         switch (r.state) {
             .open, .member => {
                 w.low = @min(w.low, r.at);
-                return .{ .value = r.value };
+                return .{ .value = if (@import("Mutate.zig").on(.overlap_cycle_may)) Ov.may else r.value };
             },
             .unread => {},
         }
@@ -178,7 +178,7 @@ pub const Queries = struct {
             return value;
         }
         const head = w.low == fr.number;
-        if (head and value.kind != .may and (moved or w.moved)) {
+        if (head and value.kind != .may and (moved or w.moved) and !@import("Mutate.zig").on(.pairs_one_pass)) {
             // Again, from the values this pass reached.
             for (w.members.items[fr.members..]) |m| w.rows.items[m].state = .unread;
             w.members.items.len = fr.members;

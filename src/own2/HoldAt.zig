@@ -33,6 +33,7 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
     const g = ev.gpa();
     const o = try Distinct.overlap(ev, hd.leaf, target, true);
     if (o.kind == .no) return;
+    if (@import("Mutate.zig").on(.hold_at_off)) return;
     if (!hd.refine) return out.append(g, .{ hd.q, o });
     // The path of the hold: below `q` by the steps from the leaf's
     // position to the slots that meet the target's.

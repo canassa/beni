@@ -39,6 +39,7 @@ pub fn closesAtSite(e: *Eval.Evaluation, su: Contract.Supply, x: anytype, n_args
 /// Each supply that holds the answer of another label: where that label's
 /// function runs more than once in the frame, its answers must be apart.
 pub fn repeated(e: *Eval.Evaluation, d: *Contract.Draft, arena: Allocator) Error!void {
+    if (@import("Mutate.zig").on(.repeated_off)) return;
     const f = e.fr();
     var arrs: std.ArrayList(Contract.Arrival) = .empty;
     for (d.labels.items, 0..) |*g, gi| for (g.supplies.items) |*sup| {

@@ -62,9 +62,12 @@ pub fn stepRel(x: Pos, y: Pos) StepRel {
     const cy = stepClass(y);
     if (cx == .other or cy == .other) return apart;
     // `[*]` names every element, a front, back or slice one's too (#1956).
+    if (@import("Mutate.zig").on(.step_elem_apart) and (cx == .elem or cy == .elem)) return apart;
     if (cx == .elem or cy == .elem) return if (cx == cy) apart else .{ .rel = .related, .second_prefix = cy == .elem };
     // Two fronts (or backs) are two indices; a front and a back may meet.
+    if (@import("Mutate.zig").on(.step_front_back_apart) and cx != .slice and cy != .slice) return apart;
     if (cx != .slice and cy != .slice) return if (cx == cy) apart else .{ .rel = .related, .second_prefix = false };
+    if (@import("Mutate.zig").on(.step_slice_apart)) return apart;
     return switch (cx) {
         .front => if (x.a < y.a) apart else .{ .rel = .related, .second_prefix = true },
         .back => if (x.a < y.b) apart else .{ .rel = .related, .second_prefix = true },

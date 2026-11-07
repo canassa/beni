@@ -20,6 +20,7 @@ const Cond = Contract.Cond;
 /// the known codes' results ask, `fed` the occurrence where the label passes
 /// on. False: `no`.
 pub fn at(e: *Eval, call: u32, o: u64, instCond: anytype, comptime F: type, plain: *std.ArrayList(u64), own: *Cond, fed: *std.ArrayList(u64)) Error!bool {
+    if (@import("Mutate.zig").on(.answer_call_no)) return false;
     const c = e.contractOf(call) orelse return false;
     const j = Contract.fedParam(o);
     const k = AnsOcc.arg(o);

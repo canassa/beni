@@ -100,6 +100,7 @@ pub const State = struct {
     /// Whether one of the escapes `escs[from..]` taken reaches leaf `li`, an
     /// own object read by no key (`overlap`: the one relation over `ev`).
     pub fn reaches(x: *const State, ev: anytype, escs: anytype, from: usize, li: u32, overlap: anytype) Error!bool {
+        if (@import("Mutate.zig").on(.host_reach_off)) return false;
         if (from == x.escs.items.len) return false;
         if (x.vague) {
             for (x.escs.items[from..]) |ei| if ((try overlap(ev, li, escs[ei].leaf, false)).kind != .no) return true;

@@ -43,6 +43,7 @@ pub fn repeats(f: *const Value.Frame, ci: u32) bool {
 /// result as its expansion; anything else by what the answer may hold
 /// (`holds`), and where that may be anything, under `fresh`.
 pub fn kept(comptime Ov: type, e: anytype, xi: u32, ti: u32, ov: anytype, holds: anytype) !Ov {
+    if (@import("Mutate.zig").on(.answer_keep_no)) return .no;
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
     const ci = callOf(e.f, t);

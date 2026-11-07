@@ -420,7 +420,7 @@ pub const Escapes = struct {
         const ks = try keys.of(ev, t);
         x.query += 1;
         const q: Query = .{ .x = x, .ev = ev, .regions = regions, .escs = escs, .t = t, .point = point, .call = call, .relied = relied };
-        if (x.unknown_bucket != none) if (try q.in(x.unknown_bucket)) return true;
+        if (!@import("Mutate.zig").on(.escape_unknown_off)) if (x.unknown_bucket != none) if (try q.in(x.unknown_bucket)) return true;
         if (ks.unknown) {
             for (0..x.runs.items.len) |b| if (try q.in(@intCast(b))) return true;
             return false;
@@ -433,7 +433,7 @@ pub const Escapes = struct {
             }
             if (x.bucket.get(k)) |b| if (try q.in(b)) return true;
         }
-        if (params) for (x.params.items) |b| if (try q.in(b)) return true;
+        if (!@import("Mutate.zig").on(.escape_params_off)) if (params) for (x.params.items) |b| if (try q.in(b)) return true;
         return false;
     }
 
@@ -593,6 +593,7 @@ pub const Operands = struct {
     /// parameter's untagged target and the others are aggregated (`T(t)`
     /// then joins `relied` through one that answers `under`).
     pub fn judged(x: *Operands, ev: *Relation.Eval, keys: *Keys, call: u32, j: u32, t: u32, relied: *Gather, out: *std.ArrayList(u32)) Error!bool {
+        if (@import("Mutate.zig").on(.operands_judged_off)) return false;
         const g = ev.gpa();
         const f = ev.f;
         const run = try x.make(ev, keys, call);

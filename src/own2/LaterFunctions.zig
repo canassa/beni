@@ -15,6 +15,7 @@ const Error = Eval.Error;
 /// What a supply at `point` is asked apart from: each function the frame's labels run after it holds what a
 /// row's footprint does not say, so the frame reads it as nothing (#2050).
 pub fn ask(e: *Eval.Evaluation, point: u32, out: *Holders.Gather) Error!void {
+    if (@import("Mutate.zig").on(.later_functions_off)) return;
     const f = e.fr();
     var seen: Ids.FixedDict(2) = .{};
     defer seen.deinit(e.gpa());

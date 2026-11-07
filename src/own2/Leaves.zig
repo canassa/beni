@@ -308,6 +308,7 @@ pub const Table = struct {
         defer all.deinit(gpa);
         var i: usize = 0;
         while (i < kids.len) : (i += 2) {
+            if (@import("Mutate.zig").on(.alt_first_arm) and i != 0) break;
             try all.append(gpa, kids[i]);
             try tags.append(gpa, try t.tags.internTags(gpa, account, &.{.{ choice, try t.tags.armOf(gpa, account, kids[i]) }}));
             try col[0].append(gpa, deep[kids[i + 1]]);

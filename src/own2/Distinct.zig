@@ -79,6 +79,8 @@ fn occOf(e: *Eval, j: u32, s: u32, only_apart: bool) Error!?u64 {
 /// named (a type variable's or an opaque place, §2.9.1; a function's, whose
 /// code reads its captures, #1956).
 fn deepAt(e: *Eval, s: Slots.PathId, o: u64) Error!u64 {
+    if (@import("Mutate.zig").on(.deep_at_closure_off) and e.places().kind(e.places().pathPlace(s)) == .closure) return o;
+    if (@import("Mutate.zig").on(.deep_at_off)) return o;
     return switch (e.places().kind(e.places().pathPlace(s))) {
         .@"var", .@"opaque", .closure => Contract.occDeep(o),
         else => o,
@@ -122,6 +124,7 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
 /// The callee's `res_cond` on call `call`'s arguments, once per call; a
 /// cycle through it reads `no`.
 pub fn instCond(e: *Eval, call: u32) Error!Cond {
+    if (@import("Mutate.zig").on(.inst_cond_yes)) return Cond.yes;
     try condStates(e);
     if (e.contractOf(call)) |c| if (!e.contracts.head(c).res_read.no) hoped(e);
     // Each call once a mode: an ask may fall back to reading, and a strict
@@ -157,6 +160,7 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
 /// *a label's answer handed back to it*): `Fed` reads the label's own answer
 /// handed back as what its call was handed, and decides `fed` occurrences.
 pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
+    if (@import("Mutate.zig").on(.inst_sel_yes)) return Cond.yes;
     if (c0.no) return Cond.unprovable;
     if (c0.sel.len == 0) return Cond.yes;
     var fed: std.ArrayList(u64) = .empty;
@@ -252,6 +256,7 @@ fn projectAll(e: *Eval, c: Cond, cl: Value.Call, got: []std.ArrayList(Proj), pla
 /// A result's separation: as a call reads it, and, where that is `no`, with
 /// its labels' answers read (§2.11.3, *a traversal's supply*).
 pub fn resConds(e: *Eval, v: u32, d: anytype, recursive: bool) Error!void {
+    if (@import("Mutate.zig").on(.res_conds_off)) return;
     e.read_mode = .strict;
     defer e.read_mode = .ask;
     d.res_cond = try sepOf(e, v);
@@ -295,6 +300,7 @@ fn singular(f: *Value.Frame, o: u64, li: u32) bool {
 /// any object its caller reaches, so an answer is apart from no other
 /// entry but an alternative to it or one its own block vouches for.
 fn answerMeets(f: *Value.Frame, ents: []const Ent, alive: []const bool, fresh: usize) Error!bool {
+    if (@import("Mutate.zig").on(.answer_meets_off)) return false;
     for (ents, 0..) |en, i| {
         if (!alive[i] or !isAnswer(f, f.leafAt(en.leaf))) continue;
         for (ents[if (i >= fresh) 0 else fresh..], if (i >= fresh) 0 else fresh..) |o, k| {
@@ -346,6 +352,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
 }
 
 fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error!Cond {
+    if (@import("Mutate.zig").on(.distinct_yes)) return Cond.yes;
     const g = e.gpa();
     const f = e.f;
     var st: Entries.Rounds = .{};
@@ -365,6 +372,8 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
     for (st.ents.items) |en| {
         const l = f.leafAt(en.leaf);
         if (isAnswer(f, l)) hoped(e);
+        if (@import("Mutate.zig").on(.sep_top_ok) and l.kind != .ref) continue;
+        if (@import("Mutate.zig").on(.sep_family_off) and l.kind == .ref) continue;
         switch (l.kind) {
             .ref => if (!l.at_pos and try isFamily(e, l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
@@ -376,6 +385,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
         // A callback answer may be what the label was supplied (unknown code
         // may answer its argument): never apart from another entry that
         // reaches a supply (`pickSecond`: `( f b, b )`).
+        if (@import("Mutate.zig").on(.sep_answer_supply_off)) continue;
         if (l.kind == .ref and f.roots.items[l.root].kind == .cb and !e.expandable(l)) {
             var sl: std.ArrayList(u32) = .empty;
             defer sl.deinit(g);
@@ -569,6 +579,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
     // A loan holds what it lends (§2.13.7); written, it is unknown.
+    if (@import("Mutate.zig").on(.loan_holds_nothing) and x.kind == .loan and t.kind != .loan) return .no;
     if (x.kind == .loan and t.kind != .loan) return pair(e, x.atom, ti, target);
     if (x.routes == 0 and t.routes == 0) {
         if (!try e.f.sets.tags.meet(e.f.account, x.tags, t.tags)) return .no;
@@ -580,8 +591,9 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         if (tp.kind == .plain and Step.fromWord(tp.a).kind == .contents) return .no;
     }
     if (x.kind == .top or t.kind == .top or x.kind == .loan or t.kind == .loan) return .may;
-    if (e.made) |m| if (m(e, x) | m(e, t) == 3) return .may;
+    if (!@import("Mutate.zig").on(.made_meets_off)) if (e.made) |m| if (m(e, x) | m(e, t) == 3) return .may;
     // A host object is no target that is still writable: it may be another host object only (§2.10).
+    if (@import("Mutate.zig").on(.overlap_host_no) and (x.kind == .host or t.kind == .host)) return .no;
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
@@ -589,6 +601,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     // An unknown label's answer, written: anything; holding the target,
     // what it was supplied or its label's function slot holds.
     if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return if (e.keeping) AnswerKeep.kept(Ov, e, xi, ti, pair, answerHolds) else .may;
+    if (@import("Mutate.zig").on(.answer_holds_no) and (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb))) return .no;
     if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
     if (xr and tr and x.root == t.root) return positional(e, xi, ti, target);
     if (xr or tr) {
@@ -598,6 +611,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         if (Chains.madeAfter(e, x, t) or Chains.madeAfter(e, t, x)) return .no;
         const ex = xr and e.expandable(x);
         const et = tr and e.expandable(t);
+        if (@import("Mutate.zig").on(.overlap_no_expand)) return .no;
         if (ex or et) {
             const expand_x = if (ex and et) x.root > t.root else ex;
             var list: std.ArrayList(u32) = .empty;
@@ -614,6 +628,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         if (xr and tr) {
             // Two parameters: apart under both selections; the holder's
             // objects need only be apart from the target's (§2.9.1).
+            if (@import("Mutate.zig").on(.two_params_no)) return .no;
             const c = try Cond.conj(e.arena, e.account(), try selOf(e, e.f.roots.items[x.root].a, x.slots, true), try sel(e, e.f.roots.items[t.root].a, t.slots));
             return .{ .kind = .under, .cond = c };
         }
@@ -644,6 +659,7 @@ fn answerHolds(e: *Eval, x: Leaf, ti: u32, target: bool) Error!Ov {
 }
 
 fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+    if (@import("Mutate.zig").on(.positional_always_apart)) return apartOf(e, xi, ti, target);
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
     if (x.slots == Slots.empty or t.slots == Slots.empty) return .no;
@@ -664,6 +680,7 @@ fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
 /// Two leaves of one root at distinct places: apart under the root's
 /// separation. A query, as `overlap`.
 pub fn apartOf(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+    if (@import("Mutate.zig").on(.apart_of_no)) return .no;
     try e.pairs.begin(e.gpa(), e.grown);
     defer e.pairs.end();
     return apartIn(e, xi, ti, target);

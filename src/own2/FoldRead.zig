@@ -14,6 +14,7 @@ const Replay = @import("Replay.zig");
 /// The `var` slot, below a root, that `words` from `t` run past, into `out`:
 /// no step of a fold names the rest. False: `words` run past none.
 pub fn prefix(e: anytype, t: Ids.PathId, words: []const u32, out: *std.ArrayList(u32)) !bool {
+    if (@import("Mutate.zig").on(.fold_prefix_off)) return false;
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(e.gpa());
     var n = words.len;
@@ -31,6 +32,7 @@ pub fn prefix(e: anytype, t: Ids.PathId, words: []const u32, out: *std.ArrayList
 
 /// What value `v` holds past the fold on `words`, when an empty read met one.
 pub fn read(e: anytype, v: u32, words: []const u32, out: *std.ArrayList(u32)) !void {
+    if (@import("Mutate.zig").on(.fold_read_off)) return;
     var n = words.len;
     while (n != 0) {
         n -= 1;

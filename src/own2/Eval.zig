@@ -342,7 +342,7 @@ fn cellAnswer(e: *Evaluation, q: u32, li: u32, modify: bool, cs: Contract.Arriva
 fn callEffects(e: *Evaluation, q: u32) Error!void {
     const f = e.fr();
     const call = f.calls.items[q];
-    if (call.contract == none) return;
+    if (call.contract == none or @import("Mutate.zig").on(.call_effects_off)) return;
     if (e.solver) |sv| if (call.code != none) if (sv.member(sv.ctx, call.code)) |m| {
         try sv.watchEffects(sv.ctx, m.x, e.x, q);
         var i: usize = 0;
@@ -380,10 +380,10 @@ pub fn callEscape(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const call = f.calls.items[q];
-    if (x.j >= call.args.len) return;
+    if (x.j >= call.args.len or @import("Mutate.zig").on(.call_escape_off)) return;
     var ps: std.ArrayList(Relation.Proj) = .empty;
     defer ps.deinit(gpa);
-    try e.ev.project(call.args[x.j], f.slots.relWords(x.slot), true, 0, 0, &ps);
+    try e.ev.project(call.args[x.j], f.slots.relWords(x.slot), !@import("Mutate.zig").on(.escape_shallow), 0, 0, &ps);
     for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, q);
 }
 
@@ -403,7 +403,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
     const gpa = e.gpa();
     const call = f.calls.items[q];
     const site: ?CallSite = if (q < e.w.walk_calls) e.w.sites.items[q] else null;
-    if (x.j >= call.args.len) return;
+    if (x.j >= call.args.len or @import("Mutate.zig").on(.call_write_off)) return;
     const arg = call.args[x.j];
     const words = f.slots.relWords(x.slot);
     const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
@@ -486,7 +486,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             // Every label the write's supply comes through, outward: a
             // slot any of them keeps refuses (#1758).
             d.wslot = x.slot;
-            if (try LabelChain.keptOutward(e.chain(), q, x.j, words)) d.kept = true;
+            if (try LabelChain.keptOutward(e.chain(), q, x.j, words) and !@import("Mutate.zig").on(.kept_outward_off)) d.kept = true;
             // A virtual call's head is a code, never an instruction: the walked call names the demand.
             d.callee_inst = if (wq < e.w.walk_calls) f.calls.items[wq].head else none;
             const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
@@ -513,7 +513,7 @@ pub fn addEscape(e: *Evaluation, leaf: u32, point: u32) Error!void {
 }
 
 pub fn addEscapeAt(e: *Evaluation, leaf: u32, point: u32, call: u32) Error!void {
-    if (e.quiet) return;
+    if (e.quiet or @import("Mutate.zig").on(.add_escape_drop)) return;
     try e.escapes.append(e.gpa(), .{ .leaf = leaf, .point = point, .call = call });
     if (e.facts_on) try e.hooks.escape(e, leaf);
 }

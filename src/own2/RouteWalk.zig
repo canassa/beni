@@ -286,6 +286,7 @@ fn descend(w: *Walk, it: Item) Error!void {
 /// read once and a value several arms reach once under the union of their
 /// routes (§2.11.2). `pass`: the pass a deep read of a value reads under.
 pub fn project(e: *Eval, v: u32, reqs: []const Req, route: u32, pass: u32) Error!void {
+    if (@import("Mutate.zig").on(.route_walk_empty)) return;
     const g = e.gpa();
     const saved = e.pass;
     e.pass = pass;

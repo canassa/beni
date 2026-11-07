@@ -839,6 +839,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
 /// it reaches is `host` where it was said, or, said inside a subtree
 /// described once per place, at every slot of its list (§2.10).
 fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
+    if (@import("Mutate.zig").on(.contract_no_escapes)) return;
     try paramEffects(&e.sink, leaf, true, .escapes);
 
     const s = &e.sink;
@@ -869,6 +870,7 @@ fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
 
 /// A demand's written parameter slots (whatever its verdict).
 fn demandFacts(e: *Evaluation, di: usize) Error!void {
+    if (@import("Mutate.zig").on(.contract_no_writes)) return;
     const dm = e.demands.items[di];
     if (dm.graft[0] != Ids.none_int) {
         const eff: Contract.Effect = .{ .j = dm.graft[0], .slot = dm.graft[1], .node = dm.graft[2] };
@@ -896,13 +898,14 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     const rv = f.val(w.result);
     d.flags.returns = rv.kind != .bot;
     d.flags.cross = !Slots.holdsAny(f.places, rpath);
-    if (d.flags.returns and !d.flags.cross) try describe(s, w.result, rpath, .{});
+    if (d.flags.returns and !d.flags.cross and !@import("Mutate.zig").on(.contract_no_res)) try describe(s, w.result, rpath, .{});
     // Reads: every local whose value is a parameter's, in one pass (§2.3.4).
     const pass = f.sets.newPass();
     if (code.called) |cd| for (0..cd.own_places.len) |j| {
         _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
     };
     for (w.uses.items[w.last.uses..]) |u| {
+        if (@import("Mutate.zig").on(.contract_no_reads)) break;
         const b = w.bindings[u.local];
         if (b.value == none) continue;
         var ps: std.ArrayList(Relation.Proj) = .empty;

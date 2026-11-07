@@ -98,6 +98,7 @@ pub const Tree = struct {
 
     /// Whether points `a` and `b` are compatible (§2.5).
     pub fn compatible(t: *const Tree, a: u32, b: u32) bool {
+        if (@import("Mutate.zig").on(.regions_never_compatible)) return false;
         return t.compatibleRegions(t.regionOf(a), t.regionOf(b));
     }
 

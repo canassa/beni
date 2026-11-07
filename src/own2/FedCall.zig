@@ -43,6 +43,7 @@ pub const Got = union(enum) { yes, no, occ: u64 };
 /// label passes on), `yes` when it is a known code whose answer holds only
 /// its argument `k` and fresh objects, else `no`.
 pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
+    if (@import("Mutate.zig").on(.fed_call_no)) return .no;
     const c = e.contractOf(call) orelse return .no;
     const j = Contract.fedParam(o);
     const k = Contract.fedArg(o);

@@ -124,7 +124,7 @@ pub fn sel(ev: *Relation.Eval, c: Cond, call: u32) Error!?Cond {
         if (!got.found_existing) {
             got.value_ptr.* = argParam(ev, call, sig.params, j) orelse return null;
             const ow = try owner.getOrPut(g, .{got.value_ptr.*});
-            if (ow.found_existing) return null;
+            if (ow.found_existing and !@import("Mutate.zig").on(.graft_sel_twice)) return null;
             ow.value_ptr.* = j;
         }
         x.* = (o & ~(@as(u64, 0x1fff_ffff) << 32)) | (@as(u64, got.value_ptr.*) << 32);

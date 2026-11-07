@@ -29,6 +29,7 @@ pub fn capture(f: *const Value.Frame, q: u32, j: u32) bool {
 /// of an answer in the code, which leave out what a traversal takes
 /// (`Each.takes`, §2.11.3).
 pub fn operands(c: LabelChain.Chain, q: u32, answer: bool, out: *std.ArrayList(u32)) Error!void {
+    if (@import("Mutate.zig").on(.across_operands_off)) return;
     const f = c.f;
     const gpa = f.gpa;
     var cur = q;
@@ -42,6 +43,7 @@ pub fn operands(c: LabelChain.Chain, q: u32, answer: bool, out: *std.ArrayList(u
             if (answer and try Each.takes(c, c.contracts.head(oc.contract), lab, @intCast(k))) continue;
             try out.append(gpa, a);
         }
+        if (@import("Mutate.zig").on(.across_no_answers)) return;
         const it = c.virt.keys.items;
         var i: usize = 0;
         while (i + 1 < it.len) : (i += 2) {

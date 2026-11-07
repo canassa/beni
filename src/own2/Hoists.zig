@@ -95,6 +95,7 @@ pub const Builder = struct {
 
     /// A demand's verdict at instruction `inst`.
     pub fn add(b: *Builder, scratch: Allocator, inst: u32, kind: Facts.DemandKind, refused: bool, callers: bool) Allocator.Error!void {
+        if (@import("Mutate.zig").on(.hoists_drop_write)) return;
         if (refused) {
             b.refused = true;
             return;
@@ -107,7 +108,7 @@ pub const Builder = struct {
     /// A refused or limited module publishes no write.
     pub fn finish(b: *Builder, scratch: Allocator, gpa: Allocator, limited: bool) Allocator.Error!Table {
         defer b.writes.deinit(scratch);
-        if (b.refused or limited) return .empty;
+        if ((b.refused or limited) and !@import("Mutate.zig").on(.hoists_of_refused)) return .empty;
         const items = b.writes.items;
         std.mem.sort(Write, items, {}, struct {
             fn lessThan(_: void, x: Write, y: Write) bool {

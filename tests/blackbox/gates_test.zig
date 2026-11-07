@@ -63,6 +63,10 @@ fn expectRefused(option: []const u8, named: []const u8) !void {
 
 test "gates refuses an ownership checker broken on purpose" {
     try expectRefused("-Downership-record-mutation=hoist-whole", "drop -Downership-record-mutation");
+    try expectRefused("-Downership-v2-mutation=fold_read_off", "drop -Downership-v2-mutation");
+    try expectRefused("-Dno-v2-parity", "drop -Dno-v2-parity");
+    try expectRefused("-Dharness-prefix=/nowhere", "drop -Dharness-prefix");
+    try expectRefused("-Dcorpus-except=Adt", "drop -Dcorpus-except");
 }
 
 test "gates refuses a corpus filter" {

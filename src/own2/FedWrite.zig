@@ -43,6 +43,7 @@ pub fn relies(e: *Relation.Eval, c: LabelChain.Chain, lab: Contract.Label, su: C
 /// occurrence is decided at the written slots only, and every parameter that
 /// arrives at the supply is asked apart but the written slot, plain.
 fn asked(e: *Relation.Eval, c: LabelChain.Chain, lab: Contract.Label, su: Contract.Supply, call: u32, words: []const u32, deep: bool) Error!?Cond {
+    if (@import("Mutate.zig").on(.fed_relies_off)) return null;
     const f = c.f;
     const arena = c.arena;
     if (su.each) return null;

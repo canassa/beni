@@ -50,6 +50,7 @@ pub const Cond = struct {
     /// parameter at a slot whose steps continue its own (§2.9.1, *A subtree
     /// held whole*).
     pub fn weakerIn(a: Cond, slots: *const Slots.Table, b: Cond) bool {
+        if (@import("Mutate.zig").on(.weaker_always)) return true;
         if (b.no) return true;
         if (a.no) return false;
         outer: for (a.sel) |x| {
@@ -72,7 +73,9 @@ pub const Cond = struct {
 
     /// The conjunction: the union of the selections, in `arena`.
     pub fn conj(arena: Allocator, account: *Ids.Account, a: Cond, b: Cond) Error!Cond {
+        if (@import("Mutate.zig").on(.conj_forgets_no) and a.no) return b;
         if (a.no or b.no) return unprovable;
+        if (@import("Mutate.zig").on(.conj_drop_right) and !a.no) return a;
         if (b.sel.len == 0) return a;
         if (a.sel.len == 0) return b;
         if (std.mem.eql(u64, a.sel, b.sel)) return a;

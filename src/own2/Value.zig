@@ -356,6 +356,7 @@ pub const Frame = struct {
             if (a.items[k] == c.items[k]) continue;
             return Steps.stepRel(f.pos.items[a.items[k]], f.pos.items[c.items[k]]);
         }
+        if (@import("Mutate.zig").on(.related_prefix_apart)) return .{ .rel = .distinct, .second_prefix = false };
         return .{ .rel = .related, .second_prefix = c.items.len <= a.items.len };
     }
 
