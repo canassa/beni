@@ -51,6 +51,7 @@ The functions of a `Context`:
 
 ```beni platform=browser
 import Browser.Worker as Worker exposing (Context)
+import Task
 
 
 type Request
@@ -93,20 +94,13 @@ count context at n found =
 
 isPrime : Int, Int → Bool
 isPrime n d = if d * d > n then True else if Int.mod n d == 0 then False else isPrime n (d + 1)
-```
 
-## Open, call and close
 
-`Worker.open scope program config options` starts a worker and waits until `init` and `start`
-are done. It returns `Ok handle`, or `Err { reason, cleanup }`. The `scope` owns the worker: when
-the scope ends, the worker closes. Open it in a `Task.scope`, in a fiber that the page starts:
-`Task.start` in the `update` of `Browser.hosted`, or a command body on `browser-tea`.
-
-```text
+-- Opens the worker in a scope, sends one request, and closes the worker when the scope ends.
 countTo : Int → String
 countTo n = Task.scope λowner →
     case Worker.open owner primes 1000000 Worker.options of
-        Err problem →
+        Err _ →
             "the worker did not start"
 
         Ok handle →
@@ -117,6 +111,16 @@ countTo n = Task.scope λowner →
                 Err _ →
                     "the request failed"
 ```
+
+## Open, call and close
+
+`Worker.open scope program config options` starts a worker and waits until `init` and `start`
+are done. It returns `Ok handle`, or `Err { reason, cleanup }`. The `scope` owns the worker: when
+the scope ends, the worker closes. Open it in a `Task.scope`, in a fiber that the page starts:
+`Task.start` in the `update` of `Browser.hosted`, or a command body on `browser-tea`.
+
+`countTo`, in the example of *The program*, opens `primes`, sends one request, and closes the
+worker when its scope ends.
 
 | Function | Does |
 |---|---|
