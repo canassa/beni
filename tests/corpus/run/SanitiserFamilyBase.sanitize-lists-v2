@@ -1,0 +1,1 @@
+A base below a family's payload: v2 refuses each write of a held list (§2.1, A family): built again under --ownership=v2 and the list stale-read sanitiser.

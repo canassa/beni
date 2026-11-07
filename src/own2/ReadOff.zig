@@ -143,6 +143,7 @@ fn valueBody(s: *Sink, v: u32, q: PathId, out: Put.ResList, stack: ?*std.ArrayLi
 
 /// Whether no step below slot `sl` names what it holds.
 fn unnamed(f: *Value.Frame, sl: PathId) bool {
+    if (@import("Mutate.zig").on(.family_exit_off)) return false;
     const k = f.places.kind(f.places.pathPlace(sl));
     return k == .@"var";
 }

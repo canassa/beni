@@ -1,0 +1,20 @@
+-- A family across modules (`ownership-v2.md` §2.1, *A family*): `Main` reads the
+-- one graph of `Lib`'s declarations, so its verdict is the one module's
+-- (`SanitiserFamilyOneModule`). The caller's `T { v : Int }` and the callee's `T a` met at no step, and `k` was edited in place.
+import Lib exposing (T, U, LT, CT0, CT1, LU, CU0, wrT, wrU)
+import List
+import Node exposing (Program)
+import String
+
+
+g : T { v : Int } → Int
+g x =
+    n = wrT (CT0 (CT1 (CU0 x)))
+    n + 0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (CT0 (LT k [ { v = 0 } ]))
+    Node.print (String.fromInt (a + List.length k))
