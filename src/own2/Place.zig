@@ -853,16 +853,6 @@ pub const Table = struct {
         for (cur.items) |c| try appendNew(gpa, out, c);
     }
 
-    /// The other names of `p`: `expandLevels`'s, when a `⟲` on it is a join. Empty otherwise,
-    /// in one read of a column.
-    pub fn joinNames(t: *Table, gpa: Allocator, arena: Allocator, charge: Charge, p: PathId) Error![]const PathId {
-        if (!t.paths.col.info[p.int()].joins or @import("Mutate.zig").on(.level_join_kept)) return &.{};
-        var ps: std.ArrayList(PathId) = .empty;
-        defer ps.deinit(gpa);
-        try t.expandLevels(gpa, charge, p, &ps);
-        return if (ps.items.len == 1 and ps.items[0] == p) &.{} else arena.dupe(PathId, ps.items);
-    }
-
     fn appendNew(gpa: Allocator, list: *std.ArrayList(PathId), p: PathId) Allocator.Error!void {
         for (list.items) |x| if (x == p) return;
         try list.append(gpa, p);

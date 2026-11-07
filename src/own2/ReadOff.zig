@@ -859,7 +859,7 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
         const t = s.host.told.items[i];
         if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
         try hostAt(e, t, if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q)));
-        if (!t.built) for (try Put.levelNames(s, .from(t.q))) |p| try hostAt(e, t, try f.slots.relOf(e.gpa(), f.account, f.places, p));
+        if (!t.built) for (try Put.levelNames(s, .from(t.q))) |p| try hostAt(e, t, try f.slots.relOf(e.gpa(), f.account, f.places, .from(p)));
     };
 }
 

@@ -49,7 +49,7 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
     }
     if (!try wideLevels(s, q, a, out)) return;
     if (a.kind == .fresh) return;
-    for (try levelNames(s, q)) |p| _ = try wideLevels(s, p, a, out);
+    for (try levelNames(s, q)) |p| _ = try wideLevels(s, .from(p), a, out);
 }
 
 /// Arrival `a`, wide at `q`, and at the levels above it (`LevelWide.of`); false when `q` had it.
@@ -64,10 +64,10 @@ fn wideLevels(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool
 /// The level paths `q` stands for when a `⟲` on it is a join (`Place.expandLevels`, §2.1,
 /// *one position, one name*): a slot's replay can reach one, and a reader walks a slot's words
 /// to the names a walk gives, so what is said at the join is said at each of them too. Empty
-/// otherwise. A `fresh` arrival is left out: a slot with no entry reads fresh.
-pub fn levelNames(s: *Sink, q: PathId) Error![]const PathId {
+/// otherwise. A caller leaves out a `fresh` arrival: a slot with no entry reads fresh.
+pub fn levelNames(s: *Sink, q: PathId) Error![]const u32 {
     const f = s.e.fr();
-    return f.places.joinNames(s.e.gpa(), s.arena, f.gc(), q);
+    return f.slots.joinNames(s.e.gpa(), s.arena, f.account, f.places, q);
 }
 
 fn wideAt(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool {
@@ -91,7 +91,7 @@ pub fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void
     }
     if (!try plainAt(s, q, a, out)) return;
     if (a.kind == .fresh) return;
-    for (try levelNames(s, q)) |p| _ = try plainAt(s, p, a, out);
+    for (try levelNames(s, q)) |p| _ = try plainAt(s, .from(p), a, out);
 }
 
 fn plainAt(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool {
@@ -142,7 +142,7 @@ pub fn emitPart(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!void 
         return;
     }
     if (!try nodeAt(s, q, n, out)) return;
-    for (try levelNames(s, q)) |p| _ = try nodeAt(s, p, n, out);
+    for (try levelNames(s, q)) |p| _ = try nodeAt(s, .from(p), n, out);
 }
 
 fn nodeAt(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!bool {

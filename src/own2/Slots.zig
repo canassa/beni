@@ -283,6 +283,20 @@ pub const Table = struct {
         return s;
     }
 
+    /// The other names of `p`: `Place.expandLevels`'s, when a `⟲` on it is a join.
+    /// Empty otherwise, in one read of a column; an object's, read off `canon`.
+    pub fn joinNames(t: *Table, gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error![]const u32 {
+        if (!places.paths.col.info[p.int()].joins or @import("Mutate.zig").on(.level_join_kept)) return &.{};
+        if (isObject(places, p)) {
+            const names = t.items(try t.canon(gpa, account, places, p));
+            return if (names.len == 1 and names[0] == p.int()) &.{} else arena.dupe(u32, names);
+        }
+        var out: std.ArrayList(PathId) = .empty;
+        defer out.deinit(gpa);
+        try places.expandLevels(gpa, .growth(account), p, &out);
+        return if (out.items.len == 1 and out.items[0] == p) &.{} else arena.dupe(u32, @ptrCast(out.items));
+    }
+
     fn canonFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
         var out: std.ArrayList(PathId) = .empty;
         defer out.deinit(gpa);
