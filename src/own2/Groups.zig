@@ -11,10 +11,10 @@
 //! §2.1, so a recursive type folds at its head and another instantiation is
 //! another place. A nominal type's constructor payloads are its BIR
 //! constructor templates read under an environment of argument ids (never
-//! fresh store variables), expanded only when `Place` visits the node; a
-//! nominal type met again inside its own payload with other arguments (a
-//! non-regular type) folds onto its head with every argument a `var` place,
-//! which holds anything. `sequence` metadata makes a list (`[*]` its
+//! fresh store variables), expanded only when `Place` visits the node. A
+//! family's heads (`Family`, a non-regular type) have one place each, with
+//! every argument the family's one payload place, whose every step comes back
+//! to itself (§2.1, *A family*). `sequence` metadata makes a list (`[*]` its
 //! argument), `cell` a cell (`◆`); `Int`, `Float`, `Char`, `String` and a
 //! `crossing foreign type` cross; any other foreign type is opaque. A store
 //! variable met again while it is being read (a cyclic type with no name,
@@ -38,6 +38,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
+const Family = @import("Family.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
@@ -122,18 +123,16 @@ pub const Imports = struct {
 // The place source
 // ---------------------------------------------------------------------------
 
-const Kind = enum(u8) { structural, nominal, cyclic };
+const Kind = enum(u8) { structural, nominal, cyclic, payload };
 
 const Node = struct {
     kind: Kind,
     place_kind: Place.Kind,
     head: u32,
     /// `structural`, `cyclic`: a run of `kids`. `nominal`: the argument list.
+    /// `payload`: the family.
     a: u32,
     b: u32,
-    /// `nominal`: the nominal node whose payloads first named it, `none` for
-    /// one read off a store variable: the chain a non-regular type folds on.
-    origin: u32 = none,
 };
 
 const Kid = struct { step: Step, id: u32 };
@@ -155,8 +154,12 @@ pub const Adapter = struct {
     var_id: u32 = none,
     cross_id: u32 = none,
     closure_id: u32 = none,
+    families: Family.Table = .{},
+    /// While a payload's steps are read: where a family head's arguments go.
+    contexts: ?*std.ArrayList(u32) = null,
 
     pub fn deinit(a: *Adapter) void {
+        a.families.deinit(a.gpa);
         a.nodes.deinit(a.gpa);
         a.kids.deinit(a.gpa);
         a.keys.deinit(a.gpa);
@@ -225,11 +228,25 @@ pub const Adapter = struct {
         return got.value_ptr.*;
     }
 
-    fn nominal(a: *Adapter, t: Types.TypeId, args: []const u32, origin: u32) Ids.IndexError!u32 {
+    /// `t` applied to `args`: a family's head reads its one place, every argument the payload.
+    fn nominal(a: *Adapter, t: Types.TypeId, args: []const u32) Ids.IndexError!u32 {
+        if (args.len == 0 or t.int() >= a.in.types.entries.len) return a.instance(t, args);
+        const family = try a.families.of(a.gpa, a.in, t.int()) orelse return a.instance(t, args);
+        if (a.contexts) |c| try c.appendSlice(a.gpa, args);
+        const got = try a.keys.getOrPut(a.gpa, .{ 0x200, if (@import("Mutate.zig").on(.family_split_heads)) t.int() else family, 0 });
+        if (!got.found_existing) got.value_ptr.* = try a.add(.{ .kind = .payload, .place_kind = .@"var", .head = 0, .a = family, .b = 0 });
+        const x = got.value_ptr.*;
+        const xs = try a.gpa.alloc(u32, args.len);
+        defer a.gpa.free(xs);
+        @memset(xs, x);
+        return a.instance(t, xs);
+    }
+
+    fn instance(a: *Adapter, t: Types.TypeId, args: []const u32) Ids.IndexError!u32 {
         const list = try a.listOf(args);
         const got = try a.keys.getOrPut(a.gpa, .{ 0x100, t.int(), list });
         if (got.found_existing) return got.value_ptr.*;
-        got.value_ptr.* = try a.add(.{ .kind = .nominal, .place_kind = .ctor, .head = t.int(), .a = list, .b = @intCast(args.len), .origin = origin });
+        got.value_ptr.* = try a.add(.{ .kind = .nominal, .place_kind = .ctor, .head = t.int(), .a = list, .b = @intCast(args.len) });
         return got.value_ptr.*;
     }
 
@@ -342,7 +359,7 @@ pub const Adapter = struct {
                 .app => |ap| {
                     ids.clearRetainingCapacity();
                     for (store.vars(ap.args)) |arg| try ids.append(a.gpa, try a.childId(arg));
-                    return a.nominal(ap.type, ids.items, none);
+                    return a.nominal(ap.type, ids.items);
                 },
             },
         }
@@ -365,9 +382,8 @@ pub const Adapter = struct {
     // ---- templates -------------------------------------------------------------
 
     /// The id of BIR type instruction `inst` of module `m` under `env` (an
-    /// argument list), read within nominal type `within`'s payloads: a
-    /// tree, post-order on an explicit stack.
-    fn ofTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32, within: u32) Error!u32 {
+    /// argument list): a tree, post-order on an explicit stack.
+    fn ofTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32) Error!u32 {
         const bir = a.in.birs[m];
         const Frame = struct { inst: Bir.Inst.Index, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
@@ -386,12 +402,12 @@ pub const Adapter = struct {
                 for (ops.items) |o| try stack.append(a.gpa, .{ .inst = o, .expanded = false });
                 continue;
             }
-            try done.put(a.gpa, f.inst.int(), try a.closeTerm(m, f.inst, env, within, &done));
+            try done.put(a.gpa, f.inst.int(), try a.closeTerm(m, f.inst, env, &done));
         }
         return done.get(inst.int()).?;
     }
 
-    fn closeTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32, within: u32, done: *stamped.Column(u32, u32)) Error!u32 {
+    fn closeTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32, done: *stamped.Column(u32, u32)) Error!u32 {
         const bir = a.in.birs[m];
         const d = bir.instData(inst);
         const tag = bir.instTag(inst);
@@ -427,41 +443,26 @@ pub const Adapter = struct {
                 defer args.deinit(a.gpa);
                 for (bir.extraSlice(bir.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index)) |e| try args.append(a.gpa, done.get(e.int()).?);
                 const head: Bir.Inst.Index = @fromBackingInt(d.lhs);
-                return a.applied(m, a.in.types.headId(@fromBackingInt(m), bir.instTag(head), bir.instData(head)), args.items, env, within);
+                return a.applied(a.in.types.headId(@fromBackingInt(m), bir.instTag(head), bir.instData(head)), args.items);
             },
             else => {
                 const t = a.in.types.headId(@fromBackingInt(m), tag, d);
                 if (t == .none) return a.leaf(&a.var_id, .@"var");
-                return a.applied(m, t, &.{}, env, within);
+                return a.applied(t, &.{});
             },
         }
     }
 
-    /// A nominal type applied in a template: an alias expanded under its
-    /// arguments, a non-regular recursion folded onto its head.
-    fn applied(a: *Adapter, m: u32, t: Types.TypeId, args: []const u32, env: u32, within: u32) Error!u32 {
-        _ = m;
+    /// A nominal type applied in a template: an alias expanded under its arguments.
+    fn applied(a: *Adapter, t: Types.TypeId, args: []const u32) Error!u32 {
         if (t == .none or t.int() >= a.in.types.entries.len) return a.leaf(&a.var_id, .@"var");
         const e = a.in.types.entries[t.int()];
         if (e.kind == .alias and !e.schema_endpoint) {
             const bir = a.in.birs[e.module.int()];
             const body = bir.decl(e.decl).annotation.unwrap() orelse return a.leaf(&a.var_id, .@"var");
-            return a.ofTerm(e.module.int(), body, try a.listOf(args), within);
+            return a.ofTerm(e.module.int(), body, try a.listOf(args));
         }
-        _ = env;
-        // The same head up the chain of payloads that named this one, with
-        // other arguments: a non-regular type (mutual ones too), folded.
-        const list = try a.listOf(args);
-        var x = within;
-        while (x != none) : (x = a.nodes.items[x].origin) {
-            const n = a.nodes.items[x];
-            if (n.kind != .nominal or n.head != t.int() or n.a == list) continue;
-            const vars = try a.gpa.alloc(u32, args.len);
-            defer a.gpa.free(vars);
-            @memset(vars, try a.leaf(&a.var_id, .@"var"));
-            return a.nominal(t, vars, within);
-        }
-        return a.nominal(t, args, within);
+        return a.nominal(t, args);
     }
 
     // ---- describing a node -------------------------------------------------------
@@ -496,6 +497,10 @@ pub const Adapter = struct {
                 for (a.kids.items[n.a..][0..n.b]) |k| try out.append(a.gpa, .{ .step = k.step, .@"var" = k.id });
                 return .{ .kind = n.place_kind, .head = n.head };
             },
+            .payload => {
+                try a.payloadSteps(n.a, id, out);
+                return .{ .kind = .@"var" };
+            },
             .nominal => {},
         }
         const t: Types.TypeId = @fromBackingInt(n.head);
@@ -526,12 +531,69 @@ pub const Adapter = struct {
                 for (bir.declCtors(decl), 0..) |c, ord| {
                     for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index), 0..) |arg, k| {
                         const step = try a.places.ctorStep(a.gpa, a.account, @intCast(ord), @intCast(k));
-                        try out.append(a.gpa, .{ .step = step, .@"var" = try a.ofTerm(e.module.int(), arg, n.a, id) });
+                        try out.append(a.gpa, .{ .step = step, .@"var" = try a.ofTerm(e.module.int(), arg, n.a) });
                     }
                 }
                 return .{ .kind = .ctor, .head = n.head };
             },
         }
+    }
+
+    /// Payload `x` of `family`: every step the structure its heads apply themselves
+    /// at can take, each back to `x`, since what stands below it may be
+    /// anything an instantiation chose (§2.1, *A family*). So no leaf of a
+    /// context is here to say that a step holds no object.
+    fn payloadSteps(a: *Adapter, family: u32, x: u32, out: *std.ArrayList(Place.Child)) Error!void {
+        if (@import("Mutate.zig").on(.payload_no_steps)) return;
+        var todo: std.ArrayList(u32) = .empty;
+        defer todo.deinit(a.gpa);
+        const saved = a.contexts;
+        a.contexts = &todo;
+        defer a.contexts = saved;
+        for (a.families.members(family)) |h| {
+            const e = a.in.types.entries[h];
+            const bir = a.in.birs[e.module.int()];
+            const xs = try a.gpa.alloc(u32, e.arity);
+            defer a.gpa.free(xs);
+            @memset(xs, x);
+            const env = try a.listOf(xs);
+            for (bir.declCtors(bir.decl(e.decl))) |c| {
+                for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index)) |arg| _ = try a.ofTerm(e.module.int(), arg, env);
+            }
+        }
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(a.gpa);
+        var words: Ids.FixedDict(1) = .{};
+        defer words.deinit(a.gpa);
+        var kids: std.ArrayList(Place.Child) = .empty;
+        defer kids.deinit(a.gpa);
+        var fields: std.ArrayList(Kid) = .empty;
+        defer fields.deinit(a.gpa);
+        var open_row = false;
+        while (todo.pop()) |id| {
+            if (id == x or (try seen.getOrPut(a.gpa, .{id})).found_existing) continue;
+            kids.clearRetainingCapacity();
+            _ = try a.describeOr(id, &kids);
+            for (kids.items) |k| {
+                try todo.append(a.gpa, k.@"var");
+                if (k.step.isRow()) {
+                    open_row = true;
+                } else if (!(try words.getOrPut(a.gpa, .{k.step.word()})).found_existing) {
+                    try out.append(a.gpa, .{ .step = k.step, .@"var" = if (@import("Mutate.zig").on(.payload_cross_child)) try a.crossOr(k.@"var", x) else x });
+                    if (k.step.kind == .field) try fields.append(a.gpa, .{ .step = k.step, .id = x });
+                }
+            }
+        }
+        if (open_row) {
+            sortKids(fields.items);
+            try out.append(a.gpa, .{ .step = try a.places.rowOf(a.gpa, a.account, fields.items), .@"var" = x });
+        }
+    }
+
+    fn crossOr(a: *Adapter, id: u32, x: u32) Error!u32 {
+        var kids: std.ArrayList(Place.Child) = .empty;
+        defer kids.deinit(a.gpa);
+        return if ((try a.describeOr(id, &kids)).kind == .cross) id else x;
     }
 
     pub fn source(a: *Adapter) Place.Source {
@@ -587,9 +649,9 @@ pub const Adapter = struct {
                     if (id == none or id == pending) break :blk none;
                     try kids.append(a.gpa, .{ .step = s, .id = id });
                 }
-                break :blk if (k == .record or k == .tuple) try a.structural(k, h, kids.items) else try a.nominal(@fromBackingInt(h), &.{kids.items[0].id}, none);
+                break :blk if (k == .record or k == .tuple) try a.structural(k, h, kids.items) else try a.nominal(@fromBackingInt(h), &.{kids.items[0].id});
             } else if (nominal_kind and h < a.in.types.entries.len and arity == 0)
-                try a.nominal(@fromBackingInt(h), &.{}, none)
+                try a.nominal(@fromBackingInt(h), &.{})
             else if (st.steps.len == 0) switch (k) {
                 .@"var" => try a.leaf(&a.var_id, .@"var"),
                 .cross => try a.leaf(&a.cross_id, .cross),

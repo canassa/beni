@@ -1,0 +1,67 @@
+-- `SanitiserFamilyBase`'s writes over fresh data (`ownership-v2.md` §2.1, *A
+-- family*): each goes in place, since a step the payload names is a slot.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (Pair a))
+
+
+type Pair a
+    = P Int a
+
+
+type B
+    = B (List Int) Int
+
+
+byWord : T B → Int
+byWord t =
+    case t of
+        Leaf (B xs _) →
+            List.length (List.push xs 1)
+
+        _ →
+            0
+
+
+type U a
+    = ULeaf a
+    | UWrap (U (List Int))
+
+
+byElem : U (List (List Int)) → Int
+byElem t =
+    case t of
+        ULeaf [ xs ] →
+            List.length (List.push xs 1)
+
+        _ →
+            0
+
+
+type V a
+    = VLeaf a
+    | VWrap (V { n : Int, v : a })
+
+
+byField : V { n : List Int, v : Int } → Int
+byField t =
+    case t of
+        VLeaf r →
+            List.length (List.push r.n 1)
+
+        _ →
+            0
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (byWord (Leaf (B [ 1 ] 0)))
+        , String.fromInt (byElem (ULeaf [ [ 1 ] ]))
+        , String.fromInt (byField (VLeaf { n = [ 1 ], v = 0 }))
+        ]

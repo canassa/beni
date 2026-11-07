@@ -1,0 +1,58 @@
+-- `SanitiserFamilyOrderFirst` with `h` last: the same verdict (`ownership-v2.md`
+-- §2.1, *A family*).
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = LT (List Int) (List a)
+    | CT0 (T a)
+    | CT1 (U Int)
+
+
+type U a
+    = LU (List Int)
+    | CU0 (T { v : a })
+
+
+wrT : T a → Int
+wrT t =
+    case t of
+        LT u _ →
+            List.length (List.push u 1)
+        CT0 u →
+            wrT u
+        CT1 u →
+            wrU u
+
+
+wrU : U a → Int
+wrU t =
+    case t of
+        LU u →
+            List.length (List.push u 1)
+        CU0 u →
+            wrT u
+
+
+g : T { v : Int } → Int
+g x =
+    n = wrT (CT0 (CT1 (CU0 x)))
+    n + 0
+
+
+h : T { v : Int } → Int
+h t =
+    case t of
+        CT0 _ →
+            1
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (CT0 (LT k [ { v = 0 } ]))
+    Node.print (String.fromInt (a + List.length k))
