@@ -104,6 +104,8 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `step_slice_apart` | O6 | a slice is no range of its parent | killed | | 0 | 4: HeldElementWrites (OwnershipV2Differs), … | 2: own2.Steps.test.meetClasses lists exactly the classes of related steps (§2.3.2), … | |
 | `related_prefix_apart` | O6 | a position and its prefix are apart | blanket | | 27: SanitiserAnswerHandedOn (SanitisedRefusalDiffers), … | 241: AliasGroupCall (OwnershipV2Differs), … | 2: own2.Value.test.every index of positions meets exactly what the pairwise relation relates (§2.3.2), … | |
 | `level_replay_same` | O6 | a `⟲` replayed where it does not fold names no level below | killed | | 0 | 10: ChildBesideOwnCall (OwnershipV2Differs), … | 0 | |
+| `level_route_shortest` | O6 | a reference's next levels are the first route alone | killed | | 3: SanitiserLevelRoutes | | |
+| `level_slot_twice` | O6 | a slot two routes of a `⟲` reach is read twice | killed | | 2: SanitiserLevelRoutesFolded | | |
 | `unescaped_off` | O8 H1 H6 | `Resolve.judge` skips Unescaped | killed | | 9: SanitiserAnswerLeft (ProgramFailed), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_unknown_off` | O8 | an escape of unknown keys reaches no target | v1 only | | 0 | 0 | 0 | 3 parity |
 | `escape_params_off` | O8 | an escape of a parameter reaches no parameter's target | killed | | SanitiserHandedWriter (SanitisedRefusalDiffers) | 7: BranchEscapes (OwnershipV2Differs), … | 0 | |
