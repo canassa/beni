@@ -490,7 +490,7 @@ pub const Eval = struct {
             if (x.a.deep) {
                 try e.project(call.args[x.a.j], rest, deep, tags, route, out);
                 if (out.items.len == before) try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
-            } else if (out.items.len == before and !@import("Mutate.zig").on(.empty_past_arrival) and PastPayload.reaches(e.places(), LevelCycle.rootOf(e.f, call.args[x.a.j]), w.items)) {
+            } else if (out.items.len == before and !@import("Mutate.zig").on(.empty_past_arrival)) {
                 try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
             }
         }
