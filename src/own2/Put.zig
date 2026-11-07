@@ -63,7 +63,7 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
 pub fn wideLevels(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
     if (!try wideOne(s, q, a, out)) return;
     if (a.kind == .fresh) return;
-    for (try levelNames(s, q)) |p| _ = try wideOne(s, p, try LevelWide.renamed(s.e.fr(), s.e.gpa(), a, q, p), out);
+    for (try levelNames(s, q)) |p| _ = try wideOne(s, .from(p), try LevelWide.renamed(s.e.fr(), s.e.gpa(), a, q, .from(p)), out);
 }
 
 /// Arrival `a`, wide at `q`, and at the levels above it (`LevelWide.of`); false when `q` had it.
@@ -77,9 +77,9 @@ fn wideOne(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool {
 
 /// The level paths `q` stands for when a `⟲` on it is a join (§2.1, *one position, one name*):
 /// what is said at the join is said at each. A caller leaves out `fresh`: no entry reads fresh.
-pub fn levelNames(s: *Sink, q: PathId) Error![]const PathId {
+pub fn levelNames(s: *Sink, q: PathId) Error![]const u32 {
     const f = s.e.fr();
-    return f.places.joinNames(s.e.gpa(), s.arena, f.gc(), q);
+    return f.slots.joinNames(s.e.gpa(), s.arena, f.account, f.places, q);
 }
 
 /// Arrival `a` at slot `r` of `out` (by structure when `wide`): when new, a fact of a member
@@ -104,7 +104,7 @@ pub fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void
     }
     if (!try plainAt(s, q, a, out)) return;
     if (a.kind == .fresh) return;
-    for (try levelNames(s, q)) |p| _ = try plainAt(s, p, a, out);
+    for (try levelNames(s, q)) |p| _ = try plainAt(s, .from(p), a, out);
 }
 
 fn plainAt(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool {
@@ -120,7 +120,7 @@ pub fn host(s: *Sink, q: PathId, built: bool, out: ResList) Error!void {
     if (built) _ = try addAt(s, Slots.root, .{ .kind = .host }, true, true, out);
     if (built) return;
     _ = try addAt(s, try SupplyKey.relAt(s, q, out.key), .{ .kind = .host }, false, false, out);
-    for (try levelNames(s, q)) |p| _ = try addAt(s, try SupplyKey.relAt(s, p, out.key), .{ .kind = .host }, false, false, out);
+    for (try levelNames(s, q)) |p| _ = try addAt(s, try SupplyKey.relAt(s, .from(p), out.key), .{ .kind = .host }, false, false, out);
 }
 
 /// `q`'s steps below the innermost subtree's path.
@@ -158,7 +158,7 @@ pub fn emitPart(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!void 
         return;
     }
     if (!try nodeAt(s, q, n, out)) return;
-    for (try levelNames(s, q)) |p| _ = try nodeAt(s, p, n, out);
+    for (try levelNames(s, q)) |p| _ = try nodeAt(s, .from(p), n, out);
 }
 
 fn nodeAt(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!bool {
