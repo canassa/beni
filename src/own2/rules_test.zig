@@ -87,6 +87,8 @@ const layers = [_]Entry{
     // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
     .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
     .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
+    .{ .file = "LevelTargets.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "PathsTo.zig", .layer = 3, .max_lines = 70 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
     // The identity tree's one normal form, below `Contract` (#1714).
@@ -99,6 +101,8 @@ const layers = [_]Entry{
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
+    // What an open arrival says at the `⟲`s above it (#2195).
+    .{ .file = "LevelWide.zig", .layer = 4, .max_lines = 80 },
     // How large `below(p)` is, split from `Subtree` (#1714).
     .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },
@@ -749,7 +753,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 136), layers.len);
+    try testing.expectEqual(@as(usize, 139), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

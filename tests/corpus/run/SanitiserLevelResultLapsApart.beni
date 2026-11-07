@@ -1,0 +1,56 @@
+-- A list dead after a third lap of a result is written in place (`ownership-v2.md` §2.1, #2195): the twin of
+-- `SanitiserLevelResultLaps`, where `k` is read after.
+import List
+import Node exposing (Program)
+import String
+
+
+type Expr
+    = Lit (List Int)
+    | Block Stmts
+    | Tag Expr Int
+
+
+type Stmts
+    = Nil
+    | Cons Expr Stmts
+
+
+wr : Expr → Int
+wr t =
+    case t of
+        Lit xs →
+            List.length (List.push xs 1)
+        Block u →
+            wrS u
+        Tag i _ →
+            wr i
+
+
+wrS : Stmts → Int
+wrS u =
+    case u of
+        Nil →
+            0
+        Cons i r →
+            wr i + wrS r
+
+
+retag : Expr → Expr
+retag t =
+    case t of
+        Tag (Block m) _ →
+            Tag (Block m) 0
+        _ →
+            Lit []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a =
+        wr
+            (retag
+                (Tag (Block (Cons (Lit []) (Cons (Lit []) (Cons (Lit []) (Cons (Lit k) Nil))))) 0)
+            )
+    Node.print (String.fromInt a)

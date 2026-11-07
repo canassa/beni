@@ -51,6 +51,14 @@ const Verdicts = @import("Kept.zig").Verdicts;
 
 const hooks: Eval.Hooks = .{ .demand = demandFacts, .escape = escapeFacts, .deliver = deliver };
 
+/// A closure of the frame said into a label's supply (which names objects,
+/// never a code) is handed to unseen code: it escapes (§2.11.3, #1776).
+fn handed(s: *Sink, li: u32, out: Put.ResList) Error!void {
+    const e, const l = .{ s.e, s.e.fr().leafAt(li) };
+    if (out.label == none or l.kind != .site or !FnRun.frameSite(e.contracts, e.ctx, e.w.closures.items, l.atom)) return;
+    try e.fn_escapes.append(e.gpa(), .{ .leaf = li, .point = none });
+}
+
 /// Run `expand` for consumer `sub`: it gets what the keys hold now (in
 /// `out`) and, while a group is solved, every leaf they gain later.
 fn expandFor(e: *Evaluation, li: u32, sub: Relation.Sub, out: *std.ArrayList(u32)) Error!void {
@@ -846,11 +854,15 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     if (from != s.host.escs.items.len) while (i < s.host.told.items.len) : (i += 1) {
         const t = s.host.told.items[i];
         if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
+        if (t.wide and !t.built) {
+            try Put.wideLevels(s, .from(t.q), .{ .kind = .host }, .{ .label = t.label, .k = t.k });
+            continue;
+        }
         const r = if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q));
         const list = try Put.resList(s, .{ .label = t.label, .k = t.k });
         try f.charge(.edge, 1);
-        const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
-        if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.wide or t.built, .{ .kind = .host }, 0);
+        const new = if (t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
+        if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.built, .{ .kind = .host }, 0);
     };
 }
 
@@ -858,7 +870,7 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
 /// its key's), said at `q` (`none`: not kept), noted for a later escape (§2.10).
 fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
     const e = s.e;
-    try Put.handed(s, li, out);
+    try handed(s, li, out);
     if (!Host.own(e.fr(), li) or e.ev.expandable(e.fr().leafAt(li))) return false;
     try s.host.tell(e.gpa(), .{ .leaf = li, .q = q, .label = out.label, .k = out.k, .wide = wide, .built = s.building.items.len != 0 or q == none });
     _ = try s.host.sync(&e.ev, e.escapes.items);
@@ -941,7 +953,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     // their callees' supplies.
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
         if (cb.inst != none) {
-            const at = try Put.labelIndex(s, @intCast(ci));
+            const at = try s.labelIndex(@intCast(ci));
             const dl = &d.labels.items[at];
             dl.calls = if (cb.calls > 1 or dl.calls == .many) .many else if (dl.calls == .none) .once else .many;
             for (cb.args, 0..) |a, k| {
@@ -953,7 +965,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         }
     }
     for (e.passes.items) |p| {
-        const at = try Put.labelIndex(s, p[0]);
+        const at = try s.labelIndex(p[0]);
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         const dl = &d.labels.items[at];

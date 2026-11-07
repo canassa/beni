@@ -1,0 +1,1 @@
+v2 refuses a write through a call's result at a level (§2.1, #2195): built again under --ownership=v2 and the sanitiser.

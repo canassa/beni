@@ -1,0 +1,116 @@
+-- A real tree through a function that rebuilds its top (`ownership-v2.md` §2.1, #2195): each open arrival of
+-- `retag` is said once per canonical slot, and the summary stays the size of the type.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type Expr
+    = Num (List Int)
+    | Var String
+    | Neg Expr
+    | Add Expr Expr
+    | Call Expr (List Expr)
+    | Lam (List Pat) Expr
+    | Block (List Stmt) Expr
+    | Case Expr (List Alt)
+    | Rec (List Field)
+
+
+type Stmt
+    = Let Pat Expr
+    | Run Expr
+    | Fun Decl
+
+
+type Decl
+    = D String (List Pat) Expr (List Decl)
+
+
+type Alt
+    = Alt Pat (Maybe Expr) Expr
+
+
+type Pat
+    = PVar String
+    | PCon String (List Pat)
+    | PLit (List Int)
+    | PAs Pat String
+    | PView Expr Pat
+
+
+type Field
+    = Field String Expr
+
+
+retag : Expr → Expr
+retag e0 =
+    case e0 of
+        Neg (Block ss b) →
+            Neg (Block ss b)
+        Neg (Case s alts) →
+            Neg (Case s alts)
+        Neg (Call f xs) →
+            Neg (Call f xs)
+        Neg (Rec fs) →
+            Neg (Rec fs)
+        _ →
+            e0
+
+
+size : Expr → Int
+size e0 =
+    case e0 of
+        Num xs →
+            List.length xs
+        Var _ →
+            1
+        Neg x →
+            size x
+        Add a b →
+            size a + size b
+        Call f xs →
+            size f + List.foldl xs 0 λx n → n + size x
+        Lam _ b →
+            size b
+        Block ss b →
+            size b + List.foldl ss 0 λs n → n + sizeS s
+        Case s alts →
+            size s + List.length alts
+        Rec fs →
+            List.length fs
+
+
+sizeS : Stmt → Int
+sizeS s =
+    case s of
+        Let _ v →
+            size v
+        Run v →
+            size v
+        Fun _ →
+            1
+
+
+bump : Expr → Int
+bump e0 =
+    case e0 of
+        Num xs →
+            List.length (List.push xs 1)
+        Neg x →
+            bump x
+        Add a b →
+            bump a + bump b
+        _ →
+            0
+
+
+pipeline : Expr → Int
+pipeline x = bump (retag x)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    Node.print (String.fromInt (pipeline (Neg (Block [ Run (Num k) ] (Num [])))))

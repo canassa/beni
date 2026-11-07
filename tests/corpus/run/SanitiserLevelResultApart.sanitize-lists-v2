@@ -1,0 +1,1 @@
+v2 keeps a list a call's result does not hold out of a level read (§2.1, #2195): built again under --ownership=v2 and the sanitiser.
