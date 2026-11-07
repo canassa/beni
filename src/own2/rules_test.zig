@@ -264,6 +264,8 @@ const layers = [_]Entry{
     .{ .file = "Put.zig", .layer = 11, .max_lines = 170 },
     // The memo of subtrees described once per place, split from `Put` (#2195).
     .{ .file = "PutMemo.zig", .layer = 11, .max_lines = 40 },
+    // The stack of subtrees the read-off describes once per place, split from `Put` (#2197).
+    .{ .file = "Building.zig", .layer = 11, .max_lines = 40 },
     // The best-hold descent over a holder DAG, below Resolve (#1714).
     .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
@@ -854,7 +856,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 153), layers.len);
+    try testing.expectEqual(@as(usize, 154), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

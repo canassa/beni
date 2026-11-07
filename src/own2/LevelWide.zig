@@ -54,3 +54,13 @@ fn hasSteps(pl: *const Place.Table, a: Trees.Arrival) bool {
     const k = pl.kind(pl.pathPlace(.from(a.path)));
     return k != .@"var" and k != .@"opaque";
 }
+
+/// Arrival `a` of result slot `q` said at `p`, another name of `q`'s position (`Put.levelNames`):
+/// at its own slot there when it is the parameter's at `q`, as `of` reads it.
+pub fn renamed(f: anytype, g: std.mem.Allocator, a: Trees.Arrival, q: PathId, p: PathId) Ids.ChargeError!Trees.Arrival {
+    if (a.path != q.int()) return a;
+    var x = a;
+    x.slot = try f.slots.relOf(g, f.account, f.places, p);
+    x.path = p.int();
+    return x;
+}

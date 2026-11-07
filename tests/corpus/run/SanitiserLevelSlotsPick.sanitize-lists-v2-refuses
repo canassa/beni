@@ -1,0 +1,2 @@
+# v2 refuses a write through a walker's list read from a holder whose slots land on a join (§2.1, #2197)
+101:9 list_still_used List.push

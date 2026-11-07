@@ -1,0 +1,1 @@
+v2 refuses a write through a call's result held in a literal where the type has folded (§2.1, #2197): built again under --ownership=v2 and the sanitiser.

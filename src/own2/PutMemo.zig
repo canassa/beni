@@ -30,3 +30,9 @@ pub fn put(s: *Sink, key: [6]u32, n: Contract.Node) Error!void {
     } else try s.nodes.put(s.e.gpa(), key, none - 2);
     if (s.cut >= depth) s.cut = std.math.maxInt(usize);
 }
+
+/// A failed read of `key`: remembered unless `above`, and no node.
+pub fn fail(s: *Sink, key: [6]u32, above: bool) Error!?Contract.Node {
+    if (!above) try s.nodes.put(s.e.gpa(), key, none - 1);
+    return null;
+}
