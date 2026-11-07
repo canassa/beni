@@ -1,7 +1,7 @@
 # WebGPU source collection
 
 Research date: 2026-10-29. Tracking: [#1257](https://github.com/canassa/beni/issues/1257).
-This directory is evidence for [the API proposal](../../webgpu.md), not an implementation.
+This directory is evidence for [the adopted API contract](../../webgpu.md), not an implementation.
 
 Read [the investigation](../webgpu-api-research.md), then the proposal. The
 [coverage inventory](coverage.md) lists every interface member, overload,

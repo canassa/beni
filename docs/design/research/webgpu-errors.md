@@ -1,6 +1,6 @@
 # WebGPU failure ledger
 
-**Proposed binding contract, researched 2026-10-29.** Read with
+**Binding contract, researched 2026-10-29; adopted with [webgpu.md](../webgpu.md) on 2026-11-08.** Read with
 [webgpu.md](../webgpu.md) §5–§8. Sources are pinned in
 [sources.json](webgpu/sources.json); the [full IDL](webgpu/webgpu.idl) includes
 all operations and conversion domains. This ledger covers the pinned standard,
@@ -71,7 +71,7 @@ and GPU/WGSL features use their own specified checks.
 
 | Native API | Documented observation and policy beyond shared rules |
 |---|---|
-| `createBuffer` | Descriptor preflight plus GPU validation/OOM scopes. With `mappedAtCreation`, native `RangeError` for the CPU-side mapped allocation → `MappedAllocationFailed { bytes, message }`. It is not a `GPUOutOfMemoryError` |
+| `createBuffer` | Descriptor preflight plus GPU validation/OOM scopes. With `mappedAtCreation`, a size that is not a multiple of 4 is refused by preflight as `MappedSizeUnaligned { path, size }` before the native call, which would throw `RangeError` before allocating ([#1269](https://github.com/canassa/beni/issues/1269); `webgpu.md` §7.1). Only after that check, native `RangeError` for the CPU-side mapped allocation → `MappedAllocationFailed { bytes, message }`. It is not a `GPUOutOfMemoryError`. Acceptance keeps the two causes in separate fixtures |
 | `createTexture`, `Texture.createView` | Validate enum/format feature requirements before native call; GPU validation/OOM as specified. Feature-gated format checks can throw `TypeError`; map only the native format-check path documented for that call, to `FormatFeatureRejected { format, required, message }`. A failure despite fully verified feature conversion with no remaining documented condition is a defect |
 | `createSampler`, `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createQuerySet` | Typed descriptors, resource/device checks, full relevant GPU scopes. Layout alternatives and binding resource unions are typed. No invented DOM exception paths |
 | `createShaderModule` | GPU validation scope reports invalid WGSL/module requirements. `getCompilationInfo` messages are returned too; no error strings are thrown to the application. Hints and auto/explicit pipeline layouts retain their full descriptor fields |
@@ -94,7 +94,7 @@ Sources: WebGPU [buffers](https://gpuweb.github.io/gpuweb/#buffers),
 | `Buffer.getMappedRange` | Preflight active mapping, bounds/alignment, overlap with active ranges. DOM `OperationError` at exactly this call → `MappedRangeRejected message`. This call does **not** allocate new backing storage: do not invent an allocation `RangeError` path |
 | `Buffer.unmap` / `destroy` while map pending | Pending native map rejects with `AbortError`; mark shared wrapper state before native call. Every alias and range is invalidated. Idempotent cleanup; no use after detachment |
 | Use of mapped ArrayBuffer outside allowed access | WebGPU forbids transfer/detach operations except unmap, causing `TypeError`. The public mapped-range API offers neither operation. Its occurrence inside a wrapper is a defect, not a normal range error |
-| `AllowSharedBufferSource` conversion | Preserve the actual source variant, element type, view offset and byte length. Detached/resized/out-of-bounds views have typed preflight errors. Shared backing requires typed shared handles and applicable host isolation; no raw JS escape. Unexpected converter failure → defect |
+| `AllowSharedBufferSource` conversion | Preserve the actual source variant, element type, view offset and byte length. Detached/resized/out-of-bounds views have typed preflight errors. Resizable `ArrayBuffer` or growable `SharedArrayBuffer` backing is refused as `ResizableBacking { path }` even when never resized and in bounds: the parameter has no `[AllowResizable]` ([#1268](https://github.com/canassa/beni/issues/1268); `webgpu.md` §3.1). The same holds for the `setBindGroup` `Uint32Array` overload. Shared backing requires typed shared handles and applicable host isolation; no raw JS escape. Unexpected converter failure → defect |
 | Safe CPU binary encoders | Return explicit range/value/size errors; preserve f16/f32/integer bit patterns and raw bytes. Any new host allocation primitive has its own narrowly documented allocation classifier, outside the GPU-error classifier |
 
 Source: WebGPU [buffer mapping](https://gpuweb.github.io/gpuweb/#buffer-mapping)
@@ -118,7 +118,7 @@ imported algorithms during implementation; each adapter is a shipping prerequisi
 | `Queue.submit` | Check duplicates, single-use command buffers, mapped/destroyed resources and device identity; native submit validation is scoped. A successful encode is not a successful submit. Failure does not imply rollback of preceding writes or other submitted buffers |
 | `Queue.writeBuffer` | Source content range and byte length multiple of four preflight. Documented DOM `OperationError` → `BufferWriteSourceRejected message`; destination availability/usage/alignment/bounds produce GPU validation. Preserve typed-array element-offset semantics |
 | `Queue.writeTexture` | Correct copy/source layouts, extents, usages, texel blocks and feature rules; GPU errors scoped. No generic `OperationError` branch copied from writeBuffer |
-| `Queue.onSubmittedWorkDone` | Completion of prior queue work, not general semantic correctness. No normal rejection in this baseline; rejection → defect. Known device loss separately wins a pending wrapper wait |
+| `Queue.onSubmittedWorkDone` | Completion of prior queue work, not general semantic correctness. No normal rejection in this baseline; rejection → defect. Known device loss separately wins a pending wrapper wait. A submission receipt captures this promise right after its own native submit, so it never covers later work ([#1271](https://github.com/canassa/beni/issues/1271); `webgpu.md` §8.3) |
 
 Sources: WebGPU [command encoding](https://gpuweb.github.io/gpuweb/#command-encoding),
 [programmable passes](https://gpuweb.github.io/gpuweb/#programmable-passes),
