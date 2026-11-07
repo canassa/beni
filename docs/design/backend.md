@@ -12205,6 +12205,7 @@ runtime, `boundary.md` Â§9.2, Â§15.11) and the `html` primitives `text` (1) 
 | `delegate` | 1 | the same, idempotently, for a `--library` build's kinds |
 | `template` | 1 | `(html)`: a lazy cloner â the first call parses, later calls clone (`rt/client.js:140-158`); pure to create; a template with no flag (*amended 2026-10-15*, below the table) |
 | `templateOf` | 2 | `(html, flags)`: the same for a template with a flag (*amended 2026-10-15*) |
+| `built` | 2 | `(desc, flags)`: `templateOf` for a build whose project says `"trustedTypes": true`, the template built by DOM calls from `desc` (*amended 2026-11-07*, *Templates under Trusted Types*, below the table) |
 | `slot` | 3 | `(parent, marker, cx)`: makes a slot, remembering the mount context its content mounts with |
 | `childHtml` | 2 | `(slot, block)`: patches when the block's kind is the slot's, remounts otherwise (Â§15.4) |
 | `childMaybe` | 2 | `(slot, blockOrNull)`: likewise, `null` emptying the slot |
@@ -12239,6 +12240,48 @@ Sternhalma and the table app byte for byte. `browser-direct`'s `Direct` supplies
 is imported, not copied*). Fixtures: `emit/release/split/TemplateOneFlag` (a page whose one flag is
 a fragment's ships no `importNode`, `createDocumentFragment` or `gather`) and
 `browser/direct/TemplateShapes` (every flag in one page, on both platforms).
+
+**Templates under Trusted Types** (*amended 2026-11-07*, the owner's decision on #2208). A page
+served with `require-trusted-types-for 'script'` refuses a string assigned to `innerHTML`, so
+`template` and `templateOf` stop the page on its first render. A beni-owned `TrustedHTML` policy is
+not the fix: `Rt` is a module a program may import (`tests/corpus/run/ProgramModule`), so a
+`Rt.template` that minted `TrustedHTML` would mint it from any string, and Trusted Types would
+guarantee nothing. A build whose project says `"trustedTypes": true` (`frontend.md` §10.1;
+`Build.trusted_types`, `boundary.md` §9.4.7) instead writes no HTML-parsing sink:
+
+- **Each template is built, not parsed.** Where it would hand `template` or `templateOf` the
+  template's HTML, the lowering hands `built` the same template as data, `(desc, flags)`, with the
+  same flags. `desc` is the list of nodes the HTML parser makes of the HTML, which the lowering
+  reads back from the text it wrote (the HTML is the lowering's own, and §15.3's parser rules already
+  make the parser's tree the planned one): a string is a text node, `0` an empty comment (`<!>`),
+  and an array `[name, attributes, …children]` an element, its attributes `0` or a flat list
+  `[name, value, …]` in written order, character references decoded. `built` makes the nodes with
+  `createElement`, `createElementNS`, `setAttribute`, `createTextNode` and `createComment` into a
+  fragment, on its first call, and from then on is `templateOf`'s steps over that fragment — the
+  same flags, the same walk, the same `cloneNode` — so every walk path and patch is unchanged. The
+  namespace is the parser's: `svg` opens SVG's and `math` MathML's; a child of `foreignObject`,
+  `desc` or `title` in SVG, or of `mi`, `mo`, `mn`, `ms` or `mtext` in MathML, is HTML again; an
+  `xlink:`, `xml:` or `xmlns` attribute of a foreign element is set in its namespace, as the parser
+  sets it.
+- **What would still be a sink is refused when it is built** (the owner's decision): the `raw`
+  attribute (it writes `innerHTML`), `srcdoc` (a `TrustedHTML` sink) and a `<script>` element (its
+  content and `src` are sinks; `html` declares no `script` element, so a program meets
+  `unknown_element` there first) are each the error `trusted_types_sink` at the markup, from the
+  lowering (`boundary.md` §9.4.7). None takes a `TrustedHTML` value instead.
+- **No policy is created**, so the page's CSP may say `trusted-types 'none'`; a page that opens
+  workers names the one policy it gives `Browser.Worker` (`workers.md` §6).
+
+**Cost: a build without the key writes exactly what it wrote before** — the lowering's choice is
+made per template at compile time, `built` is never imported, and §9's reachability leaves it out;
+the `emit/` goldens do not move. A build with the key ships `built` (233 bytes of brotli as a
+hand-minified probe; Chrome, `~/worktree-evidence/fix-2208/probe` on the measuring host) and a
+descriptor a little larger than the HTML it replaces (a js-framework-benchmark row: 108 bytes of
+brotli against 92). The first build of a template is no slower than its parse: 4.9 µs against
+12–16 µs for the row, about 43 µs each for a 50-node card with an SVG; a clone costs the same
+(18.7 µs), since it is the same `cloneNode`. Pinned by `emit/dom/TrustedTypesTemplates` (the
+shapes, and no `innerHTML`), `browser/dom/TrustedTypes*` (pages built with the key, whose
+transcripts are their HTML twins', and in Chrome under the CSP) and
+`build/bad/trusted-types/` (each refusal).
 
 **Controlled inputs** (*amended 2026-10-08*: the owner's decision on research 58 Â§5(c), approved
 for `plans/compile-away.md` slice R2; research 60 Â§3.3 built it by hand). **The promise is

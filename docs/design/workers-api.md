@@ -193,6 +193,12 @@ pub policyName : String → Result PolicyError PolicyName
 pub trust : Policy, ScriptUrl, sync (String → Bool) → Result PolicyError ScriptUrl
 ```
 
+*Amended 2026-11-07, the owner's decision (#2208).* `scriptUrl`, `trust`, `ScriptUrl`, `UrlError`
+and `PolicyError`'s `NotTrustedScriptUrl` are withdrawn from the built surface: `open` loads only
+the compiled entry's URL, so nothing consumed them. They return with `openExternal` below, the first
+operation that takes a `ScriptUrl` (`workers.md` §6). `policyName`, `policy` and `Options.policy`
+stay; an owned policy in the options is used before any default policy is looked at.
+
 `options` supplies name empty, same-origin credentials, 30 s ready deadline,
 5 s cleanup observation, 5 s heartbeat, 30 s lease, 64 queued requests,
 64 queued events and 1 MiB queue bytes; these are configurable policy defaults,
