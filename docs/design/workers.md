@@ -59,9 +59,9 @@ core/platform storage redesign is part of this landing.
 by the owner the same day):** the landing's launch gate is removed. A `build` or `check` that
 reaches a worker launch no longer reports `invalid_entry_kind` ("Worker launches are gated…"),
 and the hidden `--allow-unchecked-workers` option is gone: it is an unknown option, a usage
-error. Nothing the gate deferred is skipped: `check` and `build` both run entry reachability,
-finite launch discovery (`worker_entry_not_static`), the Wire check and the realm checks of §4
-on every launch, with no flag.
+error. Every check that the gate stood in front of runs with no flag: `check` and `build` both
+run entry reachability, finite launch discovery (`worker_entry_not_static`) and the Wire check
+on every launch, and `build` runs the realm checks of §4 on each worker entry's kept code.
 
 ## 1. One platform, different places to run
 
