@@ -88,6 +88,7 @@ const layers = [_]Entry{
     .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
     .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "LevelTargets.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "PathsTo.zig", .layer = 3, .max_lines = 70 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
     // The identity tree's one normal form, below `Contract` (#1714).
@@ -752,7 +753,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 137), layers.len);
+    try testing.expectEqual(@as(usize, 139), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

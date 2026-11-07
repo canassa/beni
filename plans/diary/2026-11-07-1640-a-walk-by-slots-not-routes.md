@@ -1,0 +1,5 @@
+## 2026-11-07 16:40 CET — a walk by slots, not routes
+
+**What I did.** The review of #2217 found no hole but 367,282 routes to say 8 slots. `LevelWide.of` no longer enumerates routes: `PathsTo.of` walks from the arrival's own path and gives the arrivals. Three `cg` shapes went into the cost table.
+
+**What I learned.** Starting at `a.path` was not enough: a walk by canonical paths still met 16,036 nodes for one arrival. "Each place once" is wrong as it stands, since `#Bx.0` and `#Bx.1` are one place and two slots, and it is right exactly where the target has returned on the walk's context: there every step onto it folds onto one path, whatever came before. So the walk has contexts, and each context is either by place or by path. A cross-check against the full walk on 7,831 walks found no difference, with 6.1 million nodes behind 8,242 arrivals. Counting the nodes is what showed it; the first count I took was of walks and arrivals, which looked innocent. The old walk also lost an arrival back at its own start: the check has to be made when a step is taken, not when a node is popped.
