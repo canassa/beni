@@ -1,0 +1,1 @@
+A callback below a parameter's root over a record row (ownership-v2.md §2.1, The row of a record): built again under --ownership=v2 and the list stale-read sanitiser.

@@ -42,6 +42,7 @@ fn slotsAt(e: anytype, x: anytype, rest: []const u32, deep: bool, tags: u32, rou
                 // A call's result read on past its place: through what arrives there.
                 if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, tags, route, out)) continue;
                 try inside.append(e.gpa(), t);
+            } else if (try Replay.inside(e.gpa(), e.account(), e.places(), .from(t), rest, &inside)) { // a concrete place no step answers (§2.1); never past a payload, which absorbs every step
             } else if (try PastPayload.prefix(e, .from(t), rest, &inside)) {
                 if (e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = tags }), .route = route });
             } else if (PastPayload.atPayload(e.places(), e.places().pathPlace(.from(t)), rest, 0)) try inside.append(e.gpa(), t);

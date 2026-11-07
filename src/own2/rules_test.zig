@@ -265,6 +265,8 @@ const layers = [_]Entry{
     // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
     .{ .file = "LaterFunctions.zig", .layer = 11, .max_lines = 40 },
     .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
+    // A row of a supply at a caller that names more (§2.1, #2172).
+    .{ .file = "SplitRow.zig", .layer = 11, .max_lines = 80 },
     // A label's answer in another label's supply (§2.11.3, #2013).
     .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "ClosureRuns.zig", .layer = 12, .max_lines = 85 },
@@ -340,10 +342,10 @@ const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig"
 /// The files that compare no name to a string literal.
 /// `std.mem`'s compares, by the start of their names: a run of words compared with
 /// another, or searched, whatever the spelling.
-const mem_compares = [_][]const u8{ "eql", "startsWith", "endsWith", "order", "lessThan", "indexOf", "lastIndexOf", "find", "containsAtLeast", "count" };
+const mem_compares = [_][]const u8{ "eql", "startsWith", "endsWith", "order", "lessThan", "indexOf", "lastIndexOf", "find", "containsAtLeast", "containsAtMost", "count", "cut", "trim", "split", "tokenize", "replace" };
 /// Files whose runs of words are no slot's: an event log, a block's words, interned
 /// runs, a place's name set, route sets, a caller's capture ids, a type's places, a site's codes.
-const no_slot_words = [_][]const u8{ "Block.zig", "Callees.zig", "CodeCaps.zig", "Counters.zig", "Enforce.zig", "Groups.zig", "Ids.zig", "Kept.zig", "Ownership.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Routes.zig", "RowSets.zig", "Runs.zig", "Twins.zig", "WordRun.zig" };
+const no_slot_words = [_][]const u8{ "Block.zig", "Callees.zig", "CodeCaps.zig", "Counters.zig", "Enforce.zig", "Kept.zig", "Ownership.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Routes.zig", "RowSets.zig", "Runs.zig", "Twins.zig", "WordRun.zig" };
 /// A line of a file with slots that compares something else, by a needle on the line.
 const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     // Parameter, code, value and leaf ids in small lists.
@@ -353,14 +355,12 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "MovedReq.zig", .needle = "js.items, Contract.occParam(o)" },
     .{ .file = "Routed.zig", .needle = "js.items, x.j" },
     .{ .file = "Contract.zig", .needle = "js.items, e.j" },
-    .{ .file = "Value.zig", .needle = "m.items, q" },
     .{ .file = "Walk.zig", .needle = "items.items, c" },
     // A record's kid ranks, and a row's names: these read one name, no slot.
     .{ .file = "Walk.zig", .needle = "ranks.items, st.kidWord()" },
     .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
     // Tarjan's stack of places.
     .{ .file = "Place.zig", .needle = "stack.items" },
-    .{ .file = "Place.zig", .needle = "PlaceId, kids" },
     // The canonical order's keys, which rank and name, and tell no slot from another's row.
     .{ .file = "Slots.zig", .needle = "t.keyOf(a)" },
     // Whole selections and runs compared as stored: equal words, the same facts, a miss
@@ -387,32 +387,103 @@ fn lineAround(text: []const u8, at: usize) []const u8 {
     return text[start..end];
 }
 
-fn notSlots(name: []const u8, line: []const u8) bool {
-    for (not_slots) |x| if (std.mem.eql(u8, x.file, name) and std.mem.indexOf(u8, line, x.needle) != null) return true;
+/// Which exceptions excused something: a file of `no_slot_words`, a line of `not_slots`.
+const Excused = struct {
+    files: [no_slot_words.len]bool = @splat(false),
+    lines: [not_slots.len]bool = @splat(false),
+};
+
+fn notSlots(name: []const u8, line: []const u8, used: *Excused) bool {
+    for (not_slots, 0..) |x, i| if (std.mem.eql(u8, x.file, name) and std.mem.indexOf(u8, line, x.needle) != null) {
+        used.lines[i] = true;
+        return true;
+    };
     return false;
 }
 
-/// Refuses a compare of `std.mem` on anything but bytes, however it is spelled, an alias
-/// of `std.mem` or of one of its compares, `std.meta.eql`, and a slice of words as bytes,
-/// which hashes or compares a slot by its words. A fixed key (`&x`) is no slot (§2.1).
+/// `text` with each call chain on one line: `std\n.mem\n.eql` is `std.mem.eql`.
+fn joinChains(gpa: std.mem.Allocator, text: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    var line_at: usize = 0;
+    var first = true;
+    while (lines.next()) |line| : (first = false) {
+        const t = std.mem.trimStart(u8, line, " ");
+        if (!first and t.len > 1 and t[0] == '.' and std.ascii.isAlphabetic(t[1]) and !isComment(out.items[line_at..])) {
+            try out.appendSlice(gpa, t);
+            continue;
+        }
+        if (!first) try out.append(gpa, '\n');
+        line_at = out.items.len;
+        try out.appendSlice(gpa, line);
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+/// Where the parenthesis opened at `open` closes, or the end of `text`.
+fn closeOf(text: []const u8, open: usize) usize {
+    var depth: usize = 0;
+    for (text[open..], open..) |c, i| {
+        if (c == '(') depth += 1;
+        if (c == ')') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+    }
+    return text.len;
+}
+
+/// Whether a call's argument at the start of `text` is a fixed key, an array by address
+/// and never a slice of a run (`&a[0..2].*`).
+fn fixedKey(text: []const u8) bool {
+    if (text.len < 2 or text[0] != '&') return false;
+    const arg = text[0 .. std.mem.indexOfScalar(u8, text, ',') orelse text.len];
+    return std.mem.indexOf(u8, arg, "..") == null and std.mem.indexOf(u8, arg, ".*") == null;
+}
+
 fn refuse(bad: *usize, quiet: bool, comptime fmt: []const u8, args: anytype) void {
     if (quiet) bad.* += 1 else fail(bad, fmt, args);
 }
 
-fn wordCompares(name: []const u8, text: []const u8, bad: *usize, quiet: bool) void {
-    if (isListed(&no_slot_words, name)) return;
-    for ([_][]const u8{ "std.mem;", "std.mem\n", "\").mem;", "\").mem\n", "std.meta.eql" }) |needle| {
+/// Refuses, by syntax, a compare of `std.mem` on anything but bytes, reached by name, by an
+/// alias of `std.mem` or of a compare, or by `@field`; `std.meta.eql`; a run of words as bytes;
+/// a deep hash; and a hash map keyed by a slice of words. A file of `no_slot_words` and a line of
+/// `not_slots` say why they may. A loop written by hand, a type alias of the key and a
+/// `std.mem` reached through a struct pass: this catches the likely spellings and proves nothing (§2.1).
+fn wordCompares(gpa: std.mem.Allocator, name: []const u8, raw: []const u8, bad: *usize, quiet: bool, used: *Excused) !void {
+    for (no_slot_words, 0..) |f, i| if (std.mem.eql(u8, f, name)) {
+        var seen: usize = 0;
+        try wordScan(gpa, name, raw, &seen, true, used);
+        used.files[i] = used.files[i] or seen != 0;
+        return;
+    };
+    return wordScan(gpa, name, raw, bad, quiet, used);
+}
+
+fn wordScan(gpa: std.mem.Allocator, name: []const u8, raw: []const u8, bad: *usize, quiet: bool, used: *Excused) !void {
+    const text = try joinChains(gpa, raw);
+    defer gpa.free(text);
+    for ([_][]const u8{ "std.mem;", "std.mem\n", "\").mem;", "\").mem\n", "std.meta.eql", "@field(std", "@field(mem", ".Deep" }) |needle| {
         var from: usize = 0;
         while (std.mem.indexOfPos(u8, text, from, needle)) |at| {
             from = at + needle.len;
-            if (!isComment(lineAround(text, at)) and !notSlots(name, lineAround(text, at))) refuse(bad, quiet, "{s}: `{s}` hides a compare of words from this rule: slots go through `SlotWords` (§2.1)", .{ name, needle });
+            if (!isComment(lineAround(text, at)) and !notSlots(name, lineAround(text, at), used)) refuse(bad, quiet, "{s}: `{s}` hides a compare of words from this rule: slots go through `SlotWords` (§2.1)", .{ name, needle });
+        }
+    }
+    for ([_][]const u8{ "sliceAsBytes(", "asBytes(" }) |needle| {
+        var from: usize = 0;
+        while (std.mem.indexOfPos(u8, text, from, needle)) |at| {
+            from = at + 1;
+            const line = lineAround(text, at);
+            if (!isComment(line) and !notSlots(name, line, used)) refuse(bad, quiet, "{s}: words as bytes: slots go through `SlotWords` (§2.1)", .{name});
         }
     }
     var from: usize = 0;
-    while (std.mem.indexOfPos(u8, text, from, "sliceAsBytes(")) |at| {
+    while (std.mem.indexOfPos(u8, text, from, "HashMap")) |at| {
         from = at + 1;
         const line = lineAround(text, at);
-        if (!isComment(line) and !notSlots(name, line)) refuse(bad, quiet, "{s}: words as bytes: slots go through `SlotWords` (§2.1)", .{name});
+        if (!isComment(line) and std.mem.indexOf(u8, line, "[]const u32") != null and !notSlots(name, line, used)) refuse(bad, quiet, "{s}: a map keyed by a run of words: slots go through `SlotWords` (§2.1)", .{name});
     }
     from = 0;
     while (std.mem.indexOfPos(u8, text, from, "mem.")) |at| {
@@ -430,7 +501,9 @@ fn wordCompares(name: []const u8, text: []const u8, bad: *usize, quiet: bool) vo
             continue;
         }
         const comma = std.mem.indexOfScalarPos(u8, text, e, ',') orelse continue;
-        if (std.mem.eql(u8, text[e + 1 .. comma], "u8") or std.mem.startsWith(u8, text[comma..], ", &") or notSlots(name, line)) continue;
+        const args = text[e..closeOf(text, e)];
+        const cast = std.mem.indexOf(u8, args, "@ptrCast") != null;
+        if ((std.mem.eql(u8, text[e + 1 .. comma], "u8") and !cast) or fixedKey(std.mem.trimStart(u8, text[comma + 1 ..], " ")) or notSlots(name, line, used)) continue;
         refuse(bad, quiet, "{s}: `mem.{s}` on {s}: slots go through `SlotWords` (§2.1)", .{ name, text[from..e], text[e + 1 .. comma] });
     }
 }
@@ -601,6 +674,7 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
     try readSources(gpa, testing.io, &sources);
     var bad: usize = 0;
     var used: [literal_allowlist.len]bool = @splat(false);
+    var exceptions: Excused = .{};
     var members: std.ArrayList([]const u8) = .empty;
     defer members.deinit(gpa);
     for (sources.items) |s| {
@@ -636,7 +710,7 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
             }
         }
         // A slot's words are compared in `WordRun`/`SlotWords` alone (§2.1).
-        wordCompares(s.name, production(s.text), &bad, false);
+        try wordCompares(gpa, s.name, production(s.text), &bad, false, &exceptions);
         // A tree's kid by a caller's word: each of these files is decided, and a new one
         // decides too, by `rowKid` or by saying why an exact kid will do (§2.1).
         for ([_][]const u8{ ".kidAt(", "Forest.at(" }) |needle| if (std.mem.indexOf(u8, production(s.text), needle) != null and !isListed(&kid_readers, s.name)) {
@@ -682,6 +756,8 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
             fail(&bad, "{s}:{d}: a column read through `items`: read the table's `col`", .{ s.name, n });
         }
     }
+    for (not_slots, exceptions.lines) |x, u| if (!u) fail(&bad, "{s}: the exception `{s}` excuses nothing: remove it", .{ x.file, x.needle });
+    for (no_slot_words, exceptions.files) |f, u| if (!u) fail(&bad, "{s}: `no_slot_words` excuses nothing here: remove it", .{f});
     for (literal_allowlist, used) |a, u| {
         if (!u) fail(&bad, "rules_test.zig: the allowlist entry for {s} (`{s}`) matches nothing: remove it", .{ a.file, a.needle });
     }
@@ -751,7 +827,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 137), layers.len);
+    try testing.expectEqual(@as(usize, 138), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
@@ -772,7 +848,7 @@ test "the import verdict refuses back doors and accepts the base layer" {
     try testing.expect(importVerdict("Shape.zig", "Nowhere.zig", false) != null);
 }
 
-test "a plain compare of words is refused however it is spelled" {
+test "a plain compare of words is refused in each spelling the rule knows" {
     const refused = [_][]const u8{
         "const mem = std.mem;\nfn f(a: []const u32) bool { return mem.startsWith(u32, a, a); }\n",
         "fn f(a: []const u32) ?usize { return std.mem.indexOfDiff(u32, a, a); }\n",
@@ -783,14 +859,25 @@ test "a plain compare of words is refused however it is spelled" {
         "fn f(a: []const u32) bool { return std.mem.eql(u8, std.mem.sliceAsBytes(a), std.mem.sliceAsBytes(a)); }\n",
         "fn f(a: []const u32) bool { return std.mem.eql(Step, a, a); }\n",
         "fn f(a: []const u32) bool { return std.meta.eql(a, a); }\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(u8, @ptrCast(a), @ptrCast(a)); }\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(u8, std.mem.asBytes(a), std.mem.asBytes(a)); }\n",
+        "fn f(a: []const u32) ?[]const u32 { return std.mem.cutPrefix(u32, a, a); }\n",
+        "fn f(a: []const u32) ?[]const u32 { return std.mem.cutSuffix(u32, a, a); }\n",
+        "fn f(a: []const u32) void { _ = std.mem.cut(u32, a, a); }\n",
+        "const eq = @field(std.mem, \"eql\");\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(u32, &a[0..2].*, &a[0..2].*); }\n",
+        "fn f(h: anytype, a: []const u32) void { std.hash.autoHashStrat(h, a, .Deep); }\n",
+        "fn f(a: []const u32) bool { return std\n    .mem\n    .eql(u32, a, a); }\n",
+        "const M = std.ArrayHashMap([]const u32, u32, Ctx, true);\n",
     };
+    var used: Excused = .{};
     for (refused) |text| {
         var bad: usize = 0;
-        wordCompares("Probe.zig", text, &bad, true);
+        try wordCompares(testing.allocator, "Probe.zig", text, &bad, true, &used);
         try testing.expect(bad != 0);
     }
     var ok: usize = 0;
-    wordCompares("Probe.zig", "fn f(x: [2]u32) bool { return std.mem.eql(u32, &x, &x) or std.mem.eql(u8, \"a\", \"b\"); }\nconst A = std.mem.Allocator;\n", &ok, true);
+    try wordCompares(testing.allocator, "Probe.zig", "fn f(x: [2]u32) bool { return std.mem.eql(u32, &x, &x) or std.mem.eql(u8, \"a\", \"b\"); }\nconst A = std.mem.Allocator;\n", &ok, true, &used);
     try testing.expectEqual(@as(usize, 0), ok);
 }
 

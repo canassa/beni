@@ -400,7 +400,8 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         try e.ev.project(arg, words, false, 0, 0, &ps);
         for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
     }
-    // A write of nothing (a crossing value consumed) is no demand.
+    // A write of nothing is no demand: a crossing value consumed, an arm that cannot run, a
+    // field a row excludes. A step no place answers is read inside it (`Replay.inside`, §2.14.3).
     if (e.w.leaf_runs.items.len == t_start) return;
     const base = Graft.argInst(call, x.j);
     // The path below the base, and the other routes a grouped demand covers,
