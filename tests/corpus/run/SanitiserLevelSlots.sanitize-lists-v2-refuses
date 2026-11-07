@@ -1,0 +1,3 @@
+# v2 refuses a write through a parameter's slots written out into a result (§2.1, #2197)
+71:9 list_still_used SanitiserLevelSlots.wr
+71:9 list_still_used SanitiserLevelSlots.wr

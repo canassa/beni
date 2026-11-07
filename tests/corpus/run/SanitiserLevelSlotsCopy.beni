@@ -1,0 +1,64 @@
+-- A walker that rebuilds its argument (`ownership-v2.md` §2.1, #2197): `cpU` holds `cp`'s result one step in, so `cp`'s slots land on
+-- joins. `wn` writes one level path alone, and nothing else in the result says `k` is there.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = E
+    | Leaf (List Int)
+    | N U
+
+
+type U
+    = X
+    | A T
+    | B T (List T)
+
+
+cp : T → T
+cp t =
+    case t of
+        E →
+            E
+        Leaf xs →
+            Leaf xs
+        N u →
+            N (cpU u)
+
+
+cpU : U → U
+cpU u =
+    case u of
+        X →
+            X
+        A p →
+            A (cp p)
+        B p q →
+            B (cp p) (cpL q)
+
+
+cpL : List T → List T
+cpL ts =
+    case ts of
+        [ h, …r ] →
+            [ cp h, …cpL r ]
+        _ →
+            []
+
+
+wn : U → Int
+wn u =
+    case u of
+        A (N (A (N (A (Leaf xs))))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = wn (cpU (A (N (A (N (A (Leaf k)))))))
+    Node.print (String.fromInt (a + List.length k))

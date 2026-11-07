@@ -1,0 +1,54 @@
+-- A call's result held in a literal (`ownership-v2.md` §2.1, #2197): `gn` puts `hg`'s result where the type has folded, so
+-- its slots land on joins, and `k` is at one of their level paths.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = E
+    | Leaf (List Int)
+    | N U
+
+
+type U
+    = X
+    | A T T
+    | K U
+
+
+wr : T → Int
+wr t =
+    case t of
+        E →
+            0
+        Leaf xs →
+            List.length (List.push xs 1)
+        N u →
+            wrU u
+
+
+wrU : U → Int
+wrU u =
+    case u of
+        X →
+            0
+        A p q →
+            wr p + wr q
+        K v →
+            wrU v
+
+
+hg : T → T
+hg x = N (A x E)
+
+
+gn : T → T
+gn v = N (K (K (A (hg v) E)))
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = wr (gn (N (A (Leaf k) E)))
+    Node.print (String.fromInt (a + List.length k))

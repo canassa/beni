@@ -1,0 +1,102 @@
+-- A holder read by a walker that answers a list (`ownership-v2.md` §2.1, #2197): the list `pick` hands back is `k`, at a level path of
+-- the join `hg`'s slots land on.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = E
+    | Leaf (List Int)
+    | N U
+
+
+type U
+    = X
+    | A T U
+    | B U T
+
+
+wr : T → Int
+wr t =
+    case t of
+        E →
+            0
+        Leaf xs →
+            List.length (List.push xs 1)
+        N u →
+            wrU u
+
+
+wrU : U → Int
+wrU u =
+    case u of
+        X →
+            0
+        A p q →
+            wr p + wrU q
+        B q p →
+            wrU q + wr p
+
+
+rd : T → Int
+rd t =
+    case t of
+        E →
+            0
+        Leaf xs →
+            List.length xs
+        N u →
+            rdU u
+
+
+rdU : U → Int
+rdU u =
+    case u of
+        X →
+            0
+        A p q →
+            rd p + rdU q
+        B q p →
+            rdU q + rd p
+
+
+hg : T → T
+hg x = N (B (A E (B X x)) E)
+
+
+pick : T → List Int
+pick t =
+    case t of
+        E →
+            []
+        Leaf xs →
+            xs
+        N u →
+            pickU u
+
+
+pickU : U → List Int
+pickU u =
+    case u of
+        X →
+            []
+        A p q →
+            orL (pick p) (pickU q)
+        B q p →
+            orL (pickU q) (pick p)
+
+
+orL : List Int, List Int → List Int
+orL a b =
+    if List.isEmpty a then
+        b
+    else
+        a
+
+
+main : Program
+main =
+    k = [ 1 ]
+    z = List.push (pick (hg (N (A (N (B X (Leaf k))) X)))) 2
+    Node.print (String.fromInt (List.length z + List.length k))
