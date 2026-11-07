@@ -13,7 +13,6 @@ const SupplyKey = @import("SupplyKey.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
-const FnRun = @import("FnRun.zig");
 const LevelWide = @import("LevelWide.zig");
 
 const Error = Eval.Error;
@@ -28,14 +27,6 @@ const none = std.math.maxInt(u32);
 pub const ResList = struct { label: u32 = none, k: u32 = 0, key: Slots.Rel = SupplyKey.none };
 /// Where a parameter effect goes.
 pub const EffList = enum(u8) { reads, writes, escapes };
-
-/// A closure of the frame said into a label's supply (which names objects,
-/// never a code) is handed to unseen code: it escapes (§2.11.3, #1776).
-pub fn handed(s: *Sink, li: u32, out: ResList) Error!void {
-    const e, const l = .{ s.e, s.e.fr().leafAt(li) };
-    if (out.label == none or l.kind != .site or !FnRun.frameSite(e.contracts, e.ctx, e.w.closures.items, l.atom)) return;
-    try e.fn_escapes.append(e.gpa(), .{ .leaf = li, .point = none });
-}
 
 pub const labelIndex = Sink.labelIndex;
 
@@ -60,15 +51,19 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
         _ = try Contract.Draft.addWide(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), a);
         return;
     }
+    if (!try wideAt(s, q, a, out)) return;
+    var said: std.ArrayList(LevelWide.Said) = .empty;
+    try LevelWide.of(f, s.e.gpa(), s.arena, q, a, &said);
+    for (said.items) |x| _ = try wideAt(s, x.at, x.a, out);
+}
+
+fn wideAt(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool {
+    const f = s.e.fr();
     const r = try SupplyKey.relAt(s, q, out.key);
-    const list = try resList(s, out);
     try f.charge(.edge, 1);
-    if (try Contract.Draft.addWide(list, s.arena, r, a)) {
-        if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, true, a, 0);
-        var said: std.ArrayList(LevelWide.Said) = .empty;
-        try LevelWide.of(f, s.e.gpa(), s.arena, q, a, &said);
-        for (said.items) |x| try arriveWide(s, x.at, x.a, out);
-    }
+    if (!try Contract.Draft.addWide(try resList(s, out), s.arena, r, a)) return false;
+    if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, true, a, 0);
+    return true;
 }
 
 pub fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
