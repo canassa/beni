@@ -11,18 +11,62 @@ const Dispatch = @import("../check/Dispatch.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
 const none = std.math.maxInt(u32);
 
-/// Globals unavailable to browser workers, except the dedicated-worker frame
-/// provider handled by pageName. Restricted receivers are checked syntactically
-/// below, without adding a native-object shape analysis.
-const page_only = std.StaticStringMap(void).initComptime(.{
-    .{"document"},             .{"window"},
-    .{"history"},              .{"localStorage"},
-    .{"sessionStorage"},       .{"innerWidth"},
-    .{"innerHeight"},          .{"scrollX"},
-    .{"scrollY"},              .{"requestAnimationFrame"},
-    .{"cancelAnimationFrame"}, .{"HTMLAnchorElement"},
-    .{"Text"},
+const Realm = @import("../entry/Plan.zig").Realm;
+const WorkerGlobals = @import("WorkerGlobals.zig");
+const Minify = @import("Minify.zig");
+
+/// Names the emitter itself defines on a worker's global object before user
+/// code runs (`Emit.workerBootstrap`), so they are there in every worker
+/// realm though no IDL declares them.
+const beni_owned = std.StaticStringMap(void).initComptime(.{
+    .{"__beniWorkerFingerprint"},
 });
+
+/// The bit of `realm` in `WorkerGlobals.table`, or 0 for a realm that is not
+/// a browser worker.
+fn workerBit(realm: Realm) u8 {
+    return switch (realm) {
+        .dedicatedWorker => WorkerGlobals.dedicated,
+        .sharedWorker => WorkerGlobals.shared,
+        .serviceWorker => WorkerGlobals.service,
+        else => 0,
+    };
+}
+
+/// Whether `realm` is a browser worker's.
+pub fn isWorker(realm: Realm) bool {
+    return workerBit(realm) != 0;
+}
+
+/// Whether `name` is on the global object of the worker realm `realm`
+/// (`workers.md` §4, *The worker global allow-list*). False for every realm
+/// that is not a browser worker. A release build of a worker writes only
+/// these names bare (`Print.bareName`).
+pub fn onWorkerGlobal(name: []const u8, realm: Realm) bool {
+    const bit = workerBit(realm);
+    if (bit == 0) return false;
+    if (beni_owned.has(name)) return true;
+    return (WorkerGlobals.table.get(name) orelse 0) & bit != 0;
+}
+
+/// What a worker build makes of a global name a kept body reads.
+const Verdict = enum {
+    available,
+    /// Not on the realm's global object: `worker_realm_violation`.
+    absent,
+    /// `Function` or `eval`: code the check cannot see, refused with
+    /// `worker_realm_violation` (`workers-api.md` §5).
+    dynamic_code,
+    /// A module worker has no `importScripts`:
+    /// `module_worker_import_scripts` (`workers.md` §6).
+    import_scripts,
+};
+
+fn classify(name: []const u8, realm: Realm) Verdict {
+    if (std.mem.eql(u8, name, "importScripts")) return .import_scripts;
+    if (std.mem.eql(u8, name, "Function") or std.mem.eql(u8, name, "eval")) return .dynamic_code;
+    return if (onWorkerGlobal(name, realm)) .available else .absent;
+}
 
 /// A kept body's first unproved access. Unknown names and escaping receiver
 /// handles are refused rather than followed through an alias or value graph.
@@ -56,11 +100,6 @@ fn receiver(e: anytype, b: *const Bir, at: Bir.Inst.Index) ?Receiver {
     return null;
 }
 
-fn pageName(name: []const u8, realm: @import("../entry/Plan.zig").Realm) bool {
-    if (realm == .dedicatedWorker and (std.mem.eql(u8, name, "requestAnimationFrame") or std.mem.eql(u8, name, "cancelAnimationFrame"))) return false;
-    return page_only.has(name);
-}
-
 // WorkerLocation and WorkerNavigator/mixin members from the pinned Webref IDL.
 const location_reads = std.StaticStringMap(void).initComptime(.{
     .{"href"}, .{"origin"},   .{"protocol"}, .{"host"}, .{"hostname"},
@@ -75,9 +114,9 @@ const navigator_reads = std.StaticStringMap(void).initComptime(.{
     .{"locks"},              .{"gpu"},                  .{"ml"},
 });
 
-fn memberAllowed(kind: Receiver, member: []const u8, call: bool, realm: @import("../entry/Plan.zig").Realm) bool {
+fn memberAllowed(kind: Receiver, member: []const u8, call: bool, realm: Realm) bool {
     return switch (kind) {
-        .globalThis, .self => !pageName(member, realm) and (!call or std.meta.stringToEnum(Receiver, member) == null),
+        .globalThis, .self => classify(member, realm) == .available and (!call or std.meta.stringToEnum(Receiver, member) == null),
         .location => if (call) std.mem.eql(u8, member, "toString") else location_reads.has(member),
         .navigator => blk: {
             if (std.mem.eql(u8, member, "setAppBadge") or std.mem.eql(u8, member, "clearAppBadge")) break :blk true;
@@ -89,11 +128,77 @@ fn memberAllowed(kind: Receiver, member: []const u8, call: bool, realm: @import(
     };
 }
 
-fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUnmanaged) std.mem.Allocator.Error!?[]const u8 {
+/// The `Js.global "N"` calls under `root` that are existence probes
+/// (`workers.md` §4, *Existence probes*): each is the whole value of a
+/// local, N is absent from the realm, and every read of the local is the
+/// subject of `Js.isUndefined` or of `Js.typeIs` with a literal type other
+/// than `"undefined"`, or lies in the arm such a probe proves N present —
+/// `False` for the first, `True` for the second. Such a local is read only
+/// where N exists, so it cannot throw. Marked in `probed`.
+fn markProbes(e: anytype, b: *const Bir, root: Bir.Inst.Index, probed: *std.DynamicBitSetUnmanaged) std.mem.Allocator.Error!void {
+    const interner = &e.session.interner;
+    const interfaces = e.session.resolution.interfaces;
+    const realm = e.options.platform.entry_host;
+    const Candidate = struct { local: u32, call: Bir.Inst.Index };
+    var candidates: std.ArrayList(Candidate) = .empty;
+    var reads: std.ArrayList(Bir.Inst.Index) = .empty;
+    var cases: std.ArrayList(Bir.Inst.Index) = .empty;
+    var todo: std.ArrayList(Bir.Inst.Index) = .empty;
+    try todo.append(e.scratch, root);
+    while (todo.pop()) |inst| {
+        if (inst.int() >= b.insts.len) continue;
+        switch (b.instTag(inst)) {
+            .local => try reads.append(e.scratch, inst),
+            .case => try cases.append(e.scratch, inst),
+            .let_def => {
+                const value: Bir.Inst.Index = @fromBackingInt(@intCast(b.instData(inst).rhs));
+                const def = b.extraData(@fromBackingInt(@intCast(b.instData(inst).lhs)), Bir.LetDef);
+                if (def.params_start == def.params_end and value.int() < b.insts.len) if (globalName(e, b, value)) |name| {
+                    if (std.meta.stringToEnum(Receiver, name) == null and classify(name, realm) == .absent) try candidates.append(e.scratch, .{ .local = def.local, .call = value });
+                };
+            },
+            else => {},
+        }
+        try b.operands(e.scratch, inst, &todo);
+    }
+    if (candidates.items.len == 0) return;
+    var allowed = try std.DynamicBitSetUnmanaged.initEmpty(e.scratch, b.insts.len);
+    for (candidates.items) |candidate| {
+        allowed.unsetAll();
+        for (cases.items) |case| {
+            const scrutinee: Bir.Inst.Index = @fromBackingInt(@intCast(b.instData(case).lhs));
+            if (scrutinee.int() >= b.insts.len or b.instTag(scrutinee) != .call) continue;
+            const which = JsIntrinsic.of(e.graph(), interfaces, b, @fromBackingInt(@intCast(b.instData(scrutinee).lhs)), interner) orelse continue;
+            const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(b.instData(scrutinee).rhs))), Bir.Inst.Index);
+            if (args.len == 0 or b.instTag(args[0]) != .local or b.instData(args[0]).lhs != candidate.local) continue;
+            const present: bool = switch (which) {
+                .isUndefined => if (args.len == 1) false else continue,
+                .typeIs => if (args.len == 2 and b.instTag(args[1]) == .string and !std.mem.eql(u8, b.bytes(args[1]), "undefined")) true else continue,
+                else => continue,
+            };
+            allowed.set(args[0].int());
+            const arm = JsIntrinsic.armOf(e.graph(), interfaces, b, case, interner, present) orelse continue;
+            try todo.append(e.scratch, @fromBackingInt(@intCast(b.instData(arm).rhs)));
+            while (todo.pop()) |inst| {
+                if (inst.int() >= b.insts.len) continue;
+                allowed.set(inst.int());
+                try b.operands(e.scratch, inst, &todo);
+            }
+        }
+        const guarded = for (reads.items) |read| {
+            if (b.instData(read).lhs == candidate.local and !allowed.isSet(read.int())) break false;
+        } else true;
+        if (guarded) probed.set(candidate.call.int());
+    }
+}
+
+fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUnmanaged, probed: *std.DynamicBitSetUnmanaged, verdict: *Verdict) std.mem.Allocator.Error!?[]const u8 {
+    verdict.* = .absent;
     const b = e.bir(m);
     const root = b.decls[index].body.unwrap() orelse return null;
     const interner = &e.session.interner;
     const interfaces = e.session.resolution.interfaces;
+    if (e.options.platform.entry_host != .unknown) try markProbes(e, b, root, probed);
     var todo: std.ArrayList(Bir.Inst.Index) = .empty;
     try todo.append(e.scratch, root);
     while (todo.pop()) |inst| {
@@ -119,9 +224,11 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
             const which = JsIntrinsic.of(e.graph(), interfaces, b, @fromBackingInt(@intCast(data.lhs)), interner);
             const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
             if (which == .global) {
+                if (probed.isSet(inst.int())) continue;
                 const name = globalName(e, b, inst) orelse return "(computed)";
                 if (std.meta.stringToEnum(Receiver, name) != null) return try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{name});
-                if (pageName(name, e.options.platform.entry_host)) return name;
+                verdict.* = classify(name, e.options.platform.entry_host);
+                if (verdict.* != .available) return name;
                 continue;
             }
             // Existing direct probes of absent globals remain runtime probes;
@@ -134,7 +241,13 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
                     if (which == .set) return try std.fmt.allocPrint(e.scratch, "{s} (receiver write)", .{@tagName(kind)});
                     if (b.instTag(args[1]) != .string) return "(computed member)";
                     const member = b.bytes(args[1]);
-                    if (!memberAllowed(kind, member, which == .call, e.options.platform.entry_host)) return try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ @tagName(kind), member });
+                    if (!memberAllowed(kind, member, which == .call, e.options.platform.entry_host)) {
+                        if (kind == .globalThis or kind == .self) verdict.* = switch (classify(member, e.options.platform.entry_host)) {
+                            .available => .absent,
+                            else => |v| v,
+                        };
+                        return try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ @tagName(kind), member });
+                    }
                     if (receiver(e, b, inst)) |escaping| return try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{@tagName(escaping)});
                     // The checked receiver chain consists only of literal reads.
                     // Do not revisit its global as an escaping standalone value.
@@ -155,16 +268,98 @@ fn refusePageGlobals(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocat
         const m: Graph.Index = @fromBackingInt(@intCast(mi));
         // One entry context: shared instruction subtrees need checking only once.
         var seen = try std.DynamicBitSetUnmanaged.initEmpty(e.scratch, e.bir(m).insts.len);
+        var probed = try std.DynamicBitSetUnmanaged.initEmpty(e.scratch, e.bir(m).insts.len);
         for (0..e.bir(m).decls.len) |di| {
             if (!e.live.decl(m, di) and !e.live.twin(m, di)) continue;
-            const global = try pageGlobal(e, m, @intCast(di), &seen) orelse continue;
+            var verdict: Verdict = .absent;
+            const global = try pageGlobal(e, m, @intCast(di), &seen, &probed, &verdict) orelse continue;
             const b = e.bir(m);
             const realm = @tagName(e.options.platform.entry_host);
             if (e.options.platform.entry_host == .unknown) {
                 try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`Js.entryWindow` needs a known entry realm. Declare `entryHost` for this platform; an entry cannot use the library fallback.", .{});
                 return true;
             }
-            try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`, which is not proved available in entry realm `{s}`.", .{ e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(b.decls[di].name)), global, realm });
+            const owner = e.session.interner.slice(e.graph().moduleName(m));
+            const name = e.session.interner.slice(b.symbol(b.decls[di].name));
+            switch (verdict) {
+                .available, .absent => try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`, which is not proved available in entry realm `{s}`.", .{ owner, name, global, realm }),
+                .dynamic_code => try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`, which runs code the realm check cannot see. Dynamic code is refused in entry realm `{s}`.", .{ owner, name, global, realm }),
+                .import_scripts => try e.report(.module_worker_import_scripts, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`. A module worker has no `importScripts`, so entry realm `{s}` would throw `TypeError`. Use an ordinary static import.", .{ owner, name, global, realm }),
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+/// What a worker build reads of a kept `foreign`'s sibling: the same rule as
+/// kept beni code, applied to the names the file's surviving code may read
+/// unbound (`Minify.globalReads`). Check 3 (`boundary.md` §4) already refuses
+/// a name the file neither binds nor finds among the standard globals, so
+/// what is left to prove is a read through `globalThis`, a host's name the
+/// file also binds somewhere, `Function`, and a reference inside a template
+/// substitution, which check 3's scanner does not see.
+fn refuseSiblings(e: anytype) std.mem.Allocator.Error!bool {
+    const realm = e.options.platform.entry_host;
+    for (0..e.graph().count()) |mi| {
+        const m: Graph.Index = @fromBackingInt(@intCast(mi));
+        const b = e.bir(m);
+        var keep: std.ArrayList([]const u8) = .empty;
+        for (b.decls, 0..) |d, di| {
+            if (d.kind != .foreign_value or !e.live.decl(m, di)) continue;
+            const name = e.session.interner.slice(b.symbol(d.name));
+            // A generated native binding's realm set is its binding metadata,
+            // which `check`'s native pass proves (§4, *Generated bindings*).
+            if (e.graph().modulePackage(m) == .core and Operations.lookup(e.session.interner.slice(e.graph().moduleName(m)), name) != null) continue;
+            try keep.append(e.scratch, name);
+        }
+        if (keep.items.len == 0) continue;
+        const path = try e.siblingPath(e.session.store.path(e.graph().moduleFile(m)));
+        // A missing sibling is check 2's to report.
+        const bytes = e.readAsset(path) orelse continue;
+        const scan = try @import("Sibling.zig").scan(e.scratch, bytes);
+        const found = try Minify.globalReads(e.scratch, bytes, keep.items, &scan.bound) orelse {
+            try e.reportInFile(.worker_realm_violation, @TypeOf(e.*).inSibling(path, bytes, 0, 0), "This file is kept in entry realm `{s}`, and I cannot read exactly which globals it uses, so its access is not proved available there.", .{@tagName(realm)});
+            return true;
+        };
+        if (found.import) |at| {
+            try e.reportInFile(.worker_realm_violation, @TypeOf(e.*).inSibling(path, bytes, at, 6), "This file is kept in entry realm `{s}` and imports a module, whose access the realm check cannot see.", .{@tagName(realm)});
+            return true;
+        }
+        for (found.reads) |read| {
+            var verdict: Verdict = .absent;
+            const access: ?[]const u8 = access: {
+                if (std.meta.stringToEnum(Receiver, read.name)) |kind| {
+                    // `globalThis.M.bind(globalThis)` with M on the list.
+                    if (read.member == null and (kind == .globalThis or kind == .self)) if (read.bound_to) |method| {
+                        if (classify(method, realm) == .available and std.meta.stringToEnum(Receiver, method) == null) break :access null;
+                    };
+                    const member = read.member orelse break :access try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{read.name});
+                    if (kind == .location or kind == .navigator) {
+                        if (memberAllowed(kind, member, false, realm)) break :access null;
+                        break :access try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ read.name, member });
+                    }
+                    if (std.meta.stringToEnum(Receiver, member)) |inner| {
+                        const member2 = read.member2 orelse break :access try std.fmt.allocPrint(e.scratch, "{s}.{s} (escaping receiver)", .{ read.name, member });
+                        if ((inner == .location or inner == .navigator) and memberAllowed(inner, member2, false, realm)) break :access null;
+                        break :access try std.fmt.allocPrint(e.scratch, "{s}.{s}.{s}", .{ read.name, member, member2 });
+                    }
+                    verdict = classify(member, realm);
+                    // A write of one property of the global object cannot
+                    // throw; what it writes is the program's.
+                    if (verdict == .available or read.probe or (read.write and verdict == .absent)) break :access null;
+                    break :access try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ read.name, member });
+                }
+                verdict = classify(read.name, realm);
+                break :access if (verdict == .available or read.probe) null else read.name;
+            };
+            const text = access orelse continue;
+            const at = @TypeOf(e.*).inSibling(path, bytes, read.offset, read.len);
+            switch (verdict) {
+                .available, .absent => try e.reportInFile(.worker_realm_violation, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`, which is not proved available there.", .{ @tagName(realm), text }),
+                .dynamic_code => try e.reportInFile(.worker_realm_violation, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`, which runs code the realm check cannot see. Dynamic code is refused there.", .{ @tagName(realm), text }),
+                .import_scripts => try e.reportInFile(.module_worker_import_scripts, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`. A module worker has no `importScripts`, so it would throw `TypeError`. Use an ordinary static import.", .{ @tagName(realm), text }),
+            }
             return true;
         }
     }
@@ -175,6 +370,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
     if (e.options.library) return;
     const realm = e.options.platform.entry_host;
     if ((realm == .dedicatedWorker or realm == .sharedWorker or realm == .serviceWorker or realm == .unknown) and try refusePageGlobals(e, module, decl)) return;
+    if ((realm == .dedicatedWorker or realm == .sharedWorker or realm == .serviceWorker) and try refuseSiblings(e)) return;
     if (!e.graph().has_native_bindings) return;
     const forbidden = Operations.bit(realm);
     const root_mask = e.session.checked.dispatch[module.int()].effectDecl(decl);

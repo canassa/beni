@@ -10856,6 +10856,14 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    (`f=window`, on `browser-inline`), `emit/release/core/GlobalWindow` (`globalThis.window`, on
    `node`).
 
+   *Amended 2026-11-07 (#2207).* In a build for a browser worker realm, a name of
+   `bare_globals` is bare only when it is on that realm's global object
+   (`RealmCheck.onWorkerGlobal`, `workers.md` §4, *The worker global allow-list*). A bare
+   `document` throws `ReferenceError` in a worker where `globalThis.document` reads `undefined`,
+   so `Js.isUndefined (Js.global "document")` printed `document===undefined` and crashed the
+   worker it was written to probe. Every other build prints exactly as before. Fixtures:
+   `emit/release/dedicated/RealmProbe`, `browser/dedicated/RealmProbeSafe`.
+
 4. **A for-each is a `forâ¦of`.** `Js.each xs f` (`boundary.md` Â§4.2) is the statement
    `for (const x of xs) â¦` (JsIr's `for_of`): with a lambda of one parameter that cannot suspend,
    the lambda's body, discarded, is the loop's body and its parameter the loop variable â

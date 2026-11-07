@@ -116,6 +116,11 @@ pub const Scan = struct {
     /// No imports, initialization, helpers or unclassified exports can
     /// produce a type exposed by one of this module's inert exports.
     only_inert_exports: bool = false,
+    /// Every name the file binds anywhere — a declaration's, a parameter's,
+    /// a pattern's, an import's — with no scopes, as check 3 reads it. The
+    /// realm check of a worker build (`RealmCheck.refuseSiblings`) takes a
+    /// name bound here as the file's own, except a host's.
+    bound: std.StringHashMapUnmanaged(void) = .empty,
 };
 
 /// Scan `source`. Everything returned is owned by `arena`.
@@ -202,7 +207,7 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
         try seen.put(arena, reference.text, {});
         try unbound.append(arena, reference);
     }
-    return .{ .exports = exports.items, .unbound = unbound.items, .relative_imports = relative.items, .only_inert_exports = onlyInertExports(items) };
+    return .{ .exports = exports.items, .unbound = unbound.items, .relative_imports = relative.items, .only_inert_exports = onlyInertExports(items), .bound = bound };
 }
 
 /// A specifier that names a file relative to this one. A BARE specifier —

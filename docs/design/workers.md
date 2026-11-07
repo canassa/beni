@@ -268,9 +268,10 @@ aliasing, passing the receiver as an argument, storing it, a computed member,
 or writing through it. Literal `globalThis`/`self` member chains are checked
 by the same rule, including receiver-valued `self`, `globalThis`, `location`
 and `navigator` members; returning those handles does not bypass the rule.
-For globalThis/self, page-only names are refused. Animation frame request
-and cancellation are allowed in dedicated workers, but not shared or service
-workers. WorkerLocation permits its readonly URL components and stringifier,
+For globalThis/self, page-only names are refused (since 2026-11-07, every
+name not on the realm's global object: *The worker global allow-list* below).
+Animation frame request and cancellation are allowed in dedicated workers, but
+not shared or service workers. WorkerLocation permits its readonly URL components and stringifier,
 not navigation methods or writes. WorkerNavigator members follow the worker
 exposures in the pinned Webref IDL, including its included mixins; Window-only
 members and unknown/computed members are refused. Existing direct
@@ -292,6 +293,81 @@ semantics) and use `location.href` in a worker. Shared sources already have
 separate per-entry output copies. Unknown-entry cache facts stay symbolic;
 only `--library` output may retain a `typeof document` fallback. Existing
 `Js.global` semantics and runtime realm probes are unchanged.
+
+### The worker global allow-list, 2026-11-07 — #2206, #2207
+
+The landing's list of 13 page-only names was a deny-list: every other
+Window-only global (`alert`, `parent`, `DOMParser`, `matchMedia`,
+`requestIdleCallback`, …) built and threw at run time. The check is now an
+allow-list per realm. In a worker build, a kept `Js.global` name, a literal
+member of `globalThis` or `self`, and a free name of a kept sibling are
+accepted only when the name is on that worker realm's global object.
+
+**The list.** `src/js/WorkerGlobals.zig` is one generated table: each name and
+the worker realms (dedicated, shared, service) whose global object has it.
+`scripts/worker-globals.mjs` builds it from the pinned Webref IDL 3.86.0
+(`research/workers/webref-idl-3.86.0.tgz`, parsed with webidl2 24.5.0) and the
+global object of ECMA-262 (2025, §19 and Annex B.2.1) and ECMA-402 (`Intl`).
+A name is on a realm's global object when it is an interface object or a
+namespace exposed in that realm (`[Exposed]` against the realm's `[Global]`
+names; `[LegacyNoInterfaceObject]` excluded), or a non-static member of the
+realm's global interface (`DedicatedWorkerGlobalScope`,
+`SharedWorkerGlobalScope`, `ServiceWorkerGlobalScope`), of its ancestors
+(`WorkerGlobalScope`, `EventTarget`) or of a mixin they include
+(`WindowOrWorkerGlobalScope`, `AnimationFrameProvider`, …), member and
+partial `[Exposed]` applied. The emitter's own bootstrap global,
+`__beniWorkerFingerprint`, is accepted too. The `location` and `navigator`
+member lists above are unchanged.
+
+**Dynamic code.** `Function` and `eval` are on every global object, but code
+they run is invisible to the check (`workers-api.md` §5), so a kept use is
+`worker_realm_violation`. A code string reaching dynamic code by another
+route — a `constructor` member, `setTimeout` with a string — is not closed by
+this syntactic check: a computed member of an arbitrary value is ordinary
+data access. #2211 tracks it.
+
+**`importScripts`.** A module worker has no usable `importScripts`; a kept
+use, bare or as a `globalThis`/`self` member, is
+`module_worker_import_scripts` (§6's table).
+
+**Existence probes.** `Js.isUndefined (Js.global "N")` stays a runtime probe
+for any name that is not a receiver. One more form is a probe: a local bound
+directly to `Js.global "N"`, N absent from the realm, whose every read is the
+subject of `Js.isUndefined` or of `Js.typeIs` with a literal type other than
+`"undefined"`, or lies in the arm that probe proves N present (`False` for
+the first, `True` for the second). The local is then read only where N
+exists. Core's macrotask scheduler probes Node's `setImmediate` this way.
+A read outside that arm is refused. This is a def-use check of one binding,
+not an alias analysis: any other use of the local refuses it.
+
+**Siblings.** Hand-written JavaScript a worker build keeps — the sibling of a
+module with a kept `foreign`, cut to the kept exports as `--release` cuts it
+(`backend.md` §9) — gets the same rule over the names its surviving code reads
+free (`Minify.globalReads`), template substitutions included: a free name, or
+a literal `globalThis.N`/`self.N`, must be on the list; `location`/`navigator`
+members follow their lists; `typeof N` and a comparison of `N` or
+`globalThis.N` with `undefined` are probes; a write `globalThis.N = …` and
+`globalThis.M.bind(globalThis)` for M on the list cannot throw and are
+accepted (beni code still may not write through a receiver); `Function`, `eval` and
+`importScripts` are refused as above; a surviving `import` is refused,
+because the imported module is not checked; a file the tokenizer or
+elimination cannot read exactly is refused. Bindings are check 3's
+(`boundary.md` §4): a name the file binds anywhere is its own everywhere, with
+no scopes, so a host name bound in one function and read free in another is
+not seen. A generated native binding's sibling is not read: its realm set is
+its binding metadata, proved by the native pass. The alternative — each
+sibling export declaring its realm — needs syntax and is the owner's decision;
+#2211 records it.
+
+**Release output.** A release worker writes a host global bare only when it is
+on the realm's list (`backend.md` §9 item 8, amended 2026-11-07); otherwise it
+keeps `globalThis.N`, which reads `undefined` where a bare N would throw.
+Page output does not change.
+
+Fixtures: `build/bad/dedicated/RealmJ*` (each refused access, siblings and
+`importScripts` included), `browser/dedicated/RealmProbeSafe` and
+`RealmAvailableSafe` (Chrome, development and release),
+`emit/release/dedicated/RealmProbe`.
 
 ### Evidence and decision
 
@@ -391,6 +467,7 @@ report obsolete_host_promise instead of silently extending page authority.
 | Diagnostic | Site and required explanation |
 |---|---|
 | worker_realm_violation | Native operation or type, entry realm, allowed realms and shortest inferred call or evidence chain |
+| module_worker_import_scripts | Kept `importScripts` (bare, as a `globalThis`/`self` member, or in a kept sibling) and the entry realm; use a static import |
 | type mismatch | Wrong generated receiver or selector; show expected native type and explicit upcast when applicable |
 | unknown symbol | Misspelled generated operation, with the owning interface and suggestion |
 | worker_callback_contract_unresolved | Callback parameter and forwarding path whose entry obligation remains unproved |

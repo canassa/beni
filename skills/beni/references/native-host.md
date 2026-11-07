@@ -37,9 +37,23 @@ worker checks are under construction.
 
 Design: `workers.md` §4; `workers-native-bindings.md`.
 
-A worker build checks its retained code for page-only globals after dead-code
-removal. `worker_realm_violation` names the offending kept declaration and
-access. Computed names and passing `Js.global` as a value are unproved. A worker
+A worker build checks its retained code after dead-code removal. A kept
+`Js.global` name, a `globalThis` or `self` member and a free name in a kept
+sibling `.js` file must be on the global object of that worker realm. The
+list comes from the WebIDL of the web platform and the ECMAScript globals.
+`worker_realm_violation` names the offending kept declaration or file and
+access. Computed names and passing `Js.global` as a value are unproved.
+`Function` and `eval` are refused in a worker, because the check cannot see
+the code that they run. `importScripts` reports
+`module_worker_import_scripts`: a module worker does not have it. Use a
+static import.
+
+`Js.isUndefined (Js.global "name")` is a runtime probe. A local set to
+`Js.global "name"` is a probe too when each read of it is the subject of
+`Js.isUndefined` or `Js.typeIs`, or is in the branch where the probe proves
+the name exists. A release worker writes `globalThis.name` for a name that
+the realm does not have, so the probe gives the same result as in
+development. A worker
 has its own `location` and `navigator`: `location.href` and navigator language
 reads work, but Location navigation methods do not. Unused page declarations
 are allowed. This adds no runtime guard.
