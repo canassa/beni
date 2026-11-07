@@ -1,0 +1,36 @@
+-- Kept beni code hands `setTimeout` a lambda, a declared function, a `let`
+-- function, a declared function through a `Js.from` wrapper and `Js.method`,
+-- and `self.setTimeout` a lambda: each is provably a function, so the worker
+-- builds and runs (#2211, `workers.md` §4).
+import Page
+import RealmJs
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → RealmJs.timerSafe ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ =
+    Page.text "waiting"
+    Page.button launch
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle Page.text
+            Worker.send handle "go"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start
