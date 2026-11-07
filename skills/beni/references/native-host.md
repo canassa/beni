@@ -32,8 +32,7 @@ helper with a portable callback.
 A platform declares the top entry realm with `entryHost`. Each `entryKinds`
 row declares its own realm. Without `entryHost`, an entry has an unknown realm
 and accepts only operations available in all known realms. The old `host: page` key reports
-`obsolete_host_promise`. Worker launch support remains gated while the other
-worker checks are under construction.
+`obsolete_host_promise`.
 
 Design: `workers.md` §4; `workers-native-bindings.md`.
 
