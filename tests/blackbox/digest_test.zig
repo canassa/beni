@@ -512,6 +512,9 @@ test "a private payload becoming a function moves the digest and removes tainted
 test "a private template that moves a type into a family reaches every importer's key" {
     // `ownership-v2.md` §2.1, *A family*: declarations decide the place graph,
     // private ones too, so a module that imports `Grown` reads another graph.
+    // This pins the premise and holds without families too: any private template
+    // change reaches the importers' keys. `Family.zig` adds no input of its own to
+    // hash, and `--ownership=v2` runs no cache yet, so no cached run tests it.
     const regular = leaf_source ++
         \\
         \\
