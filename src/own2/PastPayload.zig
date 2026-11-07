@@ -1,7 +1,8 @@
-//! L3: the payload a read runs past (`docs/design/ownership-v2.md` §2.1, *The
-//! exit rule*). A base's step has no name below a family's payload, and an
-//! empty reading tells a caller the object is fresh, so the value there is
-//! read whole, by the payload's slot.
+//! L3: the payload a read stands at or runs past (`docs/design/ownership-v2.md`
+//! §2.1, *The exit rule*). No context says at which depth a value starts below
+//! a family's payload, and a base's step has no name there, so what arrives is
+//! read whole: a reading by words may hit nothing, which tells a caller the
+//! object is fresh, or hit something at the wrong depth.
 //!
 //! Obligations kept here: none of §2.14's directly.
 
@@ -10,7 +11,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Replay = @import("Replay.zig");
 
-fn payload(pl: *const Place.Table, p: Ids.PlaceId) bool {
+pub fn payload(pl: *const Place.Table, p: Ids.PlaceId) bool {
     return pl.kind(p) == .@"var" and pl.steps(p).steps.len != 0;
 }
 

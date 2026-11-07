@@ -38,16 +38,14 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
     const full = try e.contracts.resCond(e.arena, c, e.read_mode == .reading);
     if (full.no or full.sel.len == 0) return full;
     // The plain slots of the check, as words from the call's root.
-    var plain: std.ArrayList([]const u32) = .empty;
+    var plain: std.ArrayList(u32) = .empty;
     defer plain.deinit(g);
     for (idx) |i| {
         if (Contract.isApart(ents[i].occ)) continue;
         // A whole subtree is plain at every slot below its top: every
         // occurrence may arrive there.
         if (Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) return instSel(e, full, call);
-        for (e.f.slots.items(e.f.leafAt(ents[i].leaf).slots)) |x| {
-            try plain.append(g, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
-        }
+        try plain.appendSlice(g, e.f.slots.items(e.f.leafAt(ents[i].leaf).slots));
     }
     // What arrives at the plain slots, read once for every occurrence:
     // the callee's result tree is walked once per plain slot, not once
@@ -57,7 +55,8 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
     var hits: std.ArrayList(Contract.Hit) = .empty;
     defer hits.deinit(g);
     var keys: std.ArrayList([]const u32) = .empty;
-    for (plain.items) |words| {
+    for (plain.items) |x| {
+        const words = e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x)));
         try e.charge(.cond, e.contracts.trees.count(h.res_root));
         hits.clearRetainingCapacity();
         try e.hitsAt(h.res_root, words, &hits);
@@ -66,11 +65,12 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
         for (hits.items) |hit| for (hit.arrivals) |a| {
             if (a.kind != .param) continue;
             // The arrival's slot is its own steps, then what the plain
-            // slot takes on below an open one.
-            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
+            // slot takes on below an open one; at a family's payload, all of it (§2.1).
+            const w = Subtree.wholeAt(e.places(), a, .from(x));
+            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), if (w != null) &.{} else words[hit.depth..] });
             try e.charge(.cond, @intCast(aw.len));
             try keys.append(e.arena, aw);
-            try mark(&reach, g, aw, if (a.deep) at_deep else at_slot);
+            try mark(&reach, g, aw, if ((w orelse a).deep) at_deep else at_slot);
             for (1..aw.len) |n| try mark(&reach, g, aw[0..n], below);
         };
     }

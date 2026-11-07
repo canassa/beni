@@ -1,0 +1,5 @@
+# # A family's payload says no depth, so an arrival is read whole: v2 refuses each (§2.1, The exit rule)
+139:16 list_still_used SanitiserFamilyDepth.inList
+140:22 list_still_used SanitiserFamilyDepth.inPair
+141:22 list_still_used SanitiserFamilyDepth.inMaybe
+142:22 list_still_used SanitiserFamilyDepth.inRecord

@@ -1,0 +1,57 @@
+-- The exit rule across a family of two heads (`ownership-v2.md` §2.1): `M` and `N` are one
+-- family, and the level `overM` adds is read from `overN`'s word. Refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type M a
+    = ML a
+    | MW (N (List a))
+
+
+type N a
+    = NL a
+    | NW (M a)
+
+
+one : a → List a
+one x = [ x ]
+
+
+overM : M a, a → M a
+overM m x =
+    case m of
+        ML _ →
+            ML x
+
+        MW n →
+            MW (overN n (one x))
+
+
+overN : N a, a → N a
+overN n x =
+    case n of
+        NL _ →
+            NL x
+
+        NW m →
+            NW (overM m x)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    z =
+        case overM (MW (NL [ [ 5 ] ])) k of
+            MW (NL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    Node.print (show z ++ "|" ++ show k)

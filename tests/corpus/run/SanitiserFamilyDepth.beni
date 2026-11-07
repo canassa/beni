@@ -1,0 +1,145 @@
+-- At a family's payload a word says no depth, so an arrival is read whole (`ownership-v2.md`
+-- §2.1, *The exit rule*). `over` hands `x` down one level per `TW` and sets it at the bottom:
+-- its summary says `π2` at `#1.0#0.0` with a sibling `fresh`, and `y` stands one word below.
+-- Followed by that word into the argument, `π2[*]` is an `Int` of `k`, the sibling reads as
+-- fresh, and `k` is edited in place. Each list here is `k`, and each write is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type T a
+    = TL a
+    | TW (T (List a))
+
+
+type U a
+    = UL a
+    | UW (U (a × a))
+
+
+type V a
+    = VL a
+    | VW (V (Maybe a))
+
+
+type R a
+    = RL a
+    | RW (R { v : a })
+
+
+one : a → List a
+one x = [ x ]
+
+
+pairOf : a → a × a
+pairOf x = ( x, x )
+
+
+over : T a, a → T a
+over t x =
+    case t of
+        TL _ →
+            TL x
+
+        TW u →
+            TW (over u (one x))
+
+
+overU : U a, a → U a
+overU u x =
+    case u of
+        UL _ →
+            UL x
+
+        UW w →
+            UW (overU w (pairOf x))
+
+
+overV : V a, a → V a
+overV u x =
+    case u of
+        VL _ →
+            VL x
+
+        VW w →
+            VW (overV w (Just x))
+
+
+overR : R a, a → R a
+overR u x =
+    case u of
+        RL _ →
+            RL x
+
+        RW w →
+            RW (overR w { v = x })
+
+
+inList : List Int → List Int
+inList k =
+    z =
+        case over (TW (TL [ [ 5 ] ])) k of
+            TW (TL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    z
+
+
+inPair : List Int → List Int
+inPair k =
+    z =
+        case overU (UW (UL ( [ 5 ], [ 6 ] ))) k of
+            UW (UL ( y, _ )) →
+                List.push y 9
+
+            _ →
+                []
+
+    z
+
+
+inMaybe : List Int → List Int
+inMaybe k =
+    z =
+        case overV (VW (VL (Just [ 5 ]))) k of
+            VW (VL (Just y)) →
+                List.push y 9
+
+            _ →
+                []
+
+    z
+
+
+inRecord : List Int → List Int
+inRecord k =
+    z =
+        case overR (RW (RL { v = [ 5 ] })) k of
+            RW (RL r) →
+                List.push r.v 9
+
+            _ →
+                []
+
+    z
+
+
+main : Program
+main =
+    k = [ 1 ]
+    Node.print
+        (show (inList k)
+            ++ show (inPair k)
+            ++ show (inMaybe k)
+            ++ show (inRecord k)
+            ++ "|"
+            ++ show k
+        )

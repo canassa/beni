@@ -32,6 +32,8 @@ pub const Name = enum {
     pessimistic_res_empty,
     /// O10 F: both arms of `PastPayload` off: a read past a payload stays empty.
     payload_read_off,
+    /// O10: a read at a payload follows the words below the arrival's entry.
+    payload_arrival_exact,
     /// O10: `PastPayload.prefix` off: a read past a payload finds no `var`.
     payload_prefix_off,
     /// O10: an empty read past a call's arrival or an arrival's suffix stays empty.

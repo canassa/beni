@@ -403,7 +403,9 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     }
     // Open: atoms and calls' results hold below it; anything else is its
     // projection at the slot, and each slot below through that slot's key.
-    for (opens) |a| {
+    for (opens) |a0| {
+        // At a family's payload, all of it at every depth (§2.1, *The exit rule*).
+        const a = Subtree.wholeAt(f.places, a0, cs) orelse a0;
         ls.clearRetainingCapacity();
         try e.ev.arrivalLeaves(call, c, a, &.{}, &ls);
         // What holds below the slot: an arrival by structure is the
