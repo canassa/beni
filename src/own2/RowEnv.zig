@@ -96,16 +96,14 @@ pub const Env = struct {
                 _ = try Draft.addArrival(list, env.arena, pr, .{ .kind = .param, .j = j, .slot = try env.rel(.from(s)), .deep = true });
                 continue;
             }
-            for (at.items) |q| {
-                const qr = try env.rel(.from(q));
-                if (env.isVar(.from(q))) try Draft.markOpen(list, env.arena, qr);
+            for (at.items) |q0| for ([_][]const Ids.PathId{ &.{.from(q0)}, try env.places.joinNames(env.gpa, env.arena, .growth(env.account), .from(q0)) }) |ps| for (ps) |q| {
+                const qr = try env.rel(q);
+                if (env.isVar(q)) try Draft.markOpen(list, env.arena, qr);
                 _ = try Draft.addArrival(list, env.arena, qr, arrival);
-                // Below where it lands, each result slot is that slot's
-                // steps taken inside the parameter (a cast read back is the
-                // part it was built from, §2.13.9): the slot is open, so a
-                // caller's slot below it takes its own steps on from `s`.
+                // Below where it lands, each result slot is that slot's steps inside the parameter
+                // (a cast read back, §2.13.9): open, so a caller's slot takes its own steps on.
                 if (wild) try Draft.markOpen(list, env.arena, qr);
-            }
+            };
         }
     }
 

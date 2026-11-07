@@ -5761,6 +5761,7 @@ L0  Ids  Counters  Scratch
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Once.zig` | 11 | what a closure's creation asks of what its code writes, split from `Eval` (§2.11.4) | Ids, Contract, Relation, Cells, Eval |
+| `Building.zig` | 11 | the subtrees the read-off describes once per place, with their memo, split from `Put` (§2.10, #2197) | Ids, Contract, Relation, Eval |
 | `Made.zig` | 11 | what a called code says of what its creation made: its `self` parameter (§2.11.3, #2028) | Ids, Slots, Value, Contract, Eval |
 | `CondsOff.zig` | 12 | the conditions of a contract, split from `ReadOff` (§2.10) | as `ReadOff` |
 | `CodeCaps.zig` | 12 | nested codes' captures, split from `Groups` (§2.11.4) | Ids |

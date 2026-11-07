@@ -34,6 +34,7 @@ const CallGraft = @import("CallGraft.zig");
 const Canon = @import("Canon.zig");
 const AtomGraft = @import("AtomGraft.zig");
 const Put = @import("Put.zig");
+const Building = @import("Building.zig");
 const Made = @import("Made.zig");
 const Host = @import("Host.zig");
 const Cells = @import("Cells.zig");
@@ -167,7 +168,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
         .site, .fresh => {
             try Put.arrive(s, q, try Made.made(s, l), out);
             // A closure's captures leave with it, reached by no structure here.
-            if (l.kind == .site and !(try s.described.getOrPut(e.gpa(), try Put.describedKey(s, li, q, out))).found_existing) for (e.w.closures.items) |cl| if (cl.inst == l.atom) for (f.kidsOf(f.val(cl.value))) |k| try describe(s, k, q, out);
+            if (l.kind == .site and !(try s.described.getOrPut(e.gpa(), try Building.describedKey(s, li, q, out))).found_existing) for (e.w.closures.items) |cl| if (cl.inst == l.atom) for (f.kidsOf(f.val(cl.value))) |k| try describe(s, k, q, out);
         },
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         // Unknown here, unknown below: no step of it is fresh (§2.1, a fold).
@@ -279,7 +280,7 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
         return err;
     };
     e.ev.cur_sub = saved;
-    if ((try s.described.getOrPut(e.gpa(), try Put.describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
+    if ((try s.described.getOrPut(e.gpa(), try Building.describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
     const held = try Held.atoms(f, try Put.resList(s, out), q);
     // The result slots of the key's items: the read's column.
     const col = try readDests(s, prefix, q);
@@ -339,13 +340,13 @@ fn acyclicBelow(s: *Sink, p: PlaceId) Error!bool {
 fn nodeOfValue(s: *Sink, v: u32, q: PathId, out: Put.ResList) Error!Contract.Node {
     const f = s.e.fr();
     const key: [6]u32 = .{ 1, v, 0, 0, f.places.pathPlace(q).int(), 0 };
-    if (Put.memoGet(s, key)) |n| return if (n == none) 0 else n;
+    if (Building.memoGet(s, key)) |n| return if (n == none) 0 else n;
     try s.nodes.put(s.e.gpa(), key, none);
     try f.charge(.inspection, 1);
-    try Put.begin(s, q);
+    try Building.begin(s, q);
     try valueBody(s, v, q, out, null);
-    const n = try Put.end(s);
-    try Put.memoPut(s, key, n);
+    const n = try Building.end(s);
+    try Building.memoPut(s, key, n);
     return n;
 }
 
@@ -381,7 +382,7 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     const t = &e.contracts.trees;
     const key: [6]u32 = .{ 2, call, which, n, f.places.pathPlace(q).int(), tags };
     // Below an open node a slot's key reads it too: no subtree is shared.
-    if (!above) if (Put.memoGet(s, key)) |m| return if (m == none) 0 else if (m == none - 1) null else m;
+    if (!above) if (Building.memoGet(s, key)) |m| return if (m == none) 0 else if (m == none - 1) null else m;
     // Every kid's step reaches a slot of both.
     const kids = try gpa.dupe([2]u32, t.kids(n));
     defer gpa.free(kids);
@@ -394,7 +395,7 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     }
     if (!above) try s.nodes.put(gpa, key, none);
     try f.charge(.inspection, 1);
-    try Put.begin(s, q);
+    try Building.begin(s, q);
     const here = try gpa.dupe(Contract.Arrival, t.here(n));
     defer gpa.free(here);
     const opens = try gpa.dupe(Contract.Arrival, t.open(n));
@@ -473,8 +474,8 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
         };
         try Put.emitPart(s, a[1], m, out);
     }
-    const m = try Put.end(s);
-    if (!above) try Put.memoPut(s, key, m);
+    const m = try Building.end(s);
+    if (!above) try Building.memoPut(s, key, m);
     return m;
 }
 
@@ -773,7 +774,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
         .call, .supply => {
             const one = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{sl}), .tags = l.tags });
             // Once a slot; a subtree described once per place has its memo.
-            if ((try s.described.getOrPut(gpa, try Put.describedKey(s, one, at, out))).found_existing) return;
+            if ((try s.described.getOrPut(gpa, try Building.describedKey(s, one, at, out))).found_existing) return;
             // The callee's arrivals there, its parameters renamed, never
             // replayed onto the arguments (`CallGraft`, §2.10).
             if (r.kind == .call and l.tags == 0 and e.w.code.called == null) {
@@ -857,12 +858,18 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     if (from != s.host.escs.items.len) while (i < s.host.told.items.len) : (i += 1) {
         const t = s.host.told.items[i];
         if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
-        const r = if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q));
-        const list = try Put.resList(s, .{ .label = t.label, .k = t.k });
-        try f.charge(.edge, 1);
-        const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
-        if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.wide or t.built, .{ .kind = .host }, 0);
+        try hostAt(e, t, if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q)));
+        if (!t.built) for (try Put.levelNames(s, .from(t.q))) |p| try hostAt(e, t, try f.slots.relOf(e.gpa(), f.account, f.places, p));
     };
+}
+
+/// A `host` arrival at slot `r` of what `t` was told of.
+fn hostAt(e: *Evaluation, t: Host.Told, r: Slots.Rel) Error!void {
+    const s = &e.sink;
+    const list = try Put.resList(s, .{ .label = t.label, .k = t.k });
+    try e.fr().charge(.edge, 1);
+    const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
+    if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.wide or t.built, .{ .kind = .host }, 0);
 }
 
 /// Whether an escape of the frame reaches own leaf `li` (a call's is said by

@@ -193,7 +193,7 @@ pub const PathNode = struct {
 };
 
 pub const PathInfo = packed struct(u32) {
-    depth: u29,
+    depth: u28,
     /// At or below a summary position: a `[*]` or a `⟲` on the way.
     summary: bool,
     /// The step re-entered a place on the path: the first return, a plain step (#1253),
@@ -201,6 +201,9 @@ pub const PathInfo = packed struct(u32) {
     ret: bool = false,
     /// A `⟲` on the way: else the path is its own canonical name (`Slots.canon`).
     levels: bool = false,
+    /// A `⟲` on the way past a path that is no sealed first return: the one
+    /// way `expandLevels` can name other paths. Set when the `⟲` is made.
+    joins: bool = false,
 };
 
 pub const Error = Ids.ChargeError;
@@ -794,6 +797,7 @@ pub const Table = struct {
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
         // A first return: a plain step back onto a place of the path.
         if (out == null and deepest != .none) t.paths.col.info[result.int()].ret = true;
+        if (t.pathStep(result).kind == .level and !(try t.sealed(charge, gpa, t.pathParent(result)))) t.paths.col.info[result.int()].joins = true;
         return result;
     }
 
@@ -849,6 +853,16 @@ pub const Table = struct {
         for (cur.items) |c| try appendNew(gpa, out, c);
     }
 
+    /// The other names of `p`: `expandLevels`'s, when a `⟲` on it is a join. Empty otherwise,
+    /// in one read of a column.
+    pub fn joinNames(t: *Table, gpa: Allocator, arena: Allocator, charge: Charge, p: PathId) Error![]const PathId {
+        if (!t.paths.col.info[p.int()].joins or @import("Mutate.zig").on(.level_join_kept)) return &.{};
+        var ps: std.ArrayList(PathId) = .empty;
+        defer ps.deinit(gpa);
+        try t.expandLevels(gpa, charge, p, &ps);
+        return if (ps.items.len == 1 and ps.items[0] == p) &.{} else arena.dupe(PathId, ps.items);
+    }
+
     fn appendNew(gpa: Allocator, list: *std.ArrayList(PathId), p: PathId) Allocator.Error!void {
         for (list.items) |x| if (x == p) return;
         try list.append(gpa, p);
@@ -865,7 +879,7 @@ pub const Table = struct {
         const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
         const pj = t.paths.col.jump[parent.int()];
         const jump = if (depth - 1 - t.pathDepth(pj) == t.pathDepth(pj) - t.pathDepth(t.paths.col.jump[pj.int()])) t.paths.col.jump[pj.int()] else parent;
-        const info: PathInfo = .{ .depth = @intCast(depth), .summary = summary, .ret = step.kind == .level, .levels = t.paths.col.info[parent.int()].levels or step.kind == .level };
+        const info: PathInfo = .{ .depth = @intCast(depth), .summary = summary, .ret = step.kind == .level, .levels = t.paths.col.info[parent.int()].levels or step.kind == .level, .joins = t.paths.col.info[parent.int()].joins };
         try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .info = info, .anchor_up = up, .jump = jump });
         return id;
     }

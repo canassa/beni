@@ -1,0 +1,3 @@
+# v2 refuses a write through a call's result held in a literal where the type has folded (§2.1, #2197)
+53:9 list_still_used SanitiserLevelSlotsNested.wr
+53:9 list_still_used SanitiserLevelSlotsNested.wr

@@ -1,0 +1,76 @@
+-- What a callback is handed is read as a result is (`ownership-v2.md` §2.1, #2197): the supply's slots land on a join, and `k` is at
+-- one of its level paths.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = E
+    | Leaf (List Int)
+    | N U
+
+
+type U
+    = X
+    | A T U
+    | B U T
+
+
+wr : T → Int
+wr t =
+    case t of
+        E →
+            0
+        Leaf xs →
+            List.length (List.push xs 1)
+        N u →
+            wrU u
+
+
+wrU : U → Int
+wrU u =
+    case u of
+        X →
+            0
+        A p q →
+            wr p + wrU q
+        B q p →
+            wrU q + wr p
+
+
+rd : T → Int
+rd t =
+    case t of
+        E →
+            0
+        Leaf xs →
+            List.length xs
+        N u →
+            rdU u
+
+
+rdU : U → Int
+rdU u =
+    case u of
+        X →
+            0
+        A p q →
+            rd p + rdU q
+        B q p →
+            rdU q + rd p
+
+
+hg : T → T
+hg x = N (B (A E (B X x)) E)
+
+
+run : T, (T → Int) → Int
+run x f = f (N (B (A E (B X x)) E))
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = run (N (A (N (B X (Leaf k))) X)) λy → wr y
+    Node.print (String.fromInt (a + List.length k))
