@@ -2235,7 +2235,13 @@ const Case = struct {
             detail("{s}: a build/bad fixture without its _expected.diag is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{c.fixture.name});
             return error.MissingDiagGolden;
         }
-        try c.expectGolden("diag", built.stderr);
+        // A shared test platform is passed by its absolute path (`tests/platforms/worker`),
+        // so a diagnostic in one of its files names the checkout: the golden holds the
+        // path from the repository root, which does not depend on where it lives (rule 5).
+        const repo_root = try std.fmt.allocPrint(c.arena, "{s}/", .{try Io.Dir.cwd().realPathFileAlloc(testing.io, ".", c.arena)});
+        const shared = if (c.fixture.platform) |p| std.fs.path.isAbsolute(p) else false;
+        const diag = if (shared) try std.mem.replaceOwned(u8, c.arena, built.stderr, repo_root, "") else built.stderr;
+        try c.expectGolden("diag", diag);
 
         // `ownership-checker.md` §28.10: an enforcing fixture whose golden
         // holds only the ownership checker's codes fails because lists are
