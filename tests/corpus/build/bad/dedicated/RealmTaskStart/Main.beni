@@ -27,7 +27,6 @@ worker =
             λ_ _ _ →
                 go ⊤
                 "done"
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

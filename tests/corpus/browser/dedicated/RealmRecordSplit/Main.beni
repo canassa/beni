@@ -17,7 +17,6 @@ worker =
         { init = λ_ _ → ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → actions.safe ⊤
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

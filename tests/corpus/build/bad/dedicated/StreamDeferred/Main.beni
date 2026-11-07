@@ -1,0 +1,17 @@
+-- Response streaming is deferred to #2186. The former field is refused.
+import Browser
+import Browser.Worker as Worker
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → Ok ⊤
+        , stream = λ_ _ _ _ → Ok ⊤
+        }
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → ⊤, update = λ_ model → model, view = λ_ → <main /> }

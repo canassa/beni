@@ -690,7 +690,6 @@ pub next : Stream error a → Result (ReadError error) (Step a)
 pub value : Chunk a → a
 pub release : Chunk a → ⊤
 pub take : Chunk a → a
--- suspends; body consumes a borrowed value; release occurs even on cancellation.
 ```
 
 ## 8. Inventory-to-API correspondence
@@ -709,7 +708,7 @@ or a reason it is internal; native type-specific failures remain research §9.
 | WorkerGlobalScope self/location/navigator | Context + WorkerGlobal snapshots; no exposed Js.Value |
 | WorkerGlobalScope language/online/offline events | WorkerGlobal.onLanguageChange/onConnectivityChange/unlisten |
 | WorkerGlobalScope error/unhandledrejection/rejectionhandled | Runtime fatal report/housekeeping; raw promises are not public beni values |
-| Dedicated scope name/postMessage/close/message/messageerror | WorkerGlobal.name/close and Context.emit, return values/stream sinks; callers use handle events/await; messageerror typed at every receiver |
+| Dedicated scope name/postMessage/close/message/messageerror | WorkerGlobal.name/close and Context.emit, return values; callers use handle events/await; messageerror typed at every receiver |
 | Shared scope name/close/connect | WorkerGlobal.name/close and SharedWorker per-connection accept runtime; exposing an untyped connect callback would bypass protocol validation |
 | WorkerLocation all readonly attributes/stringifier | WorkerGlobal.Location including href; no navigation APIs added |
 | WorkerNavigator ID/language/online/concurrency mixins | WorkerGlobal.Navigator fields; other partials retain their owning module APIs and exposure checks |
@@ -726,7 +725,7 @@ or a reason it is internal; native type-specific failures remain research §9.
 | ServiceWorker/container/registration/global/clients/cache/fetch/extendable events | Decided #1301: separate event-lifetime design; Dedicated and Shared do not wait |
 | Every serializable/transferable family including Wasm | Wire/prepare/clone + native owning module contracts; not seven duplicated constructor families |
 | Atomics/SAB | Binary typed atomic/shared APIs, same realm/ownership judgments; no synchronous worker RPC |
-| Pools and streaming | WorkerPool and WorkerStream signatures above, additional managed protocol rather than fake native methods |
+| Pools and streaming | WorkerPool proposal above; response streaming deferred to #2186 |
 
 Raw receiving APIs retain MessageEvent metadata through the signatures above.
 The following declarations belong to Browser.Worker:
@@ -762,16 +761,14 @@ no transferred ports. Schema failures close all newly received resources before
 returning ProtocolRejected. Event listeners and queued messages are scope-owned,
 so dropping a consumer cannot leak native endpoints.
 
-The [complete examples](workers-example.md) include the direct and Elm-shaped
-programs and the same page lifecycle. Machine command completion settles an
-unanswered token as channel-close after cleanup. respond/finish reserve a
+The streaming [examples](workers-example.md) are deferred to #2186. Machine command completion settles an
+unanswered token as channel-close after cleanup. respond reserves a
 terminal result and transfer its resources to the coordinator; they report
 TerminalClosed or TerminalPreparationFailed only, not a later native send
 failure. After the command, its child scopes and finalizers complete, the
 coordinator commits the reserved send. A preparation/native-send failure uses
 TransportFailure/lost-peer settlement; no self-join or early success reply.
-Root perform commands belong to init/subscription scope, while performFor and
-performStream remain request-scoped. Dispatched command messages retain their
+Root perform commands belong to init/subscription scope, while performFor remains request-scoped. Dispatched command messages retain their
 owning context; the serial request completes after its command queue drains.
 
 Port.Prepared and PreparedBroadcast also bind their exact endpoint generation
@@ -786,21 +783,13 @@ A call-only API can name its grouped types without inventing a stream request:
 ```text
 pub type alias CallsOnly = Worker.Protocol Call Int ⊥ Error Event ⊥
 pub calls : Worker.Program (List Int) Model CallsOnly
-calls = Worker.program { init = init, start = start, handle = handle, stream = Worker.noStream }
+calls = Worker.program { init = init, start = start, handle = handle }
 ```
 
-This fragment uses the example's Call, Error, Event and Model names,
-not a second protocol value. `Worker.stream handle (Frames 1)` on a CallsOnly
-handle is refused with the ordinary type mismatch: expected ⊥, got StreamRequest.
-
-
-The library implements noStream by eliminating its third argument with never.
-It implements noStreamRequest by eliminating its first argument. Both are pure
-and satisfy the inferred borrow and sync contracts. Use noStream with program
-or concurrent, including SharedWorker. Use noStreamRequest for the stream field
-of machine, including SharedWorker.machine. These are ordinary library values;
-they introduce no syntax or new language feature. The resulting protocol has
-bottom stream request and chunk types, so stream cannot be called with a value.
+This fragment uses the former example's Call, Error, Event and Model names.
+The bottom slots reserve the unchanged protocol grouping for future response
+streaming; they do not publish a stream callback or operation. No noStream
+placeholder is needed. The response-stream surface is deferred to #2186.
 
 ### Options audit
 

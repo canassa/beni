@@ -16,7 +16,6 @@ worker =
             λ_ _ _ →
                 Probe.defect ⊤
                 Task.never ⊤
-        , stream = Worker.noStream
         }
 
 

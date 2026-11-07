@@ -17,7 +17,6 @@ worker =
                 _ = Worker.emit context "busy"
                 Probe.spin ⊤
                 Ok ⊤
-        , stream = Worker.noStream
         }
 
 

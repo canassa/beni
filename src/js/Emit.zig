@@ -3100,8 +3100,8 @@ const Emitter = struct {
         });
         if (extension.iface.term(extension.at).tag != .empty_record) return false;
         const fields = view.iface.range(term.lhs);
-        const names: []const []const u8 = if (machine) &.{ "init", "update", "subscriptions", "request", "stream" } else &.{ "init", "start", "handle", "stream" };
-        const arities: []const u32 = if (machine) &.{ 2, 3, 1, 2, 2 } else &.{ 2, 2, 3, 4 };
+        const names: []const []const u8 = if (machine) &.{ "init", "update", "subscriptions", "request" } else &.{ "init", "start", "handle" };
+        const arities: []const u32 = if (machine) &.{ 2, 3, 1, 2 } else &.{ 2, 2, 3 };
         if (fields.len != names.len * 2) return false;
         for (names, arities) |name, arity| {
             var found = false;

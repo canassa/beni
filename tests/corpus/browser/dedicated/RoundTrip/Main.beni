@@ -22,7 +22,6 @@ worker =
         { init = λ_ _ → ⊤
         , start = λ_ _ → ⊤
         , handle = λmessage _ _ → workerOnly ++ message
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

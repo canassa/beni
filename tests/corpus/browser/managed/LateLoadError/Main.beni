@@ -9,7 +9,7 @@ import Task
 worker : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥)
 worker =
     Worker.program
-        { init = λ_ _ → Ok ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Ok ⊤, stream = Worker.noStream }
+        { init = λ_ _ → Ok ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Ok ⊤ }
 
 
 type Msg

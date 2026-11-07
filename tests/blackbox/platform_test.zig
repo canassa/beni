@@ -1512,7 +1512,7 @@ test "generic entry runtime requires a closed callback record" {
         const start = try w.read("platform/Start.beni");
         try w.write("platform/Start.beni", try std.fmt.allocPrint(
             w.arena.allocator(),
-            "{s}\npub construct : {{ {s}init : (Int, Int → Int), start : (Int, Int → Int), handle : (Int, Int, Int → Int), stream : (Int, Int, Int, Int → Int) }} → Program\nconstruct _ = Program \"callback\"\n",
+            "{s}\npub construct : {{ {s}init : (Int, Int → Int), start : (Int, Int → Int), handle : (Int, Int, Int → Int) }} → Program\nconstruct _ = Program \"callback\"\n",
             .{ start, if (open) "r | " else "" },
         ));
         try w.write("platform/beni.json",
@@ -1732,9 +1732,9 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
         \\import Page
         \\import Worker
         \\a : Worker.Program String String ⊤
-        \\a = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleA, stream = λ_ _ _ _ → ⊤ }
+        \\a = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleA }
         \\b : Worker.Program String String ⊤
-        \\b = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleB, stream = λ_ _ _ _ → ⊤ }
+        \\b = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleB }
         \\handleA : String, ⊤, ⊤ → String
         \\handleA message _ _ =
         \\    if message == "shared" then handleB message ⊤ ⊤
@@ -1808,7 +1808,7 @@ test "worker runtime factories are diagnosed before writing any output" {
         \\import Worker
         \\
         \\factory : ⊤ → Worker.Program String String ⊤
-        \\factory _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\factory _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message }
         \\
         \\start : ⊤ → ⊤
         \\start _ =
@@ -1841,7 +1841,7 @@ test "worker launch URLs stay relative to their module under release specializat
     try w.write("Nested/Open.beni",
         \\import Worker
         \\worker : Worker.Program String String ⊤
-        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message }
         \\pub open : ⊤ → ⊤
         \\open _ =
         \\    _ = Worker.open worker
@@ -1853,7 +1853,7 @@ test "worker launch URLs stay relative to their module under release specializat
         \\import Worker
         \\import Nested.Open
         \\worker : Worker.Program String String ⊤
-        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message }
         \\start : ⊤ → ⊤
         \\start _ =
         \\    _ = Worker.open worker
@@ -1907,7 +1907,7 @@ test "worker Wire rejects function fields and native values" {
         // Expose the native alias from the same platform as the transport.
         const worker = try w.read("platform/Worker.beni");
         try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n", .{worker}));
-        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\n{s}main : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open {s}\n    ⊤)\n", .{
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\" }}\n{s}main : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open {s}\n    ⊤)\n", .{
             if (scenario.generic) "a" else scenario.message,
             if (scenario.generic) try std.fmt.allocPrint(w.arena.allocator(), "specific : Worker.Program {s} String ⊤\nspecific = worker\n", .{scenario.message}) else "",
             if (scenario.generic) "specific" else "worker",
@@ -1946,7 +1946,7 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
         try w.write("Forward.beni",
             \\import Worker
             \\worker : Worker.Program a String ⊤
-            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok" }
             \\pub forward : a → ⊤
             \\forward value =
             \\    case Worker.open worker of
@@ -2005,7 +2005,7 @@ test "worker Wire follows opaque payload layouts across warm caches" {
         \\import Box
         \\import String
         \\worker : Worker.Program Box.Box Box.Box ⊤
-        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message }
         \\main : Page.Program
         \\main = Page.program (λ_ →
         \\    case Worker.open worker of
@@ -2148,7 +2148,7 @@ test "worker kept-code globals refuse raw page access through indirect routes" {
             \\import Worker
             \\import Probe
             \\worker : Worker.Program String String ⊤
-            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Probe.read 0, stream = λ_ _ _ _ → ⊤ }
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Probe.read 0 }
             \\main : Page.Program
             \\main = Page.program (λ_ →
             \\    _ = Worker.open worker
@@ -2204,7 +2204,7 @@ test "worker kept-code globals preserve shared reads and resolve private entry s
         \\import Worker
         \\import Probe
         \\worker : Worker.Program String String ⊤
-        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Probe.read 0, stream = λ_ _ _ _ → ⊤ }
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Probe.read 0 }
         \\main : Page.Program
         \\main = Page.program (λ_ →
         \\    _ = Probe.read 0

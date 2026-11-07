@@ -25,7 +25,6 @@ worker =
                 tail = List.drop request 1
                 _ = Worker.emit context tail
                 if List.head request == Just 0 then Err tail else Ok tail
-        , stream = Worker.noStream
         }
 
 

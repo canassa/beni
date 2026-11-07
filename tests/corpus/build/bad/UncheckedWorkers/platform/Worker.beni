@@ -8,7 +8,6 @@ pub type Program
         { init : (⊤, ⊤ → ⊤)
         , start : (⊤, ⊤ → ⊤)
         , handle : (String, ⊤, ⊤ → String)
-        , stream : (⊤, ⊤, ⊤, ⊤ → ⊤)
         }
 
 
@@ -24,7 +23,6 @@ pub program :
       { init : (⊤, ⊤ → ⊤)
       , start : (⊤, ⊤ → ⊤)
       , handle : (String, ⊤, ⊤ → String)
-      , stream : (⊤, ⊤, ⊤, ⊤ → ⊤)
       }
     → Program
 program callbacks = Program callbacks

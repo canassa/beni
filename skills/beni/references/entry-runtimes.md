@@ -18,4 +18,13 @@ Give each Program declaration a concrete wire message type.
 `worker_message_not_concrete` names a wire role and its unresolved type variable.
 This also applies to a variable inside a List or a tagged type.
 
-Sources: `docs/design/workers.md` §3, §5; `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5.
+## Worker script policies
+
+Trusted Types policies are owned: validate a name with `Worker.policyName`,
+create its policy with `Worker.policy`, resolve a URL with `Worker.scriptUrl`,
+and allow it with `Worker.trust policy url allow`. The synchronous `allow`
+callback runs normally; a thrown exception is a defect. Pass a policy through
+`Worker.options.policy`. A foreign default Trusted Types policy returns
+`PolicyRefused` without calling it, even if it would return an empty string.
+
+Sources: `docs/design/workers.md` §3, §5, §6, §9; `docs/design/workers-api.md` §1, §7; `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5.

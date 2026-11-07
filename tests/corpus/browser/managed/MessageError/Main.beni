@@ -13,7 +13,6 @@ worker =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → Task.never ⊤
-        , stream = Worker.noStream
         }
 
 

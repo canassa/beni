@@ -24,5 +24,4 @@ relay =
                     Err _ →
                         Worker.reply (0 - 1)
         , handle = λ_ _ _ → 0
-        , stream = λ_ _ _ _ → ⊤
         }

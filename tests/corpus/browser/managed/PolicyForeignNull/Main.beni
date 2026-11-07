@@ -1,0 +1,54 @@
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+worker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state request → Ok (state ++ request)
+        }
+
+
+exercise : ⊤ → String
+exercise ⊤ = Task.scope λowner →
+    Probe.arm "null"
+    case Worker.open owner worker "config" Worker.options of
+        Ok handle →
+            _ = Worker.close handle
+            "unexpected open;" ++ Probe.observation ⊤
+        Err error →
+            case error.reason of
+                Worker.ScriptPolicy (Worker.PolicyRefused _) →
+                    "foreign refused;" ++ Probe.observation ⊤
+                _ →
+                    "wrong refusal"
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

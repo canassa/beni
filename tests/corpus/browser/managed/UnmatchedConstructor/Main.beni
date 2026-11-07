@@ -12,7 +12,6 @@ worker =
         { init = λ_ config → Ok config
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → Ok "unexpected"
-        , stream = Worker.noStream
         }
 
 

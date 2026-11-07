@@ -30,7 +30,6 @@ worker =
                         )
                         0
                 "scheduled"
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

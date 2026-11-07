@@ -8,5 +8,4 @@ sub =
         { init = λ_ _ → ⊤
         , start = λ_ _ → ⊤
         , handle = λxs _ _ → List.sum xs
-        , stream = λ_ _ _ _ → ⊤
         }

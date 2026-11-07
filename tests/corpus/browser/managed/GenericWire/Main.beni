@@ -23,7 +23,6 @@ echo =
                 Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ message → Ok message
-        , stream = Worker.noStream
         }
 
 
@@ -33,7 +32,6 @@ nested =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ message → Ok (List.drop message 1)
-        , stream = Worker.noStream
         }
 
 
@@ -47,7 +45,6 @@ enveloped =
                 case message of
                     Envelope value items _ →
                         Ok (Envelope value (List.drop items 1) ( value, "worker" ))
-        , stream = Worker.noStream
         }
 
 
@@ -68,7 +65,6 @@ packet =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ message → Ok message
-        , stream = Worker.noStream
         }
 
 
@@ -79,7 +75,6 @@ row =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ message → Ok message
-        , stream = Worker.noStream
         }
 
 

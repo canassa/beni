@@ -17,7 +17,6 @@ child =
                 Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ request → Ok request
-        , stream = Worker.noStream
         }
 
 
@@ -37,7 +36,6 @@ parent =
                         Probe.defect ⊤
                     Err _ →
                         Err "nested open failed"
-        , stream = Worker.noStream
         }
 
 

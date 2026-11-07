@@ -17,7 +17,6 @@ worker =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ values → Ok (List.sum values)
-        , stream = Worker.noStream
         }
 
 

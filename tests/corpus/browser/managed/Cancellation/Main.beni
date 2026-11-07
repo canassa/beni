@@ -44,7 +44,6 @@ worker =
                                 ⊤
                             )
                             λ_ → Task.never ⊤
-        , stream = Worker.noStream
         }
 
 

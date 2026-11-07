@@ -12,7 +12,6 @@ worker =
         { init = λ_ _ → Ok (Probe.snapshot ⊤)
         , start = λ_ _ → ⊤
         , handle = λ_ state _ → Ok state
-        , stream = Worker.noStream
         }
 
 

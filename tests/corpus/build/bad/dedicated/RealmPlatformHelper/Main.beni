@@ -12,7 +12,6 @@ worker =
             λmessage _ _ →
                 Page.text message
                 message
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

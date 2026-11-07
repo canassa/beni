@@ -41,7 +41,6 @@ worker =
                 _self = WorkerGlobalScope.self ⊤
                 _timer = Timers.setTimeout (λ_ → ⊤) 0
                 encode message ++ ignore unreachable
-        , stream = λ_ _ _ _ → ⊤
         }
 
 
