@@ -105,6 +105,7 @@ pub type CallError error
     | Transport TransportError
 pub type EmitError = EventQueueFull | EventChannelClosed | EventTargetRequired | EventCloneRejected CloneFailure | EventCanvasTransferInvalidState
 pub type TerminalError = TerminalClosed | TerminalPreparationFailed PrepareError
+pub type WriteError = SinkClosed | ConsumerCancelled | ChunkTooLarge | ChunkSendFailed SendError
 
 pub type alias Options =
     name : String
@@ -150,6 +151,9 @@ pub call : Handle (Protocol call reply streamRequest error event chunk), call �
 -- suspends; opens the producer scope, returns once admitted, not after exhaustion.
 pub stream : Handle (Protocol call reply streamRequest error event chunk), streamRequest
     → Result (CallError error) (Stream (CallError error) chunk)
+-- suspends; response-stream producer and consumer operations.
+pub write : Sink error chunk, chunk → Result WriteError ⊤
+pub cancelStream : Stream error a → Cleanup
 -- impure; one consumer per connection, repeated access returns the same stream.
 pub events : Handle (Protocol call reply streamRequest error event chunk) → Stream TransportError event
 -- impure, synchronous codec/commit path; prepared inputs are consumed.
@@ -686,6 +690,15 @@ runs in the opener fiber and may suspend before starting its worker.
 
 ## 7. Browser.WorkerStream
 
+*Amended 2026-11-07, owner decision (#2129).* `write`, `cancelStream` and
+`WriteError` live in `Browser.Worker`. Worker already imports WorkerStream for
+Stream/Sink; placing a write error containing Worker.SendError and a cancellation
+result of Worker.Cleanup back in WorkerStream would create an import cycle.
+Existing WorkerStream types, constructors and operations, and existing Worker
+names, keep their owners. Aliases cannot preserve constructor re-exports or the
+module used for receiver-method lookup, so no type-moving or language workaround
+is introduced. Use `Worker.write sink value` and `Worker.cancelStream stream`.
+
 Streams carry data until End and have exactly one consumer. Credits count
 bytes as well as chunks. Pull acknowledges the prior chunk only when the
 consumer explicitly releases it, so receipt alone cannot defeat back-pressure.
@@ -693,13 +706,10 @@ consumer explicitly releases it, so receipt alone cannot defeat back-pressure.
 ```text
 import Browser.Worker as Worker
 -- Opaque: Stream error a; Sink error a; Chunk a
-pub type WriteError = SinkClosed | ConsumerCancelled | ChunkTooLarge | ChunkSendFailed Worker.SendError
 pub type ReadError error = Failed error | StreamClosed | StreamUnresponsive
 pub type Step a = Item (Chunk a) | End
 -- suspends
 pub next : Stream error a → Result (ReadError error) (Step a)
-pub write : Sink error a, a → Result WriteError ⊤
-pub cancel : Stream error a → Worker.Cleanup
 -- impure
 pub value : Chunk a → a
 pub release : Chunk a → ⊤
