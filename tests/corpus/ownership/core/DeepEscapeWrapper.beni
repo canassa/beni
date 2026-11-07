@@ -1,0 +1,63 @@
+-- ownership (core): a whole record a callee keeps escapes with everything it
+-- reaches (#2179, `ownership-checker.md` §31.8). `keepRef` and `keepGlobal`
+-- store `model` behind `Js.ref` and `Js.set`, so their summaries say `model`
+-- escapes whole. Its type holds no list, but that does not make the escape
+-- shallow: the holder may read `model.form` later, so the update of `form`
+-- after the call is refused, as it is when the store is written inline.
+-- `readName` keeps nothing, so the update after it is accepted.
+import Js
+
+
+type alias Form =
+    name : String
+
+
+type alias Model =
+    form : Form
+
+
+keepRef : Model → Js.Ref Model
+keepRef model = Js.ref model
+
+
+keepGlobal : Model → ⊤
+keepGlobal model = Js.set (Js.global "globalThis") "kept" (Js.from model)
+
+
+readName : Model → String
+readName model = model.form.name
+
+
+pub viaRef : Model → Js.Ref Model × Form
+viaRef model =
+    ref = keepRef model
+    form = model.form
+    ( ref, { form | name = "new" } )
+
+
+pub viaSet : Model → Form
+viaSet model =
+    keepGlobal model
+    form = model.form
+    { form | name = "new" }
+
+
+pub inlineRef : Model → Js.Ref Model × Form
+inlineRef model =
+    ref = Js.ref model
+    form = model.form
+    ( ref, { form | name = "new" } )
+
+
+pub inlineSet : Model → Form
+inlineSet model =
+    Js.set (Js.global "globalThis") "kept" (Js.from model)
+    form = model.form
+    { form | name = "new" }
+
+
+pub onlyRead : Model → String × Form
+onlyRead model =
+    name = readName model
+    form = model.form
+    ( name, { form | name = "new" } )
