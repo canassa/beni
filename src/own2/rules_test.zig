@@ -88,6 +88,7 @@ const layers = [_]Entry{
     .{ .file = "PastPayload.zig", .layer = 3, .max_lines = 90 },
     .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "LevelTargets.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "PathsTo.zig", .layer = 3, .max_lines = 70 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
     // A relative slot's text, below the contracts: `Needs` errors name it too (§2.10).
