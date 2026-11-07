@@ -29,7 +29,7 @@ pub fn callOf(f: *const Value.Frame, l: Value.Leaf) u32 {
 /// Whether label call `ci`'s function runs more than once in the frame.
 /// `SupplyAnswers.repeated` then asks what it answers, whatever holds it.
 /// `cbs` keeps every label an evaluation met, so only what runs in this one
-/// counts: a direct call, or a label passed on now. An answer of `true` lets
+/// counts: a direct call, or a label passed on now and not quietly. `true` lets
 /// a holder off, so a label an earlier evaluation met must not add to it.
 pub fn repeats(e: anytype, ci: u32) bool {
     const f = e.f;

@@ -2907,7 +2907,7 @@ Measured, against master at `add0059ab`. `review-2161/g5`: 136 TRAP and 552 of 1
 and refused now each trap on master with #2146's relation, on shorter folds. Two generators in `s2166/` (26 760 programs:
 captures through inner lambdas, nested folds, recursion through a group, record-held codes, every let and declaration
 order): 0 TRAP, 0 classes split. Their 72 TRAP of the record-held family were the escape. `repeats_stale_labels`
-survives: stale labels reach `repeats` on 240 of `review-2173/g9`'s programs and move no verdict.
+survives: no probe reaches a stale label there. The 240 `review-2173/g9` programs it differs on hold quiet labels, which `repeats` doesn't count, and they move no verdict.
 
 #### 2.11.5 Other constructs
 
