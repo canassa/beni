@@ -66,3 +66,22 @@ round-trip bytes and exact 64-bit words, and test all view kinds, numeric/bounds
 failures, detachment and fixed backing rejection. Browser tests exercise real
 source acquisition/close/transfer and preserve expected-vs-defect behavior.
 Mocks and happy-dom do not establish WebGPU or WebCodecs conformance.
+
+## 5. Explicit WGSL layout
+
+Binary.Wgsl implements host-shareable numeric, vector, column-major matrix,
+array, runtime-array and structure layouts from WGSL 14.4. It exposes member
+offsets and array/matrix strides; callers describe the shader's actual type and
+explicit member align/size attributes. It never silently pads an incompatible
+shader declaration to another layout. Legacy uniform constraints are validated
+separately from standard/storage layout, including the standard-layout language
+extension. Bool is not host-shareable, and atomics are integer layouts rather
+than vector components. Encoding and decoding use little-endian numeric storage;
+raw payload bits remain available through Binary scalar/Word64 access.
+
+The source of the byte formulas and the uniform validation rules is
+https://www.w3.org/TR/2026/CRD-WGSL-20261026/#memory-layout . Runtime arrays may
+only appear directly or as a structure's final direct member. Encoding a fresh
+buffer validates value shapes first and zero-initializes padding; writing into
+an existing view does not overwrite inaccessible padding. Checked size arithmetic
+refuses CPU sizes beyond ToIndex instead of silently rounding offsets.

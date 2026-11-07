@@ -1,0 +1,172 @@
+--! Native atomic access to integer typed views. This is the synchronization
+--! companion to Binary's ordinary non-atomic byte/scalar operations.
+
+import Binary
+import Js
+
+
+pub type Value
+    = Number Int
+    | Words Binary.Word64
+
+
+pub type Operation
+    = Load
+    | Store Value
+    | Add Value
+    | Subtract Value
+    | And Value
+    | Or Value
+    | Xor Value
+    | Exchange Value
+    | CompareExchange Value Value
+
+
+pub type Error
+    = BinaryError Binary.Error
+    | InvalidView
+    | InvalidIndex Int
+    | InvalidValue
+    | Unsupported
+
+
+--| Run an atomic load/store/read-modify-write. The result is the previous value
+--| except Store, which returns its integer input before view-width wrapping.
+--| BigInt views use exact word pairs; their signed bit patterns are preserved.
+pub access : Binary.View, Int, Operation → Result Error Value
+access view index operation =
+    source = Result.mapError (Binary.viewSource view) BinaryError?
+    info = Result.mapError (Binary.sourceInfo source) BinaryError?
+    native = Js.from view
+    name : String
+    name = Js.to (Js.get (Js.get native "constructor") "name")
+    big = name == "BigInt64Array" || name == "BigUint64Array"
+    (if not (integerKind name) then Err InvalidView else Ok ⊤)?
+    (if
+        index < 0
+            || index ≥ info.elementLength
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from index ]))
+     then
+        Err (InvalidIndex index)
+     else
+        Ok ⊤
+    )?
+    atomics = Js.global "Atomics"
+    if Js.isUndefined atomics then
+        Err Unsupported
+    else
+        result = perform atomics native index name operation?
+        if big then Result.map (fromBigInt result) Words else Ok (Number (Js.to result))
+
+
+--| Whether atomic accesses of this byte width are lock free on this host.
+pub isLockFree : Int → Bool
+isLockFree bytes =
+    atomics = Js.global "Atomics"
+    not (Js.isUndefined atomics) && Js.to (Js.call atomics "isLockFree" [ Js.from bytes ])
+
+
+perform : Js.Value, Js.Value, Int, String, Operation → Result Error Js.Value
+perform atomics native index name operation =
+    case operation of
+        Load →
+            Ok (Js.call atomics "load" [ native, Js.from index ])
+        CompareExchange expected replacement →
+            first = argument name expected?
+            second = argument name replacement?
+            Ok (Js.call atomics "compareExchange" [ native, Js.from index, first, second ])
+        Store value →
+            unary atomics native index name operation value
+        Add value →
+            unary atomics native index name operation value
+        Subtract value →
+            unary atomics native index name operation value
+        And value →
+            unary atomics native index name operation value
+        Or value →
+            unary atomics native index name operation value
+        Xor value →
+            unary atomics native index name operation value
+        Exchange value →
+            unary atomics native index name operation value
+
+
+unary : Js.Value, Js.Value, Int, String, Operation, Value → Result Error Js.Value
+unary atomics native index name operation value =
+    converted = argument name value?
+    Ok (Js.call atomics (method operation) [ native, Js.from index, converted ])
+
+
+argument : String, Value → Result Error Js.Value
+argument name value =
+    case value of
+        Words words →
+            if name ≠ "BigInt64Array" && name ≠ "BigUint64Array" then
+                Err InvalidValue
+            else
+                parts = Binary.words words
+                high = Js.apply (Js.global "BigInt") [ Js.from parts.high ]
+                low = Js.apply (Js.global "BigInt") [ Js.from parts.low ]
+                shift = Js.apply (Js.global "BigInt") [ Js.from 32 ]
+                result = Js.bitOr (Js.shiftLeft high shift) low
+                if name == "BigInt64Array" then
+                    Ok (Js.call (Js.global "BigInt") "asIntN" [ Js.from 64, result ])
+                else
+                    Ok result
+        Number number →
+            if
+                name == "BigInt64Array"
+                    || name == "BigUint64Array"
+                    || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from number ]))
+            then
+                Err InvalidValue
+            else
+                Ok (Js.from number)
+
+
+fromBigInt : Js.Value → Result Error Binary.Word64
+fromBigInt value =
+    unsigned = Js.call (Js.global "BigInt") "asUintN" [ Js.from 64, value ]
+    shift = Js.apply (Js.global "BigInt") [ Js.from 32 ]
+    mask = Js.apply (Js.global "BigInt") [ Js.from 4294967295 ]
+    high = Js.to (Js.apply (Js.global "Number") [ Js.shiftRight unsigned shift ])
+    low = Js.to (Js.apply (Js.global "Number") [ Js.bitAnd unsigned mask ])
+    Result.mapError (Binary.word64 high low) BinaryError
+
+
+integerKind : String → Bool
+integerKind name =
+    List.member
+        [ "Int8Array"
+        , "Uint8Array"
+        , "Int16Array"
+        , "Uint16Array"
+        , "Int32Array"
+        , "Uint32Array"
+        , "BigInt64Array"
+        , "BigUint64Array"
+        ]
+        name
+
+
+method : Operation → String
+method operation =
+    case operation of
+        Load →
+            "load"
+        Store _ →
+            "store"
+        Add _ →
+            "add"
+        Subtract _ →
+            "sub"
+        And _ →
+            "and"
+        Or _ →
+            "or"
+        Xor _ →
+            "xor"
+        Exchange _ →
+            "exchange"
+        CompareExchange _ _ →
+            "compareExchange"

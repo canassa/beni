@@ -1,0 +1,123 @@
+import Binary
+import Binary.Wgsl as Wgsl
+import List
+import Node exposing (Program)
+
+
+main : Program
+main = Node.printLines [ report (specExample ⊤), report (codec ⊤), report (runtimeTail ⊤) ]
+
+
+report : Result Wgsl.Error Bool → String
+report result =
+    case result of
+        Ok True →
+            "pass"
+        Ok False →
+            "FAIL"
+        Err _ →
+            "ERROR"
+
+
+specExample : ⊤ → Result Wgsl.Error Bool
+specExample ⊤ =
+    float = Wgsl.scalar Wgsl.Float32
+    vec2 = Wgsl.vector Wgsl.Float32 2?
+    vec3 = Wgsl.vector Wgsl.Float32 3?
+    inner =
+        Wgsl.structure
+            [ Wgsl.field "u" float
+            , Wgsl.field "v" float
+            , Wgsl.field "w" vec2
+            , Wgsl.field "x" float
+            ]?
+    array = Wgsl.array inner 3?
+    outer =
+        Wgsl.structure
+            [ Wgsl.field "a" vec2
+            , Wgsl.field "b" vec3
+            , Wgsl.field "c" float
+            , Wgsl.field "d" float
+            , Wgsl.field "e" inner
+            , Wgsl.field "f" vec3
+            , Wgsl.field "g" array
+            , Wgsl.field "h" (Wgsl.scalar Wgsl.Signed32)
+            ]?
+    Wgsl.uniform Wgsl.Standard outer?
+    legacyRejected =
+        case Wgsl.uniform Wgsl.Legacy outer of
+            Err _ →
+                True
+            _ →
+                False
+    offsets = List.map (Wgsl.members outer) λmember → member.offset
+    Ok
+        (Wgsl.byteSize inner == Just 24
+            && Wgsl.byteSize outer == Just 160
+            && Wgsl.alignment outer == 16
+            && offsets == [ 0, 16, 28, 32, 40, 64, 80, 152 ]
+            && legacyRejected
+        )
+
+
+codec : ⊤ → Result Wgsl.Error Bool
+codec ⊤ =
+    matrix = Wgsl.matrix Wgsl.Float32 3 3?
+    vector = Wgsl.vector Wgsl.Float32 3?
+    layout =
+        Wgsl.structure
+            [ Wgsl.field "v" vector
+            , Wgsl.field "tail" (Wgsl.scalar Wgsl.Unsigned32)
+            , Wgsl.field "m" matrix
+            ]?
+    values =
+        Wgsl.Composite
+            [ floats [ 1, 2, 3 ]
+            , Wgsl.Integer 4294967295
+            , Wgsl.Composite [ floats [ 4, 5, 6 ], floats [ 7, 8, 9 ], floats [ 10, 11, 12 ] ]
+            ]
+    buffer = Wgsl.encode layout values?
+    view =
+        Result.mapError (Binary.view (Binary.Local buffer) Binary.Data 0 Nothing) Wgsl.BinaryError?
+    decoded = Wgsl.decode view 0 layout?
+    last = Result.mapError (Binary.readF32 view 56 Binary.Little) Wgsl.BinaryError?
+    padding = Result.mapError (Binary.readU32 view 28 Binary.Little) Wgsl.BinaryError?
+    Ok
+        (Wgsl.byteSize layout == Just 64
+            && Wgsl.stride matrix == Just 16
+            && decoded == values
+            && last == 12
+            && padding == 0
+        )
+
+
+runtimeTail : ⊤ → Result Wgsl.Error Bool
+runtimeTail ⊤ =
+    unsigned = Wgsl.scalar Wgsl.Unsigned32
+    tail = Wgsl.runtimeArray unsigned?
+    layout = Wgsl.structure [ Wgsl.field "count" unsigned, Wgsl.field "values" tail ]?
+    values =
+        Wgsl.Composite
+            [ Wgsl.Integer 3, Wgsl.Composite [ Wgsl.Integer 11, Wgsl.Integer 22, Wgsl.Integer 33 ] ]
+    buffer = Wgsl.encode layout values?
+    view =
+        Result.mapError (Binary.view (Binary.Local buffer) Binary.Data 0 Nothing) Wgsl.BinaryError?
+    decoded = Wgsl.decode view 0 layout?
+    badPlacement =
+        case Wgsl.structure [ Wgsl.field "bad" tail, Wgsl.field "later" unsigned ] of
+            Err Wgsl.RuntimePlacement →
+                True
+            _ →
+                False
+    legacyArray = Wgsl.array unsigned 2?
+    badStride =
+        case Wgsl.uniform Wgsl.Legacy legacyArray of
+            Err (Wgsl.UniformStride 4) →
+                True
+            _ →
+                False
+    Ok (decoded == values && badPlacement && badStride && Wgsl.byteSize layout == Nothing)
+
+
+floats : List Int → Wgsl.Value
+floats values = Wgsl.Composite (List.map values λvalue → Wgsl.Floating (toFloat value))

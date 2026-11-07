@@ -66,6 +66,8 @@ pub type Error
     | AllocationFailed Int
     | PrecisionLost
     | WrongViewKind
+    | TransferDenied
+    | IsolationRequired
 
 
 --| Source dimensions after validating its current backing state.
@@ -92,7 +94,9 @@ pub shared : Int → Result Error SharedBuffer
 shared size =
     validSize size?
     constructor = Js.global "SharedArrayBuffer"
-    if not (Js.typeIs constructor "function") then
+    if Js.same (Js.get (Js.global "globalThis") "crossOriginIsolated") (Js.from False) then
+        Err IsolationRequired
+    else if not (Js.typeIs constructor "function") then
         Err (Unsupported "SharedArrayBuffer")
     else
         Js.catchIf (λ⊤ → Ok (Js.to (Js.construct constructor [ Js.from size ]))) isRangeError λ_ →
@@ -252,20 +256,30 @@ pub words : Word64 → { high : Int, low : Int }
 words (Words high low) = { high = high, low = low }
 
 
---| Convert an exactly representable Number to words. Nonnegative safe integers only.
+--| Convert the integer value of an Int to words, across the full u64 range.
+--| An Int already rounded before this call cannot recover its lost low bits.
 pub word64FromInt : Int → Result Error Word64
 word64FromInt value =
-    validSize value?
+    (if
+        value < 0
+            || value ≥ 18446744073709551616
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+     then
+        Err (InvalidInteger value 0 18446744073709549568)
+     else
+        Ok ⊤
+    )?
     Ok (Words (value // 4294967296) (Int.rem value 4294967296))
 
 
 --| Convert words only if the integer is exactly representable by beni Int.
 pub word64ToInt : Word64 → Result Error Int
 word64ToInt (Words high low) =
-    if high > 2097151 then
+    value = high * 4294967296 + low
+    if value // 4294967296 ≠ high || Int.rem value 4294967296 ≠ low then
         Err PrecisionLost
     else
-        Ok (high * 4294967296 + low)
+        Ok value
 
 
 --| Read an exact 64-bit word pair, with no BigInt-to-Number truncation.
@@ -636,3 +650,60 @@ writeF64 value offset endian number =
     data = scalarView value offset 8?
     _ = Js.call data "setFloat64" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
     Ok ⊤
+
+
+--| Transfer storage through the host's structured-clone algorithm. All aliases of
+--| the original become detached. Mapped or otherwise nontransferable buffers fail.
+pub transfer : Buffer → Result Error Buffer
+transfer buffer =
+    native = Js.from buffer
+    validBacking native?
+    function = Js.global "structuredClone"
+    if not (Js.typeIs function "function") then
+        Err (Unsupported "structuredClone")
+    else
+        options = Js.object [ ( "transfer", Js.array [ native ] ) ]
+        Js.catchIf
+            (λ⊤ → Ok (Js.to (Js.apply function [ native, options ])))
+            (λerror →
+                Js.instanceOf error (Js.global "DOMException")
+                    && Js.same (Js.get error "name") (Js.from "DataCloneError")
+            )
+            λ_ → Err TransferDenied
+
+
+--| The exact native backing object of a live fixed view; no copy is made.
+pub backing : View → Result Error Backing
+backing value =
+    buffer = sourceBuffer (Js.from value)
+    validBacking buffer?
+    if isShared buffer then Ok (Shared (Js.to buffer)) else Ok (Local (Js.to buffer))
+
+
+--| Interpret exact words as a signed two's-complement i64, refusing rounded output.
+pub word64ToSignedInt : Word64 → Result Error Int
+word64ToSignedInt (Words high low) =
+    signedHigh = if high ≥ 2147483648 then high - 4294967296 else high
+    value = signedHigh * 4294967296 + low
+    case word64FromSignedInt value of
+        Ok (Words actualHigh actualLow) →
+            if actualHigh == high && actualLow == low then Ok value else Err PrecisionLost
+        Err _ →
+            Err PrecisionLost
+
+
+--| The exact integer value of an Int, encoded as signed two's-complement i64 bits.
+pub word64FromSignedInt : Int → Result Error Word64
+word64FromSignedInt value =
+    (if
+        value < -9223372036854775808
+            || value ≥ 9223372036854775808
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+     then
+        Err (InvalidInteger value (-9223372036854775808) 9223372036854774784)
+     else
+        Ok ⊤
+    )?
+    signedHigh = floor (toFloat value / 4294967296)
+    high = if signedHigh < 0 then signedHigh + 4294967296 else signedHigh
+    Ok (Words high (Int.mod value 4294967296))

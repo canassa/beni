@@ -1,0 +1,20 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <canvas id="canvas" width="4" height="4"></canvas>
+    <img id="image">
+    <video id="video"></video>
+    <p>"ready"</p>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <canvas id="canvas" width="4" height="4"></canvas>
+    <img id="image">
+    <video id="video"></video>
+    <p>"native pass"</p>
+  </main>
+</body>

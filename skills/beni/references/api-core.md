@@ -87,6 +87,8 @@ module Binary
     AllocationFailed
     PrecisionLost
     WrongViewKind
+    TransferDenied
+    IsolationRequired
   type SharedBuffer
   type Source
   alias SourceInfo
@@ -108,6 +110,7 @@ module Binary
     Data
   opaque type Word64
   value allocate : Int → Result Error Buffer  -- impure
+  value backing : View → Result Error Backing  -- impure
   value bufferSource : Buffer → Result Error Source  -- impure
   value byteLength : Backing → Result Error Int  -- impure
   value copy : Source → Result Error Buffer  -- impure
@@ -129,6 +132,7 @@ module Binary
   value sharedSource : SharedBuffer → Result Error Source  -- impure
   value sourceInfo : Source → Result Error SourceInfo  -- impure
   value toList : Source → Result Error (List Int)  -- impure
+  value transfer : Buffer → Result Error Buffer  -- impure
   value view : Backing, ViewKind, Int, Maybe Int → Result Error View  -- impure
   value viewSource : View → Result Error Source  -- impure
   value word64 : Int, Int → Result Error Word64  -- impure
@@ -145,6 +149,82 @@ module Binary
   value writeU32 : View, Int, Endian, Int → Result Error ⊤  -- impure
   value writeU8 : View, Int, Int → Result Error ⊤  -- impure
   value writeWord64 : View, Int, Endian, Word64 → Result Error ⊤  -- impure
+module Binary.Atomics
+  type Error
+    BinaryError
+    InvalidView
+    InvalidIndex
+    InvalidValue
+    Unsupported
+  type Operation
+    Load
+    Store
+    Add
+    Subtract
+    And
+    Or
+    Xor
+    Exchange
+    CompareExchange
+  type Value
+    Number
+    Words
+  value access : View, Int, Operation → Result Error Value  -- impure
+  value isLockFree : Int → Bool  -- impure
+module Binary.Wgsl
+  type Error
+    InvalidDimension
+    InvalidScalar
+    InvalidCount
+    Overflow
+    EmptyStructure
+    DuplicateMember
+    InvalidAlignment
+    InvalidMemberSize
+    RuntimePlacement
+    UniformStride
+    UniformOffset
+    UniformStructureGap
+    AtomicInUniform
+    RuntimeInUniform
+    ValueShape
+    ValueCount
+    IntegerRange
+    BinaryError
+  alias Field
+    Field
+  opaque type Layout
+  alias Member
+    Member
+  type Scalar
+    Signed32
+    Unsigned32
+    Float32
+    Float16
+    AtomicSigned32
+    AtomicUnsigned32
+  type UniformRules
+    Standard
+    Legacy
+  type Value
+    Integer
+    Floating
+    Composite
+  value alignment : Layout → Int
+  value array : Layout, Int → Result Error Layout  -- impure
+  value byteSize : Layout → Maybe Int
+  value decode : View, Int, Layout → Result Error Value  -- impure
+  value encode : Layout, Value → Result Error Buffer  -- impure
+  value field : String, Layout → Field
+  value matrix : Scalar, Int, Int → Result Error Layout  -- impure
+  value members : Layout → List Member
+  value runtimeArray : Layout → Result Error Layout
+  value scalar : Scalar → Layout
+  value stride : Layout → Maybe Int
+  value structure : List Field → Result Error Layout  -- impure
+  value uniform : UniformRules, Layout → Result Error ⊤
+  value vector : Scalar, Int → Result Error Layout  -- impure
+  value write : View, Int, Layout, Value → Result Error ⊤  -- impure
 module Char
   type Char
   value fromCode : Int → Char

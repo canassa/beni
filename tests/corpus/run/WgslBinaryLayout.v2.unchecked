@@ -1,0 +1,4 @@
+WgslBinaryLayout specExample: lines 22-59 (not built: call)
+WgslBinaryLayout floats: lines 122-123 (not built: local)
+WgslBinaryLayout codec: lines 63-90 (not built: call)
+WgslBinaryLayout runtimeTail: lines 94-119 (not built: call)

@@ -25,6 +25,7 @@ module Browser
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
 module Browser.Canvas
+  type BitmapRenderer
   alias Canvas
   type Error
     Unsupported
@@ -32,15 +33,21 @@ module Browser.Canvas
     WrongElement
     InvalidDimension
     AlreadyControlled
-    Detached
+    NoContextOrDetached
+    ContextUnavailable
+    ClosedBitmap
   alias OffscreenCanvas
+  value bitmapRenderer : Canvas → Result Error BitmapRenderer  -- impure
   value byId : String → Result Error Canvas  -- impure
   value create : Int, Int → Result Error Canvas  -- impure
   value offscreen : Int, Int → Result Error OffscreenCanvas  -- impure
+  value offscreenBitmapRenderer : OffscreenCanvas → Result Error BitmapRenderer  -- impure
   value offscreenSize : OffscreenCanvas → { height : Int, width : Int }  -- impure
+  value present : BitmapRenderer, Bitmap → Result Error ⊤  -- impure
   value resize : Canvas, Int, Int → Result Error ⊤  -- impure
   value resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤  -- impure
   value size : Canvas → { height : Int, width : Int }  -- impure
+  value snapshot : OffscreenCanvas → Result Error Bitmap  -- impure
   value transfer : Canvas → Result Error OffscreenCanvas  -- impure
 module Browser.Events
   alias Size
@@ -64,6 +71,64 @@ module Browser.Events
   value onVisibilityChange : (Visibility → msg) → Sub msg  -- impure
   value size : ⊤ → Size  -- impure
   value visibility : ⊤ → Visibility  -- impure
+module Browser.Image
+  type Alpha
+    DefaultAlpha
+    Straight
+    Premultiplied
+  alias Bitmap
+  alias BitmapOptions
+    BitmapOptions
+  type ColorSpace
+    Srgb
+    DisplayP3
+  type Conversion
+    DefaultConversion
+    NoConversion
+  alias Crop
+    Crop
+  type CrossOrigin
+    SameOrigin
+    Anonymous
+    Credentials
+  alias Data
+  alias Element
+  type Error
+    Unsupported
+    NotFound
+    WrongElement
+    InvalidDimension
+    InvalidCrop
+    WrongPixelView
+    InconsistentPixels
+    SharedPixels
+    BinaryError
+    AllocationFailed
+    DecodeFailed
+    InvalidSource
+  type Orientation
+    FromImage
+    FlipY
+  type PixelFormat
+    Rgba8
+    Rgba16Float
+  type Quality
+    Pixelated
+    Low
+    Medium
+    High
+  alias Settings
+    Settings
+  value bitmap : Input, Maybe Crop, BitmapOptions → Result Error Bitmap  -- suspends
+  value bitmapOptions : BitmapOptions
+  value byId : String → Result Error Element  -- impure
+  value close : Bitmap → ⊤  -- impure
+  value data : Int, Int, Settings → Result Error Data  -- impure
+  value dataFromView : View, Int, Maybe Int, Settings → Result Error Data  -- impure
+  value decode : Element → Result Error ⊤  -- suspends
+  value load : String, CrossOrigin → Result Error Element  -- suspends
+  value pixels : Data → Result Error View  -- impure
+  value settings : Settings
 module Browser.Navigation
   type Error
     BadUrl
@@ -89,9 +154,19 @@ module Browser.Navigation
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
 module Browser.Source
+  type Attachment
+    Bytes
+    SharedBytes
+    BitmapAttachment
+    FrameAttachment
+    CanvasAttachment
+    PixelsAttachment
   type Bitmap
   type CanvasElement
+  type Endpoint
   type ImageElement
+  alias Info
+    Info
   type Input
     FromImage
     FromBitmap
@@ -100,10 +175,71 @@ module Browser.Source
     FromFrame
     FromCanvas
     FromOffscreen
+  type MessageEvent
   type OffscreenCanvas
+  alias Outgoing
+    Outgoing
+  alias Packet
+    Packet
   type Pixels
+  type State
+    Ready
+    Loading
+    Broken
+    Closed
+    Empty
+    ContextValidationRequired
+  type TransferError
+    BinaryTransferError
+    DuplicateTransfer
+    CannotMove
+    CannotCopy
+    ClosedAttachment
+    DataCloneRejected
+    CanvasHasContext
+    InvalidMessage
+    CloneUnsupported
+  type Transit
+    Copy
+    Move
   type VideoElement
   type VideoFrame
+  value clone : Outgoing → Result TransferError Packet  -- impure
+  value info : Input → Info  -- impure
+  value receive : MessageEvent → Result TransferError Packet  -- impure
+  value same : Input, Input → Bool
+  value send : Endpoint, Outgoing → Result TransferError ⊤  -- impure
+module Browser.Video
+  type Alpha
+    Keep
+    Discard
+  alias Element
+  type Error
+    Unsupported
+    NotFound
+    WrongElement
+    WrongSource
+    InvalidSource
+    Security
+    MissingTimestamp
+    InvalidTimestamp
+    InvalidDuration
+    InvalidDimensions
+    InvalidRectangle
+    InvalidRotation
+    Closed
+  alias Frame
+  alias FrameOptions
+    FrameOptions
+  alias Rect
+    Rect
+  value byId : String → Result Error Element  -- impure
+  value clone : Frame → Result Error Frame  -- impure
+  value close : Frame → ⊤  -- impure
+  value closed : Frame → Bool  -- impure
+  value frame : Input, FrameOptions → Result Error Frame  -- impure
+  value frameOptions : FrameOptions
+  value info : Frame → { closed : Bool, codedHeight : Int, codedWidth : Int, displayHeight : Int, displayWidth : Int, duration : Maybe Int, flip : Bool, rotation : Float, timestamp : Int }  -- impure
 module Cmd
   type Cmd a
     Cmd

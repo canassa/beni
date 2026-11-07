@@ -39,8 +39,16 @@ roundtrip ⊤ =
     nanBits = Binary.readWord64 view 29 Little?
     source = Binary.viewSource view?
     bytes = Binary.toList source?
+    negative = Binary.word64FromSignedInt (-1)?
+    negativeNumber = Binary.word64ToSignedInt negative?
+    large = Binary.word64 2147483648 0?
+    number = Binary.word64ToInt large?
+    back = Binary.word64FromInt number?
     Ok
-        (Binary.words actual == Binary.words exact
+        (negativeNumber == -1
+            && Binary.words negative == { high = 4294967295, low = 4294967295 }
+            && Binary.words back == Binary.words large
+            && Binary.words actual == Binary.words exact
             && Binary.words second == Binary.words exact
             && integer == -2147483648
             && Binary.words zeroBits == { high = 2147483648, low = 0 }

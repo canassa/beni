@@ -1,0 +1,404 @@
+--! Native HTML video sources and reference-counted VideoFrame resources.
+--! This exposes GPU intake and lifetime controls, not codec configuration.
+
+import Browser.Source as Source
+import Js
+
+
+pub type alias Element =
+    Source.VideoElement
+
+
+pub type alias Frame =
+    Source.VideoFrame
+
+
+pub type Alpha
+    = Keep
+    | Discard
+
+
+pub type Error
+    = Unsupported
+    | NotFound String
+    | WrongElement String
+    | WrongSource
+    | InvalidSource
+    | Security
+    | MissingTimestamp
+    | InvalidTimestamp Int
+    | InvalidDuration Int
+    | InvalidDimensions
+    | InvalidRectangle
+    | InvalidRotation
+    | Closed
+
+
+pub type alias Rect =
+    x : Float
+    y : Float
+    width : Float
+    height : Float
+
+
+pub type alias FrameOptions =
+    timestamp : Maybe Int
+    duration : Maybe Int
+    alpha : Alpha
+    visibleRect : Maybe Rect
+    rotation : Float
+    flip : Bool
+    displaySize : Maybe { width : Int, height : Int }
+
+
+pub frameOptions : FrameOptions
+frameOptions =
+    { timestamp = Nothing
+    , duration = Nothing
+    , alpha = Keep
+    , visibleRect = Nothing
+    , rotation = 0
+    , flip = False
+    , displaySize = Nothing
+    }
+
+
+--| Acquire the existing video element without replacing its current media resource.
+pub byId : String → Result Error Element
+byId id =
+    document = Js.global "document"
+    if Js.isUndefined document then
+        Err Unsupported
+    else
+        value = Js.call document "getElementById" [ Js.from id ]
+        if Js.isNull value then
+            Err (NotFound id)
+        else if not (Js.instanceOf value (Js.global "HTMLVideoElement")) then
+            Err (WrongElement id)
+        else
+            Ok (Js.to value)
+
+
+--| Capture a native source into an independent VideoFrame reference. Video and
+--| frame inputs may inherit timestamps; other image inputs require one explicitly.
+pub frame : Source.Input, FrameOptions → Result Error Frame
+frame source options =
+    constructor = Js.global "VideoFrame"
+    if not (Js.typeIs constructor "function") then
+        Err Unsupported
+    else
+        value = sourceValue source?
+        timestampRequired =
+            case source of
+                Source.FromVideo _ →
+                    False
+                Source.FromFrame _ →
+                    False
+                _ →
+                    True
+        (if timestampRequired && options.timestamp == Nothing then Err MissingTimestamp else Ok ⊤)?
+        validateOptions value source options?
+        Js.catchIf
+            (λ⊤ → Ok (Js.to (Js.construct constructor [ value, optionsValue options ])))
+            (λerror →
+                domError "InvalidStateError" error
+                    || domError "SecurityError" error
+                    || hiddenRectangleFailure source options error
+            )
+            λerror →
+                if domError "SecurityError" error then
+                    Err Security
+                else if Js.instanceOf error (Js.global "TypeError") then
+                    Err InvalidRectangle
+                else
+                    Err InvalidSource
+
+
+--| Clone a VideoFrame's reference to the same media resource, without copying pixels.
+pub clone : Frame → Result Error Frame
+clone value =
+    if closed value then
+        Err Closed
+    else
+        Js.catchIf
+            (λ⊤ → Ok (Js.to (Js.call (Js.from value) "clone" [])))
+            (domError "InvalidStateError" _)
+            λ_ → Err Closed
+
+
+--| Closing is final and idempotent; all aliases of this exact frame become closed.
+pub close : Frame → ⊤
+close value = Js.to (Js.call (Js.from value) "close" [])
+
+
+pub closed : Frame → Bool
+closed value = Js.same (Js.get (Js.from value) "codedWidth") (Js.from 0)
+
+
+pub info :
+      Frame
+    → { codedWidth : Int
+      , codedHeight : Int
+      , displayWidth : Int
+      , displayHeight : Int
+      , rotation : Float
+      , flip : Bool
+      , timestamp : Int
+      , duration : Maybe Int
+      , closed : Bool
+      }
+info handle =
+    value = Js.from handle
+    duration = Js.get value "duration"
+    { codedWidth = Js.to (Js.get value "codedWidth")
+    , codedHeight = Js.to (Js.get value "codedHeight")
+    , displayWidth = Js.to (Js.get value "displayWidth")
+    , displayHeight = Js.to (Js.get value "displayHeight")
+    , rotation = Js.to (Js.get value "rotation")
+    , flip = Js.to (Js.get value "flip")
+    , timestamp = Js.to (Js.get value "timestamp")
+    , duration = if Js.isNull duration then Nothing else Just (Js.to duration)
+    , closed = closed handle
+    }
+
+
+validateOptions : Js.Value, Source.Input, FrameOptions → Result Error ⊤
+validateOptions value source options =
+    case options.timestamp of
+        Nothing →
+            ⊤
+        Just timestamp →
+            (if
+                timestamp < -9223372036854775808
+                    || timestamp ≥ 9223372036854775808
+                    || not (integer timestamp)
+             then
+                Err (InvalidTimestamp timestamp)
+             else
+                Ok ⊤
+            )?
+    case options.duration of
+        Nothing →
+            ⊤
+        Just duration →
+            (if duration < 0 || duration ≥ 18446744073709551616 || not (integer duration) then
+                Err (InvalidDuration duration)
+             else
+                Ok ⊤
+            )?
+    case options.displaySize of
+        Nothing →
+            ⊤
+        Just dimensions →
+            (if
+                dimensions.width ≤ 0
+                    || dimensions.width > 4294967295
+                    || dimensions.height ≤ 0
+                    || dimensions.height > 4294967295
+                    || not (integer dimensions.width)
+                    || not (integer dimensions.height)
+             then
+                Err InvalidDimensions
+             else
+                Ok ⊤
+            )?
+    (if not (finite options.rotation) then Err InvalidRotation else Ok ⊤)?
+    case options.visibleRect of
+        Nothing →
+            Ok ⊤
+        Just rect →
+            dimensions = codedSize value source
+            (if
+                not (finite rect.x && finite rect.y && finite rect.width && finite rect.height)
+                    || rect.x < 0
+                    || rect.y < 0
+                    || rect.width ≤ 0
+                    || rect.height ≤ 0
+                    || (boundsObservable source
+                           && (rect.x + rect.width > toFloat dimensions.width
+                                  || rect.y + rect.height > toFloat dimensions.height
+                              )
+                       )
+             then
+                Err InvalidRectangle
+             else
+                Ok ⊤
+            )?
+            case source of
+                Source.FromFrame _ →
+                    format = Js.get value "format"
+                    (if not (Js.isNull format) && not (offsetAligned format rect) then
+                        Err InvalidRectangle
+                     else
+                        Ok ⊤
+                    )?
+                    visible = Js.get value "visibleRect"
+                    rotated =
+                        Js.same (Js.get value "rotation") (Js.from 90)
+                            || Js.same (Js.get value "rotation") (Js.from 270)
+                    displayWidth : Float
+                    displayWidth =
+                        Js.to (Js.get value (if rotated then "displayHeight" else "displayWidth"))
+                    displayHeight : Float
+                    displayHeight =
+                        Js.to (Js.get value (if rotated then "displayWidth" else "displayHeight"))
+                    baseWidth : Float
+                    baseWidth = Js.to (Js.get visible "width")
+                    baseHeight : Float
+                    baseHeight = Js.to (Js.get visible "height")
+                    if
+                        options.displaySize == Nothing
+                            && (round (rect.width * displayWidth / baseWidth) == 0
+                                   || round (rect.height * displayHeight / baseHeight) == 0
+                               )
+                    then
+                        Err InvalidDimensions
+                    else
+                        Ok ⊤
+                Source.FromImage _ →
+                    Ok ⊤
+                Source.FromVideo _ →
+                    Ok ⊤
+                _ →
+                    if
+                        options.displaySize == Nothing
+                            && (round rect.width == 0 || round rect.height == 0)
+                    then
+                        Err InvalidDimensions
+                    else
+                        Ok ⊤
+
+
+-- Image/video natural dimensions can include density or aspect correction.
+-- Their coded media dimensions and formats are private to the native constructor.
+boundsObservable : Source.Input → Bool
+boundsObservable source =
+    case source of
+        Source.FromImage _ →
+            False
+        Source.FromVideo _ →
+            False
+        _ →
+            True
+
+
+offsetAligned : Js.Value, Rect → Bool
+offsetAligned format rect =
+    horizontal =
+        if
+            Js.same format (Js.from "NV12")
+                || formatPrefix format "I420"
+                || formatPrefix format "I422"
+        then
+            2
+        else
+            1
+    vertical = if Js.same format (Js.from "NV12") || formatPrefix format "I420" then 2 else 1
+    Js.rem rect.x (toFloat horizontal) == 0 && Js.rem rect.y (toFloat vertical) == 0
+
+
+hiddenRectangleFailure : Source.Input, FrameOptions, Js.Value → Bool
+hiddenRectangleFailure source options error =
+    if not (Js.instanceOf error (Js.global "TypeError")) || options.visibleRect == Nothing then
+        False
+    else
+        case source of
+            Source.FromFrame _ →
+                False
+            _ →
+                True
+
+
+codedSize : Js.Value, Source.Input → { width : Int, height : Int }
+codedSize value source =
+    case source of
+        Source.FromFrame _ →
+            { width = Js.to (Js.get value "codedWidth")
+            , height = Js.to (Js.get value "codedHeight")
+            }
+        Source.FromVideo _ →
+            { width = Js.to (Js.get value "videoWidth")
+            , height = Js.to (Js.get value "videoHeight")
+            }
+        Source.FromImage _ →
+            { width = Js.to (Js.get value "naturalWidth")
+            , height = Js.to (Js.get value "naturalHeight")
+            }
+        _ →
+            { width = Js.to (Js.get value "width"), height = Js.to (Js.get value "height") }
+
+
+optionsValue : FrameOptions → Js.Value
+optionsValue options =
+    value = Js.object []
+    Js.set value "alpha" (Js.from (if options.alpha == Keep then "keep" else "discard"))
+    Js.set value "rotation" (Js.from options.rotation)
+    Js.set value "flip" (Js.from options.flip)
+    case options.timestamp of
+        Nothing →
+            ⊤
+        Just timestamp →
+            Js.set value "timestamp" (Js.from timestamp)
+    case options.duration of
+        Nothing →
+            ⊤
+        Just duration →
+            Js.set value "duration" (Js.from duration)
+    case options.visibleRect of
+        Nothing →
+            ⊤
+        Just rect →
+            Js.set
+                value
+                "visibleRect"
+                (Js.object
+                    [ ( "x", Js.from rect.x )
+                    , ( "y", Js.from rect.y )
+                    , ( "width", Js.from rect.width )
+                    , ( "height", Js.from rect.height )
+                    ]
+                )
+    case options.displaySize of
+        Nothing →
+            ⊤
+        Just dimensions →
+            Js.set value "displayWidth" (Js.from dimensions.width)
+            Js.set value "displayHeight" (Js.from dimensions.height)
+    value
+
+
+sourceValue : Source.Input → Result Error Js.Value
+sourceValue source =
+    case source of
+        Source.FromImage value →
+            Ok (Js.from value)
+        Source.FromBitmap value →
+            Ok (Js.from value)
+        Source.FromPixels _ →
+            Err WrongSource
+        Source.FromVideo value →
+            Ok (Js.from value)
+        Source.FromFrame value →
+            Ok (Js.from value)
+        Source.FromCanvas value →
+            Ok (Js.from value)
+        Source.FromOffscreen value →
+            Ok (Js.from value)
+
+
+formatPrefix : Js.Value, String → Bool
+formatPrefix value prefix =
+    Js.typeIs value "string" && Js.to (Js.call value "startsWith" [ Js.from prefix ])
+
+
+integer : Int → Bool
+integer value = Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ])
+
+
+finite : Float → Bool
+finite value = Js.to (Js.call (Js.global "Number") "isFinite" [ Js.from value ])
+
+
+domError : String, Js.Value → Bool
+domError name error =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)

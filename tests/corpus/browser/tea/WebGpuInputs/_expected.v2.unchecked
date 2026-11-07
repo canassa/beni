@@ -1,0 +1,6 @@
+WebGpuInputs require: lines 105-106 (not built: lambda)
+WebGpuInputs transferRoundtrip: lines 109-201 (not built: call)
+WebGpuInputs exercise: lines 56-101 (not built: call)
+WebGpuInputs update: lines 29-35 (not built: local)
+WebGpuInputs view: lines 38-41 (not built: markup)
+WebGpuInputs main: lines 19-25 (not built: lambda)

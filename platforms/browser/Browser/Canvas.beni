@@ -19,7 +19,9 @@ pub type Error
     | WrongElement String
     | InvalidDimension Int
     | AlreadyControlled
-    | Detached
+    | NoContextOrDetached
+    | ContextUnavailable
+    | ClosedBitmap
 
 
 --| Find a canvas in the current document, without changing its context mode.
@@ -56,8 +58,8 @@ create width height =
 --| Create an offscreen canvas in a Window or browser Worker realm.
 pub offscreen : Int, Int → Result Error OffscreenCanvas
 offscreen width height =
-    dimension 9007199254740991 width?
-    dimension 9007199254740991 height?
+    dimension 18446744073709549568 width?
+    dimension 18446744073709549568 height?
     constructor = Js.global "OffscreenCanvas"
     if not (Js.typeIs constructor "function") then
         Err Unsupported
@@ -105,17 +107,12 @@ resize canvas width height =
 
 pub resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤
 resizeOffscreen canvas width height =
-    dimension 9007199254740991 width?
-    dimension 9007199254740991 height?
+    dimension 18446744073709549568 width?
+    dimension 18446744073709549568 height?
     value = Js.from canvas
-    Js.catchIf
-        (λ⊤ →
-            Js.set value "width" (Js.from width)
-            Js.set value "height" (Js.from height)
-            Ok ⊤
-        )
-        (domError "InvalidStateError" _)
-        λ_ → Err Detached
+    Js.set value "width" (Js.from width)
+    Js.set value "height" (Js.from height)
+    Ok ⊤
 
 
 dimension : Int, Int → Result Error ⊤
@@ -137,3 +134,56 @@ dimensions value = { width = Js.to (Js.get value "width"), height = Js.to (Js.ge
 domError : String, Js.Value → Bool
 domError name error =
     Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
+
+
+--| A native bitmaprenderer context, whose presentation consumes bitmap ownership.
+pub foreign type BitmapRenderer
+
+
+pub bitmapRenderer : Canvas → Result Error BitmapRenderer
+bitmapRenderer canvas = renderer (Js.from canvas)
+
+
+pub offscreenBitmapRenderer : OffscreenCanvas → Result Error BitmapRenderer
+offscreenBitmapRenderer canvas = renderer (Js.from canvas)
+
+
+renderer : Js.Value → Result Error BitmapRenderer
+renderer value =
+    Js.catchIf
+        (λ⊤ →
+            context = Js.call value "getContext" [ Js.from "bitmaprenderer" ]
+            if Js.isNull context then Err ContextUnavailable else Ok (Js.to context)
+        )
+        (domError "InvalidStateError" _)
+        λ_ → Err NoContextOrDetached
+
+
+--| Present a bitmap without copying pixels. The bitmap is consumed: every alias
+--| becomes closed, while frames referencing its media resource remain valid.
+pub present : BitmapRenderer, Source.Bitmap → Result Error ⊤
+present context bitmap =
+    if (Source.info (Source.FromBitmap bitmap)).state == Source.Closed then
+        Err ClosedBitmap
+    else
+        Js.catchIf
+            (λ⊤ →
+                _ = Js.call (Js.from context) "transferFromImageBitmap" [ Js.from bitmap ]
+                Ok ⊤
+            )
+            (domError "InvalidStateError" _)
+            λ_ → Err ClosedBitmap
+
+
+--| Detach the current offscreen image into a native bitmap and replace it by a
+--| blank bitmap. This requires a context; it does not acquire one as a side effect.
+pub snapshot : OffscreenCanvas → Result Error Source.Bitmap
+snapshot canvas =
+    value = Js.from canvas
+    if not (Js.typeIs (Js.get value "transferToImageBitmap") "function") then
+        Err Unsupported
+    else
+        Js.catchIf
+            (λ⊤ → Ok (Js.to (Js.call value "transferToImageBitmap" [])))
+            (domError "InvalidStateError" _)
+            λ_ → Err NoContextOrDetached

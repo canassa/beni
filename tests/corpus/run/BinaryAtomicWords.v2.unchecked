@@ -1,0 +1,3 @@
+BinaryAtomicWords require: lines 64-65 (not built: lambda)
+BinaryAtomicWords matches: lines 55-61 (not built: call)
+BinaryAtomicWords exercise: lines 19-51 (not built: call)

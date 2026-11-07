@@ -1,0 +1,65 @@
+import Binary
+import Binary.Atomics as Atomic
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.printLines
+        [ case exercise ⊤ of
+            Ok True →
+                "pass"
+            Ok False →
+                "FAIL"
+            Err reason →
+                reason
+        ]
+
+
+exercise : ⊤ → Result String Bool
+exercise ⊤ =
+    shared = require (Binary.shared 16)?
+    big = require (Binary.view (Binary.Shared shared) Binary.U64 0 Nothing)?
+    maximum = require (Binary.word64 4294967295 4294967295)?
+    one = require (Binary.word64 0 1)?
+    zero = require (Binary.word64 0 0)?
+    _ = require (Atomic.access big 0 (Atomic.Store (Atomic.Words maximum)))?
+    old = require (Atomic.access big 0 (Atomic.Add (Atomic.Words one)))?
+    now = require (Atomic.access big 0 Atomic.Load)?
+    _ =
+        require
+            (Atomic.access big 0 (Atomic.CompareExchange (Atomic.Words zero) (Atomic.Words maximum))
+            )?
+    exchanged = require (Atomic.access big 0 Atomic.Load)?
+    signed = require (Binary.view (Binary.Shared shared) Binary.I64 0 Nothing)?
+    signedRead = require (Atomic.access signed 0 Atomic.Load)?
+    bytes = require (Binary.view (Binary.Shared shared) Binary.I8 8 Nothing)?
+    _ = require (Atomic.access bytes 0 (Atomic.Store (Atomic.Number (-1))))?
+    byte = require (Atomic.access bytes 0 Atomic.Load)?
+    invalid =
+        case Atomic.access bytes 9 Atomic.Load of
+            Err (Atomic.InvalidIndex 9) →
+                True
+            _ →
+                False
+    Ok
+        (matches maximum old
+            && matches zero now
+            && matches maximum exchanged
+            && matches maximum signedRead
+            && byte == Atomic.Number (-1)
+            && invalid
+        )
+
+
+matches : Binary.Word64, Atomic.Value → Bool
+matches expected actual =
+    case actual of
+        Atomic.Words words →
+            Binary.words words == Binary.words expected
+        _ →
+            False
+
+
+require : Result error a → Result String a
+require result = Result.mapError result λ_ → "ERROR"

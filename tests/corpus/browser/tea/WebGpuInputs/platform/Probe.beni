@@ -1,0 +1,18 @@
+--! Native host-value setup only: exercise a density-corrected HTML image whose
+--! coded media pixels differ from its natural CSS-pixel dimensions. Production
+--! decode and Frame construction remain entirely in the actual source modules.
+
+import Browser.Source as Source
+import Js
+
+
+pub densityImage : ⊤ → Source.ImageElement
+densityImage ⊤ =
+    image = Js.construct (Js.global "Image") []
+    Js.set
+        image
+        "srcset"
+        (Js.from
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGP4z8DwHxkzkC4AADxAH+HggXe0AAAAAElFTkSuQmCC 2x"
+        )
+    Js.to image

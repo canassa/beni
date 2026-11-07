@@ -1,0 +1,249 @@
+-- Native intake and lifetime evidence. happy-dom lacks these native resources;
+-- Chrome's separate golden requires actual pixel aliasing, frames and transfers.
+import Binary
+import Browser.Canvas as Canvas
+import Browser.Image as Image
+import Browser.Source as Source
+import Browser.Video as Video
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub
+import Tea
+
+
+type Msg
+    = Run
+    | Result String
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "ready", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+update : Msg, String → String × Cmd Msg
+update message model =
+    case message of
+        Run →
+            ( model, Cmd.perform λsend → send (Result (run ⊤)) )
+        Result text →
+            ( text, Cmd.none )
+
+
+view : String → Html Msg
+view model =
+    <main>
+        <button id="run" onClick={Run}>run</button><canvas id="canvas" width={4} height={4} /><img id="image" /><video id="video" /><p>{model}</p>
+    </main>
+
+
+run : ⊤ → String
+run ⊤ =
+    case exercise ⊤ of
+        Ok True →
+            "native pass"
+        Ok False →
+            "FAIL"
+        Err text →
+            text
+
+
+exercise : ⊤ → Result String Bool
+exercise ⊤ =
+    data = require "unsupported" (Image.data 2 2 Image.settings)?
+    pixels = require "pixels error" (Image.pixels data)?
+    require "write error" (Binary.writeU8 pixels 0 255)?
+    second = require "alias error" (Image.pixels data)?
+    red = require "read error" (Binary.readU8 second 0)?
+    canvas = require "canvas error" (Canvas.byId "canvas")?
+    image = require "image error" (Image.byId "image")?
+    video = require "video error" (Video.byId "video")?
+    options =
+        { Image.bitmapOptions
+            | resizeWidth = Just 3
+            , resizeHeight = Just 3
+            , orientation = Image.FlipY
+        }
+    frame =
+        require
+            "unsupported"
+            (Video.frame (Source.FromCanvas canvas) { Video.frameOptions | timestamp = Just 0 })?
+    clone = require "clone error" (Video.clone frame)?
+    bitmap = require "bitmap error" (Image.bitmap (Source.FromPixels data) Nothing options)?
+    bitmapInfo = Source.info (Source.FromBitmap bitmap)
+    density = Probe.densityImage ⊤
+    require "density decode error" (Image.decode density)?
+    densityFrame =
+        require
+            "density frame error"
+            (Video.frame (Source.FromImage density)
+                { Video.frameOptions
+                    | timestamp = Just 0
+                    , visibleRect = Just { x = 0, y = 0, width = 4, height = 4 }
+                    , displaySize = Just { width = 4, height = 4 }
+                }
+            )?
+    densityCorrect =
+        (Source.info (Source.FromImage density)).width == 2
+            && (Video.info densityFrame).codedWidth == 4
+    Video.close densityFrame
+    hiddenCrop =
+        case
+            Video.frame (Source.FromImage density)
+                { Video.frameOptions
+                    | timestamp = Just 0
+                    , visibleRect = Just { x = 0, y = 0, width = 5, height = 4 }
+                    , displaySize = Just { width = 5, height = 4 }
+                }
+        of
+            Err Video.InvalidRectangle →
+                True
+            Ok extra →
+                Video.close extra
+                False
+            Err _ →
+                False
+    tinyCrop =
+        case
+            Video.frame (Source.FromBitmap bitmap)
+                { Video.frameOptions
+                    | timestamp = Just 0
+                    , visibleRect = Just { x = 0, y = 0, width = 0.1, height = 1 }
+                }
+        of
+            Err Video.InvalidDimensions →
+                True
+            _ →
+                False
+    frameInfo = Video.info frame
+    Video.close frame
+    stillLive = not (Video.closed clone)
+    Video.close clone
+    Image.close bitmap
+    offscreen = require "offscreen error" (Canvas.offscreen 2 2)?
+    transferred = require "transfer error" (Canvas.transfer canvas)?
+    moved = transferRoundtrip ⊤?
+    Ok
+        (moved
+            && densityCorrect
+            && tinyCrop
+            && hiddenCrop
+            && red == 255
+            && bitmapInfo.width == 3
+            && bitmapInfo.height == 3
+            && bitmapInfo.state == Source.Ready
+            && frameInfo.codedWidth == 4
+            && Video.closed frame
+            && stillLive
+            && (Source.info (Source.FromBitmap bitmap)).state == Source.Closed
+            && (Source.info (Source.FromPixels data)).width == 2
+            && (Source.info (Source.FromImage image)).state == Source.Broken
+            && (Source.info (Source.FromVideo video)).state == Source.Loading
+            && (Source.info (Source.FromOffscreen offscreen)).width == 2
+            && (Canvas.offscreenSize transferred).width == 4
+        )
+
+
+require : String, Result error a → Result String a
+require reason outcome = Result.mapError outcome λ_ → reason
+
+
+transferRoundtrip : ⊤ → Result String Bool
+transferRoundtrip ⊤ =
+    bytes = require "buffer error" (Binary.fromList [ 1, 2, 3, 4 ])?
+    data = require "pixels error" (Image.data 1 1 Image.settings)?
+    bitmap =
+        require "bitmap error" (Image.bitmap (Source.FromPixels data) Nothing Image.bitmapOptions)?
+    canvas = require "offscreen error" (Canvas.offscreen 2 2)?
+    frame =
+        require
+            "frame error"
+            (Video.frame (Source.FromBitmap bitmap) { Video.frameOptions | timestamp = Just 7 })?
+    duplicate =
+        case
+            Source.clone
+                { body = "duplicate"
+                , attachments =
+                    [ Source.Move (Source.Bytes bytes), Source.Move (Source.Bytes bytes) ]
+                }
+        of
+            Err Source.DuplicateTransfer →
+                not (Binary.detached bytes)
+            _ →
+                False
+    result =
+        require
+            "clone error"
+            (Source.clone
+                { body = "native"
+                , attachments =
+                    [ Source.Move (Source.Bytes bytes)
+                    , Source.Move (Source.BitmapAttachment bitmap)
+                    , Source.Move (Source.CanvasAttachment canvas)
+                    , Source.Copy (Source.PixelsAttachment data)
+                    , Source.Move (Source.FrameAttachment frame)
+                    ]
+                }
+            )?
+    case result.attachments of
+        [ Source.Bytes receivedBytes, Source.BitmapAttachment receivedBitmap, Source.CanvasAttachment receivedCanvas, Source.PixelsAttachment receivedPixels, Source.FrameAttachment receivedFrame ] →
+            source = require "source error" (Binary.bufferSource receivedBytes)?
+            values = require "bytes error" (Binary.toList source)?
+            live =
+                (Source.info (Source.FromBitmap receivedBitmap)).width == 1
+                    && not (Video.closed receivedFrame)
+                    && (Canvas.offscreenSize receivedCanvas).width == 2
+                    && (Source.info (Source.FromPixels receivedPixels)).width == 1
+            detachedCanvas =
+                case
+                    Source.clone
+                        { body = "again"
+                        , attachments = [ Source.Move (Source.CanvasAttachment canvas) ]
+                        }
+                of
+                    Err Source.DataCloneRejected →
+                        True
+                    _ →
+                        False
+            noContext =
+                case Canvas.snapshot receivedCanvas of
+                    Err Canvas.NoContextOrDetached →
+                        True
+                    _ →
+                        False
+            renderer = require "renderer error" (Canvas.offscreenBitmapRenderer receivedCanvas)?
+            require "present error" (Canvas.present renderer receivedBitmap)?
+            consumed = (Source.info (Source.FromBitmap receivedBitmap)).state == Source.Closed
+            secondPresent =
+                case Canvas.present renderer receivedBitmap of
+                    Err Canvas.ClosedBitmap →
+                        True
+                    _ →
+                        False
+            snapshot = require "snapshot error" (Canvas.snapshot receivedCanvas)?
+            snapshotLive = (Source.info (Source.FromBitmap snapshot)).state == Source.Ready
+            Image.close snapshot
+            Image.close receivedBitmap
+            Video.close receivedFrame
+            Ok
+                (duplicate
+                    && result.body == "native"
+                    && values == [ 1, 2, 3, 4 ]
+                    && Binary.detached bytes
+                    && (Source.info (Source.FromBitmap bitmap)).state == Source.Closed
+                    && Video.closed frame
+                    && detachedCanvas
+                    && live
+                    && noContext
+                    && consumed
+                    && secondPresent
+                    && snapshotLive
+                )
+        _ →
+            Err "wrong packet"
