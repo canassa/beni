@@ -1,0 +1,6 @@
+-- A runtime can read callback result constructors and named fields too.
+import Test
+
+
+main : Test.Program
+main = Test.program λ⊤ → "transitive program fields: ok"

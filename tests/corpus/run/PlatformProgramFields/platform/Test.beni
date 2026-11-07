@@ -1,0 +1,10 @@
+pub opaque type Program
+    = Program (⊤ → Payload)
+
+
+type Payload
+    = Payload { runtimeResult : String }
+
+
+pub program : sync (⊤ → String) → Program
+program callback = Program λ⊤ → Payload { runtimeResult = callback ⊤ }
