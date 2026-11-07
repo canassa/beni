@@ -1,0 +1,60 @@
+-- A `⟲` at a call's result covers what arrives open at a middle place (`ownership-v2.md` §2.1, #2195):
+-- `hg` answers `m` at `#P.0#Wrap.0`, and a slot below that folds onto `#P.0⟲`, whose words do not start there.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap Box
+    | P T Int
+
+
+type Box
+    = Bx T T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrB u
+        P u _ →
+            wr u
+
+
+wrB : Box → Int
+wrB u =
+    case u of
+        Bx p q →
+            wr p + wr q
+
+
+rd : T → Int
+rd t =
+    case t of
+        Leaf xs →
+            List.length xs
+        Wrap (Bx p q) →
+            rd p + rd q
+        P u _ →
+            rd u
+
+
+hg : T → T
+hg t0 =
+    case t0 of
+        P (Wrap m) _ →
+            P (Wrap m) 0
+        _ →
+            Leaf []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = wr (hg (P (Wrap (Bx (Leaf k) (Leaf []))) 0))
+    Node.print (String.fromInt (a + List.length k))
