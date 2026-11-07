@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const PastPayload = @import("PastPayload.zig");
 const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Slots = @import("Slots.zig");
 const Trees = @import("Trees.zig");
 
@@ -44,6 +45,13 @@ pub fn wholeAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId) ?Tree
     if (@import("Mutate.zig").on(.payload_arrival_exact) or !PastPayload.payload(places, places.pathPlace(slot))) return null;
     var x = a;
     x.deep = true;
+    return x;
+}
+
+/// A caller's slot in a row is that slot of the argument, by structure (§2.1).
+pub fn inRow(t: *const Table, a: Trees.Arrival, suffix: []const u32) Trees.Arrival {
+    var x = a;
+    if (suffix.len != 0 and a.kind != .fresh and a.kind != .top and a.kind != .host and a.kind != .shared and SlotWords.endsInRow(t.relWords(a.slot))) x.deep = false;
     return x;
 }
 

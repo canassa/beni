@@ -870,7 +870,7 @@ pub const Eval = struct {
             defer below.deinit(e.gpa());
             var da = a;
             da.deep = true;
-            if (a.kind == .param and !a.deep) try e.arrivalLeaves(k.call, none, da, suffix0, &below) else try below.appendSlice(e.gpa(), acc.items);
+            if (a.kind == .param and !a.deep) try e.arrivalLeaves(k.call, none, Subtree.inRow(e.f.slots, da, suffix0), suffix0, &below) else try below.appendSlice(e.gpa(), acc.items);
             var atoms: std.ArrayList(u32) = .empty;
             defer atoms.deinit(e.gpa());
             var uniform = true;
@@ -1119,7 +1119,9 @@ pub const Eval = struct {
     /// entry: by those words, or at a payload whole, since a word there says no depth (§2.1).
     fn arrivalAt(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, slot: PathId, open: bool, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
         if (Subtree.wholeAt(e.places(), a, slot)) |w| return e.arrivalLeaves(call, c, w, &.{}, out);
-        try e.arrivalLeaves(call, c, Subtree.readAt(e.places(), a, slot, open), suffix, out);
+        const r = Subtree.readAt(e.places(), a, slot, open);
+        // A type variable's slot stays deep: it holds what the row's field holds, whatever that is.
+        try e.arrivalLeaves(call, c, if (e.places().kind(e.places().pathPlace(slot)) == .@"var") r else Subtree.inRow(e.f.slots, r, suffix), suffix, out);
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
@@ -1132,9 +1134,7 @@ pub const Eval = struct {
         const cl = e.f.calls.items[call];
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(e.gpa());
-        var a = a0;
-        // A caller's slot in a row is that slot of the argument, by structure (§2.1).
-        if (suffix.len != 0 and a.kind != .fresh and a.kind != .top and a.kind != .host and a.kind != .shared and SlotWords.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
+        const a = a0;
         if (a.kind == .param or a.kind == .cb or a.kind == .lent) try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
         try words.appendSlice(e.gpa(), suffix);
         const start = out.items.len;
@@ -1189,7 +1189,7 @@ pub const Eval = struct {
                 var hits: std.ArrayList(Contract.Hit) = .empty;
                 defer hits.deinit(e.gpa());
                 try e.hitsAt(e.contracts.head(vcc).res_root, words, &hits);
-                for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, va, words[hit.depth..], out);
+                for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, Subtree.inRow(e.f.slots, va, words[hit.depth..]), words[hit.depth..], out);
             }
             if (out.items.len == start and !@import("Mutate.zig").on(.known_answer_empty)) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
             return;
