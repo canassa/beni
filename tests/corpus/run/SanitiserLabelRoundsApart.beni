@@ -1,0 +1,23 @@
+-- `SanitiserLabelRounds`' twin with nothing shared (`ownership-v2.md` §2.11.3,
+-- *A virtual call is an evaluation's*, #2166): `k2` answers a copy, so `push` meets no
+-- reader of `q` and the write stands.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    k1 = λv → [ 0 ]
+    k2 = λv → if List.length v > 0 then v else List.map q λx → x
+    k0 = λv → v
+    r = List.foldl [ 1, 2, 3, 4, 5, 6 ] ( [], [], [] ) λi acc →
+        ( k0 acc.2, List.foldl [ 1, 2 ] acc.1 λj s → k1 s, k2 acc.0 )
+    w = ( r.0, r.1, r.2 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.0)

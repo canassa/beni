@@ -1,0 +1,1 @@
+Labels gained in several rounds with nothing shared: v2 accepts the write, and the sanitised run shows no stale read (§2.11.3, #2166).

@@ -166,12 +166,10 @@ pub const Walk = struct {
     /// Per root: the local whose parameter pattern it is, for texts.
     regions: *const Regions.Tree,
     index: Liveness.Index = .{},
-    /// Interned across evaluations, so a label met again is one record:
-    /// `(call, callee label)` → its virtual call; a derived label's identity
-    /// `(j, slot, origin)` → its `cbs` record; `(call, label, k)` → a supply.
-    virt: Ids.FixedDict(2) = .{},
+    /// A derived label's identity `(j, slot, origin)` → its `cbs` record, a
+    /// name that holds across evaluations; which of them pass on is each
+    /// evaluation's. Virtual calls are too (§2.11.3).
     derived: Ids.FixedDict(5) = .{},
-    supply_of: Ids.FixedDict(3) = .{},
     /// The calls and labels the walk made, before any evaluation's.
     walk_calls: u32 = 0,
     /// A called code: where its last call begins (`Called.Last`).
@@ -182,7 +180,7 @@ pub const Walk = struct {
         w.f.deinit();
         gpa.free(w.bindings);
         inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries, &w.runs }) |l| l.deinit(gpa);
-        inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.virt, &w.derived, &w.supply_of }) |l| l.deinit(gpa);
+        inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.derived }) |l| l.deinit(gpa);
     }
 
     pub fn leavesOfRun(w: *const Walk, r: Ids.Range) []const u32 {

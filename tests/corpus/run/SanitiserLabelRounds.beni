@@ -1,0 +1,27 @@
+-- A virtual call belongs to a label, not to a place in the callee's list of
+-- labels (`ownership-v2.md` §2.11.3, *A virtual call is an evaluation's*, #2166). The
+-- lambda's contract gains `k1`'s label in a later round than `k2`'s and
+-- `k0`'s, and its labels are sorted, so theirs move up one. A virtual call
+-- kept by position then ran `k0`'s code for `k2`'s label: what `k2` answers
+-- never held `q`, and `push` wrote `q` under `w`. Moving `k2` above `k1`
+-- gave the other verdict.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    k1 = λv → [ 0 ]
+    k2 = λv → if List.length v > 0 then v else q
+    k0 = λv → v
+    r = List.foldl [ 1, 2, 3, 4, 5, 6 ] ( [], [], [] ) λi acc →
+        ( k0 acc.2, List.foldl [ 1, 2 ] acc.1 λj s → k1 s, k2 acc.0 )
+    w = ( r.0, r.1, r.2 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.0)

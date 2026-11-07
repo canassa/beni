@@ -2870,6 +2870,45 @@ the chain ends, as a virtual call always follows the call it applies a label of.
 `run/SanitiserCapturedWriter` (refused; the sanitised runs trapped) and `run/SanitiserCapturedWriterApart` (the
 same shapes on apart or fresh lists, accepted in place).
 
+**A virtual call is an evaluation's** (#2166). A contract's labels are sorted by `(j, slot, origin)`, so a label's index
+moves when the contract gains a label before it, and a candidate gains labels from round to round. An index means
+something only in the contract it was read from. So **nothing that outlives an evaluation holds an index in a contract.**
+What holds one is the evaluation's and goes with it: `known`, `label_map`, `lent`, `applied` and `passes`, and every
+`cb(i)` read, each against the contract the evaluation read at that call.
+
+A virtual call follows from what an evaluation reads: the labels of the contract read at a call, and the value at each
+label's slot. So each evaluation makes its virtual calls and their supplies from nothing (`Eval.evaluate`, `Virtual.zig`):
+`Frame.calls` is cut back to the walk's, and `Frame.supplies` is emptied. No table of them lasts between rounds, a
+virtual call of a label that has gone cannot be read, and a code read as unknown escapes in every evaluation. A key of a
+supply is its index in `Frame.supplies`, which is the evaluation's too.
+
+The roots these calls make stay in the frame, as the values `valueAt` makes do. A root from an earlier evaluation is
+unreachable: only a virtual call's arguments and its answer lead to one, and they are made again. A leaf `fresh` of a
+virtual call's index is read through `Frame.calls` as it stands. The kept judgements of §2.12 compare ids only when the
+group's print says the round read what the one before it read, and then the evaluation is the same one, with the same
+numbers. The cost is charged: one root and its leaves per virtual call per round. Measured: core's records +0.12 %
+(2 097 776 → 2 100 314), a tower of 64 labelled closures +3.8 %, 26 rounds of labels through a group +0.3 %.
+
+`Frame.cbs` does last, since a derived label's record is a name a leaf `answer` holds. So what asks which labels run reads
+this evaluation's: `AnswerKeep.repeats` counts a direct label or one passed on now. It answers *yes* to let a holder off
+(`AnswerKeep.kept`, `Supplied`), so a label only an earlier evaluation met must not add to it.
+
+Before, a virtual call was kept under `(q, li)`. In `List.foldl … λi acc → ( k0 acc.2, List.foldl … λj s → k1 s, k2
+acc.0 )` the lambda gains `k1`'s label a round after `k2`'s and `k0`'s and sorts it first. Index 0 went from `k2`'s label to
+`k1`'s, index 1 from `k0`'s to `k2`'s, and the records stayed: `k2`'s label applied `k0`'s code, so what `k2` answers
+never held its capture `q`. The program was accepted and trapped, and a `let` moved gave a refusal. A code read as
+unknown made its escape once, in the evaluation that made the record, so the next evaluation's verdict went without it. Fixtures
+`run/SanitiserLabelRounds`, `run/SanitiserLabelRoundsOrder` (refused) and `run/SanitiserLabelRoundsApart`,
+`run/SanitiserLabelRoundsCopied` (accepted; the second was refused by the wrong label's answer), `run/SanitiserWildCodeRounds` (refused, the escape) and `run/SanitiserWildCodeRoundsApart` (accepted);
+`ordering_test.zig` compares the two let orders.
+
+Measured, against master at `add0059ab`. `review-2161/g5`: 136 TRAP and 552 of 1 110 classes split by let order on master with
+#2146's relation, 0 and 0 now, 2 022 programs accepted before and 2 448 now. The 120 of those g5 programs accepted before
+and refused now each trap on master with #2146's relation, on shorter folds. Two generators in `s2166/` (26 760 programs:
+captures through inner lambdas, nested folds, recursion through a group, record-held codes, every let and declaration
+order): 0 TRAP, 0 classes split. Their 72 TRAP of the record-held family were the escape. `repeats_stale_labels`
+survives: stale labels reach `repeats` on 240 of `review-2173/g9`'s programs and move no verdict.
+
 #### 2.11.5 Other constructs
 
 - **Record update** `{ r | F = … }` builds a record: a `built` record with a fresh site, whose untouched fields
@@ -4646,7 +4685,7 @@ names are directories under `~/.cache/beni-agents/`, in `s214/probes/` where no 
 | G9 | a call's value names its contract, across modules | an imported value called with arguments reads the value's contract | `review-2117b/probes/X4btop` | #2132 |
 | G10 | §2.3.3's `family` | a value's `family` is never set: `Walk.Walker.project` makes one only from one. Every family arm is dead, so the claim that a family stands for a step a position cannot name is no fact of the code | `grep`, census | #2149 |
 | G11 | the Theorem's (iv): a checked caller at every export | a `--library` export accepts `param` with no caller: JavaScript is the caller, and its next read traps | `review-2150/probes/Lib1` | #2151 |
-| G12 | a verdict does not depend on the order pairs are asked | **Open.** The relation's equations that are joins no longer depend on it (#2146): the memo of G5 was filled in the order holds were read, and `Resolve.heldAt` calls `HoldAt.holdsAt` before it asks for a later use, so a dead field's `may` filled it. `C7swap` and `C8swapB`, and `C11foldTwo` and `C12foldTwoB`, differ only in which tuple field is read, and only the second of each was refused. **Open:** `Eval`'s label index across rounds, a soundness hole in the caller (#2166); `instCond` keeps a value computed under its cut, sound since the cut reads `no`, and `kept`'s equations are order-sensitive in precision (#2160). `ordering_test.zig` varies declarations, never the order of questions | `review-2150/probes`; 3 804 classes of the generator: 112 split before, 0 now | #2146, #2160, #2166 |
+| G12 | a verdict does not depend on the order pairs are asked, or on the order a frame's declarations are met | **Open for #2160.** A label's rounds no longer move a verdict (#2166): a virtual call was kept by its label's index in a sorted list that grew between rounds, and the order of a frame's lets decides the round a label is gained in, so moving a `let` moved a verdict on regular types (§2.11.3, *A virtual call is an evaluation's*). The relation's equations that are joins no longer depend on it (#2146): the memo of G5 was filled in the order holds were read, and `Resolve.heldAt` calls `HoldAt.holdsAt` before it asks for a later use, so a dead field's `may` filled it. `C7swap` and `C8swapB`, and `C11foldTwo` and `C12foldTwoB`, differ only in which tuple field is read, and only the second of each was refused. **Open:** `Eval`'s label index across rounds, a soundness hole in the caller (#2166); `instCond` keeps a value computed under its cut, sound since the cut reads `no`, and `kept`'s equations are order-sensitive in precision (#2160). `ordering_test.zig` varies declarations, never the order of questions | `review-2150/probes`; 3 804 classes of the generator: 112 split before, 0 now | #2146, #2160, #2166 |
 
 **In flight: two pull requests make programs worse, and this section did not stop them.** The first version of this list read #2134 and
 #2104 as fitting. They do not. On the heads their reviews read, master's `REFUSED` becomes a wrong run:
@@ -5743,6 +5782,7 @@ L0  Ids  Counters  Scratch
 | `Contents.zig` | 11 | a cell's contents stay separated: a store that may hold one object twice escapes them; the `stores` a contract publishes (§2.13.7, #1984, #1986), and a move between slots judged as an edit | Ids, Place, Slots, Contract, Relation, Forest, LabelChain, Distinct, Cells, Loans, Stored, Eval |
 | `Loans.zig` | 9 | a cell callback's label by its supply below the `◆`, and what it answers as its caller reads it: a loan of the cell, or `Ref.modify`'s `.0` owned when the stored `.1` keeps none of it (§2.13.7, #1977) | Ids, Place, Slots, Value, Contract, Forest, Relation, LabelChain, Trees |
 | `Called.zig` | 8 | a function value in a result: the closure of a called code a call's result is (§2.11.3, #2028) | Ids, Slots, Value, Contract |
+| `Virtual.zig` | 9 | a virtual call: a label's application to a known code, with its roots (§2.11.3, #2166) | Ids, BelowSize, Contract, Value, WalkContext |
 | `Construction.zig` | 8 | a construction over its base, split from `Walk` (§2.13.2) | Ids, Facts, Place, Value, Relation |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `AnswerRead.zig` | 9 | whether known code only reads what it runs a parameter for (§2.11.3, #2059) |

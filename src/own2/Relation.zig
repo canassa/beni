@@ -120,7 +120,7 @@ pub const Eval = struct {
     contracts: *const Contract.Table,
     arena: Allocator,
     /// `(call, caller slot, which)` → a run of `inst_leaves`; `which` is
-    /// `none` for the result, else the supply `label << 16 | k`.
+    /// `none` for the result, else the supply's index in `Frame.supplies`.
     inst_memo: Ids.FixedDict(3) = .{},
     inst_runs: std.ArrayList([2]u32) = .empty,
     inst_leaves: std.ArrayList(u32) = .empty,
@@ -136,6 +136,11 @@ pub const Eval = struct {
     label_map: Ids.FixedDict(2) = .{},
     /// Per `(call, callee label)`: the virtual call that applies a known code.
     known: Ids.FixedDict(2) = .{},
+    /// Per call of the frame: the `(call, callee label)` it applies, as a
+    /// virtual call of this evaluation; `none` in a call's first word else.
+    applied: std.ArrayList([2]u32) = .empty,
+    /// The `cbs` labels the frame passes on in this evaluation.
+    passed: Ids.FixedDict(1) = .{},
     /// Per `(call, label)`: a cell callback's answer the cell may keep is a loan of it (§2.13.7,
     /// `Loans.lends`): an index of `lent_cells`, the cell's argument and the slot of its `◆`.
     lent: Ids.FixedDict(2) = .{},
@@ -199,6 +204,8 @@ pub const Eval = struct {
         e.pairs.deinit(g);
         e.label_map.deinit(g);
         e.known.deinit(g);
+        e.applied.deinit(g);
+        e.passed.deinit(g);
         e.lent.deinit(g);
         e.lent_cells.deinit(g);
         e.inst_stack.deinit(g);
@@ -551,12 +558,20 @@ pub const Eval = struct {
 
     // ---- instantiation (§2.11.2) ---------------------------------------------
 
-    /// The result tree of contract `c` (`which` none) or of its supply `(label << 16) | k`.
+    /// Virtual call `vi` applies label `li` of call `call`'s callee in this evaluation.
+    pub fn apply(e: *Eval, call: u32, li: u32, vi: u32) Error!void {
+        try e.known.put(e.gpa(), .{ call, li }, vi);
+        while (e.applied.items.len <= vi) try e.applied.append(e.gpa(), .{ none, none });
+        e.applied.items[vi] = .{ call, li };
+    }
+
+    /// The result tree of contract `c` (`which` none) or of the supply `which`.
     pub fn resRoot(e: *Eval, c: Contract.Id, which: u32) Contract.Node {
         const h = e.contracts.head(c);
         if (which == none) return h.res_root;
-        const l = e.contracts.labelsOf(h.labels)[which >> 16];
-        for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) return s.res_root;
+        const su = e.f.supplies.items[which];
+        const l = e.contracts.labelsOf(h.labels)[e.applied.items[su.virtual][1]];
+        for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == su.k) return s.res_root;
         return 0;
     }
 
@@ -575,7 +590,7 @@ pub const Eval = struct {
 
     /// The leaves the callee of `call` says arrive at caller slot `slot`
     /// (a path under the call's result root), or, with `which` a supply
-    /// `(label << 16) | k`, at the supply's slot. Built once per key.
+    /// (an index in `Frame.supplies`), at the supply's slot. Built once per key.
     pub fn instAt(e: *Eval, call: u32, slot: PathId, which: u32) Error![]const u32 {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
@@ -983,9 +998,7 @@ pub const Eval = struct {
     /// The root a key's call or supply results in.
     fn rootOfKey(e: *Eval, ki: u32) u32 {
         const k = e.keys.items[ki];
-        if (k.which == none) return e.f.calls.items[k.call].root;
-        for (e.f.supplies.items) |s| if (s.call == k.call and (s.label << 16 | s.k) == k.which) return s.root;
-        unreachable;
+        return if (k.which == none) e.f.calls.items[k.call].root else e.f.supplies.items[k.which].root;
     }
 
     fn addBelow(e: *Eval, ki: u32, x: u32, at: u32) Error!void {
@@ -1213,10 +1226,7 @@ pub const Eval = struct {
         // A symbol `↓p` (§2.3.1) is read the same way at `p`, whatever
         // else the set holds.
         if (r.kind == .call or r.kind == .supply) {
-            const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else blk: {
-                const su = e.f.supplies.items[r.a];
-                break :blk .{ su.call, (su.label << 16) | su.k };
-            };
+            const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else .{ e.f.supplies.items[r.a].call, r.a };
             for (Subtree.subs(e.f.slots, l.slots)) |sb| try e.wholeItems(call, which, Slots.pathOf(sb), l.tags, out);
             if (Subtree.explicit(e.f.slots, l.slots).len == 0) return;
         }
@@ -1225,10 +1235,7 @@ pub const Eval = struct {
             // made gives what it has, and its consumer gets the rest.
             const call: u32, const which: u32 = switch (r.kind) {
                 .call => .{ r.a, none },
-                .supply => blk: {
-                    const s = e.f.supplies.items[r.a];
-                    break :blk .{ s.call, (s.label << 16) | s.k };
-                },
+                .supply => .{ e.f.supplies.items[r.a].call, r.a },
                 .cb, .param => unreachable,
             };
             for (Subtree.explicit(e.f.slots, l.slots)) |s| {
@@ -1253,10 +1260,7 @@ pub const Eval = struct {
         }
         const call: u32, const which: u32 = switch (r.kind) {
             .call => .{ r.a, none },
-            .supply => blk: {
-                const s = e.f.supplies.items[r.a];
-                break :blk .{ s.call, (s.label << 16) | s.k };
-            },
+            .supply => .{ e.f.supplies.items[r.a].call, r.a },
             .cb, .param => unreachable,
         };
         for (Subtree.explicit(e.f.slots, l.slots)) |s| {

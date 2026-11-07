@@ -44,11 +44,11 @@ pub fn operands(c: LabelChain.Chain, q: u32, answer: bool, out: *std.ArrayList(u
             try out.append(gpa, a);
         }
         if (@import("Mutate.zig").on(.across_no_answers)) return;
-        const it = c.virt.keys.items;
+        const it = c.known.keys.items;
         var i: usize = 0;
         while (i + 1 < it.len) : (i += 2) {
             if (it[i] != o[0] or it[i + 1] == o[1]) continue;
-            try out.append(gpa, try f.refRoot(f.calls.items[c.virt.values.items[i / 2]].root));
+            try out.append(gpa, try f.refRoot(f.calls.items[c.known.values.items[i / 2]].root));
         }
         cur = o[0];
     }

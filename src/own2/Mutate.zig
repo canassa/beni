@@ -226,6 +226,10 @@ pub const Name = enum {
     below_outer_off,
     /// O14 H3: `SupplyAnswers.repeated` off.
     repeated_off,
+    /// O3: `AnswerKeep.repeats` counts a label only an earlier evaluation passed on.
+    repeats_stale_labels,
+    /// O1 O8: a known code read as unknown does not escape.
+    unknown_code_no_escape,
     /// O14 H3: `Traversal.runsEach` always true.
     runs_each_true,
     /// O14 H3: two sources of one traversal are always apart.

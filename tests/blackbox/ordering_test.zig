@@ -442,6 +442,33 @@ test "the checker v2's call verdicts and summaries are the same reversed" {
     });
 }
 
+// `ownership-v2.md` §2.11.3, *A virtual call is an evaluation's* (#2166): the order of a
+// frame's lets is the order of its closures' codes, which decides the round a
+// callee's contract gains a label in. Moving `k2` above `k1` turned a nested
+// fold's write from accepted to refused while virtual calls were kept by
+// position.
+test "the checker v2's verdict on a nested fold is the same in either order of its lets" {
+    var s = try Scenario.init("a nested fold's lets under the checker v2, in either order");
+    defer s.deinit();
+    const a = s.arena();
+    const written = try readRepo(a, "tests/corpus/run/SanitiserLabelRounds.beni");
+    const k1 = "    k1 = λv → [ 0 ]\n";
+    const k2 = "    k2 = λv → if List.length v > 0 then v else q\n";
+    const swapped = try std.mem.replaceOwned(u8, a, written, k1 ++ k2, k2 ++ k1);
+    var reports: [2][]const u8 = undefined;
+    for ([_][]const u8{ written, swapped }, 0..) |src, i| {
+        try s.w.write("Main.beni", src);
+        const run = try s.w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        reports[i] = try verdictLines(a, run.stdout);
+    }
+    try s.finish(.{
+        .green = !std.mem.eql(u8, written, swapped) and reports[0].len != 0 and std.mem.eql(u8, reports[0], reports[1]),
+        .signature = if (reports[0].len == 0) "no-verdict-lines" else "exit=0 ownership-differs",
+        .detail = try std.fmt.allocPrint(a, "--- written ---\n{s}--- swapped ---\n{s}", .{ reports[0], reports[1] }),
+    });
+}
+
 /// An ownership report's demand lines and summaries under their module,
 /// every `line:col` in them dropped, sorted.
 fn verdictLines(a: std.mem.Allocator, report: []const u8) ![]const u8 {
