@@ -67,7 +67,7 @@ frames context weight sink index count =
     if index ≥ count then
         Ok ⊤
     else
-        case Stream.write sink (weight * index) of
+        case Worker.write sink (weight * index) of
             Err _ → Err OutputStopped
             Ok ⊤ →
                 case Worker.emit context (Progress index) of
@@ -155,7 +155,7 @@ run send =
                             Ok (Stream.Item chunk) →
                                 send (Status ("frame " ++ String.fromInt (Stream.value chunk)))
                                 Stream.release chunk
-                        stopped = Stream.cancel frames
+                        stopped = Worker.cancelStream frames
                         send (Status ("stream " ++ cleanupText stopped))
                         case Worker.call worker (Jobs.Predict 11) of
                             Err _ → send (Status "post-cancel prediction failed")
