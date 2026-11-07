@@ -92,6 +92,7 @@ pub fn allApart(ents: []const Ent, idx: []const u32) bool {
 
 /// Whether two entries `idx` of one atom may hold together (`Routes.Table.anyPair`).
 pub fn atomTwice(f: *Frame, ents: []const Ent, idx: []const u32) Error!bool {
+    if (@import("Mutate.zig").on(.atom_twice_off)) return false;
     var es: std.ArrayList(Coexist.Entry) = .empty;
     defer es.deinit(f.gpa);
     for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ), .routes = ents[i].routes, .one = ents[i].one });
@@ -142,6 +143,7 @@ pub const Within = struct {
 
     /// Whether a new member of `members` may name an earlier member's object.
     pub fn add(x: *Within, f: *Frame, ents: []const Ent, members: []const u32, routed: bool) Error!bool {
+        if (@import("Mutate.zig").on(.within_group_off)) return false;
         defer x.seen = @intCast(members.len);
         if (members.len <= 8) {
             for (members[x.seen..], x.seen..) |i, k| for (members[0..k]) |j| {
@@ -383,6 +385,7 @@ pub const Rounds = struct {
 /// Whether, in a called code, `ents` hold an object its creation made and
 /// a part of its own parameter (`Relation.Eval.made`, §2.11.3).
 pub fn madeMeetsOwn(e: anytype, ents: []const Ent) bool {
+    if (@import("Mutate.zig").on(.made_meets_own_off)) return false;
     const m = e.made orelse return false;
     var seen: u2 = 0;
     for (ents) |en| seen |= m(e, e.f.leafAt(en.leaf));

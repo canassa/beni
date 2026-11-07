@@ -82,6 +82,7 @@ fn coveredAsks(e: *Eval, ci: u32, feed: Feed, fed: *std.ArrayList(u64)) Error!bo
 
 fn covered(e: *Eval, ci: u32, feed: Feed) bool {
     if (feed.covered == none) return false;
+    if (@import("Mutate.zig").on(.fed_covered_true)) return true;
     var got: ?u32 = null;
     for (e.f.cbs.items[ci].args) |a| if (e.f.val(a).kind != .scalar) {
         if (got != null) return false;

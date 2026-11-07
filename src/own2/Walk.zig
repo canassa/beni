@@ -278,6 +278,7 @@ const Walker = struct {
     fn use(k: *Walker, operand: u32, point: u32, kind: Facts.UseKind, foot: [2]u32, callee: [3]u32) Error!void {
         const r = k.res[k.rel(operand)];
         if (r.local == none or r.path == .none) return;
+        if (@import("Mutate.zig").on(.walker_no_call_use) and kind == .call) return;
         try k.charge(.use, 1);
         var node: Ids.NodeId = .none;
         if (kind == .call) {
@@ -435,6 +436,7 @@ const Walker = struct {
                 }
                 // A step a place cannot name: a fold's `var`, a record row a template
                 // dropped, a schema member. Unknown, not nothing (§2.1); `cross` holds no object.
+                if (@import("Mutate.zig").on(.walker_project_scalar)) if (try fr.child(x.pos, kind, a, b) == null) return fr.scalar();
                 const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .cross) fr.scalar() else fr.mk(.{ .kind = .top, .site = v });
                 return fr.mk(.{ .kind = .ref, .root = x.root, .pos = p, .place = fr.places.pathPlace(fr.pos.items[p].slot) });
             },
@@ -450,7 +452,7 @@ const Walker = struct {
                                 const ca = fr.places.ctorArgOf(st);
                                 if (x.form == .ctor and ca[0] == x.head and ca[1] < ks.len) return ks[ca[1]];
                             },
-                            .row => return fr.mk(.{ .kind = .top, .site = v }),
+                            .row => return if (@import("Mutate.zig").on(.walker_row_scalar)) fr.scalar() else fr.mk(.{ .kind = .top, .site = v }),
                             else => {},
                         }
                         return fr.scalar();

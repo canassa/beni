@@ -81,6 +81,7 @@ fn walkSource(e: *Eval.Evaluation, v0: u32, walk: bool) Error!?Source {
 /// element and a walk of its container are one traversal, by the index
 /// obligation; a pattern's front and a slice after it are apart.
 fn apartSources(d: Source, p: Source) bool {
+    if (@import("Mutate.zig").on(.apart_sources_true)) return true;
     if (d.root != p.root or d.pos != p.pos) return false;
     return switch (d.kind) {
         .taken => p.kind == .whole,
@@ -98,6 +99,7 @@ fn supplyOf(c: LabelChain.Chain, lab: Contract.Label, k: u32) ?Contract.Supply {
 /// Whether virtual call `q`'s own argument `j` is handed once per position
 /// of a family, or once: outward, by each label its code is run by.
 fn runsEach(c: LabelChain.Chain, q: u32, j: u32) Error!bool {
+    if (@import("Mutate.zig").on(.runs_each_true)) return true;
     const f = c.f;
     var cur = q;
     var k = j;
@@ -167,7 +169,7 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
     for (d.labels.items, 0..) |*g, gi| for (g.supplies.items) |*sup| {
         sup.each = false;
         sup.walk = false;
-        if (sup.kept.items.len != 0) continue;
+        if (sup.kept.items.len != 0 and !@import("Mutate.zig").on(.each_kept_ignored)) continue;
         if (!try oneFamily(e, arena, sup)) continue;
         var direct: ?Source = null;
         var pass: ?Source = null;
@@ -208,6 +210,7 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
 
 /// Whether nothing but one parameter's family arrives at the draft's supply.
 fn oneFamily(e: *Eval.Evaluation, arena: Allocator, sup: *Contract.Draft.DraftSupply) Error!bool {
+    if (@import("Mutate.zig").on(.one_family_true)) return true;
     const f = e.fr();
     var arrs: std.ArrayList(Contract.Arrival) = .empty;
     for (sup.res.items.items) |rs| {

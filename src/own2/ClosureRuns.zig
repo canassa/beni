@@ -15,6 +15,7 @@ const Loans = @import("Loans.zig");
 
 /// One closure of the frame, escaped at `point` (`none`: where it stands).
 fn runs(e: *Eval.Evaluation, atom: u32, point: u32, call: u32, read: bool) Eval.Error!void {
+    if (@import("Mutate.zig").on(.closure_runs_off)) return;
     const f = e.fr();
     for (e.w.closures.items) |cl| {
         if (cl.inst != atom) continue;

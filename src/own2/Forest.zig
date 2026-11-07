@@ -187,6 +187,7 @@ pub fn graft(t: *Trees.Table, gpa: Allocator, words: []const u32, n: Node) Ids.I
 /// `a ∪ b`, pointwise (§2.10 *Lattice*): a node's runs are each side's,
 /// merged; each pair of nodes once (`memo`, the caller's).
 pub fn unite(t: *Trees.Table, gpa: Allocator, memo: *Ids.FixedDict(2), a: Node, b: Node, less: Less) Ids.IndexError!Node {
+    if (@import("Mutate.zig").on(.unite_left)) return a;
     if (b == 0 or a == b) return a;
     if (a == 0) return b;
     if (memo.get(.{ a, b })) |n| return n;

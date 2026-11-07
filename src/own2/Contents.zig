@@ -34,6 +34,7 @@ const none: u32 = Ids.none_int;
 /// the cell holds escapes at the store. One that hangs on the frame's own
 /// parameters goes in the code's draft `d` for its callers to judge.
 pub fn check(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void {
+    if (@import("Mutate.zig").on(.contents_check_off)) return;
     const f = e.fr();
     var q: u32 = 0;
     while (q < f.calls.items.len) : (q += 1) {

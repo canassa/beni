@@ -45,7 +45,7 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
         const h = e.contracts.head(c);
         const sig = try e.ctx.codeSig(e.ctx.ctx, cl.code);
-        if (h.writes.len == 0) continue;
+        if (h.writes.len == 0 or @import("Mutate.zig").on(.escaped_writes_off)) continue;
         var flat: std.ArrayList(Contract.Effect) = .empty;
         defer flat.deinit(gpa);
         try e.contracts.writesFlat(gpa, gpa, f.account, f.slots, f.places, h.writes, &flat);

@@ -55,6 +55,7 @@ fn tree(r: Run, root: Contract.Node, seen: []bool) Eval.Error!void {
 /// Closure `atom` of the frame, run at `point` (`none`: where it stands) by code
 /// unseen: its answer goes there.
 pub fn of(e: *Eval.Evaluation, atom: u32, point: u32) Eval.Error!void {
+    if (@import("Mutate.zig").on(.closure_answers_off)) return;
     for (e.w.closures.items) |cl| {
         if (cl.inst != atom) continue;
         const c = e.ctx.contractOf(e.ctx.ctx, cl.code) orelse continue;
@@ -79,6 +80,7 @@ pub fn supplied(e: *Eval.Evaluation, c: Contract.Id, own: u32, caps: []const u32
 
 /// What a known code answers a label that lets its answer go has escaped.
 pub fn labelled(e: *Eval.Evaluation) Eval.Error!void {
+    if (@import("Mutate.zig").on(.answer_left_off)) return;
     const f = e.fr();
     for (f.calls.items, 0..) |c, q| if (c.virtual) if (LabelChain.virtualOuter(e.chain(), @intCast(q))) |o| {
         const outer = f.calls.items[o[0]];

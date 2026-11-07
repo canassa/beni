@@ -35,7 +35,7 @@ pub const Env = struct {
     contracts: *Contract.Table,
 
     pub fn has(words: u32, w: W) bool {
-        return words & w.bit() != 0;
+        return words & w.bit() != 0 and @import("Mutate.zig").keeps(w);
     }
 
     pub fn root(env: Env, p: PlaceId) Error!PathId {

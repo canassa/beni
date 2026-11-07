@@ -211,6 +211,11 @@ pub const own2 = struct {
     pub const Report = @import("own2/Report.zig");
     pub const Ownership = @import("own2/Ownership.zig");
     pub const Enforce = @import("own2/Enforce.zig");
+    pub const Ancestry = @import("own2/Ancestry.zig");
+    pub const Conds = @import("own2/Conds.zig");
+    pub const Forest = @import("own2/Forest.zig");
+    pub const Steps = @import("own2/Steps.zig");
+    pub const Within = @import("own2/Within.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
 pub const dump = struct {

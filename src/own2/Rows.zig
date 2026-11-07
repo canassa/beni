@@ -69,8 +69,10 @@ pub fn pessimistic(env: Env, arity: u32, host: bool) Error!Contract.Id {
     var d: Draft = .{ .arity = arity, .flags = .{ .returns = true, .pessimistic = true } };
     for (0..arity) |j| {
         _ = try Draft.addEffect(&d.reads, env.arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
+        if (@import("Mutate.zig").on(.pessimistic_no_escape)) continue;
         _ = try Draft.addEffect(&d.escapes, env.arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
     }
+    if (@import("Mutate.zig").on(.pessimistic_res_empty)) return env.commit(&d);
     try Draft.markOpen(&d.res, env.arena, Slots.root);
     _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = if (host) .host else .top });
     d.res_cond = .unprovable;
@@ -81,6 +83,7 @@ pub fn pessimistic(env: Env, arity: u32, host: bool) Error!Contract.Id {
 /// result crossing, nothing written.
 pub fn comparison(env: Env, arity: u32) Error!Contract.Id {
     var d: Draft = .{ .arity = arity, .flags = .{ .returns = true, .cross = true } };
+    if (@import("Mutate.zig").on(.comparison_row_no_reads)) return env.commit(&d);
     for (0..arity) |j| _ = try Draft.addEffect(&d.reads, env.arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
     return env.commit(&d);
 }

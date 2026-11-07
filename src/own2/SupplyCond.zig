@@ -42,11 +42,13 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
     defer e.ev.read_mode = .ask;
     for (f.cbs.items[e.w.last.cbs..], e.w.last.cbs..) |cb, ci| if (cb.inst != none) {
         const at = try labelIndex(s, @intCast(ci));
+        if (@import("Mutate.zig").on(.below_direct_off)) continue;
         for (cb.args, 0..) |a, k| {
             const sup = try s.d.labels.items[at].supplyOf(arena, @intCast(k));
             sup.below = try Cond.conj(arena, f.account, sup.below, try Distinct.sepOf(&e.ev, a));
         }
     };
+    if (@import("Mutate.zig").on(.below_pass_off)) return;
     for (e.passes.items) |p| {
         const at = try labelIndex(s, p[0]);
         const call = f.calls.items[p[1]];
@@ -56,7 +58,7 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
             const c = try underTaken(e.chain(), arena, f.account, p[1], try e.contracts.cond(arena, su.below));
             const fd: Distinct.Fed.Feed = .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2], .covered = Distinct.Fed.covering(&e.ev, c, call) };
             sup.below = try Cond.conj(arena, f.account, sup.below, try Distinct.instSelFeed(&e.ev, c, p[1], fd));
-            if (!call.virtual) continue;
+            if (!call.virtual or @import("Mutate.zig").on(.below_outer_off)) continue;
             const own = call.args.len - f.kidsOf(f.val(call.callee_val)).len;
             const es = try Eval.entriesOf(e, su.res_root);
             for (es.items.items) |rs| for (rs.arrivals) |a| {

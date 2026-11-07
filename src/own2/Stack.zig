@@ -179,6 +179,7 @@ pub const Index = struct {
     /// aggregation reads the unknown leaves and its related positions'
     /// lists; the target's selection joins through one other leaf.
     pub fn judge(x: *Index, ev: *Relation.Eval, w: *const Walk.Walk, regions: *const Regions.Tree, at: u32, point: u32, targets: []const u32, aggregate: bool, param_target: *const fn (*const Value.Frame, Value.Leaf) bool, relied: anytype) Error!?u32 {
+        if (@import("Mutate.zig").on(.stack_judge_off)) return null;
         if (at == none or x.items.items.len == 0) return null;
         const g = ev.gpa();
         var lists: std.ArrayList(u32) = .empty;
@@ -236,6 +237,7 @@ pub const Index = struct {
             if (!by_key or v.best != none) continue;
             // The target's selection: the first other pending leaf with a
             // parameter's key that answers `under`.
+            if (@import("Mutate.zig").on(.stack_agg_off)) continue;
             v.li = agg;
             v.once = true;
             try x.live(ev, agg, 0, at, r2, &v);

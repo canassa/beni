@@ -18,6 +18,7 @@ const none: u32 = Ids.none_int;
 /// captured `Ref` is a `writer` demand on the cell's `◆` there instead,
 /// never `once`: the code's frame keeps the write (§2.13.7).
 pub fn demands(e: *Eval.Evaluation) Eval.Error!void {
+    if (@import("Mutate.zig").on(.once_off)) return;
     const f = e.fr();
     const gpa = e.gpa();
     if (e.w.code.called != null) return; // The closures of a called code's creation are its body's.

@@ -1460,7 +1460,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
             // R-5.13.1: in a comparison's walk, a write of what arrived is `comparison_changes_value`;
             // a write of a fresh value stays accepted, and the contract keeps its writes (§2.13.13 item 13).
-            if (mod.comparison[r.decl]) for (got.lines) |*l| {
+            if (mod.comparison[r.decl] and !@import("Mutate.zig").on(.comparison_gate_off)) for (got.lines) |*l| {
                 if (l.outcome.verdict == .accepted and l.outcome.accepted == .param) {
                     l.outcome.verdict = .refused;
                     l.outcome.cause = .comparison;
@@ -1472,7 +1472,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             if (validating) {
                 // Not within its candidate: an inference defect, joined and
                 // validated again (§2.12 step 3), never silent.
-                if (try Within.within(&mod.contracts, ra, &mod.slots, c, code.contract)) {
+                if (@import("Mutate.zig").on(.within_always) or try Within.within(&mod.contracts, ra, &mod.slots, c, code.contract)) {
                     // Within: the code's own contract is what it does under the candidates, so it is
                     // what callers read (no reliance a round of the inference made and a later one dropped).
                     code.contract = c;

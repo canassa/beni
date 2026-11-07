@@ -177,6 +177,7 @@ pub const Draft = struct {
 
     /// A store into the cell at `(j, slot)`, which asks every condition stored there.
     pub fn addStore(d: *Draft, arena: Allocator, account: *Ids.Account, s: DraftStore) Error!void {
+        if (@import("Mutate.zig").on(.contract_no_stores)) return;
         for (d.stores.items) |*x| if (x.j == s.j and x.slot == s.slot) {
             x.cond = try Cond.conj(arena, account, x.cond, s.cond);
             return;
@@ -672,7 +673,7 @@ pub const Table = struct {
 
     /// `a ⊔ b` (§2.10 *Lattice*): never drops a result slot.
     pub fn join(t: *Table, gpa: Allocator, arena: Allocator, account: *Ids.Account, slots: *const Slots.Table, a: Id, b: Id) Error!Id {
-        if (a == b) return a;
+        if (a == b or @import("Mutate.zig").on(.contract_join_left)) return a;
         var d = try t.draftOf(arena, a);
         try t.mergeInto(gpa, arena, account, slots, &d, b);
         return t.commit(gpa, account, slots, &d);
@@ -686,7 +687,7 @@ pub const Table = struct {
         const a_returns = d.flags.returns;
         d.flags.returns = a_returns or b_returns;
         if (!a_returns) d.flags.cross = hb.flags.cross else if (b_returns) d.flags.cross = d.flags.cross and hb.flags.cross;
-        d.flags.once = d.flags.once or hb.flags.once;
+        d.flags.once = !@import("Mutate.zig").on(.join_once_off) and (d.flags.once or hb.flags.once);
         d.flags.taken_write = d.flags.taken_write or hb.flags.taken_write;
         d.flags.entry = d.flags.entry or hb.flags.entry;
         // A side that does not return says nothing of the result's condition.
@@ -702,7 +703,7 @@ pub const Table = struct {
         for (t.labelsOf(hb.labels), 0..) |l, i| {
             const at = map[i];
             const dl = &d.labels.items[at];
-            dl.calls = @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(l.calls))));
+            dl.calls = if (@import("Mutate.zig").on(.join_calls_second)) l.calls else @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(l.calls))));
             dl.answer_left = dl.answer_left or l.answer_left;
             for (t.suppliesOf(l.supplies)) |s| {
                 const had = for (dl.supplies.items) |x| {

@@ -24,6 +24,7 @@ const Error = Relation.Error;
 /// `unknown`: the code's contract is not final (pessimistic, or a member
 /// of the group being solved), so every slot of its answer may share.
 pub fn leaves(c: LabelChain.Chain, ev: *Relation.Eval, q: u32, modify: bool, cs: Contract.Arrival, vi: u32, unknown: bool, out: *std.ArrayList(u32)) Error!void {
+    if (@import("Mutate.zig").on(.stored_off)) return;
     const f = c.f;
     const vc = f.calls.items[vi];
     const answer = try f.refRoot(vc.root);

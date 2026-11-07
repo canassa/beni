@@ -47,7 +47,7 @@ pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from:
                 try rowPaths(gpa, account, places, at, st, &next);
                 continue;
             }
-            if (st.kind == .level and !folds(places, at)) {
+            if (st.kind == .level and !folds(places, at) and !@import("Mutate.zig").on(.level_replay_same)) {
                 const r = try places.levelsOf(gpa, .growth(account), at);
                 var k: u32 = 0;
                 while (k < r.len) : (k += 1) try next.append(gpa, places.foldPath(r.start + k).int());

@@ -693,6 +693,7 @@ pub const Account = struct {
 
     /// Reserve `n` records in the kernel `enter` named, or growth.
     pub fn reserve(a: *Account, category: Category, n: u32) AccountError!void {
+        if (@import("Mutate.zig").on(.reserve_off)) return;
         if (a.fill_depth != 0) return a.countFill(category, n);
         if (a.in_demands) a.demands += n;
         if (a.lane_slot == none_int) return a.reserveGrowth(category, n);

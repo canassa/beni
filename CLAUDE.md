@@ -313,6 +313,7 @@ zig build fmt-check       # zig fmt --check
 zig build beni-fmt-check  # .beni formatting is gated: beni fmt --check, exemptions in tests/fmt-exempt.txt
 zig build test-pending    # red fixtures of open findings (tests/pending/); not a gate
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
+zig build test-own2-mutations  # each rule of ownership v2 broken on purpose (`src/own2/Mutate.zig`): which fixture catches it; not a gate
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
 zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#workers); not a gate, CI runs it
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)

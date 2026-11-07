@@ -252,6 +252,7 @@ pub const Live = struct {
 
     /// Index local `l`, bound at `point` and last used at `last`.
     pub fn add(x: *Live, ev: *Relation.Eval, l: u32, point: u32, last: u32) Error!void {
+        if (@import("Mutate.zig").on(.sweep_add_off)) return;
         const g = ev.gpa();
         try ev.f.charge(.inspection, 1);
         try x.holders.append(g, .{ .local = l, .point = point, .last = last });

@@ -445,6 +445,7 @@ pub fn baseOf(ev: *Relation.Eval, call: Value.Call, j: u32) Error!?Base {
 /// caller's at an exact slot; the graft, or `null` when the tree is to be
 /// written out (§2.11.2).
 pub fn stop(ev: *Relation.Eval, call: Value.Call, x: Contract.Effect, groups: *std.ArrayList(Group)) Error!?Graft {
+    if (@import("Mutate.zig").on(.graft_stop_off)) return null;
     const f = ev.f;
     const g = ev.gpa();
     if (x.node == 0) return null;

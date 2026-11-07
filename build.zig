@@ -34,6 +34,7 @@
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
 //!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
 //!                                 (plans/checker-rewrite.md §2)
+//!   zig build test-own2-mutations each rule of ownership v2 broken: which fixture fails
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf)
 //! And where the test time goes, not a gate either:
@@ -223,11 +224,14 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const llvm = b.option(bool, "llvm", "Build the ReleaseSafe compiler the black-box suites spawn with LLVM, the code users get, instead of Zig's self-hosted backend: about a minute's compile instead of seconds") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
+    const no_v2_parity = b.option(bool, "no-v2-parity", "Run the corpus without the v1/v2 parity net, for `test-own2-mutations`; `gates` refuses it") orelse false;
+    const corpus_except = b.option([]const u8, "corpus-except", "Leave out the corpus fixtures whose path holds one of these comma-separated texts; unlike -Dcorpus the net still runs. `gates` refuses it") orelse "";
     const corpus_only = b.option([]const u8, "corpus", "Run only the corpus fixtures whose repo-relative path contains this text; `gates` refuses it") orelse "";
     // The ownership checker's own cross-check of an indexed spine condition
     // against the pairwise one runs in safety builds for values of eight
     // entries or fewer; this runs it for every value, at a cost in time.
     stable_generated = b.option(bool, "stable-generated", "Copy the build id and the checked core to fixed paths under .zig-cache/stable/, so `--watch -fincremental` sees their new contents instead of keeping the first build's") orelse false;
+    harness_prefix = b.option([]const u8, "harness-prefix", "The tests find the binaries this build installs here, not under zig-out: the same absolute path as --prefix");
     const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (safety builds; slow)") orelse false;
     const own_opts = b.addOptions();
     own_opts.addOption(bool, "full_cross_check", own_full_check);
@@ -237,9 +241,10 @@ pub fn build(b: *std.Build) void {
     // given to the gates.
     const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist, wrong-placement); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
-    // The v2 checker broken one way on purpose, to show that a `runtime_safety`
-    // check fires (ownership-v2.md §2.9 rule 3). Hidden; never given to the gates.
-    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, propagate-full-read, propagate-no-fold-first, propagate-no-resumed-pass2, propagate-no-merge-reopen, cert-rule4-sum, cert-view-cells, cert-untagged, cert-stop-early, cert-unmarked, cert-keys-only, cert-keys-only-reader1, cert-keys-only-reader2, cert-drop-key, cert-drop-any, cert-saturate-side, cert-rule4-per-class, cert-rule4-no-key-sum, cert-rule4-trie-per-class); `gates` refuses it") orelse "none";
+    // The v2 checker with one rule broken on purpose (`src/own2/Mutate.zig`),
+    // which `test-own2-mutations` runs against the fixtures. Hidden; never given
+    // to the gates.
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break one rule of the v2 checker, a member of `src/own2/Mutate.zig`'s `Name`; `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
     // The v2 checker's order reversed on purpose, to show that a verdict does
     // not depend on it (ownership-v2.md §2.9 rule 4 (a′), §2.11 item 3 (d)):
@@ -654,6 +659,8 @@ pub fn build(b: *std.Build) void {
         .diagnostic = diagnostic_mod,
         .filters = test_filters,
         .corpus_only = corpus_only,
+        .corpus_except = corpus_except,
+        .no_v2_parity = no_v2_parity,
         .safe_dir = safe_dir,
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
@@ -820,6 +827,16 @@ pub fn build(b: *std.Build) void {
     // §31.12's mutation controls: each breaks the record demand one way and
     // must fail at least one `ownership/Record*` fixture. Not a gate: each
     // builds the compiler again with its mutation, so it runs child builds.
+    // Each rule of the v2 checker broken on purpose (`src/own2/Mutate.zig`,
+    // `docs/design/ownership-v2.md` §7 item 7): a child build of the compiler per
+    // mutation, and which fixtures fail. It writes its table; it reports, and
+    // fails only when a mutant cannot be built or the control is not green.
+    const own2_mutations_step = b.step("test-own2-mutations", "Build beni with each rule of the v2 checker broken and say which fixtures catch it (`-- --help`); not a gate");
+    const own2_mutations = b.addSystemCommand(&.{ "node", "tests/own2-mutations.mjs", b.graph.zig_exe });
+    own2_mutations.has_side_effects = true;
+    own2_mutations.stdio = .inherit;
+    own2_mutations.addPassthruArgs();
+    own2_mutations_step.dependOn(&own2_mutations.step);
     const mutations_step = b.step("test-record-mutations", "Build beni with each record-demand mutation (ownership-checker.md §31.12) and check that the record fixtures catch it; not a gate");
     const mutations = b.addSystemCommand(&.{ "node", "tests/record-mutations.mjs", b.graph.zig_exe });
     mutations.has_side_effects = true;
@@ -1375,8 +1392,11 @@ const gate_steps = [_][]const u8{ "test", "test-blackbox", "fmt-check", "beni-fm
 /// A gate runs every test with the intended checker.
 fn gatesRefusal(b: *std.Build, filtered: bool) ?[]const u8 {
     if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to a test step";
+    if (b.user_input_options.contains("harness-prefix")) return "`gates` tests the binary it builds: drop -Dharness-prefix";
+    if (b.user_input_options.contains("corpus-except")) return "`gates` runs every test: drop -Dcorpus-except";
+    if (b.user_input_options.contains("no-v2-parity")) return "`gates` requires the v1/v2 parity net: drop -Dno-v2-parity";
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` requires the intended checker: drop -Downership-record-mutation, which breaks it on purpose; use test-record-mutations";
-    if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose";
+    if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose; use test-own2-mutations";
     if (b.user_input_options.contains("ownership-v2-switch")) return "`gates` requires the intended checker: drop -Downership-v2-switch, which reverses one of its orders on purpose";
     if (b.user_input_options.contains("ownership-v2-counters")) return "`gates` requires the intended checker: drop -Downership-v2-counters, which adds counters to its dump";
     if (b.user_input_options.contains("ownership-v2-trace")) return "`gates` requires the intended checker: drop -Downership-v2-trace";
@@ -1848,7 +1868,7 @@ fn sourcePath(b: *std.Build, rel: []const u8) []const u8 {
 }
 
 fn installPath(b: *std.Build, rel: []const u8) []const u8 {
-    return sourcePath(b, b.pathJoin(&.{ "zig-out", rel }));
+    return if (harness_prefix) |p| b.pathJoin(&.{ p, rel }) else sourcePath(b, b.pathJoin(&.{ "zig-out", rel }));
 }
 
 /// Every file under `<root>/<prefix>`, recursively, as paths relative to
@@ -2076,6 +2096,11 @@ fn entityTable(b: *std.Build) *std.Build.Module {
 }
 
 var entity_table_module: ?*std.Build.Module = null;
+
+/// `-Dharness-prefix`: where the tests of this build find what it installed. The
+/// configure step cannot read `--prefix`, so a build that gives one and spawns a
+/// binary it installed gives this too.
+var harness_prefix: ?[]const u8 = null;
 
 /// `-Downership-full-cross-check`, as the module `ownership_options` every
 /// build of the compiler imports (`src/own/Ownership.zig`).
@@ -2478,6 +2503,10 @@ const Blackbox = struct {
     filters: []const []const u8,
     /// `-Dcorpus`, pinned as `BENI_CORPUS_ONLY` on every run.
     corpus_only: []const u8,
+    /// `-Dcorpus-except`, pinned as `BENI_CORPUS_EXCEPT` on every run.
+    corpus_except: []const u8,
+    /// `-Dno-v2-parity`, pinned as `BENI_NO_V2_PARITY` on every run.
+    no_v2_parity: bool,
     /// Where the ReleaseSafe compiler is installed under the prefix:
     /// `safe_bin_dir`, or `safe_llvm_bin_dir` under `-Dllvm`.
     safe_dir: []const u8,
@@ -2571,6 +2600,8 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_CORPUS_ONLY", bb.corpus_only);
+        r.setEnvironmentVariable("BENI_CORPUS_EXCEPT", bb.corpus_except);
+        r.setEnvironmentVariable("BENI_NO_V2_PARITY", if (bb.no_v2_parity) "1" else "");
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);

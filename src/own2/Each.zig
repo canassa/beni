@@ -55,6 +55,7 @@ pub fn answersWhole(c: anytype, id: Contract.Id) Error!?u32 {
 /// `walk` supply hands its whole family, and it reaches no result, store or
 /// escape. A family at a part (`pr.0[*]`) leaves the other parts read.
 pub fn takes(c: anytype, h: Contract.Head, lab: Contract.Label, j: u32) Error!bool {
+    if (@import("Mutate.zig").on(.each_takes_true)) return true;
     var hit = false;
     for (c.contracts.suppliesOf(lab.supplies)) |su| {
         if (!su.walk or su.res_root == 0) continue;

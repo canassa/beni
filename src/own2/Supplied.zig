@@ -56,6 +56,7 @@ fn suppliedTo(e: *Eval.Evaluation, ci: u32, out: *std.ArrayList(u32)) Error!void
 
 /// Part `t` of a label's argument, judged (`leaf`: the check of one leaf).
 pub fn judge(comptime Line: type, r: anytype, t: u32, leaf: anytype) Error!Line {
+    if (@import("Mutate.zig").on(.supplied_judge_off)) return leaf.of(r, t);
     var l = try leaf.of(r, t);
     if (l.outcome.verdict != .refused or !l.outcome.cause.unseen()) return l;
     const fr = r.f();
@@ -101,6 +102,7 @@ pub fn judge(comptime Line: type, r: anytype, t: u32, leaf: anytype) Error!Line 
 /// Whether anything answer `x` may be, by what its calls were supplied, is
 /// held after the call.
 pub fn mayBeHeld(r: anytype, x: u32, leaf: anytype) Error!bool {
+    if (@import("Mutate.zig").on(.may_be_held_off)) return false;
     const fr = r.f();
     const g = r.gpa();
     var stack: std.ArrayList(u32) = .empty;
@@ -133,6 +135,7 @@ pub fn mayBeHeld(r: anytype, x: u32, leaf: anytype) Error!bool {
 /// Whether a capture at a code run more than once is held for the next
 /// run: part of argument `aj` of pass call `q`, a virtual call.
 pub fn heldByClosure(e: *Eval.Evaluation, q: u32, aj: u32) bool {
+    if (@import("Mutate.zig").on(.held_by_closure_off)) return false;
     const f = e.fr();
     const call = f.calls.items[q];
     if (aj == none or !call.virtual or !Across.capture(f, q, aj)) return false;
