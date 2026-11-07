@@ -1,0 +1,119 @@
+-- The page's queuedEvents and queuedBytes reach the worker in every build
+-- (#2203): with 5 events and 4096 bytes, 8 emits give 5 Ok and 3
+-- EventQueueFull, an event over the byte limit is refused once the page has
+-- read the first five, and the page reads exactly what the worker sent.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import List
+import String
+import Task
+
+
+emitAll : Worker.Context (List Int), Int, Int, Int → String
+emitAll context at ok full =
+    if at > 8 then
+        "ok=" ++ String.fromInt ok ++ " full=" ++ String.fromInt full
+    else
+        case Worker.emit context [ at ] of
+            Ok _ →
+                emitAll context (at + 1) (ok + 1) full
+            Err _ →
+                emitAll context (at + 1) ok (full + 1)
+
+
+emitted : Result Worker.EmitError ⊤ → String
+emitted result =
+    case result of
+        Ok _ →
+            "ok"
+        Err Worker.EventQueueFull →
+            "full"
+        Err _ →
+            "other"
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol Int String ⊥ String (List Int) ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λcontext _ request →
+                if request == 0 then
+                    Ok (emitAll context 1 0 0)
+                else if request == 1 then
+                    Ok (emitted (Worker.emit context (List.range 1 2000)))
+                else
+                    Ok (emitted (Worker.emit context [ -1 ]))
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+read : Events.Stream Worker.TransportError (List Int) → Int
+read stream =
+    case Events.next stream of
+        Ok (Events.Item chunk) →
+            List.sum (Events.take chunk)
+        _ →
+            -99
+
+
+sum : Events.Stream Worker.TransportError (List Int), Int, Int → Int
+sum stream left total = if left == 0 then total else sum stream (left - 1) (total + read stream)
+
+
+reply : Result (Worker.CallError String) String → String
+reply result =
+    case result of
+        Ok text →
+            text
+        Err _ →
+            "err"
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    case Worker.open owner worker ⊤ { Worker.options | queuedEvents = 5, queuedBytes = 4096 } of
+        Err _ →
+            "open failed"
+        Ok handle →
+            burst = reply (Worker.call handle 0)
+            total = sum (Worker.events handle) 5 0
+            big = reply (Worker.call handle 1)
+            small = reply (Worker.call handle 2)
+            next = read (Worker.events handle)
+            _ = Worker.close handle
+            burst
+                ++ " sum="
+                ++ String.fromInt total
+                ++ " big="
+                ++ big
+                ++ " small="
+                ++ small
+                ++ " next="
+                ++ String.fromInt next
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

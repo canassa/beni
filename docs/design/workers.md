@@ -648,6 +648,36 @@ limit is tracked in #1302 and #1298. It does not delay the page's fatal shutdown
 or authorize continuing after a shared defect. Ordinary page close affects only
 its connection and never sends this instance-fatal control operation.
 
+### Private control values
+
+*Added 2026-11-07 (#2203).* A release build names record fields per entry: §3's
+one build-wide table covers the Wire roles only, and each projection pins the
+fields of its own boundary (`boundary.md` §4, *What JavaScript may read of a beni
+value*). A `Js.from` and a `Js.to` at the same type variable are opaque only
+inside one entry; across the page and a worker the two sides do not share a
+spelling. So a platform-private value that crosses entries is never a beni record
+read back through a type-variable cast. It is a frame the sender builds with a
+concrete `Js.from` and the receiver reads by key, and every key is either kept
+in every build or one of the private worker encoding's prescribed keys
+(`src/js/WorkerEncoding.zig`), which both projections encode alike. The Hello
+payload is `config` (Wire role 0) plus the two event limits, `eventLimit` and
+`byteLimit`, copied from the page's `queuedEvents` and `queuedBytes`. It does not
+carry `Options`: the worker reads nothing else from it. The release worker that
+read `Options` through a type-variable cast got its own short field names,
+found the limits undefined, and accepted every event.
+
+### The page's event queue
+
+*Added 2026-11-07 (#2203).* The page's `events` queue holds `queuedEvents`
+items. The worker counts every event it sends against `queuedEvents` and
+`queuedBytes`, and the page acknowledges an event only when its reader takes it.
+So a conforming peer cannot overfill the page's queue: `emit` returns
+`EventQueueFull` first. An Event frame that finds the queue full therefore comes
+from a broken peer. It is a defect, through the program's fatal path, never a
+dropped event. An Event frame that arrives after the queue ended (Closed, or a
+transport failure already delivered to the reader) is ignored, because the
+reader has been told the stream ended.
+
 ## 8. Cancellation, scopes and lifecycle
 
 | Rule | Guarantee protected |

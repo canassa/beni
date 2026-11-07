@@ -186,11 +186,13 @@ program definition =
                                     Task.resume resume (Js.get peer "greeting")
                                 λ⊤ → Js.set peer "greetingWake" Js.null
                             input = Js.get hello "payload"
-                            opts : Options
-                            opts = guest (Js.get input "options")
+                            -- The limits travel under the private worker
+                            -- encoding, never as an Options record: this
+                            -- projection names record fields apart from the
+                            -- page's (workers.md §7, *Private control values*).
                             if Js.to (Js.get peer "eventEnabled") then
-                                Js.set peer "eventLimit" (host opts.queuedEvents)
-                                Js.set peer "byteLimit" (host opts.queuedBytes)
+                                Js.set peer "eventLimit" (Js.get input "eventLimit")
+                                Js.set peer "byteLimit" (Js.get input "byteLimit")
                             context =
                                 guest (Js.from { scope = owned, peer = peer, request = False })
                             case callbacks.init context (guest (Js.get input "config")) of
@@ -201,7 +203,7 @@ program definition =
                                     callbacks.start context state
                                     Js.set peer "phase" (host "Ready")
                                     _ = sendFrame peer "Ready" 0 Js.null
-                                    serve peer owned callbacks state opts
+                                    serve peer owned callbacks state
             }
         )
 
@@ -619,8 +621,17 @@ received peer event =
         _ = Js.call peers "delete" [ Js.get peer "generation" ]
         unlisten peer
     else if Js.same kind (Js.from "Event") then
-        _ = Browser.WorkerStream.offer (guest (Js.get peer "events")) (Js.get incoming "payload")
-        ⊤
+        queue = Js.get peer "events"
+        if Browser.WorkerStream.offer (guest queue) (Js.get incoming "payload") then
+            ⊤
+        else if Js.to (Js.get queue "ended") then
+            -- The reader has already been told the stream ended or failed.
+            ⊤
+        else
+            -- The worker emits only within the credits this page acknowledges,
+            -- so a full queue is a broken peer, never a silent drop
+            -- (workers.md §7, *The page's event queue*).
+            fatal "Worker event exceeded the page event queue"
     else if
         Js.same kind (Js.from "Success")
             || Js.same kind (Js.from "Failure")
@@ -850,7 +861,8 @@ open owner definition config opts =
                                                                 0
                                                                 ""
                                                                 (host config)
-                                                        , options = { opts | policy = Nothing }
+                                                        , eventLimit = opts.queuedEvents
+                                                        , byteLimit = opts.queuedBytes
                                                         }
                                                     )
                                             of
@@ -1249,14 +1261,8 @@ runDefinition definition =
         λ_ → ⊤
 
 
-serve :
-      V
-    , Scope
-    , Definition config state call reply error event
-    , state
-    , Options
-    → ⊤
-serve peer owned callbacks state opts =
+serve : V, Scope, Definition config state call reply error event, state → ⊤
+serve peer owned callbacks state =
     if Js.to (Js.get (Js.get peer "queue") "length") == 0 then
         Task.callback λresume →
             Js.set peer "next" (host resume)
@@ -1288,7 +1294,7 @@ serve peer owned callbacks state opts =
         peer
         "terminal"
         (Js.call (Js.global "Math") "max" [ Js.get peer "terminal", host requestId ])
-    serve peer owned callbacks state opts
+    serve peer owned callbacks state
 
 
 requireSyncStart : sync (Context event, state → ⊤) → (Context event, state → ⊤)

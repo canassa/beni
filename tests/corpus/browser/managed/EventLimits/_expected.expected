@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "ok=5 full=3 sum=15 big=full small=ok next=-1"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"ok=5 full=3 sum=15 big=full small=ok next=-1"</output>
+  </main>
+</body>
