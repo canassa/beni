@@ -138,6 +138,7 @@ const layers = [_]Entry{
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
+    .{ .file = "SupplyKey.zig", .layer = 7, .max_lines = 75 },
     // A call's subtree of atoms read as the callee's node (#1714).
     .{ .file = "AtomGraft.zig", .layer = 7, .max_lines = 70 },
     // The entries' inline order by jump pointers, for `Chains` (#1714).
@@ -236,6 +237,7 @@ const layers = [_]Entry{
     .{ .file = "Stack.zig", .layer = 10, .max_lines = 380 },
     // A write of a fold's accumulator, by its slot (§2.11.3).
     .{ .file = "FedWrite.zig", .layer = 10, .max_lines = 100 },
+    .{ .file = "ByStructure.zig", .layer = 10, .max_lines = 70 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
@@ -827,7 +829,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 138), layers.len);
+    try testing.expectEqual(@as(usize, 140), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

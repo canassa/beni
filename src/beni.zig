@@ -188,6 +188,7 @@ pub const own = struct {
 pub const own2 = struct {
     pub const Ids = @import("own2/Ids.zig");
     pub const Place = @import("own2/Place.zig");
+    pub const SupplyKey = @import("own2/SupplyKey.zig");
     pub const PlaceIdentity = @import("own2/PlaceIdentity.zig");
     pub const Facts = @import("own2/Facts.zig");
     pub const Slots = @import("own2/Slots.zig");
