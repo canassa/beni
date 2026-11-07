@@ -1759,10 +1759,10 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
     for ([_]bool{ false, true }) |release| {
         // EXECUTE
         const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
-        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
+        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
         try testing.expectEqual(@as(u8, 0), one.exit_code);
         try testing.expectEqual(@as(usize, 0), one.diagnostics.len);
-        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
+        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
         try testing.expectEqual(@as(u8, 0), eight.exit_code);
         try testing.expectEqual(@as(usize, 0), eight.diagnostics.len);
         // VERIFY OUTPUT AND SIDE EFFECTS
@@ -1820,7 +1820,7 @@ test "worker runtime factories are diagnosed before writing any output" {
         \\
     );
     // EXECUTE
-    const result = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" });
+    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
     // VERIFY OUTPUT AND SIDE EFFECTS
     try testing.expectEqual(@as(u8, 1), result.exit_code);
     try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
@@ -1880,7 +1880,7 @@ test "worker launch URLs stay relative to their module under release specializat
     for ([_]bool{ false, true }) |release| {
         // EXECUTE
         const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
-            &.{ "build", "--allow-unchecked-workers", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
+            &.{ "build", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
             if (release) &.{"--release"} else &.{},
         });
         const result = try w.run(args);
@@ -1960,7 +1960,7 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
         // EXECUTE: the second check reads the helper's cached interface.
         for (0..2) |_| {
-            const good = try w.run(&.{ "check", "--allow-unchecked-workers", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
             // Checking discharges generic Wire obligations without launching a worker.
             try testing.expectEqual(@as(u8, 0), good.exit_code);
             try testing.expectEqual(@as(usize, 0), good.diagnostics.len);
@@ -2032,7 +2032,7 @@ test "worker Wire follows opaque payload layouts across warm caches" {
         try w.write("platform/Box.beni", try std.fmt.allocPrint(w.arena.allocator(), "import List\npub opaque type Box = Box {{ {s} : List Int }}\npub make : List Int → Box\nmake values = Box {{ {s} = values }}\npub sum : Box → Int\nsum (Box record) = List.sum record.{s}\n", .{ field, field, field }));
         // EXECUTE: the second build changes a private representation while
         // retaining every public value signature and structural marker.
-        const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
+        const built = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
         try testing.expectEqual(@as(u8, 0), built.exit_code);
         try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
         // VERIFY OUTPUT: the compiled plan must normalize the new payload
@@ -2097,7 +2097,7 @@ test "worker realm obligations survive generic imported writers and warm interfa
     // EXECUTE AND VERIFY: warm compilation must read the published generic
     // obligation while keeping the page's DOM instantiation independent.
     for (0..2) |_| {
-        const good = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "--self-profile=warm.json", "Main.beni", "Storage.beni" });
+        const good = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "--self-profile=warm.json", "Main.beni", "Storage.beni" });
         try testing.expectEqual(@as(u8, 0), good.exit_code);
         try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), good.diagnostics);
     }
@@ -2116,7 +2116,7 @@ test "worker realm obligations survive generic imported writers and warm interfa
     const expected_bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/build/bad/dedicated/RealmGenericImported/_expected.diag", w.arena.allocator(), .limited(world.max_stream_bytes));
     const expected = try std.json.parseFromSlice([]const diagnostic.Diagnostic, w.arena.allocator(), expected_bytes, .{});
     for (0..2) |_| {
-        const bad = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni", "Storage.beni" });
+        const bad = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni", "Storage.beni" });
         try testing.expectEqual(@as(u8, 1), bad.exit_code);
         try testing.expectEqualDeep(expected.value, bad.diagnostics);
         try testing.expect(!w.exists("refused"));
@@ -2155,7 +2155,7 @@ test "worker kept-code globals refuse raw page access through indirect routes" {
             \\    ⊤)
         );
         for ([_]bool{ false, true }) |release| {
-            const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" }, if (release) &.{"--release"} else &.{} });
+            const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=out", "Main.beni" }, if (release) &.{"--release"} else &.{} });
             const result = try w.run(args);
             if (result.exit_code == 0) {
                 std.debug.print("unexpected acceptance: route {d}, release {any}\n", .{ si, release });
@@ -2216,7 +2216,7 @@ test "worker kept-code globals preserve shared reads and resolve private entry s
         var contents: std.ArrayList([]const u8) = .empty;
         for ([_][]const u8{ "--jobs=1", "--jobs=1", "--jobs=8", "--jobs=8" }) |jobs| {
             const cache = try std.fmt.allocPrint(w.arena.allocator(), "--cache-dir=cache-{s}-{s}", .{ if (release) "release" else "dev", jobs[7..] });
-            const result = try w.run(if (release) &.{ "build", "--release", "--allow-unchecked-workers", cache, "--platform=platform", jobs, "--out=out", "Main.beni" } else &.{ "build", "--allow-unchecked-workers", cache, "--platform=platform", jobs, "--out=out", "Main.beni" });
+            const result = try w.run(if (release) &.{ "build", "--release", cache, "--platform=platform", jobs, "--out=out", "Main.beni" } else &.{ "build", cache, "--platform=platform", jobs, "--out=out", "Main.beni" });
             try testing.expectEqual(@as(u8, 0), result.exit_code);
             try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), result.diagnostics);
             const files = try w.listFiles("out");
