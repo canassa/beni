@@ -28,7 +28,7 @@ pub fn own(f: *const Value.Frame, li: u32) bool {
 /// An own leaf the read-off said into the list `(label, k)` at result path
 /// `q` (`wide`: and every slot below), or inside a subtree described once
 /// per place (`built`), where the path is not the only one.
-pub const Told = struct { leaf: u32, q: u32, label: u32, k: u32, wide: bool, built: bool };
+pub const Told = struct { leaf: u32, q: u32, label: u32, k: u32, key: u32, wide: bool, built: bool };
 
 /// An own leaf read by no key: `(1, site)`, `(2, call)` for a call's fresh
 /// objects, `(4, label)` for a label's answer or result; null otherwise.
@@ -55,7 +55,7 @@ pub const State = struct {
     vague: bool = false,
     told: std.ArrayList(Told) = .empty,
     /// `(leaf, q, label, k)` of `told`, each once.
-    told_at: Ids.FixedDict(4) = .{},
+    told_at: Ids.FixedDict(5) = .{},
 
     pub fn deinit(x: *State, g: Allocator) void {
         x.escs.deinit(g);
@@ -65,7 +65,7 @@ pub const State = struct {
     }
 
     pub fn tell(x: *State, g: Allocator, t: Told) Error!void {
-        if ((try x.told_at.getOrPut(g, .{ t.leaf, t.q, t.label, t.k })).found_existing) return;
+        if ((try x.told_at.getOrPut(g, .{ t.leaf, t.q, t.label, t.k, t.key })).found_existing) return;
         try x.told.append(g, t);
     }
 

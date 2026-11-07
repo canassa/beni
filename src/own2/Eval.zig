@@ -15,7 +15,6 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
-const SupplyKey = @import("SupplyKey.zig");
 const Replay = @import("Replay.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -86,7 +85,7 @@ pub const Evaluation = struct {
         e.fn_escapes.deinit(g);
         e.passes.deinit(g);
         if (e.facts_on) {
-            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.keys, &e.sink.acyclic, &e.sink.host, &e.sink.reads }) |l| l.deinit(g);
+            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.acyclic, &e.sink.host, &e.sink.reads }) |l| l.deinit(g);
         }
     }
 
@@ -555,10 +554,10 @@ pub const Sink = struct {
     arena: Allocator,
     /// Per frame label (`cbs`): its index in the draft's labels.
     label_at: std.ArrayList(u32) = .empty,
-    /// `(leaf, slot, list label, list k)`: a call's leaf already described
+    /// `(leaf, slot, list label, list k, list key)`: a call's leaf already described
     /// there. Describing it again adds nothing, and a fold's answer that
     /// feeds itself would describe it without end.
-    described: Ids.FixedDict(4) = .{},
+    described: Ids.FixedDict(5) = .{},
     /// `(leaf, deep, list)`: a leaf whose parameter effects are said already (effects only grow).
     effected: Ids.FixedDict(3) = .{},
     /// The subtrees described once per place (§2.10): arrivals go to the innermost, relative to it.
@@ -571,8 +570,6 @@ pub const Sink = struct {
     reads: Relation.Dests.Reads(2) = .{},
     /// 0 not known; 1 nothing the frame reads grows; 2 something does.
     frozen: u8 = 0,
-    /// The keys supply parts are described below.
-    keys: SupplyKey.Keys = .{},
     /// The subtrees begun so far.
     serial: u32 = 0,
     /// The shallowest subtree in progress a description met again: nothing below it is kept.

@@ -54,7 +54,8 @@ pub const Ov = Pairs.Ov;
 /// kinds are the read-off's (`Eval.zig` delivers them).
 pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, effect, supply, escape, escape_fn };
 /// `d`: a `describe_below` consumer's prefix slot (its key's).
-pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0 };
+/// `key`: a supply list's key (`Put.ResList.key`), carried to the delivery whole.
+pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0, key: u32 = std.math.maxInt(u32) };
 
 /// A module code's parameters' places, its own place and its result's (`Walk`; `CallGraft` via `Eval.code_sig`).
 pub const Sig = struct { params: []const PlaceId, own: u32, result: PlaceId };
@@ -171,7 +172,7 @@ pub const Eval = struct {
     keys: std.ArrayList(Key) = .empty,
     /// `(key, leaf)`: the key has the leaf; `(key, sub…)`: subscribed.
     key_has: Ids.FixedDict(2) = .{},
-    key_subs: Ids.FixedDict(7) = .{},
+    key_subs: Ids.FixedDict(8) = .{},
     /// `(call, prefix, which)` → a key below the prefix; `(key, leaf, at)`.
     below_memo: Ids.FixedDict(3) = .{},
     below_has: Ids.FixedDict(3) = .{},
@@ -1077,7 +1078,7 @@ pub const Eval = struct {
     /// Whether `s` is new to key `ki`.
     fn subscribe(e: *Eval, ki: u32, s: Sub) Error!bool {
         if (s.kind == .forward and s.a == ki) return false;
-        const got = try e.key_subs.getOrPut(e.gpa(), .{ ki, @backingInt(s.kind), s.a, s.b, s.c, s.d, s.tags });
+        const got = try e.key_subs.getOrPut(e.gpa(), .{ ki, @backingInt(s.kind), s.a, s.b, s.c, s.d, s.tags, s.key });
         if (got.found_existing) return false;
         try e.charge(.edge, 1);
         const k = &e.keys.items[ki];

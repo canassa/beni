@@ -138,7 +138,7 @@ const layers = [_]Entry{
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
-    .{ .file = "SupplyKey.zig", .layer = 7, .max_lines = 75 },
+    .{ .file = "SupplyKey.zig", .layer = 7, .max_lines = 55 },
     // A call's subtree of atoms read as the callee's node (#1714).
     .{ .file = "AtomGraft.zig", .layer = 7, .max_lines = 70 },
     // The entries' inline order by jump pointers, for `Chains` (#1714).
