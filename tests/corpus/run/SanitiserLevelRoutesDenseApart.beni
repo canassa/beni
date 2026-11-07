@@ -1,0 +1,75 @@
+-- The twin of `SanitiserLevelRoutesDense`: `k` is dead after the call, so the edit in place is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+type T0
+    = E0
+    | Leaf (List Int)
+    | C0x0 T0
+    | C0x1 T1
+    | C0x2 T2
+    | C0x3 T3
+    | C0x4 T4
+
+
+type T1
+    = E1
+    | C1x0 T0
+    | C1x1 T1
+    | C1x2 T2
+    | C1x3 T3
+    | C1x4 T4
+
+
+type T2
+    = E2
+    | C2x0 T0
+    | C2x1 T1
+    | C2x2 T2
+    | C2x3 T3
+    | C2x4 T4
+
+
+type T3
+    = E3
+    | C3x0 T0
+    | C3x1 T1
+    | C3x2 T2
+    | C3x3 T3
+    | C3x4 T4
+
+
+type T4
+    = E4
+    | C4x0 T0
+    | C4x1 T1
+    | C4x2 T2
+    | C4x3 T3
+    | C4x4 T4
+
+
+rd : T0 → Int
+rd t =
+    case t of
+        C0x0 (C0x1 (C1x0 (Leaf xs))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+g : T0 → Int
+g t =
+    case t of
+        C0x0 (C0x0 (C0x1 x)) →
+            rd (C0x0 (C0x1 x))
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (C0x0 (C0x0 (C0x1 (C1x0 (Leaf k)))))
+    Node.print (String.fromInt a)

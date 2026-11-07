@@ -1,0 +1,2 @@
+# v2 refuses a write a reference reaches by one route a canonical arrival, on dense types (§2.1, #2192)
+76:9 list_still_used SanitiserLevelRoutesDense.g

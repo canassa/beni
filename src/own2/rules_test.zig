@@ -86,7 +86,6 @@ const layers = [_]Entry{
     // The readers and the union of result trees, below the contracts (#1714).
     // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
     .{ .file = "PastPayload.zig", .layer = 3, .max_lines = 90 },
-    .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "LevelTargets.zig", .layer = 3, .max_lines = 50 },
     .{ .file = "PathsTo.zig", .layer = 3, .max_lines = 70 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
@@ -105,6 +104,8 @@ const layers = [_]Entry{
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
     // What an open arrival says at the `⟲`s above it (#2195).
     .{ .file = "LevelWide.zig", .layer = 4, .max_lines = 80 },
+    // A route to each first arrival, through `PathsTo` (#2192).
+    .{ .file = "StepsTo.zig", .layer = 4, .max_lines = 45 },
     // How large `below(p)` is, split from `Subtree` (#1714).
     .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },

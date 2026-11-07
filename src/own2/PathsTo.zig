@@ -1,4 +1,4 @@
-//! L3: the canonical paths on which a walk from a path first reaches a place
+//! L3: the routes on which a walk from a path first reaches a place
 //! (`docs/design/ownership-v2.md` §2.1, *A level read on a built value*). The
 //! work follows the slots there are, never the routes to them. A walk below a
 //! context, the path it started from or one a fold took it up to, tells two
@@ -17,6 +17,9 @@ const Place = @import("Place.zig");
 const PathId = Ids.PathId;
 const PlaceId = Ids.PlaceId;
 
+/// A path the walk met, the node it was met from and the step's word.
+pub const Node = struct { p: PathId, back: u32, word: u32 };
+
 /// Whether a step onto `target` below `c` folds onto a path of `c`: `extend`'s
 /// condition, read from `c`, on `target`'s cycle.
 fn folds(pl: *const Place.Table, account: *Ids.Account, c: PathId, target: PlaceId) Ids.ChargeError!bool {
@@ -33,35 +36,34 @@ fn folds(pl: *const Place.Table, account: *Ids.Account, c: PathId, target: Place
     return false;
 }
 
-/// Every first arrival of a walk from `from` at `target`, on `target`'s cycle,
-/// into `out`, each once. No walk goes on past an arrival, or off the cycle.
-pub fn of(gpa: std.mem.Allocator, account: *Ids.Account, pl: *Place.Table, from: PathId, target: PlaceId, out: *std.ArrayList(u32)) Ids.ChargeError!void {
-    var contexts: std.ArrayList(PathId) = .empty;
+/// Every first arrival of a walk from `from` at `target`, on its cycle, into `out` once, as `nodes`.
+pub fn of(gpa: std.mem.Allocator, account: *Ids.Account, pl: *Place.Table, from: PathId, target: PlaceId, nodes: *std.ArrayList(Node), out: *std.ArrayList(u32)) Ids.ChargeError!void {
+    var contexts: std.ArrayList(u32) = .empty;
     defer contexts.deinit(gpa);
-    var queue: std.ArrayList(PathId) = .empty;
+    var queue: std.ArrayList(u32) = .empty;
     defer queue.deinit(gpa);
     var seen: Ids.FixedDict(2) = .{};
     defer seen.deinit(gpa);
-    try contexts.append(gpa, from);
+    try nodes.append(gpa, .{ .p = from, .back = Ids.none_int, .word = 0 });
+    try contexts.append(gpa, 0);
     var ci: usize = 0;
     while (ci < contexts.items.len) : (ci += 1) {
-        const c = contexts.items[ci];
+        const c = nodes.items[contexts.items[ci]].p;
         const by_place = try folds(pl, account, c, target);
         queue.clearRetainingCapacity();
-        try queue.append(gpa, c);
+        try queue.append(gpa, contexts.items[ci]);
         var qi: usize = 0;
         while (qi < queue.items.len) : (qi += 1) {
-            const st = pl.steps(pl.pathPlace(queue.items[qi]));
+            const at = nodes.items[queue.items[qi]].p;
+            const st = pl.steps(pl.pathPlace(at));
             for (st.steps, st.children) |s, ch| {
                 if (s.kind == .level or !pl.sameComponent(ch, target)) continue;
-                const nx = (try pl.extend(gpa, .growth(account), queue.items[qi], s)) orelse continue;
-                if (ch == target) {
-                    if (!(try seen.getOrPut(gpa, .{ 0, nx.int() })).found_existing) try out.append(gpa, nx.int());
-                } else if (!pl.isPrefix(c, nx)) {
-                    if (!(try seen.getOrPut(gpa, .{ 1, nx.int() })).found_existing) try contexts.append(gpa, nx);
-                } else if (!(try seen.getOrPut(gpa, .{ 2 + @as(u32, @intCast(ci)), if (by_place) ch.int() else nx.int() })).found_existing) {
-                    try queue.append(gpa, nx);
-                }
+                const nx = (try pl.extend(gpa, .growth(account), at, s)) orelse continue;
+                const key: [2]u32 = if (ch == target) .{ 0, nx.int() } else if (!pl.isPrefix(c, nx)) .{ 1, nx.int() } else .{ 2 + @as(u32, @intCast(ci)), if (by_place) ch.int() else nx.int() };
+                if ((try seen.getOrPut(gpa, key)).found_existing) continue;
+                try nodes.append(gpa, .{ .p = nx, .back = queue.items[qi], .word = s.word() });
+                const n: u32 = @intCast(nodes.items.len - 1);
+                try (if (key[0] == 0) out else if (key[0] == 1) &contexts else &queue).append(gpa, n);
             }
         }
     }
