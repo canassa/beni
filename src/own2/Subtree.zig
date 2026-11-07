@@ -11,6 +11,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const PastPayload = @import("PastPayload.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Trees = @import("Trees.zig");
@@ -33,6 +34,16 @@ pub fn readAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId, open: 
         .@"opaque" => a.deep,
         else => false,
     };
+    return x;
+}
+
+/// Arrival `a` read at caller slot `slot` when that slot stands at a family's payload:
+/// all of it, deep, at no suffix, since a word there says no depth (§2.1, *The exit
+/// rule*). Null off a payload, where the words do say it.
+pub fn wholeAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId) ?Trees.Arrival {
+    if (@import("Mutate.zig").on(.payload_arrival_exact) or !PastPayload.payload(places, places.pathPlace(slot))) return null;
+    var x = a;
+    x.deep = true;
     return x;
 }
 

@@ -483,6 +483,10 @@ pub const Eval = struct {
         };
         if (arrs.items.len == 0) return false;
         for (arrs.items) |x| {
+            if (Subtree.wholeAt(e.places(), x.a, t) != null) {
+                try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
+                continue;
+            }
             var w: std.ArrayList(u32) = .empty;
             defer w.deinit(e.gpa());
             try w.appendSlice(e.gpa(), e.f.slots.relWords(x.a.slot));
@@ -630,7 +634,7 @@ pub const Eval = struct {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, Subtree.readAt(e.places(), a, slot, hit.open), words[hit.depth..], &acc);
+            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalAt(call, c, a, slot, hit.open, words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
             if (!@import("Mutate.zig").on(.inst_no_contract_empty)) try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -853,7 +857,9 @@ pub const Eval = struct {
             var acc: std.ArrayList(u32) = .empty;
             defer acc.deinit(e.gpa());
             const bw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), base));
-            const suffix0 = try e.gpa().dupe(u32, bw[@min(n, bw.len)..]);
+            const at_payload = Subtree.wholeAt(e.places(), a, base);
+            if (at_payload) |w| a = w;
+            const suffix0 = try e.gpa().dupe(u32, if (at_payload != null) &.{} else bw[@min(n, bw.len)..]);
             defer e.gpa().free(suffix0);
             const at_base = base.int() | open_bit;
             e.cur_sub = .{ .kind = .forward_below, .a = ki, .b = at_base };
@@ -917,7 +923,7 @@ pub const Eval = struct {
                     const pk = e.places().kind(e.places().pathPlace(.from(sl)));
                     sa.deep = a.deep or pk == .@"var" or pk == .@"opaque";
                     at.clearRetainingCapacity();
-                    try e.arrivalLeaves(k.call, none, sa, sw[@min(n, sw.len)..], &at);
+                    try e.arrivalAt(k.call, none, sa, .from(sl), false, sw[@min(n, sw.len)..], &at);
                     for (at.items) |x| try e.addBelow(ki, x, sl);
                 };
                 for (acc.items) |x| try e.addBelow(ki, x, base.int());
@@ -1039,7 +1045,7 @@ pub const Eval = struct {
         const saved = e.cur_sub;
         e.cur_sub = .{ .kind = .forward, .a = ki };
         defer e.cur_sub = saved;
-        try e.arrivalLeaves(k.call, none, Subtree.readAt(e.places(), a, k.slot, open), suffix, &acc);
+        try e.arrivalAt(k.call, none, a, k.slot, open, suffix, &acc);
         for (acc.items) |x| try e.addLeaf(ki, x);
     }
 
@@ -1107,6 +1113,13 @@ pub const Eval = struct {
                 }
             }
         }
+    }
+
+    /// Arrival `a` read at caller slot `slot`, `suffix` the slot's words below its
+    /// entry: by those words, or at a payload whole, since a word there says no depth (§2.1).
+    fn arrivalAt(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, slot: PathId, open: bool, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
+        if (Subtree.wholeAt(e.places(), a, slot)) |w| return e.arrivalLeaves(call, c, w, &.{}, out);
+        try e.arrivalLeaves(call, c, Subtree.readAt(e.places(), a, slot, open), suffix, out);
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.

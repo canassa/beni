@@ -1,0 +1,4 @@
+# # A family's payload says no depth, so an arrival is read whole: v2 refuses each (§2.1, The exit rule)
+98:23 list_still_used SanitiserFamilyDepthCallback.mapped
+98:42 list_still_used SanitiserFamilyDepthCallback.constant
+98:63 list_still_used SanitiserFamilyDepthCallback.walked

@@ -1,0 +1,98 @@
+-- The exit rule for a callback's answer (`ownership-v2.md` §2.1): `tMap` and `tConst` hand the
+-- callback down in a lambda, so the answer at a level is one level deeper than the summary's
+-- word. Read off without the answer's subtree, or followed by the word, `y` looks fresh and
+-- `k` is edited in place. `out` reads the same object through a generic walk. Refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type T a
+    = TL a
+    | TW (T (List a))
+
+
+tMap : T a, (a → b) → T b
+tMap t f =
+    case t of
+        TL x →
+            TL (f x)
+
+        TW u →
+            TW (tMap u λl → List.map l f)
+
+
+tConst : T a, (⊤ → a) → T a
+tConst t g =
+    case t of
+        TL _ →
+            TL (g ⊤)
+
+        TW u →
+            TW (tConst u λ⊤ → [ g ⊤ ])
+
+
+idOf : a → a
+idOf x = x
+
+
+hd : List a, a → a
+hd l d =
+    case l of
+        [ x, …_ ] →
+            x
+
+        _ →
+            d
+
+
+out : T a, a → a
+out t d =
+    case t of
+        TL x →
+            x
+
+        TW u →
+            hd (out u [ d ]) d
+
+
+mapped : List Int → List Int
+mapped k =
+    z =
+        case tMap (TW (TL [ k ])) idOf of
+            TW (TL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    z
+
+
+constant : List Int → List Int
+constant k =
+    z =
+        case tConst (TW (TL [ [ 5 ] ])) λ⊤ → k of
+            TW (TL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    z
+
+
+walked : List Int → List Int
+walked k =
+    v = out (tMap (TW (TL [ k ])) idOf) [ 7 ]
+    List.push v 9
+
+
+main : Program
+main =
+    k = [ 1 ]
+    Node.print (show (mapped k) ++ show (constant k) ++ show (walked k) ++ "|" ++ show k)

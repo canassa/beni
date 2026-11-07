@@ -1,0 +1,103 @@
+-- The twin of `SanitiserFamilyDepth`, `…Callback` and `…Mutual`: the same functions, with
+-- nothing else holding what is written, so the whole read finds no holder and each write is
+-- accepted and runs in place. A whole read of an arrival is not a refusal of a family.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type T a
+    = TL a
+    | TW (T (List a))
+
+
+type M a
+    = ML a
+    | MW (N (List a))
+
+
+type N a
+    = NL a
+    | NW (M a)
+
+
+one : a → List a
+one x = [ x ]
+
+
+over : T a, a → T a
+over t x =
+    case t of
+        TL _ →
+            TL x
+
+        TW u →
+            TW (over u (one x))
+
+
+overM : M a, a → M a
+overM m x =
+    case m of
+        ML _ →
+            ML x
+
+        MW n →
+            MW (overN n (one x))
+
+
+overN : N a, a → N a
+overN n x =
+    case n of
+        NL _ →
+            NL x
+
+        NW m →
+            NW (overM m x)
+
+
+tMap : T a, (a → b) → T b
+tMap t f =
+    case t of
+        TL x →
+            TL (f x)
+
+        TW u →
+            TW (tMap u λl → List.map l f)
+
+
+idOf : a → a
+idOf x = x
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a =
+        case over (TW (TL [ [ 5 ] ])) [ 2 ] of
+            TW (TL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    b =
+        case overM (MW (NL [ [ 5 ] ])) [ 3 ] of
+            MW (NL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    c =
+        case tMap (TW (TL [ [ 4 ] ])) idOf of
+            TW (TL [ y, …_ ]) →
+                List.push y 9
+
+            _ →
+                []
+
+    Node.print (show a ++ show b ++ show c ++ "|" ++ show k)
