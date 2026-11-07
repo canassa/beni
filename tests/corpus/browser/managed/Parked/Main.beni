@@ -47,7 +47,6 @@ worker =
                                 Ok { values = List.drop numbers 2, label = "resumed" }
                             _ →
                                 Err "wrong input"
-        , stream = Worker.noStream
         }
 
 

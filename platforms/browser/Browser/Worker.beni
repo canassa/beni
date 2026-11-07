@@ -1,6 +1,7 @@
 -- Dedicated workers. Launches remain behind --allow-unchecked-workers.
-import Browser.WorkerStream exposing (Sink, Stream)
+import Browser.WorkerStream exposing (Stream)
 import Browser.WorkerWire as Wire
+import Char
 import Duration exposing (Duration)
 import Js
 import Schema exposing (Issue)
@@ -20,6 +21,16 @@ pub foreign type ConnectionId
 
 
 pub foreign type Policy
+
+
+pub foreign type PolicyName
+
+
+pub foreign type ScriptUrl
+
+
+pub type UrlError
+    = InvalidUrl
 
 
 pub type Credentials
@@ -151,15 +162,14 @@ pub type alias Protocol call reply streamRequest error event chunk =
     chunk : chunk
 
 
-pub type alias Definition config state call reply streamRequest error event chunk =
+pub type alias Definition config state call reply error event =
     init : Context event, config → Result error state
     start : Context event, state → ⊤
     handle : Context event, state, call → Result error reply
-    stream : Context event, state, streamRequest, Sink error chunk → Result error ⊤
 
 
 pub program :
-      Definition config state call reply streamRequest error event chunk
+      Definition config state call reply error event
     → Program config state (Protocol call reply streamRequest error event chunk)
 program definition =
     callbacks = { definition | start = requireSyncStart definition.start }
@@ -196,10 +206,6 @@ program definition =
         )
 
 
-pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
-noStream _ _ impossible _ = never impossible
-
-
 pub options : Options
 options =
     { name = ""
@@ -232,6 +238,135 @@ nativeFailure error name =
     Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
 
 
+-- Policy identities, never host-supplied names, establish callback ownership.
+ownedPolicies : Js.Ref Js.Value
+ownedPolicies = Js.ref Js.null
+
+
+pub policyName : String → Result PolicyError PolicyName
+policyName name =
+    if name == "" || not (String.all name policyCharacter) then
+        Err InvalidPolicyName
+    else
+        Ok (guest (host name))
+
+
+policyCharacter : Char → Bool
+policyCharacter c =
+    (Char.toCode c < 128 && Char.isAlphaNum c)
+        || String.contains "-#=_/@.%" (String.fromChar c)
+
+
+pub policy : PolicyName → Result PolicyError Policy
+policy name =
+    factory = Js.global "trustedTypes"
+    if Js.isNullish factory then
+        Err TrustedTypesUnavailable
+    else
+        allowed = Js.construct (Js.global "Set") []
+        callback value = if Js.to (Js.call allowed "has" [ value ]) then value else Js.null
+        result =
+            Js.catchIf
+                (λ⊤ →
+                    Ok
+                        (Js.call factory "createPolicy"
+                            [ host name, Js.object [ ( "createScriptURL", host callback ) ] ]
+                        )
+                )
+                (λerror → Js.instanceOf error (Js.global "TypeError"))
+                λ_ → Err TrustedPolicyDenied
+        case result of
+            Err error →
+                Err error
+            Ok native →
+                wrapped = host { native = native, allowed = allowed }
+                stored = Js.read ownedPolicies
+                registry =
+                    if Js.isNull stored then
+                        fresh = Js.construct (Js.global "WeakMap") []
+                        Js.write ownedPolicies fresh
+                        fresh
+                    else
+                        stored
+                _ = Js.call registry "set" [ native, wrapped ]
+                Ok (guest wrapped)
+
+
+pub scriptUrl : String → Result UrlError ScriptUrl
+scriptUrl text =
+    base =
+        if Js.entryWindow ⊤ then
+            Js.get (Js.global "document") "baseURI"
+        else
+            Js.get (Js.global "location") "href"
+    Js.catchIf
+        (λ⊤ →
+            parsed = Js.construct (Js.global "URL") [ host text, base ]
+            Ok (guest (Js.get parsed "href"))
+        )
+        (λerror → Js.instanceOf error (Js.global "TypeError"))
+        λ_ → Err InvalidUrl
+
+
+pub trust : Policy, ScriptUrl, sync (String → Bool) → Result PolicyError ScriptUrl
+trust chosen url allow =
+    text : String
+    text = guest (Js.apply (Js.global "String") [ host url ])
+    if allow text then
+        mintScriptUrl (host chosen) (host text)
+    else
+        Err (PolicyRefused "the script URL was refused")
+
+
+mintScriptUrl : Js.Value, Js.Value → Result PolicyError ScriptUrl
+mintScriptUrl chosen text =
+    allowed = Js.get chosen "allowed"
+    _ = Js.call allowed "add" [ text ]
+    Js.finally
+        (λ⊤ →
+            trusted = Js.call (Js.get chosen "native") "createScriptURL" [ text ]
+            factory = Js.global "trustedTypes"
+            if Js.isNullish factory then
+                Err TrustedTypesUnavailable
+            else if Js.to (Js.call factory "isScriptURL" [ trusted ]) then
+                Ok (guest trusted)
+            else
+                Err NotTrustedScriptUrl
+        )
+        λ⊤ →
+            _ = Js.call allowed "delete" [ text ]
+            ⊤
+
+
+resolveScriptUrl : Maybe Policy, Js.Value → Result PolicyError Js.Value
+resolveScriptUrl requested text =
+    factory = Js.global "trustedTypes"
+    default = if Js.isNullish factory then Js.null else Js.get factory "defaultPolicy"
+    registry = Js.read ownedPolicies
+    owned =
+        if Js.isNullish default || Js.isNull registry then
+            Js.null
+        else
+            Js.call registry "get" [ default ]
+    if not (Js.isNullish default) && Js.isNullish owned then
+        Err (PolicyRefused "the default policy is not owned by beni")
+    else
+        chosen =
+            case requested of
+                Just supplied →
+                    host supplied
+                Nothing →
+                    owned
+        if Js.isNullish chosen then
+            Ok text
+        else
+            case mintScriptUrl chosen text of
+                Ok trusted →
+                    Ok (host trusted)
+                Err error →
+                    Err error
+
+
 construct : V, Options → Result (OpenReason error) V
 construct descriptor opts =
     if not (Js.typeIs (Js.global "Worker") "function") then
@@ -245,33 +380,37 @@ construct descriptor opts =
                     "same-origin"
                 Include →
                     "include"
-        Js.catchIf
-            (λ⊤ →
-                Ok
-                    (Js.construct (Js.global "Worker")
-                        [ Js.get descriptor "url"
-                        , Js.object
-                            [ ( "type", Js.from "module" )
-                            , ( "name", Js.from opts.name )
-                            , ( "credentials", Js.from credentials )
-                            ]
-                        ]
+        case resolveScriptUrl opts.policy (Js.get descriptor "url") of
+            Err error →
+                Err (ScriptPolicy error)
+            Ok script →
+                Js.catchIf
+                    (λ⊤ →
+                        Ok
+                            (Js.construct (Js.global "Worker")
+                                [ script
+                                , Js.object
+                                    [ ( "type", Js.from "module" )
+                                    , ( "name", Js.from opts.name )
+                                    , ( "credentials", Js.from credentials )
+                                    ]
+                                ]
+                            )
                     )
-            )
-            (λcaught →
-                nativeFailure caught "SyntaxError"
-                    || nativeFailure caught "SecurityError"
-                    || Js.instanceOf caught (Js.global "TypeError")
-            )
-            λcaught →
-                Err
-                    (if nativeFailure caught "SyntaxError" then
-                        InvalidScriptUrl
-                     else if nativeFailure caught "SecurityError" then
-                        WorkerSecurityDenied
-                     else
-                        TrustedScriptUrlRejected
+                    (λcaught →
+                        nativeFailure caught "SyntaxError"
+                            || nativeFailure caught "SecurityError"
+                            || Js.instanceOf caught (Js.global "TypeError")
                     )
+                    λcaught →
+                        Err
+                            (if nativeFailure caught "SyntaxError" then
+                                InvalidScriptUrl
+                             else if nativeFailure caught "SecurityError" then
+                                WorkerSecurityDenied
+                             else
+                                TrustedScriptUrlRejected
+                            )
 
 
 -- The wire envelope is private control. Application values travel only as payloads.
@@ -324,7 +463,7 @@ newPeer native descriptor opts =
         , wire = Js.get descriptor "$wire"
         , generation = generation
         , phase = "Starting"
-        , options = opts
+        , options = { opts | policy = Nothing }
         , nextId = 0
         , startup = Js.null
         , requests = Js.construct (Js.global "Map") []
@@ -711,7 +850,7 @@ open owner definition config opts =
                                                                 0
                                                                 ""
                                                                 (host config)
-                                                        , options = opts
+                                                        , options = { opts | policy = Nothing }
                                                         }
                                                     )
                                             of
@@ -1113,7 +1252,7 @@ runDefinition definition =
 serve :
       V
     , Scope
-    , Definition config state call reply streamRequest error event chunk
+    , Definition config state call reply error event
     , state
     , Options
     → ⊤

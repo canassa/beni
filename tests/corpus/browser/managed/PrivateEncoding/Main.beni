@@ -34,7 +34,6 @@ worker =
         , handle =
             λ_ _ request →
                 if Probe.inspect request then Ok request else Err "request fields changed"
-        , stream = Worker.noStream
         }
 
 
@@ -44,7 +43,6 @@ scalar =
         { init = λ_ config → Ok config
         , start = λ_ _ → ⊤
         , handle = λ_ state request → Ok (state ++ request)
-        , stream = Worker.noStream
         }
 
 

@@ -784,8 +784,8 @@ Readable/Writable/TransformStream transfers use their standard transfer steps,
 including locked-state failures; the beni streaming protocol is not falsely
 presented as the same native object operation.
 
-See [workers-api.md](workers-api.md) for every public signature and
-[workers-example.md](workers-example.md) for complete page/worker lifecycles.
+See [workers-api.md](workers-api.md) for the public signatures. The streaming
+[examples](workers-example.md) are deferred to #2186.
 
 *Owner decision, 2026-11-07 (#2129).* Request/response streaming is deferred to
 [#2186](https://github.com/canassa/beni/issues/2186). The public Definition has

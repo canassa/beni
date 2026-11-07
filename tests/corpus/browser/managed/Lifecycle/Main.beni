@@ -22,7 +22,6 @@ worker =
                     Err "rejected"
                 else
                     Ok (state ++ request)
-        , stream = Worker.noStream
         }
 
 
@@ -36,7 +35,6 @@ closingWorker =
                 Task.join child
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → Ok "unreachable"
-        , stream = Worker.noStream
         }
 
 

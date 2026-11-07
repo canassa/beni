@@ -21,7 +21,6 @@ worker =
                         }
                     Stop →
                         { answerText = Nothing, rank = 0 }
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

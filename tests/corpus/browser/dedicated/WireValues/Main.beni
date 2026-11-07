@@ -40,7 +40,6 @@ worker =
                     , items = [ rest [ 0, 4, 5 ], rest [ 0, 6 ], List.concat message.items ]
                     , pair = ( inputLabel ++ ":tuple", rest [ 0, 6 + List.sum inputValues ] )
                 }
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

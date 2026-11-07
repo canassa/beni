@@ -13,7 +13,6 @@ worker =
             λmessage _ _ →
                 Frames.run ⊤
                 message
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

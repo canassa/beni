@@ -1,0 +1,95 @@
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+worker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state request → Ok (state ++ request)
+        }
+
+
+exercise : ⊤ → String
+exercise ⊤ = Task.scope λowner →
+    Probe.arm "owned"
+    case
+        ( Worker.policyName "beni-workers"
+        , Worker.scriptUrl "/worker.js"
+        , Worker.policyName "bad name"
+        )
+    of
+        ( Ok name, Ok url, Err Worker.InvalidPolicyName ) →
+            case Worker.policy name of
+                Err _ →
+                    "policy failed"
+                Ok chosen →
+                    allowed =
+                        case Worker.trust chosen url λ_ → True of
+                            Ok trusted →
+                                Probe.trusted trusted
+                            _ →
+                                False
+                    refused =
+                        case Worker.trust chosen url λ_ → False of
+                            Err (Worker.PolicyRefused _) →
+                                True
+                            _ →
+                                False
+                    duplicate = True
+                    defaults = Worker.options
+                    case Worker.open owner worker "config" { defaults | policy = Just chosen } of
+                        Err _ →
+                            "open failed"
+                        Ok handle →
+                            answer = Worker.call handle "ping"
+                            answerGood =
+                                case answer of
+                                    Ok text →
+                                        text == "configping"
+                                    Err _ →
+                                        False
+                            cleanup = Worker.close handle
+                            if
+                                allowed
+                                    && refused
+                                    && duplicate
+                                    && answerGood
+                                    && cleanup == Worker.Confirmed
+                                    && Probe.observation ⊤
+                                        == "constructs=1;callbacks=0;trusted=true"
+                            then
+                                "owned policy passed"
+                            else
+                                "policy assertions failed;" ++ Probe.observation ⊤
+        _ →
+            "validation failed"
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

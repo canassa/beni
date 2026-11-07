@@ -1,0 +1,12 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- throws click button
+(threw: TypeError: policy allow exploded)
+(the DOM did not change)
+-- click button
+(the DOM did not change)

@@ -16,7 +16,6 @@ worker =
                 Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → Ok ⊤
-        , stream = Worker.noStream
         }
 
 

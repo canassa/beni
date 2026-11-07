@@ -8,7 +8,6 @@ pub type Program request reply state
         { init : (⊤, ⊤ → state)
         , start : (state, ⊤ → ⊤)
         , handle : (request, state, ⊤ → reply)
-        , stream : (⊤, state, ⊤, ⊤ → ⊤)
         }
 
 
@@ -24,7 +23,6 @@ pub program :
       { init : (⊤, ⊤ → state)
       , start : (state, ⊤ → ⊤)
       , handle : (request, state, ⊤ → reply)
-      , stream : (⊤, state, ⊤, ⊤ → ⊤)
       }
     → Program request reply state
 program callbacks = Program callbacks

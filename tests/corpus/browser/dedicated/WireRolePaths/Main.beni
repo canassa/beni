@@ -28,7 +28,6 @@ worker =
         , handle =
             λmessage _ _ →
                 { message | payload = { values = rest [ 0, List.sum message.payload.values, 4 ] } }
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

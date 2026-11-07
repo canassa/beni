@@ -17,7 +17,6 @@ worker =
                     Task.join cancelled
                 else
                     Task.never ⊤
-        , stream = Worker.noStream
         }
 
 

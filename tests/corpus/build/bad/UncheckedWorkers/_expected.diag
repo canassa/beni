@@ -1,1 +1,1 @@
-[{"code":"invalid_entry_kind","severity":"error","span":{"file":"Main.beni","start":{"line":18,"col":9},"end":{"line":18,"col":20}},"title":"INVALID ENTRY KIND","message":"Worker launches are gated during the workers landing; validation builds require\n--allow-unchecked-workers."}]
+[{"code":"invalid_entry_kind","severity":"error","span":{"file":"Main.beni","start":{"line":17,"col":9},"end":{"line":17,"col":20}},"title":"INVALID ENTRY KIND","message":"Worker launches are gated during the workers landing; validation builds require\n--allow-unchecked-workers."}]

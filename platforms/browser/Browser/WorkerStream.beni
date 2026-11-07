@@ -6,9 +6,6 @@ import Task
 pub foreign type Stream error a
 
 
-pub foreign type Sink error a
-
-
 pub foreign type Chunk a
 
 

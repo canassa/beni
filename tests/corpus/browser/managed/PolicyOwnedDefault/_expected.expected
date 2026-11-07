@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "owned policy passed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"owned policy passed"</output>
+  </main>
+</body>

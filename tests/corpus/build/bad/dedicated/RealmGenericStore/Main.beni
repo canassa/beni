@@ -36,7 +36,6 @@ worker =
             λ_ _ _ →
                 go ⊤
                 "safe"
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

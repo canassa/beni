@@ -22,5 +22,4 @@ rowv =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ message → Ok message
-        , stream = Worker.noStream
         }

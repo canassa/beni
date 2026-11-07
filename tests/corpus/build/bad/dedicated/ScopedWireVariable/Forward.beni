@@ -6,7 +6,7 @@ import Worker
 make : a → Worker.Program a String ⊤
 make _ =
     Worker.program
-        { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+        { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok" }
 
 
 pub forward : a → ⊤

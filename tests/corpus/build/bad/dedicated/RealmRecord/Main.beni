@@ -23,7 +23,6 @@ worker =
         { init = λ_ _ → ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → actions.read ⊤
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

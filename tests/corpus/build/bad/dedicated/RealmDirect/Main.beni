@@ -20,7 +20,6 @@ worker =
         { init = λ_ _ → ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → dom ⊤
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

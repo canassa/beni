@@ -105,7 +105,7 @@ module Browser.Worker
     Omit
     SameOrigin
     Include
-  alias Definition a b c d e f g h
+  alias Definition a b c d e f
     Definition
   type EmitError
     EventQueueFull
@@ -141,6 +141,7 @@ module Browser.Worker
     NotTrustedScriptUrl
     PolicyRefused
     InvalidPolicyName
+  type PolicyName
   type PrepareError
     InvalidMessage
     InvalidResource
@@ -149,6 +150,7 @@ module Browser.Worker
   type Program a b c
   alias Protocol a b c d e f
     Protocol
+  type ScriptUrl
   type SendError
     WorkerCloneRejected
     CanvasTransferInvalidState
@@ -164,6 +166,8 @@ module Browser.Worker
     PeerUnresponsive
     PeerClosed
     CleanupAbandoned
+  type UrlError
+    InvalidUrl
   value abort : Handle protocol → Cleanup  -- impure
   value await : Ticket error reply → Result (CallError error) reply  -- suspends
   value call : Handle (Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply  -- suspends
@@ -173,14 +177,17 @@ module Browser.Worker
   value discard : Prepared a → ⊤  -- impure
   value emit : Context event, event → Result EmitError ⊤  -- impure
   value events : Handle (Protocol call reply streamRequest error event chunk) → Stream TransportError event  -- impure
-  value noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
   value open : Scope, Program config state (Protocol call reply streamRequest error event chunk), config, Options → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))  -- suspends
   value options : Options
+  value policy : PolicyName → Result PolicyError Policy  -- impure
+  value policyName : String → Result PolicyError PolicyName
   value prepare : a → Result PrepareError (Prepared a)
-  value program : Definition config state call reply streamRequest error event chunk → Program config state (Protocol call reply streamRequest error event chunk)
+  value program : Definition config state call reply error event → Program config state (Protocol call reply streamRequest error event chunk)
   value run : Program config state protocol → ⊤  -- impure
   value scope : Context event → Scope  -- impure
+  value scriptUrl : String → Result UrlError ScriptUrl  -- impure
   value send : Handle (Protocol call reply streamRequest error event chunk), Prepared call → Result SendError (Ticket error reply)  -- impure
+  value trust : Policy, ScriptUrl, (String → Bool) → Result PolicyError ScriptUrl  -- impure
 module Browser.WorkerRuntime
   value run : Program config state protocol → ⊤  -- impure
 module Browser.WorkerStream
@@ -189,7 +196,6 @@ module Browser.WorkerStream
     Failed
     StreamClosed
     StreamUnresponsive
-  type Sink a b
   type Step a
     Item
     End

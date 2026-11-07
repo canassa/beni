@@ -14,7 +14,6 @@ worker =
         { init = λ_ _ → Ok ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ request → Ok request
-        , stream = Worker.noStream
         }
 
 

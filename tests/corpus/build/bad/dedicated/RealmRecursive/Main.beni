@@ -23,7 +23,6 @@ worker =
         { init = λ_ _ → ⊤
         , start = λ_ _ → ⊤
         , handle = λ_ _ _ → helper 1
-        , stream = λ_ _ _ _ → ⊤
         }
 
 

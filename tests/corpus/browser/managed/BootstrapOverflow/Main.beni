@@ -16,7 +16,6 @@ worker =
         { init = λ_ _ → Ok seed
         , start = λ_ _ → ⊤
         , handle = λ_ state request → Ok (state ++ request)
-        , stream = Worker.noStream
         }
 
 
