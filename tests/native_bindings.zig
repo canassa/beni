@@ -34,10 +34,11 @@ pub fn main(init: std.process.Init) !u8 {
         const js = try callable.sibling(arena, native.module);
         if (js.len != 0) try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{native.name}), .data = js });
     }
-    for ([_][]const u8{ "Timers", "Uint8Array" }) |name| {
+    for ([_][]const u8{"Timers"} ++ Native.Operations.intrinsic_types) |name| {
         const module = try std.fmt.allocPrint(arena, "Browser.Host.{s}", .{name});
-        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{name}), .data = try Native.Callable.source(arena, module, if (std.mem.eql(u8, name, "Uint8Array")) name else null) });
-        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{name}), .data = try Native.Callable.sibling(arena, module) });
+        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{name}), .data = try Native.Callable.source(arena, module, if (std.mem.eql(u8, name, "Timers")) null else name) });
+        const js = try Native.Callable.sibling(arena, module);
+        if (js.len != 0) try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{name}), .data = js });
     }
     return 0;
 }
@@ -107,14 +108,22 @@ test "shipped native modules are exactly the pinned generator output" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope" }) |name| {
+    // The callable subset, the GPU sources' interface types and every
+    // intrinsic type; a module with no operation ships no sibling.
+    const idl = [_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Timers", "WorkerGlobalScope", "HTMLCanvasElement", "HTMLImageElement", "HTMLVideoElement", "ImageBitmap", "ImageBitmapRenderingContext", "ImageData", "OffscreenCanvas", "VideoFrame" };
+    for (idl ++ Native.Operations.intrinsic_types) |name| {
         const module = try std.fmt.allocPrint(a, "Browser.Host.{s}", .{name});
         const path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.beni", .{name});
         const actual = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024));
         try std.testing.expectEqualStrings(try Native.Callable.source(a, module, if (std.mem.eql(u8, name, "Timers")) null else name), actual);
         const js_path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.js", .{name});
+        const expected_js = try Native.Callable.sibling(a, module);
+        if (expected_js.len == 0) {
+            try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(std.testing.io, js_path, .{}));
+            continue;
+        }
         const js = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, js_path, a, .limited(64 * 1024));
-        try std.testing.expectEqualStrings(try Native.Callable.sibling(a, module), js);
+        try std.testing.expectEqualStrings(expected_js, js);
     }
 }
 

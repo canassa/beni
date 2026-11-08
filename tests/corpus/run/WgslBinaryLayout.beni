@@ -1,0 +1,192 @@
+-- Binary.Wgsl against WGSL 14.4 (CRD 2026-10-26): offsets, sizes, strides and
+-- alignments of the specification's own example, @align and @size, f16
+-- vectors and matrices, the uniform address space's constraints, and the
+-- little-endian codec. Each expected line is worked out by hand from the
+-- AlignOf/SizeOf/StrideOf tables and IEEE 754 binary16/binary32.
+import Binary
+import Binary.Wgsl as Wgsl exposing (Composite, Float16, Float32, Floating, Integer, Legacy, Signed32, Standard, Unsigned32)
+import List
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.printLines
+        [ …specExample ⊤, …attributes ⊤, …halves ⊤, …uniforms ⊤, …codec ⊤, …runtimeTail ⊤ ]
+
+
+ok : Result e a → a
+ok result =
+    case result of
+        Ok value →
+            value
+        Err error →
+            Debug.todo (Debug.toString error)
+
+
+describe : Wgsl.Layout → String
+describe layout =
+    Debug.toString
+        { align = Wgsl.alignment layout
+        , size = Wgsl.byteSize layout
+        , stride = Wgsl.stride layout
+        , offsets = List.map (Wgsl.members layout) λmember → member.offset
+        }
+
+
+f32 : Wgsl.Layout
+f32 = Wgsl.scalar Float32
+
+
+u32 : Wgsl.Layout
+u32 = Wgsl.scalar Unsigned32
+
+
+-- WGSL 14.4.3's example: struct A { u, v : f32, w : vec2<f32>, x : f32 } and
+-- struct B { a : vec2<f32>, b : vec3<f32>, c, d : f32, e : A, f : vec3<f32>,
+-- g : array<A, 3>, h : i32 }.
+specExample : ⊤ → List String
+specExample ⊤ =
+    vec2 = ok (Wgsl.vector Float32 2)
+    vec3 = ok (Wgsl.vector Float32 3)
+    inner =
+        ok
+            (Wgsl.structure
+                [ Wgsl.field "u" f32, Wgsl.field "v" f32, Wgsl.field "w" vec2, Wgsl.field "x" f32 ]
+            )
+    outer =
+        ok
+            (Wgsl.structure
+                [ Wgsl.field "a" vec2
+                , Wgsl.field "b" vec3
+                , Wgsl.field "c" f32
+                , Wgsl.field "d" f32
+                , Wgsl.field "e" inner
+                , Wgsl.field "f" vec3
+                , Wgsl.field "g" (ok (Wgsl.array inner 3))
+                , Wgsl.field "h" (Wgsl.scalar Signed32)
+                ]
+            )
+    [ describe inner
+    , describe outer
+    , Debug.toString (Wgsl.uniform Standard outer)
+    , Debug.toString (Wgsl.uniform Legacy outer)
+    ]
+
+
+-- struct { @align(16) a : f32, @size(8) b : f32, c : u32 }
+attributes : ⊤ → List String
+attributes ⊤ =
+    layout =
+        ok
+            (Wgsl.structure
+                [ { name = "a", layout = f32, align = Just 16, size = Nothing }
+                , { name = "b", layout = f32, align = Nothing, size = Just 8 }
+                , Wgsl.field "c" u32
+                ]
+            )
+    [ describe layout
+    , Debug.toString
+        (List.map (Wgsl.members layout) λmember → ( member.alignment, member.byteSize ))
+    , Debug.toString
+        (Wgsl.structure [ { name = "a", layout = f32, align = Just 2, size = Nothing } ])
+    , Debug.toString
+        (Wgsl.structure [ { name = "a", layout = f32, align = Just 12, size = Nothing } ])
+    , Debug.toString
+        (Wgsl.structure [ { name = "a", layout = f32, align = Nothing, size = Just 2 } ])
+    , Debug.toString (Wgsl.structure [ Wgsl.field "a" f32, Wgsl.field "a" u32 ])
+    , Debug.toString (Wgsl.structure [])
+    , Debug.toString (Wgsl.vector Float32 5)
+    , Debug.toString (Wgsl.matrix Signed32 2 2)
+    , Debug.toString (Wgsl.array (ok (Wgsl.vector Float32 4)) 1125899906842624)
+    ]
+
+
+-- vec2<f16>, vec3<f16>, mat2x3<f16>, mat4x4<f16>, and vec3<f16>'s bytes.
+halves : ⊤ → List String
+halves ⊤ =
+    vec3 = ok (Wgsl.vector Float16 3)
+    value = Composite [ Floating 1, Floating 2, Floating 3 ]
+    buffer = ok (Wgsl.encode vec3 value)
+    [ describe (ok (Wgsl.vector Float16 2))
+    , describe vec3
+    , describe (ok (Wgsl.matrix Float16 2 3))
+    , describe (ok (Wgsl.matrix Float16 4 4))
+    , Debug.toString (Binary.toList (Binary.WholeBuffer buffer))
+    , Debug.toString
+        (Result.map (Wgsl.decode (ok (Binary.dataView (Binary.Local buffer))) 0 vec3) λdecoded →
+            decoded == value
+        )
+    ]
+
+
+-- The uniform address space without uniform_buffer_standard_layout (14.4.5).
+uniforms : ⊤ → List String
+uniforms ⊤ =
+    s = ok (Wgsl.structure [ Wgsl.field "x" f32 ])
+    invalid = ok (Wgsl.structure [ Wgsl.field "a" s, Wgsl.field "b" f32 ])
+    valid =
+        ok
+            (Wgsl.structure
+                [ Wgsl.field "a" s, { name = "b", layout = f32, align = Just 16, size = Nothing } ]
+            )
+    misplaced = ok (Wgsl.structure [ Wgsl.field "a" f32, Wgsl.field "s" s ])
+    [ Debug.toString (Wgsl.uniform Legacy invalid)
+    , Debug.toString (Wgsl.uniform Standard invalid)
+    , Debug.toString ( Wgsl.uniform Legacy valid, describe valid )
+    , Debug.toString (Wgsl.uniform Legacy misplaced)
+    , Debug.toString (Wgsl.uniform Legacy (ok (Wgsl.array u32 2)))
+    , Debug.toString (Wgsl.uniform Standard (ok (Wgsl.array u32 2)))
+    , Debug.toString (Wgsl.uniform Standard (Wgsl.scalar Wgsl.AtomicUnsigned32))
+    , Debug.toString (Wgsl.uniform Standard (ok (Wgsl.runtimeArray u32)))
+    ]
+
+
+-- struct { v : vec3<f32>, tail : u32, m : mat3x3<f32> }
+codec : ⊤ → List String
+codec ⊤ =
+    vector = ok (Wgsl.vector Float32 3)
+    matrix = ok (Wgsl.matrix Float32 3 3)
+    layout =
+        ok (Wgsl.structure [ Wgsl.field "v" vector, Wgsl.field "tail" u32, Wgsl.field "m" matrix ])
+    values =
+        Composite
+            [ floats [ 1, 2, 3 ]
+            , Integer 4294967295
+            , Composite [ floats [ 4, 5, 6 ], floats [ 7, 8, 9 ], floats [ 10, 11, 12 ] ]
+            ]
+    buffer = ok (Wgsl.encode layout values)
+    view = ok (Binary.dataView (Binary.Local buffer))
+    [ describe layout
+    , Debug.toString (Wgsl.stride matrix)
+    , Debug.toString (Result.map (Wgsl.decode view 0 layout) λdecoded → decoded == values)
+    , Debug.toString (Binary.readF32 view 56 Binary.Little)
+    , Debug.toString (Binary.readU32 view 28 Binary.Little)
+    , Debug.toString (Binary.readU32 view 12 Binary.Little)
+    , Debug.toString (Wgsl.encode u32 (Floating 1))
+    , Debug.toString (Wgsl.encode vector (floats [ 1, 2 ]))
+    , Debug.toString (Wgsl.encode u32 (Integer (-1)))
+    , Debug.toString (Wgsl.write view 60 layout values)
+    ]
+
+
+-- struct { count : u32, values : array<u32> }
+runtimeTail : ⊤ → List String
+runtimeTail ⊤ =
+    tail = ok (Wgsl.runtimeArray u32)
+    layout = ok (Wgsl.structure [ Wgsl.field "count" u32, Wgsl.field "values" tail ])
+    values = Composite [ Integer 3, Composite [ Integer 11, Integer 22, Integer 33 ] ]
+    buffer = ok (Wgsl.encode layout values)
+    [ describe layout
+    , Debug.toString (Binary.toList (Binary.WholeBuffer buffer))
+    , Debug.toString
+        (Result.map (Wgsl.decode (ok (Binary.dataView (Binary.Local buffer))) 0 layout) λdecoded →
+            decoded == values
+        )
+    , Debug.toString (Wgsl.structure [ Wgsl.field "bad" tail, Wgsl.field "later" u32 ])
+    , Debug.toString (Wgsl.encode layout (Composite [ Integer 0, Composite [] ]))
+    ]
+
+
+floats : List Int → Wgsl.Value
+floats values = Composite (List.map values λvalue → Floating (toFloat value))

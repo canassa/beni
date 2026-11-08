@@ -1,0 +1,23 @@
+Ok { high = 4294967295, low = 4294967295 }
+Ok { high = 4294967295, low = 4294967295 }
+Ok { high = 0, low = 0 }
+Ok { high = 0, low = 0 }
+Ok { high = 4294967295, low = 4294967295 }
+Ok { high = 4294967295, low = 4294967295 }
+Ok (Number (-1))
+Ok (Number (-1))
+Ok (Number 255)
+Err InvalidValue
+Ok (Number 255)
+Ok (Number 0)
+Ok (Number 65535)
+Ok (Number 65535)
+Ok (Number 7)
+Err (InvalidIndex 8)
+Err InvalidView
+Err InvalidView
+Err InvalidView
+Err InvalidValue
+Err InvalidValue
+Err InvalidValue
+True

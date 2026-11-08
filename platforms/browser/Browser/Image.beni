@@ -1,0 +1,510 @@
+--! Native image elements, ImageData and ImageBitmap construction.
+--! docs/design/browser-sources.md records the HTML failure algorithms.
+
+import Binary
+import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
+import Browser.Host.ImageBitmap exposing (ImageBitmap)
+import Browser.Host.ImageData exposing (ImageData)
+import Browser.Source as Source
+import Js
+import Task
+
+
+pub type alias Element =
+    HTMLImageElement
+
+
+pub type alias Bitmap =
+    ImageBitmap
+
+
+pub type alias Data =
+    ImageData
+
+
+pub type ColorSpace
+    = Srgb
+    | DisplayP3
+
+
+pub type PixelFormat
+    = Rgba8
+    | Rgba16Float
+
+
+pub type CrossOrigin
+    = SameOrigin
+    | Anonymous
+    | Credentials
+
+
+pub type Orientation
+    = FromImage
+    | FlipY
+
+
+pub type Alpha
+    = DefaultAlpha
+    | Straight
+    | Premultiplied
+
+
+pub type Conversion
+    = DefaultConversion
+    | NoConversion
+
+
+pub type Quality
+    = Pixelated
+    | Low
+    | Medium
+    | High
+
+
+pub type Error
+    = Unsupported String
+    | NotFound String
+    | WrongElement String
+    | InvalidDimension Int
+    | InvalidCrop
+    | WrongPixelView
+    | InconsistentPixels
+    | SharedPixels
+    | PixelBacking Binary.BackingError
+    | BytesCopy Binary.CopyError
+    | AllocationFailed
+    | DecodeFailed
+    | InvalidSource
+
+
+pub type alias Settings =
+    colorSpace : ColorSpace
+    pixelFormat : PixelFormat
+
+
+pub type alias BitmapOptions =
+    orientation : Orientation
+    alpha : Alpha
+    conversion : Conversion
+    resizeWidth : Maybe Int
+    resizeHeight : Maybe Int
+    quality : Quality
+
+
+pub type alias Crop =
+    x : Int
+    y : Int
+    width : Int
+    height : Int
+
+
+pub settings : Settings
+settings = { colorSpace = Srgb, pixelFormat = Rgba8 }
+
+
+pub bitmapOptions : BitmapOptions
+bitmapOptions =
+    { orientation = FromImage
+    , alpha = DefaultAlpha
+    , conversion = DefaultConversion
+    , resizeWidth = Nothing
+    , resizeHeight = Nothing
+    , quality = Low
+    }
+
+
+--| Find a native image element; acquisition does not decode or copy it.
+pub byId : String → Result Error Element
+byId id =
+    document = Js.global "document"
+    if Js.isUndefined document then
+        Err (Unsupported "document")
+    else
+        value = Js.call document "getElementById" [ Js.from id ]
+        if Js.isNull value then
+            Err (NotFound id)
+        else if not (Js.instanceOf value (Js.global "HTMLImageElement")) then
+            Err (WrongElement id)
+        else
+            Ok (Js.to value)
+
+
+--| Load and decode a new image. Cancelling releases this request's element URL.
+pub load : String, CrossOrigin → Result Error Element
+load url crossOrigin =
+    constructor = Js.global "Image"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "Image")
+    else
+        value = Js.construct constructor []
+        case crossOrigin of
+            SameOrigin →
+                ⊤
+            Anonymous →
+                Js.set value "crossOrigin" (Js.from "anonymous")
+            Credentials →
+                Js.set value "crossOrigin" (Js.from "use-credentials")
+        Js.set value "src" (Js.from url)
+        Task.onExit (λ⊤ → Result.map (decodeElement (Js.to value)) λ_ → Js.to value) λexit →
+            case exit of
+                Task.Done result →
+                    case result of
+                        Ok _ →
+                            ⊤
+                        Err _ →
+                            Js.to (Js.call value "removeAttribute" [ Js.from "src" ])
+                Task.Cancelled →
+                    Js.to (Js.call value "removeAttribute" [ Js.from "src" ])
+
+
+--| Decode an existing element without taking ownership of its URL.
+pub decodeElement : Element → Result Error ⊤
+decodeElement image =
+    value = Js.from image
+    if not (Js.typeIs (Js.get value "decode") "function") then
+        Err (Unsupported "HTMLImageElement.decode")
+    else
+        outcome = wait (λ⊤ → Js.call value "decode" []) (domError "EncodingError" _) λ_ → ⊤
+        case outcome of
+            Fulfilled _ →
+                Ok ⊤
+            Rejected _ →
+                Err DecodeFailed
+
+
+--| Allocate native RGBA ImageData in the chosen color space and component format.
+pub data : Int, Int, Settings → Result Error Data
+data width height config =
+    positive width?
+    positive height?
+    formatSupported config?
+    constructor = Js.global "ImageData"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "ImageData")
+    else
+        Js.catchIf
+            (λ⊤ →
+                checkedData
+                    (Js.construct constructor
+                        [ Js.from width, Js.from height, settingsValue config ]
+                    )
+                    config
+            )
+            (λerror → Js.instanceOf error (Js.global "RangeError"))
+            λ_ → Err AllocationFailed
+
+
+--| Use the exact native Uint8ClampedArray (Rgba8) or Float16Array (Rgba16Float)
+--| as pixel storage. No copy is made: later writes to the view change the
+--| ImageData. Shared, resizable, detached or mis-sized storage is refused first.
+pub dataFromView : Binary.View, Int, Maybe Int, Settings → Result Error Data
+dataFromView pixelView width height config =
+    positive width?
+    info = Result.mapError (Binary.sourceInfo (Binary.ViewOf pixelView)) PixelBacking?
+    storage =
+        case ( pixelView, config.pixelFormat ) of
+            ( Binary.Uint8ClampedArray handle, Rgba8 ) →
+                Ok (Js.from handle)
+            ( Binary.Float16Array handle, Rgba16Float ) →
+                Ok (Js.from handle)
+            _ →
+                Err WrongPixelView
+    native = storage?
+    if info.shared then
+        Err SharedPixels
+    else
+        stride = if config.pixelFormat == Rgba8 then 4 else 8
+        if
+            info.byteLength == 0
+                || Int.rem info.byteLength stride ≠ 0
+                || Int.rem (info.byteLength // stride) width ≠ 0
+        then
+            Err InconsistentPixels
+        else
+            rows = info.byteLength // stride // width
+            positive rows?
+            case height of
+                Just explicit →
+                    positive explicit?
+                    if explicit ≠ rows then
+                        Err InconsistentPixels
+                    else
+                        constructData native width rows config
+                Nothing →
+                    constructData native width rows config
+
+
+--| The original native pixel view, with current backing checks.
+pub pixels : Data → Result Error Binary.View
+pixels image =
+    value = Js.get (Js.from image) "data"
+    view =
+        if Js.same (Js.get (Js.from image) "pixelFormat") (Js.from "rgba-float16") then
+            Binary.Float16Array (Js.to value)
+        else
+            Binary.Uint8ClampedArray (Js.to value)
+    _ = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) PixelBacking?
+    Ok view
+
+
+--| Create a bitmap from any WebGPU image-source arm. Crop coordinates are signed
+--| source pixels. Negative crop extents retain HTML's specified semantics.
+pub bitmap : Source.Input, Maybe Crop, BitmapOptions → Result Error Bitmap
+bitmap source crop options = createBitmap (sourceValue source) crop options InvalidSource
+
+
+--| Decode encoded image bytes into a bitmap. The MIME type names the format
+--| (`image/png`, `image/jpeg`, …); the bytes are copied, so shared storage is
+--| accepted. Bytes the browser cannot decode are DecodeFailed.
+pub bitmapFromBytes : Binary.Source, String, Maybe Crop, BitmapOptions → Result Error Bitmap
+bitmapFromBytes bytes mime crop options =
+    constructor = Js.global "Blob"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "Blob")
+    else
+        copied = Result.mapError (Binary.copy bytes) BytesCopy?
+        blob =
+            Js.construct constructor
+                [ Js.array [ Js.from copied ], Js.object [ ( "type", Js.from mime ) ] ]
+        createBitmap blob crop options DecodeFailed
+
+
+-- createImageBitmap's one expected rejection is InvalidStateError: an
+-- unusable or undecodable source, or a closed bitmap or frame.
+createBitmap : Js.Value, Maybe Crop, BitmapOptions, Error → Result Error Bitmap
+createBitmap value crop options failure =
+    validateResize options.resizeWidth?
+    validateResize options.resizeHeight?
+    case crop of
+        Nothing →
+            ⊤
+        Just rect →
+            signed rect.x?
+            signed rect.y?
+            signed rect.width?
+            signed rect.height?
+            (if rect.width == 0 || rect.height == 0 then Err InvalidCrop else Ok ⊤)?
+    function = Js.global "createImageBitmap"
+    if not (Js.typeIs function "function") then
+        Err (Unsupported "createImageBitmap")
+    else
+        config = bitmapValue options
+        outcome =
+            wait
+                (λ⊤ →
+                    case crop of
+                        Nothing →
+                            Js.apply function [ value, config ]
+                        Just rect →
+                            Js.apply function
+                                [ value
+                                , Js.from rect.x
+                                , Js.from rect.y
+                                , Js.from rect.width
+                                , Js.from rect.height
+                                , config
+                                ]
+                )
+                (domError "InvalidStateError" _)
+                λlate → Js.to (Js.call late "close" [])
+        case outcome of
+            Fulfilled result →
+                Ok (Js.to result)
+            Rejected _ →
+                Err failure
+
+
+pub close : Bitmap → ⊤
+close value = Js.to (Js.call (Js.from value) "close" [])
+
+
+constructData : Js.Value, Int, Int, Settings → Result Error Data
+constructData pixelView width height config =
+    formatSupported config?
+    constructor = Js.global "ImageData"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "ImageData")
+    else
+        checkedData
+            (Js.construct constructor
+                [ pixelView, Js.from width, Js.from height, settingsValue config ]
+            )
+            config
+
+
+checkedData : Js.Value, Settings → Result Error Data
+checkedData value config =
+    if
+        config.pixelFormat == Rgba16Float
+            && not (Js.same (Js.get value "pixelFormat") (Js.from "rgba-float16"))
+    then
+        Err (Unsupported "ImageData rgba-float16")
+    else if
+        config.colorSpace == DisplayP3
+            && not (Js.same (Js.get value "colorSpace") (Js.from "display-p3"))
+    then
+        Err (Unsupported "ImageData display-p3")
+    else
+        Ok (Js.to value)
+
+
+settingsValue : Settings → Js.Value
+settingsValue config =
+    Js.object
+        [ ( "colorSpace", Js.from (if config.colorSpace == Srgb then "srgb" else "display-p3") )
+        , ( "pixelFormat"
+          , Js.from (if config.pixelFormat == Rgba8 then "rgba-unorm8" else "rgba-float16")
+          )
+        ]
+
+
+bitmapValue : BitmapOptions → Js.Value
+bitmapValue options =
+    value = Js.object []
+    Js.set
+        value
+        "imageOrientation"
+        (Js.from (if options.orientation == FromImage then "from-image" else "flipY"))
+    Js.set
+        value
+        "premultiplyAlpha"
+        (Js.from
+            (case options.alpha of
+                DefaultAlpha →
+                    "default"
+                Straight →
+                    "none"
+                Premultiplied →
+                    "premultiply"
+            )
+        )
+    Js.set
+        value
+        "colorSpaceConversion"
+        (Js.from (if options.conversion == DefaultConversion then "default" else "none"))
+    Js.set
+        value
+        "resizeQuality"
+        (Js.from
+            (case options.quality of
+                Pixelated →
+                    "pixelated"
+                Low →
+                    "low"
+                Medium →
+                    "medium"
+                High →
+                    "high"
+            )
+        )
+    case options.resizeWidth of
+        Nothing →
+            ⊤
+        Just width →
+            Js.set value "resizeWidth" (Js.from width)
+    case options.resizeHeight of
+        Nothing →
+            ⊤
+        Just height →
+            Js.set value "resizeHeight" (Js.from height)
+    value
+
+
+sourceValue : Source.Input → Js.Value
+sourceValue source =
+    case source of
+        Source.FromImage value →
+            Js.from value
+        Source.FromBitmap value →
+            Js.from value
+        Source.FromPixels value →
+            Js.from value
+        Source.FromVideo value →
+            Js.from value
+        Source.FromFrame value →
+            Js.from value
+        Source.FromCanvas value →
+            Js.from value
+        Source.FromOffscreen value →
+            Js.from value
+
+
+positive : Int → Result Error ⊤
+positive value =
+    if
+        value ≤ 0
+            || value > 4294967295
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+    then
+        Err (InvalidDimension value)
+    else
+        Ok ⊤
+
+
+signed : Int → Result Error ⊤
+signed value =
+    if
+        value < -2147483648
+            || value > 2147483647
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+    then
+        Err (InvalidDimension value)
+    else
+        Ok ⊤
+
+
+validateResize : Maybe Int → Result Error ⊤
+validateResize value =
+    case value of
+        Nothing →
+            Ok ⊤
+        Just size →
+            positive size
+
+
+domError : String, Js.Value → Bool
+domError name error =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
+
+
+type Settled
+    = Fulfilled Js.Value
+    | Rejected Js.Value
+
+
+wait : sync (⊤ → Js.Value), sync (Js.Value → Bool), sync (Js.Value → ⊤) → Settled
+wait start expected release = Task.callback λresume →
+    active = Js.ref True
+    _ =
+        Js.call (start ⊤) "then"
+            [ Js.from λvalue →
+                if Js.read active then Task.resume resume (Fulfilled value) else release value
+            , Js.from λerror →
+                if expected error then
+                    if Js.read active then Task.resume resume (Rejected error)
+                else
+                    _ = Task.soon λ⊤ → Js.throw error
+                    ⊤
+            ]
+    λ⊤ → Js.write active False
+
+
+formatSupported : Settings → Result Error ⊤
+formatSupported config =
+    constructor = Js.global "ImageData"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "ImageData")
+    else if
+        config.pixelFormat == Rgba16Float
+            && (not (Js.typeIs (Js.global "Float16Array") "function")
+                   || not
+                       (Js.to
+                           (Js.call (Js.global "Reflect") "has"
+                               [ Js.get constructor "prototype", Js.from "pixelFormat" ]
+                           )
+                       )
+               )
+    then
+        Err (Unsupported "ImageData rgba-float16")
+    else
+        Ok ⊤

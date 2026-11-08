@@ -792,13 +792,13 @@ fn lowerFirst(arena: Allocator, name: []const u8) Allocator.Error![]const u8 {
 }
 
 fn emitAll(m: *Model, out: *std.ArrayList(Output)) (Error || Writer.Error)!void {
-    // The native types: every GPU interface, then the host types GPU
-    // dictionaries name.
+    // The native types: every GPU interface. The host types GPU dictionaries
+    // name from other IDL files (`m.hosts`) are the native catalogue's
+    // modules (`tests/native_bindings.zig`), which `Gpu.Types` imports.
     var natives: std.ArrayList([]const u8) = .empty;
     for (m.c.declarations) |d| {
         if (d.file == m.file and d.kind == .interface and !d.partial) try natives.append(m.arena, d.name);
     }
-    try natives.appendSlice(m.arena, m.hosts.items);
     std.mem.sort([]const u8, natives.items, {}, lessString);
     for (natives.items) |name| {
         try out.append(m.arena, .{

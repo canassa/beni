@@ -2,5 +2,5 @@
   "platform": true,
   "name": "browser-tea",
   "platforms": ["browser"],
-  "reexports": ["Html", "Html.Markdown", "Browser", "Browser.Worker", "Browser.WorkerStream", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "WebSocket", "Gpu", "Gpu.Adapter", "Gpu.Device", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.Scalar", "Gpu.Types", "Gpu.WgslFeature"]
+  "reexports": ["Html", "Html.Markdown", "Browser", "Browser.Worker", "Browser.WorkerStream", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "WebSocket", "Browser.Source", "Browser.Image", "Browser.Video", "Browser.Canvas", "Gpu", "Gpu.Adapter", "Gpu.Device", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.Scalar", "Gpu.Types", "Gpu.WgslFeature"]
 }

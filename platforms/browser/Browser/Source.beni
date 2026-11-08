@@ -1,0 +1,138 @@
+--! The image sources Image, Video, Canvas and GPU share. Each is the generated
+--! native type of `Browser.Host` (workers.md §4), never a box or a copy of the
+--! browser object. Readiness is a snapshot; host operations must still classify
+--! their own origin and lifetime errors.
+
+import Binary
+import Browser.Host.HTMLCanvasElement exposing (HTMLCanvasElement)
+import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
+import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
+import Browser.Host.ImageBitmap exposing (ImageBitmap)
+import Browser.Host.ImageData exposing (ImageData)
+import Browser.Host.OffscreenCanvas exposing (OffscreenCanvas)
+import Browser.Host.VideoFrame exposing (VideoFrame)
+import Js
+
+
+--| All seven GPU external-image source alternatives, without an unchecked escape.
+pub type Input
+    = FromImage HTMLImageElement
+    | FromBitmap ImageBitmap
+    | FromPixels ImageData
+    | FromVideo HTMLVideoElement
+    | FromFrame VideoFrame
+    | FromCanvas HTMLCanvasElement
+    | FromOffscreen OffscreenCanvas
+
+
+pub type State
+    = Ready
+    | Loading
+    | Broken
+    | Closed
+    | Empty
+    | ContextValidationRequired
+
+
+pub type alias Info =
+    width : Int
+    height : Int
+    state : State
+
+
+--| Current source-pixel dimensions and lifetime/readiness state.
+pub info : Input → Info
+info source =
+    case source of
+        FromImage handle →
+            value = Js.from handle
+            width = number value "naturalWidth"
+            height = number value "naturalHeight"
+            state =
+                if not (Js.to (Js.get value "complete")) then
+                    Loading
+                else if Js.same (Js.get value "currentSrc") (Js.from "") then
+                    -- No source at all: complete, and nothing was asked for.
+                    Empty
+                else if width == 0 || height == 0 then
+                    Broken
+                else
+                    Ready
+            { width = width, height = height, state = state }
+        FromVideo handle →
+            value = Js.from handle
+            width = number value "videoWidth"
+            height = number value "videoHeight"
+            state =
+                if not (Js.isNull (Js.get value "error")) then
+                    Broken
+                else if number value "readyState" < 2 then
+                    Loading
+                else if width == 0 || height == 0 then
+                    Empty
+                else
+                    Ready
+            { width = width, height = height, state = state }
+        FromFrame handle →
+            value = Js.from handle
+            width = number value "displayWidth"
+            height = number value "displayHeight"
+            { width = width
+            , height = height
+            , state = if number value "codedWidth" == 0 then Closed else Ready
+            }
+        FromBitmap handle →
+            value = Js.from handle
+            width = number value "width"
+            height = number value "height"
+            { width = width
+            , height = height
+            , state = if width == 0 || height == 0 then Closed else Ready
+            }
+        FromPixels handle →
+            value = Js.from handle
+            buffer = Js.get (Js.get value "data") "buffer"
+            { width = number value "width"
+            , height = number value "height"
+            , state = if Binary.detached (Js.to buffer) then Closed else Ready
+            }
+        FromCanvas handle →
+            dimensions (Js.from handle)
+        FromOffscreen handle →
+            result = dimensions (Js.from handle)
+            { result | state = ContextValidationRequired }
+
+
+--| Referential source identity. Closing/transferring one alias affects all aliases.
+pub same : Input, Input → Bool
+same first second = Js.same (native first) (native second)
+
+
+native : Input → Js.Value
+native source =
+    case source of
+        FromImage handle →
+            Js.from handle
+        FromBitmap handle →
+            Js.from handle
+        FromPixels handle →
+            Js.from handle
+        FromVideo handle →
+            Js.from handle
+        FromFrame handle →
+            Js.from handle
+        FromCanvas handle →
+            Js.from handle
+        FromOffscreen handle →
+            Js.from handle
+
+
+dimensions : Js.Value → Info
+dimensions value =
+    width = number value "width"
+    height = number value "height"
+    { width = width, height = height, state = if width == 0 || height == 0 then Empty else Ready }
+
+
+number : Js.Value, String → Int
+number value field = Js.to (Js.get value field)

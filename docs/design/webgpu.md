@@ -400,8 +400,11 @@ host refuses): `Size64` covers the integers 0 … 2⁵³ − 1. `GPUSize64` is
 its upper bound to 2⁵³ − 1 and throws a `TypeError` above it under `[EnforceRange]`
 ([Web IDL, *ConvertToInt*](https://webidl.spec.whatwg.org/#abstract-opdef-converttoint)).
 No GPU parameter or descriptor member takes a larger number: an exact 64-bit value
-(a query result) is binary data, `Binary.Word64` (#1284), never a `Size64`, and
-converting one to a `Size64` is an error when it exceeds 2⁵³ − 1. Arithmetic helpers detect
+(a query result) is binary data, `Binary.Word64` (#1284), an opaque pair of exact unsigned
+32-bit words (`Binary.word64 high low`, `Binary.words`; amended 2026-11-08, it replaces the
+proposed `Binary.U64`), never a `Size64`. Its conversion to Number (`Binary.word64ToInt`)
+returns `PrecisionLost` when it loses bits, and converting one to a `Size64` is an error when
+it exceeds 2⁵³ − 1. Arithmetic helpers detect
 overflow; range checks use subtraction or exact arithmetic, not rounded sums.
 
 The supporting `Binary` module offers ArrayBuffer, DataView and every standard
@@ -441,24 +444,37 @@ The supporting API must provide typed acquisition, not just types with no
 public constructors. The minimum intake is:
 
 ```text
-Binary.allocate : Size64 → Result Binary.AllocationError Binary.Buffer
-Binary.view : Binary.Buffer, ViewKind, ByteRange → Result Binary.ViewError Binary.View
-Binary.shared : Size64 → Result Binary.SharedError Binary.SharedBuffer
-Binary.u64Words : U32, U32 → Binary.U64
+Binary.allocate : Int → Result Binary.AllocationError Binary.Buffer
+Binary.view : Binary.Backing, ViewKind, Binary.ByteRange → Result Binary.ViewError Binary.View
+Binary.shared : Int → Result Binary.SharedError Binary.SharedBuffer
+Binary.word64 : Int, Int → Result Binary.WordError Binary.Word64
 
-Browser.Image.fromElement : String → Result ImageError Browser.Image.Element
-Browser.Image.decode : ImageInput, BitmapOptions → Result ImageError Browser.Image.Bitmap
-Browser.Image.data : ImageDataDescriptor, Binary.View → Result ImageError Browser.Image.Data
-Browser.Video.fromElement : String → Result VideoError Browser.Video.Element
-Browser.Video.frame : VideoFrameSource, VideoFrameInit → Result VideoError Browser.Video.Frame
-Browser.Canvas.fromElement : String → Result CanvasError Browser.Canvas.Canvas
-Browser.Canvas.offscreen : U32, U32 → Result CanvasError Browser.Canvas.OffscreenCanvas
+Browser.Image.byId : String → Result Browser.Image.Error Browser.Image.Element
+Browser.Image.bitmap : Browser.Source.Input, Maybe Crop, BitmapOptions → Result Browser.Image.Error Browser.Image.Bitmap
+Browser.Image.bitmapFromBytes : Binary.Source, String, Maybe Crop, BitmapOptions → Result Browser.Image.Error Browser.Image.Bitmap
+Browser.Image.dataFromView : Binary.View, Int, Maybe Int, Settings → Result Browser.Image.Error Browser.Image.Data
+Browser.Video.byId : String → Result Browser.Video.Error Browser.Video.Element
+Browser.Video.frame : Browser.Source.Input, FrameOptions → Result Browser.Video.Error Browser.Video.Frame
+Browser.Canvas.byId : String → Result Browser.Canvas.Error Browser.Canvas.Canvas
+Browser.Canvas.offscreen : Int, Int → Result Browser.Canvas.Error Browser.Canvas.OffscreenCanvas
 Browser.Canvas.transfer : Browser.Canvas.Canvas → Result CanvasError Browser.Canvas.OffscreenCanvas
 ```
 
+**Amended 2026-11-08 (#1278, PR #1284)** to the signatures that were built.
+ArrayBuffer sizes are `Int` checked against ToIndex (0 through 2^53 − 1),
+not `Size64`: a CPU allocation cannot exceed ToIndex, and `Size64` stays the
+type of GPU descriptors. `view` takes a `Backing` (`Local` or `Shared`) and a
+`ByteRange` in bytes. Each `Binary` function has its own error type, naming
+only its own failures (`binary.md` §2). `word64`/`Word64` replace
+`u64Words`/`U64`. Elements are acquired with `byId`; `Image.bitmap` (any
+decoded source, with the crop overload) and `Image.bitmapFromBytes` (encoded
+bytes with a MIME type) are `ImageInput`'s two arms of the proposed `decode`,
+and `Image.decodeElement` decodes an element in place. A VideoFrame built from
+raw pixel buffers is #2250. `Canvas.transfer` waits for #1299.
+
 `ImageInput` includes decoded source handles and encoded bytes (with MIME where
 needed); `VideoFrameSource` includes typed image sources and raw pixel-buffer
-descriptors. Full VideoFrame construction metadata and image decoding options
+descriptors (the latter is #2250). Full VideoFrame construction metadata and image decoding options
 belong to those supporting modules, not an unchecked dictionary argument.
 GPU source-sum constructors wrap each resulting handle without exposing its
 native object. Typed worker message transfers can also receive Bitmap, Frame,
@@ -964,14 +980,16 @@ Gpu.Buffer.destroy : Buffer → ⊤
 Gpu.Texture.destroy : Texture → ⊤
 Gpu.QuerySet.destroy : QuerySet → ⊤
 
-Gpu.MappedRange.readBytes : MappedRange, Range → Result InputError Binary.Bytes
-Gpu.MappedRange.writeBytes : MappedRange, Offset, Binary.Bytes → Result InputError ⊤
+Gpu.MappedRange.readBytes : MappedRange, Range → Result InputError Binary.Buffer
+Gpu.MappedRange.writeBytes : MappedRange, Offset, Binary.Source → Result InputError ⊤
 Gpu.MappedRange.readU32 : MappedRange, Offset → Result InputError U32
 Gpu.MappedRange.writeF32 : MappedRange, Offset, Float → Result InputError ⊤
 ```
 
 Mapped ranges access native mapped storage directly through typed reads/writes;
-`readBytes` explicitly copies into persistent bytes. Include all numeric views,
+`readBytes` explicitly copies into a fresh fixed `Binary.Buffer`, and
+`writeBytes` takes any `Binary.Source` (amended 2026-11-08: these were the
+unspecified `Binary.Bytes`). Include all numeric views,
 bulk copies and exact bit access, not only the representative methods above.
 Expose read/write modes, size and mapState. `mappedAtCreation` produces a mapping
 handle without pretending `MAP_WRITE` was required (§7.1). Ranges track overlap,

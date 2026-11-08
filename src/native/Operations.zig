@@ -36,6 +36,13 @@ pub const rows = [_]Row{
     .{ .owner = "WindowOrWorkerGlobalScope", .member = "setTimeout", .module = "Browser.Host.Timers", .name = "setTimeout", .signature = "sync (⊤ → ⊤), Int → Int", .recipe = .timeout, .allowed = browser, .algorithm = "https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#dom-settimeout" },
     .{ .owner = "WorkerGlobalScope", .member = "self", .module = "Browser.Host.WorkerGlobalScope", .name = "self", .signature = "⊤ → WorkerGlobalScope", .recipe = .worker_self, .allowed = workers, .algorithm = "https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-self" },
 };
+/// ECMAScript buffer and view types, intrinsic revision 2: ordinary nominal
+/// native types with no operations of their own (ECMA-262 2025 §25.1
+/// ArrayBuffer, §25.2 SharedArrayBuffer, §25.3 DataView, §23.2 TypedArray
+/// objects, Float16Array included). They are on every realm's global
+/// object. `Binary` operates on them in beni over `Js`; a reviewed row here
+/// is what would make one of their operations a direct native call.
+pub const intrinsic_types = [_][]const u8{ "ArrayBuffer", "BigInt64Array", "BigUint64Array", "DataView", "Float16Array", "Float32Array", "Float64Array", "Int16Array", "Int32Array", "Int8Array", "SharedArrayBuffer", "Uint16Array", "Uint32Array", "Uint8Array", "Uint8ClampedArray" };
 pub fn lookup(module: []const u8, name: []const u8) ?Row {
     for (rows) |row| if (std.mem.eql(u8, row.module, module) and std.mem.eql(u8, row.name, name)) return row;
     return null;

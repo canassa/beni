@@ -1,0 +1,10 @@
+Err ResizableBacking
+Err ResizableBacking
+Err ResizableBacking
+Err (ViewBacking ResizableBacking)
+Err (TransferBacking ResizableBacking)
+Err NotTransferable
+thrown
+Ok True
+Err NotTransferable
+Err IsolationRequired
