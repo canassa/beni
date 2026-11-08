@@ -499,6 +499,7 @@ module Gpu.Engine
   value reportDefect : V, V → ⊤  -- impure
   value reserveAdapter : V, Bool → ⊤  -- impure
   value settleDevice : V → ⊤  -- impure
+  value trackMapped : V, V, Bool → ⊤  -- impure
   value tryLease : V → Bool  -- impure
 module Gpu.Error
   type CanvasError
@@ -529,7 +530,6 @@ module Gpu.Error
     FormatFeatureRejected
     HostOperationRejected
     RelatedFailures
-    AllocationFailed
   alias FailureDetail
     FailureDetail
   alias FailureSet
@@ -764,8 +764,11 @@ module Gpu.Limits
   value limitNameFromString : String → Maybe LimitName
   value limitNameToString : LimitName → String
 module Gpu.MappedRange
+  type ReadError
+    Refused
+    Allocation
   value offset : MappedRange → Int  -- impure
-  value readBytes : MappedRange, ByteRange → Result Error Buffer  -- impure
+  value readBytes : MappedRange, ByteRange → Result ReadError Buffer  -- impure
   value readF16 : MappedRange, Int → Result Error Float  -- impure
   value readF32 : MappedRange, Int → Result InputError Float  -- impure
   value readF64 : MappedRange, Int → Result InputError Float  -- impure
@@ -802,6 +805,7 @@ module Gpu.Memory
   value mapUsage : MapMode → BufferUsage
   value newRange : V, Int, Int, V → V  -- impure
   value overlaps : V, Int, Int → Bool  -- impure
+  value rawBytes : Source → V  -- impure
   value record : Buffer → V  -- impure
   value release : V, Int → ⊤  -- impure
   value size64 : Int, String → Result InputError Int
