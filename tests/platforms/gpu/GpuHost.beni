@@ -5,6 +5,8 @@
 --! `navigator.gpu`; under `zig build test-webgpu` it is Chrome's own, and
 --! each fault wraps the native method it is about.
 
+import Binary
+import Browser.Host.Uint8Array exposing (Uint8Array)
 import Task
 
 
@@ -51,3 +53,29 @@ drain ⊤ = Task.callback λresume →
 --| Release only the latest pop of `filter` (`"validation"`,
 --| `"out-of-memory"`, `"internal"`) held since `inject "pops-held"`.
 pub foreign impure releasePop : String → ⊤
+
+
+--| Settle every map held since `inject "maps-held"`, in the order they
+--| were asked, each as its host map settled.
+pub foreign impure releaseMaps : ⊤ → ⊤
+
+
+--| A resizable `ArrayBuffer` of `bytes`, which `Binary` never makes.
+pub foreign impure resizable : Int → Binary.Buffer
+
+
+--| Whether the page has shared memory (`SharedArrayBuffer`).
+pub foreign impure sharedMemory : ⊤ → Bool
+
+
+--| A growable `SharedArrayBuffer` of `bytes`; only where `sharedMemory`.
+pub foreign impure growable : Int → Binary.SharedBuffer
+
+
+--| A `Uint8Array` over a resizable `ArrayBuffer` of `bytes`.
+pub foreign impure resizableBytes : Int → Uint8Array
+
+
+--| A `Uint8Array` over a growable `SharedArrayBuffer` of `bytes`; only
+--| where `sharedMemory`.
+pub foreign impure growableBytes : Int → Uint8Array

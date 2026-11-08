@@ -1,0 +1,23 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §4, §7): the
+-- native map rejects with a DOMException the ledger does not list for
+-- `mapAsync` (NotSupportedError). The page stops.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (MapRead, CopyDst, CopySrc)
+import Gpu.Queue
+import Gpu.Submission
+import GpuKit exposing (must, buffer, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "map-unlisted" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+    [ "map: " ++ GpuShow.checked (Gpu.Buffer.map b Gpu.Buffer.mapRead) λ_ → "mapping" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

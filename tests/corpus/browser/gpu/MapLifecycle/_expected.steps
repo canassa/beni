@@ -1,0 +1,5 @@
+click #pending
+click #cancelled
+click #stale
+click #bracket
+click #leased

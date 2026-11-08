@@ -1,0 +1,79 @@
+-- load
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="writes">"writes"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #creation
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="writes">"writes"</button>
+    <ol>
+      <li>"mapped at creation, no memory: Err MapFailed MappedAllocationFailed 16"</li>
+      <li>"not mapped, same host: Ok buffer"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+    </ol>
+  </main>
+</body>
+-- click #maps
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="writes">"writes"</button>
+    <ol>
+      <li>"mapped at creation, no memory: Err MapFailed MappedAllocationFailed 16"</li>
+      <li>"not mapped, same host: Ok buffer"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"refused by the device: Err RelatedFailures [MapFailed MapRejected, Validation], then unmapped"</li>
+      <li>"no memory for the map: Err MapFailed MappedAllocationFailed 16, then unmapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #ranges
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="writes">"writes"</button>
+    <ol>
+      <li>"mapped at creation, no memory: Err MapFailed MappedAllocationFailed 16"</li>
+      <li>"not mapped, same host: Ok buffer"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"refused by the device: Err RelatedFailures [MapFailed MapRejected, Validation], then unmapped"</li>
+      <li>"no memory for the map: Err MapFailed MappedAllocationFailed 16, then unmapped"</li>
+      <li>"range the host refuses: Err MapFailed MappedRangeRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #writes
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="writes">"writes"</button>
+    <ol>
+      <li>"mapped at creation, no memory: Err MapFailed MappedAllocationFailed 16"</li>
+      <li>"not mapped, same host: Ok buffer"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"refused by the device: Err RelatedFailures [MapFailed MapRejected, Validation], then unmapped"</li>
+      <li>"no memory for the map: Err MapFailed MappedAllocationFailed 16, then unmapped"</li>
+      <li>"range the host refuses: Err MapFailed MappedRangeRejected"</li>
+      <li>"source the host refuses: Err HostOperationRejected BufferWriteSourceRejected"</li>
+    </ol>
+  </main>
+</body>
