@@ -3,6 +3,7 @@
 const std = @import("std");
 const Idl = @import("Idl.zig");
 pub const Callable = @import("Callable.zig");
+pub const Gpu = @import("Gpu.zig");
 const Allocator = std.mem.Allocator;
 pub const source = .{
     .package = "@webref/idl",
@@ -271,6 +272,7 @@ test "native index refuses unresolved inheritance and cycles" {
 
 test {
     _ = Idl;
+    _ = Gpu;
 }
 
 test "native index rejects duplicate identities, incompatible partials and mapped-name collisions" {
