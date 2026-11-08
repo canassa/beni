@@ -1,0 +1,63 @@
+-- load
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="losses">"losses"</button>
+    <button id="bundles">"bundles"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #scopes
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="losses">"losses"</button>
+    <button id="bundles">"bundles"</button>
+    <ol>
+      <li>"validation scope popped: ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"out-of-memory scope popped: OutOfMemoryError"</li>
+      <li>"session: Err OutOfMemory"</li>
+      <li>"internal scope popped: InternalError"</li>
+      <li>"session: Err Internal"</li>
+    </ol>
+  </main>
+</body>
+-- click #losses
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="losses">"losses"</button>
+    <button id="bundles">"bundles"</button>
+    <ol>
+      <li>"validation scope popped: ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"out-of-memory scope popped: OutOfMemoryError"</li>
+      <li>"session: Err OutOfMemory"</li>
+      <li>"internal scope popped: InternalError"</li>
+      <li>"session: Err Internal"</li>
+      <li>"destroyed: Destroyed"</li>
+      <li>"lost by the host: UnknownLoss"</li>
+    </ol>
+  </main>
+</body>
+-- click #bundles
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="losses">"losses"</button>
+    <button id="bundles">"bundles"</button>
+    <ol>
+      <li>"validation scope popped: ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"out-of-memory scope popped: OutOfMemoryError"</li>
+      <li>"session: Err OutOfMemory"</li>
+      <li>"internal scope popped: InternalError"</li>
+      <li>"session: Err Internal"</li>
+      <li>"destroyed: Destroyed"</li>
+      <li>"lost by the host: UnknownLoss"</li>
+      <li>"bundle: made"</li>
+      <li>"executed in a pass: Ok encoded"</li>
+    </ol>
+  </main>
+</body>
