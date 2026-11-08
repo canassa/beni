@@ -488,7 +488,8 @@ fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
 // cost the 2^depth leaves of the tree: an alias is expanded once per read
 // (checker-v2.md §7.4), and each value's type is its annotation's. It is not
 // linear either: each of the `depth` annotations expands its own chain of
-// aliases, so the cost grows about ×3 when the depth doubles (#2074).
+// aliases, so the cost grows about ×3 when the depth doubles. That cost is
+// accepted (checker-v2.md §7.4, *Amended 2026-11-08*, #2074).
 // Ownership v1, the default checker, walks the value's 2^depth paths and
 // grows ×4 a level (pending_test.zig's "the default checker's check of a
 // doubling record is not exponential in its depth"), so this claim is the

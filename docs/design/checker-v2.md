@@ -1115,10 +1115,35 @@ requirement in an alias's body, a hidden position's included, to the alias's own
 
 An application found this way costs one level of the reader's depth, as a hit of the memo above
 does. The interface reader applies the same rule to an alias row, with the row's shape settled
-from its terms (`AliasShape.Rows`), once per reader. `run/AliasDiamondChain` reads three diamonds
-64 deep, in their module and through its interface. `check/bad/AliasSharedByShownArguments` holds
+from its terms (`AliasShape.Rows`), once per reader. `check/good/AliasDiamondChain` reads three
+diamonds 64 deep, in their module and through its interface (it is not a `run/` fixture, because
+ownership v2 is exponential on a used value of such a type, #2121). `check/bad/AliasSharedByShownArguments` holds
 messages over shared applications, with the golden that the read printed before the change.
 `perf_test.zig` holds the scenario. No corpus output changed.
+
+*Amended 2026-11-08: n annotations over a chain of n aliases cost about n², by decision (#2074;
+the owner, 2026-11-08).* Each annotation is one read, and the memo is per read (above). So a
+chain of `i` aliases is expanded again at each annotation that names it, and n annotations, one
+per level of `W{i} = { a : W{i-1}, b : W{i-1} }`, cost about n²/2 expansions. The source is
+linear. This cost is accepted, and it is not a defect:
+
+- It is polynomial. The exponential costs (a DAG read as a tree inside one read, above) stay
+  fixed, and `perf_test.zig`'s "checking a doubling record under annotations is not exponential
+  in its depth" holds that claim, not a linear one.
+- A linear cost needs one shared copy of a ground type across reads. The readings are only one
+  of the places that copy it: generalisation (`Generalize.adjustRanks`), instantiation
+  (`Instantiate.copy`), the type keys (`TypeKeys.build`) and ownership v2 each walk it per
+  declaration. At n = 128 (record values, ReleaseFast, master `1550a68d61`) callgrind put 19% of
+  the instructions in the readings, 13% in `adjustRanks`, 13% in `copy`, 10% in `TypeKeys`, 15%
+  in ownership v2 and 7% in effects. A memo across reads alone removes at most the first part.
+  It also breaks the reason the memo is per read: two annotations get separate variables, with
+  their own ranks and modes, and a poison of one must not reach the other.
+- Real chains of aliases are a few levels deep. Measured on master `1550a68d61`
+  (`--ownership=v2`, an empty module 14.3 M instructions): `f_i : W_i → W_i` costs 19.0 / 26.6 /
+  52.5 / 148 M at n = 16 / 32 / 64 / 128, about ×3 when n doubles.
+
+A change to this rule is a new amendment: it specifies the shared ground types for every place
+above, before any of them is built.
 
 ### 7.5 Speculation (I14)
 
