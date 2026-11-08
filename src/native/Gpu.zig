@@ -30,12 +30,12 @@ pub const Rename = struct { idl: []const u8, beni: []const u8 };
 /// The 22 handle interfaces of §2.1, each aliased in `Gpu.Handle` by its name
 /// without `GPU`, with §3's four exceptions.
 pub const handle_interfaces = [_][]const u8{
-    "GPUAdapter",           "GPUDevice",              "GPUQueue",              "GPUBuffer",
-    "GPUTexture",           "GPUTextureView",         "GPUSampler",            "GPUExternalTexture",
-    "GPUBindGroupLayout",   "GPUPipelineLayout",      "GPUBindGroup",          "GPUShaderModule",
-    "GPUComputePipeline",   "GPURenderPipeline",      "GPUCommandEncoder",     "GPUCommandBuffer",
-    "GPUComputePassEncoder", "GPURenderPassEncoder",  "GPURenderBundleEncoder", "GPURenderBundle",
-    "GPUQuerySet",          "GPUCanvasContext",
+    "GPUAdapter",            "GPUDevice",            "GPUQueue",               "GPUBuffer",
+    "GPUTexture",            "GPUTextureView",       "GPUSampler",             "GPUExternalTexture",
+    "GPUBindGroupLayout",    "GPUPipelineLayout",    "GPUBindGroup",           "GPUShaderModule",
+    "GPUComputePipeline",    "GPURenderPipeline",    "GPUCommandEncoder",      "GPUCommandBuffer",
+    "GPUComputePassEncoder", "GPURenderPassEncoder", "GPURenderBundleEncoder", "GPURenderBundle",
+    "GPUQuerySet",           "GPUCanvasContext",
 };
 pub const handle_names = [_]Rename{
     .{ .idl = "GPUShaderModule", .beni = "Shader" },

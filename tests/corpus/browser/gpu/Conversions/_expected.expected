@@ -1,0 +1,80 @@
+-- load
+<body>
+  <main>
+    <button id="descriptors">"descriptors"</button>
+    <button id="scalars">"scalars"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #descriptors
+<body>
+  <main>
+    <button id="descriptors">"descriptors"</button>
+    <button id="scalars">"scalars"</button>
+    <ol>
+      <li>"adapter, all Default: {}"</li>
+      <li>"adapter, Values: {\"powerPreference\":\"high-performance\",\"forceFallbackAdapter\":false}"</li>
+      <li>"device, all Default: {}"</li>
+      <li>"device, features, limits, queue: {\"label\":\"gpu\",\"requiredFeatures\":[\"timestamp-query\"],\"requiredLimits\":{\"maxBindGroups\":4},\"defaultQueue\":{\"label\":\"queue\"}}"</li>
+      <li>"buffer: {\"size\":1024,\"usage\":72,\"mappedAtCreation\":false}"</li>
+      <li>"texture, extent as a sequence: {\"size\":[64,32],\"format\":\"rgba8unorm\",\"usage\":16}"</li>
+      <li>"texture, extent as fields: {\"size\":{\"width\":8,\"depthOrArrayLayers\":1},\"dimension\":\"2d\",\"format\":\"rgba8unorm\",\"usage\":16,\"viewFormats\":[\"rgba8unorm-srgb\"]}"</li>
+      <li>"sampler: {\"addressModeU\":\"repeat\",\"lodMaxClamp\":16.5,\"compare\":\"less-equal\",\"maxAnisotropy\":70000}"</li>
+      <li>"bind group layout: {\"entries\":[{\"binding\":0,\"visibility\":3,\"buffer\":{}},{\"binding\":1,\"visibility\":3,\"externalTexture\":{}}]}"</li>
+      <li>"render pass layout, a null slot: {\"colorFormats\":[null,\"rgba8unorm\"]}"</li>
+      <li>"color target: {\"format\":\"bgra8unorm\",\"blend\":{\"color\":{},\"alpha\":{}},\"writeMask\":9}"</li>
+      <li>"depth stencil, a signed bias: {\"format\":\"depth24plus\",\"depthWriteEnabled\":true,\"depthCompare\":\"less\",\"stencilFront\":{\"compare\":\"always\",\"passOp\":\"replace\"},\"depthBias\":-3}"</li>
+      <li>"color as a sequence: [0.5,1,0,1]"</li>
+      <li>"color as fields: {\"r\":0.25,\"g\":0,\"b\":0,\"a\":1}"</li>
+      <li>"every buffer usage: 1023"</li>
+      <li>"ColorWrite All holds Red: yes"</li>
+      <li>"a spelling both ways: astc-10x10-unorm-srgb back"</li>
+      <li>"a spelling outside the pin: Nothing"</li>
+    </ol>
+  </main>
+</body>
+-- click #scalars
+<body>
+  <main>
+    <button id="descriptors">"descriptors"</button>
+    <button id="scalars">"scalars"</button>
+    <ol>
+      <li>"adapter, all Default: {}"</li>
+      <li>"adapter, Values: {\"powerPreference\":\"high-performance\",\"forceFallbackAdapter\":false}"</li>
+      <li>"device, all Default: {}"</li>
+      <li>"device, features, limits, queue: {\"label\":\"gpu\",\"requiredFeatures\":[\"timestamp-query\"],\"requiredLimits\":{\"maxBindGroups\":4},\"defaultQueue\":{\"label\":\"queue\"}}"</li>
+      <li>"buffer: {\"size\":1024,\"usage\":72,\"mappedAtCreation\":false}"</li>
+      <li>"texture, extent as a sequence: {\"size\":[64,32],\"format\":\"rgba8unorm\",\"usage\":16}"</li>
+      <li>"texture, extent as fields: {\"size\":{\"width\":8,\"depthOrArrayLayers\":1},\"dimension\":\"2d\",\"format\":\"rgba8unorm\",\"usage\":16,\"viewFormats\":[\"rgba8unorm-srgb\"]}"</li>
+      <li>"sampler: {\"addressModeU\":\"repeat\",\"lodMaxClamp\":16.5,\"compare\":\"less-equal\",\"maxAnisotropy\":70000}"</li>
+      <li>"bind group layout: {\"entries\":[{\"binding\":0,\"visibility\":3,\"buffer\":{}},{\"binding\":1,\"visibility\":3,\"externalTexture\":{}}]}"</li>
+      <li>"render pass layout, a null slot: {\"colorFormats\":[null,\"rgba8unorm\"]}"</li>
+      <li>"color target: {\"format\":\"bgra8unorm\",\"blend\":{\"color\":{},\"alpha\":{}},\"writeMask\":9}"</li>
+      <li>"depth stencil, a signed bias: {\"format\":\"depth24plus\",\"depthWriteEnabled\":true,\"depthCompare\":\"less\",\"stencilFront\":{\"compare\":\"always\",\"passOp\":\"replace\"},\"depthBias\":-3}"</li>
+      <li>"color as a sequence: [0.5,1,0,1]"</li>
+      <li>"color as fields: {\"r\":0.25,\"g\":0,\"b\":0,\"a\":1}"</li>
+      <li>"every buffer usage: 1023"</li>
+      <li>"ColorWrite All holds Red: yes"</li>
+      <li>"a spelling both ways: astc-10x10-unorm-srgb back"</li>
+      <li>"a spelling outside the pin: Nothing"</li>
+      <li>"u32 0: Ok 0"</li>
+      <li>"u32 4294967295: Ok 4294967295"</li>
+      <li>"u32 4294967296: Err U32Domain 4294967296.0"</li>
+      <li>"u32 -1: Err U32Domain -1.0"</li>
+      <li>"u32Truncating 7.9: Ok 7"</li>
+      <li>"u32Truncating -0.5: Ok 0"</li>
+      <li>"u32Truncating NaN: Err U32Domain NaN"</li>
+      <li>"i32 -2147483648: Ok -2147483648"</li>
+      <li>"i32 2147483648: Err I32Domain 2147483648.0"</li>
+      <li>"size64 2⁵³ + 2: Ok 9007199254740994"</li>
+      <li>"size64FromFloat 2⁶⁴ − 2048: Ok 18446744073709550000"</li>
+      <li>"size64FromFloat 2⁶⁴: Err Size64Domain 18446744073709552000.0"</li>
+      <li>"size64FromFloat 1.5: Err Size64Domain 1.5"</li>
+      <li>"size64Truncating 1.5: Ok 1"</li>
+      <li>"finiteF32 3.4e38: Ok 3.4e+38"</li>
+      <li>"finiteF32 3.5e38: Err FiniteF32Domain 3.5e+38"</li>
+      <li>"finiteF64 1e308: Ok 1e+308"</li>
+      <li>"finiteF64 Infinity: Err FiniteF64Domain Infinity"</li>
+    </ol>
+  </main>
+</body>
