@@ -24,8 +24,11 @@ pub const Part = ByStructure.Part;
 const Plan = ByStructure.Plan;
 
 /// The parts of arrival `a` of a callee's supply entry at `key`, which is `open`.
-pub fn plan(ev: *Relation.Eval, call: Value.Call, key: []const u32, open: bool, a: Contract.Arrival, arena: std.mem.Allocator, out: *std.ArrayList(Part)) Error!void {
+pub fn plan(ev: *Relation.Eval, q: u32, key: []const u32, open: bool, a: Contract.Arrival, arena: std.mem.Allocator, out: *std.ArrayList(Part)) Error!void {
+    const call = ev.f.calls.items[q];
     const p: Plan = .{ .ev = ev, .call = call, .arena = arena, .out = out };
+    // A known code's answer is a value too: written by its structure where its place names one (#2283).
+    if (a.kind == .cb and open) if (ev.known.get(.{ q, a.j })) |vc| return atValue(p, try ev.f.refRoot(ev.f.calls.items[vc].root), ev.f.slots.relWords(a.slot), key, a, false);
     if (a.kind != .param or a.j >= call.args.len) return out.append(arena, .{ .key = key, .a = a });
     const aw = ev.f.slots.relWords(a.slot);
     if (SlotWords.endsInRow(key) and SlotWords.endsInRow(aw)) return atValue(p, call.args[a.j], aw[0 .. aw.len - 1], key, a, true);

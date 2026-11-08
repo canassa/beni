@@ -1,0 +1,4 @@
+# v2 refuses each write: a generic function's closure is supplied where the frame names its structure (§2.1, A callback; An arrival's level).
+69:16 list_still_used List.push
+72:16 list_still_used List.push
+75:16 list_still_used List.push

@@ -998,7 +998,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 for (x.arrivals) |a| {
                     // A passed-on supply is read at the argument, as a direct one is.
                     if (a.kind == .param and a.j < call.args.len and !@import("Mutate.zig").on(.supply_no_reads)) try readsDeep(s, try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot)), &.{}, cb_pass);
-                    try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
+                    try SplitRow.plan(&e.ev, p[1], es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
                 }
                 const placed = for (parts.items) |pt| {
                     if (pt.place == .none) break false;

@@ -1,0 +1,76 @@
+-- A closure a generic function returns, used as a callback: plain composition (`compose f identity`), a maker
+-- (`mkg h = λq → h q`) and a maker behind `idg`, each run on a record update. The code's own type and its
+-- origin's are type variables, so what the closure was supplied sat where nothing names a level, and a caller's
+-- `.inner.todo` appended to those leaves named nothing: an aliased list was taken as fresh. A supply and an answer
+-- now sit at the type the frame has the closure at, and a known code's answer is written by its structure
+-- (§2.1, A callback; An arrival's level; §2.11.3).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Model =
+    log : List Int
+    inner :
+        seen : List Int
+        todo : List Int
+
+
+compose : (b → c), (a → b) → (a → c)
+compose g h = λx → g (h x)
+
+
+step : Model, (Model → Model) → Model
+step m f = (compose f identity) { m | log = [] }
+
+
+run2 : (a → b), a → b
+run2 h x = h x
+
+
+mkg : (a → y) → (a → y)
+mkg h = λq → h q
+
+
+idg : a → a
+idg x = x
+
+
+unj : Maybe q → q
+unj m =
+    case m of
+        Just x →
+            x
+
+        Nothing →
+            unj m
+
+
+f0 : Model, Maybe (Model → y) → y
+f0 rec o = run2 (unj o) { rec | log = [] }
+
+
+made : Model, Maybe (Model → y) → y
+made rec o = f0 rec (Just (mkg (unj o)))
+
+
+held : Model, Maybe (Model → y) → y
+held rec o = f0 rec (Just (idg (mkg (unj o))))
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    m1 = step { log = [ 2 ], inner = { seen = [ 4 ], todo = k1 } } identity
+    u1 = show (List.push m1.inner.todo 9)
+    k2 = [ 2 ]
+    m2 = made { log = [ 2 ], inner = { seen = [ 4 ], todo = k2 } } (Just λs → s)
+    u2 = show (List.push m2.inner.todo 9)
+    k3 = [ 3 ]
+    m3 = held { log = [ 2 ], inner = { seen = [ 4 ], todo = k3 } } (Just λs → s)
+    u3 = show (List.push m3.inner.todo 9)
+    Node.print (u1 ++ " " ++ show k1 ++ " " ++ u2 ++ " " ++ show k2 ++ " " ++ u3 ++ " " ++ show k3)
