@@ -1140,7 +1140,8 @@ linear. This cost is accepted, and it is not a defect:
   their own ranks and modes, and a poison of one must not reach the other.
 - Real chains of aliases are a few levels deep. Measured on master `1550a68d61`
   (`--ownership=v2`, an empty module 14.3 M instructions): `f_i : W_i → W_i` costs 19.0 / 26.6 /
-  52.5 / 148 M at n = 16 / 32 / 64 / 128, about ×3 when n doubles.
+  52.5 / 148 M at n = 16 / 32 / 64 / 128, about ×3 when n doubles
+  at these sizes. Above the empty module the ratios are 2.6, 3.1 and 3.5, and they approach ×4.
 
 A change to this rule is a new amendment: it specifies the shared ground types for every place
 above, before any of them is built.
