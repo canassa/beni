@@ -454,7 +454,11 @@ sessionReport r f =
 
                     Nothing →
                         "withheld"
-            "Ok " ++ value ++ ", observed [" ++ String.join (List.map got.observed gpuError) ", " ++ "]"
+            "Ok "
+                ++ value
+                ++ ", observed ["
+                ++ String.join (List.map got.observed gpuError) ", "
+                ++ "]"
 
 
 --| A device's event.
