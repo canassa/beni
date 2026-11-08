@@ -65,7 +65,12 @@ requestAdapter options =
         Ok gpu →
             native = Native.adapterOptions options
             ch = Engine.channel ⊤
-            Engine.awaitHost ch (λ⊤ → Js.call gpu "requestAdapter" [ native ]) adapterOutcome λ_ → ⊤
+            Engine.awaitHost
+                ch
+                "requestAdapter"
+                (λ⊤ → Js.call gpu "requestAdapter" [ native ])
+                adapterOutcome
+                λ_ → ⊤
 
 
 -- `requestAdapter`'s outcome: null is `AdapterUnavailable`, an adapter is
