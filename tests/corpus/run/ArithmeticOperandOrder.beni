@@ -19,4 +19,4 @@ main =
                       note "other" 99
               )
             + (note "fourth" 2 * note "fifth" 3)
-    Node.printLines [ String.fromInt value, String.fromInt (2 ^ 3 ^ 2) ]
+    Node.printLines [ String.fromInt value, String.fromInt (2 ^^ 3 ^^ 2) ]
