@@ -29,6 +29,7 @@ const SlotWords = @import("SlotWords.zig");
 const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const PastPayload = @import("PastPayload.zig");
+const ArriveAt = @import("ArriveAt.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -639,7 +640,7 @@ pub const Eval = struct {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalAt(call, c, a, slot, hit.open, words[hit.depth..], &acc);
+            for (hits.items) |hit| for (hit.arrivals) |a| try ArriveAt.at(e, call, c, a, slot, hit.open, words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
             if (!@import("Mutate.zig").on(.inst_no_contract_empty)) try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -925,22 +926,7 @@ pub const Eval = struct {
                     for (below.items) |x| try e.addBelow(ki, x, at_base);
                     return;
                 }
-                var at: std.ArrayList(u32) = .empty;
-                defer at.deinit(e.gpa());
-                const own = a.path != none and a.slot == br;
-                if (!inside or a.path != Contract.Arrival.level_copy) for (e.f.slots.items(try Subtree.belowAll(e.f.slots, e.gpa(), e.account(), e.places(), base))) |sl| if (sl != base.int()) {
-                    const sr = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sl));
-                    const sw = e.f.slots.relWords(sr);
-                    var sa = a;
-                    const pk = e.places().kind(e.places().pathPlace(.from(sl)));
-                    sa.deep = a.deep or pk == .@"var" or pk == .@"opaque";
-                    // Folded above `base`: the slot's own words, not a suffix of them.
-                    const up = own and !SlotWords.startsAt(sw, bw);
-                    if (up) sa = .{ .kind = .param, .j = a.j, .slot = sr, .deep = sa.deep };
-                    at.clearRetainingCapacity();
-                    try e.arrivalAt(k.call, none, sa, .from(sl), false, if (up) &.{} else sw[@min(n, sw.len)..], &at);
-                    for (at.items) |x| try e.addBelow(ki, x, sl);
-                };
+                if (!inside or a.path != Contract.Arrival.level_copy) try ArriveAt.below(e, ki, k.call, base, bw, n, a, a.path != none and a.slot == br);
                 for (acc.items) |x| try e.addBelow(ki, x, base.int());
                 return;
             }
@@ -1035,7 +1021,7 @@ pub const Eval = struct {
         return if (k.which == none) e.f.calls.items[k.call].root else e.f.supplies.items[k.which].root;
     }
 
-    fn addBelow(e: *Eval, ki: u32, x: u32, at: u32) Error!void {
+    pub fn addBelow(e: *Eval, ki: u32, x: u32, at: u32) Error!void {
         if ((try e.below_has.getOrPut(e.gpa(), .{ ki, x, at })).found_existing) return;
         e.grown +%= 1;
         try e.charge(.edge, 1);
@@ -1060,7 +1046,7 @@ pub const Eval = struct {
         const saved = e.cur_sub;
         e.cur_sub = .{ .kind = .forward, .a = ki };
         defer e.cur_sub = saved;
-        try e.arrivalAt(k.call, none, a, k.slot, open, suffix, &acc);
+        try ArriveAt.at(e, k.call, none, a, k.slot, open, suffix, &acc);
         for (acc.items) |x| try e.addLeaf(ki, x);
     }
 
@@ -1128,15 +1114,6 @@ pub const Eval = struct {
                 }
             }
         }
-    }
-
-    /// Arrival `a` read at caller slot `slot`, `suffix` the slot's words below its
-    /// entry: by those words, or at a payload whole, since a word there says no depth (§2.1).
-    fn arrivalAt(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, slot: PathId, open: bool, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
-        if (Subtree.wholeAt(e.places(), a, slot)) |w| return e.arrivalLeaves(call, c, w, &.{}, out);
-        const r = Subtree.readAt(e.places(), a, slot, open);
-        // A type variable's slot stays deep: it holds what the row's field holds, whatever that is.
-        try e.arrivalLeaves(call, c, if (e.places().kind(e.places().pathPlace(slot)) == .@"var") r else Subtree.inRow(e.f.slots, r, suffix), suffix, out);
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
