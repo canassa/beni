@@ -1,0 +1,38 @@
+-- Whether WebGPU is there (docs/design/webgpu.md §4, ledger §2): a secure
+-- context with `navigator.gpu` is `Available`; with no `navigator.gpu` every
+-- entry point returns `ApiUnavailable`, and outside a secure context
+-- `InsecureContext`, checked first, without naming a missing global. A
+-- host with no adapter to give answers `requestAdapter` with null:
+-- `AdapterUnavailable`, with no cause invented.
+import Gpu
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+entries : String → List String
+entries scenario =
+    GpuHost.inject scenario
+    [ scenario ++ ": available " ++ GpuShow.availability (Gpu.available ⊤)
+    , scenario
+        ++ ": requestAdapter "
+        ++ GpuShow.result (Gpu.requestAdapter Types.adapterOptions) λ_ → "adapter"
+    , scenario
+        ++ ": preferredCanvasFormat "
+        ++ GpuShow.result (Gpu.preferredCanvasFormat ⊤) λ_ → "format"
+    , scenario
+        ++ ": wgslLanguageFeatures "
+        ++ GpuShow.result (Gpu.wgslLanguageFeatures ⊤) λ_ → "features"
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "none", λ⊤ → entries "none" )
+        , ( "adapter-null", λ⊤ → entries "adapter-null" )
+        , ( "no-api", λ⊤ → entries "no-api" )
+        , ( "insecure", λ⊤ → entries "insecure" )
+        ]

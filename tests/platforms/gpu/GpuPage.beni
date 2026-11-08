@@ -1,0 +1,50 @@
+--! The page every WebGPU fixture is: a button per scenario, which runs the
+--! scenario as a command and appends the lines it returns to a list. A
+--! scenario does its GPU work in the command's fiber, so a defect there
+--! stops the page as any program's would.
+
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Run Int
+    | Got (List String)
+
+
+--| A page with one button per `( id, scenario )`, in order.
+pub program : List (String × (⊤ → List String)) → Tea.Program
+program scenarios =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = λmsg lines → update scenarios msg lines
+        , view = view scenarios _
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+update : List (String × (⊤ → List String)), Msg, List String → List String × Cmd Msg
+update scenarios msg lines =
+    case msg of
+        Run i →
+            case List.head (List.drop scenarios i) of
+                Just ( _, scenario ) →
+                    ( lines, Cmd.task scenario Got )
+
+                Nothing →
+                    ( lines, Cmd.none )
+
+        Got more →
+            ( lines ++ more, Cmd.none )
+
+
+view : List (String × (⊤ → List String)), List String → Html Msg
+view scenarios lines =
+    <main>
+        <For each={List.indexedMap scenarios λi ( name, _ ) → ( i, name )} keyed={False}>
+            {λ( i, name ) → <button id={name} onClick={Run i}>{name}</button>}
+        </For>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>

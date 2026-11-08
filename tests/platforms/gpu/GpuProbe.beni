@@ -1,0 +1,62 @@
+--! What the engine hands the host, as text: a descriptor converted by
+--! `Gpu.Native`, written as JSON, so a fixture shows that a `Default`
+--! member is left out, a `Value` set even to its default, a `Nothing`
+--! written as `null`, and each union arm in its native shape.
+
+import Gpu.Native as Native
+import Gpu.Types as Types
+import Js
+
+
+json : Js.Value → String
+json v = Js.to (Js.call (Js.global "JSON") "stringify" [ v ])
+
+
+--| The native dictionary of adapter options.
+pub adapterOptions : Types.AdapterOptions → String
+adapterOptions d = json (Native.adapterOptions d)
+
+
+--| The native dictionary of a device descriptor.
+pub deviceDescriptor : Types.DeviceDescriptor → String
+deviceDescriptor d = json (Native.deviceDescriptor d)
+
+
+--| The native dictionary of a buffer descriptor.
+pub bufferDescriptor : Types.BufferDescriptor → String
+bufferDescriptor d = json (Native.bufferDescriptor d)
+
+
+--| The native dictionary of a texture descriptor.
+pub textureDescriptor : Types.TextureDescriptor → String
+textureDescriptor d = json (Native.textureDescriptor d)
+
+
+--| The native dictionary of a sampler descriptor.
+pub samplerDescriptor : Types.SamplerDescriptor → String
+samplerDescriptor d = json (Native.samplerDescriptor d)
+
+
+--| The native dictionary of a bind group layout descriptor.
+pub bindGroupLayoutDescriptor : Types.BindGroupLayoutDescriptor → String
+bindGroupLayoutDescriptor d = json (Native.bindGroupLayoutDescriptor d)
+
+
+--| The native dictionary of a render pass layout.
+pub renderPassLayout : Types.RenderPassLayout → String
+renderPassLayout d = json (Native.renderPassLayout d)
+
+
+--| The native dictionary of a color target state.
+pub colorTargetState : Types.ColorTargetState → String
+colorTargetState d = json (Native.colorTargetState d)
+
+
+--| The native dictionary of a depth-stencil state.
+pub depthStencilState : Types.DepthStencilState → String
+depthStencilState d = json (Native.depthStencilState d)
+
+
+--| The native value of a color.
+pub color : Types.Color → String
+color c = json (Native.color c)

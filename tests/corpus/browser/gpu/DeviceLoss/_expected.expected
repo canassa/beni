@@ -1,0 +1,61 @@
+-- load
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="destroyed">"destroyed"</button>
+    <button id="at-birth">"at-birth"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #later
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="destroyed">"destroyed"</button>
+    <button id="at-birth">"at-birth"</button>
+    <ol>
+      <li>"before the loss: none"</li>
+      <li>"the waiter woke with: UnknownLoss"</li>
+      <li>"latched: UnknownLoss"</li>
+      <li>"a late waiter: UnknownLoss"</li>
+    </ol>
+  </main>
+</body>
+-- click #destroyed
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="destroyed">"destroyed"</button>
+    <button id="at-birth">"at-birth"</button>
+    <ol>
+      <li>"before the loss: none"</li>
+      <li>"the waiter woke with: UnknownLoss"</li>
+      <li>"latched: UnknownLoss"</li>
+      <li>"a late waiter: UnknownLoss"</li>
+      <li>"before destroy: none"</li>
+      <li>"right after destroy: Destroyed"</li>
+      <li>"the waiter woke with: Destroyed"</li>
+      <li>"after a second destroy: Destroyed"</li>
+    </ol>
+  </main>
+</body>
+-- click #at-birth
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="destroyed">"destroyed"</button>
+    <button id="at-birth">"at-birth"</button>
+    <ol>
+      <li>"before the loss: none"</li>
+      <li>"the waiter woke with: UnknownLoss"</li>
+      <li>"latched: UnknownLoss"</li>
+      <li>"a late waiter: UnknownLoss"</li>
+      <li>"before destroy: none"</li>
+      <li>"right after destroy: Destroyed"</li>
+      <li>"the waiter woke with: Destroyed"</li>
+      <li>"after a second destroy: Destroyed"</li>
+      <li>"lost at birth: Err InitializationLost UnknownLoss"</li>
+      <li>"its adapter again: Err AdapterConsumed"</li>
+    </ol>
+  </main>
+</body>

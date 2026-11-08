@@ -357,6 +357,35 @@ function prelude() {
   // has failed, and every later settle of the page waits one turn.
   const record = { log: [], errors: [], unsettled: false };
   globalThis.__beniHarness = record;
+  // Under `--webgpu` the page has Chrome's own WebGPU, whose promises
+  // settle in real time, after work in the GPU process: each one the page
+  // is waiting for is counted from its call to its settling, for `settle`
+  // (docs/design/webgpu.md §10). The count sees the promise, never changes
+  // it: the page's own reactions get what the host gave.
+  record.gpu = { pending: 0 };
+  if (globalThis.__beniWebGpuNative === true) {
+    const count = (proto, name) => {
+      if (proto === undefined || typeof proto[name] !== "function") return;
+      const original = proto[name];
+      proto[name] = function (...args) {
+        const promise = original.apply(this, args);
+        record.gpu.pending += 1;
+        const done = () => {
+          record.gpu.pending -= 1;
+        };
+        promise.then(done, done);
+        return promise;
+      };
+    };
+    count(globalThis.GPU?.prototype, "requestAdapter");
+    count(globalThis.GPUAdapter?.prototype, "requestDevice");
+    count(globalThis.GPUDevice?.prototype, "popErrorScope");
+    count(globalThis.GPUDevice?.prototype, "createComputePipelineAsync");
+    count(globalThis.GPUDevice?.prototype, "createRenderPipelineAsync");
+    count(globalThis.GPUShaderModule?.prototype, "getCompilationInfo");
+    count(globalThis.GPUBuffer?.prototype, "mapAsync");
+    count(globalThis.GPUQueue?.prototype, "onSubmittedWorkDone");
+  }
   // Every page starts with empty storage: Chrome keeps an origin's
   // across the pages of one run, happy-dom's window starts empty.
   try {
@@ -1744,9 +1773,26 @@ async function settle() {
   const turn = record.turn;
   const node = typeof process === "object";
   const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : record.ports.pending > 0);
+  // A native WebGPU promise (`--webgpu`) settles in real time: while one is
+  // pending and nothing else is, the settle waits 2 ms at a time, 10 s at
+  // most, and then goes on as after any turn.
+  const gpu = () => (record.gpu?.pending ?? 0) > 0;
+  let waited = 0;
   await turn();
   if (record.unsettled) return false;
-  for (let k = 1; busy(); k++) {
+  for (let k = 1; busy() || gpu(); k++) {
+    if (!busy()) {
+      if (waited === 5000) {
+        record.unsettled = true;
+        record.errors.push("Error: a native WebGPU promise was still pending after 10 s, so the step cannot end");
+        return false;
+      }
+      waited += 1;
+      k -= 1;
+      await new Promise((done) => record.clock.real(done, 2));
+      await turn();
+      continue;
+    }
     if (k === 1000) {
       record.unsettled = true;
       const what = node ? "a setImmediate to run" : "a message to deliver";
@@ -1756,6 +1802,16 @@ async function settle() {
     await turn();
   }
   return true;
+}
+
+// `--webgpu`: the adapter Chrome gives the page, described in one line for
+// the run's summary (`test-webgpu`), or why there is none.
+async function webgpuProbe() {
+  if (globalThis.navigator.gpu === undefined) return `none: no navigator.gpu (secure context: ${globalThis.isSecureContext})`;
+  const adapter = await globalThis.navigator.gpu.requestAdapter();
+  if (adapter === null) return "none: requestAdapter gave null";
+  const i = adapter.info;
+  return `vendor=${i.vendor} architecture=${i.architecture} device=${i.device} description=${i.description} fallback=${i.isFallbackAdapter} features=${adapter.features.size} ${navigator.userAgent.match(/Chrome\/[0-9.]+/)?.[0] ?? ""}`;
 }
 
 // `--wait-handshakes`'s wait: in real time, 5 s at most, until the host has
@@ -2096,6 +2152,7 @@ for (const arg of process.argv.slice(2)) {
   if (m) options[m[1]] = m[2];
   else if (arg === "--no-comments") comments = false;
   else if (arg === "--wait-handshakes") options.waitHandshakes = true;
+  else if (arg === "--webgpu") options.webgpu = true;
   else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page", fuzz: p[1] === "fuzz", html: p[1] === "html-page" });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
@@ -2106,6 +2163,7 @@ if ((options.dom === undefined) === (options.chrome === undefined)) usage("give 
 if (options.parser !== undefined && options.dom === undefined) usage("--parser goes with --dom: Chrome parses as the standard does");
 if (options.server !== undefined && (options.dom === undefined || !/^127\.0\.0\.1:[0-9]+$/.test(options.server))) usage("--server goes with --dom, and is 127.0.0.1:<port>");
 if (options.waitHandshakes && options.server === undefined) usage("--wait-handshakes goes with --server");
+if (options.webgpu && options.chrome === undefined) usage("--webgpu goes with --chrome: happy-dom has no WebGPU");
 // With `--server`, the line of each step goes to file descriptor 3, which
 // the serve driver's `page` step opens. When the caller did not open it,
 // Node's own event loop may hold that number (an epoll descriptor on
@@ -2448,6 +2506,8 @@ function parseStep(written, where) {
 // Only the port differs between the two, so no fixture shows it.
 // Each page's, set before it is made (`runPage`).
 let entryFile = "";
+// `--webgpu`: the line `webgpuProbe` gave for the latest page.
+let webgpuAdapter = null;
 let pageUrl = "";
 // Whether the page is opened from a file (the `file` step), as a page a user
 // double-clicked is: its address is `file:`, not `http:`.
@@ -2653,6 +2713,9 @@ async function chromePage(endpoint) {
   // `document.activeElement` without firing `focus` and `blur`; emulated
   // focus makes it fire them, as happy-dom and a focused browser do.
   await send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
+  // `--webgpu`: the page has Chrome's own WebGPU, before the prelude counts
+  // its promises and before the test platform's host reads it.
+  if (options.webgpu) await send("Page.addScriptToEvaluateOnNewDocument", { source: "globalThis.__beniWebGpuNative = true;" }, sessionId);
   await send("Page.addScriptToEvaluateOnNewDocument", { source: `(${prelude})();` }, sessionId);
   const loaded = new Promise((done) => {
     events.push((m) => {
@@ -2664,7 +2727,7 @@ async function chromePage(endpoint) {
   // The target opened at `about:blank`: its history begins at the page, as
   // happy-dom's does, so no traversal leaves the page's document.
   await send("Page.resetNavigationHistory", {}, sessionId);
-  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
+  const helpers = `const webgpuProbe = ${webgpuProbe}; const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -2715,6 +2778,16 @@ async function runPage(entry, fiber, html = false) {
   pageUrl = fromFile ? "file:///_page.html" : `http://${options.server ?? "127.0.0.1:8000"}/_page.html`;
   entryUrl = pathToFileURL(entryFile).href;
   const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
+  // `--webgpu`: the adapter the page will have, asked for before anything
+  // of the program runs. With none, no step runs, and the case is
+  // `unsupported`, not failed.
+  if (options.webgpu) {
+    webgpuAdapter = await page.run(webgpuProbe);
+    if (webgpuAdapter.startsWith("none")) {
+      await page.close();
+      return { code: 0, stdout: `(webgpu unsupported: ${webgpuAdapter})\n`, stderr: "", webgpu: webgpuAdapter };
+    }
+  }
   // The test hook goes in before anything of the program runs.
   if (fiber) await page.run(fiberSubscriptions);
   // The page the build wrote, before the setup steps and the program.
@@ -2865,7 +2938,11 @@ if (pages[0].report === null) {
   await written(process.stderr, r.stderr);
   process.exit(r.code);
 } else {
-  for (const p of pages) writeFileSync(p.report, JSON.stringify(p.fuzz ? await runFuzz(p.entry) : await runPage(p.entry, p.fiber, p.html)));
+  for (const p of pages) {
+    const r = p.fuzz ? await runFuzz(p.entry) : await runPage(p.entry, p.fiber, p.html);
+    if (options.webgpu && webgpuAdapter !== null) r.webgpu = webgpuAdapter;
+    writeFileSync(p.report, JSON.stringify(r));
+  }
   process.exit(0);
 }
 

@@ -1,0 +1,28 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §7): a plain object named `OperationError`, which is not a native `DOMException` (ledger §1: a same-named fake).
+-- The command's fiber throws it, and the page stops with its crash screen;
+-- the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+refused : ⊤ → List String
+refused ⊤ =
+    GpuHost.inject "device-spoofed"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            [ "device: "
+                ++ GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", refused ) ]

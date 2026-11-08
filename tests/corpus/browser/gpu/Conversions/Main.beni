@@ -1,0 +1,228 @@
+-- Descriptors and scalars (docs/design/webgpu.md §3, §3.1): what the
+-- engine hands the host for a descriptor, as JSON. A `Default` member is
+-- left out, so the native default applies; a `Value` is set even when it
+-- equals the default; a `Nothing` in a nullable sequence is `null`; a
+-- flag set is its exact bits; each union arm has its native shape; an
+-- inherited member (`label`) is a field like any other. Each scalar
+-- holds only what its IDL type accepts: integral, in range, finite after
+-- rounding to 32 bits; the truncating constructors drop the fraction
+-- first, as `[EnforceRange]` does, and `Size64` reaches 2⁶⁴ − 2048.
+import Gpu.Flags as Flags
+import Gpu.Limits as Limits
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuPage
+import GpuProbe
+import Tea
+
+
+ok : Result Scalar.DomainError a → a
+ok r =
+    case r of
+        Ok v →
+            v
+
+        Err _ →
+            Debug.todo "a scalar outside its domain"
+
+
+domain : Result Scalar.DomainError a, (a → String) → String
+domain r f =
+    case r of
+        Ok v →
+            "Ok " ++ f v
+
+        Err problem →
+            "Err "
+                ++ (case problem.expected of
+                       Scalar.U32Domain →
+                           "U32Domain"
+
+                       Scalar.I32Domain →
+                           "I32Domain"
+
+                       Scalar.Size64Domain →
+                           "Size64Domain"
+
+                       Scalar.FiniteF32Domain →
+                           "FiniteF32Domain"
+
+                       Scalar.FiniteF64Domain →
+                           "FiniteF64Domain"
+                   )
+                ++ " "
+                ++ String.fromFloat problem.actual
+
+
+descriptors : ⊤ → List String
+descriptors ⊤ =
+    adapter = Types.adapterOptions
+    device = Types.deviceDescriptor
+    buffer =
+        Types.bufferDescriptor
+            (ok (Scalar.size64 1024))
+            (Flags.buffer [ Flags.Uniform, Flags.CopyDst ])
+    texture =
+        Types.textureDescriptor
+            (Types.Extent3DSequence [ ok (Scalar.u32 64), ok (Scalar.u32 32) ])
+            Types.Rgba8unorm
+            (Flags.texture [ Flags.RenderAttachment ])
+    stages = Flags.shaderStages [ Flags.VertexStage, Flags.FragmentStage ]
+    sampler = Types.samplerDescriptor
+    entry = Types.bindGroupLayoutEntry (ok (Scalar.u32 0)) stages
+    blend = Types.blendState Types.blendComponent Types.blendComponent
+    target = Types.colorTargetState Types.Bgra8unorm
+    depth = Types.depthStencilState Types.Depth24plus
+    [ "adapter, all Default: " ++ GpuProbe.adapterOptions adapter
+    , "adapter, Values: "
+        ++ GpuProbe.adapterOptions
+            { adapter
+                | powerPreference = Types.Value Types.HighPerformance
+                , forceFallbackAdapter = Types.Value False
+            }
+    , "device, all Default: " ++ GpuProbe.deviceDescriptor device
+    , "device, features, limits, queue: "
+        ++ GpuProbe.deviceDescriptor
+            { device
+                | label = Types.Value "gpu"
+                , requiredFeatures = Types.Value [ Types.FeatureTimestampQuery ]
+                , requiredLimits = Types.Value [ ( Limits.MaxBindGroups, ok (Scalar.size64 4) ) ]
+                , defaultQueue = Types.Value { label = Types.Value "queue" }
+            }
+    , "buffer: " ++ GpuProbe.bufferDescriptor { buffer | mappedAtCreation = Types.Value False }
+    , "texture, extent as a sequence: " ++ GpuProbe.textureDescriptor texture
+    , "texture, extent as fields: "
+        ++ GpuProbe.textureDescriptor
+            { texture
+                | size =
+                    Types.Extent3DFields
+                        { width = ok (Scalar.u32 8)
+                        , height = Types.Default
+                        , depthOrArrayLayers = Types.Value (ok (Scalar.u32 1))
+                        }
+                , dimension = Types.Value Types.Dimension2D
+                , viewFormats = Types.Value [ Types.Rgba8unormSrgb ]
+            }
+    , "sampler: "
+        ++ GpuProbe.samplerDescriptor
+            { sampler
+                | addressModeU = Types.Value Types.Repeat
+                , lodMaxClamp = Types.Value (ok (Scalar.finiteF32 16.5))
+                , compare = Types.Value Types.LessEqual
+                , maxAnisotropy = Types.Value 70000
+            }
+    , "bind group layout: "
+        ++ GpuProbe.bindGroupLayoutDescriptor
+            (Types.bindGroupLayoutDescriptor
+                [ { entry | buffer = Types.Value Types.bufferBindingLayout }
+                , { entry
+                    | binding = ok (Scalar.u32 1)
+                    , externalTexture = Types.Value Types.externalTextureBindingLayout
+                  }
+                ]
+            )
+    , "render pass layout, a null slot: "
+        ++ GpuProbe.renderPassLayout (Types.renderPassLayout [ Nothing, Just Types.Rgba8unorm ])
+    , "color target: "
+        ++ GpuProbe.colorTargetState
+            { target
+                | blend = Types.Value blend
+                , writeMask = Types.Value (Flags.colorWrites [ Flags.Red, Flags.Alpha ])
+            }
+    , "depth stencil, a signed bias: "
+        ++ GpuProbe.depthStencilState
+            { depth
+                | depthWriteEnabled = Types.Value True
+                , depthCompare = Types.Value Types.Less
+                , depthBias = Types.Value (ok (Scalar.i32 (-3)))
+                , stencilFront =
+                    Types.Value
+                        { compare = Types.Value Types.Always
+                        , failOp = Types.Default
+                        , depthFailOp = Types.Default
+                        , passOp = Types.Value Types.StencilReplace
+                        }
+            }
+    , "color as a sequence: "
+        ++ GpuProbe.color
+            (Types.ColorSequence
+                [ ok (Scalar.finiteF64 0.5)
+                , ok (Scalar.finiteF64 1.0)
+                , ok (Scalar.finiteF64 0.0)
+                , ok (Scalar.finiteF64 1.0)
+                ]
+            )
+    , "color as fields: "
+        ++ GpuProbe.color
+            (Types.ColorFields
+                { r = ok (Scalar.finiteF64 0.25)
+                , g = ok (Scalar.finiteF64 0.0)
+                , b = ok (Scalar.finiteF64 0.0)
+                , a = ok (Scalar.finiteF64 1.0)
+                }
+            )
+    , "every buffer usage: "
+        ++ String.fromInt (Flags.bufferUsagesBits (Flags.buffer Flags.allBufferUsages))
+    , "ColorWrite All holds Red: "
+        ++ (if Flags.colorWritesHas (Flags.colorWrites [ Flags.All ]) Flags.Red then "yes" else "no"
+           )
+    , "a spelling both ways: "
+        ++ Types.textureFormatToString Types.Astc10x10UnormSrgb
+        ++ " "
+        ++ (if
+               Types.textureFormatFromString "astc-10x10-unorm-srgb"
+                   == Just Types.Astc10x10UnormSrgb
+            then
+               "back"
+            else
+               "lost"
+           )
+    , "a spelling outside the pin: "
+        ++ (if Types.textureFormatFromString "rgba8unorm-wrong" == Nothing then
+               "Nothing"
+            else
+               "Just"
+           )
+    ]
+
+
+scalars : ⊤ → List String
+scalars ⊤ =
+    [ "u32 0: " ++ domain (Scalar.u32 0) λv → String.fromInt (Scalar.u32ToInt v)
+    , "u32 4294967295: " ++ domain (Scalar.u32 4294967295) λv → String.fromInt (Scalar.u32ToInt v)
+    , "u32 4294967296: " ++ domain (Scalar.u32 4294967296) λv → String.fromInt (Scalar.u32ToInt v)
+    , "u32 -1: " ++ domain (Scalar.u32 (-1)) λv → String.fromInt (Scalar.u32ToInt v)
+    , "u32Truncating 7.9: "
+        ++ domain (Scalar.u32Truncating 7.9) λv → String.fromInt (Scalar.u32ToInt v)
+    , "u32Truncating -0.5: "
+        ++ domain (Scalar.u32Truncating (-0.5)) λv → String.fromInt (Scalar.u32ToInt v)
+    , "u32Truncating NaN: "
+        ++ domain (Scalar.u32Truncating (0.0 / 0.0)) λv → String.fromInt (Scalar.u32ToInt v)
+    , "i32 -2147483648: "
+        ++ domain (Scalar.i32 (-2147483648)) λv → String.fromInt (Scalar.i32ToInt v)
+    , "i32 2147483648: " ++ domain (Scalar.i32 2147483648) λv → String.fromInt (Scalar.i32ToInt v)
+    , "size64 2⁵³ + 2: "
+        ++ domain (Scalar.size64 9007199254740994) λv → String.fromInt (Scalar.size64ToInt v)
+    , "size64FromFloat 2⁶⁴ − 2048: "
+        ++ domain (Scalar.size64FromFloat 18446744073709549568.0) λv →
+            String.fromInt (Scalar.size64ToInt v)
+    , "size64FromFloat 2⁶⁴: "
+        ++ domain (Scalar.size64FromFloat 18446744073709551616.0) λv →
+            String.fromInt (Scalar.size64ToInt v)
+    , "size64FromFloat 1.5: "
+        ++ domain (Scalar.size64FromFloat 1.5) λv → String.fromInt (Scalar.size64ToInt v)
+    , "size64Truncating 1.5: "
+        ++ domain (Scalar.size64Truncating 1.5) λv → String.fromInt (Scalar.size64ToInt v)
+    , "finiteF32 3.4e38: "
+        ++ domain (Scalar.finiteF32 3.4e38) λv → String.fromFloat (Scalar.finiteF32ToFloat v)
+    , "finiteF32 3.5e38: "
+        ++ domain (Scalar.finiteF32 3.5e38) λv → String.fromFloat (Scalar.finiteF32ToFloat v)
+    , "finiteF64 1e308: "
+        ++ domain (Scalar.finiteF64 1.0e308) λv → String.fromFloat (Scalar.finiteF64ToFloat v)
+    , "finiteF64 Infinity: "
+        ++ domain (Scalar.finiteF64 (1.0 / 0.0)) λv → String.fromFloat (Scalar.finiteF64ToFloat v)
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "descriptors", descriptors ), ( "scalars", scalars ) ]

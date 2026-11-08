@@ -1,0 +1,35 @@
+-- A defect from an outcome nobody waits for (docs/design/webgpu.md §6.4,
+-- *Outcomes that outlive their caller*; ledger §7): a rejection of `device.lost`, which the standard never makes.
+-- The device's sentinel, a fiber of the program that requested it, throws
+-- it, and the page stops with its crash screen; the release build stops
+-- with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+lost : ⊤ → List String
+lost ⊤ =
+    GpuHost.inject "lost-controlled"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok _ →
+                    GpuHost.lose "reject"
+                    Task.yieldNow ⊤
+                    [ "the device was granted" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", lost ) ]

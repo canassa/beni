@@ -1,0 +1,17 @@
+--! The `gpu-test` platform's host for the WebGPU fixtures
+--! (`docs/design/webgpu.md` §10): the failures a page cannot cause on its
+--! own, injected into the host before a fixture's GPU work. Under happy-dom
+--! and in a Chrome without WebGPU the host is a deterministic fake of
+--! `navigator.gpu`; under `zig build test-webgpu` it is Chrome's own, and
+--! each fault wraps the native method it is about.
+
+--| Prepare the host for a scenario: `"none"` leaves it as it is, and each
+--| other name, listed in `GpuHost.js`, makes one native call fail as the
+--| ledger describes or as it never documents.
+pub foreign impure inject : String → ⊤
+
+
+--| Settle the loss of the latest device made since `inject
+--| "lost-controlled"`: `"reject"` rejects its `lost` promise, and any other
+--| text resolves it with that reason.
+pub foreign impure lose : String → ⊤

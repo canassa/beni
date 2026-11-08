@@ -1,0 +1,6 @@
+# Each scenario starts from the host as no fault touched it.
+click #none
+click #adapter-null
+click #no-api
+click #insecure
+click #none

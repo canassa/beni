@@ -581,7 +581,8 @@ fn walk(kind: Kind) !void {
     // per fixture, read in order.
     const workers: usize = if (cfg.mode == .pending) 1 else @min(8, @max(1, std.Thread.getCpuCount() catch 1));
     // One Chrome for every page of the walk, each page a target of its own.
-    var chrome: ?browser.Chrome = if (cfg.chrome) |exe| try browser.Chrome.launch(gpa, io, exe) else null;
+    browser.webgpu = cfg.webgpu;
+    var chrome: ?browser.Chrome = if (cfg.chrome) |exe| try browser.Chrome.launch(gpa, io, exe, cfg.webgpu) else null;
     defer if (chrome) |*c| c.deinit(io);
     chrome_endpoint = if (chrome) |c| c.endpoint else null;
     defer chrome_endpoint = null;
@@ -593,6 +594,7 @@ fn walk(kind: Kind) !void {
         walker.work(io);
     }
     const failures = walker.failures.load(.monotonic);
+    if (cfg.webgpu) browser.reportWebGpu();
     if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,
@@ -704,6 +706,16 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         for (fixtures.items[start..]) |*fixture| {
             fixture.platform = worker_platform;
         }
+    }
+    // `browser/gpu/`: the WebGPU pages (docs/design/webgpu.md §10), built for
+    // the `gpu-test` platform (`tests/platforms/gpu`): a fake host in the
+    // gates and under `test-browser`, Chrome's own under `test-webgpu`.
+    if (kind == .browser) {
+        const gpu_dir = try std.fs.path.join(arena, &.{ kind_dir, "gpu" });
+        const start = fixtures.items.len;
+        try collect(arena, gpu_dir, false, false, &fixtures, true);
+        const gpu_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, browser.gpu_platform_path, arena);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = gpu_platform;
     }
     if (kind == .browser or kind == .build_bad) {
         const managed_dir = try std.fs.path.join(arena, &.{ kind_dir, "managed" });
@@ -985,6 +997,14 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         }
         return expanded.items;
     }
+    // `test-webgpu` runs the WebGPU pages alone.
+    if (cfg.webgpu) {
+        var kept: std.ArrayList(Fixture) = .empty;
+        for (fixtures.items) |fixture| {
+            if (std.mem.endsWith(u8, fixture.dir, "/gpu")) try kept.append(arena, fixture);
+        }
+        return kept.items;
+    }
     return fixtures.items;
 }
 
@@ -1095,6 +1115,10 @@ const Config = struct {
     /// `BENI_BROWSER=chrome`: the Chrome every `browser/` page runs in
     /// (`browser.findChrome`), or null for happy-dom.
     chrome: ?[]const u8,
+    /// `BENI_BROWSER=webgpu` (`zig build test-webgpu`): Chrome with a real
+    /// WebGPU adapter, running the `browser/gpu/` pages alone against the
+    /// native host (`browser.webgpu`).
+    webgpu: bool = false,
     /// `BENI_FUZZ_SEEDS` (`1,2,…`) and `BENI_FUZZ_STEPS`: a longer page
     /// fuzz than the gates' (`browser.gate_seeds`, `browser.gate_steps`),
     /// for `zig build fuzz`; such a run is never skipped for a record.
@@ -1154,8 +1178,8 @@ const Config = struct {
             return error.BadCorpusPart;
         }
         const chrome: ?[]const u8 = if (envOr(arena, "BENI_BROWSER")) |text| chrome: {
-            if (!std.mem.eql(u8, text, "chrome")) {
-                std.debug.print("BENI_BROWSER must be `chrome` (or unset), not `{s}`\n", .{text});
+            if (!std.mem.eql(u8, text, "chrome") and !std.mem.eql(u8, text, "webgpu")) {
+                std.debug.print("BENI_BROWSER must be `chrome` or `webgpu` (or unset), not `{s}`\n", .{text});
                 return error.BadBrowser;
             }
             if (mode == .pending) {
@@ -1189,6 +1213,7 @@ const Config = struct {
             .in_place = in_place,
             .fuzz_steps = fuzz_steps,
             .chrome = chrome,
+            .webgpu = if (envOr(arena, "BENI_BROWSER")) |text| std.mem.eql(u8, text, "webgpu") else false,
             .report_dir = envOr(arena, "BENI_RUN_HASH_REPORT"),
             .root = std.mem.trimEnd(u8, root, "/"),
             .part = part,
@@ -1537,7 +1562,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "managed") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "prerender")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "gpu") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "managed") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "prerender")) {
             try refuseRecordsIn(try std.fs.path.join(arena, &.{ dir_path, entry.name }));
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
@@ -3199,6 +3224,11 @@ const Case = struct {
 
     fn runPage(case: Case) !void {
         var c = case;
+        // A page `test-webgpu` cannot run in a real browser, with its reason.
+        if (c.cfg.webgpu and c.goldenExists("webgpu-skip")) {
+            _ = browser.webgpu_tally.skipped.fetchAdd(1, .monotonic);
+            return;
+        }
         if (c.fixture.prerender) return c.runPrerender();
         var own: ?World = null;
         defer if (own) |*w| w.deinit();
@@ -3368,7 +3398,9 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
         const chrome = c.cfg.chrome != null;
-        const golden = if (chrome and c.goldenExists("chrome-expected"))
+        const golden = if (c.cfg.webgpu and c.goldenExists("webgpu-expected"))
+            "webgpu-expected"
+        else if (chrome and c.goldenExists("chrome-expected"))
             "chrome-expected"
         else if (pass == .release and c.goldenExists("release-expected"))
             "release-expected"
@@ -3377,7 +3409,7 @@ const Case = struct {
         // `expected` is the development build's golden: a release build
         // that disagrees with it is the finding, so only a build's own
         // golden is blessed by it.
-        const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
+        const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or std.mem.eql(u8, golden, "webgpu-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         return .{
             .pass = pass,
@@ -3660,6 +3692,11 @@ const Case = struct {
         // arguments or the steps, or ran out of time — and says why as it
         // would have for this page alone.
         const shown = page orelse driver;
+        // `test-webgpu` on a host with no adapter: the driver ran no step.
+        if (c.cfg.webgpu and shown.exit_code == 0 and std.mem.startsWith(u8, shown.stdout, browser.webgpu_unsupported)) {
+            _ = browser.webgpu_tally.unsupported.fetchAdd(1, .monotonic);
+            return;
+        }
         // Exit 1 is the page failing (an uncaught exception, a step that
         // could not run), with the page until then on stdout; anything else
         // is the driver refusing its arguments or the steps.
@@ -3676,6 +3713,7 @@ const Case = struct {
             return error.PageFailed;
         }
         try c.expectGoldenMaybeBless(golden, shown.stdout, bless);
+        if (c.cfg.webgpu) _ = browser.webgpu_tally.passed.fetchAdd(1, .monotonic);
     }
 
     /// One build-and-run of a `run/` fixture, against `golden`. Node is not
