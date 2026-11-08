@@ -6,6 +6,7 @@ import Gpu
 import Gpu.Error as Error
 import Gpu.Flags as Flags
 import Gpu.Limits as Limits
+import Gpu.MappedRange
 import Gpu.Types as Types
 
 
@@ -153,9 +154,6 @@ error problem =
 
         Error.HostOperationRejected o →
             "HostOperationRejected " ++ operationFailure o
-
-        Error.AllocationFailed a →
-            "AllocationFailed " ++ String.fromInt a.bytes
 
         Error.RelatedFailures set →
             "RelatedFailures ["
@@ -318,3 +316,17 @@ checked r f =
 
         Err problem →
             "Err " ++ error problem
+
+
+--| A `readBytes` result's constructor, with `f` for an `Ok` value.
+pub readResult : Result Gpu.MappedRange.ReadError a, (a → String) → String
+readResult r f =
+    case r of
+        Ok a →
+            "Ok " ++ f a
+
+        Err (Gpu.MappedRange.Refused problem) →
+            "Err Refused " ++ inputError problem
+
+        Err (Gpu.MappedRange.Allocation _) →
+            "Err Allocation"

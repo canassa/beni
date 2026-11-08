@@ -102,7 +102,7 @@ ranges ⊤ = GpuKit.with "none" λd →
     , "read past the range: " ++ GpuShow.inputResult (MappedRange.readU32 r 6) String.fromInt
     , "read at 4: " ++ GpuShow.inputResult (MappedRange.readU32 r 4) String.fromInt
     , "bytes past the range: "
-        ++ GpuShow.checked (MappedRange.readBytes r { byteOffset = 4, byteLength = Just 8 }) λ_ →
+        ++ GpuShow.readResult (MappedRange.readBytes r { byteOffset = 4, byteLength = Just 8 }) λ_ →
             "bytes"
     , "mapping live: " ++ GpuKit.yesNo (Gpu.Buffer.mappingLive mapping)
     ]
@@ -201,7 +201,8 @@ backing ⊤ = GpuKit.with "none" λd →
         ]
 
 
--- Fixed storage written into a mapping from creation, and read back.
+-- Fixed storage written into a mapping from creation, and read back; then
+-- resizable storage, which a CPU copy takes.
 fromFixed : Device → String
 fromFixed d =
     made = must (Gpu.Device.createMappedBuffer d (buffer 8 [ CopySrc ]))
@@ -214,7 +215,14 @@ fromFixed d =
             "Err " ++ GpuShow.inputError problem
 
         Ok _ →
-            GpuShow.inputResult (MappedRange.readU32 r 4) String.fromInt
+            fixed = GpuShow.inputResult (MappedRange.readU32 r 4) String.fromInt
+            -- A CPU copy: resizable storage is no GPU input, and is copied too.
+            resizable = MappedRange.writeBytes r 0 (Binary.ViewOf (Binary.Uint8Array (GpuHost.resizableBytes 8)))
+            fixed
+                ++ "; from resizable storage: "
+                ++ GpuShow.inputResult resizable (λ_ → "done")
+                ++ ", then "
+                ++ GpuShow.inputResult (MappedRange.readU32 r 4) String.fromInt
 
 
 others : ⊤ → List String

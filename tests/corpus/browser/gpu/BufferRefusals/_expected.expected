@@ -90,7 +90,7 @@
       <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
       <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
       <li>"read at 4: Ok 0"</li>
-      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"bytes past the range: Err Refused OutOfRange bytes 4+8 of 8"</li>
       <li>"mapping live: yes"</li>
     </ol>
   </main>
@@ -129,7 +129,7 @@
       <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
       <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
       <li>"read at 4: Ok 0"</li>
-      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"bytes past the range: Err Refused OutOfRange bytes 4+8 of 8"</li>
       <li>"mapping live: yes"</li>
       <li>"u8 256: Err InvalidValue value 256.0"</li>
       <li>"i8 -129: Err InvalidValue value -129.0"</li>
@@ -174,7 +174,7 @@
       <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
       <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
       <li>"read at 4: Ok 0"</li>
-      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"bytes past the range: Err Refused OutOfRange bytes 4+8 of 8"</li>
       <li>"mapping live: yes"</li>
       <li>"u8 256: Err InvalidValue value 256.0"</li>
       <li>"i8 -129: Err InvalidValue value -129.0"</li>
@@ -228,7 +228,7 @@
       <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
       <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
       <li>"read at 4: Ok 0"</li>
-      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"bytes past the range: Err Refused OutOfRange bytes 4+8 of 8"</li>
       <li>"mapping live: yes"</li>
       <li>"u8 256: Err InvalidValue value 256.0"</li>
       <li>"i8 -129: Err InvalidValue value -129.0"</li>
@@ -251,7 +251,7 @@
       <li>"a view on a growable SharedArrayBuffer: Err InvalidInput ResizableBacking data"</li>
       <li>"fixed ArrayBuffer: Ok written"</li>
       <li>"fixed view: Ok written"</li>
-      <li>"mapped range from fixed storage: Ok 99"</li>
+      <li>"mapped range from fixed storage: Ok 99; from resizable storage: Ok done, then Ok 0"</li>
     </ol>
   </main>
 </body>
@@ -289,7 +289,7 @@
       <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
       <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
       <li>"read at 4: Ok 0"</li>
-      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"bytes past the range: Err Refused OutOfRange bytes 4+8 of 8"</li>
       <li>"mapping live: yes"</li>
       <li>"u8 256: Err InvalidValue value 256.0"</li>
       <li>"i8 -129: Err InvalidValue value -129.0"</li>
@@ -312,7 +312,7 @@
       <li>"a view on a growable SharedArrayBuffer: Err InvalidInput ResizableBacking data"</li>
       <li>"fixed ArrayBuffer: Ok written"</li>
       <li>"fixed view: Ok written"</li>
-      <li>"mapped range from fixed storage: Ok 99"</li>
+      <li>"mapped range from fixed storage: Ok 99; from resizable storage: Ok done, then Ok 0"</li>
       <li>"a buffer of another device's queue: Err InvalidInput WrongDevice buffer"</li>
     </ol>
   </main>
