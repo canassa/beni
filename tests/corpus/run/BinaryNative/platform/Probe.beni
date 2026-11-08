@@ -17,7 +17,7 @@ fixedRequirement ⊤ =
     [ Debug.toString (Binary.sourceInfo (Binary.WholeBuffer (Js.to buffer)))
     , Debug.toString (Binary.sourceInfo (Binary.ViewOf (Binary.Uint8Array (Js.to view))))
     , Debug.toString (Binary.sourceInfo (Binary.WholeShared (Js.to shared)))
-    , Debug.toString (Binary.view (Binary.Local (Js.to buffer)) Binary.U8 0 Nothing)
+    , Debug.toString (Binary.view (Binary.Local (Js.to buffer)) Binary.U8 Binary.whole)
     , Debug.toString (Binary.transfer (Js.to buffer))
     ]
 
@@ -44,3 +44,27 @@ unknownDefects ⊤ =
                 λ_ → "thrown"
         )
         λ⊤ → Js.set (Js.global "globalThis") "ArrayBuffer" original
+
+
+--| A SharedArrayBuffer from another realm (node:vm) is still shared: the brand
+--| check does not use instanceof. Handed to `transfer` as if it were an
+--| ArrayBuffer, it is refused before the host call.
+pub foreignRealm : ⊤ → List String
+foreignRealm ⊤ =
+    shared = Js.call (Js.module "node:vm") "runInNewContext" [ Js.from "new SharedArrayBuffer(8)" ]
+    [ Debug.toString
+        (Result.map (Binary.sourceInfo (Binary.WholeShared (Js.to shared))) λinfo → info.shared)
+    , Debug.toString (Binary.transfer (Js.to shared))
+    ]
+
+
+--| A page that is not cross-origin isolated has `crossOriginIsolated` false:
+--| shared memory is then IsolationRequired, whatever the host constructor.
+pub notIsolated : ⊤ → String
+notIsolated ⊤ =
+    Js.set (Js.global "globalThis") "crossOriginIsolated" (Js.from False)
+    Js.finally (λ⊤ → Debug.toString (Binary.shared 8)) λ⊤ →
+        _ =
+            Js.call (Js.global "Reflect") "deleteProperty"
+                [ Js.global "globalThis", Js.from "crossOriginIsolated" ]
+        ⊤

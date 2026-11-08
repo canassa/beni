@@ -1,151 +1,144 @@
 -- Binary storage on Node: exact round trips through every scalar width and
 -- both byte orders, exact 64-bit words, every view kind, copies, in-realm
--- transfer and the detachment every alias then sees, and each named failure.
+-- transfer and the detachment every alias then sees, and each typed failure.
+-- Every expected line is worked out by hand from ECMA-262's encodings.
 import Binary exposing (Big, Data, F16, F32, F64, I16, I32, I64, I8, Little, U16, U32, U64, U8, U8Clamped)
 import List
 import Node exposing (Program)
 
 
 main : Program
-main =
-    Node.printLines
-        [ show (scalars ⊤)
-        , show (words ⊤)
-        , show (kinds ⊤)
-        , show (copies ⊤)
-        , show (transfers ⊤)
-        , show (failures ⊤)
-        ]
+main = Node.printLines [ …scalars ⊤, …words ⊤, …kinds ⊤, …copies ⊤, …transfers ⊤, …failures ⊤ ]
 
 
-show : Result Binary.Error a → String
-show result = Debug.toString result
+-- Setup that must succeed; a failure here is a broken fixture, not a result.
+ok : Result e a → a
+ok result =
+    case result of
+        Ok value →
+            value
+        Err error →
+            Debug.todo (Debug.toString error)
 
 
-scalars : ⊤ → Result Binary.Error (List String)
+range : Int, Maybe Int → Binary.ByteRange
+range offset length = { byteOffset = offset, byteLength = length }
+
+
+scalars : ⊤ → List String
 scalars ⊤ =
-    buffer = Binary.allocate 16?
-    view = Binary.view (Binary.Local buffer) Data 0 Nothing?
-    Binary.writeI8 view 0 (-128)?
-    i8 = Binary.readI8 view 0?
-    u8 = Binary.readU8 view 0?
-    Binary.writeI16 view 1 Big (-2)?
-    i16 = Binary.readI16 view 1 Big?
-    u16Little = Binary.readU16 view 1 Little?
-    Binary.writeU32 view 3 Little 3735928559?
-    u32 = Binary.readU32 view 3 Little?
-    u32Big = Binary.readU32 view 3 Big?
-    i32 = Binary.readI32 view 3 Little?
-    Binary.writeF32 view 7 Big 0.1?
-    f32 = Binary.readF32 view 7 Big?
-    Binary.writeF64 view 8 Little (-1.5)?
-    negative = Binary.readWord64 view 8 Little?
-    f16 =
-        case Binary.writeF16 view 0 Little 65504 of
-            Ok ⊤ →
-                Debug.toString (Binary.readF16 view 0 Little)
-            Err (Binary.Unsupported _) →
-                "Ok 65504.0"
-            Err other →
-                Debug.toString other
-    Ok
-        [ Debug.toString ( i8, u8 )
-        , Debug.toString ( i16, u16Little )
-        , Debug.toString ( u32, u32Big, i32 )
-        , Debug.toString f32
-        , Debug.toString (Binary.words negative)
-        , f16
-        ]
+    view = ok (Binary.view (Binary.Local (ok (Binary.allocate 16))) Data Binary.whole)
+    ok (Binary.writeI8 view 0 (-128))
+    i8 = Binary.readI8 view 0
+    u8 = Binary.readU8 view 0
+    ok (Binary.writeI16 view 1 Big (-2))
+    i16 = Binary.readI16 view 1 Big
+    u16Little = Binary.readU16 view 1 Little
+    ok (Binary.writeU32 view 3 Little 3735928559)
+    u32 = Binary.readU32 view 3 Little
+    u32Big = Binary.readU32 view 3 Big
+    i32 = Binary.readI32 view 3 Little
+    ok (Binary.writeF32 view 7 Big 0.1)
+    f32 = Binary.readF32 view 7 Big
+    ok (Binary.writeF64 view 8 Little (-1.5))
+    negative = Result.map (Binary.readWord64 view 8 Little) Binary.words
+    -- 65504 is the largest finite half; its bits are 0x7BFF.
+    f16Write = Binary.writeF16 view 0 Little 65504
+    f16 = Binary.readF16 view 0 Little
+    f16Bits = Binary.readU16 view 0 Little
+    [ Debug.toString ( i8, u8 )
+    , Debug.toString ( i16, u16Little )
+    , Debug.toString ( u32, u32Big, i32 )
+    , Debug.toString f32
+    , Debug.toString negative
+    , Debug.toString ( f16Write, f16, f16Bits )
+    ]
 
 
-words : ⊤ → Result Binary.Error (List String)
+words : ⊤ → List String
 words ⊤ =
-    buffer = Binary.allocate 16?
-    view = Binary.view (Binary.Local buffer) Data 0 Nothing?
-    exact = Binary.word64 4294967295 4294967294?
-    Binary.writeWord64 view 0 Big exact?
-    Binary.writeWord64 view 8 Little exact?
-    bytes = Binary.toList (Binary.WholeBuffer buffer)?
-    big = Binary.readWord64 view 0 Big?
-    minusOne = Binary.word64FromSignedInt (-1)?
-    large = Binary.word64FromInt 9007199254740993?
-    top = Binary.word64FromInt 18446744073709549568?
-    Ok
-        [ Debug.toString bytes
-        , Debug.toString (Binary.words big)
-        , Debug.toString (Binary.words minusOne)
-        , Debug.toString (Binary.word64ToSignedInt minusOne)
-        , Debug.toString (Binary.word64ToInt exact)
-        , Debug.toString (Binary.words large)
-        , Debug.toString (Binary.words top)
-        , Debug.toString (Binary.word64ToInt top)
-        ]
+    buffer = ok (Binary.allocate 16)
+    view = ok (Binary.view (Binary.Local buffer) Data Binary.whole)
+    exact = ok (Binary.word64 4294967295 4294967294)
+    ok (Binary.writeWord64 view 0 Big exact)
+    ok (Binary.writeWord64 view 8 Little exact)
+    minusOne = ok (Binary.word64FromSignedInt (-1))
+    top = ok (Binary.word64FromInt 18446744073709549568)
+    [ Debug.toString (Binary.toList (Binary.WholeBuffer buffer))
+    , Debug.toString (Result.map (Binary.readWord64 view 0 Big) Binary.words)
+    , Debug.toString (Binary.words minusOne)
+    , Debug.toString (Binary.word64ToSignedInt minusOne)
+    , Debug.toString (Binary.word64ToInt exact)
+    , Debug.toString (Result.map (Binary.word64FromInt 9007199254740993) Binary.words)
+    , Debug.toString (Binary.words top)
+    , Debug.toString (Binary.word64ToInt top)
+    , Debug.toString (Binary.word64 4294967296 0)
+    , Debug.toString (Binary.word64FromInt (-1))
+    ]
 
 
-kinds : ⊤ → Result Binary.Error (List String)
+kinds : ⊤ → List String
 kinds ⊤ =
-    buffer = Binary.allocate 48?
-    Ok
-        (List.map [ I8, U8, U8Clamped, I16, U16, I32, U32, I64, U64, F16, F32, F64, Data ] λkind →
-            case Binary.view (Binary.Local buffer) kind 8 Nothing of
-                Err error →
-                    Debug.toString error
-                Ok view →
-                    case Binary.sourceInfo (Binary.ViewOf view) of
-                        Ok info →
-                            Debug.toString
-                                ( Binary.kind view == kind, info.byteOffset, info.elementLength )
-                        Err error →
-                            Debug.toString error
-        )
+    buffer = ok (Binary.allocate 48)
+    List.map [ I8, U8, U8Clamped, I16, U16, I32, U32, I64, U64, F16, F32, F64, Data ] λkind →
+        case Binary.view (Binary.Local buffer) kind (range 8 Nothing) of
+            Err error →
+                Debug.toString error
+            Ok view →
+                case Binary.sourceInfo (Binary.ViewOf view) of
+                    Ok info →
+                        Debug.toString
+                            ( Binary.kind view == kind, info.byteOffset, info.elementLength )
+                    Err error →
+                        Debug.toString error
 
 
-copies : ⊤ → Result Binary.Error (List String)
+copies : ⊤ → List String
 copies ⊤ =
-    buffer = Binary.fromList [ 1, 2, 3, 4, 5, 6, 7, 8 ]?
-    whole = Binary.view (Binary.Local buffer) U8 0 Nothing?
-    middle = Binary.view (Binary.Local buffer) U8 2 (Just 4)?
-    copied = Binary.copy (Binary.ViewOf middle)?
+    buffer = ok (Binary.fromList [ 1, 2, 3, 4, 5, 6, 7, 8 ])
+    whole = ok (Binary.view (Binary.Local buffer) U8 Binary.whole)
+    middle = ok (Binary.view (Binary.Local buffer) U8 (range 2 (Just 4)))
+    copied = ok (Binary.copy (Binary.ViewOf middle))
     -- Overlapping storage copies as if through a temporary.
-    Binary.copyInto whole 3 (Binary.ViewOf middle)?
-    after = Binary.toList (Binary.WholeBuffer buffer)?
-    independent = Binary.toList (Binary.WholeBuffer copied)?
-    Ok [ Debug.toString after, Debug.toString independent ]
+    into = Binary.copyInto whole 3 (Binary.ViewOf middle)
+    [ Debug.toString into
+    , Debug.toString (Binary.toList (Binary.WholeBuffer buffer))
+    , Debug.toString (Binary.toList (Binary.WholeBuffer copied))
+    , Debug.toString (Binary.copyInto whole 6 (Binary.ViewOf middle))
+    , Debug.toString (Binary.fromList [ 1, -1 ])
+    ]
 
 
-transfers : ⊤ → Result Binary.Error (List String)
+transfers : ⊤ → List String
 transfers ⊤ =
-    buffer = Binary.fromList [ 9, 8, 7, 6 ]?
-    view = Binary.view (Binary.Local buffer) U16 0 Nothing?
-    moved = Binary.transfer buffer?
-    Ok
-        [ Debug.toString (Binary.detached buffer)
-        , Debug.toString (Binary.readU16 view 0 Little)
-        , Debug.toString (Binary.sourceInfo (Binary.WholeBuffer buffer))
-        , Debug.toString (Binary.transfer buffer)
-        , Debug.toString (Binary.view (Binary.Local buffer) U8 0 Nothing)
-        , Debug.toString (Binary.toList (Binary.WholeBuffer moved))
-        ]
+    buffer = ok (Binary.fromList [ 9, 8, 7, 6 ])
+    view = ok (Binary.view (Binary.Local buffer) U16 Binary.whole)
+    moved = ok (Binary.transfer buffer)
+    [ Debug.toString (Binary.detached buffer)
+    , Debug.toString (Binary.readU16 view 0 Little)
+    , Debug.toString (Binary.sourceInfo (Binary.WholeBuffer buffer))
+    , Debug.toString (Binary.transfer buffer)
+    , Debug.toString (Binary.view (Binary.Local buffer) U8 Binary.whole)
+    , Debug.toString (Binary.toList (Binary.WholeBuffer moved))
+    ]
 
 
-failures : ⊤ → Result Binary.Error (List String)
+failures : ⊤ → List String
 failures ⊤ =
-    buffer = Binary.allocate 8?
-    bytes = Binary.view (Binary.Local buffer) U8 2 (Just 3)?
-    data = Binary.view (Binary.Local buffer) Data 0 Nothing?
-    Ok
-        [ Debug.toString (Binary.allocate (-1))
-        , Debug.toString (Binary.allocate 9007199254740992)
-        , Debug.toString (Binary.view (Binary.Local buffer) U32 1 (Just 1))
-        , Debug.toString (Binary.view (Binary.Local buffer) U32 0 (Just 3))
-        , Debug.toString (Binary.view (Binary.Local buffer) U8 9 Nothing)
-        , Debug.toString (Binary.view (Binary.Local buffer) F64 4 Nothing)
-        , Debug.toString (Binary.readU32 bytes 0 Little)
-        , Debug.toString (Binary.writeU8 data 0 256)
-        , Debug.toString (Binary.writeI16 data 0 Big (-32769))
-        , Debug.toString (Binary.fromList [ 1, -1 ])
-        , Debug.toString (Binary.word64 4294967296 0)
-        , Debug.toString (Binary.word64FromInt (-1))
-        , Debug.toString (Binary.word64 4294967295 4294967295 ▷ Result.andThen Binary.word64ToInt)
-        , Debug.toString (Binary.copyInto data 6 (Binary.ViewOf bytes))
-        ]
+    buffer = ok (Binary.allocate 8)
+    bytes = ok (Binary.view (Binary.Local buffer) U8 (range 2 (Just 3)))
+    data = ok (Binary.view (Binary.Local buffer) Data Binary.whole)
+    [ Debug.toString (Binary.allocate (-1))
+    , Debug.toString (Binary.allocate 9007199254740992)
+    , Debug.toString (Binary.view (Binary.Local buffer) U32 (range 1 (Just 4)))
+    , Debug.toString (Binary.view (Binary.Local buffer) U32 (range 0 (Just 6)))
+    , Debug.toString (Binary.view (Binary.Local buffer) U32 (range 0 (Just 12)))
+    , Debug.toString (Binary.view (Binary.Local buffer) U8 (range 9 Nothing))
+    , Debug.toString (Binary.view (Binary.Local buffer) F64 (range 4 Nothing))
+    , Debug.toString (Binary.view (Binary.Local buffer) F64 (range 0 (Just 4)))
+    , Debug.toString (Binary.readU32 bytes 0 Little)
+    , Debug.toString (Binary.writeU8 data 0 256)
+    , Debug.toString (Binary.writeI16 data 0 Big (-32769))
+    , Debug.toString (Binary.writeU32 data 6 Little 1)
+    , Debug.toString (Binary.readF16 bytes 2 Little)
+    ]

@@ -1,0 +1,55 @@
+-- Binary.view and Binary.Wgsl.encode kept in a dedicated worker: every view
+-- constructor is a literal global the worker realm has, so the build proves
+-- it (workers.md §4). A computed `Js.global` here was worker_realm_violation.
+import Binary
+import Binary.Wgsl as Wgsl
+import List
+import Page
+import String
+import Worker
+
+
+work : ⊤ → String
+work ⊤ =
+    encoded =
+        case Wgsl.encode (Wgsl.scalar Wgsl.Unsigned32) (Wgsl.Integer 7) of
+            Ok buffer →
+                case Binary.toList (Binary.WholeBuffer buffer) of
+                    Ok bytes →
+                        String.join (List.map bytes String.fromInt) ","
+                    Err _ →
+                        "detached"
+            Err _ →
+                "encode failed"
+    viewed =
+        case Binary.allocate 8 of
+            Ok buffer →
+                case Binary.view (Binary.Local buffer) Binary.U16 Binary.whole of
+                    Ok view →
+                        if Binary.kind view == Binary.U16 then "u16" else "wrong kind"
+                    Err _ →
+                        "view failed"
+            Err _ →
+                "allocate failed"
+    encoded ++ " " ++ viewed
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → work ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    Page.text "waiting"
+    Page.button λ_ →
+        case Worker.open worker of
+            Ok handle →
+                Worker.receive handle Page.text
+                Worker.send handle "go"
+            Err _ →
+                Page.text "open failed"

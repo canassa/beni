@@ -22,22 +22,24 @@ pub type Operation
     | CompareExchange Value Value
 
 
+--| An atomic access's failures. InvalidValue is a Number outside the view's
+--| element range (as `Binary.writeU8` refuses 256), or Words on a Number view
+--| and Number on a BigInt view.
 pub type Error
-    = BinaryError Binary.Error
+    = Backing Binary.BackingError
     | InvalidView
     | InvalidIndex Int
     | InvalidValue
-    | Unsupported
+    | NoAtomics
 
 
 --| Run an atomic load/store/read-modify-write at an element index. The result
---| is the previous value, except Store, which returns its integer input before
---| view-width wrapping. BigInt64Array and BigUint64Array take and give exact
+--| is the previous value, except Store, which returns the value it stored. BigInt64Array and BigUint64Array take and give exact
 --| word pairs, the others Number; the integer views alone are atomic
 --| (Uint8ClampedArray, the float views and DataView are InvalidView).
 pub access : View, Int, Operation → Result Error Value
 access view index operation =
-    info = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) BinaryError?
+    info = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) Backing?
     native = integerView view?
     big = Binary.kind view == Binary.I64 || Binary.kind view == Binary.U64
     (if
@@ -51,9 +53,9 @@ access view index operation =
     )?
     atomics = Js.global "Atomics"
     if Js.isUndefined atomics then
-        Err Unsupported
+        Err NoAtomics
     else
-        result = perform atomics native index big operation?
+        result = perform atomics native index (range view) operation?
         if big then Result.map (fromBigInt result) Words else Ok (Number (Js.to result))
 
 
@@ -87,56 +89,80 @@ integerView view =
             Err InvalidView
 
 
-perform : Js.Value, Js.Value, Int, Bool, Operation → Result Error Js.Value
-perform atomics native index big operation =
+perform : Js.Value, Js.Value, Int, Maybe (Int × Int), Operation → Result Error Js.Value
+perform atomics native index bounds operation =
     case operation of
         Load →
             Ok (Js.call atomics "load" [ native, Js.from index ])
         CompareExchange expected replacement →
-            first = argument big expected?
-            second = argument big replacement?
+            first = argument bounds expected?
+            second = argument bounds replacement?
             Ok (Js.call atomics "compareExchange" [ native, Js.from index, first, second ])
         Store value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
         Add value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
         Subtract value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
         And value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
         Or value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
         Xor value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
         Exchange value →
-            unary atomics native index big operation value
+            unary atomics native index bounds operation value
 
 
-unary : Js.Value, Js.Value, Int, Bool, Operation, Value → Result Error Js.Value
-unary atomics native index big operation value =
-    converted = argument big value?
+unary : Js.Value, Js.Value, Int, Maybe (Int × Int), Operation, Value → Result Error Js.Value
+unary atomics native index bounds operation value =
+    converted = argument bounds value?
     Ok (Js.call atomics (method operation) [ native, Js.from index, converted ])
 
 
--- A BigInt view takes the two's-complement bit pattern as an unsigned BigInt:
--- the native ToBigInt64/ToBigUint64 conversion wraps it to the view's sign.
-argument : Bool, Value → Result Error Js.Value
-argument big value =
-    case value of
-        Words words →
-            if not big then
-                Err InvalidValue
-            else
-                parts = Binary.words words
-                high = Js.apply (Js.global "BigInt") [ Js.from parts.high ]
-                low = Js.apply (Js.global "BigInt") [ Js.from parts.low ]
-                shift = Js.apply (Js.global "BigInt") [ Js.from 32 ]
-                Ok (Js.bitOr (Js.shiftLeft high shift) low)
-        Number number →
-            if big || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from number ])) then
+-- A BigInt view (no bounds) takes the two's-complement bit pattern as an
+-- unsigned BigInt: the native ToBigInt64/ToBigUint64 conversion wraps it to the
+-- view's sign. A Number view takes an integer in its element range only.
+argument : Maybe (Int × Int), Value → Result Error Js.Value
+argument bounds value =
+    case ( bounds, value ) of
+        ( Nothing, Words words ) →
+            parts = Binary.words words
+            high = Js.apply (Js.global "BigInt") [ Js.from parts.high ]
+            low = Js.apply (Js.global "BigInt") [ Js.from parts.low ]
+            shift = Js.apply (Js.global "BigInt") [ Js.from 32 ]
+            Ok (Js.bitOr (Js.shiftLeft high shift) low)
+        ( Just ( lower, upper ), Number number ) →
+            if
+                number < lower
+                    || number > upper
+                    || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from number ]))
+            then
                 Err InvalidValue
             else
                 Ok (Js.from number)
+        _ →
+            Err InvalidValue
+
+
+-- The element range of a Number view; Nothing for a BigInt view.
+range : View → Maybe (Int × Int)
+range view =
+    case Binary.kind view of
+        Binary.I8 →
+            Just ( -128, 127 )
+        Binary.U8 →
+            Just ( 0, 255 )
+        Binary.I16 →
+            Just ( -32768, 32767 )
+        Binary.U16 →
+            Just ( 0, 65535 )
+        Binary.I32 →
+            Just ( -2147483648, 2147483647 )
+        Binary.U32 →
+            Just ( 0, 4294967295 )
+        _ →
+            Nothing
 
 
 fromBigInt : Js.Value → Result Error Binary.Word64
@@ -146,7 +172,8 @@ fromBigInt value =
     mask = Js.apply (Js.global "BigInt") [ Js.from 4294967295 ]
     high = Js.to (Js.apply (Js.global "Number") [ Js.shiftRight unsigned shift ])
     low = Js.to (Js.apply (Js.global "Number") [ Js.bitAnd unsigned mask ])
-    Result.mapError (Binary.word64 high low) BinaryError
+    -- Both halves of asUintN(64, v) are in 0 through 2^32 − 1, so this is Ok.
+    Result.mapError (Binary.word64 high low) λ_ → InvalidValue
 
 
 method : Operation → String
