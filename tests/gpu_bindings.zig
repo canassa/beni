@@ -361,3 +361,9 @@ test "no public signature of the public Gpu modules names Js, and browser-tea hi
     try std.testing.expect(std.mem.find(u8, tea, "\"Gpu.Native\"") == null);
     try std.testing.expect(std.mem.find(u8, tea, "\"Gpu.Types\"") != null);
 }
+
+// The coverage gate (docs/design/webgpu.md §10.1) shares this module's
+// pinned IDL.
+test {
+    _ = @import("gpu_coverage.zig");
+}
