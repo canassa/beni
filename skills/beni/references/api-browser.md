@@ -416,9 +416,38 @@ module Gpu.Adapter
   value info : Adapter → AdapterInfo  -- impure
   value limits : Adapter → Limits  -- impure
   value requestDevice : Adapter, DeviceDescriptor → Result InitError Device  -- suspends
+module Gpu.Buffer
+  alias MapRequest
+    MapRequest
+  type MappingMode
+    ReadMapping
+    WriteMapping
+    CreationMapping
+  alias Range
+    Range
+  value currentMapping : Buffer → Maybe Mapping  -- impure
+  value destroy : Buffer → ⊤  -- impure
+  value getMappedRange : Mapping, Range → Result Error MappedRange  -- impure
+  value label : Buffer → String  -- impure
+  value map : Buffer, MapRequest → Result Error Mapping  -- suspends
+  value mapRead : MapRequest
+  value mapState : Buffer → BufferMapState  -- impure
+  value mapWrite : MapRequest
+  value mappingBuffer : Mapping → Buffer  -- impure
+  value mappingLive : Mapping → Bool  -- impure
+  value mappingMode : Mapping → MappingMode  -- impure
+  value mappingRange : Mapping → { offset : Int, size : Int }  -- impure
+  value setLabel : Buffer, String → ⊤  -- impure
+  value size : Buffer → Int  -- impure
+  value unmap : Buffer → ⊤  -- impure
+  value usage : Buffer → BufferUsages  -- impure
+  value whole : Range
+  value withMapped : Buffer, MapRequest, (Mapping → Result Error a) → Result Error a  -- suspends
 module Gpu.Device
   value adapterInfo : Device → AdapterInfo  -- impure
   value awaitLost : Device → DeviceLoss  -- suspends
+  value createBuffer : Device, BufferDescriptor → Result Error Buffer  -- suspends
+  value createMappedBuffer : Device, BufferDescriptor → Result Error { buffer : Buffer, mapping : Mapping }  -- suspends
   value createSampler : Device, SamplerDescriptor → Result Error Sampler  -- suspends
   value destroy : Device → ⊤  -- impure
   value features : Device → Features  -- impure
@@ -438,9 +467,12 @@ module Gpu.Engine
   value adoptDevice : V, V → ⊤  -- impure
   value awaitHost : V, String, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
   value awaitLost : V → DeviceLoss  -- suspends
+  value awaitPending : V → Result Error ⊤  -- suspends
   value channel : ⊤ → V  -- impure
   value channelDefect : V, V → ⊤  -- impure
   value checked : V, String, List String, (⊤ → Result Error V) → Result Error V  -- suspends
+  value checkedAwait : V, String, List String, (⊤ → Result Error V), (Bool, V → Outcome (Result Error V)) → Result Error V  -- suspends
+  value checkedMaking : V, String, List String, (⊤ → Result Error V), (V → ⊤), (V → ⊤) → Result Error V  -- suspends
   value consumeAdapter : V → ⊤  -- impure
   value contextual : String, V → V  -- impure
   value defect : String → a  -- impure
@@ -452,12 +484,14 @@ module Gpu.Engine
   value guard : V, String, (⊤ → ⊤) → ⊤  -- impure
   value hold : V → ⊤  -- impure
   value isDomException : V, String → Bool  -- impure
+  value isRangeError : V → Bool  -- impure
   value isTypeError : V → Bool  -- impure
   value known : V → Bool  -- impure
   value loss : V → Maybe DeviceLoss  -- impure
   value member : V, String → V  -- impure
   value messageOf : V → String  -- impure
   value openChannelCount : ⊤ → Int  -- impure
+  value pendingOutcome : V, String, V, (Bool, V → Outcome ⊤) → V  -- impure
   value readNames : V, String → List String  -- impure
   value recordOf : V → V  -- impure
   value release : V → ⊤  -- impure
@@ -495,6 +529,7 @@ module Gpu.Error
     FormatFeatureRejected
     HostOperationRejected
     RelatedFailures
+    AllocationFailed
   alias FailureDetail
     FailureDetail
   alias FailureSet
@@ -523,6 +558,15 @@ module Gpu.Error
     ResourcePending
     MappedSizeUnaligned
     ResizableBacking
+    DetachedSource
+    Misaligned
+    OutOfRange
+    InvalidValue
+    InvalidMapMode
+    MissingBufferUsage
+    MappingState
+    RangeOverlap
+    ReadOnlyMapping
     SessionState
     SessionStopped
   alias LimitMismatch
@@ -719,6 +763,57 @@ module Gpu.Limits
   value limitClass : LimitName → LimitClass
   value limitNameFromString : String → Maybe LimitName
   value limitNameToString : LimitName → String
+module Gpu.MappedRange
+  value offset : MappedRange → Int  -- impure
+  value readBytes : MappedRange, ByteRange → Result Error Buffer  -- impure
+  value readF16 : MappedRange, Int → Result Error Float  -- impure
+  value readF32 : MappedRange, Int → Result InputError Float  -- impure
+  value readF64 : MappedRange, Int → Result InputError Float  -- impure
+  value readI16 : MappedRange, Int → Result InputError Int  -- impure
+  value readI32 : MappedRange, Int → Result InputError Int  -- impure
+  value readI8 : MappedRange, Int → Result InputError Int  -- impure
+  value readU16 : MappedRange, Int → Result InputError Int  -- impure
+  value readU32 : MappedRange, Int → Result InputError Int  -- impure
+  value readU8 : MappedRange, Int → Result InputError Int  -- impure
+  value readWord64 : MappedRange, Int → Result InputError Word64  -- impure
+  value size : MappedRange → Int  -- impure
+  value writeBytes : MappedRange, Int, Source → Result InputError ⊤  -- impure
+  value writeF16 : MappedRange, Int, Float → Result Error ⊤  -- impure
+  value writeF32 : MappedRange, Int, Float → Result InputError ⊤  -- impure
+  value writeF64 : MappedRange, Int, Float → Result InputError ⊤  -- impure
+  value writeI16 : MappedRange, Int, Int → Result InputError ⊤  -- impure
+  value writeI32 : MappedRange, Int, Int → Result InputError ⊤  -- impure
+  value writeI8 : MappedRange, Int, Int → Result InputError ⊤  -- impure
+  value writeU16 : MappedRange, Int, Int → Result InputError ⊤  -- impure
+  value writeU32 : MappedRange, Int, Int → Result InputError ⊤  -- impure
+  value writeU8 : MappedRange, Int, Int → Result InputError ⊤  -- impure
+  value writeWord64 : MappedRange, Int, Word64 → Result InputError ⊤  -- impure
+module Gpu.Memory
+  value access : AccessError, String → InputError  -- impure
+  value adoptBuffer : V, V, Int, Int, Bool → ⊤  -- impure
+  value aligned : Int, Int, String → Result InputError ⊤
+  value currentMapping : V → Maybe V  -- impure
+  value destroy : V → ⊤  -- impure
+  value deviceOf : V → V  -- impure
+  value isDestroyed : V → Bool  -- impure
+  value live : V → Bool  -- impure
+  value liveBuffer : V, String → Result InputError V  -- impure
+  value mapSettled : V, Int, String, Int, Int, Bool, V → Outcome (Result Error V)  -- impure
+  value mapUsage : MapMode → BufferUsage
+  value newRange : V, Int, Int, V → V  -- impure
+  value overlaps : V, Int, Int → Bool  -- impure
+  value record : Buffer → V  -- impure
+  value release : V, Int → ⊤  -- impure
+  value size64 : Int, String → Result InputError Int
+  value sizeOf : V → Int  -- impure
+  value sourceInfo : Source, String → Result InputError SourceInfo  -- impure
+  value sourceObject : Source → V
+  value startMap : V → Int  -- impure
+  value stateOf : V → BufferMapState  -- impure
+  value unmap : V → ⊤  -- impure
+  value usable : V, V, String → Result InputError ⊤  -- impure
+  value usageOf : V → Int  -- impure
+  value viewObject : View → V
 module Gpu.Native
   value adapterOptions : AdapterOptions → Value  -- impure
   value array : List a, (a → Value) → Value  -- impure
@@ -796,6 +891,15 @@ module Gpu.Native
   value vertexAttribute : VertexAttribute → Value  -- impure
   value vertexBufferLayout : VertexBufferLayout → Value  -- impure
   value vertexState : VertexState → Value  -- impure
+module Gpu.Queue
+  alias WriteBufferSource
+    WriteBufferSource
+  value bufferWrite : Int, Source → WriteBufferSource
+  value label : Queue → String  -- impure
+  value onSubmittedWorkDone : Queue → Result Error ⊤  -- suspends
+  value setLabel : Queue, String → ⊤  -- impure
+  value submit : Queue, List CommandBuffer → Result Error Submission  -- suspends
+  value writeBuffer : Queue, Buffer, WriteBufferSource → Result Error ⊤  -- suspends
 module Gpu.Scalar
   type Domain
     U32Domain
@@ -824,6 +928,8 @@ module Gpu.Scalar
   value u32 : Int → Result DomainError U32
   value u32ToInt : U32 → Int
   value u32Truncating : Float → Result DomainError U32
+module Gpu.Submission
+  value done : Submission → Result Error ⊤  -- suspends
 module Gpu.Types
   alias AdapterInfo
     AdapterInfo
