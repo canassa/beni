@@ -270,6 +270,18 @@ inputError input =
         Error.ViewKindRequired d →
             "ViewKindRequired " ++ d.path
 
+        Error.QueryActive d →
+            "QueryActive " ++ d.path
+
+        Error.QueryInactive d →
+            "QueryInactive " ++ d.path
+
+        Error.QuerySetMissing d →
+            "QuerySetMissing " ++ d.path
+
+        Error.QueryReused d →
+            "QueryReused " ++ d.path ++ " " ++ String.fromInt d.index
+
         Error.SessionState Error.DeviceLeased →
             "SessionState DeviceLeased"
 

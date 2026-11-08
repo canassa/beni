@@ -1371,7 +1371,8 @@ without list item =
 
 --| A resource argument at `path` (§6.3, §7): an object the engine made on
 --| the device of record `onDevice`, accepted — or provisional in `batch`,
---| the live batch the call runs in (null outside one) — and not destroyed.
+--| the live batch the call runs in (null outside one) — and not destroyed,
+--| nor, for a texture view, its texture.
 --| A provisional object is usable while the batch that made it runs: the
 --| batch is synchronous, so whatever code runs then is that batch's.
 --| An object the engine did not make is a defect.
@@ -1383,7 +1384,7 @@ usable native onDevice batch path =
         Err (Error.ResourceRejected { path = path })
     else if Js.same status (Js.from "provisional") && not (inLiveBatch o batch) then
         Err (Error.ResourcePending { path = path })
-    else if Js.same (Js.get o "destroyed") (Js.from True) then
+    else if Js.same (Js.get o "destroyed") (Js.from True) || viewOfDestroyed o then
         Err (Error.ResourceDestroyed { path = path })
     else if not (Js.same (Js.get o "device") onDevice) then
         Err (Error.WrongDevice { path = path })
@@ -1426,3 +1427,14 @@ inLiveBatch o batch =
         False
     else
         Js.same (Js.get made "live") (Js.from True)
+
+
+-- A texture view whose texture was destroyed: its record keeps the
+-- texture (`Gpu.Make.textureView`).
+viewOfDestroyed : V → Bool
+viewOfDestroyed o =
+    texture = Js.get o "texture"
+    if Js.isNullish texture then
+        False
+    else
+        Js.same (Js.get (recordOf texture) "destroyed") (Js.from True)

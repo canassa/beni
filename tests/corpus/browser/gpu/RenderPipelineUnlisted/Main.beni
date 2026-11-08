@@ -1,0 +1,30 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §3): the native
+-- `createRenderPipelineAsync` rejects with a DOMException, which is not the
+-- `GPUPipelineError` the ledger documents. The page stops.
+import Gpu.Device
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "render-pipeline-unlisted" λd →
+    shader =
+        must
+            (Gpu.Device.createShaderModule
+                d
+                (Types.shaderModuleDescriptor
+                    "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0); }"
+                )
+            )
+    pipeline =
+        Gpu.Device.createRenderPipelineAsync
+            d
+            (Types.renderPipelineDescriptor Types.Auto (Types.vertexState shader))
+    [ "pipeline: " ++ GpuShow.checked pipeline λ_ → "pipeline" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

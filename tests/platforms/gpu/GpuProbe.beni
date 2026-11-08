@@ -80,3 +80,19 @@ releaseLease device = Engine.releaseLease (Js.from device)
 --| reported and nothing of it is pending.
 pub openChannels : ⊤ → Int
 openChannels ⊤ = Engine.openChannelCount ⊤
+
+
+-- The render bundle `keepBundle` was given last.
+keptBundles : Js.Ref (Maybe Js.Value)
+keptBundles = Js.ref Nothing
+
+
+--| Keep a render bundle, as a program that stores a provisional handle
+--| might.
+pub keepBundle : Handle.RenderBundle → ⊤
+keepBundle b = Js.write keptBundles (Just (Js.from b))
+
+
+--| The render bundle kept last.
+pub keptBundle : ⊤ → Maybe Handle.RenderBundle
+keptBundle ⊤ = Maybe.map (Js.read keptBundles) Js.to

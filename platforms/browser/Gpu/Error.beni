@@ -97,7 +97,11 @@ pub type Error
 --| `finish` or `end`; `DebugStackEmpty` a pop with no debug group pushed;
 --| `CommandBufferSubmitted` and `DuplicateCommandBuffer` a command buffer
 --| submitted before or twice in one submit; `ViewKindRequired` a binary view
---| of another kind than the one the call takes.
+--| of another kind than the one the call takes. `QueryActive` is an
+--| occlusion query begun while one is open, `QueryInactive` one ended while
+--| none is or a pass ended while one is open, `QuerySetMissing` one begun in
+--| a pass with no occlusion query set, and `QueryReused` a query index begun
+--| twice in one pass.
 pub type InputError
     = NumericDomain { path : String, domain : Scalar.DomainError }
     | WrongDevice { path : String }
@@ -123,6 +127,10 @@ pub type InputError
     | CommandBufferSubmitted { path : String }
     | DuplicateCommandBuffer { path : String }
     | ViewKindRequired { path : String, kind : Binary.ViewKind }
+    | QueryActive { path : String }
+    | QueryInactive { path : String }
+    | QuerySetMissing { path : String }
+    | QueryReused { path : String, index : Int }
     | SessionState SessionState
     | SessionStopped
 
@@ -263,10 +271,14 @@ pub type CanvasError
     | CanvasConfigurationRejected HostMessage
 
 
---| A texture format a feature gates, refused by the host.
+--| A texture format a feature gates, refused by the host. The host does not
+--| say which format it refused: `format` and `required` are the first
+--| feature-gated format the call named, and `candidates` every one of them,
+--| that one first.
 pub type alias FormatFailure =
     format : Types.TextureFormat
     required : Types.FeatureName
+    candidates : List (Types.TextureFormat × Types.FeatureName)
     message : String
 
 

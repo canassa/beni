@@ -1,0 +1,35 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §3): the native
+-- `createView` throws a `TypeError` for a view that names no format, so no
+-- documented format check can have made it. The page stops.
+import Gpu.Device
+import Gpu.Flags as Flags
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "view-type-error" λd →
+    extent =
+        Types.Extent3DFields
+            { width = u32 4, height = Types.Default, depthOrArrayLayers = Types.Default }
+
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    extent
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    view = Gpu.Texture.createView texture Types.textureViewDescriptor
+    [ "view: " ++ GpuShow.checked view λ_ → "view" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

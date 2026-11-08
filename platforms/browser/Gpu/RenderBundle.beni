@@ -1,0 +1,16 @@
+--! Render bundles (`docs/design/webgpu.md` §6.2): made by
+--! `Gpu.Encode.bundle` or `Gpu.Batch.encodeBundle`, run in a render pass by
+--! `Gpu.RenderPass.executeBundles`.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The bundle's label.
+pub label : Handle.RenderBundle → String
+label bundle = Js.to (Js.get (Js.from bundle) "label")
+
+
+--| Set the bundle's label.
+pub setLabel : Handle.RenderBundle, String → ⊤
+setLabel bundle text = Js.set (Js.from bundle) "label" (Js.from text)

@@ -1,0 +1,15 @@
+--! Texture views (`docs/design/webgpu.md` §4): made by
+--! `Gpu.Texture.createView` or `Gpu.Batch.createView`.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The view's label.
+pub label : Handle.TextureView → String
+label view = Js.to (Js.get (Js.from view) "label")
+
+
+--| Set the view's label.
+pub setLabel : Handle.TextureView, String → ⊤
+setLabel view text = Js.set (Js.from view) "label" (Js.from text)

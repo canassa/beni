@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"no render attachment usage: Err Validation"</li>
+      <li>"sample count mismatch: Err Validation"</li>
+      <li>"misaligned indirect offset: Err Validation"</li>
+    </ol>
+  </main>
+</body>

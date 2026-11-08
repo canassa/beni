@@ -1,0 +1,4 @@
+click #view
+click #render
+click #renderAsync
+click #bundle

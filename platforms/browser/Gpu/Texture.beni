@@ -1,10 +1,12 @@
 --! Textures (`docs/design/webgpu.md` §4, §7): made by
 --! `Gpu.Device.createTexture`, copied to and from buffers and textures by
---! `Gpu.CommandEncoder`. Views and sampling come with rendering.
+--! `Gpu.CommandEncoder`, and viewed by `createView`.
 
 import Gpu.Engine as Engine
+import Gpu.Error as Error
 import Gpu.Flags as Flags
 import Gpu.Handle as Handle
+import Gpu.Make as Make
 import Gpu.Types as Types
 import Js
 
@@ -81,3 +83,16 @@ destroy texture =
     else
         Js.set r "destroyed" (Js.from True)
         Js.to (Js.call native "destroy" [])
+
+
+--| A view of the texture, checked (§6.1): `Default` members view the
+--| whole texture as it is. A view format whose feature the device was not
+--| made with is `UnsupportedCapability (MissingFeature …)` before any
+--| native call, and the host's refusal of a feature-gated format anyway is
+--| `FormatFeatureRejected` (ledger §3); a view the device refuses is
+--| `Validation`. May suspend.
+pub createView : Handle.Texture, Types.TextureViewDescriptor → Result Error.Error Handle.TextureView
+createView texture descriptor =
+    native = Js.from texture
+    device = Js.get (Engine.recordOf native) "native"
+    Result.map (Make.checked (Make.textureView device Js.null native descriptor)) λv → Js.to v

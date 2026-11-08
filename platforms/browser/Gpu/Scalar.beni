@@ -105,6 +105,16 @@ u32ToInt value =
             n
 
 
+--| The `U32` 0.
+pub u32Zero : U32
+u32Zero = U32 0
+
+
+--| The `U32` 1.
+pub u32One : U32
+u32One = U32 1
+
+
 --| The `I32` of an integer, if it is in the domain.
 pub i32 : Int → Result DomainError I32
 i32 n = Result.map (integral I32Domain (-2147483648.0) 2147483647.0 (toFloat n)) I32
@@ -127,6 +137,11 @@ i32ToInt value =
     case value of
         I32 n →
             n
+
+
+--| The `I32` 0.
+pub i32Zero : I32
+i32Zero = I32 0
 
 
 -- 2⁵³ − 1, the largest integer `[EnforceRange] unsigned long long` accepts

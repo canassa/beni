@@ -1,0 +1,645 @@
+-- load
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #locked
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+    </ol>
+  </main>
+</body>
+-- click #ended
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+    </ol>
+  </main>
+</body>
+-- click #noQuerySet
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+    </ol>
+  </main>
+</body>
+-- click #pastTheSet
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+    </ol>
+  </main>
+</body>
+-- click #beganTwice
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+    </ol>
+  </main>
+</body>
+-- click #noneOpen
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+    </ol>
+  </main>
+</body>
+-- click #leftOpen
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+    </ol>
+  </main>
+</body>
+-- click #endedOpen
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+    </ol>
+  </main>
+</body>
+-- click #reused
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #negativeOffset
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+    </ol>
+  </main>
+</body>
+-- click #destroyedView
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+    </ol>
+  </main>
+</body>
+-- click #otherDevice
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+    </ol>
+  </main>
+</body>
+-- click #noPipeline
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+      <li>"no pipeline: Err Validation"</li>
+    </ol>
+  </main>
+</body>
+-- click #afterFinish
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+      <li>"no pipeline: Err Validation"</li>
+      <li>"after finish: Err InvalidInput EncoderFinished encoder"</li>
+    </ol>
+  </main>
+</body>
+-- click #bundleFeature
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+      <li>"no pipeline: Err Validation"</li>
+      <li>"after finish: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"bundle feature: Err UnsupportedCapability"</li>
+    </ol>
+  </main>
+</body>
+-- click #immediatesRejected
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+      <li>"no pipeline: Err Validation"</li>
+      <li>"after finish: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"bundle feature: Err UnsupportedCapability"</li>
+      <li>"immediates rejected: Err HostOperationRejected ImmediateWriteRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #immediatesMissing
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+      <li>"no pipeline: Err Validation"</li>
+      <li>"after finish: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"bundle feature: Err UnsupportedCapability"</li>
+      <li>"immediates rejected: Err HostOperationRejected ImmediateWriteRejected"</li>
+      <li>"immediates missing: Err UnsupportedCapability"</li>
+    </ol>
+  </main>
+</body>
+-- click #commands
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+      <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
+      <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
+      <li>"no pipeline: Err Validation"</li>
+      <li>"after finish: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"bundle feature: Err UnsupportedCapability"</li>
+      <li>"immediates rejected: Err HostOperationRejected ImmediateWriteRejected"</li>
+      <li>"immediates missing: Err UnsupportedCapability"</li>
+      <li>"commands: Err Validation"</li>
+    </ol>
+  </main>
+</body>

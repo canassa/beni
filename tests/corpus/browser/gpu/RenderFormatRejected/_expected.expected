@@ -1,0 +1,64 @@
+-- load
+<body>
+  <main>
+    <button id="view">"view"</button>
+    <button id="render">"render"</button>
+    <button id="renderAsync">"renderAsync"</button>
+    <button id="bundle">"bundle"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #view
+<body>
+  <main>
+    <button id="view">"view"</button>
+    <button id="render">"render"</button>
+    <button id="renderAsync">"renderAsync"</button>
+    <button id="bundle">"bundle"</button>
+    <ol>
+      <li>"view: Err FormatFeatureRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #render
+<body>
+  <main>
+    <button id="view">"view"</button>
+    <button id="render">"render"</button>
+    <button id="renderAsync">"renderAsync"</button>
+    <button id="bundle">"bundle"</button>
+    <ol>
+      <li>"view: Err FormatFeatureRejected"</li>
+      <li>"pipeline: Err FormatFeatureRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #renderAsync
+<body>
+  <main>
+    <button id="view">"view"</button>
+    <button id="render">"render"</button>
+    <button id="renderAsync">"renderAsync"</button>
+    <button id="bundle">"bundle"</button>
+    <ol>
+      <li>"view: Err FormatFeatureRejected"</li>
+      <li>"pipeline: Err FormatFeatureRejected"</li>
+      <li>"async: Err FormatFeatureRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #bundle
+<body>
+  <main>
+    <button id="view">"view"</button>
+    <button id="render">"render"</button>
+    <button id="renderAsync">"renderAsync"</button>
+    <button id="bundle">"bundle"</button>
+    <ol>
+      <li>"view: Err FormatFeatureRejected"</li>
+      <li>"pipeline: Err FormatFeatureRejected"</li>
+      <li>"async: Err FormatFeatureRejected"</li>
+      <li>"bundle: Err FormatFeatureRejected"</li>
+    </ol>
+  </main>
+</body>

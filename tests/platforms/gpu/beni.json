@@ -2,5 +2,5 @@
   "platform": true,
   "name": "gpu-test",
   "platforms": ["browser-tea"],
-  "reexports": ["Html", "Cmd", "Sub", "Tea", "Gpu", "Gpu.Adapter", "Gpu.Batch", "Gpu.Buffer", "Gpu.CommandEncoder", "Gpu.ComputePass", "Gpu.ComputePipeline", "Gpu.Device", "Gpu.Encode", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.MappedRange", "Gpu.QuerySet", "Gpu.Queue", "Gpu.Scalar", "Gpu.Shader", "Gpu.Submission", "Gpu.Texture", "Gpu.Types", "Gpu.WgslFeature"]
+  "reexports": ["Html", "Cmd", "Sub", "Tea", "Gpu", "Gpu.Adapter", "Gpu.Batch", "Gpu.Buffer", "Gpu.CommandEncoder", "Gpu.ComputePass", "Gpu.ComputePipeline", "Gpu.Device", "Gpu.Encode", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.MappedRange", "Gpu.QuerySet", "Gpu.Queue", "Gpu.RenderBundle", "Gpu.RenderBundleEncoder", "Gpu.RenderPass", "Gpu.RenderPipeline", "Gpu.Scalar", "Gpu.Shader", "Gpu.Submission", "Gpu.Texture", "Gpu.TextureView", "Gpu.Types", "Gpu.WgslFeature"]
 }

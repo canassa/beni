@@ -1,0 +1,104 @@
+-- What only the device can refuse comes back as `Validation`
+-- (docs/design/webgpu.md §6.2; ledger §1, §5): the local checks pass these
+-- encodings and the run's error scopes report them. A texture without the
+-- render attachment usage as a color attachment, a 4-sample pipeline in a
+-- 1-sample pass, and an indirect draw at an offset that is not a multiple
+-- of 4. The gates' fake host validates none of them, so its transcript
+-- shows `Ok`; `test-webgpu`'s shows Chrome's `Validation`
+-- (`_expected.webgpu-expected`).
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (Indirect)
+import Gpu.Handle exposing (Buffer, CommandEncoder, Device, RenderPass, RenderPipeline, Shader, TextureView)
+import Gpu.RenderPass as RenderPass
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+wgsl : String
+wgsl =
+    "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.5, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+
+
+shader : Device → Shader
+shader d = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+
+
+pipeline : Device, Int → RenderPipeline
+pipeline d samples =
+    module = shader d
+    base = Types.renderPipelineDescriptor Types.Auto (Types.vertexState module)
+
+    descriptor =
+        { base
+            | fragment =
+                Types.Value
+                    (Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ])
+            , multisample =
+                Types.Value { (Types.multisampleState) | count = Types.Value (u32 samples) }
+        }
+    must (Gpu.Device.createRenderPipeline d descriptor)
+
+
+target : Device, List Flags.TextureUsage → TextureView
+target d usages =
+    extent =
+        Types.Extent3DFields
+            { width = u32 4, height = Types.Default, depthOrArrayLayers = Types.Default }
+    t =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor extent Types.Rgba8unorm (Flags.texture usages))
+            )
+    must (Gpu.Texture.createView t Types.textureViewDescriptor)
+
+
+pass : TextureView → Types.RenderPassDescriptor
+pass v =
+    Types.renderPassDescriptor
+        [ Just
+            (Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store
+            )
+        ]
+
+
+drawn : RenderPipeline, RenderPass → Result InputError ⊤
+drawn p rp =
+    RenderPass.setPipeline rp p?
+    RenderPass.draw rp (RenderPass.vertices (u32 3))
+
+
+indirect : RenderPipeline, Buffer, RenderPass → Result InputError ⊤
+indirect p args rp =
+    RenderPass.setPipeline rp p?
+    RenderPass.drawIndirect rp args 2
+
+
+encoded : String, Device, (CommandEncoder → Result InputError ⊤) → String
+encoded name d body =
+    name ++ ": " ++ GpuShow.checked (Encode.run d Types.commandEncoderDescriptor body) λ_ → "Ok"
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    one = pipeline d 1
+    four = pipeline d 4
+    sampled = pass (target d [ Flags.TextureBinding ])
+    attached = pass (target d [ Flags.RenderAttachment ])
+    args = must (Gpu.Device.createBuffer d (buffer 32 [ Indirect ]))
+    [ encoded "no render attachment usage" d λenc → RenderPass.with enc sampled (drawn one _)
+    , encoded "sample count mismatch" d λenc → RenderPass.with enc attached (drawn four _)
+    , encoded "misaligned indirect offset" d λenc →
+        RenderPass.with enc attached (indirect one args _)
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

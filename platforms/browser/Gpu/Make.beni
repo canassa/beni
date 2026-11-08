@@ -21,6 +21,7 @@ import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Feature as Feature
 import Gpu.Flags as Flags
+import Gpu.Formats as Formats
 import Gpu.Handle as Handle
 import Gpu.Limits as Limits
 import Gpu.Memory as Memory
@@ -43,7 +44,9 @@ ignore _ = ⊤
 pub type Action
     = Create String V
     | CreateBuffer V Int Int Bool
-    | CreateTexture V Types.TextureFormat
+    | CreateTexture V (List Types.TextureFormat)
+    | CreateView V (List Types.TextureFormat)
+    | CreateRenderPipeline V (List Types.TextureFormat)
     | CreateShader V String
     | CreateQuerySet V
     | CreateBindGroup V V
@@ -90,23 +93,14 @@ perform op =
             else
                 Ok (Js.call target "createBuffer" [ converted ])
 
-        CreateTexture converted format →
-            Js.catchIf
-                (λ⊤ → Ok (Js.call target "createTexture" [ converted ]))
-                (λerror → Engine.isTypeError error && formatFeature format ≠ Nothing)
-                λerror →
-                    case formatFeature format of
-                        Just f →
-                            Err
-                                (Error.FormatFeatureRejected
-                                    { format = format
-                                    , required = f
-                                    , message = Engine.messageOf error
-                                    }
-                                )
+        CreateTexture converted formats →
+            Formats.formatChecked formats λ⊤ → Js.call target "createTexture" [ converted ]
 
-                        Nothing →
-                            Js.throw error
+        CreateView converted formats →
+            Formats.formatChecked formats λ⊤ → Js.call target "createView" [ converted ]
+
+        CreateRenderPipeline converted formats →
+            Formats.formatChecked formats λ⊤ → Js.call target "createRenderPipeline" [ converted ]
 
         CreateShader converted _ →
             Ok (Js.call target "createShaderModule" [ converted ])
@@ -193,6 +187,10 @@ adopt op made =
 
         CreateShader _ code →
             Js.set (Engine.recordOf made) "code" (Js.from code)
+
+        CreateView _ _ →
+            -- A view keeps its texture, so a check of the view sees it.
+            Js.set (Engine.recordOf made) "texture" op.target
 
         CreateBindGroup _ uses →
             Js.set (Engine.recordOf made) "uses" uses
@@ -304,53 +302,22 @@ buffer device descriptor =
             }
 
 
---| The feature a texture format needs, if any (the specification's
---| texture format capability tables).
-pub formatFeature : Types.TextureFormat → Maybe Types.FeatureName
-formatFeature format =
-    name = Types.textureFormatToString format
-    if String.startsWith name "bc" then
-        Just Types.FeatureTextureCompressionBc
-    else if String.startsWith name "etc2" || String.startsWith name "eac" then
-        Just Types.FeatureTextureCompressionEtc2
-    else if String.startsWith name "astc" then
-        Just Types.FeatureTextureCompressionAstc
-    else if name == "depth32float-stencil8" then
-        Just Types.FeatureDepth32floatStencil8
-    else if
-        List.member
-            [ "r16unorm", "r16snorm", "rg16unorm", "rg16snorm", "rgba16unorm", "rgba16snorm" ]
-            name
-    then
-        Just Types.FeatureTextureFormatsTier1
-    else
-        Nothing
-
-
---| A texture: a format whose feature the device lacks is refused before
---| the native call (`UnsupportedCapability`); a `TypeError` of the native
---| format check is `FormatFeatureRejected` only for a format that needs a
---| feature (ledger §3), and a defect otherwise. A rejected texture is
---| destroyed.
+--| A texture: a format or view format whose feature the device lacks is
+--| refused before the native call (`UnsupportedCapability`); a `TypeError`
+--| of the native format check is `FormatFeatureRejected` only when a format
+--| it names needs a feature (ledger §3), and a defect otherwise. A rejected
+--| texture is destroyed.
 pub texture : V, Types.TextureDescriptor → Result Error.Error Op
 texture device descriptor =
-    features = Feature.fromNames (Engine.readNames device "features")
-
-    missing =
-        List.filter (List.filterMap [ descriptor.format, …(viewFormats descriptor) ] formatFeature) λf →
-            not (Feature.has features f)
-    case missing of
-        [ f, …_ ] →
-            Err (Error.UnsupportedCapability (Error.MissingFeature f))
-
-        [] →
-            Ok
-                { name = "createTexture"
-                , labels = labelsOf descriptor.label
-                , target = device
-                , device = device
-                , action = CreateTexture (Native.textureDescriptor descriptor) descriptor.format
-                }
+    formats = [ descriptor.format, …(viewFormats descriptor) ]
+    Formats.formatsAvailable device formats?
+    Ok
+        { name = "createTexture"
+        , labels = labelsOf descriptor.label
+        , target = device
+        , device = device
+        , action = CreateTexture (Native.textureDescriptor descriptor) formats
+        }
 
 
 viewFormats : Types.TextureDescriptor → List Types.TextureFormat
@@ -791,3 +758,87 @@ count m name =
         Js.to value
     else
         Engine.defect ("a compilation message whose `" ++ name ++ "` is not a non-negative integer")
+
+
+-- ---- Formats, views and render pipelines (S3) -------------------------------
+
+--| A view of `texture` (a native texture of `device`, in `batch` or null):
+--| the texture must be usable, and a view format whose feature the device
+--| lacks is refused before the native call. The view keeps its texture in
+--| its record, so a check of the view can see the texture's state.
+pub textureView : V, V, V, Types.TextureViewDescriptor → Result Error.Error Op
+textureView device batch target descriptor =
+    ofBatch target batch "texture"?
+    handle target (Engine.recordOf device) batch "texture"?
+
+    formats =
+        case descriptor.format of
+            Types.Value f →
+                [ f ]
+
+            Types.Default →
+                []
+    Formats.formatsAvailable device formats?
+    Ok
+        { name = "createView"
+        , labels = labelsOf descriptor.label
+        , target = target
+        , device = device
+        , action = CreateView (Native.textureViewDescriptor descriptor) formats
+        }
+
+
+--| The formats a render pipeline names: its color targets' and its depth
+--| and stencil format.
+pub renderFormats : Types.RenderPipelineDescriptor → List Types.TextureFormat
+renderFormats descriptor =
+    targets =
+        case descriptor.fragment of
+            Types.Value fragment →
+                List.filterMap fragment.targets λt → Maybe.map t λc → c.format
+
+            Types.Default →
+                []
+    case descriptor.depthStencil of
+        Types.Value d →
+            [ …targets, d.format ]
+
+        Types.Default →
+            targets
+
+
+--| The handles a render pipeline names — its layout when explicit, its
+--| vertex and fragment modules — and the features of its formats.
+pub renderHandles : V, V, Types.RenderPipelineDescriptor → Result Error.Error ⊤
+renderHandles device batch descriptor =
+    r = Engine.recordOf device
+    case descriptor.layout of
+        Types.Explicit layout →
+            handle (Js.from layout) r batch "layout"?
+
+        Types.Auto →
+            ⊤
+    handle (Js.from descriptor.vertex.module) r batch "vertex.module"?
+    case descriptor.fragment of
+        Types.Value fragment →
+            handle (Js.from fragment.module) r batch "fragment.module"?
+
+        Types.Default →
+            ⊤
+    Formats.formatsAvailable device (renderFormats descriptor)
+
+
+--| A render pipeline, made at once (the synchronous form).
+pub renderPipeline : V, V, Types.RenderPipelineDescriptor → Result Error.Error Op
+renderPipeline device batch descriptor =
+    renderHandles device batch descriptor?
+    Ok
+        { name = "createRenderPipeline"
+        , labels = labelsOf descriptor.label
+        , target = device
+        , device = device
+        , action =
+            CreateRenderPipeline
+                (Native.renderPipelineDescriptor descriptor)
+                (renderFormats descriptor)
+        }

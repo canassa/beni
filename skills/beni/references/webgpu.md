@@ -10,7 +10,8 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`, and the
   checked operations `createSampler`, `createBuffer`, `createMappedBuffer`, `createTexture`,
   `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createShaderModule`,
-  `createComputePipeline`, `createComputePipelineAsync` and `createQuerySet`.
+  `createComputePipeline`, `createComputePipelineAsync`, `createRenderPipeline`,
+  `createRenderPipelineAsync` and `createQuerySet`.
 - `Gpu.Buffer`: `size`, `usage`, `mapState`, `label`, `setLabel`, `map`, `currentMapping`,
   `getMappedRange`, `withMapped`, `unmap`, `destroy`, and the mapping's `mappingMode`,
   `mappingRange`, `mappingBuffer` and `mappingLive`.
@@ -18,9 +19,17 @@ browser's WebGPU API with types. Only the main thread has them now.
   `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`.
 - `Gpu.Queue`: `writeBuffer`, `writeTexture`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
 - `Gpu.Shader`: `getCompilationInfo`, `compile`, `source`. `Gpu.ComputePipeline`:
-  `getBindGroupLayout`. `Gpu.Texture` and `Gpu.QuerySet`: snapshots and `destroy`.
-- `Gpu.Encode.run`: encode commands. `Gpu.CommandEncoder` and `Gpu.ComputePass` have the
-  commands: copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
+  `getBindGroupLayout`. `Gpu.Texture`: snapshots, `createView` and `destroy`. `Gpu.QuerySet`:
+  snapshots and `destroy`. `Gpu.TextureView`, `Gpu.RenderBundle`: `label`, `setLabel`.
+- `Gpu.RenderPipeline`: `label`, `setLabel`, `getBindGroupLayout`.
+- `Gpu.RenderPass`: the commands of a render pass: `with`, `end`, `setPipeline`,
+  `setBindGroup`, `setVertexBuffer`, `setIndexBuffer`, `draw`, `drawIndexed`, `drawIndirect`,
+  `drawIndexedIndirect`, `setViewport`, `setScissorRect`, `setBlendConstant`,
+  `setStencilReference`, `beginOcclusionQuery`, `endOcclusionQuery`, `executeBundles` and the
+  others. `Gpu.RenderBundleEncoder`: the same draw commands and `finish`.
+- `Gpu.Encode.run`: encode commands. `Gpu.Encode.bundle`: encode a render bundle.
+  `Gpu.CommandEncoder` has `beginRenderPass` and `beginComputePass`. `Gpu.CommandEncoder` and
+  `Gpu.ComputePass` have the commands: copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
   `setBindGroup`, `dispatchWorkgroups`, `setImmediates` and the others.
 - `Gpu.Batch`: many synchronous operations, checked together.
 - `Gpu.Submission`: `done`, which waits for the work of one submit.
@@ -33,7 +42,7 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Error`: `InitError`, `Error` and their parts.
 - `Gpu.Handle`: the handle types, for example `Adapter` and `Device`.
 
-Texture views, render pipelines, render passes and canvases come in later releases.
+Canvases come in a later release.
 
 ## Rules
 
@@ -96,127 +105,9 @@ Texture views, render pipelines, render passes and canvases come in later releas
    `currentMapping`, the mapped range reads and writes, and `Gpu.Submission.done`. A checked
    operation (`map`, `createBuffer`, `writeBuffer`, `submit`) returns `DeviceLeased`.
 
-## Compute
+## Encoding, compute and rendering
 
-1. **Encode in one callback.** `Gpu.Encode.run device descriptor λencoder → …` gives the
-   callback a `CommandEncoder`. The callback cannot suspend. Use `Gpu.ComputePass.with` for a
-   pass. The result has your value and the `CommandBuffer`. Submit it with `Gpu.Queue.submit`.
-2. **An `Ok` from a command means it was issued, not that the device accepted it.** The
-   `Result` of `Encode.run` tells you that.
-3. **The first refusal stops the session.** Later commands give `SessionStopped`. `Encode.run`
-   returns the first refusal, also when your callback ignored it.
-4. **A command buffer is used once.** A second submit gives `CommandBufferSubmitted`.
-5. **`Gpu.Batch.run` checks many synchronous operations together.** What the batch makes is
-   provisional: the batch can use it at once; other code gets `ResourcePending` until the batch
-   is accepted, and `Gpu.Batch.awaitReady` waits for that.
-   A failed batch rejects all that it made. A batch is not a transaction: a write it did stays.
-6. **The GPU memory is little-endian.** Read a query result with `readWord64`.
-7. **A batch fails as a whole.** Its failure is `BatchFailed`: the failure, and which operations
-   were issued and which were refused. `Gpu.Batch.segment` names a part of the batch, and a
-   device error carries that name.
-
-This module encodes a clear and submits it, then does the same work in a batch:
-
-```beni platform=browser-tea
-import Cmd exposing (Cmd)
-import Gpu
-import Gpu.Adapter
-import Gpu.Batch as Batch
-import Gpu.CommandEncoder as CommandEncoder
-import Gpu.Device
-import Gpu.Encode as Encode
-import Gpu.Error as Error
-import Gpu.Flags as Flags
-import Gpu.Handle exposing (Batch, Device)
-import Gpu.Queue
-import Gpu.Scalar as Scalar
-import Gpu.Submission
-import Gpu.Types as Types
-import Html exposing (Html)
-import Sub
-import Tea
-
-
-type Msg
-    = Start
-    | Done (Result String ⊤)
-
-
--- Clear a new buffer on the GPU and wait for the work.
-clearOnce : Device → Result Error.Error ⊤
-clearOnce device =
-    size = (Result.mapError (Scalar.size64 16) λd → Error.InvalidInput (Error.atPath "size" d))?
-    buffer =
-        Gpu.Device.createBuffer
-            device
-            (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
-    encoded =
-        (Encode.run device Types.commandEncoderDescriptor λencoder →
-            CommandEncoder.clearBuffer encoder buffer 0 Nothing
-        )?
-    receipt = Gpu.Queue.submit (Gpu.Device.queue device) [ encoded.commands ]?
-    Gpu.Submission.done receipt
-
-
--- The same work as one batch: checked together, accepted together.
-clearInBatch : Device, Batch → Result Error.Error ⊤
-clearInBatch device b =
-    size = (Result.mapError (Scalar.size64 16) λd → Error.InvalidInput (Error.atPath "size" d))?
-    buffer = Batch.createBuffer b (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
-    encoded =
-        (Batch.encode b Types.commandEncoderDescriptor λencoder →
-            CommandEncoder.clearBuffer encoder buffer 0 Nothing
-        )?
-    _ = Batch.submit b (Gpu.Device.queue device) [ encoded.commands ]?
-    Ok ⊤
-
-
-start : ⊤ → Result String ⊤
-start ⊤ =
-    case Gpu.requestAdapter Types.adapterOptions of
-        Err _ →
-            Err "no adapter"
-
-        Ok adapter →
-            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
-                Err _ →
-                    Err "no device"
-
-                Ok device →
-                    case ( clearOnce device, Batch.run device "clear" (clearInBatch device _) ) of
-                        ( Ok _, Ok _ ) →
-                            Ok ⊤
-
-                        _ →
-                            Err "the GPU refused the work"
-
-
-update : Msg, String → String × Cmd Msg
-update msg _ =
-    case msg of
-        Start →
-            ( "working", Cmd.task start Done )
-
-        Done (Ok _) →
-            ( "done", Cmd.none )
-
-        Done (Err why) →
-            ( why, Cmd.none )
-
-
-view : String → Html Msg
-view text = <button onClick={Start}>{text}</button>
-
-
-main : Tea.Program
-main =
-    Tea.element
-        { init = λ⊤ → ( "start", Cmd.none )
-        , update = update
-        , view = view
-        , subscriptions = λ_ → Sub.none
-        }
-```
+Encoding, batches, compute and render passes are in `references/webgpu-render.md`.
 
 ## Example
 
@@ -289,5 +180,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §7, §7.1, §8, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/webgpu.md` §2–§5, §6.2, §7, §7.1, §8, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
 modules' doc comments.

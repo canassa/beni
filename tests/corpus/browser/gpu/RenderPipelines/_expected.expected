@@ -1,0 +1,105 @@
+-- load
+<body>
+  <main>
+    <button id="missingEntry">"missingEntry"</button>
+    <button id="internal">"internal"</button>
+    <button id="feature">"feature"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="views">"views"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #missingEntry
+<body>
+  <main>
+    <button id="missingEntry">"missingEntry"</button>
+    <button id="internal">"internal"</button>
+    <button id="feature">"feature"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="views">"views"</button>
+    <ol>
+      <li>"sync: Err Validation"</li>
+      <li>"async: Err PipelineValidation"</li>
+      <li>"valid: Ok made"</li>
+    </ol>
+  </main>
+</body>
+-- click #internal
+<body>
+  <main>
+    <button id="missingEntry">"missingEntry"</button>
+    <button id="internal">"internal"</button>
+    <button id="feature">"feature"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="views">"views"</button>
+    <ol>
+      <li>"sync: Err Validation"</li>
+      <li>"async: Err PipelineValidation"</li>
+      <li>"valid: Ok made"</li>
+      <li>"async: Err PipelineInternal"</li>
+    </ol>
+  </main>
+</body>
+-- click #feature
+<body>
+  <main>
+    <button id="missingEntry">"missingEntry"</button>
+    <button id="internal">"internal"</button>
+    <button id="feature">"feature"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="views">"views"</button>
+    <ol>
+      <li>"sync: Err Validation"</li>
+      <li>"async: Err PipelineValidation"</li>
+      <li>"valid: Ok made"</li>
+      <li>"async: Err PipelineInternal"</li>
+      <li>"pipeline: Err UnsupportedCapability"</li>
+      <li>"async: Err UnsupportedCapability"</li>
+      <li>"view: Err UnsupportedCapability"</li>
+    </ol>
+  </main>
+</body>
+-- click #layouts
+<body>
+  <main>
+    <button id="missingEntry">"missingEntry"</button>
+    <button id="internal">"internal"</button>
+    <button id="feature">"feature"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="views">"views"</button>
+    <ol>
+      <li>"sync: Err Validation"</li>
+      <li>"async: Err PipelineValidation"</li>
+      <li>"valid: Ok made"</li>
+      <li>"async: Err PipelineInternal"</li>
+      <li>"pipeline: Err UnsupportedCapability"</li>
+      <li>"async: Err UnsupportedCapability"</li>
+      <li>"view: Err UnsupportedCapability"</li>
+      <li>"label: scene"</li>
+      <li>"group 5: Err InvalidInput OutOfRange index 5+1 of 4"</li>
+    </ol>
+  </main>
+</body>
+-- click #views
+<body>
+  <main>
+    <button id="missingEntry">"missingEntry"</button>
+    <button id="internal">"internal"</button>
+    <button id="feature">"feature"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="views">"views"</button>
+    <ol>
+      <li>"sync: Err Validation"</li>
+      <li>"async: Err PipelineValidation"</li>
+      <li>"valid: Ok made"</li>
+      <li>"async: Err PipelineInternal"</li>
+      <li>"pipeline: Err UnsupportedCapability"</li>
+      <li>"async: Err UnsupportedCapability"</li>
+      <li>"view: Err UnsupportedCapability"</li>
+      <li>"label: scene"</li>
+      <li>"group 5: Err InvalidInput OutOfRange index 5+1 of 4"</li>
+      <li>"label: whole"</li>
+      <li>"two mips: Err Validation"</li>
+    </ol>
+  </main>
+</body>

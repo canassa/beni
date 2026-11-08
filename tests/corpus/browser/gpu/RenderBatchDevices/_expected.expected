@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"view: Err BatchFailed view: InvalidInput WrongDevice texture; issued [], refused [createView]"</li>
+      <li>"pipeline: Err BatchFailed pipeline: InvalidInput WrongDevice vertex.module; issued [], refused [createRenderPipeline]"</li>
+      <li>"layout: Err BatchFailed layout: InvalidInput WrongDevice pipeline; issued [], refused [getBindGroupLayout]"</li>
+      <li>"bundle: Err BatchFailed bundle: InvalidInput WrongDevice pipeline; issued [encodeBundle], refused []"</li>
+    </ol>
+  </main>
+</body>

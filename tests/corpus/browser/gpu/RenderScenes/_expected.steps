@@ -1,0 +1,9 @@
+click #multipass
+click #indirect
+click #depth
+click #stencil
+click #msaa
+click #mrt
+click #bundle
+click #batch
+click #occlusion

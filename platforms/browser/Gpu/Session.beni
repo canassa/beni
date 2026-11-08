@@ -13,6 +13,7 @@
 
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
+import Gpu.Formats as Formats
 import Gpu.Native as Native
 import Gpu.Types as Types
 import Js
@@ -136,6 +137,19 @@ debug s r delta path =
         Ok ⊤
 
 
+-- A new session of the device `device` (record `r`), in `batch` or null.
+newSession : V, V, V → V
+newSession device r batch =
+    Js.object
+        [ ( "device", r )
+        , ( "native", device )
+        , ( "batch", batch )
+        , ( "live", Js.from True )
+        , ( "failure", Js.null )
+        , ( "uses", Js.construct (Js.global "Set") [] )
+        ]
+
+
 --| Run `body` with a new command encoder of `device` (a native device, in
 --| `batch` or null), as one session, and give the command buffer it
 --| encoded; `value` receives `body`'s value. The encoder is finished here
@@ -151,18 +165,42 @@ pub encode :
     → Result Error.Error V
 encode device batch descriptor body value =
     r = Engine.recordOf device
-
-    s =
-        Js.object
-            [ ( "device", r )
-            , ( "native", device )
-            , ( "batch", batch )
-            , ( "live", Js.from True )
-            , ( "failure", Js.null )
-            , ( "uses", Js.construct (Js.global "Set") [] )
-            ]
+    s = newSession device r batch
     native = Js.call device "createCommandEncoder" [ Native.commandEncoderDescriptor descriptor ]
-    Engine.adoptInBatch native r batch
+    runSession s native body value
+
+
+--| Run `body` with a new render bundle encoder of `device` (a native
+--| device, in `batch` or null), as one session, and give the render bundle
+--| it encoded, as `encode` does. A format of `descriptor` whose feature the
+--| device lacks is refused before (`Gpu.Formats.formatsAvailable`); the
+--| host's `TypeError` for a feature-gated format anyway is
+--| `FormatFeatureRejected` (ledger §3, §5).
+pub bundle :
+      V
+    , V
+    , Types.RenderBundleEncoderDescriptor
+    , sync (V → Result InputError a)
+    , Js.Ref (Maybe a)
+    → Result Error.Error V
+bundle device batch descriptor body value =
+    r = Engine.recordOf device
+    s = newSession device r batch
+    formats = Formats.bundleFormats descriptor
+    Formats.formatsAvailable device formats?
+    converted = Native.renderBundleEncoderDescriptor descriptor
+
+    native =
+        (Formats.formatChecked formats λ⊤ → Js.call device "createRenderBundleEncoder" [ converted ]
+        )?
+    runSession s native body value
+
+
+-- Adopt `native`, the encoder of session `s`, run `body` over it, and
+-- finish it unless `body` did.
+runSession : V, V, sync (V → Result InputError a), Js.Ref (Maybe a) → Result Error.Error V
+runSession s native body value =
+    Engine.adoptInBatch native (Js.get s "device") (Js.get s "batch")
     enc = Engine.recordOf native
     Js.set enc "session" s
     Js.set enc "state" (Js.from "open")
@@ -190,8 +228,63 @@ encode device batch descriptor body value =
         Ok commands
 
 
---| Record a command buffer an encoder finished.
+--| Record what an encoder's `finish` gave.
 pub finished : V, V → ⊤
 finished enc commands =
     Js.set enc "state" (Js.from "finished")
     Js.set enc "finished" commands
+
+
+--| Adopt `pass`, a pass the encoder that `at` names began: the encoder is
+--| locked until the pass ends.
+pub beginPass : V, V, V → ⊤
+beginPass s enc begun =
+    Engine.adoptInBatch begun (Js.get s "device") (Js.get s "batch")
+    p = Engine.recordOf begun
+    Js.set p "session" s
+    Js.set p "encoder" enc
+    Js.set p "ended" (Js.from False)
+    Js.set p "debug" (Js.from 0)
+    Js.set enc "state" (Js.from "locked")
+
+
+--| End a pass: its encoder is unlocked.
+pub endPass : V, V → ⊤
+endPass p native =
+    Js.set p "ended" (Js.from True)
+    Js.set (Js.get p "encoder") "state" (Js.from "open")
+    Js.call native "end" [] ▷ ignore
+
+
+--| A pass may end: no occlusion query of it is open (`QueryActive`,
+--| latched).
+pub queriesClosed : { session : V, record : V } → Result InputError ⊤
+queriesClosed at =
+    if Js.same (Js.get at.record "occlusion") (Js.from True) then
+        refuse at.session (Error.QueryActive { path = "pass" })
+    else
+        Ok ⊤
+
+
+--| What a pass's `with` does once its callback gave `result`: end the pass
+--| unless the callback ended it or the session is over, and latch an `Err`.
+--| A pass with an open occlusion query is `QueryActive`, and is not ended.
+pub withPass : V, Result InputError a → Result InputError a
+withPass native result =
+    p = Engine.recordOf native
+    s = Js.get p "session"
+    if not (Js.to (Js.get p "ended")) && Js.to (Js.get s "live") then
+        case queriesClosed { session = s, record = p } of
+            Ok _ →
+                endPass p native
+
+            Err _ →
+                ⊤
+    else
+        ⊤
+    case result of
+        Ok v →
+            Ok v
+
+        Err problem →
+            refuse s problem

@@ -865,6 +865,42 @@ using, directly or through a bind group, a resource destroyed (`ResourceDestroye
 mapped (`MappingState`) since it was encoded. `getBindGroupLayout` refuses an index at or
 above `maxBindGroups` (`OutOfRange`).
 
+*As built — S3a (2026-11-08, #2241).* Rendering follows the compute half. `Gpu.Texture.createView`
+(and `Gpu.Batch.createView`), `Gpu.Device.createRenderPipeline` and `createRenderPipelineAsync` (and
+`Gpu.Batch.createRenderPipeline`, `getRenderBindGroupLayout`) are prepared in `Gpu.Make` like every
+creation. A format a feature gates — a view format, a color target or depth format, a bundle
+encoder's formats — is `UnsupportedCapability` before the native call, and the host's `TypeError`
+for one anyway is `FormatFeatureRejected` (ledger §3, §5); a `TypeError` with no gated format is a
+defect. `Gpu.CommandEncoder.beginRenderPass` and `Gpu.RenderPass.with` hold the render pass;
+`Gpu.RenderPass` has every command of the pass and its mixins (`setPipeline`, `setBindGroup`,
+`setBindGroupSlice`, `setImmediates`, `setVertexBuffer`, `setIndexBuffer`, `draw`, `drawIndexed`,
+`drawIndirect`, `drawIndexedIndirect`, `setViewport`, `setScissorRect`, `setBlendConstant`,
+`setStencilReference`, `beginOcclusionQuery`, `endOcclusionQuery`, `executeBundles`, the debug
+commands, `end`). `DrawArguments` and `DrawIndexedArguments` are records of `Gpu.RenderPass` in the
+native argument order, made with the native defaults by `vertices` and `indices`; the other
+commands keep §3 item 1's positional order. Render bundles are a session like an encoder's:
+`Gpu.Encode.bundle : Device, RenderBundleEncoderDescriptor, sync (RenderBundleEncoder → Result
+InputError a) → Result Error { value : a, bundle : RenderBundle }` and `Gpu.Batch.encodeBundle`, with
+the commands in `Gpu.RenderBundleEncoder` (its `finish` closes it, as `CommandEncoder.finish`
+does). The mixins live once, in the private `Gpu.Commands`, which `Gpu.ComputePass` now uses too. An
+attachment, resolve target or query set must be usable, and a view is unusable once its texture is
+destroyed (`ResourceDestroyed`). Occlusion queries are checked locally: the new `InputError` arms
+`QuerySetMissing`, `QueryActive` (also a pass ended, by `end` or by `with`, with a query open),
+`QueryInactive` and `QueryReused` (an index begun twice in one pass), and an index past the set is
+`OutOfRange` at `queryIndex`. The host does not say which feature-gated format it refused, so
+`FormatFailure` names the first and lists every `candidates`; only a native `TypeError` is that
+failure, and a same-named object, an `Error` named `TypeError`, a `RangeError` or a
+`DOMException` there is a defect (`browser/gpu/FormatHostile*`). Since the batch review the render
+creations are `Gpu.Make` actions (`CreateView`, `CreateRenderPipeline`) run by `perform` like the
+others, the render batch operations return `Result Error`, a batch checks a texture or a pipeline
+it is given against its device with the same check as for a queue (`WrongDevice`), and the format
+checks live in `Gpu.Formats`, which `Gpu.Make` and `Gpu.Session` share. `executeBundles` keeps no shadow state, so it has none to clear. Fixtures:
+`browser/gpu/RenderScenes` (multi-pass, indirect, depth, stencil, MSAA resolve, MRT, a bundle, a
+batch and occlusion, compared under `test-webgpu` with pixels worked out by hand),
+`RenderRefusals`, `RenderPipelines`, `RenderFormatRejected`, and the defects
+`RenderPipelineUnlisted`, `RenderFormatUnlisted` and `ViewFormatUnlisted`.
+
+
 ### 6.4 Explicit error-scope diagnostics without an unsafe escape hatch
 
 Native push/pop are available through an explicit **diagnostic session**, not

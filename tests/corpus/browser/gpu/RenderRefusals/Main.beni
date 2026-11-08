@@ -1,0 +1,319 @@
+-- What a render pass and a render bundle encoder refuse before any native
+-- call (docs/design/webgpu.md §6.2; ledger §5), each in a run of its own,
+-- since a session stops at its first refusal and the run returns it: an
+-- encoder command while its pass is open (`EncoderLocked`), a pass command
+-- after `end` (`PassEnded`), an occlusion query with no query set, past the
+-- set, begun twice or ended with none open, left open when its pass ends
+-- (`QueryActive`, by `with` and by `end`), an index begun twice in one pass
+-- (`QueryReused`), a negative vertex buffer
+-- offset, a view of a destroyed texture and a view of another device as an
+-- attachment, a bundle command after `finish`, a bundle format whose
+-- feature the device lacks, and immediates the host refuses or does not
+-- have. A draw with no pipeline passes the local checks and the device
+-- reports it at `finish`: `Validation`. The last button shows the native
+-- calls of one pass as the fake host saw them, arguments in native order
+-- (the pass sets no pipeline, so its run is `Validation` too); a native
+-- host shows none (`_expected.webgpu-expected`).
+import Binary
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst, Vertex, Index, Indirect)
+import Gpu.Handle exposing (Device, Buffer, CommandEncoder, TextureView, RenderPass, RenderBundleEncoder, QuerySet)
+import Gpu.RenderBundleEncoder as BundleEncoder
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+side : Types.Extent3D
+side =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 4), depthOrArrayLayers = Types.Default }
+
+
+target : Device → TextureView
+target d =
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    side
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    must (Gpu.Texture.createView texture Types.textureViewDescriptor)
+
+
+attachment : TextureView → Types.RenderPassColorAttachment
+attachment v =
+    Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store
+
+
+pass : TextureView → Types.RenderPassDescriptor
+pass v = Types.renderPassDescriptor [ Just (attachment v) ]
+
+
+-- One encoding run, shown.
+encoded : String, Device, (CommandEncoder → Result InputError ⊤) → String
+encoded name d body =
+    name ++ ": " ++ GpuShow.checked (Encode.run d Types.commandEncoderDescriptor body) λ_ → "made"
+
+
+-- A pass `body` runs in, on a fresh device after `scenarios`.
+inPass : String, String, (RenderPass → Result InputError ⊤) → List String
+inPass name scenarios body = GpuKit.with scenarios λd →
+    v = target d
+    [ encoded name d λenc → RenderPass.with enc (pass v) body ]
+
+
+locked : ⊤ → List String
+locked ⊤ = GpuKit.with "none" λd →
+    v = target d
+    scratch = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst ]))
+    [ encoded "locked" d (lockedBody v scratch _) ]
+
+
+lockedBody : TextureView, Buffer, CommandEncoder → Result InputError ⊤
+lockedBody v scratch enc =
+    _ = CommandEncoder.beginRenderPass enc (pass v)?
+    CommandEncoder.clearBuffer enc scratch 0 Nothing
+
+
+ended : ⊤ → List String
+ended ⊤ = GpuKit.with "none" λd →
+    v = target d
+    [ encoded "ended" d (endedBody v _) ]
+
+
+endedBody : TextureView, CommandEncoder → Result InputError ⊤
+endedBody v enc =
+    rp = CommandEncoder.beginRenderPass enc (pass v)?
+    RenderPass.end rp?
+    RenderPass.draw rp (RenderPass.vertices (u32 3))
+
+
+noQuerySet : ⊤ → List String
+noQuerySet ⊤ = inPass "no query set" "none" λrp → RenderPass.beginOcclusionQuery rp (u32 0)
+
+
+-- A pass with an occlusion query set of one query, `body` in it.
+withQueries : String, (RenderPass → Result InputError ⊤) → List String
+withQueries name body = GpuKit.with "none" λd →
+    v = target d
+    queries = must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 1)))
+    descriptor = { (pass v) | occlusionQuerySet = Types.Value queries }
+    [ encoded name d λenc → RenderPass.with enc descriptor body ]
+
+
+pastTheSet : ⊤ → List String
+pastTheSet ⊤ = withQueries "past the set" λrp → RenderPass.beginOcclusionQuery rp (u32 1)
+
+
+beganTwice : ⊤ → List String
+beganTwice ⊤ = withQueries "began twice" twice
+
+
+twice : RenderPass → Result InputError ⊤
+twice rp =
+    RenderPass.beginOcclusionQuery rp (u32 0)?
+    RenderPass.beginOcclusionQuery rp (u32 0)
+
+
+noneOpen : ⊤ → List String
+noneOpen ⊤ = withQueries "none open" RenderPass.endOcclusionQuery
+
+
+leftOpen : ⊤ → List String
+leftOpen ⊤ = withQueries "left open" λrp → RenderPass.beginOcclusionQuery rp (u32 0)
+
+
+endedOpen : ⊤ → List String
+endedOpen ⊤ = withQueries "ended open" openThenEnd
+
+
+openThenEnd : RenderPass → Result InputError ⊤
+openThenEnd rp =
+    RenderPass.beginOcclusionQuery rp (u32 0)?
+    RenderPass.end rp
+
+
+reused : ⊤ → List String
+reused ⊤ = withQueries "reused" twiceInTurn
+
+
+twiceInTurn : RenderPass → Result InputError ⊤
+twiceInTurn rp =
+    RenderPass.beginOcclusionQuery rp (u32 0)?
+    RenderPass.endOcclusionQuery rp?
+    RenderPass.beginOcclusionQuery rp (u32 0)
+
+
+negativeOffset : ⊤ → List String
+negativeOffset ⊤ = GpuKit.with "none" λd →
+    v = target d
+    vertices = must (Gpu.Device.createBuffer d (buffer 16 [ Vertex ]))
+    [ encoded "negative offset" d λenc →
+        RenderPass.with enc (pass v) λrp →
+            RenderPass.setVertexBuffer rp (u32 0) (Just vertices) (-4) Nothing
+    ]
+
+
+destroyedView : ⊤ → List String
+destroyedView ⊤ = GpuKit.with "none" λd →
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    side
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    v = must (Gpu.Texture.createView texture Types.textureViewDescriptor)
+    Gpu.Texture.destroy texture
+    [ encoded "destroyed view" d λenc → RenderPass.with enc (pass v) λ_ → Ok ⊤ ]
+
+
+otherDevice : ⊤ → List String
+otherDevice ⊤ = GpuKit.with "none" λd →
+    case GpuKit.device "none" of
+        Err why →
+            [ why ]
+
+        Ok other →
+            v = target other
+            [ encoded "other device" d λenc → RenderPass.with enc (pass v) λ_ → Ok ⊤ ]
+
+
+noPipeline : ⊤ → List String
+noPipeline ⊤ = inPass "no pipeline" "none" λrp → RenderPass.draw rp (RenderPass.vertices (u32 3))
+
+
+-- A bundle run, shown.
+bundled :
+      String
+    , Device
+    , Types.RenderBundleEncoderDescriptor
+    , (RenderBundleEncoder → Result InputError ⊤)
+    → String
+bundled name d descriptor body =
+    name ++ ": " ++ GpuShow.checked (Encode.bundle d descriptor body) λ_ → "made"
+
+
+afterFinish : ⊤ → List String
+afterFinish ⊤ = GpuKit.with "none" λd →
+    [ bundled
+        "after finish"
+        d
+        (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+        finished
+    ]
+
+
+finished : RenderBundleEncoder → Result InputError ⊤
+finished b =
+    BundleEncoder.finish b Types.renderBundleDescriptor?
+    BundleEncoder.draw b (RenderPass.vertices (u32 3))
+
+
+bundleFeature : ⊤ → List String
+bundleFeature ⊤ = GpuKit.with "none" λd →
+    descriptor =
+        { (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+            | depthStencilFormat = Types.Value Types.Depth32floatStencil8
+        }
+    [ bundled "bundle feature" d descriptor λ_ → Ok ⊤ ]
+
+
+words : Binary.Source
+words = Binary.WholeBuffer (must (Binary.fromList [ 1, 0, 0, 0 ]))
+
+
+immediatesRejected : ⊤ → List String
+immediatesRejected ⊤ = inPass "immediates rejected" "immediates-rejected" λrp →
+    RenderPass.setImmediates rp 0 words 0 Nothing
+
+
+immediatesMissing : ⊤ → List String
+immediatesMissing ⊤ = GpuKit.with "no-immediates" λd →
+    [ bundled "immediates missing" d (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) λb →
+        BundleEncoder.setImmediates b 0 words 0 Nothing
+    ]
+
+
+commands : ⊤ → List String
+commands ⊤ = GpuKit.with "none" λd →
+    v = target d
+    vertices =
+        must (Gpu.Device.createBuffer d { (buffer 64 [ Vertex ]) | label = Types.Value "vertices" })
+    indices =
+        must (Gpu.Device.createBuffer d { (buffer 16 [ Index ]) | label = Types.Value "indices" })
+    args =
+        must (Gpu.Device.createBuffer d { (buffer 32 [ Indirect ]) | label = Types.Value "args" })
+    result = Encode.run d Types.commandEncoderDescriptor λenc →
+        RenderPass.with enc (pass v) (every vertices indices args _)
+    [ "commands: " ++ GpuShow.checked result λ_ → "made", …GpuHost.commands ⊤ ]
+
+
+f32 : Float → Scalar.FiniteF32
+f32 x = must (Scalar.finiteF32 x)
+
+
+every : Buffer, Buffer, Buffer, RenderPass → Result InputError ⊤
+every vertices indices args rp =
+    RenderPass.setViewport rp (f32 0.0) (f32 1.0) (f32 2.0) (f32 3.0) (f32 0.25) (f32 0.75)?
+    RenderPass.setScissorRect rp (u32 0) (u32 1) (u32 2) (u32 3)?
+    RenderPass.setStencilReference rp (u32 7)?
+    RenderPass.setVertexBuffer rp (u32 1) (Just vertices) 8 (Just 16)?
+    RenderPass.setVertexBuffer rp (u32 2) Nothing 0 Nothing?
+    RenderPass.setIndexBuffer rp indices Types.IndexUint32 4 Nothing?
+    RenderPass.pushDebugGroup rp "group"?
+    RenderPass.insertDebugMarker rp "marker"?
+    RenderPass.popDebugGroup rp?
+    RenderPass.draw rp
+        { vertexCount = u32 3, instanceCount = u32 2, firstVertex = u32 1, firstInstance = u32 4 }?
+    RenderPass.drawIndexed rp
+        { indexCount = u32 6
+        , instanceCount = u32 1
+        , firstIndex = u32 2
+        , baseVertex = must (Scalar.i32 (-3))
+        , firstInstance = u32 0
+        }?
+    RenderPass.drawIndirect rp args 0?
+    RenderPass.drawIndexedIndirect rp args 12?
+    RenderPass.executeBundles rp []
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "locked", locked )
+        , ( "ended", ended )
+        , ( "noQuerySet", noQuerySet )
+        , ( "pastTheSet", pastTheSet )
+        , ( "beganTwice", beganTwice )
+        , ( "noneOpen", noneOpen )
+        , ( "leftOpen", leftOpen )
+        , ( "endedOpen", endedOpen )
+        , ( "reused", reused )
+        , ( "negativeOffset", negativeOffset )
+        , ( "destroyedView", destroyedView )
+        , ( "otherDevice", otherDevice )
+        , ( "noPipeline", noPipeline )
+        , ( "afterFinish", afterFinish )
+        , ( "bundleFeature", bundleFeature )
+        , ( "immediatesRejected", immediatesRejected )
+        , ( "immediatesMissing", immediatesMissing )
+        , ( "commands", commands )
+        ]

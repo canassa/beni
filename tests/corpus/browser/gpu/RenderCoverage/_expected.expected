@@ -1,0 +1,222 @@
+-- load
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #batchBundle
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+    </ol>
+  </main>
+</body>
+-- click #bindGroups
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+    </ol>
+  </main>
+</body>
+-- click #bundleCommands
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+    </ol>
+  </main>
+</body>
+-- click #timestamps
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+      <li>"timestamps: Ok Ok"</li>
+    </ol>
+  </main>
+</body>
+-- click #attachmentTexture
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+      <li>"timestamps: Ok Ok"</li>
+      <li>"texture attachment: Ok Ok"</li>
+    </ol>
+  </main>
+</body>
+-- click #resolveTargets
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+      <li>"timestamps: Ok Ok"</li>
+      <li>"texture attachment: Ok Ok"</li>
+      <li>"destroyed resolve target: Err InvalidInput ResourceDestroyed colorAttachments.resolveTarget"</li>
+      <li>"other device's resolve target: Err InvalidInput WrongDevice colorAttachments.resolveTarget"</li>
+    </ol>
+  </main>
+</body>
+-- click #depthAttachments
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+      <li>"timestamps: Ok Ok"</li>
+      <li>"texture attachment: Ok Ok"</li>
+      <li>"destroyed resolve target: Err InvalidInput ResourceDestroyed colorAttachments.resolveTarget"</li>
+      <li>"other device's resolve target: Err InvalidInput WrongDevice colorAttachments.resolveTarget"</li>
+      <li>"destroyed depth attachment: Err InvalidInput ResourceDestroyed depthStencilAttachment.view"</li>
+      <li>"other device's depth attachment: Err InvalidInput WrongDevice depthStencilAttachment.view"</li>
+    </ol>
+  </main>
+</body>
+-- click #bundles
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+      <li>"timestamps: Ok Ok"</li>
+      <li>"texture attachment: Ok Ok"</li>
+      <li>"destroyed resolve target: Err InvalidInput ResourceDestroyed colorAttachments.resolveTarget"</li>
+      <li>"other device's resolve target: Err InvalidInput WrongDevice colorAttachments.resolveTarget"</li>
+      <li>"destroyed depth attachment: Err InvalidInput ResourceDestroyed depthStencilAttachment.view"</li>
+      <li>"other device's depth attachment: Err InvalidInput WrongDevice depthStencilAttachment.view"</li>
+      <li>"other device's bundle: Err InvalidInput WrongDevice bundles"</li>
+      <li>"the batch: Err BatchFailed refused: InvalidInput MappedSizeUnaligned size 6; issued [encodeBundle], refused [createBuffer]"</li>
+      <li>"a rejected bundle: Err InvalidInput ResourceRejected bundles"</li>
+    </ol>
+  </main>
+</body>
+-- click #querySets
+<body>
+  <main>
+    <button id="batchBundle">"batchBundle"</button>
+    <button id="bindGroups">"bindGroups"</button>
+    <button id="bundleCommands">"bundleCommands"</button>
+    <button id="timestamps">"timestamps"</button>
+    <button id="attachmentTexture">"attachmentTexture"</button>
+    <button id="resolveTargets">"resolveTargets"</button>
+    <button id="depthAttachments">"depthAttachments"</button>
+    <button id="bundles">"bundles"</button>
+    <button id="querySets">"querySets"</button>
+    <ol>
+      <li>"batch: Ok Ok"</li>
+      <li>"bind groups: Ok Ok"</li>
+      <li>"bundle: Ok Ok"</li>
+      <li>"pushDebugGroup(bundle); setPipeline(<>); setBindGroup(0, <>, []); setBindGroup(0, <>, {\"0\":0}, 0, 0); setVertexBuffer(0, null, 0, undefined); setIndexBuffer(<indices>, uint32, 0, undefined); draw(3, 1, 0, 0); drawIndexed(3, 1, 0, 0, 0); drawIndirect(<args>, 0); drawIndexedIndirect(<args>, 16); insertDebugMarker(drawn); popDebugGroup()"</li>
+      <li>"timestamps: Ok Ok"</li>
+      <li>"texture attachment: Ok Ok"</li>
+      <li>"destroyed resolve target: Err InvalidInput ResourceDestroyed colorAttachments.resolveTarget"</li>
+      <li>"other device's resolve target: Err InvalidInput WrongDevice colorAttachments.resolveTarget"</li>
+      <li>"destroyed depth attachment: Err InvalidInput ResourceDestroyed depthStencilAttachment.view"</li>
+      <li>"other device's depth attachment: Err InvalidInput WrongDevice depthStencilAttachment.view"</li>
+      <li>"other device's bundle: Err InvalidInput WrongDevice bundles"</li>
+      <li>"the batch: Err BatchFailed refused: InvalidInput MappedSizeUnaligned size 6; issued [encodeBundle], refused [createBuffer]"</li>
+      <li>"a rejected bundle: Err InvalidInput ResourceRejected bundles"</li>
+      <li>"destroyed query set: Err InvalidInput ResourceDestroyed occlusionQuerySet"</li>
+    </ol>
+  </main>
+</body>

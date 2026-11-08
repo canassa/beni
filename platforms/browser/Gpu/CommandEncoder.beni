@@ -10,9 +10,11 @@
 --! after `finish`, `EncoderFinished`; after the run, `SessionState
 --! SessionEnded`.
 
+import Gpu.Commands as Commands
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
 import Gpu.Handle as Handle
+import Gpu.Make as Make
 import Gpu.Memory as Memory
 import Gpu.Native as Native
 import Gpu.Scalar as Scalar
@@ -27,32 +29,6 @@ type alias V =
 
 ignore : V → ⊤
 ignore _ = ⊤
-
-
--- An optional native argument: `undefined`, which Web IDL reads as omitted.
-optional : Maybe Int → V
-optional value =
-    case value of
-        Just n →
-            Js.from n
-
-        Nothing →
-            Js.undefined
-
-
--- A size or an offset, as a `GPUSize64` accepts it, latched when refused.
-size64 : V, Int, String → Result InputError ⊤
-size64 s value path = Session.check s (Result.map (Memory.size64 value path) λ_ → ⊤)
-
-
-optionalSize : V, Maybe Int, String → Result InputError ⊤
-optionalSize s value path =
-    case value of
-        Just n →
-            size64 s n path
-
-        Nothing →
-            Ok ⊤
 
 
 --| The encoder's label.
@@ -82,14 +58,78 @@ beginComputePass encoder descriptor =
         Types.Default →
             ⊤
     pass = Js.call native "beginComputePass" [ Native.computePassDescriptor descriptor ]
-    Engine.adoptInBatch pass (Js.get s "device") (Js.get s "batch")
-    p = Engine.recordOf pass
-    Js.set p "session" s
-    Js.set p "encoder" at.record
-    Js.set p "ended" (Js.from False)
-    Js.set p "debug" (Js.from 0)
-    Js.set at.record "state" (Js.from "locked")
+    Session.beginPass s at.record pass
     Ok (Js.to pass)
+
+
+--| Begin a render pass. The encoder is locked until the pass ends; prefer
+--| `Gpu.RenderPass.with`, which ends it. Every attachment, resolve target,
+--| occlusion query set and timestamp query set must be usable on the
+--| encoder's device (`InvalidInput` otherwise, latched).
+pub beginRenderPass :
+      Handle.CommandEncoder
+    , Types.RenderPassDescriptor
+    → Result InputError Handle.RenderPass
+beginRenderPass encoder descriptor =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Make.each descriptor.colorAttachments (colorAttachment s _)?
+    case descriptor.depthStencilAttachment of
+        Types.Value a →
+            attachment s a.view "depthStencilAttachment.view"?
+
+        Types.Default →
+            ⊤
+    occlusion =
+        case descriptor.occlusionQuerySet of
+            Types.Value q →
+                Session.usable s (Js.from q) "occlusionQuerySet"?
+                Js.from q
+
+            Types.Default →
+                Js.null
+    case descriptor.timestampWrites of
+        Types.Value writes →
+            Session.usable s (Js.from writes.querySet) "timestampWrites.querySet"?
+
+        Types.Default →
+            ⊤
+    pass = Js.call native "beginRenderPass" [ Native.renderPassDescriptor descriptor ]
+    Session.beginPass s at.record pass
+    p = Engine.recordOf pass
+    Js.set p "occlusionQuerySet" occlusion
+    Js.set p "occlusion" (Js.from False)
+    Js.set p "queries" (Js.construct (Js.global "Set") [])
+    Ok (Js.to pass)
+
+
+-- A color attachment slot: its view and resolve target usable.
+colorAttachment : V, Maybe Types.RenderPassColorAttachment → Result InputError ⊤
+colorAttachment s slot =
+    case slot of
+        Just a →
+            attachment s a.view "colorAttachments.view"?
+            case a.resolveTarget of
+                Types.Value target →
+                    attachment s target "colorAttachments.resolveTarget"
+
+                Types.Default →
+                    Ok ⊤
+
+        Nothing →
+            Ok ⊤
+
+
+-- An attachment's texture or view, usable.
+attachment : V, Types.AttachmentView, String → Result InputError ⊤
+attachment s view path =
+    case view of
+        Types.AttachmentTexture t →
+            Session.usable s (Js.from t) path
+
+        Types.AttachmentTextureView v →
+            Session.usable s (Js.from v) path
 
 
 --| Copy `size` bytes from `source` at `sourceOffset` to `destination` at
@@ -108,15 +148,15 @@ copyBufferToBuffer encoder source sourceOffset destination destinationOffset siz
     s = at.session
     Session.usable s (Js.from source) "source"?
     Session.usable s (Js.from destination) "destination"?
-    size64 s sourceOffset "sourceOffset"?
-    size64 s destinationOffset "destinationOffset"?
-    optionalSize s size "size"?
+    Commands.size64 s sourceOffset "sourceOffset"?
+    Commands.size64 s destinationOffset "destinationOffset"?
+    Commands.optionalSize s size "size"?
     Js.call native "copyBufferToBuffer"
         [ Js.from source
         , Js.from sourceOffset
         , Js.from destination
         , Js.from destinationOffset
-        , optional size
+        , Commands.optional size
         ]
         ▷ ignore
     Ok ⊤
@@ -136,8 +176,9 @@ copyBuffer encoder source destination size =
     s = at.session
     Session.usable s (Js.from source) "source"?
     Session.usable s (Js.from destination) "destination"?
-    optionalSize s size "size"?
-    Js.call native "copyBufferToBuffer" [ Js.from source, Js.from destination, optional size ]
+    Commands.optionalSize s size "size"?
+    Js.call native "copyBufferToBuffer"
+        [ Js.from source, Js.from destination, Commands.optional size ]
         ▷ ignore
     Ok ⊤
 
@@ -216,9 +257,9 @@ clearBuffer encoder buffer offset size =
     at = Session.encoder native "encoder"?
     s = at.session
     Session.usable s (Js.from buffer) "buffer"?
-    size64 s offset "offset"?
-    optionalSize s size "size"?
-    Js.call native "clearBuffer" [ Js.from buffer, Js.from offset, optional size ] ▷ ignore
+    Commands.size64 s offset "offset"?
+    Commands.optionalSize s size "size"?
+    Js.call native "clearBuffer" [ Js.from buffer, Js.from offset, Commands.optional size ] ▷ ignore
     Ok ⊤
 
 
@@ -239,7 +280,7 @@ resolveQuerySet encoder querySet firstQuery queryCount destination destinationOf
     s = at.session
     Session.usable s (Js.from querySet) "querySet"?
     Session.usable s (Js.from destination) "destination"?
-    size64 s destinationOffset "destinationOffset"?
+    Commands.size64 s destinationOffset "destinationOffset"?
     Js.call native "resolveQuerySet"
         [ Js.from querySet
         , Js.from (Scalar.u32ToInt firstQuery)
