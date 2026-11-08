@@ -1,0 +1,54 @@
+-- A message type that recurs with larger arguments has no finite Wire plan:
+-- `Fork Int` holds a `Fork (List Int)` and a `Fork (Int × Int)`. The plan
+-- takes the type-variable walk at the recursive position (workers.md §5,
+-- *Types that recur with growing arguments*), so the build ends, and the walk
+-- materializes the List view in the payload before structured clone.
+import Page
+import String
+import Worker
+
+
+type Fork a
+    = Leaf a
+    | Lists (Fork (List a))
+    | Pairs (Fork (a × a))
+
+
+describe : Fork Int → String
+describe fork =
+    case fork of
+        Leaf value →
+            String.fromInt value
+        Lists _ →
+            "lists"
+        Pairs _ →
+            "pairs"
+
+
+worker : Worker.Program (Fork Int) String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → describe message
+        }
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            values =
+                case [ 0, 1, 2, 3 ] of
+                    [ _, …tail ] →
+                        tail
+                    _ →
+                        []
+            Worker.receive handle λreply → Page.text reply
+            Worker.send handle (Lists (Pairs (Leaf ( values, [ 4 ] ))))
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

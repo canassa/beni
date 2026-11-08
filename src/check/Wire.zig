@@ -173,6 +173,9 @@ const Builder = struct {
     edges: std.ArrayList(Edge) = .empty,
     types: std.ArrayList(Types.TypeId) = .empty,
     memo: std.ArrayList(struct { type: Types.TypeId, args: []const Var, node: u32 }) = .empty,
+    /// The named types being expanded on the current path, with the size of
+    /// their arguments (workers.md §5, *Types that recur with growing arguments*).
+    open: std.ArrayList(struct { type: Types.TypeId, size: u32 }) = .empty,
     defer_all: bool = false,
     owners: []const Var = &.{},
     bindings: std.ArrayList(struct { variable: Var, owner: Var }) = .empty,
@@ -310,6 +313,40 @@ const Builder = struct {
         return index;
     }
 
+    /// The number of type terms in `vars`, capped: a larger argument is all
+    /// the recursion check needs to know.
+    fn size(w: *Builder, vars: []const Var) u32 {
+        var total: u32 = 0;
+        for (vars) |v| total +|= w.termSize(v, 0);
+        return total;
+    }
+
+    fn termSize(w: *Builder, original: Var, depth: u32) u32 {
+        const store = w.cx.store;
+        if (depth > 64) return 1;
+        var total: u32 = 1;
+        switch (store.resolved(original)[1]) {
+            .alias => return w.termSize(Walk.follow(store, store.find(original), .expansion, 0).?, depth + 1),
+            .structure => |s| switch (s) {
+                .func => {
+                    const f = Walk.function(store, original).?;
+                    for (f.params) |v| total +|= w.termSize(v, depth + 1);
+                    total +|= w.termSize(f.result, depth + 1);
+                },
+                .tuple, .app => for (Walk.positions(store, original)) |v| {
+                    total +|= w.termSize(v, depth + 1);
+                },
+                .record => |r| {
+                    for (Walk.recordFields(store, r)) |f| total +|= w.termSize(f.value, depth + 1);
+                    total +|= w.termSize(Walk.recordExtension(r), depth + 1);
+                },
+                else => {},
+            },
+            else => {},
+        }
+        return total;
+    }
+
     fn node(w: *Builder, original: Var, path: []const u8, depth: u32) Allocator.Error!u32 {
         if (depth > 512) return w.bad(path, "a type whose Wire graph cannot be resolved");
         const cx = w.cx;
@@ -376,8 +413,22 @@ const Builder = struct {
                     }
                     if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Schema") and std.mem.eql(u8, cx.interner.slice(entry.name), "Value")) return w.add(.stable, &.{});
                     if (entry.kind == .foreign or entry.schema_endpoint) return w.bad(path, try std.fmt.allocPrint(a, "the native type `{s}.{s}`", .{ cx.interner.slice(entry.module_name), cx.interner.slice(entry.name) }));
+                    // A type that recurs with larger arguments has no finite
+                    // plan. Every infinite path has such a frame: the memo
+                    // holds each frame's arguments, so they never repeat, and a
+                    // finite set of named types has finitely many arguments of
+                    // one size. Its value takes the type-variable walk. Wire
+                    // still holds: the open frame checks every constructor
+                    // payload, and the new arguments are checked here.
+                    const arg_size = w.size(args);
+                    for (w.open.items) |frame| if (frame.type == app.type and arg_size > frame.size) {
+                        for (args) |v| _ = try w.node(v, path, depth + 1);
+                        return w.add(.variable, &.{});
+                    };
                     const index = try w.add(.tagged, &.{});
                     try w.memo.append(a, .{ .type = app.type, .args = args, .node = index });
+                    try w.open.append(a, .{ .type = app.type, .size = arg_size });
+                    defer w.open.items.len -= 1;
                     if (std.mem.indexOfScalar(Types.TypeId, w.types.items, app.type) == null) try w.types.append(a, app.type);
                     const bir = cx.artifacts.bir(cx.graph.moduleFile(entry.module));
                     const decl = bir.decl(entry.decl);

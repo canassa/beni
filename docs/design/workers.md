@@ -633,6 +633,28 @@ or close receiver-owned resources. This rule protects against partial native
 failure, not merely the happy path. Binary/Image/Video/Canvas remain the shared
 owning modules from #1278; worker wrappers do not duplicate those handles.
 
+### Types that recur with growing arguments, 2026-11-08 — #1763
+
+A named type can recur with larger arguments:
+`type Fork a = Leaf a | Lists (Fork (List a)) | Pairs (Fork (a × a))`.
+`Fork Int` holds `Fork (List Int)`, which holds `Fork (List (List Int))`,
+without end. The memoized graph has no finite plan for such a type, because
+the memo key is the type and its arguments, and the arguments do not repeat.
+
+The plan builder keeps the named types that are open on the current path,
+with the size of their arguments. When the same type is open with smaller
+arguments, the plan uses the type-variable walk at this position. Every
+infinite path has such a position, so the build always ends. The plan of
+`Fork Int` and of `Nest Int` (`Nest a = Done a | Deeper (Nest (List a))`) has
+a fixed size, not one node per level.
+
+The Wire judgment stays complete. The open frame checks every constructor
+payload of the type, and the plan builder checks the new arguments at the
+recursive position. A function or a native value in such a type is still
+refused. A false detection costs one runtime walk, never a refused program
+(rule 7). Fixtures: `tests/corpus/browser/dedicated/PolyRecursiveFork` and
+`PolyRecursiveNest`.
+
 ## 6. Native API adapters and precise failures
 
 The [research §9](research/workers-api-research.md#9-prose-defined-serialization-and-exact-native-transfer-checks)
