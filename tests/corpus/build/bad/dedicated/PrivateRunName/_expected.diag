@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"Main.beni","start":{"line":19,"col":23},"end":{"line":19,"col":33}},"title":"PRIVATE NAME","message":"`Browser.Worker.run` is private to the platform’s worker entry modules,\n`Browser.Worker` and `Browser.WorkerRuntime`.\n\n`Browser.Worker` declares it `pub`, but only those modules may use it."}]

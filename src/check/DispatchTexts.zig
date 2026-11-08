@@ -299,27 +299,54 @@ pub fn clashes(r: *const Reporter, module: Graph.Index, type_name: Symbol, metho
     return e.module == module and e.name != type_name;
 }
 
-/// §10.2. The value exists, but not as `pub`.
-pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, method: Symbol) Error!void {
+/// §10.2. The value exists, but not as `pub` — or it is `pub` and fenced
+/// (`CorePrivate`). The text names the use as the program wrote it: `x.m`
+/// for a dot-call, the operator for `==` or `<` (#1755).
+pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, type_name: Symbol, method: Symbol) Error!void {
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;
     const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
     const method_text = r.env.interner.slice(method);
-    if (@import("../resolve/CorePrivate.zig").access(module_text, method_text, true) == .worker) {
-        w.writeAll("This name is private to the platform’s worker entry machinery.") catch return error.OutOfMemory;
+    const type_text = r.env.interner.slice(type_name);
+    const operator = methodOperator(r, region);
+    const written = if (operator) |op|
+        try std.fmt.allocPrint(r.gpa, "`{s}`", .{op})
+    else
+        try std.fmt.allocPrint(r.gpa, "`x.{s}`", .{method_text});
+    defer r.gpa.free(written);
+    const CorePrivate = @import("../resolve/CorePrivate.zig");
+    if (CorePrivate.access(module_text, method_text, true)) |fence| {
+        CorePrivate.writeRefusal(w, fence, module_text, method_text, .{ .written = written, .type_name = type_text }) catch return error.OutOfMemory;
         return r.emit(.private_method, region, &out);
     }
-    w.print(
+    if (operator != null) w.print(
         \\`{s}.{s}` is not `pub`.
         \\
-        \\`{s}` declares `{s}`, but without `pub` it is private to that module, so
-        \\`x.{s}` cannot reach it from here.
+        \\{s} needs the `{s}` of `{s}`, and `{s}` declares `{s}` without `pub`, so
+        \\it is private to that module and cannot be used from here.
         \\
         \\Hint: add `pub` to `{s}` in `{s}`.
         \\
-    , .{ module_text, method_text, module_text, method_text, method_text, method_text, module_text }) catch return error.OutOfMemory;
+    , .{ module_text, method_text, written, method_text, type_text, module_text, method_text, method_text, module_text }) catch return error.OutOfMemory else w.print(
+        \\`{s}.{s}` is not `pub`.
+        \\
+        \\`{s}` declares `{s}`, but without `pub` it is private to that module, so
+        \\{s} cannot reach it from here.
+        \\
+        \\Hint: add `pub` to `{s}` in `{s}`.
+        \\
+    , .{ module_text, method_text, module_text, method_text, written, method_text, module_text }) catch return error.OutOfMemory;
     try r.emit(.private_method, region, &out);
+}
+
+/// The operator a method use was written as (`==`, `<`), or null for a
+/// dot-call or a use that is not a method call.
+fn methodOperator(r: *const Reporter, region: Bir.Inst.Index) ?[]const u8 {
+    const bir = r.env.bir;
+    if (region.int() >= bir.insts.len or bir.instTag(region) != .method_call) return null;
+    const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(region).rhs)), Bir.MethodCall);
+    return m.origin.spelling();
 }
 
 /// §10.3. A tuple, a function, `()` or a record that reached discharge

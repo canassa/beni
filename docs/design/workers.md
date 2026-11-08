@@ -1109,6 +1109,12 @@ impure, stores its callback, and remains fenced to the worker runtime's owning
 platform modules; it is not an application Task API. This bridge retains master’s
 defect storage and scheduler behavior.
 
+*Amended 2026-11-08* (#1755): a refused use of a fenced name names it and the callers the fence
+admits — "`Task.chainDefect` is private to the platform’s worker entry modules, `Browser.Worker`
+and `Browser.WorkerRuntime`." — as `private_name` for a name and `private_method` for a method
+(`worker.run`), whose text also names the use and the type. The wording is
+`CorePrivate.writeRefusal`'s, the one map both codes use (`static-dispatch-spike.md` §10.2).
+
 The replay's P-sync inventory pins `Browser.Worker.listen`, `installFatal`
 and `runDefinition`. `listen` retains a guarded host listener on its peer and
 stops the realm on an escaping defect. `installFatal` installs the private

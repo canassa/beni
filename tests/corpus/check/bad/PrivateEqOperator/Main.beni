@@ -1,0 +1,12 @@
+-- A private method reached by an operator: the text names the operator the
+-- program wrote and the type whose method it needs, not a `x.eq` the program
+-- never wrote (static-dispatch-spike.md §10.2, #1755).
+import M
+
+
+same : Bool
+same = M.T 1 == M.T 2
+
+
+before : Bool
+before = M.T 1 < M.T 2

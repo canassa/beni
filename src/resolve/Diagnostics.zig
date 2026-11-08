@@ -151,8 +151,8 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             \\
             \\Check the spelling, or check that the declaration in `{s}` is marked `pub`.
         , .{ cx.module, cx.name, cx.module }),
-        .private_name => if (@import("CorePrivate.zig").access(cx.module, cx.name, true) == .worker)
-            try w.writeAll("This name is private to the platform’s worker entry machinery.")
+        .private_name => if (@import("CorePrivate.zig").access(cx.module, cx.name, true)) |fence|
+            try @import("CorePrivate.zig").writeRefusal(w, fence, cx.module, cx.name, null)
         else
             try w.print(
                 \\`{s}` is not public in `{s}`.
