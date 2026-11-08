@@ -373,8 +373,8 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     defer gpa.free(at);
     for (kids, at) |k, *a| {
         const st = Step.fromWord(k[0]);
-        if (st.kind == .level) return fail(s, key, above);
-        a.* = .{ (try f.places.extend(gpa, f.gc(), cs, st)) orelse return fail(s, key, above), (try f.places.extend(gpa, f.gc(), q, st)) orelse return fail(s, key, above) };
+        if (st.kind == .level) return Put.fail(s, key, above);
+        a.* = .{ (try f.places.extend(gpa, f.gc(), cs, st)) orelse return Put.fail(s, key, above), (try f.places.extend(gpa, f.gc(), q, st)) orelse return Put.fail(s, key, above) };
     }
     if (!above) try s.nodes.put(gpa, key, none);
     try f.charge(.inspection, 1);
@@ -455,18 +455,13 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     for (kids, at) |k, a| {
         const m = (try callNodeAt(s, call, which, c, k[1], a[0], tags, a[1], above or opens.len != 0, out)) orelse {
             _ = s.building.pop();
-            return fail(s, key, above);
+            return Put.fail(s, key, above);
         };
         try Put.emitPart(s, a[1], m, out);
     }
     const m = try Put.end(s);
     if (!above) try PutMemo.put(s, key, m);
     return m;
-}
-
-fn fail(s: *Sink, key: [6]u32, above: bool) Error!?Contract.Node {
-    if (!above) try s.nodes.put(s.e.gpa(), key, none - 1);
-    return null;
 }
 
 /// The slots of `domain` entered in the column `d` of the read `(from, q)`,

@@ -37,6 +37,12 @@ pub fn handed(s: *Sink, li: u32, out: ResList) Error!void {
     try e.fn_escapes.append(e.gpa(), .{ .leaf = li, .point = none });
 }
 
+/// A failed read of `key`: remembered unless `above`, and no node.
+pub fn fail(s: *Sink, key: [6]u32, above: bool) Error!?Contract.Node {
+    if (!above) try s.nodes.put(s.e.gpa(), key, none - 1);
+    return null;
+}
+
 pub fn resList(s: *Sink, l: ResList) Error!*Contract.Draft.Res {
     if (l.label == none) return &s.d.res;
     return &(try s.d.labels.items[l.label].supplyOf(s.arena, l.k)).res;
