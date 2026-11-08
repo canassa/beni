@@ -3,7 +3,9 @@
 -- since a session stops at its first refusal and the run returns it: an
 -- encoder command while its pass is open (`EncoderLocked`), a pass command
 -- after `end` (`PassEnded`), an occlusion query with no query set, past the
--- set, begun twice or ended with none open, a negative vertex buffer
+-- set, begun twice or ended with none open, left open when its pass ends
+-- (`QueryActive`, by `with` and by `end`), an index begun twice in one pass
+-- (`QueryReused`), a negative vertex buffer
 -- offset, a view of a destroyed texture and a view of another device as an
 -- attachment, a bundle command after `finish`, a bundle format whose
 -- feature the device lacks, and immediates the host refuses or does not
@@ -129,6 +131,31 @@ twice rp =
 
 noneOpen : ⊤ → List String
 noneOpen ⊤ = withQueries "none open" RenderPass.endOcclusionQuery
+
+
+leftOpen : ⊤ → List String
+leftOpen ⊤ = withQueries "left open" λrp → RenderPass.beginOcclusionQuery rp (u32 0)
+
+
+endedOpen : ⊤ → List String
+endedOpen ⊤ = withQueries "ended open" openThenEnd
+
+
+openThenEnd : RenderPass → Result InputError ⊤
+openThenEnd rp =
+    RenderPass.beginOcclusionQuery rp (u32 0)?
+    RenderPass.end rp
+
+
+reused : ⊤ → List String
+reused ⊤ = withQueries "reused" twiceInTurn
+
+
+twiceInTurn : RenderPass → Result InputError ⊤
+twiceInTurn rp =
+    RenderPass.beginOcclusionQuery rp (u32 0)?
+    RenderPass.endOcclusionQuery rp?
+    RenderPass.beginOcclusionQuery rp (u32 0)
 
 
 negativeOffset : ⊤ → List String
@@ -277,6 +304,9 @@ main =
         , ( "pastTheSet", pastTheSet )
         , ( "beganTwice", beganTwice )
         , ( "noneOpen", noneOpen )
+        , ( "leftOpen", leftOpen )
+        , ( "endedOpen", endedOpen )
+        , ( "reused", reused )
         , ( "negativeOffset", negativeOffset )
         , ( "destroyedView", destroyedView )
         , ( "otherDevice", otherDevice )

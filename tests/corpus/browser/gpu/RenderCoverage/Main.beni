@@ -1,0 +1,385 @@
+-- The render operations the other fixtures leave out (docs/design/webgpu.md
+-- §6.2, §6.3; ledger §5). Accepted: a bundle encoded in a batch and run by
+-- the batch's own pass, a render pipeline's bind group layout made in a
+-- batch, bind groups (both overloads) and a blend constant in a pass, every
+-- other bundle command, timestamp writes in a render pass, and a texture
+-- itself as a color attachment. Refused before any native call: a destroyed
+-- and another device's resolve target, a destroyed and another device's
+-- depth attachment, another device's bundle, a bundle its failed batch
+-- rejected, and a destroyed occlusion query set. The last line of
+-- `bundleCommands` lists the native calls of the bundle as the fake host saw
+-- them; a native host lists none (`_expected.webgpu-expected`).
+import Binary
+import Gpu
+import Gpu.Adapter
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst, Index, Indirect, Uniform)
+import Gpu.Handle exposing (Batch, BindGroup, Buffer, CommandEncoder, Device, RenderBundleEncoder, RenderPass, RenderPipeline, Shader, Texture, TextureView)
+import Gpu.QuerySet
+import Gpu.RenderBundleEncoder as BundleEncoder
+import Gpu.RenderPass as RenderPass
+import Gpu.RenderPipeline
+import Gpu.Scalar as Scalar
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+wgsl : String
+wgsl =
+    String.join
+        [ "@group(0) @binding(0) var<uniform> tint : vec4f;"
+        , "@vertex fn vs(@builtin(vertex_index) v : u32) -> @builtin(position) vec4f {"
+        , "    return vec4f(f32(v) * 0.1, 0.0, 0.5, 1.0);"
+        , "}"
+        , "@fragment fn fs() -> @location(0) vec4f { return tint; }"
+        ]
+        "\n"
+
+
+shader : Device → Shader
+shader d = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+
+
+describe : Shader → Types.RenderPipelineDescriptor
+describe module =
+    base = Types.renderPipelineDescriptor Types.Auto (Types.vertexState module)
+    { base
+        | fragment =
+            Types.Value
+                (Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ])
+    }
+
+
+pipeline : Device → RenderPipeline
+pipeline d = must (Gpu.Device.createRenderPipeline d (describe (shader d)))
+
+
+side : Types.Extent3D
+side =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 4), depthOrArrayLayers = Types.Default }
+
+
+texture : Device, Types.TextureFormat, Int → Texture
+texture d format samples =
+    desc = Types.textureDescriptor side format (Flags.texture [ Flags.RenderAttachment ])
+    must (Gpu.Device.createTexture d { desc | sampleCount = Types.Value (u32 samples) })
+
+
+view : Texture → TextureView
+view t = must (Gpu.Texture.createView t Types.textureViewDescriptor)
+
+
+color : TextureView → Types.RenderPassColorAttachment
+color v = Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store
+
+
+-- A uniform buffer bound at group 0 of `p`.
+group : Device, RenderPipeline → BindGroup
+group d p =
+    layout = must (Gpu.RenderPipeline.getBindGroupLayout p (u32 0))
+    uniform = must (Gpu.Device.createBuffer d (buffer 16 [ Uniform, CopyDst ]))
+    must
+        (Gpu.Device.createBindGroup
+            d
+            (Types.bindGroupDescriptor layout
+                [ Types.bindGroupEntry (u32 0) (Types.WholeBufferBinding uniform) ]
+            )
+        )
+
+
+-- One encoding run, shown.
+encoded : String, Device, (CommandEncoder → Result InputError ⊤) → String
+encoded name d body =
+    name ++ ": " ++ GpuShow.checked (Encode.run d Types.commandEncoderDescriptor body) λ_ → "Ok"
+
+
+inPass :
+      Types.RenderPassDescriptor
+    , (RenderPass → Result InputError ⊤)
+    , CommandEncoder
+    → Result InputError ⊤
+inPass descriptor body enc = RenderPass.with enc descriptor body
+
+
+nothing : RenderPass → Result InputError ⊤
+nothing _ = Ok ⊤
+
+
+three : RenderPass.DrawArguments
+three = RenderPass.vertices (u32 3)
+
+
+-- ---- Accepted -------------------------------------------------------------------
+
+marker : RenderBundleEncoder → Result InputError ⊤
+marker b = BundleEncoder.insertDebugMarker b "in a batch"
+
+
+batchRender : RenderPipeline, Batch → Result InputError ⊤
+batchRender p b =
+    t =
+        Batch.createTexture
+            b
+            (Types.textureDescriptor
+                side
+                Types.Rgba8unorm
+                (Flags.texture [ Flags.RenderAttachment ])
+            )?
+    v = Batch.createView b t Types.textureViewDescriptor?
+    made =
+        Batch.encodeBundle b (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) marker?
+    _ = Batch.getRenderBindGroupLayout b p (u32 0)?
+    _ =
+        Batch.encode
+            b
+            Types.commandEncoderDescriptor
+            (inPass
+                (Types.renderPassDescriptor [ Just (color v) ])
+                (λrp → RenderPass.executeBundles rp [ made.bundle ])
+                _
+            )?
+    Ok ⊤
+
+
+batchBundle : ⊤ → List String
+batchBundle ⊤ = GpuKit.with "none" λd →
+    p = pipeline d
+    [ "batch: " ++ GpuShow.checked (Batch.run d "render" (batchRender p _)) λ_ → "Ok" ]
+
+
+offsets : Binary.View
+offsets = must (Binary.view (Binary.Local (must (Binary.allocate 4))) Binary.U32 Binary.whole)
+
+
+bound : RenderPipeline, BindGroup, RenderPass → Result InputError ⊤
+bound p g rp =
+    RenderPass.setPipeline rp p?
+    RenderPass.setBindGroup rp (u32 0) (Just g) []?
+    RenderPass.setBindGroup rp (u32 1) Nothing []?
+    RenderPass.setBindGroupSlice rp (u32 0) (Just g) offsets 0 0?
+    f = λx → must (Scalar.finiteF64 x)
+    RenderPass.setBlendConstant
+        rp
+        (Types.ColorFields (Types.colorDict (f 0.5) (f 0.5) (f 0.5) (f 1.0)))?
+    RenderPass.draw rp three
+
+
+bindGroups : ⊤ → List String
+bindGroups ⊤ = GpuKit.with "none" λd →
+    p = pipeline d
+    g = group d p
+    v = view (texture d Types.Rgba8unorm 1)
+    [ encoded
+        "bind groups"
+        d
+        (inPass (Types.renderPassDescriptor [ Just (color v) ]) (bound p g _) _)
+    ]
+
+
+bundled : RenderPipeline, BindGroup, Buffer, Buffer, RenderBundleEncoder → Result InputError ⊤
+bundled p g indices args b =
+    BundleEncoder.pushDebugGroup b "bundle"?
+    BundleEncoder.setPipeline b p?
+    BundleEncoder.setBindGroup b (u32 0) (Just g) []?
+    BundleEncoder.setBindGroupSlice b (u32 0) (Just g) offsets 0 0?
+    BundleEncoder.setVertexBuffer b (u32 0) Nothing 0 Nothing?
+    BundleEncoder.setIndexBuffer b indices Types.IndexUint32 0 Nothing?
+    BundleEncoder.draw b three?
+    BundleEncoder.drawIndexed b (RenderPass.indices (u32 3))?
+    BundleEncoder.drawIndirect b args 0?
+    BundleEncoder.drawIndexedIndirect b args 16?
+    BundleEncoder.insertDebugMarker b "drawn"?
+    BundleEncoder.popDebugGroup b
+
+
+bundleCommands : ⊤ → List String
+bundleCommands ⊤ = GpuKit.with "none" λd →
+    p = pipeline d
+    g = group d p
+    indices =
+        must (Gpu.Device.createBuffer d { (buffer 12 [ Index ]) | label = Types.Value "indices" })
+    args =
+        must (Gpu.Device.createBuffer d { (buffer 36 [ Indirect ]) | label = Types.Value "args" })
+    made =
+        Encode.bundle
+            d
+            (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+            (bundled p g indices args _)
+    [ "bundle: " ++ GpuShow.checked made λ_ → "Ok", String.join (GpuHost.commands ⊤) "; " ]
+
+
+timestamps : ⊤ → List String
+timestamps ⊤ =
+    GpuHost.inject "none"
+    adapter = must (Gpu.requestAdapter Types.adapterOptions)
+    descriptor =
+        { (Types.deviceDescriptor)
+            | requiredFeatures = Types.Value [ Types.FeatureTimestampQuery ]
+        }
+    case Gpu.Adapter.requestDevice adapter descriptor of
+        Err problem →
+            [ "timestamps: " ++ GpuShow.initError problem ]
+
+        Ok d →
+            queries =
+                must
+                    (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Timestamp (u32 2)))
+            writes =
+                { (Types.renderPassTimestampWrites queries)
+                    | beginningOfPassWriteIndex = Types.Value (u32 0)
+                    , endOfPassWriteIndex = Types.Value (u32 1)
+                }
+            v = view (texture d Types.Rgba8unorm 1)
+            pass =
+                { (Types.renderPassDescriptor [ Just (color v) ])
+                    | timestampWrites = Types.Value writes
+                }
+            [ encoded "timestamps" d (inPass pass nothing _) ]
+
+
+attachmentTexture : ⊤ → List String
+attachmentTexture ⊤ = GpuKit.with "none" λd →
+    t = texture d Types.Rgba8unorm 1
+    attachment = Types.renderPassColorAttachment (Types.AttachmentTexture t) Types.Clear Types.Store
+    [ encoded
+        "texture attachment"
+        d
+        (inPass (Types.renderPassDescriptor [ Just attachment ]) nothing _)
+    ]
+
+
+-- ---- Refused ------------------------------------------------------------------
+
+-- A 4-sample target resolved into `target`.
+resolved : Device, Types.AttachmentView → Types.RenderPassDescriptor
+resolved d target =
+    ms = view (texture d Types.Rgba8unorm 4)
+    Types.renderPassDescriptor [ Just { (color ms) | resolveTarget = Types.Value target } ]
+
+
+resolveTargets : ⊤ → List String
+resolveTargets ⊤ = GpuKit.with "none" λd →
+    other = must (GpuKit.device "none")
+    gone = texture d Types.Rgba8unorm 1
+    goneView = view gone
+    Gpu.Texture.destroy gone
+    elsewhere = view (texture other Types.Rgba8unorm 1)
+    toGone = resolved d (Types.AttachmentTextureView goneView)
+    toElsewhere = resolved d (Types.AttachmentTextureView elsewhere)
+    [ encoded
+        "destroyed resolve target"
+        d
+        (inPass toGone nothing _)
+    , encoded
+        "other device's resolve target"
+        d
+        (inPass toElsewhere nothing _)
+    ]
+
+
+-- A pass with `depth` as its depth attachment.
+withDepth : Device, TextureView → Types.RenderPassDescriptor
+withDepth d depth =
+    attachment =
+        { (Types.renderPassDepthStencilAttachment (Types.AttachmentTextureView depth))
+            | depthClearValue = Types.Value (must (Scalar.finiteF32 1.0))
+            , depthLoadOp = Types.Value Types.Clear
+            , depthStoreOp = Types.Value Types.Discard
+        }
+    { (Types.renderPassDescriptor [ Just (color (view (texture d Types.Rgba8unorm 1))) ])
+        | depthStencilAttachment = Types.Value attachment
+    }
+
+
+depthAttachments : ⊤ → List String
+depthAttachments ⊤ = GpuKit.with "none" λd →
+    other = must (GpuKit.device "none")
+    gone = texture d Types.Depth24plus 1
+    goneView = view gone
+    Gpu.Texture.destroy gone
+    elsewhere = view (texture other Types.Depth24plus 1)
+    onGone = withDepth d goneView
+    onElsewhere = withDepth d elsewhere
+    [ encoded "destroyed depth attachment" d (inPass onGone nothing _)
+    , encoded "other device's depth attachment" d (inPass onElsewhere nothing _)
+    ]
+
+
+-- A batch that encodes a bundle, keeps it, then is refused.
+refusedBatch : Batch → Result InputError ⊤
+refusedBatch b =
+    made =
+        Batch.encodeBundle b (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) marker?
+    GpuProbe.keepBundle made.bundle
+    _ = Batch.createBuffer b { (buffer 6 [ CopyDst ]) | mappedAtCreation = Types.Value True }?
+    Ok ⊤
+
+
+bundles : ⊤ → List String
+bundles ⊤ = GpuKit.with "none" λd →
+    other = must (GpuKit.device "none")
+    elsewhere =
+        must
+            (Encode.bundle
+                other
+                (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+                marker
+            )
+    failed = Batch.run d "refused" refusedBatch
+    v = view (texture d Types.Rgba8unorm 1)
+    pass = Types.renderPassDescriptor [ Just (color v) ]
+
+    rejected =
+        case GpuProbe.keptBundle ⊤ of
+            Just kept →
+                encoded
+                    "a rejected bundle"
+                    d
+                    (inPass pass (λrp → RenderPass.executeBundles rp [ kept ]) _)
+
+            Nothing →
+                "no bundle was kept"
+    [ encoded
+        "other device's bundle"
+        d
+        (inPass pass (λrp → RenderPass.executeBundles rp [ elsewhere.bundle ]) _)
+    , "the batch: " ++ GpuShow.checked failed λ_ → "Ok"
+    , rejected
+    ]
+
+
+querySets : ⊤ → List String
+querySets ⊤ = GpuKit.with "none" λd →
+    queries = must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 1)))
+    Gpu.QuerySet.destroy queries
+    v = view (texture d Types.Rgba8unorm 1)
+    pass =
+        { (Types.renderPassDescriptor [ Just (color v) ])
+            | occlusionQuerySet = Types.Value queries
+        }
+    [ encoded "destroyed query set" d (inPass pass nothing _) ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "batchBundle", batchBundle )
+        , ( "bindGroups", bindGroups )
+        , ( "bundleCommands", bundleCommands )
+        , ( "timestamps", timestamps )
+        , ( "attachmentTexture", attachmentTexture )
+        , ( "resolveTargets", resolveTargets )
+        , ( "depthAttachments", depthAttachments )
+        , ( "bundles", bundles )
+        , ( "querySets", querySets )
+        ]

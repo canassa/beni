@@ -265,6 +265,9 @@ inputError input =
         Error.QuerySetMissing d →
             "QuerySetMissing " ++ d.path
 
+        Error.QueryReused d →
+            "QueryReused " ++ d.path ++ " " ++ String.fromInt d.index
+
         Error.SessionState Error.DeviceLeased →
             "SessionState DeviceLeased"
 

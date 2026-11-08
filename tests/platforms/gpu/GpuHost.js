@@ -772,6 +772,27 @@ const faults = {
     }),
 };
 
+// What a hostile host throws where the ledger documents a `TypeError` of a
+// format check (ledger §7): a plain object named like one, an `Error` named
+// like one, and two native classes the ledger does not list there. Each is
+// a defect, never `FormatFeatureRejected`.
+const hostile = {
+  plain: () => ({ name: "TypeError", message: "a plain object named TypeError" }),
+  named: () => globalThis.Object.assign(new globalThis.Error("an Error named TypeError"), { name: "TypeError" }),
+  range: () => new globalThis.RangeError("injected RangeError"),
+  dom: () => new globalThis.DOMException("injected DOMException", "OperationError"),
+};
+for (const site of ["view", "render", "bundle"])
+  for (const kind of globalThis.Object.keys(hostile))
+    faults[`${site}-throws-${kind}`] = () => {
+      bufferFaults[site] = () => {
+        throw hostile[kind]();
+      };
+    };
+faults["render-pipeline-range"] = () => {
+  bufferFaults.renderAsync = () => globalThis.Promise.reject(new globalThis.RangeError("injected RangeError"));
+};
+
 // Every device: its scope stack as the page pushed it, so a pop knows its
 // filter; its pops, held or faulted; its `createSampler`, counted or made
 // to throw.

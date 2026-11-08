@@ -28,7 +28,8 @@ browser's WebGPU API with types. Only the main thread has them now.
   `setStencilReference`, `beginOcclusionQuery`, `endOcclusionQuery`, `executeBundles` and the
   others. `Gpu.RenderBundleEncoder`: the same draw commands and `finish`.
 - `Gpu.Encode.run`: encode commands. `Gpu.Encode.bundle`: encode a render bundle.
-  `Gpu.CommandEncoder` and `Gpu.ComputePass` have the commands: `beginRenderPass`, copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
+  `Gpu.CommandEncoder` has `beginRenderPass` and `beginComputePass`. `Gpu.CommandEncoder` and
+  `Gpu.ComputePass` have the commands: copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
   `setBindGroup`, `dispatchWorkgroups`, `setImmediates` and the others.
 - `Gpu.Batch`: many synchronous operations, checked together.
 - `Gpu.Submission`: `done`, which waits for the work of one submit.
@@ -139,6 +140,54 @@ browser's WebGPU API with types. Only the main thread has them now.
    that names such a format on a device without the feature gives `UnsupportedCapability`.
 7. **A batch can make render resources.** `Gpu.Batch.createView`, `createRenderPipeline`,
    `getRenderBindGroupLayout` and `encodeBundle` are the batch forms.
+8. **An occlusion query ends before its pass.** A pass that ends with an open query gives
+   `QueryActive`. An index used a second time in one pass gives `QueryReused`.
+
+```beni platform=browser-tea
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle exposing (CommandBuffer, Device, RenderPass, RenderPipeline, TextureView)
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+
+
+wgsl : String
+wgsl =
+    "@vertex fn vs(@builtin(vertex_index) v : u32) -> @builtin(position) vec4f {\n"
+        ++ "    return vec4f(f32(v % 2u), f32(v / 2u), 0.0, 1.0);\n"
+        ++ "}\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+
+
+pipeline : Device → Result Error.Error RenderPipeline
+pipeline device =
+    module = (Gpu.Device.createShaderModule device (Types.shaderModuleDescriptor wgsl))?
+    base = Types.renderPipelineDescriptor Types.Auto (Types.vertexState module)
+    fragment = Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ]
+    Gpu.Device.createRenderPipeline device { base | fragment = Types.Value fragment }
+
+
+triangle : RenderPipeline, RenderPass → Result InputError ⊤
+triangle p pass =
+    RenderPass.setPipeline pass p?
+    three = Result.mapError (Scalar.u32 3) (Error.atPath "vertexCount" _)?
+    RenderPass.draw pass (RenderPass.vertices three)
+
+
+draw : Device, TextureView → Result Error.Error CommandBuffer
+draw device target =
+    p = pipeline device?
+    color =
+        Types.renderPassColorAttachment (Types.AttachmentTextureView target) Types.Clear Types.Store
+    pass = Types.renderPassDescriptor [ Just color ]
+    encoded =
+        (Encode.run device Types.commandEncoderDescriptor λencoder →
+            RenderPass.with encoder pass (triangle p _)
+        )?
+    Ok encoded.commands
+```
 
 ## Canvases and frames
 

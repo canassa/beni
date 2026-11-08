@@ -16,7 +16,8 @@
 --!     drawTriangle : Gpu.Handle.RenderPipeline, Gpu.Handle.RenderPass → Result Gpu.Error.InputError ⊤
 --!     drawTriangle pipeline pass =
 --!         Gpu.RenderPass.setPipeline pass pipeline?
---!         Gpu.RenderPass.draw pass (Gpu.RenderPass.vertices three)
+--!         count = Result.mapError (Gpu.Scalar.u32 3) (Gpu.Error.atPath "vertexCount" _)?
+--!         Gpu.RenderPass.draw pass (Gpu.RenderPass.vertices count)
 
 import Binary
 import Gpu.CommandEncoder as CommandEncoder
@@ -99,10 +100,12 @@ open : Handle.RenderPass → Result InputError Commands.At
 open pass = Session.pass (Js.from pass) "pass"
 
 
---| End the pass; its encoder takes commands again.
+--| End the pass; its encoder takes commands again. A pass with an open
+--| occlusion query is `QueryActive`, and stays open.
 pub end : Handle.RenderPass → Result InputError ⊤
 end pass =
     at = open pass?
+    Session.queriesClosed at?
     Session.endPass at.record (Js.from pass)
     Ok ⊤
 
@@ -279,7 +282,8 @@ setStencilReference pass reference =
 
 --| Begin occlusion query `index` of the pass's occlusion query set: a pass
 --| with none is `QuerySetMissing`, an index past the set `OutOfRange`, and
---| a query begun while one is open `QueryActive`.
+--| a query begun while one is open `QueryActive`, and an index begun before
+--| in this pass `QueryReused`.
 pub beginOcclusionQuery : Handle.RenderPass, Scalar.U32 → Result InputError ⊤
 beginOcclusionQuery pass index =
     at = open pass?
@@ -297,8 +301,11 @@ beginOcclusionQuery pass index =
                 (Error.OutOfRange { path = "queryIndex", offset = i, size = 1, available = count })
         else if Js.to (Js.get at.record "occlusion") then
             Session.refuse s (Error.QueryActive { path = "queryIndex" })
+        else if Js.to (Js.call (Js.get at.record "queries") "has" [ Js.from i ]) then
+            Session.refuse s (Error.QueryReused { path = "queryIndex", index = i })
         else
             Js.set at.record "occlusion" (Js.from True)
+            Js.call (Js.get at.record "queries") "add" [ Js.from i ] ▷ ignore
             Js.call (Js.from pass) "beginOcclusionQuery" [ Js.from i ] ▷ ignore
             Ok ⊤
 

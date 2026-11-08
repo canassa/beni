@@ -1,0 +1,13 @@
+-- A defect, never `FormatFeatureRejected` (CLAUDE.md rule 9; ledger §3, §7):
+-- `createRenderPipelineAsync` rejects with a `RangeError`, while the pipeline names a feature-gated format: the ledger documents a `GPUPipelineError` or the format check's `TypeError` there. The page stops.
+import GpuFormats
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuFormats.withFeature "render-pipeline-range" λd → [ GpuFormats.renderAsync d ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

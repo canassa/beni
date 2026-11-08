@@ -10,6 +10,7 @@
 --! after `finish`, `EncoderFinished`; after the run, `SessionState
 --! SessionEnded`.
 
+import Gpu.Commands as Commands
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
 import Gpu.Handle as Handle
@@ -28,32 +29,6 @@ type alias V =
 
 ignore : V → ⊤
 ignore _ = ⊤
-
-
--- An optional native argument: `undefined`, which Web IDL reads as omitted.
-optional : Maybe Int → V
-optional value =
-    case value of
-        Just n →
-            Js.from n
-
-        Nothing →
-            Js.undefined
-
-
--- A size or an offset, as a `GPUSize64` accepts it, latched when refused.
-size64 : V, Int, String → Result InputError ⊤
-size64 s value path = Session.check s (Result.map (Memory.size64 value path) λ_ → ⊤)
-
-
-optionalSize : V, Maybe Int, String → Result InputError ⊤
-optionalSize s value path =
-    case value of
-        Just n →
-            size64 s n path
-
-        Nothing →
-            Ok ⊤
 
 
 --| The encoder's label.
@@ -125,6 +100,7 @@ beginRenderPass encoder descriptor =
     p = Engine.recordOf pass
     Js.set p "occlusionQuerySet" occlusion
     Js.set p "occlusion" (Js.from False)
+    Js.set p "queries" (Js.construct (Js.global "Set") [])
     Ok (Js.to pass)
 
 
@@ -172,15 +148,15 @@ copyBufferToBuffer encoder source sourceOffset destination destinationOffset siz
     s = at.session
     Session.usable s (Js.from source) "source"?
     Session.usable s (Js.from destination) "destination"?
-    size64 s sourceOffset "sourceOffset"?
-    size64 s destinationOffset "destinationOffset"?
-    optionalSize s size "size"?
+    Commands.size64 s sourceOffset "sourceOffset"?
+    Commands.size64 s destinationOffset "destinationOffset"?
+    Commands.optionalSize s size "size"?
     Js.call native "copyBufferToBuffer"
         [ Js.from source
         , Js.from sourceOffset
         , Js.from destination
         , Js.from destinationOffset
-        , optional size
+        , Commands.optional size
         ]
         ▷ ignore
     Ok ⊤
@@ -200,8 +176,9 @@ copyBuffer encoder source destination size =
     s = at.session
     Session.usable s (Js.from source) "source"?
     Session.usable s (Js.from destination) "destination"?
-    optionalSize s size "size"?
-    Js.call native "copyBufferToBuffer" [ Js.from source, Js.from destination, optional size ]
+    Commands.optionalSize s size "size"?
+    Js.call native "copyBufferToBuffer"
+        [ Js.from source, Js.from destination, Commands.optional size ]
         ▷ ignore
     Ok ⊤
 
@@ -280,9 +257,9 @@ clearBuffer encoder buffer offset size =
     at = Session.encoder native "encoder"?
     s = at.session
     Session.usable s (Js.from buffer) "buffer"?
-    size64 s offset "offset"?
-    optionalSize s size "size"?
-    Js.call native "clearBuffer" [ Js.from buffer, Js.from offset, optional size ] ▷ ignore
+    Commands.size64 s offset "offset"?
+    Commands.optionalSize s size "size"?
+    Js.call native "clearBuffer" [ Js.from buffer, Js.from offset, Commands.optional size ] ▷ ignore
     Ok ⊤
 
 
@@ -303,7 +280,7 @@ resolveQuerySet encoder querySet firstQuery queryCount destination destinationOf
     s = at.session
     Session.usable s (Js.from querySet) "querySet"?
     Session.usable s (Js.from destination) "destination"?
-    size64 s destinationOffset "destinationOffset"?
+    Commands.size64 s destinationOffset "destinationOffset"?
     Js.call native "resolveQuerySet"
         [ Js.from querySet
         , Js.from (Scalar.u32ToInt firstQuery)

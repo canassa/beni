@@ -100,3 +100,18 @@ remember surface =
     before = Js.read remembered
     Js.write remembered (Just (Js.from surface))
     Maybe.map before λb → Js.same b (Js.from surface)
+
+-- The render bundle `keepBundle` was given last.
+keptBundles : Js.Ref (Maybe Js.Value)
+keptBundles = Js.ref Nothing
+
+
+--| Keep a render bundle, as a program that stores a provisional handle
+--| might.
+pub keepBundle : Handle.RenderBundle → ⊤
+keepBundle b = Js.write keptBundles (Just (Js.from b))
+
+
+--| The render bundle kept last.
+pub keptBundle : ⊤ → Maybe Handle.RenderBundle
+keptBundle ⊤ = Maybe.map (Js.read keptBundles) Js.to

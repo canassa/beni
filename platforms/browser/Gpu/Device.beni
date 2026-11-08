@@ -254,23 +254,11 @@ createRenderPipelineAsync device descriptor =
                     Engine.adoptInBatch value r Js.null
                     Engine.Expected (Ok value)
                 else
-                    case Make.gated formats of
-                        Just ( format, required ) →
-                            if Engine.isTypeError value then
-                                Engine.Expected
-                                    (Err
-                                        (Error.FormatFeatureRejected
-                                            { format = format
-                                            , required = required
-                                            , message = Engine.messageOf value
-                                            }
-                                        )
-                                    )
-                            else
-                                pipelineFailure "createRenderPipelineAsync" value
-
-                        Nothing →
-                            pipelineFailure "createRenderPipelineAsync" value
+                    candidates = Make.gated formats
+                    if candidates ≠ [] && Engine.isTypeError value then
+                        Engine.Expected (Err (Make.formatFailure candidates value))
+                    else
+                        pipelineFailure "createRenderPipelineAsync" value
     case result of
         Ok pipeline →
             Engine.setStatus pipeline "accepted"

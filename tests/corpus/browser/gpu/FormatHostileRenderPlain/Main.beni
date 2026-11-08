@@ -1,0 +1,13 @@
+-- A defect, never `FormatFeatureRejected` (CLAUDE.md rule 9; ledger §3, §7):
+-- `createRenderPipeline` throws a plain object named `TypeError`, while the call names a feature-gated format: only a native `TypeError` is the documented format check. The page stops.
+import GpuFormats
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuFormats.withFeature "render-throws-plain" λd → [ GpuFormats.render d ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

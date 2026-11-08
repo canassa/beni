@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"no render attachment usage: Ok Ok"</li>
+      <li>"sample count mismatch: Ok Ok"</li>
+      <li>"misaligned indirect offset: Ok Ok"</li>
+    </ol>
+  </main>
+</body>

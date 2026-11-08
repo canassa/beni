@@ -1,0 +1,103 @@
+--! The calls whose content timeline checks a feature-gated format
+--! (ledger §3, §5), each naming `depth32float-stencil8` on a device made with
+--! that feature: what the format fixtures run after a fault.
+
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Encode
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, Shader)
+import Gpu.Scalar as Scalar
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must)
+import GpuShow
+
+
+--| `run` on a device with `depth32float-stencil8`, after `fault`.
+pub withFeature : String, (Device → List String) → List String
+withFeature fault run =
+    GpuHost.inject ("more-features," ++ fault)
+    adapter = must (Gpu.requestAdapter Types.adapterOptions)
+
+    descriptor =
+        { (Types.deviceDescriptor)
+            | requiredFeatures = Types.Value [ Types.FeatureDepth32floatStencil8 ]
+        }
+    case Gpu.Adapter.requestDevice adapter descriptor of
+        Err problem →
+            [ "device: " ++ GpuShow.initError problem ]
+
+        Ok d →
+            run d
+
+
+shader : Device → Shader
+shader d =
+    must
+        (Gpu.Device.createShaderModule
+            d
+            (Types.shaderModuleDescriptor
+                "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }"
+            )
+        )
+
+
+pipeline : Device → Types.RenderPipelineDescriptor
+pipeline d =
+    { (Types.renderPipelineDescriptor Types.Auto (Types.vertexState (shader d)))
+        | depthStencil =
+            Types.Value
+                { (Types.depthStencilState Types.Depth32floatStencil8)
+                    | depthWriteEnabled = Types.Value False
+                    , depthCompare = Types.Value Types.Always
+                }
+    }
+
+
+--| A view of a `depth32float-stencil8` texture in that format.
+pub view : Device → String
+view d =
+    width = must (Scalar.u32 4)
+
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    (Types.Extent3DFields
+                        { width = width
+                        , height = Types.Default
+                        , depthOrArrayLayers = Types.Default
+                        }
+                    )
+                    Types.Depth32floatStencil8
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    descriptor = { (Types.textureViewDescriptor) | format = Types.Value Types.Depth32floatStencil8 }
+    "view: " ++ GpuShow.checked (Gpu.Texture.createView texture descriptor) λ_ → "made"
+
+
+--| A render pipeline with that depth format, made synchronously.
+pub render : Device → String
+render d =
+    "pipeline: " ++ GpuShow.checked (Gpu.Device.createRenderPipeline d (pipeline d)) λ_ → "made"
+
+
+--| The same pipeline, made asynchronously.
+pub renderAsync : Device → String
+renderAsync d =
+    "async: " ++ GpuShow.checked (Gpu.Device.createRenderPipelineAsync d (pipeline d)) λ_ → "made"
+
+
+--| A render bundle encoder with that depth format.
+pub bundle : Device → String
+bundle d =
+    descriptor =
+        { (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+            | depthStencilFormat = Types.Value Types.Depth32floatStencil8
+        }
+    "bundle: " ++ GpuShow.checked (Gpu.Encode.bundle d descriptor λ_ → Ok ⊤) λ_ → "made"

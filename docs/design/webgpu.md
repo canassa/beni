@@ -862,8 +862,12 @@ the commands in `Gpu.RenderBundleEncoder` (its `finish` closes it, as `CommandEn
 does). The mixins live once, in the private `Gpu.Commands`, which `Gpu.ComputePass` now uses too. An
 attachment, resolve target or query set must be usable, and a view is unusable once its texture is
 destroyed (`ResourceDestroyed`). Occlusion queries are checked locally: the new `InputError` arms
-`QuerySetMissing`, `QueryActive` and `QueryInactive`, and an index past the set is `OutOfRange` at
-`queryIndex`. `executeBundles` keeps no shadow state, so it has none to clear. Fixtures:
+`QuerySetMissing`, `QueryActive` (also a pass ended, by `end` or by `with`, with a query open),
+`QueryInactive` and `QueryReused` (an index begun twice in one pass), and an index past the set is
+`OutOfRange` at `queryIndex`. The host does not say which feature-gated format it refused, so
+`FormatFailure` names the first and lists every `candidates`; only a native `TypeError` is that
+failure, and a same-named object, an `Error` named `TypeError`, a `RangeError` or a
+`DOMException` there is a defect (`browser/gpu/FormatHostile*`). `executeBundles` keeps no shadow state, so it has none to clear. Fixtures:
 `browser/gpu/RenderScenes` (multi-pass, indirect, depth, stencil, MSAA resolve, MRT, a bundle, a
 batch and occlusion, compared under `test-webgpu` with pixels worked out by hand),
 `RenderRefusals`, `RenderPipelines`, `RenderFormatRejected`, and the defects
