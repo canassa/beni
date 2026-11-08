@@ -1326,6 +1326,34 @@ as a defect (`browser/gpu/WorkDoneRejected`). `done` answers at once for work al
 buffer of another device before the native call; the other command-buffer checks land with the
 encoders (S2b).
 
+*As built — S3b (2026-11-08, #2241).* `Gpu.Surface` has `fromElement`, `fromCanvas`, `fromOffscreen`
+(a main-thread `Browser.Canvas.offscreen`), `configure`, `unconfigure`, `getConfiguration` and
+`canvas`, whose `CanvasSource` is `Element Browser.Canvas.Canvas | Offscreen
+Browser.Canvas.OffscreenCanvas`. `configure` is a checked operation on the configuration's device: a
+feature-gated format is `UnsupportedCapability` first, the host's `TypeError` is
+`CanvasConfigurationRejected`, and a configuration that failed leaves the surface unconfigured for
+frames. `getConfiguration` reads the host's configuration back, a member the host leaves out as
+`Default`. `Gpu.Frame` has `submit`, `batch`, `getCurrentTexture`, `encode` and `submitCommands`; a
+frame is a `Gpu.Batch.run` on the surface's device whose batch is the `Frame`, so §8.2's batch bridge
+is the batch itself, and `Frame.submit` refuses an unconfigured surface (`CanvasUnconfigured`) and a
+leased device before the callback runs. Every native submit of the frame, through
+`submitCommands` or `Gpu.Batch.submit` on the frame's batch, adds its receipt to `submissions` in
+issue order. **The non-yielding host-turn section is the scope section itself**: the callback is
+`sync`, so it is emitted as plain JavaScript with no suspension point, and the engine runs it inside
+the device's scope section, one synchronous call; `browser/gpu/SurfaceFrames`' *checkpoint* shows
+that a microtask queued at the start of the callback has not run when it has submitted. A current
+texture and every view of it expire (`ResourceExpired`, the engine's `usable`) when its frame ends,
+when the surface is configured again or unconfigured, and when its canvas's `width` or `height`
+changes. `importExternalTexture` waits for S5 with the other media sources. Fixtures:
+`SurfaceFrames` (receipts, expiry, resize, reconfiguration, an `OffscreenCanvas`, the checkpoint),
+`SurfaceConfiguration` (configuration, its refusals and readback, a lease), `CanvasPage` (a TEA page
+with a stable `<canvas>`), and the defect `CurrentTextureUnlisted`. In `test-webgpu`'s Chrome a
+canvas texture breaks the device's WebGPU instance — the next `popErrorScope` and
+`onSubmittedWorkDone` reject with an `OperationError` the ledger does not list — so the pages that
+acquire one are `.webgpu-skip` (#2267); `SurfaceConfiguration` runs there and matches the fake. A
+direct `Browser.hosted` page is #2268.
+
+
 ## 9. Reserved
 
 The additional rendering abstraction was removed by the owner on 2026-10-30.

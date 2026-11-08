@@ -550,6 +550,7 @@ module Gpu.Engine
   value adoptAdapter : V → ⊤  -- impure
   value adoptDevice : V, V → ⊤  -- impure
   value adoptInBatch : V, V, V → ⊤  -- impure
+  value adoptSurface : V, V → ⊤  -- impure
   value awaitHost : V, String, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
   value awaitLost : V → DeviceLoss  -- suspends
   value awaitPending : V → Result Error ⊤  -- suspends
@@ -566,6 +567,7 @@ module Gpu.Engine
   value deviceContext : V, String → String  -- impure
   value deviceId : V → Int  -- impure
   value entry : ⊤ → Result Missing V  -- impure
+  value expiresWith : V, V, V → ⊤  -- impure
   value guard : V, String, (⊤ → ⊤) → ⊤  -- impure
   value hold : V → ⊤  -- impure
   value isDomException : V, String → Bool  -- impure
@@ -576,6 +578,7 @@ module Gpu.Engine
   value loss : V → Maybe DeviceLoss  -- impure
   value member : V, String → V  -- impure
   value messageOf : V → String  -- impure
+  value nextGeneration : V → ⊤  -- impure
   value openChannelCount : ⊤ → Int  -- impure
   value pendingOutcome : V, String, V, (Bool, V → Outcome ⊤) → V  -- impure
   value readNames : V, String → List String  -- impure
@@ -784,6 +787,12 @@ module Gpu.Flags
   value textureUsageBits : TextureUsage → Int
   value textureUsagesBits : TextureUsages → Int
   value textureUsagesHas : TextureUsages, TextureUsage → Bool
+module Gpu.Frame
+  value batch : Frame → Batch
+  value encode : Frame, CommandEncoderDescriptor, (CommandEncoder → Result InputError a) → Result InputError { commands : CommandBuffer, value : a }  -- impure
+  value getCurrentTexture : Frame → Result InputError Texture  -- impure
+  value submit : Surface, String, (Frame → Result InputError a) → Result Error { submissions : List Submission, value : a }  -- suspends
+  value submitCommands : Frame, List CommandBuffer → Result InputError Submission  -- impure
 module Gpu.Handle
   alias Adapter
   type Batch
@@ -1150,6 +1159,17 @@ module Gpu.Shader
   value source : Shader → String  -- impure
 module Gpu.Submission
   value done : Submission → Result Error ⊤  -- suspends
+module Gpu.Surface
+  type CanvasSource
+    Element
+    Offscreen
+  value canvas : Surface → CanvasSource  -- impure
+  value configure : Surface, CanvasConfiguration → Result Error ⊤  -- suspends
+  value fromCanvas : Canvas → Result Error Surface  -- impure
+  value fromElement : String → Result Error Surface  -- impure
+  value fromOffscreen : OffscreenCanvas → Result Error Surface  -- impure
+  value getConfiguration : Surface → Maybe CanvasConfiguration  -- impure
+  value unconfigure : Surface → ⊤  -- impure
 module Gpu.Texture
   value createView : Texture, TextureViewDescriptor → Result Error TextureView  -- suspends
   value depthOrArrayLayers : Texture → Int  -- impure
