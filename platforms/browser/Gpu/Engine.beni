@@ -620,6 +620,7 @@ newScopes ⊤ =
         , ( "done", Js.from False )
         , ( "taken", Js.from False )
         , ( "onLoss", Js.null )
+        , ( "made", Js.null )
         ]
 
 
@@ -659,6 +660,7 @@ checked device operation labels call =
                     Js.call table "set"
                         [ made, Js.object [ ( "device", r ), ( "status", Js.from "provisional" ) ] ]
                         ▷ ignore
+                    Js.set scopes "made" made
 
                 Err _ →
                     ⊤
@@ -777,12 +779,13 @@ popScopes device r scopes operation labels i =
     else
         Js.set r "pops" (Js.from (int (Js.get r "pops") + 1))
         ch = Js.get r "channel"
+        context = deviceContext r operation
         Js.call (Js.call device "popErrorScope" []) "then"
             [ Js.from λerror →
-                guard ch λ⊤ → scoped r scopes operation labels i error
+                guard ch context λ⊤ → scoped r scopes operation labels i error
                 popped r
             , Js.from λerror →
-                guard ch λ⊤ → unexpectedScope r scopes error
+                guard ch context λ⊤ → unexpectedScope r scopes (contextual context error)
                 popped r
             ]
             ▷ ignore
@@ -822,11 +825,12 @@ scoped r scopes operation labels i error =
         unexpectedScope
             r
             scopes
-            (Js.construct (Js.global "Error")
-                [ Js.from
-                    ("webgpu: an error scope reported what its filter does not: " ++ operation)
-                , Js.object [ ( "cause", error ) ]
-                ]
+            (contextual
+                (deviceContext
+                    r
+                    (operation ++ ", an error scope reporting what its filter does not")
+                )
+                error
             )
     else
         detail =
@@ -911,6 +915,10 @@ leaveScopes : V, V → ⊤
 leaveScopes r scopes =
     Js.set scopes "done" (Js.from True)
     unwatch r scopes
+    -- A cancelled operation publishes nothing: what its call made is rejected.
+    made = Js.get scopes "made"
+    if not (Js.to (Js.get scopes "taken")) && not (Js.isNull made) then
+        Js.set (recordOf made) "status" (Js.from "rejected")
     unexpected = Js.get scopes "unexpected"
     if not (Js.to (Js.get scopes "taken")) && not (Js.isNull unexpected) then
         Js.set scopes "unexpected" Js.null
