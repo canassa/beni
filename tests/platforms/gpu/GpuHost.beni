@@ -156,3 +156,11 @@ pub foreign impure openScopes : Device → Int
 
 --| Write `line` to the console: what a page that stops still shows.
 pub foreign impure log : String → ⊤
+
+
+--| Raise the flag `name`, until the next `inject`.
+pub foreign impure raise : String → ⊤
+
+
+--| Whether the flag `name` is raised.
+pub foreign impure raised : String → Bool

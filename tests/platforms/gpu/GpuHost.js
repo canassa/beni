@@ -1189,6 +1189,7 @@ let secureContext = null;
 // holds. Each `inject` starts from it, so faults never pile up.
 function prepare() {
   renderLog.length = 0;
+  raisedFlags.clear();
   contextNull = false;
   if (!native()) fakeCanvases();
   wrapContexts();
@@ -1412,3 +1413,12 @@ export const log = (line) => {
   globalThis.console.log(line);
   return null;
 };
+
+// Named flags a page raises and reads, cleared by each `inject`: what lets
+// one fiber wait for another without joining it.
+const raisedFlags = new globalThis.Set();
+export const raise = (name) => {
+  raisedFlags.add(name);
+  return null;
+};
+export const raised = (name) => raisedFlags.has(name);
