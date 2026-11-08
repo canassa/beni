@@ -10,3 +10,11 @@ same = M.T 1 == M.T 2
 
 before : Bool
 before = M.T 1 < M.T 2
+
+
+differ : Bool
+differ = M.T 1 ≠ M.T 2
+
+
+atLeast : Bool
+atLeast = M.T 1 ≥ M.T 2
