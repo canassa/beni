@@ -1,0 +1,167 @@
+--! The handle types of WebGPU (`docs/design/webgpu.md` §2.1). A native
+--! handle is a transparent alias of its generated `Browser.Host` type: the
+--! value is the native object itself. The engine keeps every handle's state
+--! beside it, never on it, so every alias of one object sees the same state.
+--! The six engine handles have no native object of their own; only the
+--! platform makes them.
+--!
+--! No GPU operation is a method of these types: call an operation by its
+--! module, `Gpu.Device.destroy device`, or with the pipe,
+--! `device ▷ Gpu.Device.destroy` (§2.1, *What static dispatch reaches*).
+
+import Browser.Host.GPUAdapter
+import Browser.Host.GPUBindGroup
+import Browser.Host.GPUBindGroupLayout
+import Browser.Host.GPUBuffer
+import Browser.Host.GPUCanvasContext
+import Browser.Host.GPUCommandBuffer
+import Browser.Host.GPUCommandEncoder
+import Browser.Host.GPUComputePassEncoder
+import Browser.Host.GPUComputePipeline
+import Browser.Host.GPUDevice
+import Browser.Host.GPUExternalTexture
+import Browser.Host.GPUPipelineLayout
+import Browser.Host.GPUQuerySet
+import Browser.Host.GPUQueue
+import Browser.Host.GPURenderBundle
+import Browser.Host.GPURenderBundleEncoder
+import Browser.Host.GPURenderPassEncoder
+import Browser.Host.GPURenderPipeline
+import Browser.Host.GPUSampler
+import Browser.Host.GPUShaderModule
+import Browser.Host.GPUTexture
+import Browser.Host.GPUTextureView
+
+
+--| A `GPUAdapter`.
+pub type alias Adapter =
+    Browser.Host.GPUAdapter.GPUAdapter
+
+
+--| A `GPUDevice`.
+pub type alias Device =
+    Browser.Host.GPUDevice.GPUDevice
+
+
+--| A `GPUQueue`.
+pub type alias Queue =
+    Browser.Host.GPUQueue.GPUQueue
+
+
+--| A `GPUBuffer`.
+pub type alias Buffer =
+    Browser.Host.GPUBuffer.GPUBuffer
+
+
+--| A `GPUTexture`.
+pub type alias Texture =
+    Browser.Host.GPUTexture.GPUTexture
+
+
+--| A `GPUTextureView`.
+pub type alias TextureView =
+    Browser.Host.GPUTextureView.GPUTextureView
+
+
+--| A `GPUSampler`.
+pub type alias Sampler =
+    Browser.Host.GPUSampler.GPUSampler
+
+
+--| A `GPUExternalTexture`.
+pub type alias ExternalTexture =
+    Browser.Host.GPUExternalTexture.GPUExternalTexture
+
+
+--| A `GPUBindGroupLayout`.
+pub type alias BindGroupLayout =
+    Browser.Host.GPUBindGroupLayout.GPUBindGroupLayout
+
+
+--| A `GPUPipelineLayout`.
+pub type alias PipelineLayout =
+    Browser.Host.GPUPipelineLayout.GPUPipelineLayout
+
+
+--| A `GPUBindGroup`.
+pub type alias BindGroup =
+    Browser.Host.GPUBindGroup.GPUBindGroup
+
+
+--| A `GPUShaderModule`.
+pub type alias Shader =
+    Browser.Host.GPUShaderModule.GPUShaderModule
+
+
+--| A `GPUComputePipeline`.
+pub type alias ComputePipeline =
+    Browser.Host.GPUComputePipeline.GPUComputePipeline
+
+
+--| A `GPURenderPipeline`.
+pub type alias RenderPipeline =
+    Browser.Host.GPURenderPipeline.GPURenderPipeline
+
+
+--| A `GPUCommandEncoder`.
+pub type alias CommandEncoder =
+    Browser.Host.GPUCommandEncoder.GPUCommandEncoder
+
+
+--| A `GPUCommandBuffer`.
+pub type alias CommandBuffer =
+    Browser.Host.GPUCommandBuffer.GPUCommandBuffer
+
+
+--| A `GPUComputePassEncoder`.
+pub type alias ComputePass =
+    Browser.Host.GPUComputePassEncoder.GPUComputePassEncoder
+
+
+--| A `GPURenderPassEncoder`.
+pub type alias RenderPass =
+    Browser.Host.GPURenderPassEncoder.GPURenderPassEncoder
+
+
+--| A `GPURenderBundleEncoder`.
+pub type alias RenderBundleEncoder =
+    Browser.Host.GPURenderBundleEncoder.GPURenderBundleEncoder
+
+
+--| A `GPURenderBundle`.
+pub type alias RenderBundle =
+    Browser.Host.GPURenderBundle.GPURenderBundle
+
+
+--| A `GPUQuerySet`.
+pub type alias QuerySet =
+    Browser.Host.GPUQuerySet.GPUQuerySet
+
+
+--| A `GPUCanvasContext`.
+pub type alias Surface =
+    Browser.Host.GPUCanvasContext.GPUCanvasContext
+
+
+--| The live mapping of one mapping generation of a buffer (§7).
+pub foreign type Mapping
+
+
+--| A range of a mapping's memory (§7).
+pub foreign type MappedRange
+
+
+--| The receipt of one native submit (§8.3).
+pub foreign type Submission
+
+
+--| A group of synchronous operations checked together (§6.3).
+pub foreign type Batch
+
+
+--| One frame of a surface (§8).
+pub foreign type Frame
+
+
+--| The authority of a diagnostic session over its device's lease (§6.4).
+pub foreign type DiagnosticSession

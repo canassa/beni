@@ -1,0 +1,36 @@
+--! The WGSL language extensions the host supports (`WGSLLanguageFeatures`,
+--! `docs/design/webgpu.md` §2.1, §4): a snapshot of names, read once. The
+--! names are WGSL's, not the IDL's, so they stay names.
+
+--| A snapshot of WGSL language feature names, in their order.
+pub opaque type WgslFeatures
+    = WgslFeatures (List String)
+
+
+--| A snapshot of these names. What the engine reads a native set into.
+pub fromNames : List String → WgslFeatures
+fromNames names = WgslFeatures (List.sort names)
+
+
+--| Whether the host supports the language feature of this name.
+pub has : WgslFeatures, String → Bool
+has features name =
+    case features of
+        WgslFeatures names →
+            List.member names name
+
+
+--| Every name of the set, in order.
+pub values : WgslFeatures → List String
+values features =
+    case features of
+        WgslFeatures names →
+            names
+
+
+--| How many names the set has.
+pub size : WgslFeatures → Int
+size features =
+    case features of
+        WgslFeatures names →
+            List.length names

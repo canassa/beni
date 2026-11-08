@@ -1,0 +1,206 @@
+--! The numeric domains of WebGPU's IDL (`docs/design/webgpu.md` §3.1): a
+--! `U32`, `I32`, `Size64`, `FiniteF32` or `FiniteF64` holds only a value its
+--! IDL type accepts, so a descriptor never carries a number the host would
+--! refuse at conversion. Each constructor checks the domain and says which
+--! one a value missed; a constructor from a `Float` with `Truncating` in
+--! its name applies the standard's `[EnforceRange]` conversion, which drops
+--! the fraction first.
+--!
+--! Raw buffer bytes are not checked here: a payload may hold any bit
+--! pattern WGSL allows.
+
+import Js
+
+
+--| The domain a value was checked against.
+pub type Domain
+    = U32Domain
+    | I32Domain
+    | Size64Domain
+    | FiniteF32Domain
+    | FiniteF64Domain
+
+
+--| A value outside its domain: the domain, and the value as given.
+pub type alias DomainError =
+    expected : Domain
+    actual : Float
+
+
+--| An integer in 0 … 4294967295: `unsigned long`, and every GPU typedef
+--| of it (`GPUSize32`, `GPUIndex32`, `GPUIntegerCoordinate`, …).
+pub opaque type U32
+    = U32 Int
+
+
+--| An integer in -2147483648 … 2147483647: `long`, `GPUSignedOffset32` and
+--| `GPUDepthBias`.
+pub opaque type I32
+    = I32 Int
+
+
+--| An integer in 0 … 2⁶⁴ − 2048, the largest such Number: `GPUSize64`.
+--| Values above 2⁵³ are those a Number holds exactly.
+pub opaque type Size64
+    = Size64 Int
+
+
+--| A finite number that stays finite when rounded to 32 bits: `float`.
+pub opaque type FiniteF32
+    = FiniteF32 Float
+
+
+--| A finite number: `double`.
+pub opaque type FiniteF64
+    = FiniteF64 Float
+
+
+isInteger : Float → Bool
+isInteger x = Js.pure λ⊤ → Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from x ])
+
+
+isFinite : Float → Bool
+isFinite x = Js.pure λ⊤ → Js.to (Js.call (Js.global "Number") "isFinite" [ Js.from x ])
+
+
+fround : Float → Float
+fround x = Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "fround" [ Js.from x ])
+
+
+trunc : Float → Float
+trunc x = Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ])
+
+
+-- An integral value in [low, high], as an `Int`.
+integral : Domain, Float, Float, Float → Result DomainError Int
+integral domain low high x =
+    if isInteger x && x >= low && x <= high then
+        Ok (Js.to (Js.from x))
+    else
+        Err { expected = domain, actual = x }
+
+
+--| The `U32` of an integer, if it is in the domain.
+pub u32 : Int → Result DomainError U32
+u32 n = Result.map (integral U32Domain 0.0 4294967295.0 (toFloat n)) U32
+
+
+--| `[EnforceRange] unsigned long` of a number: its fraction dropped, then
+--| the domain checked. Not finite is out of the domain.
+pub u32Truncating : Float → Result DomainError U32
+u32Truncating x =
+    if isFinite x then
+        Result.mapError (Result.map (integral U32Domain 0.0 4294967295.0 (trunc x)) U32) λ_ →
+            { expected = U32Domain, actual = x }
+    else
+        Err { expected = U32Domain, actual = x }
+
+
+--| The value of a `U32`.
+pub u32ToInt : U32 → Int
+u32ToInt value =
+    case value of
+        U32 n →
+            n
+
+
+--| The `I32` of an integer, if it is in the domain.
+pub i32 : Int → Result DomainError I32
+i32 n = Result.map (integral I32Domain (-2147483648.0) 2147483647.0 (toFloat n)) I32
+
+
+--| `[EnforceRange] long` of a number: its fraction dropped, then the
+--| domain checked.
+pub i32Truncating : Float → Result DomainError I32
+i32Truncating x =
+    if isFinite x then
+        Result.mapError (Result.map (integral I32Domain (-2147483648.0) 2147483647.0 (trunc x)) I32) λ_ →
+            { expected = I32Domain, actual = x }
+    else
+        Err { expected = I32Domain, actual = x }
+
+
+--| The value of an `I32`.
+pub i32ToInt : I32 → Int
+i32ToInt value =
+    case value of
+        I32 n →
+            n
+
+
+-- 2⁶⁴: no Number lies between 2⁶⁴ − 2048 and it, so below it is at most
+-- 2⁶⁴ − 2048.
+size64Bound : Float
+size64Bound = 18446744073709551616.0
+
+
+size64Of : Float → Result DomainError Size64
+size64Of x =
+    if isInteger x && x >= 0.0 && x < size64Bound then
+        Ok (Size64 (Js.to (Js.from x)))
+    else
+        Err { expected = Size64Domain, actual = x }
+
+
+--| The `Size64` of an integer, if it is in the domain.
+pub size64 : Int → Result DomainError Size64
+size64 n = size64Of (toFloat n)
+
+
+--| The `Size64` of a number that is an integer: what reaches the values
+--| above 2⁵³ that an `Int` literal does not spell.
+pub size64FromFloat : Float → Result DomainError Size64
+size64FromFloat x = size64Of x
+
+
+--| `[EnforceRange] unsigned long long` of a number: its fraction dropped,
+--| then the domain checked.
+pub size64Truncating : Float → Result DomainError Size64
+size64Truncating x =
+    if isFinite x then
+        Result.mapError (size64Of (trunc x)) λ_ → { expected = Size64Domain, actual = x }
+    else
+        Err { expected = Size64Domain, actual = x }
+
+
+--| The value of a `Size64`, as the Number the host takes.
+pub size64ToInt : Size64 → Int
+size64ToInt value =
+    case value of
+        Size64 n →
+            n
+
+
+--| The `FiniteF32` of a number that is finite before and after rounding
+--| to 32 bits; it keeps the number as given, which the host rounds.
+pub finiteF32 : Float → Result DomainError FiniteF32
+finiteF32 x =
+    if isFinite x && isFinite (fround x) then
+        Ok (FiniteF32 x)
+    else
+        Err { expected = FiniteF32Domain, actual = x }
+
+
+--| The value of a `FiniteF32`.
+pub finiteF32ToFloat : FiniteF32 → Float
+finiteF32ToFloat value =
+    case value of
+        FiniteF32 x →
+            x
+
+
+--| The `FiniteF64` of a finite number.
+pub finiteF64 : Float → Result DomainError FiniteF64
+finiteF64 x =
+    if isFinite x then
+        Ok (FiniteF64 x)
+    else
+        Err { expected = FiniteF64Domain, actual = x }
+
+
+--| The value of a `FiniteF64`.
+pub finiteF64ToFloat : FiniteF64 → Float
+finiteF64ToFloat value =
+    case value of
+        FiniteF64 x →
+            x

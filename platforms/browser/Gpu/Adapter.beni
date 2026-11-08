@@ -1,0 +1,122 @@
+--! An adapter's snapshots and its one device (`docs/design/webgpu.md` §4,
+--! ledger §2). An adapter gives at most one device: once a request has
+--! succeeded it is consumed, and while one is in flight a second is
+--! refused. A failed request leaves it free.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InitError, AdapterConsumed, UnsupportedFeatures, UnsupportedLimits, FeatureRequestRejected, DeviceRequestRejected, InitializationLost, LimitProblem, AboveMaximum, BelowAlignment, NotPowerOfTwo)
+import Gpu.Feature as Feature
+import Gpu.Handle as Handle
+import Gpu.Limits as Limits
+import Gpu.Native as Native
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import Js
+
+
+--| The features the adapter supports.
+pub features : Handle.Adapter → Feature.Features
+features adapter = readFeatures (Js.get (Js.from adapter) "features")
+
+
+--| The limits the adapter supports.
+pub limits : Handle.Adapter → Limits.Limits
+limits adapter = Native.readLimits (Js.get (Js.from adapter) "limits")
+
+
+--| What the host says of the adapter, as it says it: a privacy-reduced
+--| string is kept as given.
+pub info : Handle.Adapter → Types.AdapterInfo
+info adapter = Native.readAdapterInfo (Js.get (Js.from adapter) "info")
+
+
+readFeatures : Js.Value → Feature.Features
+readFeatures set = Feature.fromNames (Js.to (Js.call (Js.global "Array") "from" [ set ]))
+
+
+--| A device with the descriptor's features and limits, checked first
+--| against what the adapter supports: an unsupported feature or limit is
+--| refused before the host is asked, and never clamped. The host's own
+--| refusals are `FeatureRequestRejected` (a `TypeError`) and
+--| `DeviceRequestRejected` (an `OperationError`); any other is a defect. A
+--| device the host gave already lost is `InitializationLost`.
+pub requestDevice : Handle.Adapter, Types.DeviceDescriptor → Result InitError Handle.Device
+requestDevice adapter descriptor =
+    native = Js.from adapter
+    requested = optionList descriptor.requiredFeatures
+    if not (Engine.adapterFree native) then
+        Err AdapterConsumed
+    else
+        supported = features adapter
+        missing = List.filter requested λname → not (Feature.has supported name)
+        if not (List.isEmpty missing) then
+            Err (UnsupportedFeatures missing)
+        else
+            mismatches = limitMismatches (limits adapter) (optionList descriptor.requiredLimits)
+            if not (List.isEmpty mismatches) then
+                Err (UnsupportedLimits mismatches)
+            else
+                Engine.reserveAdapter native True
+                case Engine.requestDevice native (Native.deviceDescriptor descriptor) of
+                    Engine.Granted device →
+                        Engine.consumeAdapter native
+                        case Engine.loss device of
+                            Just loss →
+                                Err (InitializationLost loss)
+
+                            Nothing →
+                                Engine.watchDefects device
+                                Ok (Js.to device)
+
+                    Engine.Refused error →
+                        Engine.reserveAdapter native False
+                        if Engine.isTypeError error then
+                            Err
+                                (FeatureRequestRejected
+                                    { requested = requested, message = Engine.messageOf error }
+                                )
+                        else if Engine.isDomException error "OperationError" then
+                            Err (DeviceRequestRejected { message = Engine.messageOf error })
+                        else
+                            Js.throw error
+
+
+optionList : Types.Option (List a) → List a
+optionList option =
+    case option of
+        Types.Default →
+            []
+
+        Types.Value xs →
+            xs
+
+
+-- Every required limit the adapter does not support, in the order given
+-- (the WebGPU limit classes: a maximum may not be exceeded; an alignment
+-- is a power of two no smaller than the supported one).
+limitMismatches : Limits.Limits, List (Limits.LimitName × Scalar.Size64) → List Error.LimitMismatch
+limitMismatches supported required = List.filterMap required λ( name, value ) →
+    have = Limits.limit supported name
+    asked = Scalar.size64ToInt value
+    problem =
+        case Limits.limitClass name of
+            Limits.Maximum →
+                if asked > have then Just AboveMaximum else Nothing
+
+            Limits.Alignment →
+                if not (powerOfTwo asked) then
+                    Just NotPowerOfTwo
+                else if asked < have then
+                    Just BelowAlignment
+                else
+                    Nothing
+    Maybe.map problem λp → { limit = name, requested = value, supported = have, problem = p }
+
+
+powerOfTwo : Int → Bool
+powerOfTwo n =
+    n > 0
+        && Js.to
+            (Js.call (Js.global "Number") "isInteger"
+                [ Js.call (Js.global "Math") "log2" [ Js.from n ] ]
+            )

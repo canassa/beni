@@ -1,0 +1,333 @@
+--! The WebGPU engine (`docs/design/webgpu.md` §2.1, §6, §8): the state
+--! table beside every native object, the host's entry point, waits on
+--! native promises with exactly the failures the ledger documents, and the
+--! loss latch of each device. The operation modules (`Gpu`, `Gpu.Adapter`,
+--! `Gpu.Device`) are written over it; an application never needs it, and
+--! its signatures name `Js.Value`.
+--!
+--! Written over `Js`. A native object's state is a record in a `WeakMap`
+--! keyed by the object, never a property on it, so every alias of a handle
+--! sees one state. A native GPU object with no record was not made by the
+--! engine, and meeting one is a defect.
+--!
+--! No `catch` here is broad (`CLAUDE.md` rule 9): a promise's rejection is
+--! handed to the operation's own classifier, which names what the ledger
+--! documents and makes everything else a defect.
+
+import Gpu.Error as Error exposing (DeviceLoss, LossReason, UnknownLoss, Destroyed)
+import Js
+import Task
+
+
+type alias V =
+    Js.Value
+
+
+-- The state table of this realm: native object → its record.
+table : V
+table = Js.pure λ⊤ → Js.construct (Js.global "WeakMap") []
+
+
+-- The runtime identities of devices, from 1, in the order they were made.
+lastDevice : Js.Ref Int
+lastDevice = Js.ref 0
+
+
+--| Stop the program: a wrapper invariant broke, or the host gave what the
+--| ledger does not document. The error keeps the cause when there is one.
+pub defect : String → a
+defect message = Js.throw (Js.construct (Js.global "Error") [ Js.from ("webgpu: " ++ message) ])
+
+
+--| The record of a native object the engine made; a defect for any other.
+pub recordOf : V → V
+recordOf native =
+    r = Js.call table "get" [ native ]
+    if Js.isUndefined r then
+        defect "a GPU object the engine did not make"
+    else
+        r
+
+
+--| Whether the engine made this native object.
+pub known : V → Bool
+known native = Js.to (Js.call table "has" [ native ])
+
+
+-- ---- The host's entry point (ledger §2) ------------------------------------
+
+--| Why the API is not there: not a secure context, or no `navigator.gpu`.
+pub type Missing
+    = NotSecure
+    | NoApi
+
+
+--| The realm's `GPU` object, or why there is none. A missing global is
+--| read as `undefined`, never named.
+pub entry : ⊤ → Result Missing V
+entry ⊤ =
+    if not (Js.same (Js.global "isSecureContext") (Js.from True)) then
+        Err NotSecure
+    else
+        navigator = Js.global "navigator"
+        if Js.isNullish navigator then
+            Err NoApi
+        else
+            gpu = Js.get navigator "gpu"
+            if Js.isNullish gpu then Err NoApi else Ok gpu
+
+
+-- ---- Waiting for a native promise ------------------------------------------
+
+--| How a native promise settled.
+pub type Settled
+    = Fulfilled V
+    | Rejected V
+
+
+--| Wait for the promise `start` returns. Both reactions are attached at
+--| once, so the promise is drained however the wait ends; a cancelled
+--| wait drops its outcome. What a rejection means is the caller's
+--| classifier's to say.
+pub settle : sync (⊤ → V) → Settled
+settle start = Task.callback λresume →
+    _ =
+        Js.call (start ⊤) "then"
+            [ Js.from λvalue → Task.resume resume (Fulfilled value)
+            , Js.from λerror → Task.resume resume (Rejected error)
+            ]
+    λ⊤ → ⊤
+
+
+--| Whether `error` is a native `DOMException` named `name`: a plain object
+--| with a matching `name` is not one (ledger §1).
+pub isDomException : V, String → Bool
+isDomException error name =
+    constructor = Js.global "DOMException"
+    not (Js.isUndefined constructor)
+        && Js.instanceOf error constructor
+        && Js.same (Js.get error "name") (Js.from name)
+
+
+--| Whether `error` is a native `TypeError`.
+pub isTypeError : V → Bool
+isTypeError error = Js.instanceOf error (Js.global "TypeError")
+
+
+--| The `message` of a native error.
+pub messageOf : V → String
+messageOf error = Js.to (Js.get error "message")
+
+
+-- ---- Adapters ------------------------------------------------------------------
+
+--| Record a new adapter: neither consumed nor reserved.
+pub adoptAdapter : V → ⊤
+adoptAdapter adapter =
+    _ =
+        Js.call table "set"
+            [ adapter, Js.from { consumed = False, reserved = False } ]
+    ⊤
+
+
+--| Whether a device request on the adapter may start: none has succeeded
+--| and none is in flight.
+pub adapterFree : V → Bool
+adapterFree adapter =
+    r = recordOf adapter
+    not (Js.to (Js.get r "consumed")) && not (Js.to (Js.get r "reserved"))
+
+
+--| Reserve the adapter for one device request, or release it.
+pub reserveAdapter : V, Bool → ⊤
+reserveAdapter adapter reserved = Js.set (recordOf adapter) "reserved" (Js.from reserved)
+
+
+--| The adapter gave its device: it is consumed for good.
+pub consumeAdapter : V → ⊤
+consumeAdapter adapter =
+    r = recordOf adapter
+    Js.set r "reserved" (Js.from False)
+    Js.set r "consumed" (Js.from True)
+
+
+-- ---- Devices and the loss latch (§8) -------------------------------------------
+
+--| How a device request settled.
+pub type Requested
+    = Granted V
+    | Refused V
+
+
+--| Request a device and record it with its loss watched before the fiber
+--| sees it (ledger §2: `device.lost` is observed from creation). The fiber
+--| is resumed one microtask after the record is made, so a loss the host
+--| had already delivered is latched by then. A device whose wait was
+--| cancelled is destroyed when it arrives: nothing can own it.
+pub requestDevice : V, V → Requested
+requestDevice adapter descriptor = Task.callback λresume →
+    cancelled = Js.ref False
+    _ =
+        Js.call (Js.call adapter "requestDevice" [ descriptor ]) "then"
+            [ Js.from λdevice →
+                adoptDevice device
+                if Js.read cancelled then
+                    Js.to (Js.call device "destroy" [])
+                else
+                    _ =
+                        Js.call (Js.call (Js.global "Promise") "resolve" []) "then"
+                            [ Js.from λ_ → Task.resume resume (Granted device) ]
+                    ⊤
+            , Js.from λerror → Task.resume resume (Refused error)
+            ]
+    λ⊤ → Js.write cancelled True
+
+
+-- A device's record: its runtime identity, its latched loss (null until
+-- one is observed), whether `destroy` was called, the fibers waiting for
+-- its loss, and its defect channel — the sentinel's `Resume`, or the
+-- defect that arrived before the sentinel waited.
+adoptDevice : V → ⊤
+adoptDevice device =
+    id = Js.read lastDevice + 1
+    Js.write lastDevice id
+
+    r =
+        Js.object
+            [ ( "id", Js.from id )
+            , ( "loss", Js.null )
+            , ( "destroyed", Js.from False )
+            , ( "waiters", Js.array [] )
+            , ( "sentinel", Js.null )
+            , ( "pending", Js.null )
+            ]
+    _ = Js.call table "set" [ device, r ]
+    _ =
+        Js.call (Js.get device "lost") "then"
+            [ Js.from λinfo → lost r info
+            , Js.from λerror → reportDefect r error
+            ]
+    -- The queue belongs to the device: its record names the device.
+    _ = Js.call table "set" [ Js.get device "queue", Js.object [ ( "device", r ) ] ]
+    ⊤
+
+
+--| The runtime identity of a device: a number, never the native object.
+pub deviceId : V → Int
+deviceId device = Js.to (Js.get (recordOf device) "id")
+
+
+--| The loss a device has latched, if any.
+pub loss : V → Maybe DeviceLoss
+loss device =
+    l = Js.get (recordOf device) "loss"
+    if Js.isNull l then Nothing else Just (Js.to l)
+
+
+--| Wait for the device's loss; at once when it is latched already. A
+--| cancelled wait leaves the device's waiters.
+pub awaitLost : V → DeviceLoss
+awaitLost device =
+    r = recordOf device
+    l = Js.get r "loss"
+    if Js.isNull l then
+        Task.callback λresume →
+            waiters = Js.get r "waiters"
+            waiter = Js.from resume
+            _ = Js.call waiters "push" [ waiter ]
+            λ⊤ →
+                at = Js.call waiters "indexOf" [ waiter ]
+                if Js.to (Js.ge at (Js.from 0)) then
+                    _ = Js.call waiters "splice" [ at, Js.from 1 ]
+                    ⊤
+                else
+                    ⊤
+    else
+        Js.to l
+
+
+--| Destroy the device: its state is latched at once — later work on it
+--| fails, and waiters for its loss wake — and the host's later report of
+--| the loss replaces the message. Destroying twice does nothing more.
+pub destroy : V → ⊤
+destroy device =
+    r = recordOf device
+    if Js.to (Js.get r "destroyed") then
+        ⊤
+    else
+        Js.set r "destroyed" (Js.from True)
+        if Js.isNull (Js.get r "loss") then latch r { reason = Destroyed, message = "" }
+        Js.to (Js.call device "destroy" [])
+
+
+--| Whether `destroy` was called on the device.
+pub destroyed : V → Bool
+destroyed device = Js.to (Js.get (recordOf device) "destroyed")
+
+
+-- The host's `lost` settled with `info`: a reason of the pin is latched,
+-- any other is a defect (ledger §7).
+lost : V, V → ⊤
+lost r info =
+    reason = Js.get info "reason"
+    if Js.same reason (Js.from "destroyed") then
+        latch r { reason = Destroyed, message = Js.to (Js.get info "message") }
+    else if Js.same reason (Js.from "unknown") then
+        latch r { reason = UnknownLoss, message = Js.to (Js.get info "message") }
+    else
+        reportDefect
+            r
+            (Js.construct (Js.global "Error")
+                [ Js.from "webgpu: a device was lost for a reason outside the pin"
+                , Js.object [ ( "cause", reason ) ]
+                ]
+            )
+
+
+-- Latch the loss and wake every waiter. A later report replaces an earlier
+-- one (the host's message after `destroy`'s), and wakes nobody twice.
+latch : V, DeviceLoss → ⊤
+latch r value =
+    Js.set r "loss" (Js.from value)
+    waiters = Js.get r "waiters"
+    Js.set r "waiters" (Js.array [])
+    Js.each waiters λw → Task.resume (Js.to w) value
+
+
+-- ---- Defects of outcomes nobody waits for (§6.4, *Outcomes that outlive
+-- their caller*) ---------------------------------------------------------------
+
+--| Start the device's sentinel: a fiber of the program that requested the
+--| device, detached so that it outlives the request, which waits for an
+--| unexpected outcome of the device and throws it. Its throw is that
+--| program's defect, with the program's stop and crash screen.
+pub watchDefects : V → ⊤
+watchDefects device =
+    r = recordOf device
+    _ = Task.spawnDetached λ⊤ → sentinel r
+    ⊤
+
+
+sentinel : V → ⊤
+sentinel r =
+    pending = Js.get r "pending"
+
+    error =
+        if Js.isNull pending then
+            Task.callback λresume →
+                Js.set r "sentinel" (Js.from resume)
+                λ⊤ → Js.set r "sentinel" Js.null
+        else
+            pending
+    Js.throw error
+
+
+--| Hand an unexpected outcome of the device to its program's sentinel.
+reportDefect : V, V → ⊤
+reportDefect r error =
+    s = Js.get r "sentinel"
+    if Js.isNull s then
+        if Js.isNull (Js.get r "pending") then Js.set r "pending" error
+    else
+        Js.set r "sentinel" Js.null
+        Task.resume (Js.to s) error

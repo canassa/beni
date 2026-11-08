@@ -1,0 +1,211 @@
+--! What a WebGPU operation can fail with (`docs/design/webgpu.md` §5, and
+--! the failure ledger `docs/design/research/webgpu-errors.md`). Every
+--! failure the standard documents for an operation is a value of these
+--! types; anything else — an exception or rejection the ledger does not
+--! list, a spoofed error, a returned value outside the pin — is a defect
+--! and stops the program, never a value here.
+--!
+--! What the standard cannot report is not reported: an error scope keeps one
+--! representative per scope, a lost device stops reporting ordinary errors,
+--! and a fault inside a running shader may go unseen. A success means the
+--! checks an operation awaited reported no failure, not that the device
+--! stays healthy or that the work has run.
+
+import Gpu.Limits as Limits
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+
+
+--| Why getting an adapter or a device failed.
+pub type InitError
+    = InsecureContext
+    | ApiUnavailable
+    | AdapterUnavailable
+    | AdapterConsumed
+    | UnsupportedFeatures (List Types.FeatureName)
+    | UnsupportedLimits (List LimitMismatch)
+    | FeatureRequestRejected RequestDetail
+    | DeviceRequestRejected HostMessage
+    | InitializationInput InputError
+    | InitializationLost DeviceLoss
+
+
+--| The message the host gave, as it gave it: for diagnostics, never to
+--| match on.
+pub type alias HostMessage =
+    message : String
+
+
+--| A device request the host refused for its features.
+pub type alias RequestDetail =
+    requested : List Types.FeatureName
+    message : String
+
+
+--| One required limit the adapter does not support.
+pub type alias LimitMismatch =
+    limit : Limits.LimitName
+    requested : Scalar.Size64
+    supported : Int
+    problem : LimitProblem
+
+
+--| How a required limit misses: above a maximum the adapter supports, below
+--| an alignment it supports, or an alignment that is not a power of two.
+pub type LimitProblem
+    = AboveMaximum
+    | BelowAlignment
+    | NotPowerOfTwo
+
+
+--| A failed GPU operation.
+pub type Error
+    = InvalidInput InputError
+    | UnsupportedCapability Capability
+    | Validation FailureDetail
+    | OutOfMemory FailureDetail
+    | Internal FailureDetail
+    | PipelineValidation PipelineFailure
+    | PipelineInternal PipelineFailure
+    | DeviceLost DeviceLossReport
+    | MapFailed MapError
+    | SourceFailed SourceError
+    | CanvasFailed CanvasError
+    | FormatFeatureRejected FormatFailure
+    | HostOperationRejected OperationFailure
+    | RelatedFailures FailureSet
+
+
+--| An input refused before any native call: each names the descriptor
+--| member or argument (`path`) it is about.
+pub type InputError
+    = NumericDomain { path : String, expected : Scalar.Domain, actual : Float }
+    | WrongDevice { path : String }
+    | ResourceDestroyed { path : String }
+    | ResourceExpired { path : String }
+    | ResourceRejected { path : String }
+    | ResourcePending { path : String }
+    | MappedSizeUnaligned { path : String, size : Int }
+    | ResizableBacking { path : String }
+    | SessionState SessionState
+    | SessionStopped
+
+
+--| Why a device refuses a call for its diagnostic session (§6.4).
+pub type SessionState
+    = DeviceLeased
+    | SessionEnded
+
+
+--| A capability the device or the host does not have.
+pub type Capability
+    = MissingFeature Types.FeatureName
+    | MissingHostMember String
+
+
+--| Where a failure was observed.
+pub type Stage
+    = Content
+    | DeviceValidation
+    | Submission
+    | Mapping
+    | PipelineCreation
+
+
+--| A failure an error scope reported: the device's runtime identity (not
+--| the native object), the checked operation or segment, the stage, the
+--| labels of the resources involved, and the host's message. A scope
+--| names its operation, not the first command that failed.
+pub type alias FailureDetail =
+    device : Int
+    operation : String
+    stage : Stage
+    labels : List String
+    message : String
+
+
+--| A pipeline the host refused when it created it asynchronously.
+pub type alias PipelineFailure =
+    operation : String
+    message : String
+
+
+--| A device's loss: its reason and the host's message.
+pub type alias DeviceLoss =
+    reason : LossReason
+    message : String
+
+
+--| Why a device was lost: `Destroyed` by `destroy`, or `UnknownLoss`, the
+--| standard's reason `"unknown"`.
+pub type LossReason
+    = UnknownLoss
+    | Destroyed
+
+
+--| A loss observed while an operation was checked, with what else that
+--| operation observed.
+pub type alias DeviceLossReport =
+    loss : DeviceLoss
+    operation : OperationReport
+
+
+--| What a checked operation observed: one representative per scope that
+--| reported, never a complete list of every error.
+pub type alias OperationReport =
+    operation : String
+    observed : List Observation
+
+
+--| One observed failure.
+pub type Observation
+    = ObservedValidation FailureDetail
+    | ObservedOutOfMemory FailureDetail
+    | ObservedInternal FailureDetail
+    | ObservedPipelineValidation PipelineFailure
+    | ObservedPipelineInternal PipelineFailure
+    | ObservedMapFailed MapError
+    | ObservedHostRejection OperationFailure
+
+
+--| Several failures of one operation: never empty, and each a leaf.
+pub type alias FailureSet =
+    first : Observation
+    rest : List Observation
+
+
+--| Why mapping a buffer failed.
+pub type MapError
+    = MapRejected HostMessage
+    | MapAborted
+    | MappedAllocationFailed { bytes : Int, message : String }
+    | MappedRangeRejected HostMessage
+
+
+--| Why an image or video source could not be used.
+pub type SourceError
+    = SourceNotOriginClean
+    | SourceUnusable HostMessage
+    | ExternalImageCopyRangeRejected HostMessage
+
+
+--| Why a canvas could not be used.
+pub type CanvasError
+    = CanvasNotFound String
+    | WrongElementKind String
+    | CanvasContextUnavailable
+    | CanvasUnconfigured
+    | CanvasConfigurationRejected HostMessage
+
+
+--| A texture format a feature gates, refused by the host.
+pub type alias FormatFailure =
+    format : Types.TextureFormat
+    required : Types.FeatureName
+    message : String
+
+
+--| A documented host rejection of one operation.
+pub type OperationFailure
+    = BufferWriteSourceRejected HostMessage
+    | ImmediateWriteRejected HostMessage

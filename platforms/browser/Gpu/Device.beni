@@ -1,0 +1,53 @@
+--! A device's snapshots, its queue, its destruction and its loss
+--! (`docs/design/webgpu.md` §4, §8). The loss is watched from the moment
+--! the device is made: it is latched once, every waiter wakes, and a late
+--! reader still sees it. There is no retry: after a loss, a program asks
+--! for a new adapter and a new device.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Feature as Feature
+import Gpu.Handle as Handle
+import Gpu.Limits as Limits
+import Gpu.Native as Native
+import Gpu.Types as Types
+import Js
+
+
+--| The features the device was made with, dependencies included.
+pub features : Handle.Device → Feature.Features
+features device =
+    Feature.fromNames
+        (Js.to (Js.call (Js.global "Array") "from" [ Js.get (Js.from device) "features" ]))
+
+
+--| The limits the device was made with.
+pub limits : Handle.Device → Limits.Limits
+limits device = Native.readLimits (Js.get (Js.from device) "limits")
+
+
+--| What the host says of the device's adapter.
+pub adapterInfo : Handle.Device → Types.AdapterInfo
+adapterInfo device = Native.readAdapterInfo (Js.get (Js.from device) "adapterInfo")
+
+
+--| The device's queue.
+pub queue : Handle.Device → Handle.Queue
+queue device = Js.to (Js.get (Js.from device) "queue")
+
+
+--| Destroy the device. Later work on it fails, waiters for its loss wake
+--| with `Destroyed`, and destroying it again does nothing. Not checked by
+--| an error scope: the standard gives it no GPU error.
+pub destroy : Handle.Device → ⊤
+destroy device = Engine.destroy (Js.from device)
+
+
+--| The device's loss, if one has been observed.
+pub loss : Handle.Device → Maybe Error.DeviceLoss
+loss device = Engine.loss (Js.from device)
+
+
+--| Wait until the device is lost; at once if it is already.
+pub awaitLost : Handle.Device → Error.DeviceLoss
+awaitLost device = Engine.awaitLost (Js.from device)
