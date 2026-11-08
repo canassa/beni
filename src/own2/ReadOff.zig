@@ -1007,12 +1007,16 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (es.items.items) |x| {
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
-                if (at_site and !SupplyAnswers.staysOpen(x)) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
-                for (x.arrivals) |a| {
-                    var parts: std.ArrayList(SplitRow.Part) = .empty;
-                    try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
-                    for (parts.items) |pt| try supplyPart(s, p[1], pt, .{ .label = at, .k = su.k }, rel);
-                }
+                // Each arrival's parts, planned first: an open entry whose every part is written by
+                // its value's structure, each at its own key, leaves nothing open at its own (§2.1,
+                // *An arrival's level*). Marked open, it would also open every plain arrival there.
+                var parts: std.ArrayList(SplitRow.Part) = .empty;
+                for (x.arrivals) |a| try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
+                const placed = for (parts.items) |pt| {
+                    if (pt.place == .none) break false;
+                } else parts.items.len != 0;
+                if (at_site and !SupplyAnswers.staysOpen(x)) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open and !placed) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
+                for (parts.items) |pt| try supplyPart(s, p[1], pt, .{ .label = at, .k = su.k }, rel);
             }
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
             for (e.contracts.effectsOf(su.kept)) |kp| _ = try Contract.Draft.addEffect(&sup.kept, arena, kp);
