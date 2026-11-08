@@ -4,8 +4,8 @@
 -- draws one frame. `init`, `update` and `view` stay synchronous; the GPU
 -- work is the command's. The second click finds the same surface, because
 -- a render keeps the canvas node. The fake host keeps no texels, so the
--- pixel reads zero; `test-webgpu` skips the page with the other frames
--- (#2267, `_expected.webgpu-skip`).
+-- pixel reads zero; in `test-webgpu` it is blue, `0 0 255 255` read as one
+-- little-endian u32 (`_expected.webgpu-expected`).
 import Cmd exposing (Cmd)
 import Gpu.Batch as Batch
 import Gpu.CommandEncoder as CommandEncoder

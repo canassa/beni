@@ -1347,11 +1347,12 @@ when the surface is configured again or unconfigured, and when its canvas's `wid
 changes. `importExternalTexture` waits for S5 with the other media sources. Fixtures:
 `SurfaceFrames` (receipts, expiry, resize, reconfiguration, an `OffscreenCanvas`, the checkpoint),
 `SurfaceConfiguration` (configuration, its refusals and readback, a lease), `CanvasPage` (a TEA page
-with a stable `<canvas>`), and the defect `CurrentTextureUnlisted`. In `test-webgpu`'s Chrome a
-canvas texture breaks the device's WebGPU instance — the next `popErrorScope` and
-`onSubmittedWorkDone` reject with an `OperationError` the ledger does not list — so the pages that
-acquire one are `.webgpu-skip` (#2267); `SurfaceConfiguration` runs there and matches the fake. A
-direct `Browser.hosted` page is #2268.
+with a stable `<canvas>`), and the defect `CurrentTextureUnlisted`. All three run in `test-webgpu`'s
+Chrome, which runs Skia and ANGLE on SwiftShader's Vulkan (`--enable-features=Vulkan
+--use-vulkan=swiftshader --use-angle=vulkan`): on ANGLE's SwiftShader GL, Chrome composites in
+software and has no shared-image backing for a canvas texture, so `getCurrentTexture` lost the
+device and the next `popErrorScope` and `onSubmittedWorkDone` rejected with an `OperationError`
+(#2267, a host configuration failure, not a ledger row). A direct `Browser.hosted` page is #2268.
 
 
 ## 9. Reserved

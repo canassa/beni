@@ -18,9 +18,8 @@
 -- submitting. The frames that submit nothing after acquiring are
 -- `SurfaceConfiguration`'s.
 --
--- The gates' fake host keeps no texels, so its transcript shows zeros.
--- `test-webgpu` skips the page: its Chrome rejects the receipt of a submit
--- after a canvas texture (#2267, `_expected.webgpu-skip`).
+-- The gates' fake host keeps no texels, so its transcript shows zeros;
+-- `test-webgpu`'s shows the clear colors (`_expected.webgpu-expected`).
 import Browser.Canvas as Canvas
 import Gpu.Batch as Batch
 import Gpu.CommandEncoder as CommandEncoder
