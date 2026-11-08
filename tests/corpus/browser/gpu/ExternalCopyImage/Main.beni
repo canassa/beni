@@ -6,7 +6,13 @@
 -- `GpuMedia.colour` writes out by hand; every pixel read back is compared
 -- with those bytes, never with anything the code under test computed. The
 -- gates' fake host keeps no texels, so its transcript reads zeros;
--- `test-webgpu`'s is the GPU's (`_expected.webgpu-expected`).
+-- `test-webgpu`'s is the GPU's (`_expected.webgpu-expected`). reloading: the
+-- same image, loaded, then given a new source the driver holds back, so
+-- `complete` is false. The engine reads the current request, not
+-- `complete`: where it still holds the loaded image (its natural size is
+-- not 0), as HTML specifies and the fake host models, the copy is the
+-- host's and succeeds; Chrome 153 clears the current image at once (its
+-- natural size is 0), so there the copy is `SourceNotReady`.
 import Gpu.Types as Types
 import GpuMedia
 import GpuPage
@@ -17,5 +23,9 @@ run : ⊤ → List String
 run ⊤ = GpuMedia.copied (λ⊤ → Types.ImageElement (GpuMedia.image "same")) 0
 
 
+reloading : ⊤ → List String
+reloading ⊤ = GpuMedia.copied (λ⊤ → Types.ImageElement (GpuMedia.image "reloading")) 0
+
+
 main : Tea.Program
-main = GpuPage.program [ ( "run", run ) ]
+main = GpuPage.program [ ( "run", run ), ( "reloading", reloading ) ]
