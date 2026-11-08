@@ -1053,7 +1053,9 @@ and `browser-direct`'s manifest drops it. What a platform does owe instead:
 - **ownership words** on every `foreign` that takes or returns a list or a function (§4,
   amended the same day);
 - **the word `entry`** on the record parameter of each program constructor whose functions the
-  runtime calls (`ownership-checker.md` §30.3);
+  runtime calls (`ownership-checker.md` §30.3). The effect checker reads it too: the record is
+  erased as a `foreign`'s parameter is (`transparent-effects-proposal.md` §14.3 rule 6, amended
+  2026-11-08);
 - **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
   `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
 
@@ -4537,6 +4539,10 @@ fiber holds is released; and no other code of the program runs. What is reached,
 by `Hosted`'s set of added listeners, and is removed by the function `Hosted` gave
 `Task.onShutdown`, in a microtask queued at the stop, before the sweep.)*
 
+*(Amended 2026-11-06, #1154: a finaliser that a message's `update` left when it threw is held
+apart on the caller's record. The record's unwinding runs it first; when the caller's fiber reaches
+its end before the teardown, the fiber runs it before it ends. §9.8.16 (b), amended the same day.)*
+
 A dropped body or after-render function is program code, which (c) of §9.8.10 says no longer runs; it
 holds no finaliser — work that cannot suspend cannot have parked on anything — so dropping it
 releases nothing that needed releasing. Outlets and relays are not closed one by one: every send is
@@ -5236,6 +5242,45 @@ is set and no record holds the slots.
 - **Not covered**, as before: a scope that the body closes after the throw takes the wrong entry
   off the list (#921), and a body in a fiber that ends after the throw drops `update`'s finalisers
   (#1154).
+
+*Amended 2026-11-06 (#1154, #921): the finalisers that a throwing `update` leaves go off the
+caller's list.* Two defects that the amendment above leaves had one cause: after the throw,
+`update`'s finalisers stayed on the caller's list. A scope that the caller closed after a throw
+that the DOM reports took `update`'s entry off the list, not its own, so the caller's release ran
+a second time at the teardown (#921). And a body in a fiber that ended before the teardown took
+`update`'s finalisers with it: the teardown did not find the fiber, and they never ran (#1154).
+§9.8.14 (a) asks that every finaliser runs exactly once.
+
+- **Where.** When `update` throws and leaves finalisers above the ones that the caller had,
+  `Task.endUpdate` takes them off the caller's list and keeps them apart on the same record. On top
+  of them goes an entry that keeps the record's slots as they are when it runs and sets `update`'s
+  slots of the throw. Under them goes an entry that puts the kept slots back. The caller's list is
+  then what it was before `update`, so each scope that the caller closes later takes its own entry
+  off.
+- **When they run.** When the record's fiber unwinds, it runs them first, then its own finalisers.
+  At the teardown, the fiber that runs the finalisers of the record outside any fiber (§9.8.14 (d)
+  step 4) runs them first in the same way. When the record's fiber reaches its end first, it runs
+  them before it ends, each above a boundary as its unwinding would, and then ends with its value.
+  Its own list is then empty, because every scope that it opened has closed. They are told
+  `Cancelled`, as every finaliser that the page's stop runs is. A fiber of their own would also do,
+  but `complete` would then call `newFiber`, and that write of `fibered`, even where it is never
+  reached, keeps the fiber runtime in a release page that has no fiber.
+- **Without a slot.** The same holds for a `bracket` that `update` opens in a build that sets no
+  slot. So `beginUpdate` and `endUpdate` read `finalising` as well as `slotted`. When no record
+  held a finaliser as `update` began, every finaliser on the record after it is `update`'s.
+- **What a program sees.** A program that has no defect sees no change: an `update` that returns
+  has taken off every finaliser that it put on. After a throw that the DOM reports, each finaliser
+  runs once, with the context of the scope that it was put on in
+  (`browser/tea/LogUpdateFinalisersAfterBodyEnds`, `UpdateBracketAfterBodyEnds`,
+  `BodyReleaseOnceAfterReportedThrow`).
+- **Cost.** A build in which nothing sets a slot and nothing registers a finaliser keeps none of
+  it, and a build with no `send` of `browser` keeps none of the readers: a cell, `stranding`, that
+  only the move sets, is read first. Measured with one compiler against the core of the amendment
+  above, in release: the pages that set a slot grow by 280 to 391 raw bytes (107 to 166 brotli);
+  the 25 of 328 pages that register a finaliser and set no slot by 666 to 671 (146 to 233 brotli);
+  the other 287, Conduit and the empty pages among them, and the Node programs that open a
+  `bracket` do not change. *Open (dashboard `dom-throw-body-q1`):* whether pages that set no slot
+  pay for this, or keep their bytes and the defect.
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`

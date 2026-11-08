@@ -1351,6 +1351,49 @@ every group of the module has been checked (§14.4).
    later (a page's handler, `Task.start`'s observer), and the join carried a suspending callback's
    rung into the call too, so a `sync_boundary` error gained a second, cascading `must_not_suspend`
    at its caller.
+   *Amended 2026-11-08 (#1697): erased types and `entry` records.* The rule above reads only the
+   function types *written* in a signature. A function type can also reach the host through a type
+   variable — `Js.from : a → Value` takes any value, `Js.to : Value → a` makes any value — and
+   through a record the runtime calls with no beni call between. The checker did not see either,
+   so a host-made `send` was `pure`, and the release optimiser removed a call to it: on
+   `browser-inline`, `Sub.on K (λsend → …) Got` and `Cmd.perform λsend → …`, written in `main`,
+   sent nothing under `--release`, with no diagnostic. Two additions close the class:
+
+   - **A type variable that occurs once in a `foreign`'s signature is an erasure** (its `where`
+     types not counted). It is on one side of the boundary: the host *receives* the value (the
+     variable is in a negative position, as in `Js.from`) or *makes* it (a positive position, as in
+     `Js.to`). Its class carries that side (§14.6, the `erased` bits). At each use, the checker
+     walks the type the variable is instantiated with, once every class is final: each function
+     type in a position the host makes is `impure` — the value itself when the host makes it, a
+     parameter of a function the host receives, and so on, a parameter flipping the side — and so
+     is each nominal application that holds a function in such a position (§14.5). A function the
+     host receives keeps its own class: it is beni's, and the host calls it. A variable that occurs
+     twice (`Js.same : a, a → Bool`, `Js.read : Ref a → a`) is not an erasure: the host hands back
+     only the values beni gave it.
+   - **When the erased value is itself a type variable, the use marks it**, so a beni declaration
+     that erases its own parameter (`Schema.toHost : a → Js.Value`) publishes the same side to its
+     callers. A variable that the erased value only holds is not marked: core's `List` erases a
+     `List a` and a callback `a → b` to run them in the host's loops, which call the callback with
+     the list's own elements, never with a value the host made. Marking those made a
+     `Url.Parser.oneOf` impure and refused three prerendered pages (`prerender.md` §3.1).
+   - **A nominal value the host receives is not raised.** Its one class (§14.5) holds its own arrows
+     too, and core's `List` erases every element it stores, so raising it made every function-holding
+     element of every list impure.
+   - **An `entry` record parameter is an erasure that the host receives**
+     (`boundary.md` §5.2, `ownership-checker.md` §30.3): the runtime receives the record and calls
+     its functions. The same walk applies to the declaration's own scheme, and here a nominal value
+     that the record's functions return is raised as well: the runtime runs what it holds — a
+     command's body — with arguments it makes. So `Tea.element`'s `Cmd msg` is `impure`, and a body
+     written where that class is monomorphic keeps every `send`.
+
+   The rule gives `impure`, never the `foreign`'s own rung: the rung describes the erasure, which
+   does nothing, and says nothing about what the host does with the value. It never gives
+   `suspends`, so no `sync` demand and no second body changes. A generalised class needs none of
+   this — the lowering keeps a call whose callee class is a scheme class — so the defect, and the
+   rule, concern a monomorphic class: a lambda written in `main` or in another top-level value.
+   Measured on the branch: the release output of every `examples/` application and of 340
+   `browser/` pages is byte-identical to master's; only the two fixtures that pin the defect,
+   `browser/inline/SubStartSends` and `browser/inline/PerformSends`, change.
 7. **A derived `eq` or `compare` joins its context.** The derived function calls the evidence of
    each context entry, so each entry's method type `⊑` the method type it answers.
 8. **Recursion needs nothing.** A binding group's members share their variables until the group is
@@ -1414,6 +1457,9 @@ site_count × { class, root, step_count, step_count × step }
 
 - A **rung** is `0` pure, `1` impure, `2` suspends. A class's **deps** are classes of the same
   block, ascending.
+- *Amended 2026-11-08 (§14.3 rule 6's amendment, #1697):* a class word also carries **`erased`**
+  in bits 10–11: bit 10 when the class is a type variable that the host receives, bit 11 when the
+  host makes it. A class with either bit is worth writing. Interface format 22 → 23.
 - A **site** is one function type or nominal application of the scheme that belongs to a class
   worth writing — one with a rung, a dependency, a dependant, or multiple scheme
   variables joined to the same class. Pure shared classes retain their joins across

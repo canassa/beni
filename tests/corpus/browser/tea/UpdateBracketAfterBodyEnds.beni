@@ -1,0 +1,50 @@
+-- `LogUpdateFinalisersAfterBodyEnds` in a page that sets no slot: no
+-- `Log.annotate`, only a `bracket` in `Boom`'s `update`. The DOM reports
+-- the throw (#859), and the body, in a fiber, goes on and ends before the
+-- teardown. `send` took the `bracket`'s release off the body's list, and a
+-- fiber of its own runs it at the teardown (boundary.md §9.8.16 (b),
+-- amended 2026-11-06, #1154): it runs once (§9.8.14 (a)).
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n + 1
+            , Cmd.perform λ_ →
+                Time.sleep (Time.millis 5)
+                _ = Dom.focus "target"
+                Log.info "the body, after the focus"
+            )
+
+        Boom →
+            Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

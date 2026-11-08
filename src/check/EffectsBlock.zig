@@ -37,12 +37,13 @@ pub fn write(
     const classes = s.classesOf(decl);
     if (!e.publishes(decl)) return Interface.no_terms;
     const gpa = e.gpa;
-    // Which classes are worth a site: a rung, a dependency, or a dependant.
+    // Which classes are worth a site: a rung, a dependency, a dependant, or
+    // an erasure (§14.3 rule 6, amended 2026-11-08).
     const worth = try gpa.alloc(bool, classes.len);
     defer gpa.free(worth);
     @memset(worth, false);
     for (classes, 0..) |c, i| {
-        if (c.rung != .pure or c.realms != 0 or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
+        if (c.rung != .pure or c.realms != 0 or c.deps_len != 0 or c.sync or c.sensitive or c.erased != 0) worth[i] = true;
         for (s.depsOf(c)) |d| worth[d & ~Interface.EffectBlock.realm_only] = true;
     }
 
@@ -98,7 +99,7 @@ pub fn write(
             if (number[index] != none) try deps.append(gpa, number[index] | (d & Interface.EffectBlock.realm_only));
         }
         std.mem.sort(u32, deps.items, {}, std.sort.asc(u32));
-        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (@as(u32, class.realms) << 16) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
+        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (@as(u32, class.realms) << 16) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0) | (@as(u32, class.erased) << Interface.EffectBlock.erased_shift));
         try extra.append(extra_gpa, @intCast(deps.items.len));
         try extra.appendSlice(extra_gpa, deps.items);
     }
