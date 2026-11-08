@@ -1,0 +1,367 @@
+-- Boundary cases of the WebGPU conformance test suite (docs/design/webgpu.md
+-- §10; CTS d116bcccd1833369fa3715a6df503c0dd9b0d7fa, `src/webgpu/api/
+-- validation/`), for the edges the wrappers decide before any native call.
+-- Each case's outcome — accepted, or refused — is the CTS's own, copied by
+-- hand into the comment above its scenario; the transcript adds which
+-- typed refusal beni gives. kOffsetAlignment is 8 and kSizeAlignment 4.
+import Binary
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePass as ComputePass
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Buffer, CommandEncoder, Device)
+import Gpu.Queue
+import Gpu.RenderPass as RenderPass
+import Gpu.RenderPipeline as RenderPipeline
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- "accepted", or "refused" and the kind of refusal.
+outcome : Result Error.Error a → String
+outcome r =
+    case r of
+        Ok _ →
+            "accepted"
+
+        Err (Error.InvalidInput input) →
+            "refused (" ++ firstWord (GpuShow.inputError input) ++ ")"
+
+        Err problem →
+            "refused (" ++ firstWord (GpuShow.error problem) ++ ")"
+
+
+inputOutcome : Result Error.InputError a → String
+inputOutcome r = outcome (Result.mapError r Error.InvalidInput)
+
+
+firstWord : String → String
+firstWord text =
+    case String.split text " " of
+        [ word, …_ ] →
+            word
+
+        [] →
+            text
+
+
+mappable : Device, Int → Buffer
+mappable d bytes =
+    must (Gpu.Device.createBuffer d (GpuKit.buffer bytes [ Flags.MapRead, Flags.CopyDst ]))
+
+
+-- Map a fresh buffer of `bytes` at `offset`, `size`, then unmap it.
+mapCase : Device, Int, Int, Maybe Int → String
+mapCase d bytes offset size =
+    buffer = mappable d bytes
+    mapped =
+        Gpu.Buffer.map buffer { mode = Flags.mapModes [ Flags.Read ], offset = offset, size = size }
+    Gpu.Buffer.unmap buffer
+    "buffer "
+        ++ String.fromInt bytes
+        ++ ", offset "
+        ++ String.fromInt offset
+        ++ ", size "
+        ++ showSize size
+        ++ ": "
+        ++ outcome mapped
+
+
+showSize : Maybe Int → String
+showSize size =
+    case size of
+        Just n →
+            String.fromInt n
+
+        Nothing →
+            "unspecified"
+
+
+-- buffer/mapping.spec.ts, `mapAsync,offsetAndSizeAlignment`: a 16-byte
+-- buffer, offset in {0, 8, 4} and size in {0, 4, 2}; accepted exactly when
+-- the offset is a multiple of 8 and the size of 4.
+mapAlignment : ⊤ → List String
+mapAlignment ⊤ = GpuKit.with "none" λd →
+    List.concatMap [ 0, 8, 4 ] λoffset →
+        List.map [ 0, 4, 2 ] λsize → mapCase d 16 offset (Just size)
+
+
+-- buffer/mapping.spec.ts, `mapAsync,offsetAndSizeOOB`: accepted exactly
+-- when offset + size ≤ the buffer's size. And `mapAsync,sizeUnspecifiedOOB`:
+-- with the size left out, accepted exactly when offset ≤ the buffer's size.
+mapBounds : ⊤ → List String
+mapBounds ⊤ = GpuKit.with "none" λd →
+    [ mapCase d 0 0 (Just 0)
+    , mapCase d 0 0 (Just 4)
+    , mapCase d 0 8 (Just 0)
+    , mapCase d 16 0 (Just 16)
+    , mapCase d 16 8 (Just 16)
+    , mapCase d 16 16 (Just 0)
+    , mapCase d 16 16 (Just 4)
+    , mapCase d 16 8 (Just 8)
+    , mapCase d 16 8 (Just 12)
+    , mapCase d 1024 512 (Just 512)
+    , mapCase d 1024 512 (Just 516)
+    , mapCase d 0 0 Nothing
+    , mapCase d 0 8 Nothing
+    , mapCase d 16 16 Nothing
+    , mapCase d 16 24 Nothing
+    ]
+
+
+-- One range of a fresh 16-byte buffer mapped at creation.
+creationRange : Device, Int, Maybe Int → String
+creationRange d offset size =
+    made = must (Gpu.Device.createMappedBuffer d (GpuKit.buffer 16 [ Flags.CopyDst ]))
+    range = Gpu.Buffer.getMappedRange made.mapping { offset = offset, size = size }
+    Gpu.Buffer.unmap made.buffer
+    "offset " ++ String.fromInt offset ++ ", size " ++ showSize size ++ ": " ++ outcome range
+
+
+-- buffer/mapping.spec.ts, `getMappedRange,offsetAndSizeAlignment,mappedAtCreation`:
+-- accepted exactly when the offset is a multiple of 8 and the size of 4.
+rangeAlignment : ⊤ → List String
+rangeAlignment ⊤ = GpuKit.with "none" λd →
+    List.concatMap [ 0, 8, 4 ] λoffset →
+        List.map [ 0, 4, 2 ] λsize → creationRange d offset (Just size)
+
+
+-- One range of a fresh 80-byte buffer mapped at `mapOffset`, `mapSize`.
+mappedRange : Device, Int, Maybe Int, Int, Maybe Int → String
+mappedRange d mapOffset mapSize offset size =
+    buffer = mappable d 80
+    line =
+        case
+            Gpu.Buffer.map buffer
+                { mode = Flags.mapModes [ Flags.Read ], offset = mapOffset, size = mapSize }
+        of
+            Err problem →
+                "map: Err " ++ GpuShow.error problem
+
+            Ok mapping →
+                outcome (Gpu.Buffer.getMappedRange mapping { offset = offset, size = size })
+    Gpu.Buffer.unmap buffer
+    "mapped "
+        ++ String.fromInt mapOffset
+        ++ "+"
+        ++ showSize mapSize
+        ++ ", range "
+        ++ String.fromInt offset
+        ++ "+"
+        ++ showSize size
+        ++ ": "
+        ++ line
+
+
+-- buffer/mapping.spec.ts, `getMappedRange,sizeAndOffsetOOB,mapped`, an
+-- 80-byte buffer: accepted exactly when the range starts at or after the
+-- mapping, at or before the buffer's end, and ends at or before the
+-- mapping's end, a left-out size being the rest of the BUFFER.
+rangeBounds : ⊤ → List String
+rangeBounds ⊤ = GpuKit.with "none" λd →
+    [ mappedRange d 24 (Just 40) 24 (Just 40)
+    , mappedRange d 24 (Just 40) 16 (Just 40)
+    , mappedRange d 24 (Just 40) 32 (Just 40)
+    , mappedRange d 24 (Just 40) 24 (Just 44)
+    , mappedRange d 24 Nothing 24 Nothing
+    , mappedRange d 24 Nothing 80 Nothing
+    , mappedRange d 24 (Just 40) 24 Nothing
+    , mappedRange d 0 (Just 64) 0 Nothing
+    , mappedRange d 0 (Just 64) 0 (Just 64)
+    , mappedRange d 0 (Just 80) 40 (Just 44)
+    ]
+
+
+-- buffer/create.spec.ts, `size`: mapped at creation, a size that is not a
+-- multiple of 4 is refused (a RangeError in JavaScript); 0, 4 and 8 are
+-- accepted.
+creation : ⊤ → List String
+creation ⊤ = GpuKit.with "none" λd →
+    List.map [ 0, 2, 4, 6, 8 ] λbytes →
+        made = Gpu.Device.createMappedBuffer d (GpuKit.buffer bytes [ Flags.CopySrc ])
+        case made of
+            Ok m →
+                Gpu.Buffer.unmap m.buffer
+
+            Err _ →
+                ⊤
+        "size " ++ String.fromInt bytes ++ ": " ++ outcome made
+
+
+u8s : Int → Binary.Source
+u8s n = Binary.ViewOf (must (Binary.view (Binary.Local (GpuKit.zeros n)) Binary.U8 Binary.whole))
+
+
+u32s : Int → Binary.Source
+u32s n =
+    Binary.ViewOf (must (Binary.view (Binary.Local (GpuKit.zeros (n * 4))) Binary.U32 Binary.whole))
+
+
+-- One write into a fresh 16-element buffer.
+write : Device, Int, String, Binary.Source, Int, Maybe Int → String
+write d elementSize name data dataOffset size =
+    buffer = must (Gpu.Device.createBuffer d (GpuKit.buffer (16 * elementSize) [ Flags.CopyDst ]))
+    wrote =
+        Gpu.Queue.writeBuffer (Gpu.Device.queue d) buffer
+            { (Gpu.Queue.bufferWrite 0 data) | dataOffset = dataOffset, size = size }
+    name
+        ++ ", data offset "
+        ++ String.fromInt dataOffset
+        ++ ", size "
+        ++ showSize size
+        ++ ": "
+        ++ outcome wrote
+
+
+-- queue/writeBuffer.spec.ts, `ranges`, its content-timeline cases (an
+-- OperationError in JavaScript, data offset and size in elements):
+-- Uint8Array, 16-byte buffer: 15 elements refused (15 bytes), 15 from 3
+-- accepted (12 bytes), 16 from 3 refused (13 bytes), 8 sized 7 refused;
+-- Uint32Array, 64-byte buffer: 8 sized 16 refused, 8 from 4 sized 8
+-- refused, 8 from 9 sized 0 refused, 8 from 9 refused, 8 from 8 sized 0
+-- accepted, 8 sized 8 accepted, 8 sized 12 refused, 8 from 4 sized 4
+-- accepted.
+writes : ⊤ → List String
+writes ⊤ = GpuKit.with "none" λd →
+    [ write d 1 "15 bytes" (u8s 15) 0 Nothing
+    , write d 1 "15 bytes" (u8s 15) 3 Nothing
+    , write d 1 "16 bytes" (u8s 16) 3 Nothing
+    , write d 1 "8 bytes" (u8s 8) 0 (Just 7)
+    , write d 4 "8 words" (u32s 8) 0 (Just 16)
+    , write d 4 "8 words" (u32s 8) 4 (Just 8)
+    , write d 4 "8 words" (u32s 8) 9 (Just 0)
+    , write d 4 "8 words" (u32s 8) 9 Nothing
+    , write d 4 "8 words" (u32s 8) 8 (Just 0)
+    , write d 4 "8 words" (u32s 8) 0 (Just 8)
+    , write d 4 "8 words" (u32s 8) 0 (Just 12)
+    , write d 4 "8 words" (u32s 8) 4 (Just 4)
+    ]
+
+
+-- One `setImmediates` in a compute pass of its own.
+immediate : Device, String, Int, Binary.Source, Int, Maybe Int → String
+immediate d name rangeOffset data dataOffset size =
+    ran = Encode.run d Types.commandEncoderDescriptor λencoder →
+        pass = must (CommandEncoder.beginComputePass encoder Types.computePassDescriptor)
+        set = ComputePass.setImmediates pass rangeOffset data dataOffset size
+        _ = ComputePass.end pass
+        set
+    name ++ ": " ++ outcome ran
+
+
+-- encoding/cmds/setImmediates.spec.ts, `alignment`: range offset 4 and 8
+-- bytes accepted; range offset 6 refused (a validation error at finish in
+-- JavaScript); 10 bytes refused (an OperationError). And `out_of_bounds`:
+-- a size past the data refused (an OperationError).
+immediates : ⊤ → List String
+immediates ⊤ = GpuKit.with "none" λd →
+    [ immediate d "range offset 4, 8 bytes" 4 (u8s 8) 0 Nothing
+    , immediate d "range offset 6, 8 bytes" 6 (u8s 8) 0 Nothing
+    , immediate d "range offset 4, 10 bytes" 4 (u8s 10) 0 Nothing
+    , immediate d "2 words, size 3" 0 (u32s 2) 0 (Just 3)
+    ]
+
+
+wgsl : String
+wgsl =
+    "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+
+
+-- getBindGroupLayout.spec.ts, `index_range,explicit_layout`: a pipeline of
+-- one explicit group; refused exactly when the index is at least the
+-- device's maxBindGroups. The device's limit is read, never assumed.
+layouts : ⊤ → List String
+layouts ⊤ = GpuKit.with "none" λd →
+    group = must (Gpu.Device.createBindGroupLayout d (Types.bindGroupLayoutDescriptor []))
+    explicit =
+        must (Gpu.Device.createPipelineLayout d (Types.pipelineLayoutDescriptor [ Just group ]))
+    module = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+    base =
+        Types.renderPipelineDescriptor (Types.Explicit explicit)
+            { (Types.vertexState module) | entryPoint = Types.Value "vs" }
+    pipeline =
+        must
+            (Gpu.Device.createRenderPipeline d
+                { base
+                    | fragment =
+                        Types.Value
+                            { (Types.fragmentState module
+                                  [ Just (Types.colorTargetState Types.Rgba8unorm) ]
+                              )
+                                | entryPoint = Types.Value "fs"
+                            }
+                }
+            )
+    groups = (Gpu.Device.limits d).maxBindGroups
+    List.map [ 0, 1, groups - 1, groups, groups + 1 ] λi →
+        name =
+            if i < groups then
+                "index " ++ String.fromInt i
+            else
+                "index maxBindGroups + " ++ String.fromInt (i - groups)
+        name ++ ": " ++ outcome (RenderPipeline.getBindGroupLayout pipeline (u32 i))
+
+
+-- encoding/queries/general.spec.ts, `occlusion_query,query_index`: a set
+-- of 2; index 0 accepted, index 2 refused.
+queries : ⊤ → List String
+queries ⊤ = GpuKit.with "none" λd →
+    set = must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 2)))
+    target =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    (Types.Extent3DFields
+                        { (Types.extent3DDict (u32 4)) | height = Types.Value (u32 4) }
+                    )
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    view = must (Gpu.Texture.createView target Types.textureViewDescriptor)
+    List.map [ 0, 2 ] λi →
+        ran = Encode.run d Types.commandEncoderDescriptor (occlusion view set i _)
+        "index " ++ String.fromInt i ++ ": " ++ outcome ran
+
+
+occlusion :
+      Gpu.Handle.TextureView
+    , Gpu.Handle.QuerySet
+    , Int
+    , CommandEncoder
+    → Result Error.InputError ⊤
+occlusion view set i encoder =
+    attachment =
+        Types.renderPassColorAttachment (Types.AttachmentTextureView view) Types.Clear Types.Store
+    pass =
+        CommandEncoder.beginRenderPass encoder
+            { (Types.renderPassDescriptor [ Just attachment ])
+                | occlusionQuerySet = Types.Value set
+            }?
+    RenderPass.beginOcclusionQuery pass (u32 i)?
+    RenderPass.endOcclusionQuery pass?
+    RenderPass.end pass
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "map-alignment", mapAlignment )
+        , ( "map-bounds", mapBounds )
+        , ( "range-alignment", rangeAlignment )
+        , ( "range-bounds", rangeBounds )
+        , ( "creation", creation )
+        , ( "writes", writes )
+        , ( "immediates", immediates )
+        , ( "layouts", layouts )
+        , ( "queries", queries )
+        ]

@@ -1,0 +1,9 @@
+click #map-alignment
+click #map-bounds
+click #range-alignment
+click #range-bounds
+click #creation
+click #writes
+click #immediates
+click #layouts
+click #queries
