@@ -1,0 +1,97 @@
+-- A texture's binding view dimension on a compatibility-mode device
+-- (docs/design/webgpu.md §4; WebGPU, `createTexture()`, and `GPUTexture`'s
+-- `textureBindingViewDimension`): on a device without
+-- "core-features-and-limits" it is the descriptor's, when given, and
+-- otherwise "1d" for a 1d texture, "2d" for a 2d texture of one layer,
+-- "2d-array" for one of more, and "3d" for a 3d texture. The adapter is
+-- asked for at the compatibility feature level and the device asks for no
+-- feature. These expectations are the specification's algorithm.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device)
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+extent : Int, Int → Types.Extent3D
+extent w layers =
+    Types.Extent3DFields
+        { width = u32 w
+        , height = Types.Value (u32 w)
+        , depthOrArrayLayers = Types.Value (u32 layers)
+        }
+
+
+bindingView : Device, Types.TextureDescriptor → String
+bindingView d descriptor =
+    t = must (Gpu.Device.createTexture d descriptor)
+    case Gpu.Texture.textureBindingViewDimension t of
+        Just v →
+            "Just " ++ Types.textureViewDimensionToString v
+
+        Nothing →
+            "Nothing"
+
+
+usage : Flags.TextureUsages
+usage = Flags.texture [ Flags.TextureBinding ]
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "none"
+    options = { (Types.adapterOptions) | featureLevel = Types.Value "compatibility" }
+    case Gpu.requestAdapter options of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok d →
+                    [ "2d, one layer: "
+                        ++ bindingView
+                            d
+                            (Types.textureDescriptor (extent 4 1) Types.Rgba8unorm usage)
+                    , "2d, three layers: "
+                        ++ bindingView
+                            d
+                            (Types.textureDescriptor (extent 4 3) Types.Rgba8unorm usage)
+                    , "3d: "
+                        ++ bindingView d
+                            { (Types.textureDescriptor (extent 4 2) Types.Rgba8unorm usage)
+                                | dimension = Types.Value Types.Dimension3D
+                            }
+                    , "1d: "
+                        ++ bindingView d
+                            { (Types.textureDescriptor
+                                  (Types.Extent3DFields
+                                      { width = u32 4
+                                      , height = Types.Default
+                                      , depthOrArrayLayers = Types.Default
+                                      }
+                                  )
+                                  Types.Rgba8unorm
+                                  usage
+                              )
+                                | dimension = Types.Value Types.Dimension1D
+                            }
+                    , "6 layers, given cube: "
+                        ++ bindingView d
+                            { (Types.textureDescriptor (extent 4 6) Types.Rgba8unorm usage)
+                                | textureBindingViewDimension = Types.Value Types.ViewCube
+                            }
+                    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

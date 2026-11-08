@@ -1,0 +1,20 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"2d, one layer: Just 2d"</li>
+      <li>"2d, three layers: Just 2d-array"</li>
+      <li>"3d: Just 3d"</li>
+      <li>"1d: Just 1d"</li>
+      <li>"6 layers, given cube: Just cube"</li>
+    </ol>
+  </main>
+</body>

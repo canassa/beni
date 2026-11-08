@@ -114,6 +114,7 @@ const renderEncoder = (label, invalid) => {
 };
 
 const fakeDevice = (adapter, descriptor) => {
+  const compatibility = adapter.compatibility === true && !(descriptor?.requiredFeatures ?? []).includes("core-features-and-limits");
   let resolveLost = null;
   const device = {
     features: new globalThis.Set(descriptor?.requiredFeatures ?? []),
@@ -335,6 +336,13 @@ const fakeDevice = (adapter, descriptor) => {
     t.dimension = descriptor.dimension ?? "2d";
     t.format = descriptor.format;
     t.usage = descriptor.usage;
+    // The specification's createTexture: on a device without
+    // "core-features-and-limits", the given binding view dimension, or one
+    // derived from the dimension and the array layer count.
+    if (compatibility) {
+      const derived = t.dimension === "1d" ? "1d" : t.dimension === "3d" ? "3d" : t.depthOrArrayLayers === 1 ? "2d" : "2d-array";
+      t.textureBindingViewDimension = descriptor.textureBindingViewDimension ?? derived;
+    }
     t.destroy = () => {};
     t.createView = (viewDescriptor) => {
       const d = viewDescriptor ?? {};
@@ -652,8 +660,11 @@ FakePipelineError.prototype.toString = function () {
   return `GPUPipelineError: ${this.message}`;
 };
 
-const fakeAdapter = () => {
+const fakeAdapter = (options) => {
   const adapter = {
+    // An adapter asked for at the compatibility feature level makes
+    // compatibility-mode devices unless one asks for core features.
+    compatibility: options?.featureLevel === "compatibility",
     features: new globalThis.Set(moreFeatures ? [...adapterFeatures, "depth32float-stencil8"] : adapterFeatures),
     limits: globalThis.Object.freeze({ ...limitDefaults }),
     info: globalThis.Object.freeze({ vendor: "beni", architecture: "fake", device: "", description: "", subgroupMinSize: 4, subgroupMaxSize: 128, isFallbackAdapter: false }),
