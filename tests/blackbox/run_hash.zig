@@ -397,9 +397,12 @@ fn programDigest(arena: Allocator, w: *World, script: []const u8, expected: worl
     var h = Sha256.init(.{});
     feed(&h, "beni program-run 1");
     feed(&h, try nodeVersion(w));
-    // How Node runs: `node <script>` in the project directory, with an
-    // empty environment and stdin closed (`world.spawnAndCapture`); only the
-    // script varies.
+    // How Node runs: `node <script>` in the project directory, with only
+    // `TZ` and the dev shell's `sh` and `sleep` on `PATH` in its
+    // environment, and stdin closed (`World.nodeWith`); only the script
+    // varies. The `PATH` is not fed: like Node's version, it is the
+    // toolchain's, and a scenario that runs with no Node on `PATH` must
+    // find the digest that a run with Node recorded.
     feed(&h, script);
     feed(&h, &.{expected.exit_code});
     feed(&h, expected.stdout);

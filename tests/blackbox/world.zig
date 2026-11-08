@@ -202,6 +202,14 @@ pub const World = struct {
     /// Null when nothing on `PATH` is called `node`, which a scenario
     /// reports rather than silently skipping.
     node_exe: ?[]const u8,
+    /// The `PATH` an emitted program runs with: the directories of the
+    /// `sh` and the `sleep` on the TEST process's `PATH`, and nothing else
+    /// of the machine's. A program's children (`ChildProcess`) are found
+    /// there, and so are the utilities a `/bin/sh -c` script names. With
+    /// no `PATH`, a shell searches its compiled-in default: `/bin` on
+    /// Ubuntu, `/no-such-path` on NixOS, where `sleep` was not found
+    /// (#2086). Null when neither is on `PATH`: no `PATH` at all.
+    program_path: ?[]const u8,
 
     pub fn init(gpa: Allocator, io: Io) !World {
         var tmp = projectDir(io);
@@ -219,8 +227,10 @@ pub const World = struct {
             .arena = .init(gpa),
             .exe = exe,
             .node_exe = null,
+            .program_path = null,
         };
         world.node_exe = findOnPath(world.arena.allocator(), io, "node");
+        world.program_path = programPath(world.arena.allocator(), io);
         return world;
     }
 
@@ -489,11 +499,17 @@ pub const World = struct {
         return spawnAndCapture(arena, world.gpa, world.io, argv.items, .{ .dir = world.tmp.dir }, default_timeout_ms);
     }
 
+    /// `node <script>` with an environment of `TZ` (`time_zone`) and
+    /// `PATH` (`program_path`).
     pub fn nodeWith(world: *World, script: []const u8, timeout_ms: i64) !Result {
         const arena = world.arena.allocator();
         const exe = world.node_exe orelse return error.NodeNotOnPath;
         const argv = try arena.dupe([]const u8, &.{ exe, script });
-        return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir }, timeout_ms);
+        var env = std.process.Environ.Map.init(world.gpa);
+        defer env.deinit();
+        try env.put("TZ", time_zone);
+        if (world.program_path) |path| try env.put("PATH", path);
+        return spawnAndCaptureIn(arena, world.io, argv, .{ .dir = world.tmp.dir }, timeout_ms, &env);
     }
 
     /// Assert that `node <script>`, run in the project directory, does what
@@ -660,6 +676,21 @@ fn findOnPath(arena: Allocator, io: Io, name: []const u8) ?[]const u8 {
         return candidate;
     }
     return null;
+}
+
+/// `World.program_path`: the directories of `sh` and `sleep` on the TEST
+/// process's `PATH`, each once, joined with `:`; null when neither is there.
+fn programPath(arena: Allocator, io: Io) ?[]const u8 {
+    var dirs: std.ArrayList([]const u8) = .empty;
+    for ([_][]const u8{ "sh", "sleep" }) |name| {
+        const exe = findOnPath(arena, io, name) orelse continue;
+        const dir = std.fs.path.dirname(exe) orelse continue;
+        for (dirs.items) |seen| {
+            if (std.mem.eql(u8, seen, dir)) break;
+        } else dirs.append(arena, dir) catch return null;
+    }
+    if (dirs.items.len == 0) return null;
+    return std.mem.join(arena, ":", dirs.items) catch null;
 }
 
 /// The one variable every child gets: the time zone. With no `TZ`, a

@@ -1,7 +1,10 @@
 -- run: `ChildProcess.run` starts a program with its arguments and no
 -- shell, and answers how it ended and what it wrote, both as values
 -- (boundary.md §9.14 (a)–(c)). Every child is `/bin/sh`, or a name found
--- on `PATH`: Linux, macOS and NixOS all have it.
+-- on `PATH`: Linux, macOS and NixOS all have it. The suite runs a program
+-- with a `PATH` that holds the dev shell's `sh` and `sleep`
+-- (`World.program_path`), so a script's `sleep` never depends on the
+-- shell's default path, which on NixOS finds nothing.
 --
 --   - standard output, standard error and a non-zero exit, all `Ok`;
 --   - a program found by name on `PATH`;
