@@ -6,5 +6,5 @@
   </main>
 </body>
 -- throws click #run
-(threw: Error: webgpu: device 1, createComputePipelineAsync: [object Object])
+(threw: Error: webgpu: device 1, createComputePipelineAsync: GPUPipelineError: injected unknown reason)
 (the DOM did not change)

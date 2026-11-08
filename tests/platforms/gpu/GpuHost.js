@@ -345,6 +345,10 @@ function FakePipelineError(message, options) {
   this.message = message;
   this.reason = options.reason;
 }
+// Printed as a browser prints its own.
+FakePipelineError.prototype.toString = function () {
+  return `GPUPipelineError: ${this.message}`;
+};
 
 const fakeAdapter = () => {
   const adapter = {
@@ -447,9 +451,9 @@ const faults = {
   },
   "pipeline-unknown-reason": () => {
     bufferFaults.pipeline = () => {
-      const error = globalThis.Object.create(globalThis.GPUPipelineError.prototype);
+      // A genuine GPUPipelineError, its reason shadowed by one outside the pin.
+      const error = new globalThis.GPUPipelineError("injected unknown reason", { reason: "internal" });
       globalThis.Object.defineProperty(error, "reason", { value: "exploded" });
-      globalThis.Object.defineProperty(error, "message", { value: "injected unknown reason" });
       return globalThis.Promise.reject(error);
     };
   },
