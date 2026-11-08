@@ -1628,10 +1628,20 @@ test-blackbox` and so by the gates, reads the pinned IDL through the
 native-bindings catalogue and fails when a member has no row, a row names no
 member, a row has neither a binding nor a later slice the table lists, a
 declaration is not `pub` in a module that `browser-tea` re-exports, a fixture
-has no golden, or no fixture of a row names one of its declarations in its
-code. A test of the gate breaks rows on purpose and expects each break to
-fail. The research script `inventory.py`, whose `--check` this replaces with
-a stricter, gated check, is removed. The audit found these gaps and filled
+has no golden, or no fixture of a row uses one of its declarations. A use is
+in the fixture's own code, with comments, string literals and import lines
+left out; a type or constructor that only a test-platform module the fixture
+imports names counts when the fixture's golden shows it, so the page really
+produced the value. The gate also holds the file's IDL text to the pin: each
+section in IDL order, its parent, every member's text, every enum's values
+and the counts line, the check the research script `inventory.py` made
+before it was removed. Tests of the gate break rows and IDL text on purpose
+and expect each break to fail, and feed it a comment, a string and an
+unused import as cheats. **Completeness here is at the level of
+declarations**: a row binds a whole dictionary, enum, typedef or namespace
+to behaviour; its fields, values and constants are checked one by one for
+existence in the generated modules by the census of §2.2, not each for
+behaviour. The audit found these gaps and filled
 them, each with a fixture: label access for the five handles that had no
 module (`Gpu.Sampler`, `Gpu.BindGroupLayout`, `Gpu.BindGroup`,
 `Gpu.PipelineLayout`, `Gpu.CommandBuffer`, each `label` and `setLabel`),
@@ -1648,13 +1658,16 @@ occlusion-query index edges from the pinned CTS, each case's outcome copied
 from the CTS into the fixture, never from the wrapper. **The differential
 harness** is `GpuDiff` in the test platform and `browser/gpu/Differential`:
 sixteen seeds of 24 buffer operations (create, mapped at creation or not;
-write; copy; clear; read back; map a range; destroy) with offsets and sizes
+write; copy; a copy whose source is destroyed between encoding and submit;
+clear; read back; map a range; destroy; and a closing read of every buffer) with offsets and sizes
 on their edges, run through the wrappers and on raw WebGPU, each on a device
 of its own, compared operation by operation as `ok`, `error` or the bytes
 read; a difference prints the seed, the sequence and both lists. Under the
 gates both halves run on the fake host, which now also models the copy and
-clear rules the harness reaches (usages, bounds, an invalid command buffer
-runs nothing); under `test-webgpu`, on Chrome's WebGPU.
+clear rules the harness reaches as the specification places them: usages,
+bounds and the device at encoding, and at submit a validation error, with
+nothing run, for an invalid or resubmitted command buffer or one that uses a
+buffer destroyed since it was encoded; under `test-webgpu`, on Chrome's WebGPU.
 
 ### 10.1 A new standard revision
 
