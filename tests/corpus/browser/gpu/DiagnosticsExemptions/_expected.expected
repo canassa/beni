@@ -24,6 +24,8 @@
       <li>"mapped memory: range Ok written, read Ok 7"</li>
       <li>"teardown: unmapped buffer unmapped"</li>
       <li>"receipt: Ok done"</li>
+      <li>"queue completion: Ok done"</li>
+      <li>"compilation info: Ok read"</li>
       <li>"pending map: Ok mapping"</li>
       <li>"ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"session: Ok ⊤, observed []"</li>
@@ -50,6 +52,8 @@
       <li>"mapped memory: range Ok written, read Ok 7"</li>
       <li>"teardown: unmapped buffer unmapped"</li>
       <li>"receipt: Ok done"</li>
+      <li>"queue completion: Ok done"</li>
+      <li>"compilation info: Ok read"</li>
       <li>"pending map: Ok mapping"</li>
       <li>"ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"session: Ok ⊤, observed []"</li>
@@ -66,6 +70,8 @@
       <li>"unrelated fiber, mapped memory: range Ok written, read Ok 7"</li>
       <li>"unrelated fiber, teardown: unmapped buffer unmapped"</li>
       <li>"unrelated fiber, receipt: Ok done"</li>
+      <li>"unrelated fiber, queue completion: Ok done"</li>
+      <li>"unrelated fiber, compilation info: Ok read"</li>
       <li>"unrelated fiber, ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"session: Ok ⊤, observed []"</li>
       <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>
@@ -91,6 +97,8 @@
       <li>"mapped memory: range Ok written, read Ok 7"</li>
       <li>"teardown: unmapped buffer unmapped"</li>
       <li>"receipt: Ok done"</li>
+      <li>"queue completion: Ok done"</li>
+      <li>"compilation info: Ok read"</li>
       <li>"pending map: Ok mapping"</li>
       <li>"ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"session: Ok ⊤, observed []"</li>
@@ -107,6 +115,8 @@
       <li>"unrelated fiber, mapped memory: range Ok written, read Ok 7"</li>
       <li>"unrelated fiber, teardown: unmapped buffer unmapped"</li>
       <li>"unrelated fiber, receipt: Ok done"</li>
+      <li>"unrelated fiber, queue completion: Ok done"</li>
+      <li>"unrelated fiber, compilation info: Ok read"</li>
       <li>"unrelated fiber, ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"session: Ok ⊤, observed []"</li>
       <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>

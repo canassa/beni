@@ -155,7 +155,8 @@ Encoding, batches, compute and render passes are in `references/webgpu-render.md
 4. **These calls run as usual under a lease**: `destroy`, `unmap` and `unconfigure`; the reads
    of state (`features`, `limits`, `label`, `mapState`, `currentMapping`, `loss`, `queue`,
    `getConfiguration`); `getMappedRange` and the mapped range reads and writes; and the waits
-   on earlier work (`Gpu.Submission.done`, a map that started before, `awaitLost`, `eachEvent`,
+   on earlier work (`Gpu.Submission.done`, `Gpu.Queue.onSubmittedWorkDone`,
+   `Gpu.Shader.getCompilationInfo`, a map that started before, `awaitLost`, `eachEvent`,
    `onEvent`).
 5. **A forwarding call has no scopes of its own.** The device's errors go to your scopes, or to
    the session's own scopes when no scope of yours takes them. What it makes is provisional:

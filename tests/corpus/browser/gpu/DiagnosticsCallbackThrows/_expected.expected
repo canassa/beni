@@ -6,6 +6,7 @@
   </main>
 </body>
 -- throws click #run
+console.log: leased at the throw: yes
 (threw: TypeError: the callback fails)
 <body>
   <main>
@@ -16,4 +17,5 @@
 </body>
 -- advance 10
 console.log: error scopes open: 0
+console.log: leased after the teardown: no
 (the DOM did not change)

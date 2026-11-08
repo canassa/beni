@@ -149,7 +149,7 @@ and [OffscreenCanvas](https://html.spec.whatwg.org/multipage/canvas.html#the-off
 | Native API / observation | Policy |
 |---|---|
 | `pushErrorScope` | Closed filter enum; called inside a non-suspending stack section. Unexpected throw → defect; balance every successfully pushed scope in a finalizer |
-| `popErrorScope` | Null is no reported GPU error, not proof of no device loss. A native DOM `OperationError` for an empty *explicit managed diagnostic stack* → `ScopeUnderflow`. Underflow in an automatic wrapper-owned scope is a beni defect, because user code cannot unbalance that stack |
+| `popErrorScope` | Null is no reported GPU error, not proof of no device loss. An empty *explicit managed diagnostic stack* → `ScopeUnderflow`, decided by the session's own count before any native call, so the engine never pops one of its own scopes for the user (amended 2026-11-08 as built, `webgpu.md` §6.4). A native rejection of a user pop that count allows — `OperationError` included — is a defect, as is underflow in an automatic wrapper-owned scope, because user code cannot unbalance that stack |
 | Scope returns GPU error | Match exact known class; retain representative for that filter/segment. Do not claim every error or first failing instruction is known |
 | Scope promise rejects unexpectedly | Defect. Drain the other scope promises without replacing the original defect |
 | `device.lost` | Promise resolves once, with known enum reason. Defined reason `unknown` → `UnknownLoss`; a new string → defect. Unexpected rejection → defect |

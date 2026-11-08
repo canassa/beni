@@ -92,6 +92,8 @@ onEvent device tag =
 
 
 -- Each event, sent as a value of its own: what the engine queued is its.
+-- The copy exists only because the ownership checker refuses a send of a
+-- value read with `Js.to` (#2291).
 sendEvents : Handle.Device, (DeviceEvent → ⊤) → ⊤
 sendEvents device send = eachEvent device λevent → send (fresh event)
 

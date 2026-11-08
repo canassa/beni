@@ -3,12 +3,17 @@
 -- defect of the program, a `TypeError` that the engine does not relabel.
 -- The session ends however its callback ends, so its finaliser pops the
 -- scope the callback left open and the session's own three: the host logs
--- none left open after the throw, and the page stops.
+-- none left open after the throw, and the page stops. The callback is
+-- suspendable, so no `try … finally` can hold it: the session closes when
+-- the runtime's teardown cancels the stopped program's fibers, one task
+-- after the throw, when nothing of the program runs any more. The host
+-- logs the lease held at the throw and free after the teardown.
 import Gpu.Diagnostics
 import Gpu.Types as Types
 import GpuHost
 import GpuKit
 import GpuPage
+import GpuProbe
 import GpuShow
 import Task
 import Tea
@@ -20,6 +25,8 @@ run ⊤ = GpuKit.with "none" λd →
         pushed = Gpu.Diagnostics.pushErrorScope session Types.FilterValidation
         Task.yieldNow ⊤
         GpuHost.logScopesLater d
+        GpuHost.log ("leased at the throw: " ++ GpuKit.yesNo (GpuProbe.leased d))
+        GpuHost.logLater "leased after the teardown" λ⊤ → GpuKit.yesNo (GpuProbe.leased d)
         GpuHost.fail "the callback fails"
         pushed
     [ "unreachable: " ++ GpuShow.sessionReport report λ_ → "⊤" ]
