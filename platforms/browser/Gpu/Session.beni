@@ -13,7 +13,7 @@
 
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
-import Gpu.Make as Make
+import Gpu.Formats as Formats
 import Gpu.Native as Native
 import Gpu.Types as Types
 import Js
@@ -102,7 +102,27 @@ pass native path =
 --| A resource a command names, at `path`: usable on the session's device,
 --| or provisional in its batch.
 pub usable : V, V, String → Result InputError ⊤
-usable s native path = check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)
+usable s native path =
+    check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)?
+    uses = Js.get s "uses"
+    Js.call uses "add" [ native ] ▷ ignore
+    -- What a bind group binds is used through it.
+    bound = Js.get (Engine.recordOf native) "uses"
+    if Js.isNullish bound then ⊤ else Js.each bound λx → Js.call uses "add" [ x ] ▷ ignore
+    Ok ⊤
+
+
+-- What every command buffer an encoding finished uses: the resources its
+-- commands named, for `submit`'s checks (ledger §5).
+usesTable : V
+usesTable = Js.pure λ⊤ → Js.construct (Js.global "WeakMap") []
+
+
+--| The resources a command buffer's commands use, as a native `Set`.
+pub usesOf : V → V
+usesOf commands =
+    u = Js.call usesTable "get" [ commands ]
+    if Js.isUndefined u then Js.construct (Js.global "Set") [] else u
 
 
 --| One debug group more, or one fewer — refused when none is open.
@@ -126,6 +146,7 @@ newSession device r batch =
         , ( "batch", batch )
         , ( "live", Js.from True )
         , ( "failure", Js.null )
+        , ( "uses", Js.construct (Js.global "Set") [] )
         ]
 
 
@@ -152,7 +173,7 @@ encode device batch descriptor body value =
 --| Run `body` with a new render bundle encoder of `device` (a native
 --| device, in `batch` or null), as one session, and give the render bundle
 --| it encoded, as `encode` does. A format of `descriptor` whose feature the
---| device lacks is refused before (`Gpu.Make.formatsAvailable`); the
+--| device lacks is refused before (`Gpu.Formats.formatsAvailable`); the
 --| host's `TypeError` for a feature-gated format anyway is
 --| `FormatFeatureRejected` (ledger §3, §5).
 pub bundle :
@@ -165,12 +186,13 @@ pub bundle :
 bundle device batch descriptor body value =
     r = Engine.recordOf device
     s = newSession device r batch
-    formats = Make.bundleFormats descriptor
-    Make.formatsAvailable device formats?
+    formats = Formats.bundleFormats descriptor
+    Formats.formatsAvailable device formats?
     converted = Native.renderBundleEncoderDescriptor descriptor
 
     native =
-        (Make.formatChecked formats λ⊤ → Js.call device "createRenderBundleEncoder" [ converted ])?
+        (Formats.formatChecked formats λ⊤ → Js.call device "createRenderBundleEncoder" [ converted ]
+        )?
     runSession s native body value
 
 
@@ -196,10 +218,14 @@ runSession s native body value =
         Err (Js.to failure)
     else if Js.same (Js.get enc "state") (Js.from "locked") then
         Err (Error.InvalidInput (Error.EncoderLocked { path = "encoder" }))
-    else if Js.same (Js.get enc "state") (Js.from "finished") then
-        Ok (Js.get enc "finished")
     else
-        Ok (Js.call native "finish" [])
+        commands =
+            if Js.same (Js.get enc "state") (Js.from "finished") then
+                Js.get enc "finished"
+            else
+                Js.call native "finish" []
+        Js.call usesTable "set" [ commands, Js.get s "uses" ] ▷ ignore
+        Ok commands
 
 
 --| Record what an encoder's `finish` gave.

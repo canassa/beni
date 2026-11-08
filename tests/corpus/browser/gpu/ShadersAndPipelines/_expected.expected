@@ -16,7 +16,7 @@
     <button id="capabilities">"capabilities"</button>
     <button id="destroyed">"destroyed"</button>
     <ol>
-      <li>"invalid WGSL: Err Validation"</li>
+      <li>"invalid WGSL: Err ShaderRejected, 1 error messages"</li>
       <li>"valid WGSL, errors: 0, label kernel"</li>
       <li>"source kept: yes"</li>
     </ol>
@@ -30,12 +30,12 @@
     <button id="capabilities">"capabilities"</button>
     <button id="destroyed">"destroyed"</button>
     <ol>
-      <li>"invalid WGSL: Err Validation"</li>
+      <li>"invalid WGSL: Err ShaderRejected, 1 error messages"</li>
       <li>"valid WGSL, errors: 0, label kernel"</li>
       <li>"source kept: yes"</li>
       <li>"missing entry point, synchronous: Err Validation"</li>
       <li>"missing entry point, asynchronous: Err PipelineValidation"</li>
-      <li>"bind group layout 7: Err Validation"</li>
+      <li>"bind group layout 7: Err InvalidInput OutOfRange index 7+1 of 4"</li>
     </ol>
   </main>
 </body>
@@ -47,12 +47,12 @@
     <button id="capabilities">"capabilities"</button>
     <button id="destroyed">"destroyed"</button>
     <ol>
-      <li>"invalid WGSL: Err Validation"</li>
+      <li>"invalid WGSL: Err ShaderRejected, 1 error messages"</li>
       <li>"valid WGSL, errors: 0, label kernel"</li>
       <li>"source kept: yes"</li>
       <li>"missing entry point, synchronous: Err Validation"</li>
       <li>"missing entry point, asynchronous: Err PipelineValidation"</li>
-      <li>"bind group layout 7: Err Validation"</li>
+      <li>"bind group layout 7: Err InvalidInput OutOfRange index 7+1 of 4"</li>
       <li>"timestamp queries without the feature: Err UnsupportedCapability"</li>
       <li>"a BC texture without the feature: Err UnsupportedCapability"</li>
     </ol>
@@ -66,12 +66,12 @@
     <button id="capabilities">"capabilities"</button>
     <button id="destroyed">"destroyed"</button>
     <ol>
-      <li>"invalid WGSL: Err Validation"</li>
+      <li>"invalid WGSL: Err ShaderRejected, 1 error messages"</li>
       <li>"valid WGSL, errors: 0, label kernel"</li>
       <li>"source kept: yes"</li>
       <li>"missing entry point, synchronous: Err Validation"</li>
       <li>"missing entry point, asynchronous: Err PipelineValidation"</li>
-      <li>"bind group layout 7: Err Validation"</li>
+      <li>"bind group layout 7: Err InvalidInput OutOfRange index 7+1 of 4"</li>
       <li>"timestamp queries without the feature: Err UnsupportedCapability"</li>
       <li>"a BC texture without the feature: Err UnsupportedCapability"</li>
       <li>"snapshots: q occlusion 2, texture 4x2 rgba8unorm"</li>

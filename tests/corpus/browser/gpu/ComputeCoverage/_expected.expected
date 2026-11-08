@@ -1,0 +1,150 @@
+-- load
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #commands
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol>
+      <li>"buffer to texture: Ok commands"</li>
+      <li>"indirect dispatch: Ok commands"</li>
+      <li>"timestamp writes to a destroyed query set: Err InvalidInput ResourceDestroyed timestampWrites.querySet"</li>
+    </ol>
+  </main>
+</body>
+-- click #submits
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol>
+      <li>"buffer to texture: Ok commands"</li>
+      <li>"indirect dispatch: Ok commands"</li>
+      <li>"timestamp writes to a destroyed query set: Err InvalidInput ResourceDestroyed timestampWrites.querySet"</li>
+      <li>"a buffer mapped since: Err InvalidInput MappingState commands mapped"</li>
+      <li>"a buffer destroyed since, bound by a group: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"a buffer destroyed since: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"native submits: 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #writes
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol>
+      <li>"buffer to texture: Ok commands"</li>
+      <li>"indirect dispatch: Ok commands"</li>
+      <li>"timestamp writes to a destroyed query set: Err InvalidInput ResourceDestroyed timestampWrites.querySet"</li>
+      <li>"a buffer mapped since: Err InvalidInput MappingState commands mapped"</li>
+      <li>"a buffer destroyed since, bound by a group: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"a buffer destroyed since: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"native submits: 0"</li>
+      <li>"a destroyed texture: Err InvalidInput ResourceDestroyed destination.texture"</li>
+      <li>"another device's texture: Err InvalidInput WrongDevice destination.texture"</li>
+      <li>"resizable data: Err InvalidInput ResizableBacking data"</li>
+      <li>"fixed data: Ok written"</li>
+    </ol>
+  </main>
+</body>
+-- click #immediates
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol>
+      <li>"buffer to texture: Ok commands"</li>
+      <li>"indirect dispatch: Ok commands"</li>
+      <li>"timestamp writes to a destroyed query set: Err InvalidInput ResourceDestroyed timestampWrites.querySet"</li>
+      <li>"a buffer mapped since: Err InvalidInput MappingState commands mapped"</li>
+      <li>"a buffer destroyed since, bound by a group: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"a buffer destroyed since: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"native submits: 0"</li>
+      <li>"a destroyed texture: Err InvalidInput ResourceDestroyed destination.texture"</li>
+      <li>"another device's texture: Err InvalidInput WrongDevice destination.texture"</li>
+      <li>"resizable data: Err InvalidInput ResizableBacking data"</li>
+      <li>"fixed data: Ok written"</li>
+      <li>"a host without setImmediates: Err UnsupportedCapability GPUComputePassEncoder.setImmediates"</li>
+    </ol>
+  </main>
+</body>
+-- click #internal
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol>
+      <li>"buffer to texture: Ok commands"</li>
+      <li>"indirect dispatch: Ok commands"</li>
+      <li>"timestamp writes to a destroyed query set: Err InvalidInput ResourceDestroyed timestampWrites.querySet"</li>
+      <li>"a buffer mapped since: Err InvalidInput MappingState commands mapped"</li>
+      <li>"a buffer destroyed since, bound by a group: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"a buffer destroyed since: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"native submits: 0"</li>
+      <li>"a destroyed texture: Err InvalidInput ResourceDestroyed destination.texture"</li>
+      <li>"another device's texture: Err InvalidInput WrongDevice destination.texture"</li>
+      <li>"resizable data: Err InvalidInput ResizableBacking data"</li>
+      <li>"fixed data: Ok written"</li>
+      <li>"a host without setImmediates: Err UnsupportedCapability GPUComputePassEncoder.setImmediates"</li>
+      <li>"internal: PipelineInternal, entry points [main]"</li>
+    </ol>
+  </main>
+</body>
+-- click #formats
+<body>
+  <main>
+    <button id="commands">"commands"</button>
+    <button id="submits">"submits"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="internal">"internal"</button>
+    <button id="formats">"formats"</button>
+    <ol>
+      <li>"buffer to texture: Ok commands"</li>
+      <li>"indirect dispatch: Ok commands"</li>
+      <li>"timestamp writes to a destroyed query set: Err InvalidInput ResourceDestroyed timestampWrites.querySet"</li>
+      <li>"a buffer mapped since: Err InvalidInput MappingState commands mapped"</li>
+      <li>"a buffer destroyed since, bound by a group: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"a buffer destroyed since: Err InvalidInput ResourceDestroyed commands"</li>
+      <li>"native submits: 0"</li>
+      <li>"a destroyed texture: Err InvalidInput ResourceDestroyed destination.texture"</li>
+      <li>"another device's texture: Err InvalidInput WrongDevice destination.texture"</li>
+      <li>"resizable data: Err InvalidInput ResizableBacking data"</li>
+      <li>"fixed data: Ok written"</li>
+      <li>"a host without setImmediates: Err UnsupportedCapability GPUComputePassEncoder.setImmediates"</li>
+      <li>"internal: PipelineInternal, entry points [main]"</li>
+      <li>"a BC texture the host's check refuses: Err FormatFeatureRejected"</li>
+    </ol>
+  </main>
+</body>

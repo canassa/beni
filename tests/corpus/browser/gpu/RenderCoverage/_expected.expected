@@ -185,7 +185,7 @@
       <li>"destroyed depth attachment: Err InvalidInput ResourceDestroyed depthStencilAttachment.view"</li>
       <li>"other device's depth attachment: Err InvalidInput WrongDevice depthStencilAttachment.view"</li>
       <li>"other device's bundle: Err InvalidInput WrongDevice bundles"</li>
-      <li>"the batch: Err InvalidInput MappedSizeUnaligned size 6"</li>
+      <li>"the batch: Err BatchFailed refused: InvalidInput MappedSizeUnaligned size 6; issued [encodeBundle], refused [createBuffer]"</li>
       <li>"a rejected bundle: Err InvalidInput ResourceRejected bundles"</li>
     </ol>
   </main>
@@ -214,7 +214,7 @@
       <li>"destroyed depth attachment: Err InvalidInput ResourceDestroyed depthStencilAttachment.view"</li>
       <li>"other device's depth attachment: Err InvalidInput WrongDevice depthStencilAttachment.view"</li>
       <li>"other device's bundle: Err InvalidInput WrongDevice bundles"</li>
-      <li>"the batch: Err InvalidInput MappedSizeUnaligned size 6"</li>
+      <li>"the batch: Err BatchFailed refused: InvalidInput MappedSizeUnaligned size 6; issued [encodeBundle], refused [createBuffer]"</li>
       <li>"a rejected bundle: Err InvalidInput ResourceRejected bundles"</li>
       <li>"destroyed query set: Err InvalidInput ResourceDestroyed occlusionQuerySet"</li>
     </ol>

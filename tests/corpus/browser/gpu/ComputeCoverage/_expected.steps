@@ -1,0 +1,6 @@
+click #commands
+click #submits
+click #writes
+click #immediates
+click #internal
+click #formats

@@ -53,7 +53,7 @@ texture d =
 
 
 -- A batch of `d` running `body`, shown.
-inBatch : String, Device, (Batch → Result InputError a) → String
+inBatch : String, Device, (Batch → Result Error.Error a) → String
 inBatch name d body = name ++ ": " ++ GpuShow.checked (Batch.run d name body) λ_ → "Ok made"
 
 
@@ -61,7 +61,7 @@ setOther : RenderPipeline, RenderBundleEncoder → Result InputError ⊤
 setOther p b = BundleEncoder.setPipeline b p
 
 
-bundleOf : RenderPipeline, Batch → Result InputError ⊤
+bundleOf : RenderPipeline, Batch → Result Error.Error ⊤
 bundleOf p b =
     _ =
         Batch.encodeBundle

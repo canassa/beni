@@ -8,6 +8,7 @@
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Feature as Feature
+import Gpu.Formats as Formats
 import Gpu.Handle as Handle
 import Gpu.Limits as Limits
 import Gpu.Make as Make
@@ -69,7 +70,7 @@ createSampler device descriptor = made device (Make.sampler (Js.from device) des
 
 -- Run a prepared creation as a checked operation, and give what it made.
 made : Handle.Device, Result Error.Error Make.Op → Result Error.Error a
-made device prepared = Result.map (Make.checked (Js.from device) prepared) λm → Js.to m
+made _ prepared = Result.map (Make.checked prepared) λm → Js.to m
 
 
 --| A buffer, checked (§6.1, §7.1). With `mappedAtCreation = Value True` it
@@ -133,14 +134,42 @@ createPipelineLayout device descriptor =
     made device (Make.pipelineLayout (Js.from device) Js.null descriptor)
 
 
---| A shader module, checked: invalid WGSL is `Validation`, with the host's
---| message. `Gpu.Shader.getCompilationInfo` gives every message. May
---| suspend.
+--| A shader module, checked: invalid WGSL is `ShaderRejected`, with the
+--| host's message and every message the compiler gave (§4), read before
+--| the failure is returned. `Gpu.Shader.getCompilationInfo` gives the
+--| messages of a module that was accepted. May suspend.
 pub createShaderModule :
       Handle.Device
     , Types.ShaderModuleDescriptor
     → Result Error.Error Handle.Shader
-createShaderModule device descriptor = made device (Make.shaderModule (Js.from device) descriptor)
+createShaderModule device descriptor =
+    op = Make.shaderModule (Js.from device) descriptor?
+    shader = Js.ref Js.null
+
+    result =
+        Engine.checkedMaking
+            op.device
+            op.name
+            op.labels
+            (λ⊤ → Make.perform op)
+            (λm →
+                Js.write shader m
+                Make.adopt op m
+            )
+            λm → Make.discard op m
+    case result of
+        Ok m →
+            Ok (Js.to m)
+
+        Err (Error.Validation detail) →
+            if Js.isNull (Js.read shader) then
+                Err (Error.Validation detail)
+            else
+                info = Make.compilationInfo (Js.read shader)?
+                Err (Error.ShaderRejected { failure = detail, messages = info.messages })
+
+        Err problem →
+            Err problem
 
 
 --| A compute pipeline, made by the native synchronous call and checked
@@ -155,8 +184,8 @@ createComputePipeline device descriptor =
 
 --| A compute pipeline, made by the native asynchronous call (ledger §3): a
 --| `GPUPipelineError` of reason `validation` is `PipelineValidation`, of
---| reason `internal` `PipelineInternal`; any other rejection or reason is a
---| defect. A cancelled wait leaves the pipeline unpublished. May suspend.
+--| reason `internal` `PipelineInternal`, each with the entry points asked
+--| for; any other rejection or reason is a defect. A cancelled wait leaves the pipeline unpublished. May suspend.
 pub createComputePipelineAsync :
       Handle.Device
     , Types.ComputePipelineDescriptor
@@ -178,7 +207,7 @@ createComputePipelineAsync device descriptor =
                     Engine.adoptInBatch value r Js.null
                     Engine.Expected (Ok value)
                 else
-                    pipelineFailure "createComputePipelineAsync" value
+                    pipelineFailure "createComputePipelineAsync" (entryPoints descriptor) value
     case result of
         Ok pipeline →
             Engine.setStatus pipeline "accepted"
@@ -190,19 +219,30 @@ createComputePipelineAsync device descriptor =
 
 -- A rejected asynchronous pipeline: a native `GPUPipelineError` of a reason
 -- in the pin, or unexpected.
-pipelineFailure : String, Js.Value → Engine.Outcome (Result Error.Error Js.Value)
-pipelineFailure operation error =
+pipelineFailure : String, List String, Js.Value → Engine.Outcome (Result Error.Error Js.Value)
+pipelineFailure operation entries error =
     if not (Engine.isInstanceOf error "GPUPipelineError") then
         Engine.Unexpected error
     else
         reason = Js.get error "reason"
-        failure = { operation = operation, message = Engine.messageOf error }
+        failure = { operation = operation, message = Engine.messageOf error, entryPoints = entries }
         if Js.same reason (Js.from "validation") then
             Engine.Expected (Err (Error.PipelineValidation failure))
         else if Js.same reason (Js.from "internal") then
             Engine.Expected (Err (Error.PipelineInternal failure))
         else
             Engine.Unexpected error
+
+
+-- The entry points a pipeline descriptor asks for.
+entryPoints : Types.ComputePipelineDescriptor → List String
+entryPoints descriptor =
+    case descriptor.compute.entryPoint of
+        Types.Value name →
+            [ name ]
+
+        Types.Default →
+            []
 
 
 --| A query set, checked. A timestamp query set needs the `timestamp-query`
@@ -254,11 +294,14 @@ createRenderPipelineAsync device descriptor =
                     Engine.adoptInBatch value r Js.null
                     Engine.Expected (Ok value)
                 else
-                    candidates = Make.gated formats
+                    candidates = Formats.gated formats
                     if candidates ≠ [] && Engine.isTypeError value then
-                        Engine.Expected (Err (Make.formatFailure candidates value))
+                        Engine.Expected (Err (Formats.formatFailure candidates value))
                     else
-                        pipelineFailure "createRenderPipelineAsync" value
+                        pipelineFailure
+                            "createRenderPipelineAsync"
+                            (renderEntryPoints descriptor)
+                            value
     case result of
         Ok pipeline →
             Engine.setStatus pipeline "accepted"
@@ -266,3 +309,30 @@ createRenderPipelineAsync device descriptor =
 
         Err problem →
             Err problem
+
+
+-- The entry points a render pipeline descriptor asks for: its vertex
+-- stage's, then its fragment stage's.
+renderEntryPoints : Types.RenderPipelineDescriptor → List String
+renderEntryPoints descriptor =
+    vertex =
+        case descriptor.vertex.entryPoint of
+            Types.Value name →
+                [ name ]
+
+            Types.Default →
+                []
+
+    fragment =
+        case descriptor.fragment of
+            Types.Value f →
+                case f.entryPoint of
+                    Types.Value name →
+                        [ name ]
+
+                    Types.Default →
+                        []
+
+            Types.Default →
+                []
+    [ …vertex, …fragment ]

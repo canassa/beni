@@ -7,6 +7,21 @@
 // whichever host is there.
 //
 // The fake is not WebGPU: it validates nothing a fixture does not ask it to.
+// Where it differs from Chrome's, on purpose:
+// - every promise settles on a microtask, never after GPU work:
+//   `onSubmittedWorkDone` resolves at once, a map one microtask after it is
+//   asked for (or, under "maps-held", when `releaseMaps` says);
+// - a device's loss changes no outcome of its own: a pending map is not
+//   rejected by a loss, and work submitted on a lost device still "runs";
+// - it runs no shader and keeps no texels, so a dispatch writes nothing
+//   and a texture reads back as zeros (those pages have a
+//   `.webgpu-expected` for Chrome's answer);
+// - its validation is the handful of rules the fixtures reach (buffer
+//   usages and sizes, map ranges, writeBuffer bounds, sampler clamps), and
+//   its error messages are its own;
+// - its error classes (`GPUValidationError` and the rest) are plain
+//   functions installed on the page, and `SharedArrayBuffer` exists where
+//   a Chrome page without cross-origin isolation has none.
 
 const native = () => globalThis.__beniWebGpuNative === true;
 
@@ -97,7 +112,11 @@ const fakeDevice = (adapter, descriptor) => {
     label: descriptor?.label ?? "",
     lost: new globalThis.Promise((done) => (resolveLost = done)),
   };
+  // Every buffer the device made: `destroy` unmaps each, as the
+  // specification's device destruction does.
+  const buffers = [];
   device.destroy = () => {
+    for (const b of buffers) b.unmap();
     resolveLost(lostInfo("destroyed", "the device was destroyed"));
   };
   // The error scopes: a stack of `{ filter, error }`, each keeping the first
@@ -149,6 +168,7 @@ const fakeDevice = (adapter, descriptor) => {
     };
     globalThis.Object.defineProperty(buffer, "mapState", { get: () => s.mapState });
     fakeBuffers.set(buffer, s);
+    buffers.push(buffer);
     if (atCreation) {
       s.mapState = "mapped";
       s.mode = MAP_WRITE;
@@ -174,7 +194,7 @@ const fakeDevice = (adapter, descriptor) => {
       return new globalThis.Promise((resolve, reject) => {
         const pending = { reject };
         s.pending = pending;
-        globalThis.queueMicrotask(() => {
+        const settle = () => {
           if (s.pending !== pending) return;
           s.pending = null;
           s.mapState = "mapped";
@@ -182,7 +202,11 @@ const fakeDevice = (adapter, descriptor) => {
           s.offset = offset;
           s.length = length;
           resolve(undefined);
-        });
+        };
+        // Under "maps-held" the map stays pending until `releaseMaps`, so an
+        // unmap or a destroy meanwhile rejects it with `AbortError`.
+        if (holdMaps) heldFakeMaps.push(settle);
+        else globalThis.queueMicrotask(settle);
       });
     };
     buffer.getMappedRange = (offset = 0, rangeSize = undefined) => {
@@ -400,6 +424,10 @@ function FakePipelineError(message, options) {
   this.message = message;
   this.reason = options.reason;
 }
+// Printed as a browser prints its own.
+FakePipelineError.prototype.toString = function () {
+  return `GPUPipelineError: ${this.message}`;
+};
 
 const fakeAdapter = () => {
   const adapter = {
@@ -460,6 +488,8 @@ let moreFeatures = false;
 let bufferFaults = {};
 let holdMaps = false;
 const heldMaps = [];
+// The fake host's own pending maps, held under "maps-held".
+const heldFakeMaps = [];
 const held = [];
 const callCounts = {};
 
@@ -494,6 +524,39 @@ const faults = {
   // pipeline rejected with what is not a `GPUPipelineError`, compilation
   // messages rejected, and immediate data the host refuses after the
   // engine's checks passed.
+  // A pipeline the host refuses for an internal reason, and a
+  // GPUPipelineError of a reason outside the pin.
+  "pipeline-internal": () => {
+    bufferFaults.pipeline = () => globalThis.Promise.reject(new globalThis.GPUPipelineError("injected internal failure", { reason: "internal" }));
+  },
+  "pipeline-unknown-reason": () => {
+    bufferFaults.pipeline = () => {
+      // A genuine GPUPipelineError, its reason shadowed by one outside the pin.
+      const error = new globalThis.GPUPipelineError("injected unknown reason", { reason: "internal" });
+      globalThis.Object.defineProperty(error, "reason", { value: "exploded" });
+      return globalThis.Promise.reject(error);
+    };
+  },
+  // A host without setImmediates on its compute passes.
+  "immediates-missing": () => {
+    bufferFaults.noImmediates = true;
+  },
+  // The adapter offers BC compression (the fake's own adapter only), and
+  // the native format check of createTexture refuses it anyway.
+  "adapter-bc": (gpu) => {
+    if (native()) return;
+    wrap(gpu, "requestAdapter", function (original, ...args) {
+      return original.apply(this, args).then((adapter) => {
+        if (adapter !== null) adapter.features.add("texture-compression-bc");
+        return adapter;
+      });
+    });
+  },
+  "texture-type-error": () => {
+    bufferFaults.texture = () => {
+      throw new globalThis.TypeError("injected format refusal");
+    };
+  },
   "pipeline-unlisted": () => {
     bufferFaults.pipeline = () => globalThis.Promise.reject(new globalThis.DOMException("injected unlisted pipeline failure", "AbortError"));
   },
@@ -539,6 +602,38 @@ const faults = {
   "immediates-rejected": () => {
     bufferFaults.immediates = () => {
       throw new globalThis.DOMException("injected immediate refusal", "OperationError");
+    };
+  },
+  // Spoofed failures (ledger §1, §7): a plain object named like the error
+  // each buffer classifier documents is not that error, and an
+  // unexpected class at mapped creation is not the allocation failure.
+  "map-spoofed-abort": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "AbortError", message: "a plain object, not a DOMException" });
+  },
+  "map-spoofed-operation": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "OperationError", message: "a plain object, not a DOMException" });
+  },
+  "map-spoofed-range": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "RangeError", message: "a plain object, not a RangeError" });
+  },
+  "range-spoofed": () => {
+    bufferFaults.range = () => {
+      throw { name: "OperationError", message: "a plain object, not a DOMException" };
+    };
+  },
+  "write-spoofed": () => {
+    bufferFaults.write = () => {
+      throw { name: "OperationError", message: "a plain object, not a DOMException" };
+    };
+  },
+  "buffer-allocation-spoofed": () => {
+    bufferFaults.createMapped = () => {
+      throw { name: "RangeError", message: "a plain object, not a RangeError" };
+    };
+  },
+  "buffer-allocation-unlisted": () => {
+    bufferFaults.createMapped = () => {
+      throw new globalThis.TypeError("injected unlisted creation failure");
     };
   },
   // Buffers and the queue (docs/design/webgpu.md §7, §8.3; ledger §3–§5).
@@ -725,6 +820,10 @@ const instrument = (device) => {
     });
     return buffer;
   });
+  wrap(device, "createTexture", function (original, ...args) {
+    if (bufferFaults.texture !== undefined) return bufferFaults.texture();
+    return original.apply(this, args);
+  });
   wrap(device, "createComputePipelineAsync", function (original, ...args) {
     if (bufferFaults.pipeline !== undefined) return asked(bufferFaults.pipeline());
     return asked(original.apply(this, args));
@@ -776,6 +875,7 @@ const instrument = (device) => {
     });
     wrap(encoder, "beginComputePass", function (begin, ...rest) {
       const pass = begin.apply(this, rest);
+      if (bufferFaults.noImmediates === true) globalThis.Object.defineProperty(pass, "setImmediates", { configurable: true, value: undefined });
       if (typeof pass.setImmediates === "function") {
         wrap(pass, "setImmediates", function (set, ...data) {
           if (bufferFaults.immediates !== undefined) return bufferFaults.immediates();
@@ -962,6 +1062,7 @@ export const releasePop = (filter) => {
 // Every held map, in the order they were asked, each settled as its
 // host map did.
 export const releaseMaps = (_unit) => {
+  for (const settle of heldFakeMaps.splice(0)) settle();
   for (const entry of heldMaps.splice(0)) entry.outcome.then(entry.resolve, entry.reject);
   return null;
 };
@@ -992,3 +1093,10 @@ export const kept = (_unit) => keptBuffer;
 
 // The render commands issued since the last call, oldest first.
 export const commands = (_unit) => renderLog.splice(0);
+
+let keptBatchValue = null;
+export const keepBatch = (batch) => {
+  keptBatchValue = batch;
+  return null;
+};
+export const keptBatch = (_unit) => keptBatchValue;

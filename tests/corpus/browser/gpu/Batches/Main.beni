@@ -2,50 +2,55 @@
 -- buffer mapped at creation and writes its mapping at once, makes a
 -- readable buffer, encodes a copy between them and submits it, all
 -- provisional — usable by the batch itself — and accepted together; the
--- copied bytes read back after the receipt's `done`. A batch whose buffer
--- the device refuses fails as a whole: what it made is rejected (a kept
--- handle gives `ResourceRejected`) and its writes are not undone. A batch
--- kept past its run gives `SessionEnded`; its first refusal is latched
--- (`SessionStopped` after it, the refusal the run's result); a batch on a
--- leased device is refused at once.
+-- copied bytes read back after the receipt's `done`. Every batch form
+-- runs, a bind group binding the batch's own buffer and layout included. A
+-- failed batch is `BatchFailed`: its failure, and which operations were
+-- issued and which refused; what it made is rejected (a kept handle gives
+-- `ResourceRejected`), and its writes are not undone. A refusal beside a
+-- device's validation error keeps both. Named segments attribute a scope's
+-- error to their part. Another fiber touching a batch's object while the
+-- batch waits gets `ResourcePending`, and `awaitReady` waits for the
+-- batch; a cancelled batch rejects what it made. A batch names only its
+-- own device's pipelines and queues (`WrongDevice`), and a missing
+-- capability is itself, not `SessionStopped`. A batch kept past its run
+-- gives `SessionEnded`; on a leased device a batch is refused at once.
+import Binary
 import Gpu.Batch as Batch
 import Gpu.Buffer
 import Gpu.CommandEncoder as CommandEncoder
 import Gpu.Device
 import Gpu.Error as Error
-import Gpu.Flags exposing (CopyDst, CopySrc, MapRead, Storage)
+import Gpu.Flags as Flags exposing (CopyDst, CopySrc, MapRead, Storage)
 import Gpu.Handle exposing (Batch, Buffer, Device)
 import Gpu.MappedRange as MappedRange
+import Gpu.Queue
 import Gpu.Submission
 import Gpu.Types as Types
 import GpuHost
-import GpuKit exposing (must, buffer)
+import GpuKit exposing (buffer, must, u32, zeros)
 import GpuPage
 import GpuProbe
 import GpuShow
+import Task
 import Tea
 
 
 -- Write 7 and 9 into a mapping from creation, inside the batch.
-fill : Buffer → Result Error.InputError ⊤
+fill : Buffer → Result Error.Error ⊤
 fill source =
     case Gpu.Buffer.currentMapping source of
         Nothing →
-            Err (Error.ResourceExpired { path = "mapping" })
+            Err (Error.InvalidInput (Error.ResourceExpired { path = "mapping" }))
 
         Just mapping →
-            case Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole of
-                Err _ →
-                    Err (Error.ResourceExpired { path = "range" })
-
-                Ok range →
-                    MappedRange.writeU32 range 0 7?
-                    MappedRange.writeU32 range 4 9?
-                    Gpu.Buffer.unmap source
-                    Ok ⊤
+            range = Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole?
+            Result.mapError (MappedRange.writeU32 range 0 7) Error.InvalidInput?
+            Result.mapError (MappedRange.writeU32 range 4 9) Error.InvalidInput?
+            Gpu.Buffer.unmap source
+            Ok ⊤
 
 
-work : Device, Batch → Result Error.InputError { target : Buffer, receipt : Gpu.Handle.Submission }
+work : Device, Batch → Result Error.Error { target : Buffer, receipt : Gpu.Handle.Submission }
 work d b =
     source = Batch.createBuffer b { buffer 8 [ CopySrc ] | mappedAtCreation = Types.Value True }?
     target = Batch.createBuffer b (buffer 8 [ MapRead, CopyDst ])?
@@ -74,26 +79,154 @@ accepted ⊤ = GpuKit.with "none" λd →
             ]
 
 
+wgsl : String
+wgsl =
+    "@group(0) @binding(0) var<storage, read_write> data : array<u32>;\n@compute @workgroup_size(1) fn main() { data[0] = 1u; }"
+
+
+extent : Types.Extent3D
+extent =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 1), depthOrArrayLayers = Types.Default }
+
+
+-- Every batch form, each on what the batch made before it.
+everything : Device, Batch → Result Error.Error (List String)
+everything d b =
+    queue = Gpu.Device.queue d
+    storage = Batch.createBuffer b (buffer 16 [ Storage, CopyDst ])?
+    Batch.writeBuffer b queue storage (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 8)))?
+    _ = Batch.createSampler b Types.samplerDescriptor?
+    entry =
+        { (Types.bindGroupLayoutEntry (u32 0) (Flags.shaderStages [ Flags.ComputeStage ]))
+            | buffer =
+                Types.Value { (Types.bufferBindingLayout) | type_ = Types.Value Types.Storage }
+        }
+    layout = Batch.createBindGroupLayout b (Types.bindGroupLayoutDescriptor [ entry ])?
+    _ =
+        Batch.createBindGroup
+            b
+            (Types.bindGroupDescriptor layout
+                [ Types.bindGroupEntry (u32 0) (Types.WholeBufferBinding storage) ]
+            )?
+    pipelineLayout = Batch.createPipelineLayout b (Types.pipelineLayoutDescriptor [ Just layout ])?
+    shader = Batch.createShaderModule b (Types.shaderModuleDescriptor wgsl)?
+    pipeline =
+        Batch.createComputePipeline
+            b
+            (Types.computePipelineDescriptor
+                (Types.Explicit pipelineLayout)
+                (Types.programmableStage shader)
+            )?
+    _ = Batch.getBindGroupLayout b pipeline (u32 0)?
+    _ = Batch.createQuerySet b (Types.querySetDescriptor Types.Occlusion (u32 2))?
+    texture =
+        Batch.createTexture
+            b
+            (Types.textureDescriptor
+                extent
+                Types.Rgba8unorm
+                (Flags.texture [ Flags.TextureCopyDst ])
+            )?
+    Batch.writeTexture
+        b
+        queue
+        (Types.texelCopyTextureInfo texture)
+        (Binary.WholeBuffer (zeros 16))
+        Types.texelCopyBufferLayout
+        extent?
+    Ok [ "every batch form: Ok" ]
+
+
+forms : ⊤ → List String
+forms ⊤ = GpuKit.with "none" λd →
+    case Batch.run d "everything" (everything d _) of
+        Ok xs →
+            xs
+
+        Err problem →
+            [ "every batch form: Err " ++ GpuShow.error problem ]
+
+
+-- A batch whose second buffer the device refuses; the first is kept.
+refusedBatch : Batch → Result Error.Error Buffer
+refusedBatch b =
+    kept = Batch.createBuffer b (buffer 8 [ MapRead, CopyDst ])?
+    GpuHost.keep kept
+    _ = Batch.createBuffer b (buffer 8 [ MapRead, Storage ])?
+    Ok kept
+
+
 rejected : ⊤ → List String
 rejected ⊤ = GpuKit.with "none" λd →
     failed = Batch.run d "refused" refusedBatch
-    lines = GpuHost.notes ⊤
     keptLater = Gpu.Buffer.map (GpuHost.kept ⊤) Gpu.Buffer.mapRead
-    [ "a batch with a refused buffer: "
-        ++ GpuShow.checked failed λ_ → "buffers"
-        ++ ", "
-        ++ String.join lines " "
+    [ "a batch with a refused buffer: " ++ GpuShow.checked failed λ_ → "buffers"
     , "its buffer, kept: " ++ GpuShow.checked keptLater λ_ → "mapping"
     ]
+
+
+-- A buffer the device refuses, then a refusal of the batch's own.
+refusalAndValidation : Batch → Result Error.Error ⊤
+refusalAndValidation b =
+    _ = Batch.createBuffer b (buffer 8 [ MapRead, Storage ])
+    _ = Batch.createBuffer b { buffer 6 [ CopyDst ] | mappedAtCreation = Types.Value True }
+    Ok ⊤
+
+
+-- Two named segments: the first good, the second refused by the device.
+segmented : Batch → Result Error.Error ⊤
+segmented b =
+    Batch.segment b "first"?
+    _ = Batch.createBuffer b (buffer 8 [ CopyDst ])?
+    Batch.segment b "second"?
+    _ = Batch.createBuffer b (buffer 8 [ MapRead, Storage ])?
+    Ok ⊤
+
+
+operationOf : Result Error.Error a → String
+operationOf r =
+    case r of
+        Err (Error.BatchFailed report) →
+            case report.failure of
+                Error.Validation detail →
+                    detail.operation
+
+                _ →
+                    "another failure"
+
+        _ →
+            "no failure"
+
+
+reports : ⊤ → List String
+reports ⊤ = GpuKit.with "none" λd →
+    both = Batch.run d "both" refusalAndValidation
+    named = Batch.run d "named" segmented
+    whole = Batch.run d "whole" λb → Batch.createBuffer b (buffer 8 [ MapRead, Storage ])
+    capability = Batch.run d "capability" λb →
+        q = Batch.createQuerySet b (Types.querySetDescriptor Types.Timestamp (u32 2))
+        GpuHost.note ("timestamp queries: " ++ GpuShow.checked q λ_ → "query set")
+        Ok ⊤
+    seen = GpuHost.notes ⊤
+    List.concat
+        [ [ "a refusal beside a validation error: " ++ GpuShow.checked both λ_ → "done"
+          , "segments: the failure is in " ++ operationOf named
+          , "no segment: the failure is in " ++ operationOf whole
+          ]
+        , seen
+        , [ "run: " ++ GpuShow.checked capability λ_ → "done" ]
+        ]
 
 
 rules : ⊤ → List String
 rules ⊤ = GpuKit.with "none" λd →
     kept = Batch.run d "kept" λb → Ok b
+
     late =
         case kept of
             Ok b →
-                GpuShow.inputResult (Batch.createBuffer b (buffer 8 [ CopyDst ])) λ_ → "buffer"
+                GpuShow.checked (Batch.createBuffer b (buffer 8 [ CopyDst ])) λ_ → "buffer"
 
             Err problem →
                 "Err " ++ GpuShow.error problem
@@ -102,9 +235,9 @@ rules ⊤ = GpuKit.with "none" λd →
         second = Batch.createBuffer b (buffer 8 [ CopyDst ])
         GpuHost.note
             ("first "
-                ++ GpuShow.inputResult first λ_ → "buffer"
+                ++ GpuShow.checked first λ_ → "buffer"
                 ++ ", then "
-                ++ GpuShow.inputResult second λ_ → "buffer"
+                ++ GpuShow.checked second λ_ → "buffer"
             )
         Ok ⊤
     seen = GpuHost.notes ⊤
@@ -117,20 +250,93 @@ rules ⊤ = GpuKit.with "none" λd →
     ]
 
 
+-- A batch that keeps itself and its buffer for another fiber.
+keeping : Batch → Result Error.Error ⊤
+keeping b =
+    GpuHost.keepBatch b
+    made = Batch.createBuffer b (buffer 8 [ MapRead, CopyDst ])?
+    GpuHost.keep made
+    Ok ⊤
+
+
+waiting : ⊤ → List String
+waiting ⊤ =
+    ready = GpuKit.with "pops-held" λd →
+        f = Task.spawn λ⊤ → Batch.run d "waited for" keeping
+        GpuHost.drain ⊤
+        early = GpuShow.checked (Gpu.Buffer.map (GpuHost.kept ⊤) Gpu.Buffer.mapRead) λ_ → "mapping"
+        w = Task.spawn λ⊤ → Batch.awaitReady (GpuHost.keptBatch ⊤)
+        Task.yieldNow ⊤
+        GpuHost.releasePops ⊤
+        readied = GpuShow.checked (Task.join w) λ_ → "ready"
+        _ = Task.join f
+        later = mapReleased (GpuHost.kept ⊤)
+        [ "another fiber, while the batch waits: " ++ early
+        , "awaitReady: " ++ readied ++ ", then " ++ later
+        ]
+    cancelled = GpuKit.with "pops-held" λd2 →
+        f = Task.spawn λ⊤ → Batch.run d2 "cancelled" keeping
+        GpuHost.drain ⊤
+        Task.cancel f
+        GpuHost.releasePops ⊤
+        GpuHost.drain ⊤
+        [ "a cancelled batch's buffer: "
+            ++ mapReleased (GpuHost.kept ⊤)
+        , "awaitReady on it: "
+            ++ GpuShow.checked (Batch.awaitReady (GpuHost.keptBatch ⊤)) λ_ → "ready"
+        ]
+    List.concat [ ready, cancelled ]
+
+
+-- Map with every pop held released: what a map on a "pops-held" host
+-- gives.
+mapReleased : Buffer → String
+mapReleased b =
+    f = Task.spawn λ⊤ → Gpu.Buffer.map b Gpu.Buffer.mapRead
+    GpuHost.drain ⊤
+    GpuHost.releasePops ⊤
+    GpuShow.checked (Task.join f) λ_ → "mapping"
+
+
+-- A batch names only its own device's pipelines and queues.
+crossDevice : ⊤ → List String
+crossDevice ⊤ = GpuKit.with "none" λd →
+    GpuKit.with "none" λother →
+        shader =
+            must
+                (Gpu.Device.createShaderModule
+                    other
+                    (Types.shaderModuleDescriptor "@compute @workgroup_size(1) fn main() {}")
+                )
+        theirs =
+            must
+                (Gpu.Device.createComputePipeline
+                    other
+                    (Types.computePipelineDescriptor Types.Auto (Types.programmableStage shader))
+                )
+        target = must (Gpu.Device.createBuffer d (buffer 8 [ CopyDst ]))
+        layout = Batch.run d "their pipeline" λb → Batch.getBindGroupLayout b theirs (u32 0)
+        write = Batch.run d "their queue" λb →
+            Batch.writeBuffer
+                b
+                (Gpu.Device.queue other)
+                target
+                (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 8)))
+        submit = Batch.run d "their queue, submit" λb → Batch.submit b (Gpu.Device.queue other) []
+        [ "another device's pipeline: " ++ GpuShow.checked layout λ_ → "layout"
+        , "another device's queue, write: " ++ GpuShow.checked write λ_ → "written"
+        , "another device's queue, submit: " ++ GpuShow.checked submit λ_ → "receipt"
+        ]
+
+
 main : Tea.Program
 main =
     GpuPage.program
         [ ( "accepted", accepted )
+        , ( "forms", forms )
         , ( "rejected", rejected )
+        , ( "reports", reports )
         , ( "rules", rules )
+        , ( "waiting", waiting )
+        , ( "cross-device", crossDevice )
         ]
-
-
--- A batch whose second buffer the device refuses; the first is kept.
-refusedBatch : Batch → Result Error.InputError Buffer
-refusedBatch b =
-    kept = Batch.createBuffer b (buffer 8 [ MapRead, CopyDst ])?
-    GpuHost.keep kept
-    GpuHost.note "made"
-    _ = Batch.createBuffer b (buffer 8 [ MapRead, Storage ])?
-    Ok kept

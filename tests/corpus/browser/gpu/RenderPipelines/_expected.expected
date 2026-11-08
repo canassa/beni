@@ -76,7 +76,7 @@
       <li>"async: Err UnsupportedCapability"</li>
       <li>"view: Err UnsupportedCapability"</li>
       <li>"label: scene"</li>
-      <li>"group 5: Err Validation"</li>
+      <li>"group 5: Err InvalidInput OutOfRange index 5+1 of 4"</li>
     </ol>
   </main>
 </body>
@@ -97,7 +97,7 @@
       <li>"async: Err UnsupportedCapability"</li>
       <li>"view: Err UnsupportedCapability"</li>
       <li>"label: scene"</li>
-      <li>"group 5: Err Validation"</li>
+      <li>"group 5: Err InvalidInput OutOfRange index 5+1 of 4"</li>
       <li>"label: whole"</li>
       <li>"two mips: Err Validation"</li>
     </ol>

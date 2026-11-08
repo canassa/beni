@@ -10,7 +10,8 @@ import Js
 
 
 --| Wait until the submission's work is done; at once when it is already.
---| `DeviceLost` when the device is lost first. Work done is not display
+--| `DeviceLost` once the device's loss is observed, even when the work was
+--| done before it (§8.3: observed loss wins). Work done is not display
 --| done. The receipt of a batch is usable once its batch was accepted
 --| (`ResourcePending` before, `ResourceRejected` after a failed batch). May
 --| suspend; runs under a diagnostic session's lease (§6.4).

@@ -81,8 +81,9 @@ Canvases come in a later release.
 1. **Map a buffer to read or write its memory.** `Gpu.Buffer.map buffer Gpu.Buffer.mapRead` gives a
    `Mapping`. `Gpu.Buffer.getMappedRange` gives a `MappedRange` of it. `Gpu.Buffer.withMapped`
    maps, calls your function, and unmaps after it, also when it returns `Err` or is cancelled.
-2. **A mapping ends at `unmap`, at `destroy` and at the next `map`.** After that, the mapping and
-   all its ranges give `ResourceExpired`, also where you kept a copy of them.
+2. **A mapping ends at `unmap`, at `destroy`, at the next `map`, and when its device is
+   destroyed.** After that, the mapping and all its ranges give `ResourceExpired`, also where
+   you kept a copy of them.
 3. **A buffer made with `mappedAtCreation = Value True` is mapped.** Get its mapping with
    `Gpu.Buffer.currentMapping`, or use `Gpu.Device.createMappedBuffer`. You can write that mapping
    without the `MapWrite` usage. Its size must be a multiple of 4 (`MappedSizeUnaligned`).
@@ -94,7 +95,8 @@ Canvases come in a later release.
    `readWord64` and `writeWord64` keep all 64 bits: use them for `u64` and `i64` values.
 6. **Binary data for the GPU must have a fixed length.** A resizable `ArrayBuffer` or a growable
    `SharedArrayBuffer` gives `ResizableBacking`, also through a view and also when it never
-   resized. Detached data gives `DetachedSource`.
+   resized. Detached data gives `DetachedSource`. `Gpu.MappedRange.writeBytes` is a copy in
+   CPU memory: it takes any attached storage.
 7. **`Gpu.Queue.writeBuffer` counts `dataOffset` and `size` in elements of the data**, as the
    browser does: bytes for an `ArrayBuffer` or a `DataView`, elements for a typed array.
 8. **Each `Gpu.Queue.submit` gives one receipt.** `Gpu.Submission.done` waits for the work of that
@@ -114,9 +116,116 @@ Canvases come in a later release.
    returns the first refusal, also when your callback ignored it.
 4. **A command buffer is used once.** A second submit gives `CommandBufferSubmitted`.
 5. **`Gpu.Batch.run` checks many synchronous operations together.** What the batch makes is
-   provisional: the batch can use it at once; other code gets it after the batch is accepted.
+   provisional: the batch can use it at once; other code gets `ResourcePending` until the batch
+   is accepted, and `Gpu.Batch.awaitReady` waits for that.
    A failed batch rejects all that it made. A batch is not a transaction: a write it did stays.
 6. **The GPU memory is little-endian.** Read a query result with `readWord64`.
+7. **A batch fails as a whole.** Its failure is `BatchFailed`: the failure, and which operations
+   were issued and which were refused. `Gpu.Batch.segment` names a part of the batch, and a
+   device error carries that name.
+
+This module encodes a clear and submits it, then does the same work in a batch:
+
+```beni platform=browser-tea
+import Cmd exposing (Cmd)
+import Gpu
+import Gpu.Adapter
+import Gpu.Batch as Batch
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Batch, Device)
+import Gpu.Queue
+import Gpu.Scalar as Scalar
+import Gpu.Submission
+import Gpu.Types as Types
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Start
+    | Done (Result String ⊤)
+
+
+-- Clear a new buffer on the GPU and wait for the work.
+clearOnce : Device → Result Error.Error ⊤
+clearOnce device =
+    size = (Result.mapError (Scalar.size64 16) λd → Error.InvalidInput (Error.atPath "size" d))?
+    buffer =
+        Gpu.Device.createBuffer
+            device
+            (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
+    encoded =
+        (Encode.run device Types.commandEncoderDescriptor λencoder →
+            CommandEncoder.clearBuffer encoder buffer 0 Nothing
+        )?
+    receipt = Gpu.Queue.submit (Gpu.Device.queue device) [ encoded.commands ]?
+    Gpu.Submission.done receipt
+
+
+-- The same work as one batch: checked together, accepted together.
+clearInBatch : Device, Batch → Result Error.Error ⊤
+clearInBatch device b =
+    size = (Result.mapError (Scalar.size64 16) λd → Error.InvalidInput (Error.atPath "size" d))?
+    buffer = Batch.createBuffer b (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
+    encoded =
+        (Batch.encode b Types.commandEncoderDescriptor λencoder →
+            CommandEncoder.clearBuffer encoder buffer 0 Nothing
+        )?
+    _ = Batch.submit b (Gpu.Device.queue device) [ encoded.commands ]?
+    Ok ⊤
+
+
+start : ⊤ → Result String ⊤
+start ⊤ =
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err _ →
+            Err "no adapter"
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err _ →
+                    Err "no device"
+
+                Ok device →
+                    case ( clearOnce device, Batch.run device "clear" (clearInBatch device _) ) of
+                        ( Ok _, Ok _ ) →
+                            Ok ⊤
+
+                        _ →
+                            Err "the GPU refused the work"
+
+
+update : Msg, String → String × Cmd Msg
+update msg _ =
+    case msg of
+        Start →
+            ( "working", Cmd.task start Done )
+
+        Done (Ok _) →
+            ( "done", Cmd.none )
+
+        Done (Err why) →
+            ( why, Cmd.none )
+
+
+view : String → Html Msg
+view text = <button onClick={Start}>{text}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "start", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+```
 
 ## Rendering
 
