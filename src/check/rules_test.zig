@@ -57,6 +57,7 @@ const files = [_]File{
     .{ .path = "EffectsBlock.zig", .text = @embedFile("EffectsBlock.zig") },
     .{ .path = "Effects.zig", .text = @embedFile("Effects.zig") },
     .{ .path = "EffectsForeign.zig", .text = @embedFile("EffectsForeign.zig") },
+    .{ .path = "EffectsSummary.zig", .text = @embedFile("EffectsSummary.zig") },
     .{ .path = "EffectsView.zig", .text = @embedFile("EffectsView.zig") },
     .{ .path = "Elaborate.zig", .text = @embedFile("Elaborate.zig") },
     .{ .path = "Erasure.zig", .text = @embedFile("Erasure.zig") },

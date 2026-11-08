@@ -23,15 +23,15 @@ pub floats : Float, Float → Float
 floats x y = x / y + negate x
 
 
-pub power : Int, Int, Int → Int
+pub power : Int, Int, Int → Float
 power a b c = a ^ b ^ c
 
 
-pub powerLeft : Int, Int, Int → Int
+pub powerLeft : Int, Int, Int → Float
 powerLeft a b c = (a ^ b) ^ c
 
 
-pub powerOfNegation : Int, Int → Int
+pub powerOfNegation : Int, Int → Float
 powerOfNegation a b = negate a ^ b
 
 

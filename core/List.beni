@@ -814,9 +814,20 @@ treeRight tr leaf =
         rightGrow (Js.get tr "r") (Js.to (Js.get tr "s")) (Js.to (Js.get tr "off")) tc leaf
 
 
+--| Two to the power `k`, for a whole `k` of 0 or more. It doubles with `*`,
+--| so that only a program that writes `^^` ships `Basics.ipow` (Cesar's
+--| decision, 2026-11-05, #1985).
+twoTo : Int → Int
+twoTo k =
+    if k == 0 then
+        1
+    else
+        2 * twoTo (k - 1)
+
+
 rightGrow : Js.Value, Int, Int, Int, Js.Value → Js.Value
 rightGrow r s off tc leaf =
-    if off + tc ≥ 2 ^ (s + 5) then
+    if off + tc ≥ twoTo (s + 5) then
         rightGrow (Js.array [ r ]) (s + 5) off tc leaf
     else
         treeOf (putLeaf r s (off + tc) leaf) s off (tc + 32)
@@ -1018,7 +1029,7 @@ collapse : Js.Value, Int, Int, Int, Int, Js.Value, Int, Js.Value, Int → Js.Val
 collapse r s off end n h hc t tc =
     if s > 5 && Js.shiftRightZero off s == Js.shiftRightZero end s then
         j = Js.shiftRightZero off s
-        collapse (Js.at r j) (s - 5) (off - j * 2 ^ s) end n h hc t tc
+        collapse (Js.at r j) (s - 5) (off - j * twoTo s) end n h hc t tc
     else
         header n h hc (treeOf r s off tc) t
 
@@ -1072,10 +1083,10 @@ singleton value = [ value ]
 
 
 --| Create a list with `n` copies of a value. A fraction is cut toward zero,
---| and a count below 1 is `[]`.
+--| and a count below 1 is `[]`: a count of 2.5 makes two copies.
 --|
 --|     repeat 0 3 == [ 0, 0, 0 ]
---|     repeat 0 (2 + 2 ^ (0 - 1)) == [ 0, 0 ]
+--|     repeat 0 0 == []
 pub repeat : a, Int → List a
 repeat value n =
     k = count n
@@ -1096,10 +1107,10 @@ repeatHelp value i n b =
 --|     range 3 6 == [ 3, 4, 5, 6 ]
 --|     range 3 3 == [ 3 ]
 --|     range 6 3 == []
---|     range 0 (1 + 2 ^ (0 - 1)) == [ 0, 1 ]
+--|     range (-1) 1 == [ -1, 0, 1 ]
 --|
 --| The count is `hi - lo + 1`, and a fraction in it is cut toward zero, so
---| every element is at most `hi`.
+--| every element is at most `hi`: from 0 to 1.5, the list is 0 and 1.
 pub range : Int, Int → List Int
 range lo hi =
     k = count (hi - lo + 1)

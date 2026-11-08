@@ -689,6 +689,7 @@ openSession device parent =
                         , ( "after", Js.array [] )
                         , ( "settled", Js.null )
                         , ( "opened", Js.from False )
+                        , ( "abandoned", Js.from False )
                         ]
                 if Js.isNull parent then ⊤ else Js.set parent "child" s
                 Js.set r "section" (Js.from True)
@@ -926,8 +927,18 @@ closeSession s abandoned =
         r = Js.get s "device"
         scopes = Js.get s "scopes"
         if abandoned then
+            Js.set s "abandoned" (Js.from True)
             Js.set scopes "done" (Js.from True)
             settleMade s "rejected"
+            -- An unexpected outcome the session kept for its run, which will
+            -- not run now, goes to the device's program; those still to
+            -- come go there too, since the scopes are done.
+            unexpected = Js.get scopes "unexpected"
+            if Js.isNull unexpected then
+                ⊤
+            else
+                Js.set scopes "unexpected" Js.null
+                reportDefect r unexpected
         else
             ⊤
         if Js.to (Js.get r "section") then
@@ -966,34 +977,45 @@ closeSession s abandoned =
 --| errors its user scopes reported, in the order they arrived. What the
 --| session made is accepted only when there is none of these, and rejected
 --| otherwise. A cancelled wait rejects it. An unexpected outcome is a
---| defect. May suspend.
+--| defect, thrown once what the session made is rejected. A session its
+--| parent abandoned — closed with it, cancelled or ended by a defect — is
+--| `SessionState SessionEnded` at once, never waited for: its pops drain
+--| to the device's program, and what it made was rejected already. May
+--| suspend.
 pub finishSession : V → Result Error.Error (List Error.GpuError)
 finishSession s =
     r = Js.get s "device"
     scopes = Js.get s "scopes"
-    outcome = Task.onExit (λ⊤ → settle r scopes "diagnostics") λexit →
-        case exit of
-            Task.Cancelled →
-                settleMade s "rejected"
-
-            Task.Done _ →
-                ⊤
-    case outcome of
-        Err problem →
-            settleMade s "rejected"
-            Err problem
-
-        Ok observed →
-            case failureOf Nothing observed of
-                Just problem →
+    if Js.to (Js.get s "abandoned") then
+        Err (Error.InvalidInput (Error.SessionState Error.SessionEnded))
+    else
+        waited = Task.onExit (λ⊤ → waitScopes r scopes) λexit →
+            case exit of
+                Task.Cancelled →
                     settleMade s "rejected"
-                    Err problem
 
-                Nothing →
-                    errors : List Error.GpuError
-                    errors = Js.to (Js.call (Js.get s "observed") "slice" [])
-                    if List.isEmpty errors then settleMade s "accepted" else settleMade s "rejected"
-                    Ok errors
+                Task.Done _ →
+                    ⊤
+        if Js.isNull (Js.get scopes "unexpected") then ⊤ else settleMade s "rejected"
+        case settledWith r scopes "diagnostics" waited of
+            Err problem →
+                settleMade s "rejected"
+                Err problem
+
+            Ok observed →
+                case failureOf Nothing observed of
+                    Just problem →
+                        settleMade s "rejected"
+                        Err problem
+
+                    Nothing →
+                        errors : List Error.GpuError
+                        errors = Js.to (Js.call (Js.get s "observed") "slice" [])
+                        if List.isEmpty errors then
+                            settleMade s "accepted"
+                        else
+                            settleMade s "rejected"
+                        Ok errors
 
 
 -- What the session made takes `status`, once: a rejected object is
@@ -1437,8 +1459,13 @@ hostSettled r scopes operation outcome =
 -- Steps 5 and 6 up to the combination: wait, throw what was unexpected,
 -- and give what the scopes observed, or the loss that wins.
 settle : V, V, String → Result Error.Error (List Observation)
-settle r scopes operation =
-    waited = waitScopes r scopes
+settle r scopes operation = settledWith r scopes operation (waitScopes r scopes)
+
+
+-- Step 6's start, once the wait ended as `waited`: throw what was
+-- unexpected, or give what the scopes observed, or the loss that wins.
+settledWith : V, V, String, Waited → Result Error.Error (List Observation)
+settledWith r scopes operation waited =
     unexpected = Js.get scopes "unexpected"
     if not (Js.isNull unexpected) then
         Js.throw unexpected

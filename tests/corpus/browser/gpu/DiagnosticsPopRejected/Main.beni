@@ -1,6 +1,6 @@
 -- A defect, never a typed error (CLAUDE.md rule 9; ledger §7, *Scope
--- promise rejects unexpectedly*): a diagnostic session's own internal scope
--- is popped by `popErrorScope` and the pop rejects with an
+-- promise rejects unexpectedly*): the internal scope the user pushed in a
+-- diagnostic session is popped by `popErrorScope`, and the pop rejects with an
 -- `OperationError`. The engine pops a user scope only when one is open, so
 -- that is not `ScopeUnderflow`: it is a defect, thrown in the fiber that
 -- waits for the pop, and the page stops.

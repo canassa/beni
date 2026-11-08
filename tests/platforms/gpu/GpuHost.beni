@@ -140,10 +140,6 @@ pub foreign impure escape : Device → ⊤
 pub foreign impure escapeSpoofed : Device → ⊤
 
 
---| Pop the device's innermost error scope behind the engine's back.
-pub foreign impure popBehind : Device → ⊤
-
-
 --| Log how many error scopes of the device are open three tasks later.
 pub foreign impure logScopesLater : Device → ⊤
 
@@ -182,3 +178,7 @@ pub foreign impure image : String, Binary.Buffer, Int, sync (HTMLImageElement �
 --| with no source at all. On the fake host the element only reports that
 --| state.
 pub foreign impure video : String, Binary.Buffer, Int, sync (HTMLVideoElement → ⊤) → ⊤
+
+--| Log `label` and what `probe` answers three tasks later: after a throw,
+--| once the runtime's teardown ran.
+pub foreign impure logLater : String, sync (⊤ → String) → ⊤

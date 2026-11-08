@@ -1203,7 +1203,7 @@ fn precedence(tag: Node.Tag) u8 {
         .append, .cons => 5,
         .add, .sub => 6,
         .mul, .div, .int_div => 7,
-        .pow => 8,
+        .pow, .int_pow => 8,
         else => unreachable, // callers check isBinop
     };
 }
@@ -1213,7 +1213,7 @@ fn precedence(tag: Node.Tag) u8 {
 /// chain at all, so either answer is right for them).
 fn rightAssociative(tag: Node.Tag) bool {
     return switch (tag) {
-        .pipe_left, .bool_or, .bool_and, .append, .cons, .pow => true,
+        .pipe_left, .bool_or, .bool_and, .append, .cons, .pow, .int_pow => true,
         else => false,
     };
 }

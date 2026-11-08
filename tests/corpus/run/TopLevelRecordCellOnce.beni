@@ -1,0 +1,32 @@
+-- run: a top-level record that holds a cell and a callback is made once
+-- (transparent-effects-proposal.md §16.2, amended 2026-11-06; #1662). Its
+-- evaluation makes a cell, so it is not `pure`, and its classes are one class
+-- at every use. Before, `read` joined `state.cb` with a callback that
+-- suspends, so it took the record's second body, `Main$state$s`, which held a
+-- second cell: `bump` wrote 5 into one cell, `read` read 0 from the other.
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+state : { cell : Ref Int, cb : ⊤ → ⊤ }
+state = { cell = Ref.make 0, cb = λ⊤ → ⊤ }
+
+
+bump : ⊤ → ⊤
+bump _ = Ref.set state.cell 5
+
+
+read : ⊤ → Int
+read _ =
+    s = state
+    steps = [ s.cb, Task.yieldNow ]
+    _ = List.map steps λstep → step ⊤
+    Ref.get s.cell
+
+
+main : Program
+main = Io.run λ⊤ →
+    bump ⊤
+    Node.printLines [ "cell: ${String.fromInt (read ⊤)}" ]

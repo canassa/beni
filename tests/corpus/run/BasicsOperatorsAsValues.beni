@@ -36,7 +36,8 @@ main =
         , String.fromInt (apply Basics.sub 7 3)
         , String.fromInt (apply Basics.mul 7 3)
         , String.fromFloat (apply Basics.fdiv 7 2)
-        , String.fromInt (apply Basics.pow 2 10)
+        , String.fromFloat (apply Basics.pow 2 10)
+        , String.fromInt (apply Basics.ipow 2 10)
         , comparisons 2 2
         , comparisons 1.5 2
         , showBool (apply Basics.and True False)

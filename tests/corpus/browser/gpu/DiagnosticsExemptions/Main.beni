@@ -7,7 +7,8 @@
 -- configuration); mapped memory (`getMappedRange` and a range's reads and
 -- writes); teardown that returns ⊤ (`Buffer.unmap`, `Buffer.destroy`,
 -- `Texture.destroy`, `QuerySet.destroy`, `Surface.unconfigure`); and waits
--- on work issued before the session (`Submission.done`, a pending map's
+-- on work issued before the session (`Submission.done`, the queue's
+-- `onSubmittedWorkDone`, a module's `getCompilationInfo`, a pending map's
 -- wait). `Device.destroy` under a lease latches the loss at once: a wait
 -- in `awaitLost` and an `eachEvent` listener wake with it, the session's
 -- forwarding calls report it, the run ends in `DeviceLost`, and the lease
@@ -26,6 +27,7 @@ import Gpu.Limits as Limits
 import Gpu.MappedRange as MappedRange
 import Gpu.QuerySet
 import Gpu.Queue
+import Gpu.Shader
 import Gpu.Submission
 import Gpu.Surface as Surface
 import Gpu.Texture
@@ -116,6 +118,8 @@ type alias Made =
     queries : Gpu.Handle.QuerySet
     surface : Gpu.Handle.Surface
     receipt : Gpu.Handle.Submission
+    queue : Gpu.Handle.Queue
+    shader : Gpu.Handle.Shader
 
 
 made : Device → Made
@@ -141,6 +145,13 @@ made d =
         must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 2)))
     , surface = surface
     , receipt = must (Gpu.Queue.submit (Gpu.Device.queue d) [])
+    , queue = Gpu.Device.queue d
+    , shader =
+        must
+            (Gpu.Device.createShaderModule
+                d
+                (Types.shaderModuleDescriptor "@compute @workgroup_size(1) fn main() {}")
+            )
     }
 
 
@@ -156,6 +167,8 @@ rest m =
     [ "mapped memory: " ++ mem
     , "teardown: unmapped buffer " ++ mapState m.mapped
     , "receipt: " ++ GpuShow.checked (Gpu.Submission.done m.receipt) λ_ → "done"
+    , "queue completion: " ++ GpuShow.checked (Gpu.Queue.onSubmittedWorkDone m.queue) λ_ → "done"
+    , "compilation info: " ++ GpuShow.checked (Gpu.Shader.getCompilationInfo m.shader) λ_ → "read"
     ]
 
 

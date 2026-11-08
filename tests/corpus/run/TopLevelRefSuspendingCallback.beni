@@ -1,0 +1,76 @@
+-- run: a top-level `Ref` that holds a callback is one cell, and every use of
+-- it sees what another use wrote (transparent-effects-proposal.md §14.3 rule
+-- 3 and §16.2, amended 2026-11-06; #1662). Each cell starts with a callback
+-- that cannot suspend. A declaration writes one that does: directly, through
+-- a setter's parameter, or inside a λ. Another declaration reads the cell and
+-- calls what it holds. Before, every use copied the cell's classes fresh: the
+-- value had two bodies, `Main$direct` and `Main$direct$s`, the write went into
+-- one cell and the read came from the other, and every line said `initial`.
+-- One cell alone was not enough: the read still took the stored callback for
+-- one that cannot suspend, and printed the waiting task.
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+replacement : ⊤ → String
+replacement _ =
+    Task.yieldNow ⊤
+    "replaced"
+
+
+direct : Ref (⊤ → String)
+direct = Ref.make λ⊤ → "initial"
+
+
+setDirect : ⊤ → ⊤
+setDirect _ = Ref.set direct replacement
+
+
+callDirect : ⊤ → String
+callDirect _ = (Ref.get direct) ⊤
+
+
+viaSetter : Ref (⊤ → String)
+viaSetter = Ref.make λ⊤ → "initial"
+
+
+put : (⊤ → String) → ⊤
+put callback = Ref.set viaSetter callback
+
+
+callViaSetter : ⊤ → String
+callViaSetter _ = (Ref.get viaSetter) ⊤
+
+
+wrapped : Ref (⊤ → String)
+wrapped = Ref.make λ⊤ → "initial"
+
+
+wrap : (⊤ → String) → ⊤
+wrap callback = Ref.set wrapped λ⊤ → "${callback ⊤}, wrapped"
+
+
+callWrapped : ⊤ → String
+callWrapped _ = (Ref.get wrapped) ⊤
+
+
+-- A reader of a reader: what it calls suspends only because of a write that
+-- another declaration makes.
+shout : ⊤ → String
+shout _ = "${callDirect ⊤}!"
+
+
+main : Program
+main = Io.run λ⊤ →
+    setDirect ⊤
+    put replacement
+    wrap replacement
+
+    Node.printLines
+        [ "direct: ${callDirect ⊤}"
+        , "through a setter: ${callViaSetter ⊤}"
+        , "inside a λ: ${callWrapped ⊤}"
+        , "through a reader: ${shout ⊤}"
+        ]

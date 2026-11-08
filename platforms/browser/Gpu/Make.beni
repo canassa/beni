@@ -1222,6 +1222,7 @@ batchIn session device name body =
             , ( "refused", Js.array [] )
             , ( "settled", Js.null )
             , ( "waiters", Js.array [] )
+            , ( "handedOver", Js.from False )
             ]
     value = Js.ref Nothing
 
@@ -1253,11 +1254,15 @@ batchIn session device name body =
             if Js.isNull session then
                 settleBatch batch "accepted"
             else
+                -- What the batch made is the session's from now on: the
+                -- session settles and releases it, once, and the batch only
+                -- takes the session's verdict.
+                Js.set batch "handedOver" (Js.from True)
                 Js.each (Js.get batch "made") λentry →
                     op = Js.get entry "op"
                     Engine.handOver session (Js.get entry "made") λm →
                         if Js.isNull op then ⊤ else discard (Js.to op) m
-                Engine.afterSession session (wakeBatch batch _)
+                Engine.afterSession session (settleBatch batch _)
             Ok v
 
         ( Ok _, Nothing ) →
@@ -1276,27 +1281,24 @@ batchIn session device name body =
 
 
 --| Every resource the batch made takes its status, once; a rejected one is
---| released. Whoever waits for the batch wakes.
+--| released. Whoever waits for the batch wakes. The batch is settled
+--| before anything else, so a discard that runs code of the engine sees
+--| it settled. A batch handed to a diagnostic session only takes its
+--| status: the session settled and released what it made.
 pub settleBatch : V, String → ⊤
 settleBatch batch status =
     if not (Js.isNull (Js.get batch "settled")) then
         ⊤
     else
-        Js.each (Js.get batch "made") λentry →
-            made = Js.get entry "made"
-            Engine.setStatus made status
-            op = Js.get entry "op"
-            if status == "rejected" && not (Js.isNull op) then discard (Js.to op) made else ⊤
-        wakeBatch batch status
-
-
--- The batch is settled: whoever waits for it wakes.
-wakeBatch : V, String → ⊤
-wakeBatch batch status =
-    if not (Js.isNull (Js.get batch "settled")) then
-        ⊤
-    else
         Js.set batch "settled" (Js.from status)
+        if Js.to (Js.get batch "handedOver") then
+            ⊤
+        else
+            Js.each (Js.get batch "made") λentry →
+                made = Js.get entry "made"
+                Engine.setStatus made status
+                op = Js.get entry "op"
+                if status == "rejected" && not (Js.isNull op) then discard (Js.to op) made else ⊤
         waiters = Js.get batch "waiters"
         Js.set batch "waiters" (Js.array [])
         Js.each waiters λw → Js.to (Js.apply w [ Js.from status ])

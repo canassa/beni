@@ -1,0 +1,60 @@
+-- check/bad: transparent-effects-proposal.md §14.3 rule 3, amended
+-- 2026-11-06 (#1662). `apply`'s evaluation updates a cell, so it is not
+-- `pure`, and its classes are fixed: one class for the whole module. `slow`
+-- hands it a callback that suspends, so the callback class suspends at every
+-- use, and the use inside `Ref.update`'s `sync` function is refused:
+-- `sync_boundary`, once, where the demand is, and not at `slow`. Before the
+-- amendment this checked, because each use had its own copy. The escape
+-- hatch is a parameter: `apply f x = …` is a function, and generalises its
+-- classes. The second case below must still be refused at its use.
+import Ref exposing (Ref)
+import Task
+
+
+loads : Ref Int
+loads = Ref.make 0
+
+
+apply : (Int → Int), Int → Int
+apply =
+    Ref.update loads λn → n + 1
+    λf x → f x
+
+
+slowDouble : Int → Int
+slowDouble x =
+    Task.yieldNow ⊤
+    x * 2
+
+
+pub slow : ⊤ → Int
+slow _ = apply slowDouble 2
+
+
+pub bump : Ref Int → ⊤
+bump cell = Ref.update cell λn → apply (λk → k + 1) n
+
+
+-- The skip of a fixed class's per-use demand must not hide this one:
+-- `runSync`'s callback class is not fixed, but `go` hands it the callback
+-- `held` holds, whose class is fixed and suspends (`setSlow`).
+held : Ref (⊤ → ⊤)
+held = Ref.make λ⊤ → ⊤
+
+
+counter : Ref Int
+counter = Ref.make 0
+
+
+runSync : (⊤ → ⊤) → ⊤
+runSync k = Ref.update counter λn →
+    k ⊤
+    n
+
+
+pub setSlow : ⊤ → ⊤
+setSlow _ = Ref.set held Task.yieldNow
+
+
+pub go : ⊤ → ⊤
+go _ = runSync (Ref.get held)

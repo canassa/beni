@@ -1,0 +1,35 @@
+-- load
+<body>
+  <main>
+    <button id="goFirst">"goFirst"</button>
+    <button id="popsFirst">"popsFirst"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #goFirst
+<body>
+  <main>
+    <button id="goFirst">"goFirst"</button>
+    <button id="popsFirst">"popsFirst"</button>
+    <ol>
+      <li>"nested: Err InvalidInput SessionState SessionEnded"</li>
+      <li>"outer: Ok outer value, observed []"</li>
+      <li>"what the nested session made: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #popsFirst
+<body>
+  <main>
+    <button id="goFirst">"goFirst"</button>
+    <button id="popsFirst">"popsFirst"</button>
+    <ol>
+      <li>"nested: Err InvalidInput SessionState SessionEnded"</li>
+      <li>"outer: Ok outer value, observed []"</li>
+      <li>"what the nested session made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"nested: Err InvalidInput SessionState SessionEnded"</li>
+      <li>"outer: Ok outer value, observed []"</li>
+      <li>"what the nested session made: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
