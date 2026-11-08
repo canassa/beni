@@ -1,0 +1,65 @@
+-- An answer read whole at a family's payload (`ownership-v2.md` §2.1, *An
+-- arrival's level*): `mid` finds a list at `U`'s payload, where one place stands
+-- for every level, so `pick`'s result holds all of `h`'s answer, deep. `main`
+-- writes that result, and the list is `k`'s: refused. `whole` writes the same
+-- through its own label: its need is deep, and `main` hands `k`, read after.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+type U a
+    = UL a
+    | UC (U a)
+    | UW (U (List a))
+
+
+fu : U a, (a → List Int) → List Int
+fu t f =
+    case t of
+        UL x →
+            f x
+
+        UC y →
+            fu y f
+
+        UW r →
+            fu r λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+mid : U (List Int) → List Int
+mid t = fu t λl → l
+
+
+apply : (⊤ → a) → a
+apply f = f ⊤
+
+
+applyA : (List Int → a), List Int → a
+applyA f a = f a
+
+
+pick : (⊤ → U (List Int)) → List Int
+pick h = mid (apply h)
+
+
+whole : (List Int → U (List Int)), List Int → List Int
+whole h a = List.push (mid (applyA h a)) 2
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (pick λ⊤ → UC (UW (UL [ k ]))) 2
+    m = whole (λl → UC (UW (UL [ l ]))) k
+    Node.print (show n ++ "|" ++ show m ++ "|" ++ show k)

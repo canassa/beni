@@ -1153,7 +1153,7 @@ pub const Eval = struct {
             .cb => {
                 if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep, words.items, out) else {
                     const fl = e.label_map.get(.{ call, a.j }) orelse return if (@import("Mutate.zig").on(.arrival_no_label_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
-                    try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
+                    try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items), .whole = a.deep }));
                 }
                 if (e.lent.get(.{ call, a.j })) |i| if (e.lent_cells.items[i][0] < cl.args.len) try e.lend(out, start, .{ cl.args[e.lent_cells.items[i][0]], e.lent_cells.items[i][1] }, call);
             },

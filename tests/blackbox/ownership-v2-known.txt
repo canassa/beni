@@ -1,3 +1,7 @@
+tests/corpus/run/SanitiserAnswerWhole.beni SanitiserAnswerWhole 57:13 #0 :: List.push <call> :: rejected :: accepted  v1 refuses a write of a label's answer read whole at a payload; v2 publishes a deep need, which main's call refuses (§2.1, An arrival's level; §2.11.3, a need)
+tests/corpus/run/SanitiserAnswerWholeApart.beni SanitiserAnswerWholeApart 54:13 #0 :: List.push <call> :: rejected :: accepted  v1 refuses a write of a label's answer; v2 publishes a deep need, which each caller discharges against a fresh answer (§2.1, An arrival's level; §2.11.3, a need)
+tests/corpus/run/SanitiserAnswerWholeApart.beni SanitiserAnswerWholeApart 60:9 #0 :: List.push <call> :: rejected :: accepted  v1 refuses the write of a code's result whose answer is read whole; v2 reads the fresh answer through the known code, deep (§2.1, An arrival's level)
+tests/corpus/run/SanitiserAnswerWholeApart.beni SanitiserAnswerWholeApart 61:9 #0 :: SanitiserAnswerWholeApart.whole <literal> :: accepted :: absent  v1's demand on an argument a function hands back; v2 judges it in the need's discharge, with no line of its own (§2.11.3, a need)
 # The known, justified differences between --ownership=v1 and --ownership=v2,
 # in `node bench/ownership-everywhere.mjs --diff=v1,v2` and in the corpus
 # harness's v2 parity of every ownership fixture, every run/ program, every
