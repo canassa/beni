@@ -45,6 +45,12 @@ const Category = Tree.Category;
 const Var = Tree.Var;
 const Error = Tree.Error;
 
+/// Record the variable `inst` was generated against, for
+/// `dump --stage=ownership` only (`ownership-checker.md` §2.3).
+fn noteType(g: *Generator, inst: Bir.Inst.Index, expected: Var) void {
+    if (inst.int() < g.cx.inst_type.len) g.cx.inst_type[inst.int()] = expected.toOptional();
+}
+
 /// Constrain `inst` to have type `expected`.
 pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Category) Error!Constraint {
     g.depth += 1;
@@ -57,8 +63,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         return g.equal(expected, try g.fresh(.err), inst, category);
     }
 
-    // For `dump --stage=ownership` only (`ownership-checker.md` §2.3).
-    if (inst.int() < g.cx.inst_type.len) g.cx.inst_type[inst.int()] = expected.toOptional();
+    noteType(g, inst, expected);
     const bir = g.cx.bir;
     const wk = g.cx.types.well_known;
     const data = bir.instData(inst);
@@ -386,62 +391,152 @@ fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expect
     return g.conj(parts.items);
 }
 
+/// A call's constraints: the callee, the call, then the arguments.
+///
+/// **The left spine is walked without recursion.** An operator chain
+/// `x + x + … + x` nests one call per operator in its FIRST argument, and the
+/// parser accepts it `Parse.max_depth` levels deep. A recursive walk of it
+/// would use one native frame pair (`expr`, `call`) per operator, which
+/// exhausts the engine's stack of a WebAssembly compiler (about 1 MB in V8,
+/// `playground.md` §2.3) on a chain the native compiler checks (#2090). So a
+/// first argument that is itself a call is begun here, on `open`, exactly as
+/// `expr` would begin it: the same `depth`, the same refusal past
+/// `Generator.max_depth` (left to `expr`), and every variable and node made
+/// in the same order, so the tree is the one the recursion built. Every other
+/// argument, and the callee, still goes through `expr`.
 fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
-    const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
-    const callee = try g.freshFlex();
-    try g.called(callee, inst);
-    const arg_vars = try g.cx.scratch.alloc(Var, args.len);
-    defer g.cx.scratch.free(arg_vars);
-    for (arg_vars) |*v| v.* = try g.freshFlex();
-
-    const args_start: u32 = @intCast(g.tree.extra.items.len);
-    try g.tree.extra.appendSlice(g.gpa, @ptrCast(arg_vars));
-    const payload = try g.addExtra(Tree.Call{
-        .callee = callee,
-        .args_start = args_start,
-        .args_len = @intCast(args.len),
-        .result = expected,
-        .flavor = .call,
-    });
-
-    var parts: std.ArrayList(Constraint) = .empty;
-    defer parts.deinit(g.cx.scratch);
-    // The callee first, so the solver knows its arrows; then the call, so
-    // §8.3 sees both the arrows and what the result was wanted for; then
-    // the arguments, against a callee that is already concrete.
-    const which = jsIntrinsic(g, @fromBackingInt(@intCast(data.lhs)));
-    // `Js.method` with a lambda of parameters after its receiver is typed
-    // by the lambda's count (`methodLambda`): the declaration is generated
-    // against a variable of its own, so the use is recorded, and `callee`
-    // takes the shape the lambda gives it.
-    const by_count = which == .method and methodLambdaCount(g, args) != null;
-    try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), if (by_count) try g.freshFlex() else callee, .{ .tag = .general }));
-    try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
-    if (by_count) {
-        try parts.append(g.cx.scratch, try methodLambda(g, inst, @fromBackingInt(@intCast(data.lhs)), args, callee, expected, category));
-        return g.conj(parts.items);
-    }
-    const in_place = if (which) |w| JsIntrinsic.inPlaceLiterals(w) else 0;
-    for (args, arg_vars, 0..) |arg, v, i| {
-        if (i < 8 and in_place & (@as(u8, 1) << @intCast(i)) != 0) {
-            if (which == .object) if (try objectFields(g, arg)) |c| {
-                try parts.append(g.cx.scratch, c);
-                continue;
-            };
-            if (try inPlaceLiteral(g, arg)) |c| {
-                try parts.append(g.cx.scratch, c);
-                continue;
-            }
+    const scratch = g.cx.scratch;
+    // The calls begun and not finished, outermost first; each after the
+    // first is its parent's first argument, entered with one `depth`.
+    var open: std.ArrayList(OpenCall) = .empty;
+    defer open.deinit(scratch);
+    var entered: u32 = 0;
+    errdefer {
+        g.depth -= entered;
+        var i = open.items.len;
+        while (i > 0) {
+            i -= 1;
+            open.items[i].deinit(g);
         }
-        try parts.append(g.cx.scratch, try expr(g, arg, v, .{
-            .tag = .call_arg,
-            .index = @intCast(i + 1),
-            .owner = inst.toOptional(),
-        }));
     }
-    return g.conj(parts.items);
+    try open.append(scratch, try OpenCall.begin(g, inst, data, expected, category));
+    while (true) {
+        const top = open.items[open.items.len - 1];
+        if (top.args.len == 0) break;
+        const first = top.args[0];
+        // `expr`'s own entry, for a call; past the limit, `expr` refuses it.
+        if (bir.instTag(first) != .call or g.depth >= Generator.max_depth) break;
+        g.depth += 1;
+        entered += 1;
+        noteType(g, first, top.arg_vars[0]);
+        try open.ensureUnusedCapacity(scratch, 1);
+        open.appendAssumeCapacity(try OpenCall.begin(g, first, bir.instData(first), top.arg_vars[0], argCategory(top.inst, 0)));
+    }
+    // Finish from the innermost: its arguments from the first, then each
+    // parent's from the second, after the call just finished.
+    var from: usize = 0;
+    var result: Constraint = undefined;
+    while (open.items.len != 0) {
+        const top = &open.items[open.items.len - 1];
+        if (from == 1) try top.parts.append(scratch, result);
+        result = try top.finish(g, from);
+        top.deinit(g);
+        open.items.len -= 1;
+        if (open.items.len != 0) {
+            g.depth -= 1;
+            entered -= 1;
+        }
+        from = 1;
+    }
+    return result;
 }
+
+/// The category of argument `i` of the call at `owner`.
+fn argCategory(owner: Bir.Inst.Index, i: usize) Category {
+    return .{ .tag = .call_arg, .index = @intCast(i + 1), .owner = owner.toOptional() };
+}
+
+/// A call `call` has begun and not finished: its callee and its `call` node
+/// are generated, its arguments are not.
+const OpenCall = struct {
+    inst: Bir.Inst.Index,
+    /// The arguments still to generate; empty for a `Js.method` call typed
+    /// by its lambda's count, which `begin` finishes whole.
+    args: []const Bir.Inst.Index,
+    arg_vars: []Var,
+    parts: std.ArrayList(Constraint),
+    which: ?JsIntrinsic.Which,
+    in_place: u8,
+
+    fn begin(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!OpenCall {
+        const bir = g.cx.bir;
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
+        const callee = try g.freshFlex();
+        try g.called(callee, inst);
+        const arg_vars = try g.cx.scratch.alloc(Var, args.len);
+        errdefer g.cx.scratch.free(arg_vars);
+        for (arg_vars) |*v| v.* = try g.freshFlex();
+
+        const args_start: u32 = @intCast(g.tree.extra.items.len);
+        try g.tree.extra.appendSlice(g.gpa, @ptrCast(arg_vars));
+        const payload = try g.addExtra(Tree.Call{
+            .callee = callee,
+            .args_start = args_start,
+            .args_len = @intCast(args.len),
+            .result = expected,
+            .flavor = .call,
+        });
+
+        var parts: std.ArrayList(Constraint) = .empty;
+        errdefer parts.deinit(g.cx.scratch);
+        // The callee first, so the solver knows its arrows; then the call, so
+        // §8.3 sees both the arrows and what the result was wanted for; then
+        // the arguments, against a callee that is already concrete.
+        const which = jsIntrinsic(g, @fromBackingInt(@intCast(data.lhs)));
+        // `Js.method` with a lambda of parameters after its receiver is typed
+        // by the lambda's count (`methodLambda`): the declaration is generated
+        // against a variable of its own, so the use is recorded, and `callee`
+        // takes the shape the lambda gives it.
+        const by_count = which == .method and methodLambdaCount(g, args) != null;
+        try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), if (by_count) try g.freshFlex() else callee, .{ .tag = .general }));
+        try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
+        if (by_count) try parts.append(g.cx.scratch, try methodLambda(g, inst, @fromBackingInt(@intCast(data.lhs)), args, callee, expected, category));
+        return .{
+            .inst = inst,
+            .args = if (by_count) &.{} else args,
+            .arg_vars = arg_vars,
+            .parts = parts,
+            .which = which,
+            .in_place = if (which) |w| JsIntrinsic.inPlaceLiterals(w) else 0,
+        };
+    }
+
+    /// The arguments from `from` on, then the conjunction of every part.
+    /// A first argument that is a call never takes the in-place path:
+    /// `objectFields` and `inPlaceLiteral` read only lists and strings.
+    fn finish(c: *OpenCall, g: *Generator, from: usize) Error!Constraint {
+        for (c.args[from..], c.arg_vars[from..c.args.len], from..) |arg, v, i| {
+            if (i < 8 and c.in_place & (@as(u8, 1) << @intCast(i)) != 0) {
+                if (c.which == .object) if (try objectFields(g, arg)) |part| {
+                    try c.parts.append(g.cx.scratch, part);
+                    continue;
+                };
+                if (try inPlaceLiteral(g, arg)) |part| {
+                    try c.parts.append(g.cx.scratch, part);
+                    continue;
+                }
+            }
+            try c.parts.append(g.cx.scratch, try expr(g, arg, v, argCategory(c.inst, i)));
+        }
+        return g.conj(c.parts.items);
+    }
+
+    fn deinit(c: *OpenCall, g: *Generator) void {
+        c.parts.deinit(g.cx.scratch);
+        g.cx.scratch.free(c.arg_vars);
+    }
+};
 
 /// `Js.method`'s lambda, written in place with parameters after its
 /// receiver (`boundary.md` §4.2, amended 2026-11-04; checker-v2.md §30):

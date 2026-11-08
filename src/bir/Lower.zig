@@ -2900,18 +2900,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         // the chain as `cons_removed`, and it lowers to the poison that
         // report stands for.
         .cons => return l.errorInst(.cons_removed),
-        .add, .sub, .mul, .div, .int_div, .pow, .int_pow, .append, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
-            const b = l.tree.fullBinop(node);
-            const lhs = try l.lowerExpr(b.lhs);
-            const rhs = try l.lowerExpr(b.rhs);
-            if (Bir.WellKnown.fromOperator(l.opTag(b.op_token))) |origin| {
-                l.cur_token = b.op_token;
-                return l.methodCall(lhs, origin.method().?.symbol(), origin, &.{rhs.int()});
-            }
-            const function = try l.operatorRef(l.opTag(b.op_token));
-            l.cur_token = b.op_token;
-            return l.call(function, &.{ lhs.int(), rhs.int() });
-        },
+        .add, .sub, .mul, .div, .int_div, .pow, .int_pow, .append, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => return l.lowerBinop(node),
         // Only a `<-` right-hand side can hold one (§6.7); the parser has
         // reported it as `placeholder_outside_argument` already.
         .placeholder => return l.errorInst(.placeholder_outside_argument),
@@ -2921,6 +2910,47 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.errorInst(l.tree.fullError(node).code);
         },
     }
+}
+
+fn isBinop(tag: Ast.Node.Tag) bool {
+    return switch (tag) {
+        .add, .sub, .mul, .div, .int_div, .pow, .int_pow, .append, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => true,
+        else => false,
+    };
+}
+
+/// A binary operator, and every binary operator on its left spine, with
+/// no native frame per operator (#1780). The parser nests a left-associative
+/// chain `x + x + … + x` one level per operator in the LEFT operand,
+/// `Parse.max_depth` deep, and a recursive `lowerExpr` used one frame per
+/// level of the engine's stack in the WebAssembly compiler. The spine is
+/// collected first, the innermost left operand lowered, and then each
+/// operator from the inside out: its right operand, then its call, which is
+/// the order the recursion made every instruction in.
+fn lowerBinop(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    var spine: std.ArrayList(NodeIndex) = .empty;
+    defer spine.deinit(l.gpa);
+    var left = node;
+    while (isBinop(l.tree.nodeTag(left))) {
+        try spine.append(l.gpa, left);
+        left = l.tree.fullBinop(left).lhs;
+    }
+    var lhs = try l.lowerExpr(left);
+    var i = spine.items.len;
+    while (i > 0) {
+        i -= 1;
+        const b = l.tree.fullBinop(spine.items[i]);
+        const rhs = try l.lowerExpr(b.rhs);
+        if (Bir.WellKnown.fromOperator(l.opTag(b.op_token))) |origin| {
+            l.cur_token = b.op_token;
+            lhs = try l.methodCall(lhs, origin.method().?.symbol(), origin, &.{rhs.int()});
+            continue;
+        }
+        const function = try l.operatorRef(l.opTag(b.op_token));
+        l.cur_token = b.op_token;
+        lhs = try l.call(function, &.{ lhs.int(), rhs.int() });
+    }
+    return lhs;
 }
 
 /// A list literal with a spread (language.md §6.8, §8): the `List.cons` and

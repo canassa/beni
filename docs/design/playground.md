@@ -749,6 +749,14 @@ levels deep (`abuse_test.zig`). Three page loads gave the same depth. A program 
 writes rarely nests a few hundred levels; a long operator chain does, because the parser
 nests one level per operator (`x + x + … + x`).
 
+*Amended 2026-11-08 (#2090, #1780):* an operator chain written left to right no longer stops here.
+BIR lowering, the checker's constraint generator and solver (`checker-v2.md` §10.2) and emit's
+lowering (`backend.md`, *Emitted JavaScript nests only as deep as the source*) walk it with
+explicit frames. The shipped `.wasm` builds `run/WideArithmetic` and `run/WideIdiv`, 4 095 terms
+each, in dev and release, under `node --stack-size=60` (KB), the smallest stack that also builds a
+five-line program; both fail at 40. `wasm_test.zig` runs them in the gates and `test-playground`
+on the shipped `.wasm`. The depths above for `f (f (… 1))` were not measured again.
+
 **A program that does not stop holds its frame.** The compiled program runs in the output frame,
 not in the worker, and nothing bounds its time. In Chrome the sandboxed frame has a process of
 its own (Chrome isolates sandboxed frames; the page tests attach to it as a separate target),

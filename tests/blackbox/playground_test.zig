@@ -71,6 +71,10 @@ const programs = [_]Program{
     .{ .path = "tests/corpus/run/ReleaseAliasChain1000.beni", .kind = .print },
     .{ .path = "tests/corpus/run/ReleaseEverything.beni", .kind = .print },
     .{ .path = "tests/corpus/run/SuspendDeepRecursion.beni", .kind = .print },
+    // The longest operator chains the parser accepts, on the engine's
+    // stack (#2090, #1780): arithmetic, and `//`, a general call.
+    .{ .path = "tests/corpus/run/WideArithmetic.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/WideIdiv.beni", .kind = .print },
     // Schemas and markup.
     .{ .path = "tests/corpus/run/JsonDerivedArticle.beni", .kind = .print },
     .{ .path = "tests/corpus/run/SchemaShapeThreshold.beni", .kind = .print },

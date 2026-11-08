@@ -379,8 +379,9 @@ pub fn readied(s: *const Solve) bool {
 
 pub fn solve(s: *Solve, first: Constraint) Error!void {
     if (first == .none) return;
+    const outer = s.depth;
     s.depth += 1;
-    defer s.depth -= 1;
+    defer s.depth = outer;
     // The parser bounds how deep one declaration's expressions nest, and a
     // `let`'s groups are a TAIL chain the loop below walks without
     // recursing, so an accepted file cannot reach this. If one ever does it
@@ -389,13 +390,46 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
     if (s.depth - s.depth_base > Tree.Generator.max_depth) {
         return s.report.nestingTooDeep(s.tree.node(first).region, Tree.Generator.max_depth);
     }
+    // A conjunction's children wait here, last on top, so they are solved
+    // in the order the recursion solved them, each with everything it holds
+    // before the next (#1780). Each keeps the `depth` the recursion gave
+    // it, which the guard above and §10.2's budget read, and meets the
+    // guard as it is taken. An operator chain nests one conjunction per
+    // operator, `Parse.max_depth` deep, and a recursion per conjunction ran
+    // out of the engine's stack of the WebAssembly compiler. A conjunction
+    // whose children do not fit is solved by recursion, as before, so the
+    // list needs no allocation and the recursion is one frame per
+    // `pending.len` levels of such a chain.
+    const Pending = struct { c: Constraint, depth: @TypeOf(s.depth) };
+    var pending: [64]Pending = undefined;
+    var len: usize = 0;
     var c = first;
-    while (c != .none) {
+    while (true) {
+        while (c == .none) {
+            if (len == 0) return;
+            len -= 1;
+            c = pending[len].c;
+            s.depth = pending[len].depth;
+            if (c != .none and s.depth - s.depth_base > Tree.Generator.max_depth) {
+                try s.report.nestingTooDeep(s.tree.node(c).region, Tree.Generator.max_depth);
+                c = .none;
+            }
+        }
         const node = s.tree.node(c);
         c = .none;
         switch (node.tag) {
             .true_ => {},
-            .and_ => for (s.tree.constraints(node.a, node.b)) |child| try s.solve(child),
+            .and_ => {
+                const children = s.tree.constraints(node.a, node.b);
+                if (children.len <= pending.len - len) {
+                    var i = children.len;
+                    while (i > 0) {
+                        i -= 1;
+                        pending[len] = .{ .c = children[i], .depth = s.depth + 1 };
+                        len += 1;
+                    }
+                } else for (children) |child| try s.solve(child);
+            },
             .equal => _ = try s.unify(@fromBackingInt(@intCast(node.a)), @fromBackingInt(@intCast(node.b)), node.region, node.category),
             .update_base => {
                 const required: Var = @fromBackingInt(@intCast(node.a));

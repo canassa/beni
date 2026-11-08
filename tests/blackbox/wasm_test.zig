@@ -11,7 +11,8 @@
 //!     a tree as deep as the parser allows run here;
 //!   - the WebAssembly one, `zig-out/wasm/bin/beni.wasm`, run by
 //!     `tests/wasm/beni.mjs` on the playground's own WASI host. Its
-//!     two smallest scenarios run in the gates; `zig build test-playground`,
+//!     two smallest scenarios and the longest operator chain the parser
+//!     accepts, on the engine's stack, run in the gates; `zig build test-playground`,
 //!     in CI on every pull request, runs the shipped `.wasm` on the corpus.
 //!
 //! The threaded compiler runs with `--jobs=8`, and so does the other: a
@@ -277,6 +278,51 @@ fn reportsDiagnostics() !void {
     const checked = try wasm.expectSame(&w, &.{ "check", "--jobs=8", "--diagnostics=json", "bad" }, other);
     try testing.expectEqual(@as(u8, 1), checked.exit_code);
     try testing.expect(std.mem.indexOf(u8, checked.stderr, "\"type_mismatch\"") != null);
+}
+
+test "the WebAssembly compiler builds an operator chain as long as the parser allows on the engine's stack" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A WebAssembly function's frames are on the engine's own stack, about
+    // 1 MB in V8, which a page cannot make larger (`playground.md` §2.3). The
+    // parser nests one level per operator, so `x + x + … + x` with 4 095
+    // terms is a tree `Parse.max_depth` levels deep. A walk that recursed
+    // once per operator ran out of that stack in the checker's constraint
+    // generator (#2090) while the native compiler built the program; the
+    // generator walks the chain's left spine without recursion now.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const other: wasm.Other = .{ .wasm = try wasmCompiler(&w) };
+    try wasm.writeRepoFile(&w, "tests/corpus/run/WideArithmetic.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE AND VERIFY                      │
+    // └─────────────────────────────────────────┘
+    const built = try wasm.expectSame(&w, &.{ "build", "--no-cache", "--platform=node", "WideArithmetic.beni" }, other);
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+}
+
+test "the WebAssembly compiler builds a chain of a general call as long as the parser allows on the engine's stack" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `//` is a call of `Basics.idiv`, not an arithmetic operator, so the
+    // lowering's arithmetic walk did not take it: `x // x // … // x` with
+    // 4 095 terms recursed `expr` → `callExpr` once per term (#1780). Every
+    // call is lowered with explicit frames now, in dev and release builds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const other: wasm.Other = .{ .wasm = try wasmCompiler(&w) };
+    try wasm.writeRepoFile(&w, "tests/corpus/run/WideIdiv.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE AND VERIFY                      │
+    // └─────────────────────────────────────────┘
+    const built = try wasm.expectSame(&w, &.{ "build", "--no-cache", "--platform=node", "WideIdiv.beni" }, other);
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    const released = try wasm.expectSame(&w, &.{ "build", "--no-cache", "--release", "--platform=node", "WideIdiv.beni" }, other);
+    try testing.expectEqual(@as(u8, 0), released.exit_code);
 }
 
 test "a build with no threads refuses serve, which answers requests while it builds" {

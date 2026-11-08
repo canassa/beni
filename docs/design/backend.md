@@ -1761,6 +1761,14 @@ work stack. A written operator chain must not consume one native compiler stack 
 per term. Each operand keeps its written evaluation order, statement hoists, representation
 key and expression-height accounting; the walk does not reassociate arithmetic.
 
+*Amended 2026-11-08 (#1780):* the work stack holds every call, not only arithmetic. `//` is a
+general call of `Basics.idiv`, and `x // x // … // x` recursed once per term. `callPlan` is the
+one prelude: every call, outer or inner, meets the same special cases in the same order, and
+gives a value, an `Operator`, or the general call. The last two become frames of `callExpr`'s
+walk, and a call operand is entered as `expr` enters it. The JavaScript is the recursion's, byte
+for byte. The effect walk `reachesProjected` keeps its waiting operands on a fixed list and
+recurses only when the list is full.
+
 *Added 2026-09-25.* Every JavaScript engine parses â and V8 and JavaScriptCore
 compile â a nested expression or block by recursion, and gives up with `RangeError` or
 `InternalError` past a depth that depends on the construct and the engine. Before this section a
