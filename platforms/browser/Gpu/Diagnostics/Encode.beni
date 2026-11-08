@@ -1,0 +1,35 @@
+--! The forwarding forms of `Gpu.Encode.run` and `bundle`
+--! (`docs/design/webgpu.md` §6.4): the encoder is made, the callback
+--! encodes and the encoder is finished in one host turn, as in the ordinary
+--! forms, under the session's scopes. Every command of `Gpu.CommandEncoder`,
+--! `Gpu.ComputePass`, `Gpu.RenderPass` and `Gpu.RenderBundleEncoder` runs
+--! in the callback as usual: the session's authority is the run's.
+
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Types as Types
+import Js
+
+
+--| `Gpu.Encode.run` under the session. The command buffer is provisional,
+--| and the session may submit it.
+pub run :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.CommandEncoderDescriptor
+    , sync (Handle.CommandEncoder → Result InputError a)
+    → Result Error.Error { value : a, commands : Handle.CommandBuffer }
+run session device descriptor body =
+    Make.encodeIn (Js.from session) (Js.from device) descriptor body
+
+
+--| `Gpu.Encode.bundle` under the session.
+pub bundle :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.RenderBundleEncoderDescriptor
+    , sync (Handle.RenderBundleEncoder → Result InputError a)
+    → Result Error.Error { value : a, bundle : Handle.RenderBundle }
+bundle session device descriptor body =
+    Make.bundleIn (Js.from session) (Js.from device) descriptor body

@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="late">"late"</button>
+    <button id="several">"several"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #late
+<body>
+  <main>
+    <button id="late">"late"</button>
+    <button id="several">"several"</button>
+    <ol>
+      <li>"after the loss: Lost Destroyed"</li>
+    </ol>
+  </main>
+</body>
+-- click #several
+<body>
+  <main>
+    <button id="late">"late"</button>
+    <button id="several">"several"</button>
+    <ol>
+      <li>"after the loss: Lost Destroyed"</li>
+      <li>"first: Lost UnknownLoss"</li>
+      <li>"first returned"</li>
+      <li>"second: Lost UnknownLoss"</li>
+      <li>"second returned"</li>
+    </ol>
+  </main>
+</body>

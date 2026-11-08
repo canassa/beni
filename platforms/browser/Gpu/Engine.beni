@@ -438,6 +438,7 @@ adoptDevice device ch =
             , ( "section", Js.from False )
             , ( "ops", Js.array [] )
             , ( "mapped", Js.construct (Js.global "Set") [] )
+            , ( "listeners", Js.array [] )
             ]
     _ = Js.call table "set" [ device, r ]
     hold ch
@@ -446,12 +447,28 @@ adoptDevice device ch =
             [ Js.from λinfo → guard ch (deviceContext r "lost") λ⊤ → lost r info
             , Js.from λerror → reportDefect r (contextual (deviceContext r "lost") error)
             ]
+    watchUncaptured device r ch
     -- The queue belongs to the device: its record names the device, and
     -- the native device its checked operations run on.
     _ =
         Js.call table "set"
             [ member device "queue", Js.object [ ( "device", r ), ( "native", device ) ] ]
     ⊤
+
+
+-- Every error the device does not hand to a scope (§8; ledger §7): the
+-- host dispatches `uncapturederror` as a task of its own, never inside a
+-- call the engine made, and the listener only queues the event for the
+-- device's listeners and resumes fibers (`ownership-v2.md` §2.13.7,
+-- P-sync).
+watchUncaptured : V, V, V → ⊤
+watchUncaptured device r ch =
+    Js.call (member device "addEventListener") "call"
+        [ device
+        , Js.from "uncapturederror"
+        , Js.from λevent → guard ch (deviceContext r "uncapturederror") λ⊤ → uncaptured r event
+        ]
+        ▷ ignore
 
 
 --| The runtime identity of a device: a number, never the native object.
@@ -555,6 +572,7 @@ lost r info =
 -- one (the host's message after `destroy`'s), and wakes nobody twice.
 latch : V, DeviceLoss → ⊤
 latch r value =
+    if Js.isNull (Js.get r "loss") then emit r (Error.Lost value) else ⊤
     Js.set r "loss" (Js.from value)
     waiters = Js.get r "waiters"
     Js.set r "waiters" (Js.array [])
@@ -608,6 +626,542 @@ tryLease device =
 --| Give the device's lease back.
 pub releaseLease : V → ⊤
 releaseLease device = Js.set (recordOf device) "leased" (Js.from False)
+
+
+-- ---- Diagnostic sessions (§6.4) -------------------------------------------------
+--
+-- A session is a record, the `DiagnosticSession` value itself: its
+-- device's record, the lease generation it was issued under, whether it is
+-- live, its parent and its open nested session, the user scopes it pushed
+-- (their filters, innermost last), the engine's three outer scopes (a
+-- scope record as a checked operation's), every error its user scopes
+-- reported, what its forwarding calls made, and what waits for it to
+-- settle. The device's lease is held while any session of it is live; the
+-- live session with no open nested session is the one that may act.
+
+--| Open a diagnostic session of `device` (a native device): with `parent`
+--| null, a new lease, taken at once or refused — `DeviceLost` once a loss
+--| is latched, `DeviceLeased` while a lease is held — never waited for;
+--| under `parent`, a nested session that holds its parent's lease until it
+--| closes. The engine's outer validation, out-of-memory and internal
+--| scopes are pushed first, in one section; a push that throws pops what
+--| was pushed and gives the lease back before the defect goes on.
+pub openSession : V, V → Result Error.Error V
+openSession device parent =
+    r = recordOf device
+
+    gate =
+        if Js.isNull parent then
+            admit device "diagnostics"
+        else
+            sessionAdmit parent device "diagnostics"
+    case gate of
+        Err problem →
+            Err problem
+
+        Ok _ →
+            if Js.to (Js.get r "section") then
+                defect "a diagnostic session opened inside a scope section"
+            else
+                if Js.isNull parent then
+                    Js.set r "leased" (Js.from True)
+                    Js.set r "generation" (Js.from (int (Js.get r "generation") + 1))
+                else
+                    ⊤
+                scopes = newScopes ⊤
+                Js.set scopes "native" device
+                Js.set scopes "name" (Js.from "diagnostics")
+                Js.set scopes "labels" (Js.array [])
+
+                s =
+                    Js.object
+                        [ ( "device", r )
+                        , ( "native", device )
+                        , ( "generation", Js.get r "generation" )
+                        , ( "live", Js.from True )
+                        , ( "parent", parent )
+                        , ( "child", Js.null )
+                        , ( "filters", Js.array [] )
+                        , ( "scopes", scopes )
+                        , ( "observed", Js.array [] )
+                        , ( "made", Js.array [] )
+                        , ( "after", Js.array [] )
+                        , ( "settled", Js.null )
+                        , ( "opened", Js.from False )
+                        , ( "abandoned", Js.from False )
+                        ]
+                if Js.isNull parent then ⊤ else Js.set parent "child" s
+                Js.set r "section" (Js.from True)
+                Js.finally
+                    (λ⊤ →
+                        pushSegment device scopes
+                        Js.set s "opened" (Js.from True)
+                    )
+                    λ⊤ →
+                        Js.set r "section" (Js.from False)
+                        if Js.to (Js.get s "opened") then ⊤ else abandonOpen s
+                Ok s
+
+
+-- A push of the outer scopes threw: pop what was pushed, give the lease
+-- back, and end the session; the throw goes on, a defect.
+abandonOpen : V → ⊤
+abandonOpen s =
+    r = Js.get s "device"
+    scopes = Js.get s "scopes"
+    Js.set s "live" (Js.from False)
+    Js.set scopes "done" (Js.from True)
+    Js.set scopes "owed" (Js.get scopes "pushed")
+    popSegment (Js.get s "native") r scopes
+    giveBack s
+
+
+-- The session's lease passes back to its parent, or is free.
+giveBack : V → ⊤
+giveBack s =
+    parent = Js.get s "parent"
+    if Js.isNull parent then
+        Js.set (Js.get s "device") "leased" (Js.from False)
+    else
+        Js.set parent "child" Js.null
+
+
+--| Whether the session may act now: `SessionEnded` once its lease ended,
+--| `DeviceLeased` while a nested session of it is open.
+pub sessionState : V → Result Error.SessionState ⊤
+sessionState s =
+    r = Js.get s "device"
+    if
+        not (Js.to (Js.get s "live"))
+            || not (Js.same (Js.get s "generation") (Js.get r "generation"))
+            || not (Js.to (Js.get r "leased"))
+    then
+        Err Error.SessionEnded
+    else if not (Js.isNull (Js.get s "child")) then
+        Err Error.DeviceLeased
+    else
+        Ok ⊤
+
+
+--| Whether a forwarding call of `session` may run on `device` (§6.4): the
+--| session's own device (`WrongDevice` at `session` otherwise), the session
+--| able to act (`sessionState`), and no loss latched (`DeviceLost`: a
+--| destroyed device's session goes on, but its calls report the loss).
+pub sessionAdmit : V, V, String → Result Error.Error ⊤
+sessionAdmit session device operation =
+    r = recordOf device
+    if not (Js.same (Js.get session "device") r) then
+        Err (Error.InvalidInput (Error.WrongDevice { path = "session" }))
+    else
+        case sessionState session of
+            Err state →
+                Err (Error.InvalidInput (Error.SessionState state))
+
+            Ok _ →
+                l = Js.get r "loss"
+                if Js.isNull l then
+                    Ok ⊤
+                else
+                    Err
+                        (Error.DeviceLost
+                            { loss = Js.to l, operation = { operation = operation, observed = [] } }
+                        )
+
+
+--| The native device of a session.
+pub sessionDevice : V → V
+sessionDevice s = Js.get s "native"
+
+
+--| Push a user error scope of filter `filter` (0 validation, 1 out of
+--| memory, 2 internal) in the session: `SessionState` when the session
+--| cannot act. A push that throws is a defect.
+pub pushUserScope : V, Int → Result Error.InputError ⊤
+pushUserScope s filter =
+    case sessionState s of
+        Err state →
+            Err (Error.SessionState state)
+
+        Ok _ →
+            Js.call (Js.get s "native") "pushErrorScope" [ filterName filter ] ▷ ignore
+            Js.call (Js.get s "filters") "push" [ Js.from filter ] ▷ ignore
+            Ok ⊤
+
+
+--| Pop the session's innermost user scope and wait for what it reports:
+--| `Nothing` for no error, which is not proof of no loss. A session with no
+--| user scope open is `ScopeUnderflow`, and the engine's own scopes are
+--| never popped for it. An error of a class the scope's filter does not
+--| report, a spoofed one, or a rejected pop is a defect. A cancelled wait
+--| leaves the pop drained, its error still the session's. May suspend.
+pub popUserScope : V → Result Error.DiagnosticError (Maybe Error.GpuError)
+popUserScope s =
+    case sessionState s of
+        Err state →
+            Err (Error.SessionRefused (Error.SessionState state))
+
+        Ok _ →
+            filters = Js.get s "filters"
+            if int (Js.get filters "length") == 0 then
+                Err Error.ScopeUnderflow
+            else
+                filter = int (Js.call filters "pop" [])
+                p =
+                    Js.object
+                        [ ( "settled", Js.from False )
+                        , ( "outcome", Js.null )
+                        , ( "waiter", Js.null )
+                        ]
+                popUser s filter p
+                outcome =
+                    if Js.to (Js.get p "settled") then
+                        Js.to (Js.get p "outcome")
+                    else
+                        Task.callback λresume →
+                            Js.set p "waiter" (Js.from resume)
+                            λ⊤ → Js.set p "waiter" Js.null
+                case outcome of
+                    Expected found →
+                        Ok found
+
+                    Unexpected error →
+                        r = Js.get s "device"
+                        Js.throw (contextual (deviceContext r "popErrorScope") error)
+
+
+-- Invoke the native pop of one user scope of filter `filter`. It is owed
+-- to the session, which waits for it before it settles, and pending on the
+-- device, so the device keeps its channel while it is.
+popUser : V, Int, V → ⊤
+popUser s filter p =
+    r = Js.get s "device"
+    scopes = Js.get s "scopes"
+    Js.set scopes "owed" (Js.from (int (Js.get scopes "owed") + 1))
+    Js.set r "pops" (Js.from (int (Js.get r "pops") + 1))
+    ch = Js.get r "channel"
+    context = deviceContext r "popErrorScope"
+    Js.call (Js.call (Js.get s "native") "popErrorScope" []) "then"
+        [ Js.from λvalue →
+            guard ch context λ⊤ → userPopped s p (userOutcome filter True value)
+            popped r
+        , Js.from λerror →
+            guard ch context λ⊤ → userPopped s p (userOutcome filter False error)
+            popped r
+        ]
+        ▷ ignore
+
+
+-- What a user scope's pop gave: null, or an error of the class its filter
+-- reports. Anything else — a rejection (the engine never pops an empty
+-- user stack), a class another filter reports, a spoofed error — is
+-- unexpected.
+userOutcome : Int, Bool, V → Outcome (Maybe Error.GpuError)
+userOutcome filter fulfilled value =
+    if not fulfilled then
+        Unexpected value
+    else if Js.isNull value then
+        Expected Nothing
+    else if isInstance value (filterClass filter) then
+        Expected (Just (gpuError filter (messageOf value)))
+    else
+        Unexpected value
+
+
+gpuError : Int, String → Error.GpuError
+gpuError filter message =
+    if filter == 0 then
+        Error.ValidationError { message = message }
+    else if filter == 1 then
+        Error.OutOfMemoryError { message = message }
+    else
+        Error.InternalError { message = message }
+
+
+-- A user pop settled: its error is the session's, and the fiber that
+-- waits for it, if any, takes the outcome; an unexpected outcome nobody
+-- waits for is the session's to throw, or its program's once the session
+-- settled.
+userPopped : V, V, Outcome (Maybe Error.GpuError) → ⊤
+userPopped s p outcome =
+    r = Js.get s "device"
+    scopes = Js.get s "scopes"
+    case outcome of
+        Expected (Just found) →
+            Js.call (Js.get s "observed") "push" [ Js.from found ] ▷ ignore
+
+        _ →
+            ⊤
+    Js.set p "settled" (Js.from True)
+    Js.set p "outcome" (Js.from outcome)
+    waiter = Js.get p "waiter"
+    if not (Js.isNull waiter) then
+        Js.set p "waiter" Js.null
+        Task.resume (Js.to waiter) outcome
+        counted r scopes
+    else
+        case outcome of
+            Unexpected error →
+                unexpectedScope r scopes (contextual (deviceContext r "popErrorScope") error)
+
+            Expected _ →
+                counted r scopes
+
+
+--| Close a session in the turn its callback ends, however it ends: a
+--| nested session still open under it closes first; every user scope still
+--| open is popped, innermost first, then the three outer scopes; and the
+--| lease passes back to the parent, or is free. Nothing waits here: what
+--| the pops report is the session's (`finishSession`), or, for a session
+--| `abandoned` — cancelled, or ended by a defect — drained, an unexpected
+--| outcome going to the device's program, and what the session made
+--| rejected at once.
+pub closeSession : V, Bool → ⊤
+closeSession s abandoned =
+    if not (Js.to (Js.get s "live")) then
+        ⊤
+    else
+        child = Js.get s "child"
+        if Js.isNull child then ⊤ else closeSession child True
+        Js.set s "live" (Js.from False)
+        r = Js.get s "device"
+        scopes = Js.get s "scopes"
+        if abandoned then
+            Js.set s "abandoned" (Js.from True)
+            Js.set scopes "done" (Js.from True)
+            settleMade s "rejected"
+            -- An unexpected outcome the session kept for its run, which will
+            -- not run now, goes to the device's program; those still to
+            -- come go there too, since the scopes are done.
+            unexpected = Js.get scopes "unexpected"
+            if Js.isNull unexpected then
+                ⊤
+            else
+                Js.set scopes "unexpected" Js.null
+                reportDefect r unexpected
+        else
+            ⊤
+        if Js.to (Js.get r "section") then
+            defect "a diagnostic session closed inside a scope section"
+        else
+            Js.set r "section" (Js.from True)
+            Js.finally
+                (λ⊤ →
+                    filters = Js.get s "filters"
+                    open = Js.call filters "splice" [ Js.from 0 ]
+                    Js.call open "reverse" [] ▷ ignore
+                    Js.each open λf →
+                        popUser
+                            s
+                            (int f)
+                            (Js.object
+                                [ ( "settled", Js.from False )
+                                , ( "outcome", Js.null )
+                                , ( "waiter", Js.null )
+                                ]
+                            )
+                    Js.set
+                        scopes
+                        "owed"
+                        (Js.from (int (Js.get scopes "owed") + int (Js.get scopes "pushed")))
+                    popSegment (Js.get s "native") r scopes
+                )
+                λ⊤ →
+                    Js.set r "section" (Js.from False)
+                    giveBack s
+
+
+--| Wait until every pop of a closed session settled, then settle it: a
+--| loss is `DeviceLost`, an error an outer scope caught — one no user
+--| scope did — the failure, as a checked operation's; otherwise the
+--| errors its user scopes reported, in the order they arrived. What the
+--| session made is accepted only when there is none of these, and rejected
+--| otherwise. A cancelled wait rejects it. An unexpected outcome is a
+--| defect, thrown once what the session made is rejected. A session its
+--| parent abandoned — closed with it, cancelled or ended by a defect — is
+--| `SessionState SessionEnded` at once, never waited for: its pops drain
+--| to the device's program, and what it made was rejected already. May
+--| suspend.
+pub finishSession : V → Result Error.Error (List Error.GpuError)
+finishSession s =
+    r = Js.get s "device"
+    scopes = Js.get s "scopes"
+    if Js.to (Js.get s "abandoned") then
+        Err (Error.InvalidInput (Error.SessionState Error.SessionEnded))
+    else
+        waited = Task.onExit (λ⊤ → waitScopes r scopes) λexit →
+            case exit of
+                Task.Cancelled →
+                    settleMade s "rejected"
+
+                Task.Done _ →
+                    ⊤
+        if Js.isNull (Js.get scopes "unexpected") then ⊤ else settleMade s "rejected"
+        case settledWith r scopes "diagnostics" waited of
+            Err problem →
+                settleMade s "rejected"
+                Err problem
+
+            Ok observed →
+                case failureOf Nothing observed of
+                    Just problem →
+                        settleMade s "rejected"
+                        Err problem
+
+                    Nothing →
+                        errors : List Error.GpuError
+                        errors = Js.to (Js.call (Js.get s "observed") "slice" [])
+                        if List.isEmpty errors then
+                            settleMade s "accepted"
+                        else
+                            settleMade s "rejected"
+                        Ok errors
+
+
+-- What the session made takes `status`, once: a rejected object is
+-- released. Whoever waits for the session to settle is told.
+settleMade : V, String → ⊤
+settleMade s status =
+    if not (Js.isNull (Js.get s "settled")) then
+        ⊤
+    else
+        Js.set s "settled" (Js.from status)
+        Js.each (Js.get s "made") λitem →
+            made = Js.get item "made"
+            Js.set (recordOf made) "status" (Js.from status)
+            if status == "rejected" then Js.to (Js.apply (Js.get item "discard") [ made ]) else ⊤
+        Js.each (Js.get s "after") λf → Js.to (Js.apply f [ Js.from status ])
+
+
+--| Call `f` with `"accepted"` or `"rejected"` once the session settles what
+--| it made: what a batch or a configuration run under it waits for.
+pub afterSession : V, sync (String → ⊤) → ⊤
+afterSession s f = Js.call (Js.get s "after") "push" [ Js.from f ] ▷ ignore
+
+
+--| Hand an object a run under `session` made to it: provisional, usable by
+--| the session, and settled with it, `discard` releasing it if it is
+--| rejected.
+pub handOver : V, V, sync (V → ⊤) → ⊤
+handOver session made discard =
+    o = recordOf made
+    Js.set o "batch" session
+    Js.call (Js.get session "made") "push"
+        [ Js.object [ ( "made", made ), ( "discard", Js.from discard ) ] ]
+        ▷ ignore
+
+
+-- ---- Device events (§8) ------------------------------------------------------
+
+-- An `uncapturederror` event: its error, decoded, goes to every listener,
+-- and then, since every call the engine makes runs under a scope, to the
+-- device's program as a defect with the decoded error in its message. An
+-- error of a class outside the pin is a defect at once.
+uncaptured : V, V → ⊤
+uncaptured r event =
+    error = Js.get event "error"
+
+    decoded =
+        if isInstance error "GPUValidationError" then
+            Just (gpuError 0 (messageOf error))
+        else if isInstance error "GPUOutOfMemoryError" then
+            Just (gpuError 1 (messageOf error))
+        else if isInstance error "GPUInternalError" then
+            Just (gpuError 2 (messageOf error))
+        else
+            Nothing
+    case decoded of
+        Nothing →
+            reportDefect
+                r
+                (contextual (deviceContext r "an uncaptured error of a class outside the pin") error
+                )
+
+        Just found →
+            emit r (Error.Uncaptured found)
+            -- The class alone names it: the host's message differs between
+            -- browsers, and stays with the original, the `cause`.
+            reportDefect
+                r
+                (Js.construct (Js.global "Error")
+                    [ Js.from
+                        ("webgpu: "
+                            ++ deviceContext
+                                r
+                                ("an error escaped every error scope: " ++ className found)
+                        )
+                    , Js.object [ ( "cause", error ) ]
+                    ]
+                )
+
+
+className : Error.GpuError → String
+className found =
+    case found of
+        Error.ValidationError _ →
+            "GPUValidationError"
+
+        Error.OutOfMemoryError _ →
+            "GPUOutOfMemoryError"
+
+        Error.InternalError _ →
+            "GPUInternalError"
+
+
+-- Hand an event to every listener of the device, in order.
+emit : V, Error.DeviceEvent → ⊤
+emit r event =
+    listeners = Js.call (Js.get r "listeners") "slice" []
+    Js.each listeners λl →
+        waiter = Js.get l "waiter"
+        if Js.isNull waiter then
+            Js.call (Js.get l "queue") "push" [ Js.from event ] ▷ ignore
+        else
+            Js.set l "waiter" Js.null
+            Task.resume (Js.to waiter) event
+
+
+--| Call `handler` with each event of the device, in order, in the calling
+--| fiber, until the device is lost: its `Lost` event is the last. A device
+--| lost already gives its `Lost` at once. An event that arrives while
+--| `handler` runs waits for it; none is dropped. A cancelled fiber stops
+--| listening and keeps nothing. May suspend; `handler` may too.
+pub eachEvent : V, (Error.DeviceEvent → ⊤) → ⊤
+eachEvent device handler =
+    r = recordOf device
+    l = Js.object [ ( "queue", Js.array [] ), ( "waiter", Js.null ) ]
+    latched = Js.get r "loss"
+    if Js.isNull latched then
+        ⊤
+    else
+        Js.call (Js.get l "queue") "push" [ Js.from (Error.Lost (Js.to latched)) ] ▷ ignore
+    Js.call (Js.get r "listeners") "push" [ l ] ▷ ignore
+    Task.onExit (λ⊤ → listen l handler) λ_ →
+        without (Js.get r "listeners") l
+        Js.set l "queue" (Js.array [])
+        Js.set l "waiter" Js.null
+
+
+listen : V, (Error.DeviceEvent → ⊤) → ⊤
+listen l handler =
+    event = nextEvent l
+    handler event
+    case event of
+        Error.Lost _ →
+            ⊤
+
+        Error.Uncaptured _ →
+            listen l handler
+
+
+nextEvent : V → Error.DeviceEvent
+nextEvent l =
+    queue = Js.get l "queue"
+    if int (Js.get queue "length") > 0 then
+        Js.to (Js.call queue "shift" [])
+    else
+        Task.callback λresume →
+            Js.set l "waiter" (Js.from resume)
+            λ⊤ → Js.set l "waiter" Js.null
 
 
 -- ---- One checked host operation (§6.1) ------------------------------------------
@@ -704,7 +1258,26 @@ pub checkedMaking :
     , sync (V → ⊤)
     → Result Error.Error V
 checkedMaking device operation labels call adopt discard =
-    case admit device operation of
+    checkedIn Js.null device operation labels call adopt discard
+
+
+--| `checkedMaking` for a forwarding call of the diagnostic session
+--| `session` (§6.4), or for an ordinary call when it is null. Under a
+--| session the call presents its lease instead of being refused by it,
+--| and runs under the session's scopes, with no scopes of its own: so
+--| nothing is waited for, and what it made is provisional until the
+--| session settles it.
+pub checkedIn :
+      V
+    , V
+    , String
+    , List String
+    , sync (⊤ → Result Error.Error V)
+    , sync (V → ⊤)
+    , sync (V → ⊤)
+    → Result Error.Error V
+checkedIn session device operation labels call adopt discard =
+    case admitIn session device operation of
         Err problem →
             Err problem
 
@@ -712,7 +1285,7 @@ checkedMaking device operation labels call adopt discard =
             r = recordOf device
             scopes = newScopes ⊤
             Js.set scopes "discard" (Js.from discard)
-            outcome = section device r scopes operation labels call
+            outcome = section session device r scopes operation labels call
             case outcome of
                 Ok made →
                     Js.call table "set"
@@ -721,6 +1294,7 @@ checkedMaking device operation labels call adopt discard =
                             [ ( "device", r )
                             , ( "native", device )
                             , ( "status", Js.from "provisional" )
+                            , ( "batch", session )
                             ]
                         ]
                         ▷ ignore
@@ -744,8 +1318,39 @@ checkedMaking device operation labels call adopt discard =
                             -- `outcome` is `Ok made` here: a failed call is
                             -- its own failure.
                             made = Js.get scopes "made"
-                            Js.set (recordOf made) "status" (Js.from "accepted")
+                            publish session made discard?
                             Ok made
+
+
+--| Publish what a checked operation made: accepted, or, under the
+--| diagnostic session `session`, provisional until the session settles it
+--| (§6.4), usable meanwhile by the session's forwarding calls. A session
+--| that ended before the outcome arrived rejects it, and the call is
+--| `SessionEnded`.
+pub publish : V, V, sync (V → ⊤) → Result Error.Error ⊤
+publish session made discard =
+    o = recordOf made
+    if Js.isNull session then
+        Js.set o "status" (Js.from "accepted")
+        Ok ⊤
+    else if not (Js.to (Js.get session "live")) then
+        Js.set o "status" (Js.from "rejected")
+        discard made
+        Err (Error.InvalidInput (Error.SessionState Error.SessionEnded))
+    else
+        Js.set o "status" (Js.from "provisional")
+        Js.set o "batch" session
+        Js.call (Js.get session "made") "push"
+            [ Js.object [ ( "made", made ), ( "discard", Js.from discard ) ] ]
+            ▷ ignore
+        Ok ⊤
+
+
+-- An ordinary call is admitted by the device; a forwarding call by its
+-- session.
+admitIn : V, V, String → Result Error.Error ⊤
+admitIn session device operation =
+    if Js.isNull session then admit device operation else sessionAdmit session device operation
 
 
 --| A checked operation whose native call answers with a promise
@@ -764,14 +1369,29 @@ pub checkedAwait :
     , sync (Bool, V → Outcome (Result Error.Error V))
     → Result Error.Error V
 checkedAwait device operation labels call classify =
-    case admit device operation of
+    checkedAwaitIn Js.null device operation labels call classify
+
+
+--| `checkedAwait` for a forwarding call of the diagnostic session
+--| `session`, or an ordinary one when it is null: under a session the call
+--| has no scopes of its own, and only its promise is waited for.
+pub checkedAwaitIn :
+      V
+    , V
+    , String
+    , List String
+    , sync (⊤ → Result Error.Error V)
+    , sync (Bool, V → Outcome (Result Error.Error V))
+    → Result Error.Error V
+checkedAwaitIn session device operation labels call classify =
+    case admitIn session device operation of
         Err problem →
             Err problem
 
         Ok _ →
             r = recordOf device
             scopes = newScopes ⊤
-            outcome = section device r scopes operation labels call
+            outcome = section session device r scopes operation labels call
             case outcome of
                 Ok promise →
                     Js.set scopes "owed" (Js.from (int (Js.get scopes "owed") + 1))
@@ -838,8 +1458,13 @@ hostSettled r scopes operation outcome =
 -- Steps 5 and 6 up to the combination: wait, throw what was unexpected,
 -- and give what the scopes observed, or the loss that wins.
 settle : V, V, String → Result Error.Error (List Observation)
-settle r scopes operation =
-    waited = waitScopes r scopes
+settle r scopes operation = settledWith r scopes operation (waitScopes r scopes)
+
+
+-- Step 6's start, once the wait ended as `waited`: throw what was
+-- unexpected, or give what the scopes observed, or the loss that wins.
+settledWith : V, V, String, Waited → Result Error.Error (List Observation)
+settledWith r scopes operation waited =
     unexpected = Js.get scopes "unexpected"
     if not (Js.isNull unexpected) then
         Js.throw unexpected
@@ -925,25 +1550,41 @@ reject scopes =
 -- Steps 2–4: enter the section, push the three scopes, make the call, and
 -- in a finaliser pop every scope that was pushed, in reverse, with both
 -- reactions attached at once, then leave the section. A push or a call
--- that throws goes on after the pops: a defect.
-section : V, V, V, String, List String, sync (⊤ → Result Error.Error V) → Result Error.Error V
-section device r scopes operation labels call =
+-- that throws goes on after the pops: a defect. Under a diagnostic
+-- session the section pushes nothing: the call runs under the session's
+-- scopes (§6.4).
+section :
+      V
+    , V
+    , V
+    , V
+    , String
+    , List String
+    , sync (⊤ → Result Error.Error V)
+    → Result Error.Error V
+section session device r scopes operation labels call =
     if Js.to (Js.get r "section") then
         defect "a GPU call entered a device's scope section from inside it"
     else
         Js.set r "section" (Js.from True)
-        Js.set r "sectionScopes" scopes
         Js.set scopes "native" device
         Js.set scopes "name" (Js.from operation)
         Js.set scopes "labels" (Js.from labels)
-        Js.finally
-            (λ⊤ →
-                pushSegment device scopes
-                call ⊤
-            )
-            λ⊤ →
-                Js.set scopes "owed" (Js.get scopes "pushed")
-                popSegment device r scopes
+        if Js.isNull session then
+            Js.set r "sectionScopes" scopes
+            Js.finally
+                (λ⊤ →
+                    pushSegment device scopes
+                    call ⊤
+                )
+                λ⊤ →
+                    Js.set scopes "owed" (Js.get scopes "pushed")
+                    popSegment device r scopes
+                    Js.set r "sectionScopes" Js.null
+                    Js.set r "section" (Js.from False)
+        else
+            Js.set r "sectionScopes" (Js.object [ ( "session", session ) ])
+            Js.finally (λ⊤ → call ⊤) λ⊤ →
                 Js.set r "sectionScopes" Js.null
                 Js.set r "section" (Js.from False)
 
@@ -979,13 +1620,16 @@ popSegment device r scopes =
 --| Close the current scope segment of the section open on `device` and
 --| start one named `name` (§6.3): its three scopes are popped under the
 --| old name, and three new ones pushed. Only inside a section: anywhere
---| else, a wrapper invariant broke.
+--| else, a wrapper invariant broke. A section of a diagnostic session has
+--| no scopes of its own, so a segment there changes nothing (§6.4).
 pub segment : V, String → ⊤
 segment device name =
     r = recordOf device
     scopes = Js.get r "sectionScopes"
     if Js.isNullish scopes then
         defect "a scope segment outside a scope section"
+    else if not (Js.isUndefined (Js.get scopes "session")) then
+        ⊤
     else
         popSegment device r scopes
         Js.set scopes "name" (Js.from name)

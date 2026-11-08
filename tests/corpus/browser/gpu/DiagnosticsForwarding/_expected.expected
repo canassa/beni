@@ -1,0 +1,121 @@
+-- load
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #accepted
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <ol>
+      <li>"createBuffer: Ok made"</li>
+      <li>"createMappedBuffer: Ok made"</li>
+      <li>"getMappedRange: Ok made"</li>
+      <li>"createSampler: Ok made"</li>
+      <li>"createTexture: Ok made"</li>
+      <li>"createView: Ok made"</li>
+      <li>"createBindGroupLayout: Ok made"</li>
+      <li>"createBindGroup: Ok made"</li>
+      <li>"createPipelineLayout: Ok made"</li>
+      <li>"createShaderModule: Ok made"</li>
+      <li>"createComputePipeline: Ok made"</li>
+      <li>"createComputePipelineAsync: Ok made"</li>
+      <li>"ComputePipeline.getBindGroupLayout: Ok made"</li>
+      <li>"createRenderPipeline: Ok made"</li>
+      <li>"createRenderPipelineAsync: Ok made"</li>
+      <li>"RenderPipeline.getBindGroupLayout: Ok made"</li>
+      <li>"createQuerySet: Ok made"</li>
+      <li>"writeBuffer: Ok made"</li>
+      <li>"writeTexture: Ok made"</li>
+      <li>"Encode.run: Ok made"</li>
+      <li>"submit: Ok made"</li>
+      <li>"Encode.bundle: Ok made"</li>
+      <li>"map: Ok made"</li>
+      <li>"withMapped: Ok made"</li>
+      <li>"configure: Ok made"</li>
+      <li>"Frame.submit: Ok made"</li>
+      <li>"Batch.run: Ok made"</li>
+      <li>"session: Ok Ok made, observed []"</li>
+      <li>"batch after: Ok ready"</li>
+      <li>"buffer after: Ok written"</li>
+      <li>"frame after: Ok drawn"</li>
+      <li>"receipt after: Ok done"</li>
+    </ol>
+  </main>
+</body>
+-- click #rejected
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <ol>
+      <li>"createBuffer: Ok made"</li>
+      <li>"createMappedBuffer: Ok made"</li>
+      <li>"getMappedRange: Ok made"</li>
+      <li>"createSampler: Ok made"</li>
+      <li>"createTexture: Ok made"</li>
+      <li>"createView: Ok made"</li>
+      <li>"createBindGroupLayout: Ok made"</li>
+      <li>"createBindGroup: Ok made"</li>
+      <li>"createPipelineLayout: Ok made"</li>
+      <li>"createShaderModule: Ok made"</li>
+      <li>"createComputePipeline: Ok made"</li>
+      <li>"createComputePipelineAsync: Ok made"</li>
+      <li>"ComputePipeline.getBindGroupLayout: Ok made"</li>
+      <li>"createRenderPipeline: Ok made"</li>
+      <li>"createRenderPipelineAsync: Ok made"</li>
+      <li>"RenderPipeline.getBindGroupLayout: Ok made"</li>
+      <li>"createQuerySet: Ok made"</li>
+      <li>"writeBuffer: Ok made"</li>
+      <li>"writeTexture: Ok made"</li>
+      <li>"Encode.run: Ok made"</li>
+      <li>"submit: Ok made"</li>
+      <li>"Encode.bundle: Ok made"</li>
+      <li>"map: Ok made"</li>
+      <li>"withMapped: Ok made"</li>
+      <li>"configure: Ok made"</li>
+      <li>"Frame.submit: Ok made"</li>
+      <li>"Batch.run: Ok made"</li>
+      <li>"session: Ok Ok made, observed []"</li>
+      <li>"batch after: Ok ready"</li>
+      <li>"buffer after: Ok written"</li>
+      <li>"frame after: Ok drawn"</li>
+      <li>"receipt after: Ok done"</li>
+      <li>"createBuffer: Ok made"</li>
+      <li>"createMappedBuffer: Ok made"</li>
+      <li>"getMappedRange: Ok made"</li>
+      <li>"createSampler: Ok made"</li>
+      <li>"createTexture: Ok made"</li>
+      <li>"createView: Ok made"</li>
+      <li>"createBindGroupLayout: Ok made"</li>
+      <li>"createBindGroup: Ok made"</li>
+      <li>"createPipelineLayout: Ok made"</li>
+      <li>"createShaderModule: Ok made"</li>
+      <li>"createComputePipeline: Ok made"</li>
+      <li>"createComputePipelineAsync: Ok made"</li>
+      <li>"ComputePipeline.getBindGroupLayout: Ok made"</li>
+      <li>"createRenderPipeline: Ok made"</li>
+      <li>"createRenderPipelineAsync: Ok made"</li>
+      <li>"RenderPipeline.getBindGroupLayout: Ok made"</li>
+      <li>"createQuerySet: Ok made"</li>
+      <li>"writeBuffer: Ok made"</li>
+      <li>"writeTexture: Ok made"</li>
+      <li>"Encode.run: Ok made"</li>
+      <li>"submit: Ok made"</li>
+      <li>"Encode.bundle: Ok made"</li>
+      <li>"map: Ok made"</li>
+      <li>"withMapped: Ok made"</li>
+      <li>"configure: Ok made"</li>
+      <li>"Frame.submit: Ok made"</li>
+      <li>"Batch.run: Ok made"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"batch after: Err InvalidInput ResourceRejected batch"</li>
+      <li>"buffer after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"frame after: Err CanvasFailed CanvasUnconfigured"</li>
+    </ol>
+  </main>
+</body>

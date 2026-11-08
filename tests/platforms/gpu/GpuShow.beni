@@ -3,6 +3,7 @@
 --! between the fake and a browser.
 
 import Gpu
+import Gpu.Diagnostics
 import Gpu.Error as Error
 import Gpu.Flags as Flags
 import Gpu.Limits as Limits
@@ -405,3 +406,67 @@ readResult r f =
 
         Err (Gpu.MappedRange.Allocation _) →
             "Err Allocation"
+
+
+--| An error a scope or an event reported: its class, never its message.
+pub gpuError : Error.GpuError → String
+gpuError found =
+    case found of
+        Error.ValidationError _ →
+            "ValidationError"
+
+        Error.OutOfMemoryError _ →
+            "OutOfMemoryError"
+
+        Error.InternalError _ →
+            "InternalError"
+
+
+--| What a diagnostic session's pop gave.
+pub popped : Result Error.DiagnosticError (Maybe Error.GpuError) → String
+popped r =
+    case r of
+        Ok Nothing →
+            "Ok none"
+
+        Ok (Just found) →
+            "Ok " ++ gpuError found
+
+        Err Error.ScopeUnderflow →
+            "Err ScopeUnderflow"
+
+        Err (Error.SessionRefused input) →
+            "Err SessionRefused " ++ inputError input
+
+
+--| A diagnostic session's result, with `f` for the callback's value.
+pub sessionReport : Result Error.Error (Gpu.Diagnostics.DiagnosticReport a), (a → String) → String
+sessionReport r f =
+    case r of
+        Err problem →
+            "Err " ++ error problem
+
+        Ok got →
+            value =
+                case got.value of
+                    Just v →
+                        f v
+
+                    Nothing →
+                        "withheld"
+            "Ok "
+                ++ value
+                ++ ", observed ["
+                ++ String.join (List.map got.observed gpuError) ", "
+                ++ "]"
+
+
+--| A device's event.
+pub deviceEvent : Error.DeviceEvent → String
+deviceEvent event =
+    case event of
+        Error.Uncaptured found →
+            "Uncaptured " ++ gpuError found
+
+        Error.Lost l →
+            "Lost " ++ loss l

@@ -1,0 +1,20 @@
+--! The forwarding form of `Gpu.Surface.configure` (`docs/design/webgpu.md`
+--! §6.4), under a diagnostic session on the configuration's device.
+
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Types as Types
+import Js
+
+
+--| `Gpu.Surface.configure` under the session: the surface is configured at
+--| once, and frames may use it; if the session rejects what it made, the
+--| surface is unconfigured for frames again, as after a failed `configure`.
+pub configure :
+      Handle.DiagnosticSession
+    , Handle.Surface
+    , Types.CanvasConfiguration
+    → Result Error.Error ⊤
+configure session surface configuration =
+    Make.configureIn (Js.from session) (Js.from surface) configuration

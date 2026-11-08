@@ -1,0 +1,24 @@
+--! The forwarding form of `Gpu.Texture.createView` (`docs/design/webgpu.md`
+--! §6.4), under a diagnostic session, as `Gpu.Diagnostics.Device`'s are.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Types as Types
+import Js
+
+
+--| `Gpu.Texture.createView` under the session; the texture may be one the
+--| session made.
+pub createView :
+      Handle.DiagnosticSession
+    , Handle.Texture
+    , Types.TextureViewDescriptor
+    → Result Error.Error Handle.TextureView
+createView session texture descriptor =
+    native = Js.from texture
+    device = Js.get (Engine.recordOf native) "native"
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.textureView device Js.null native descriptor))
+        Js.to

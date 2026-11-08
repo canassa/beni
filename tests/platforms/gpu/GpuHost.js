@@ -141,12 +141,24 @@ const fakeDevice = (adapter, descriptor) => {
     if (scope === undefined) return globalThis.Promise.reject(new globalThis.DOMException("the error scope stack is empty", "OperationError"));
     return globalThis.Promise.resolve(scope.error);
   };
+  // The device is an event target of `uncapturederror` only: an error no
+  // scope of its filter takes is dispatched there, on a microtask (a
+  // browser dispatches it on a task).
+  const eventListeners = [];
+  device.addEventListener = (type, listener) => {
+    if (type === "uncapturederror") eventListeners.push(listener);
+  };
+  device.dispatchEvent = (event) => {
+    if (event.type === "uncapturederror") for (const listener of eventListeners.slice()) listener.call(device, event);
+    return true;
+  };
   const report = (filter, error) => {
     for (let i = scopes.length - 1; i >= 0; i -= 1) {
       if (scopes[i].filter !== filter) continue;
       if (scopes[i].error === null) scopes[i].error = error;
       return;
     }
+    globalThis.queueMicrotask(() => device.dispatchEvent({ type: "uncapturederror", error }));
   };
   deviceReports.set(device, report);
   // Two of the specification's sampler rules, enough for the fixtures.
@@ -637,6 +649,7 @@ let controlLoss = false;
 // native method of a device was called.
 let popFaults = {};
 let holdPops = false;
+let pushThrowsAt = 0;
 let createThrows = false;
 let moreFeatures = false;
 // The buffer and queue faults of the scenario, by the native call they
@@ -918,6 +931,14 @@ const faults = {
   "pops-held": () => {
     holdPops = true;
   },
+  // A device's second push throws (a diagnostic session's own scopes), or
+  // its fourth (the first scope a session pushes for its user).
+  "push-throws-open": () => {
+    pushThrowsAt = 2;
+  },
+  "push-throws-user": () => {
+    pushThrowsAt = 4;
+  },
   "create-throws": () => {
     createThrows = true;
   },
@@ -983,6 +1004,7 @@ faults["render-pipeline-range"] = () => {
 // to throw.
 const instrument = (device) => {
   const stack = [];
+  scopeStacks.set(device, stack);
   const count = (name) => {
     callCounts[name] = (callCounts[name] ?? 0) + 1;
   };
@@ -1086,7 +1108,10 @@ const instrument = (device) => {
   wrap(queue, "onSubmittedWorkDone", function (original, ...args) {
     return asked(bufferFaults.workDone === undefined ? original.apply(this, args) : bufferFaults.workDone());
   });
+  let pushes = 0;
   wrap(device, "pushErrorScope", function (original, filter) {
+    pushes += 1;
+    if (pushes === pushThrowsAt) throw new globalThis.TypeError(`injected failure of push ${pushes}`);
     stack.push(filter);
     return original.call(this, filter);
   });
@@ -1164,12 +1189,14 @@ let secureContext = null;
 // holds. Each `inject` starts from it, so faults never pile up.
 function prepare() {
   renderLog.length = 0;
+  raisedFlags.clear();
   contextNull = false;
   if (!native()) fakeCanvases();
   wrapContexts();
   controlLoss = false;
   popFaults = {};
   holdPops = false;
+  pushThrowsAt = 0;
   createThrows = false;
   moreFeatures = false;
   holdRequests = false;
@@ -1335,3 +1362,64 @@ export const keepBatch = (batch) => {
 };
 export const keptBatch = (_unit) => keptBatchValue;
 
+
+// A native call the engine never makes: a sampler the device refuses, made
+// outside every error scope, so its validation error is uncaptured.
+export const escape = (device) => {
+  device.createSampler({ lodMinClamp: 10, lodMaxClamp: 1 });
+  // An answer of the GPU process after the error, for the page to wait on.
+  device.queue.onSubmittedWorkDone();
+  return null;
+};
+
+// An `uncapturederror` event whose error is a plain object named like a GPU
+// error, dispatched on the device.
+export const escapeSpoofed = (device) => {
+  const event = new globalThis.Event("uncapturederror");
+  globalThis.Object.defineProperty(event, "error", { value: { name: "GPUValidationError", message: "a plain object, not a GPUValidationError" } });
+  device.dispatchEvent(event);
+  return null;
+};
+
+// Every instrumented device's error scope stack, as the page pushed it.
+const scopeStacks = new globalThis.WeakMap();
+
+// Log how many error scopes of the device are open three tasks later:
+// after a throw, once the runtime's teardown (a task after the throw) ran
+// the finalisers of every fiber.
+export const logScopesLater = (device) => {
+  const log = () => globalThis.console.log(`error scopes open: ${(scopeStacks.get(device) ?? []).length}`);
+  globalThis.setTimeout(() => globalThis.setTimeout(() => globalThis.setTimeout(log, 0), 0), 0);
+  return null;
+};
+
+// Throw a native `TypeError`, as application code might.
+export const fail = (message) => {
+  throw new globalThis.TypeError(message);
+};
+
+// How many error scopes of the device are open now, as the page pushed them.
+export const openScopes = (device) => (scopeStacks.get(device) ?? []).length;
+
+// Write `line` to the console, where a page that stops still shows it.
+export const log = (line) => {
+  globalThis.console.log(line);
+  return null;
+};
+
+// Named flags a page raises and reads, cleared by each `inject`: what lets
+// one fiber wait for another without joining it.
+const raisedFlags = new globalThis.Set();
+export const raise = (name) => {
+  raisedFlags.add(name);
+  return null;
+};
+export const raised = (name) => raisedFlags.has(name);
+
+// Log what `probe` answers three tasks later, as `logScopesLater` does:
+// after a throw, what the runtime's teardown left.
+export const logLater = (label, probe) => {
+  const log = () => globalThis.console.log(`${label}: ${probe(null)}`);
+  globalThis.setTimeout(() => globalThis.setTimeout(() => globalThis.setTimeout(log, 0), 0), 0);
+  return null;
+};

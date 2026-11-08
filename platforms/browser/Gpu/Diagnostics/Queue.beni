@@ -1,0 +1,56 @@
+--! The forwarding forms of `Gpu.Queue`'s checked operations
+--! (`docs/design/webgpu.md` §6.4), under a diagnostic session, as
+--! `Gpu.Diagnostics.Device`'s are. A submit's receipt waits for its work as
+--! any receipt does; it is usable once the session accepts it.
+
+import Binary
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Queue as Queue
+import Gpu.Types as Types
+import Js
+
+
+--| `Gpu.Queue.writeBuffer` under the session.
+pub writeBuffer :
+      Handle.DiagnosticSession
+    , Handle.Queue
+    , Handle.Buffer
+    , Queue.WriteBufferSource
+    → Result Error.Error ⊤
+writeBuffer session queue buffer write =
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.writeBuffer (Js.from queue) Js.null buffer write))
+        λ_ → ⊤
+
+
+--| `Gpu.Queue.submit` under the session: one native submit, and its
+--| receipt.
+pub submit :
+      Handle.DiagnosticSession
+    , Handle.Queue
+    , List Handle.CommandBuffer
+    → Result Error.Error Handle.Submission
+submit session queue commands =
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.submit (Js.from queue) Js.null commands))
+        Js.to
+
+
+--| `Gpu.Queue.writeTexture` under the session.
+pub writeTexture :
+      Handle.DiagnosticSession
+    , Handle.Queue
+    , Types.TexelCopyTextureInfo
+    , Binary.Source
+    , Types.TexelCopyBufferLayout
+    , Types.Extent3D
+    → Result Error.Error ⊤
+writeTexture session queue destination data layout extent =
+    Result.map
+        (Make.checkedIn
+            (Js.from session)
+            (Make.writeTexture (Js.from queue) Js.null destination data layout extent)
+        )
+        λ_ → ⊤

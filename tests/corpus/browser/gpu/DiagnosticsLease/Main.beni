@@ -1,0 +1,89 @@
+-- The diagnostic lease (docs/design/webgpu.md §6.4, #1270): a session takes
+-- its device's lease at once, and while it holds it an ordinary checked
+-- operation is refused with `DeviceLeased` at once — from the session's own
+-- callback, from a child fiber the callback joins, and from an unrelated
+-- fiber — with no native call. The order transcript shows that nothing
+-- waits: each refusal is noted before a microtask armed just before the
+-- call has run, and the callback's join of its child returns. A second
+-- session on the leased device is refused the same way, a session on
+-- another device is not, and after the session the device works again.
+import Gpu.Device
+import Gpu.Diagnostics
+import Gpu.Diagnostics.Device
+import Gpu.Handle exposing (Device)
+import Gpu.Types as Types
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+-- An ordinary sampler: its result, the native calls it made, and whether a
+-- microtask ran while it was made.
+sampler : Device → String
+sampler d =
+    before = GpuHost.calls "createSampler"
+    GpuHost.armMicrotask ⊤
+    got = GpuShow.checked (Gpu.Device.createSampler d Types.samplerDescriptor) λ_ → "sampler"
+    waited = GpuHost.microtaskHasRun ⊤
+    got
+        ++ ", native calls "
+        ++ String.fromInt (GpuHost.calls "createSampler" - before)
+        ++ ", waited "
+        ++ GpuKit.yesNo waited
+
+
+lease : ⊤ → List String
+lease ⊤ = GpuKit.with "none" λd →
+    _ = GpuHost.notes ⊤
+    other = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        GpuHost.note ("unrelated fiber: " ++ sampler d)
+
+    report = Gpu.Diagnostics.run d λsession →
+        GpuHost.note ("callback: " ++ sampler d)
+        child = Task.spawn λ⊤ → GpuHost.note ("joined child: " ++ sampler d)
+        Task.join child
+        again = Gpu.Diagnostics.run d λ_ → ⊤
+        GpuHost.note ("second session: " ++ GpuShow.sessionReport again λ_ → "⊤")
+        forwarded = Gpu.Diagnostics.Device.createSampler session d Types.samplerDescriptor
+        GpuHost.note ("forwarded: " ++ GpuShow.checked forwarded λ_ → "sampler")
+        "done"
+    Task.join other
+    [ …GpuHost.notes ⊤
+    , "session: " ++ GpuShow.sessionReport report λv → v
+    , "after the session: " ++ sampler d
+    ]
+
+
+twoDevices : ⊤ → List String
+twoDevices ⊤ = GpuKit.with "none" λd →
+    case GpuKit.device "none" of
+        Err why →
+            [ why ]
+
+        Ok e2 →
+            report = Gpu.Diagnostics.run d λ_ →
+                ordinary = sampler e2
+
+                inner = Gpu.Diagnostics.run e2 λsession →
+                    GpuShow.checked
+                        (Gpu.Diagnostics.Device.createSampler session e2 Types.samplerDescriptor)
+                        λ_ → "sampler"
+                [ "other device, ordinary: " ++ ordinary
+                , "other device, a session: " ++ GpuShow.sessionReport inner λv → v
+                ]
+            lines =
+                case report of
+                    Ok got →
+                        Maybe.withDefault got.value []
+
+                    Err _ →
+                        []
+            [ "leased device: " ++ GpuShow.sessionReport report λ_ → "done", …lines ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "lease", lease ), ( "twoDevices", twoDevices ) ]

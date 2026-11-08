@@ -1,0 +1,43 @@
+-- load
+<body>
+  <main>
+    <button id="lease">"lease"</button>
+    <button id="twoDevices">"twoDevices"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #lease
+<body>
+  <main>
+    <button id="lease">"lease"</button>
+    <button id="twoDevices">"twoDevices"</button>
+    <ol>
+      <li>"callback: Err InvalidInput SessionState DeviceLeased, native calls 0, waited no"</li>
+      <li>"joined child: Err InvalidInput SessionState DeviceLeased, native calls 0, waited no"</li>
+      <li>"unrelated fiber: Err InvalidInput SessionState DeviceLeased, native calls 0, waited no"</li>
+      <li>"second session: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"forwarded: Ok sampler"</li>
+      <li>"session: Ok done, observed []"</li>
+      <li>"after the session: Ok sampler, native calls 1, waited yes"</li>
+    </ol>
+  </main>
+</body>
+-- click #twoDevices
+<body>
+  <main>
+    <button id="lease">"lease"</button>
+    <button id="twoDevices">"twoDevices"</button>
+    <ol>
+      <li>"callback: Err InvalidInput SessionState DeviceLeased, native calls 0, waited no"</li>
+      <li>"joined child: Err InvalidInput SessionState DeviceLeased, native calls 0, waited no"</li>
+      <li>"unrelated fiber: Err InvalidInput SessionState DeviceLeased, native calls 0, waited no"</li>
+      <li>"second session: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"forwarded: Ok sampler"</li>
+      <li>"session: Ok done, observed []"</li>
+      <li>"after the session: Ok sampler, native calls 1, waited yes"</li>
+      <li>"leased device: Ok done, observed []"</li>
+      <li>"other device, ordinary: Ok sampler, native calls 1, waited yes"</li>
+      <li>"other device, a session: Ok Ok sampler, observed []"</li>
+    </ol>
+  </main>
+</body>

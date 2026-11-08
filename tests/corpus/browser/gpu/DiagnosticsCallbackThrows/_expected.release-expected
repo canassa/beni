@@ -1,0 +1,15 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+console.log: leased at the throw: yes
+(threw: TypeError: the callback fails)
+(the DOM did not change)
+-- advance 10
+console.log: error scopes open: 0
+console.log: leased after the teardown: no
+(the DOM did not change)

@@ -45,6 +45,11 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Surface`: `fromElement`, `fromCanvas`, `fromOffscreen`, `configure`, `unconfigure`,
   `getConfiguration`, `canvas`.
 - `Gpu.Frame`: `submit`, `batch`, `getCurrentTexture`, `encode`, `submitCommands`.
+- `Gpu.Diagnostics`: `run`, `nested`, `pushErrorScope`, `popErrorScope`, `state` and
+  `DiagnosticReport`. `Gpu.Diagnostics.Device`, `.Texture`, `.ComputePipeline`,
+  `.RenderPipeline`, `.Queue`, `.Buffer`, `.Surface`, `.Encode`, `.Batch` and `.Frame`: the
+  forwarding form of each checked operation, with the session as the first argument.
+- `Gpu.Device.eachEvent` and `Gpu.Device.onEvent`: the device's events, `Gpu.Error.DeviceEvent`.
 
 ## Rules
 
@@ -105,7 +110,8 @@ browser's WebGPU API with types. Only the main thread has them now.
    submit. An empty list is a submit too. Nothing waits if you do not call `done`.
 9. **Some calls run while a diagnostic session holds the device**: `unmap`, `destroy`,
    `currentMapping`, the mapped range reads and writes, and `Gpu.Submission.done`. A checked
-   operation (`map`, `createBuffer`, `writeBuffer`, `submit`) returns `DeviceLeased`.
+   operation (`map`, `createBuffer`, `writeBuffer`, `submit`) returns `DeviceLeased`; use its
+   form in `Gpu.Diagnostics.Buffer` or `Gpu.Diagnostics.Queue` (see *Diagnostic sessions*).
 
 ## Encoding, compute and rendering
 
@@ -132,6 +138,71 @@ Encoding, batches, compute and render passes are in `references/webgpu-render.md
    surface again.
 7. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
    `UnsupportedCapability`. A field the browser does not report is `Default`.
+
+## Diagnostic sessions
+
+1. **A session gives you the native error scopes.** `Gpu.Diagnostics.run device body` takes
+   the device's lease and calls `body` with a `DiagnosticSession`. In `body`,
+   `Gpu.Diagnostics.pushErrorScope session filter` pushes a scope and
+   `Gpu.Diagnostics.popErrorScope session` pops it and gives the one error it kept, or
+   `Nothing`. A pop with no scope of yours open gives `ScopeUnderflow`.
+2. **The lease is taken at once or refused.** `run` on a device whose lease is held gives
+   `InvalidInput (SessionState DeviceLeased)`. Nothing waits for a lease.
+3. **While the lease is held, every ordinary checked operation on that device gives
+   `DeviceLeased` at once**: from `body`, from a fiber that `body` starts or joins, and from
+   every other fiber. Use the forwarding forms: `Gpu.Diagnostics.Device.createBuffer session
+   device descriptor` and the others take the session first, then the usual arguments.
+4. **These calls run as usual under a lease**: `destroy`, `unmap` and `unconfigure`; the reads
+   of state (`features`, `limits`, `label`, `mapState`, `currentMapping`, `loss`, `queue`,
+   `getConfiguration`); `getMappedRange` and the mapped range reads and writes; and the waits
+   on earlier work (`Gpu.Submission.done`, `Gpu.Queue.onSubmittedWorkDone`,
+   `Gpu.Shader.getCompilationInfo`, a map that started before, `awaitLost`, `eachEvent`,
+   `onEvent`).
+5. **A forwarding call has no scopes of its own.** The device's errors go to your scopes, or to
+   the session's own scopes when no scope of yours takes them. What it makes is provisional:
+   the session can use it, and it is accepted only when the session ends and no scope reported
+   an error.
+6. **The result is a report.** `run` gives `Ok { value, observed }`: `value` is `Nothing` when a
+   scope of yours reported an error, and then what the session made is rejected. An error that
+   only the session's own scopes caught gives `Err` (`Validation`, `OutOfMemory`, `Internal`),
+   and a loss gives `DeviceLost`.
+7. **The lease ends when `body` ends**: when it returns, when it is cancelled, and when it
+   throws. Scopes that `body` left open are popped then. A session used after that gives
+   `SessionEnded`. `Gpu.Diagnostics.nested` opens a session inside a session; while it is open,
+   the outer session's calls give `DeviceLeased`.
+8. **Do not wait in a session for work that uses the device through ordinary calls.** A fiber
+   that retries an ordinary call until it does not get `DeviceLeased` never succeeds while the
+   session waits for it, and the session never ends. Send that work through the session, or do
+   it after the session.
+
+```beni platform=browser-tea
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Device
+import Gpu.Error as Error
+import Gpu.Handle exposing (Device)
+import Gpu.Types as Types
+
+
+-- Whether the device refuses `descriptor`, seen through a scope of its own.
+refuses : Device, Types.SamplerDescriptor → Result Error.Error Bool
+refuses device descriptor =
+    report = Diagnostics.run device λsession →
+        _ = Diagnostics.pushErrorScope session Types.FilterValidation
+        _ = Gpu.Diagnostics.Device.createSampler session device descriptor
+        Diagnostics.popErrorScope session
+    Result.map report λr → not (List.isEmpty r.observed)
+```
+
+## Device events
+
+1. **`Gpu.Device.eachEvent device handler` calls `handler` with each event of the device.** It
+   returns after the `Lost` event. A listener that starts after the loss gets `Lost` at once.
+   Cancel the fiber to stop it.
+2. **`Gpu.Device.onEvent device tag` is the same as a subscription** in `browser-tea`.
+3. **An `Uncaptured` event is a defect.** The engine runs every call under an error scope, so an
+   error that no scope took is a fault in beni or in the browser. The listeners get the event,
+   and then the program that made the device stops. Do not use events to find errors: each
+   operation returns its own.
 
 ## Example
 
@@ -204,5 +275,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §6.2, §7, §7.1, §8, §8.2, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/webgpu.md` §2–§5, §6.2, §6.4, §7, §7.1, §8, §8.1, §8.2, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
 modules' doc comments.

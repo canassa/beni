@@ -1,0 +1,25 @@
+-- A defect, never a typed error (ledger §7, `pushErrorScope`: an unexpected
+-- throw is a defect): the first scope a diagnostic session pushes for its
+-- user throws a `TypeError`. The throw goes on unchanged; the session ends
+-- with its callback, so its finaliser pops the session's own three scopes,
+-- and the host logs none left open once the runtime's teardown ran.
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Types as Types
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "push-throws-user" λd →
+    r = Diagnostics.run d λsession →
+        GpuHost.logScopesLater d
+        GpuShow.inputResult (Diagnostics.pushErrorScope session Types.FilterValidation) λ_ →
+            "pushed"
+    [ "unreachable: " ++ GpuShow.sessionReport r λv → v ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

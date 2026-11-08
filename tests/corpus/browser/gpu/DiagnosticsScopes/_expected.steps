@@ -1,0 +1,9 @@
+click #captured
+click #clean
+click #escaped
+click #underflow
+click #unclosed
+click #filters
+click #nested
+click #ended
+click #wrongDevice

@@ -1,0 +1,147 @@
+--! Diagnostic sessions (`docs/design/webgpu.md` §6.4): the device's native
+--! error scopes, pushed and popped by hand, with no unchecked handle and no
+--! way around the engine's checks.
+--!
+--! `run` takes the device's diagnostic **lease** at once, or is refused: a
+--! session never waits for one. While the lease is held, every ordinary
+--! checked operation on the device — from the session's own callback, from
+--! a fiber it starts or joins, or from any other fiber — returns
+--! `InvalidInput (SessionState DeviceLeased)` at once. Only the forwarding
+--! calls of the `Gpu.Diagnostics.*` modules, which take the session as
+--! their first argument, run on the device then. They run under the
+--! session's scopes: what they make is provisional, usable by the session,
+--! and accepted only when the session ends with no error reported. What
+--! makes no error scope runs as usual under a lease: teardown (`destroy`,
+--! `unmap`, `unconfigure`), reads of state (`features`, `limits`, `label`,
+--! `mapState`, `currentMapping`, `loss`, …), mapped memory
+--! (`getMappedRange`, `Gpu.MappedRange`), and waits on work issued before
+--! (`Gpu.Submission.done`, a pending `map`, `awaitLost`, `eachEvent`,
+--! `onEvent`).
+--!
+--! **The livelock hazard is the program's.** A session that waits for a
+--! fiber which retries an ordinary call on the leased device until it
+--! succeeds never ends: the retry needs the lease to end, and the lease
+--! needs the callback to return. The engine cannot see that cycle. Work a
+--! session waits for must not touch the leased device through ordinary
+--! calls: route it through the session, or do it after the session ends.
+--!
+--!     probe : Gpu.Handle.Device, Gpu.Types.SamplerDescriptor
+--!         → Result Gpu.Error.Error (Gpu.Diagnostics.DiagnosticReport (Maybe Gpu.Error.GpuError))
+--!     probe device descriptor =
+--!         Gpu.Diagnostics.run device λsession →
+--!             _ = Gpu.Diagnostics.pushErrorScope session Gpu.Types.FilterValidation
+--!             _ = Gpu.Diagnostics.Device.createSampler session device descriptor
+--!             case Gpu.Diagnostics.popErrorScope session of
+--!                 Ok found →
+--!                     found
+--!
+--!                 Err _ →
+--!                     Nothing
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (DiagnosticError, GpuError, InputError)
+import Gpu.Handle as Handle
+import Gpu.Types as Types
+import Js
+import Task
+
+
+type alias V =
+    Js.Value
+
+
+--| What a session observed: the callback's value, `Nothing` when a scope
+--| of the session reported an error — then what the session made is
+--| rejected, since it may be invalid — and every error the session's own
+--| scopes reported, in the order they arrived. A scope keeps one error,
+--| the first of its filter: this is never a complete list.
+pub type alias DiagnosticReport a =
+    value : Maybe a
+    observed : List GpuError
+
+
+--| Run `body` with a new diagnostic session of `device`, holding the
+--| device's lease until `body` returns. The lease is taken at once or
+--| refused: `InvalidInput (SessionState DeviceLeased)` while a lease is
+--| held, `DeviceLost` once the device's loss was observed. The session
+--| pushes three scopes of its own first, which catch every error the
+--| session's scopes do not. When `body` returns, is cancelled or fails,
+--| every scope it left open is popped, innermost first, and the lease
+--| ends, in that turn; then the run waits for the pops. An error only the
+--| engine's scopes caught is the run's failure (`Validation`, …, or
+--| `RelatedFailures`), and a loss observed meanwhile `DeviceLost`; what the
+--| session made is then rejected. Otherwise the result is the report. A
+--| cancelled run rejects what the session made. A throw in `body` is a
+--| defect. May suspend; `body` may too.
+pub run : Handle.Device, (Handle.DiagnosticSession → a) → Result Error.Error (DiagnosticReport a)
+run device body =
+    s = Engine.openSession (Js.from device) Js.null?
+    within s body
+
+
+--| Run `body` with a session nested in `session`, under its lease: the
+--| nested session's scopes are inside the outer session's, and it ends
+--| before the outer one does. While it is open, the outer session's calls
+--| are `InvalidInput (SessionState DeviceLeased)`, as an ordinary call is;
+--| a second nested session too. `run` called inside a session is an
+--| ordinary acquisition: on the same device it is refused. The report and
+--| the failures are `run`'s; what the nested session made is settled by its
+--| own scopes. May suspend; `body` may too.
+pub nested :
+      Handle.DiagnosticSession
+    , (Handle.DiagnosticSession → a)
+    → Result Error.Error (DiagnosticReport a)
+nested session body =
+    parent = Js.from session
+    s = Engine.openSession (Engine.sessionDevice parent) parent?
+    within s body
+
+
+within : V, (Handle.DiagnosticSession → a) → Result Error.Error (DiagnosticReport a)
+within s body =
+    value = Task.onExit (λ⊤ → body (Js.to s)) λexit →
+        case exit of
+            Task.Done _ →
+                Engine.closeSession s False
+
+            Task.Cancelled →
+                Engine.closeSession s True
+    errors = Engine.finishSession s?
+    Ok { value = if List.isEmpty errors then Just value else Nothing, observed = errors }
+
+
+--| Push a native error scope of `filter` in the session: every error of
+--| that filter a later call of the session generates, until the matching
+--| `popErrorScope`, goes to it, and not to a scope beneath. `SessionState
+--| SessionEnded` once the session's lease ended, `DeviceLeased` while a
+--| nested session of it is open. Never suspends.
+pub pushErrorScope : Handle.DiagnosticSession, Types.ErrorFilter → Result InputError ⊤
+pushErrorScope session filter =
+    index =
+        case filter of
+            Types.FilterValidation →
+                0
+
+            Types.FilterOutOfMemory →
+                1
+
+            Types.FilterInternal →
+                2
+    Engine.pushUserScope (Js.from session) index
+
+
+--| Pop the session's innermost scope and wait for what it reports: the one
+--| error of its filter it kept, or `Nothing` — which is not proof that the
+--| device was not lost. `ScopeUnderflow` when the session has no scope of
+--| its own open: the session's own three scopes are never popped for it.
+--| `SessionRefused` when the session cannot act (`pushErrorScope`'s
+--| refusals). An error of a class the scope's filter does not report, or a
+--| rejected pop, is a defect. May suspend.
+pub popErrorScope : Handle.DiagnosticSession → Result DiagnosticError (Maybe GpuError)
+popErrorScope session = Engine.popUserScope (Js.from session)
+
+
+--| Whether the session can still act: `Ok` while its lease is live and no
+--| nested session of it is open.
+pub state : Handle.DiagnosticSession → Result Error.SessionState ⊤
+state session = Engine.sessionState (Js.from session)

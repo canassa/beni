@@ -1,0 +1,20 @@
+--! The forwarding form of `Gpu.Frame.submit` (`docs/design/webgpu.md`
+--! §6.4, §8): a frame of a surface configured with the session's device,
+--! run under the session's lease, so its synchronous callback never waits
+--! for one, and under the session's scopes.
+
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Js
+
+
+--| `Gpu.Frame.submit` under the session: its receipts are returned at
+--| once, usable once the session accepts what it made.
+pub submit :
+      Handle.DiagnosticSession
+    , Handle.Surface
+    , String
+    , sync (Handle.Frame → Result Error.Error a)
+    → Result Error.Error { value : a, submissions : List Handle.Submission }
+submit session surface name body = Make.frameIn (Js.from session) (Js.from surface) name body

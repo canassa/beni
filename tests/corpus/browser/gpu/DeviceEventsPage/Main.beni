@@ -1,0 +1,80 @@
+-- A device's events as a TEA subscription (docs/design/webgpu.md §8,
+-- `onEvent`): while the model holds a device, `subscriptions` has its
+-- `onEvent`, and each event arrives as a message through the tagger. A
+-- click destroys the device, and the loss arrives as `Lost`.
+import Cmd exposing (Cmd)
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Handle exposing (Device)
+import GpuKit
+import GpuShow
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    device : Maybe Device
+    lines : List String
+
+
+type Msg
+    = Made (Result String Device)
+    | Destroy
+    | Destroyed ⊤
+    | Event Error.DeviceEvent
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ → ( { device = Nothing, lines = [] }, Cmd.task (λ⊤ → GpuKit.device "none") Made )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Made (Ok d) →
+            ( { model | device = Just d, lines = model.lines ++ [ "device made" ] }, Cmd.none )
+
+        Made (Err why) →
+            ( { model | lines = model.lines ++ [ why ] }, Cmd.none )
+
+        Destroy →
+            case model.device of
+                Just d →
+                    ( model, Cmd.task (λ⊤ → Gpu.Device.destroy d) Destroyed )
+
+                Nothing →
+                    ( model, Cmd.none )
+
+        Destroyed _ →
+            ( { model | lines = model.lines ++ [ "destroyed" ] }, Cmd.none )
+
+        Event event →
+            ( { model | lines = model.lines ++ [ "event: " ++ GpuShow.deviceEvent event ] }
+            , Cmd.none
+            )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    case model.device of
+        Just d →
+            Gpu.Device.onEvent d Event
+
+        Nothing →
+            Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="destroy" onClick={Destroy}>destroy</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>

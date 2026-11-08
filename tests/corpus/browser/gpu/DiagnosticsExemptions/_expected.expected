@@ -1,0 +1,132 @@
+-- load
+<body>
+  <main>
+    <button id="callback">"callback"</button>
+    <button id="unrelated">"unrelated"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #callback
+<body>
+  <main>
+    <button id="callback">"callback"</button>
+    <button id="unrelated">"unrelated"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"features: timestamp-query no"</li>
+      <li>"limits: maxBindGroups some"</li>
+      <li>"adapter info: yes"</li>
+      <li>"queue label: []"</li>
+      <li>"loss: none"</li>
+      <li>"buffer: size 8, map state mapped, label renamed, current mapping some"</li>
+      <li>"configuration: Ok some"</li>
+      <li>"mapped memory: range Ok written, read Ok 7"</li>
+      <li>"teardown: unmapped buffer unmapped"</li>
+      <li>"receipt: Ok done"</li>
+      <li>"queue completion: Ok done"</li>
+      <li>"compilation info: Ok read"</li>
+      <li>"pending map: Ok mapping"</li>
+      <li>"ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"session: Ok ⊤, observed []"</li>
+      <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"after: surface configured Ok none"</li>
+      <li>"after: ordinary call Ok sampler"</li>
+    </ol>
+  </main>
+</body>
+-- click #unrelated
+<body>
+  <main>
+    <button id="callback">"callback"</button>
+    <button id="unrelated">"unrelated"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"features: timestamp-query no"</li>
+      <li>"limits: maxBindGroups some"</li>
+      <li>"adapter info: yes"</li>
+      <li>"queue label: []"</li>
+      <li>"loss: none"</li>
+      <li>"buffer: size 8, map state mapped, label renamed, current mapping some"</li>
+      <li>"configuration: Ok some"</li>
+      <li>"mapped memory: range Ok written, read Ok 7"</li>
+      <li>"teardown: unmapped buffer unmapped"</li>
+      <li>"receipt: Ok done"</li>
+      <li>"queue completion: Ok done"</li>
+      <li>"compilation info: Ok read"</li>
+      <li>"pending map: Ok mapping"</li>
+      <li>"ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"session: Ok ⊤, observed []"</li>
+      <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"after: surface configured Ok none"</li>
+      <li>"after: ordinary call Ok sampler"</li>
+      <li>"unrelated fiber, features: timestamp-query no"</li>
+      <li>"unrelated fiber, limits: maxBindGroups some"</li>
+      <li>"unrelated fiber, adapter info: yes"</li>
+      <li>"unrelated fiber, queue label: []"</li>
+      <li>"unrelated fiber, loss: none"</li>
+      <li>"unrelated fiber, buffer: size 8, map state mapped, label renamed, current mapping some"</li>
+      <li>"unrelated fiber, configuration: Ok some"</li>
+      <li>"unrelated fiber, mapped memory: range Ok written, read Ok 7"</li>
+      <li>"unrelated fiber, teardown: unmapped buffer unmapped"</li>
+      <li>"unrelated fiber, receipt: Ok done"</li>
+      <li>"unrelated fiber, queue completion: Ok done"</li>
+      <li>"unrelated fiber, compilation info: Ok read"</li>
+      <li>"unrelated fiber, ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"session: Ok ⊤, observed []"</li>
+      <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"after: surface configured Ok none"</li>
+      <li>"after: ordinary call Ok sampler"</li>
+    </ol>
+  </main>
+</body>
+-- click #destroyed
+<body>
+  <main>
+    <button id="callback">"callback"</button>
+    <button id="unrelated">"unrelated"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"features: timestamp-query no"</li>
+      <li>"limits: maxBindGroups some"</li>
+      <li>"adapter info: yes"</li>
+      <li>"queue label: []"</li>
+      <li>"loss: none"</li>
+      <li>"buffer: size 8, map state mapped, label renamed, current mapping some"</li>
+      <li>"configuration: Ok some"</li>
+      <li>"mapped memory: range Ok written, read Ok 7"</li>
+      <li>"teardown: unmapped buffer unmapped"</li>
+      <li>"receipt: Ok done"</li>
+      <li>"queue completion: Ok done"</li>
+      <li>"compilation info: Ok read"</li>
+      <li>"pending map: Ok mapping"</li>
+      <li>"ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"session: Ok ⊤, observed []"</li>
+      <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"after: surface configured Ok none"</li>
+      <li>"after: ordinary call Ok sampler"</li>
+      <li>"unrelated fiber, features: timestamp-query no"</li>
+      <li>"unrelated fiber, limits: maxBindGroups some"</li>
+      <li>"unrelated fiber, adapter info: yes"</li>
+      <li>"unrelated fiber, queue label: []"</li>
+      <li>"unrelated fiber, loss: none"</li>
+      <li>"unrelated fiber, buffer: size 8, map state mapped, label renamed, current mapping some"</li>
+      <li>"unrelated fiber, configuration: Ok some"</li>
+      <li>"unrelated fiber, mapped memory: range Ok written, read Ok 7"</li>
+      <li>"unrelated fiber, teardown: unmapped buffer unmapped"</li>
+      <li>"unrelated fiber, receipt: Ok done"</li>
+      <li>"unrelated fiber, queue completion: Ok done"</li>
+      <li>"unrelated fiber, compilation info: Ok read"</li>
+      <li>"unrelated fiber, ordinary call: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"session: Ok ⊤, observed []"</li>
+      <li>"after: write into the destroyed buffer Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"after: surface configured Ok none"</li>
+      <li>"after: ordinary call Ok sampler"</li>
+      <li>"listener: Lost Destroyed"</li>
+      <li>"awaitLost: Destroyed"</li>
+      <li>"forwarding after destroy: Err DeviceLost Destroyed observed 0"</li>
+      <li>"session: Err DeviceLost Destroyed observed 0"</li>
+      <li>"after: ordinary call Err DeviceLost Destroyed observed 0"</li>
+    </ol>
+  </main>
+</body>

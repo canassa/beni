@@ -221,9 +221,16 @@ discard op made =
 
 --| Run a prepared operation as a checked operation of its own (§6.1).
 pub checked : Result Error.Error Op → Result Error.Error V
-checked prepared =
+checked prepared = checkedIn Js.null prepared
+
+
+--| Run a prepared operation as a checked operation of its own, or, when
+--| `session` is not null, as a forwarding call of that diagnostic session
+--| (§6.4): under the session's scopes, provisional until it settles.
+pub checkedIn : V, Result Error.Error Op → Result Error.Error V
+checkedIn session prepared =
     op = prepared?
-    Engine.checkedMaking op.device op.name op.labels (λ⊤ → perform op) (λm → adopt op m) λm →
+    Engine.checkedIn session op.device op.name op.labels (λ⊤ → perform op) (λm → adopt op m) λm →
         discard op m
 
 
@@ -844,3 +851,433 @@ renderPipeline device batch descriptor =
                 (Native.renderPipelineDescriptor descriptor)
                 (renderFormats descriptor)
         }
+
+
+-- ---- Runs that a diagnostic session forwards (§6.4) ---------------------------
+--
+-- Each is the body of a public operation, with the session that forwards
+-- it, or null for the ordinary call: `Gpu.Device`, `Gpu.Surface`,
+-- `Gpu.Encode`, `Gpu.Batch` and `Gpu.Frame` call them with null, and the
+-- `Gpu.Diagnostics` modules with the session.
+
+--| A shader module (`Gpu.Device.createShaderModule`): invalid WGSL that a
+--| scope of the operation reports is `ShaderRejected`, with the compiler's
+--| messages read before the failure is returned.
+pub shaderModuleIn : V, V, Types.ShaderModuleDescriptor → Result Error.Error V
+shaderModuleIn session device descriptor =
+    op = shaderModule device descriptor?
+    shader = Js.ref Js.null
+
+    result =
+        Engine.checkedIn
+            session
+            op.device
+            op.name
+            op.labels
+            (λ⊤ → perform op)
+            (λm →
+                Js.write shader m
+                adopt op m
+            )
+            λm → discard op m
+    case result of
+        Ok m →
+            Ok m
+
+        Err (Error.Validation detail) →
+            if Js.isNull (Js.read shader) then
+                Err (Error.Validation detail)
+            else
+                info = compilationInfo (Js.read shader)?
+                Err (Error.ShaderRejected { failure = detail, messages = info.messages })
+
+        Err problem →
+            Err problem
+
+
+--| A compute pipeline by the native asynchronous call
+--| (`Gpu.Device.createComputePipelineAsync`).
+pub computePipelineAsyncIn : V, V, Types.ComputePipelineDescriptor → Result Error.Error V
+computePipelineAsyncIn session native descriptor =
+    computeHandles native Js.null descriptor?
+    converted = Native.computePipelineDescriptor descriptor
+    r = Engine.recordOf native
+
+    result =
+        Engine.checkedAwaitIn
+            session
+            native
+            "createComputePipelineAsync"
+            (labelsOf descriptor.label)
+            (λ⊤ → Ok (Js.call native "createComputePipelineAsync" [ converted ]))
+            λfulfilled value →
+                if fulfilled then
+                    Engine.adoptInBatch value r Js.null
+                    Engine.Expected (Ok value)
+                else
+                    pipelineFailure "createComputePipelineAsync" (entryPoints descriptor) value
+    case result of
+        Ok pipeline →
+            Engine.publish session pipeline ignore?
+            Ok pipeline
+
+        Err problem →
+            Err problem
+
+
+--| A rejected asynchronous pipeline: a native `GPUPipelineError` of a reason
+--| in the pin, or unexpected.
+pub pipelineFailure : String, List String, V → Engine.Outcome (Result Error.Error V)
+pipelineFailure operation entries error =
+    if not (Engine.isInstanceOf error "GPUPipelineError") then
+        Engine.Unexpected error
+    else
+        reason = Js.get error "reason"
+        failure = { operation = operation, message = Engine.messageOf error, entryPoints = entries }
+        if Js.same reason (Js.from "validation") then
+            Engine.Expected (Err (Error.PipelineValidation failure))
+        else if Js.same reason (Js.from "internal") then
+            Engine.Expected (Err (Error.PipelineInternal failure))
+        else
+            Engine.Unexpected error
+
+
+-- The entry points a compute pipeline descriptor asks for.
+entryPoints : Types.ComputePipelineDescriptor → List String
+entryPoints descriptor =
+    case descriptor.compute.entryPoint of
+        Types.Value name →
+            [ name ]
+
+        Types.Default →
+            []
+
+
+--| A render pipeline by the native asynchronous call
+--| (`Gpu.Device.createRenderPipelineAsync`).
+pub renderPipelineAsyncIn : V, V, Types.RenderPipelineDescriptor → Result Error.Error V
+renderPipelineAsyncIn session native descriptor =
+    renderHandles native Js.null descriptor?
+    formats = renderFormats descriptor
+    converted = Native.renderPipelineDescriptor descriptor
+    r = Engine.recordOf native
+
+    result =
+        Engine.checkedAwaitIn
+            session
+            native
+            "createRenderPipelineAsync"
+            (labelsOf descriptor.label)
+            (λ⊤ → Ok (Js.call native "createRenderPipelineAsync" [ converted ]))
+            λfulfilled value →
+                if fulfilled then
+                    Engine.adoptInBatch value r Js.null
+                    Engine.Expected (Ok value)
+                else
+                    candidates = Formats.gated formats
+                    if candidates ≠ [] && Engine.isTypeError value then
+                        Engine.Expected (Err (Formats.formatFailure candidates value))
+                    else
+                        pipelineFailure
+                            "createRenderPipelineAsync"
+                            (renderEntryPoints descriptor)
+                            value
+    case result of
+        Ok pipeline →
+            Engine.publish session pipeline ignore?
+            Ok pipeline
+
+        Err problem →
+            Err problem
+
+
+-- The entry points a render pipeline descriptor asks for: its vertex
+-- stage's, then its fragment stage's.
+renderEntryPoints : Types.RenderPipelineDescriptor → List String
+renderEntryPoints descriptor =
+    vertex =
+        case descriptor.vertex.entryPoint of
+            Types.Value name →
+                [ name ]
+
+            Types.Default →
+                []
+
+    fragment =
+        case descriptor.fragment of
+            Types.Value f →
+                case f.entryPoint of
+                    Types.Value name →
+                        [ name ]
+
+                    Types.Default →
+                        []
+
+            Types.Default →
+                []
+    [ …vertex, …fragment ]
+
+
+--| Configure a surface (`Gpu.Surface.configure`) on the configuration's
+--| device. Under a session the surface is configured at once, and a
+--| session that rejects what it made unconfigures it for frames again.
+pub configureIn : V, V, Types.CanvasConfiguration → Result Error.Error ⊤
+configureIn session native configuration =
+    s = Engine.recordOf native
+    device = Js.from configuration.device
+
+    views =
+        case configuration.viewFormats of
+            Types.Value formats →
+                formats
+
+            Types.Default →
+                []
+    -- A refusal before the native call changes nothing of the surface.
+    if Js.isNull session then
+        Engine.admit device "configure"?
+    else
+        Engine.sessionAdmit session device "configure"?
+    Formats.formatsAvailable device [ configuration.format, …views ]?
+    converted = Native.canvasConfiguration configuration
+    Engine.nextGeneration s
+    Js.set s "device" Js.null
+    generation = Js.get s "generation"
+
+    result =
+        Engine.checkedIn
+            session
+            device
+            "configure"
+            []
+            (λ⊤ →
+                Js.catchIf
+                    (λ⊤ →
+                        Js.call native "configure" [ converted ] ▷ ignore
+                        Ok (Js.object [])
+                    )
+                    Engine.isTypeError
+                    λerror →
+                        Err
+                            (Error.CanvasFailed
+                                (Error.CanvasConfigurationRejected
+                                    { message = Engine.messageOf error }
+                                )
+                            )
+            )
+            ignore
+            ignore
+    case result of
+        Ok _ →
+            -- Unless the surface was configured or unconfigured again while
+            -- this configuration was checked.
+            if Js.same (Js.get s "generation") generation then Js.set s "device" device else ⊤
+            if Js.isNull session then
+                ⊤
+            else
+                Engine.afterSession session λstatus →
+                    if status == "rejected" && Js.same (Js.get s "generation") generation then
+                        Js.set s "device" Js.null
+                    else
+                        ⊤
+            Ok ⊤
+
+        Err problem →
+            Err problem
+
+
+--| Encode with a new command encoder of `device` (`Gpu.Encode.run`).
+pub encodeIn :
+      V
+    , V
+    , Types.CommandEncoderDescriptor
+    , sync (Handle.CommandEncoder → Result Error.InputError a)
+    → Result Error.Error { value : a, commands : Handle.CommandBuffer }
+encodeIn session native descriptor body =
+    value = Js.ref Nothing
+
+    made =
+        Engine.checkedIn
+            session
+            native
+            "encode"
+            (labelsOf descriptor.label)
+            (λ⊤ → Session.encode native Js.null descriptor (λenc → body (Js.to enc)) value)
+            ignore
+            ignore
+    case ( made, Js.read value ) of
+        ( Ok commands, Just v ) →
+            Ok { value = v, commands = Js.to commands }
+
+        ( Ok _, Nothing ) →
+            Engine.defect "an encoding run published commands without a value"
+
+        ( Err problem, _ ) →
+            Err problem
+
+
+--| Encode a render bundle with a new bundle encoder of `device`
+--| (`Gpu.Encode.bundle`).
+pub bundleIn :
+      V
+    , V
+    , Types.RenderBundleEncoderDescriptor
+    , sync (Handle.RenderBundleEncoder → Result Error.InputError a)
+    → Result Error.Error { value : a, bundle : Handle.RenderBundle }
+bundleIn session native descriptor body =
+    Formats.formatsAvailable native (Formats.bundleFormats descriptor)?
+    value = Js.ref Nothing
+
+    made =
+        Engine.checkedIn
+            session
+            native
+            "encodeBundle"
+            (labelsOf descriptor.label)
+            (λ⊤ → Session.bundle native Js.null descriptor (λenc → body (Js.to enc)) value)
+            ignore
+            ignore
+    case ( made, Js.read value ) of
+        ( Ok rendered, Just v ) →
+            Ok { value = v, bundle = Js.to rendered }
+
+        ( Ok _, Nothing ) →
+            Engine.defect "a bundle run published a bundle without a value"
+
+        ( Err problem, _ ) →
+            Err problem
+
+
+--| Run a batch of `device` (`Gpu.Batch.run`). Under a session, what the
+--| batch made is handed to the session when the batch's run succeeds, and
+--| the batch settles when the session does.
+pub batchIn :
+      V
+    , Handle.Device
+    , String
+    , sync (Handle.Batch → Result Error.Error a)
+    → Result Error.Error a
+batchIn session device name body =
+    native = Js.from device
+    r = Engine.recordOf native
+
+    batch =
+        Js.object
+            [ ( "device", r )
+            , ( "native", native )
+            , ( "name", Js.from name )
+            , ( "live", Js.from False )
+            , ( "failure", Js.null )
+            , ( "made", Js.array [] )
+            , ( "issued", Js.array [] )
+            , ( "refused", Js.array [] )
+            , ( "settled", Js.null )
+            , ( "waiters", Js.array [] )
+            , ( "handedOver", Js.from False )
+            ]
+    value = Js.ref Nothing
+
+    ran =
+        Engine.checkedIn
+            session
+            native
+            ("batch " ++ name)
+            [ name ]
+            (λ⊤ →
+                Js.set batch "live" (Js.from True)
+                outcome = Js.finally (λ⊤ → body (Js.to batch)) λ⊤ →
+                    Js.set batch "live" (Js.from False)
+                case outcome of
+                    Ok v →
+                        Js.write value (Just v)
+
+                    Err problem →
+                        Session.latch batch problem
+                failure = Js.get batch "failure"
+                if Js.isNull failure then Ok (Js.object []) else Err (Js.to failure)
+            )
+            ignore
+            -- A run rejected after its call — by a scope, a loss or a
+            -- cancellation — rejects what the batch made.
+            λ_ → settleBatch batch "rejected"
+    case ( ran, Js.read value ) of
+        ( Ok _, Just v ) →
+            if Js.isNull session then
+                settleBatch batch "accepted"
+            else
+                -- What the batch made is the session's from now on: the
+                -- session settles and releases it, once, and the batch only
+                -- takes the session's verdict.
+                Js.set batch "handedOver" (Js.from True)
+                Js.each (Js.get batch "made") λentry →
+                    op = Js.get entry "op"
+                    Engine.handOver session (Js.get entry "made") λm →
+                        if Js.isNull op then ⊤ else discard (Js.to op) m
+                Engine.afterSession session (settleBatch batch _)
+            Ok v
+
+        ( Ok _, Nothing ) →
+            Engine.defect "a batch was accepted without a value"
+
+        ( Err problem, _ ) →
+            settleBatch batch "rejected"
+            Err
+                (Error.BatchFailed
+                    { batch = name
+                    , failure = problem
+                    , issued = Js.to (Js.get batch "issued")
+                    , unissued = Js.to (Js.get batch "refused")
+                    }
+                )
+
+
+--| Every resource the batch made takes its status, once; a rejected one is
+--| released. Whoever waits for the batch wakes. The batch is settled
+--| before anything else, so a discard that runs code of the engine sees
+--| it settled. A batch handed to a diagnostic session only takes its
+--| status: the session settled and released what it made.
+pub settleBatch : V, String → ⊤
+settleBatch batch status =
+    if not (Js.isNull (Js.get batch "settled")) then
+        ⊤
+    else
+        Js.set batch "settled" (Js.from status)
+        if Js.to (Js.get batch "handedOver") then
+            ⊤
+        else
+            Js.each (Js.get batch "made") λentry →
+                made = Js.get entry "made"
+                Engine.setStatus made status
+                op = Js.get entry "op"
+                if status == "rejected" && not (Js.isNull op) then discard (Js.to op) made else ⊤
+        waiters = Js.get batch "waiters"
+        Js.set batch "waiters" (Js.array [])
+        Js.each waiters λw → Js.to (Js.apply w [ Js.from status ])
+
+
+--| Run a frame of `surface` (`Gpu.Frame.submit`): a batch on the device the
+--| surface is configured with, which is the frame, keeping its receipts.
+pub frameIn :
+      V
+    , V
+    , String
+    , sync (Handle.Frame → Result Error.Error a)
+    → Result Error.Error { value : a, submissions : List Handle.Submission }
+frameIn session native name body =
+    s = Engine.recordOf native
+    device = Js.get s "device"
+    if Js.isNull device then
+        Err (Error.CanvasFailed Error.CanvasUnconfigured)
+    else
+        receipts = Js.array []
+        result = batchIn session (Js.to device) ("frame " ++ name) (inFrame native receipts body _)
+        Result.map result λv → { value = v, submissions = Js.to receipts }
+
+
+-- The batch is the frame: it knows its surface, and keeps its receipts.
+inFrame : V, V, sync (Handle.Frame → Result Error.Error a), Handle.Batch → Result Error.Error a
+inFrame surface receipts body b =
+    frame = Js.from b
+    Js.set frame "surface" surface
+    Js.set frame "submissions" receipts
+    body (Js.to frame)

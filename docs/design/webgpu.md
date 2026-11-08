@@ -955,9 +955,12 @@ a scope section, so they are never refused and run at once under a lease:
   write. They touch CPU memory of an existing mapping. `getMappedRange`'s
   only failure is a synchronous content-timeline `OperationError` (ledger §4),
   not a scoped GPU error.
-- **Waits on work issued earlier:** `Gpu.Submission.done`, a pending `map`'s
-  wait, `Gpu.Device.awaitLost`, `eachEvent` and `onEvent`. They issue no
-  scoped native call.
+- **Waits on work issued earlier:** `Gpu.Submission.done`,
+  `Gpu.Queue.onSubmittedWorkDone`, `Gpu.Shader.getCompilationInfo`, a pending
+  `map`'s wait, `Gpu.Device.awaitLost`, `eachEvent` and `onEvent`. They issue
+  no scoped native call. *(Amended 2026-11-08, review of #2289: the queue's
+  completion and a module's compilation messages are waits on earlier work
+  that push no scopes, so they run under a lease too.)*
 
 **Why it cannot deadlock.** The lease adds no wait: an ordinary operation
 refuses, `run` on a leased device refuses, and a forwarding call holds the lease
@@ -1045,6 +1048,76 @@ The report holds the callback value only when safe to publish, plus explicit
 scope observations. A failed session withholds that value and returns the
 observed typed failures. This preserves the ability to test native failure
 behavior without giving ordinary code a raw GPU handle or unchecked use route.
+
+*As built — S4 (2026-11-08, #2242), names chosen under the owner's delegation.* The session
+is a record of the engine (`Gpu.Engine.openSession`, `closeSession`, `finishSession`), the
+`DiagnosticSession` value itself; the device's record keeps the lease flag and generation of S1.
+`Gpu.Diagnostics` has `run`, `nested`, `pushErrorScope`, `popErrorScope`, `state : DiagnosticSession
+→ Result SessionState ⊤` and `DiagnosticReport a = { value : Maybe a, observed : List GpuError }`;
+`Gpu.Error` gains `GpuError = ValidationError HostMessage | OutOfMemoryError HostMessage |
+InternalError HostMessage` (what a scope or an `uncapturederror` reports) and `DiagnosticError =
+ScopeUnderflow | SessionRefused InputError` (a session that cannot act). The forwarding modules are
+`Gpu.Diagnostics.Device` (every checked creation, `createMappedBuffer` included),
+`.Texture.createView`, `.ComputePipeline` and `.RenderPipeline` `getBindGroupLayout`,
+`.Queue` (`writeBuffer`, `writeTexture`, `submit`), `.Buffer` (`map`, `withMapped`),
+`.Surface.configure`, `.Encode` (`run`, `bundle`), `.Batch.run` and `.Frame.submit`; each takes
+the session, then the ordinary form's arguments, and the public operations and their forwarding
+forms share one body that takes the session or null (`Gpu.Make.checkedIn`, `shaderModuleIn`, …,
+`Gpu.Memory.mapIn`). The commands inside an encoder, a pass, a bundle encoder or a batch need no
+forwarding form: they never enter a scope section of their own, and the run that hands them out
+holds the session's authority. Five rules made precise here:
+
+- **What a forwarding call returns.** It pushes no scope, so it waits for nothing but its own
+  promise (`map`, the asynchronous pipelines): it returns what it made at once, provisional and
+  usable by the session's calls (the session is the made object's batch). A session settles what
+  it made all together, after every pop of it settled: accepted when no scope of the session —
+  the user's and its own — reported an error and no loss was observed, rejected (and released)
+  otherwise. A scope keeps one error per filter for every call under it, so the session cannot
+  tell which object an error belongs to; it rejects them all, and the report's `value` is
+  `Nothing` then. An error only the session's own scopes caught is the run's `Err`, as for a
+  checked operation. A batch run under a session hands what it made to the session, and
+  `Gpu.Batch.awaitReady` wakes when the session settles; `Gpu.Batch.segment` there only names,
+  since the batch has no scopes of its own. A surface configured under a session is configured
+  at once, and unconfigured for frames again if the session rejects what it made.
+- **Nesting is a lease of the lease.** While a nested session is open, its parent can no more act
+  than an ordinary caller: the parent's forwarding calls, pushes, pops and a second `nested` are
+  `DeviceLeased`. So the native stack always holds the parent's scopes beneath the nested
+  session's, and no wait is added. A parent whose callback ends while a nested session is still
+  open (in a fiber the callback started) closes it with itself: the nested session is
+  abandoned, what it made rejected, and its pops drained to the device's program. Its own run,
+  when its callback returns later, is `InvalidInput (SessionState SessionEnded)` at once; it
+  never waits for those pops and never reports a success (`browser/gpu/DiagnosticsNestedAbandoned`,
+  both orders).
+- **`ScopeUnderflow` is decided by the session's count**, before any native call: the engine
+  never pops one of its own scopes for the user. A native rejection of a user pop the count
+  allows is therefore a defect, as is a class the scope's filter does not report.
+- **The end of the lease.** The session closes in the turn its callback exits on return, and
+  on cancellation through `Task.onExit`'s finaliser. **A throw in the callback is the one
+  exception to "in the turn the callback exits":** the callback may suspend, and `Js.finally`
+  (`try … finally`) holds only `sync` code (`backend.md` §4), so nothing can run at the throw
+  without catching it, which rule 9 forbids. The throw is a defect: the program stops at once,
+  and the runtime's teardown, one task later, cancels every fiber of it, so the same finaliser
+  pops the scopes and frees the lease then. Between the two nothing of that program runs, and the
+  device belongs to it (§6.4, *Outcomes that outlive their caller*), so no caller can meet the
+  lease still held. `browser/gpu/DiagnosticsCallbackThrows` logs the lease held at the throw, and
+  free with no scope open after the teardown. A cancelled session hands an unexpected outcome it
+  kept for its run to the device's program (`DiagnosticsCancelledPopDefect`).
+- **Events.** `GPUUncapturedErrorEvent` is `Gpu.Error.DeviceEvent` (`Uncaptured GpuError |
+  Lost DeviceLoss`), aliased as `Gpu.Device.DeviceEvent`, since the engine sends it and `Gpu.Error`
+  is beneath the engine. Every call the engine makes is scoped, so every uncaptured error is the
+  defect of §8: its listeners are handed it first, as telemetry, then the device's program stops
+  with its class; the host's message differs between browsers and stays on the original, the
+  defect's `cause`. `Gpu.Device.onEvent` is a `Sub.listen` keyed by the device's
+  identity.
+
+Fixtures (`browser/gpu/`): `DiagnosticsLease` (the three refusals with an order transcript: each
+refused with no native call and before a microtask armed just before it ran), `DiagnosticsScopes`,
+`DiagnosticsExemptions` (every exemption, from the callback and from an unrelated fiber, and
+`destroy` under a lease), `DiagnosticsForwarding` (every forwarding call, accepted and rejected),
+`DiagnosticsCancelled` (cancellation in every phase), `DeviceEvents`, `DeviceEventsPage` (TEA), and
+the defects `DiagnosticsCallbackThrows`, `DiagnosticsLateDefect`, `DiagnosticsPopRejected`,
+`DiagnosticsPopSpoofed`, `DiagnosticsPushThrows`, `DiagnosticsOpenThrows`, `DeviceEventsUncaptured`
+and `DeviceEventsSpoofed`.
 
 ## 7. Resource identity, memory mapping and lifetime
 

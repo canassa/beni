@@ -6940,3 +6940,4 @@ tests/corpus/ownership/NeedAcrossModules [node] Main 42:14 #0 :: Writers.pushOf 
 tests/corpus/ownership/NeedAcrossModules [node] Main 52:11 #0 :: value <lambda> :: rejected :: absent  v1's need is deep and stops at a forwarding lambda or a maker; v2 keeps the slot and follows the code to its caller (§2.11.3, a need)
 tests/corpus/ownership/NeedAcrossModules [node] Writers 12:11 #0 :: value <lambda> :: rejected :: absent  v1's need is deep and stops at a forwarding lambda or a maker; v2 keeps the slot and follows the code to its caller (§2.11.3, a need)
 tests/corpus/ownership/NeedAcrossModules [node] Main 26:9 #0 :: value <lambda> :: absent :: rejected  v2 refuses the need where its code is known, at the forwarding caller or where a closure leaves (§2.11.3, a need)
+tests/corpus/browser/gpu/DeviceEventsPage Main 30:5 #0 :: entry Main.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

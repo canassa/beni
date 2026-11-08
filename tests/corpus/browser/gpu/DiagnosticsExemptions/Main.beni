@@ -1,0 +1,262 @@
+-- What a diagnostic lease never refuses (docs/design/webgpu.md §6.4,
+-- *What the lease refuses*): the operations that enter no error scope run
+-- at once while a session holds the device's lease, both in the session's
+-- callback and in an unrelated fiber. Reads of state (`features`,
+-- `limits`, `adapterInfo`, `queue`, `loss`, a buffer's size, usage, map
+-- state, label and `setLabel`, `currentMapping`, a surface's
+-- configuration); mapped memory (`getMappedRange` and a range's reads and
+-- writes); teardown that returns ⊤ (`Buffer.unmap`, `Buffer.destroy`,
+-- `Texture.destroy`, `QuerySet.destroy`, `Surface.unconfigure`); and waits
+-- on work issued before the session (`Submission.done`, the queue's
+-- `onSubmittedWorkDone`, a module's `getCompilationInfo`, a pending map's
+-- wait). `Device.destroy` under a lease latches the loss at once: a wait
+-- in `awaitLost` and an `eachEvent` listener wake with it, the session's
+-- forwarding calls report it, the run ends in `DeviceLost`, and the lease
+-- is released, so an ordinary call after it reports the loss, not the
+-- lease.
+import Binary
+import Browser.Canvas as Canvas
+import Gpu.Buffer as Buffer
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Device
+import Gpu.Feature as Feature
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Buffer, Device, Mapping)
+import Gpu.Limits as Limits
+import Gpu.MappedRange as MappedRange
+import Gpu.QuerySet
+import Gpu.Queue
+import Gpu.Shader
+import Gpu.Submission
+import Gpu.Surface as Surface
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+extent : Types.Extent3D
+extent =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 1), depthOrArrayLayers = Types.Default }
+
+
+leased : Device → String
+leased d = GpuShow.checked (Gpu.Device.createSampler d Types.samplerDescriptor) λ_ → "sampler"
+
+
+mapState : Buffer → String
+mapState b =
+    case Buffer.mapState b of
+        Types.Unmapped →
+            "unmapped"
+
+        Types.Pending →
+            "pending"
+
+        Types.Mapped →
+            "mapped"
+
+
+-- What a mapped range holds after a write: the word written, read back.
+memory : Mapping → String
+memory mapping =
+    case Buffer.getMappedRange mapping Buffer.whole of
+        Err problem →
+            "Err " ++ GpuShow.error problem
+
+        Ok range →
+            written = GpuShow.inputResult (MappedRange.writeU32 range 0 7) λ_ → "written"
+            read = GpuShow.inputResult (MappedRange.readU32 range 0) String.fromInt
+            "range " ++ written ++ ", read " ++ read
+
+
+some : Maybe a → String
+some m =
+    case m of
+        Just _ →
+            "some"
+
+        Nothing →
+            "none"
+
+
+-- Every read of state, against what was made before the session.
+reads : Device, Buffer, Gpu.Handle.Surface → List String
+reads d mapped surface =
+    Buffer.setLabel mapped "renamed"
+    [ "features: timestamp-query "
+        ++ GpuKit.yesNo (Feature.has (Gpu.Device.features d) Types.FeatureTimestampQuery)
+    , "limits: maxBindGroups "
+        ++ some (Limits.limit (Gpu.Device.limits d) Limits.MaxBindGroups)
+    , "adapter info: " ++ GpuKit.yesNo (String.length (Gpu.Device.adapterInfo d).vendor ≥ 0)
+    , "queue label: [" ++ Gpu.Queue.label (Gpu.Device.queue d) ++ "]"
+    , "loss: " ++ GpuShow.latched (Gpu.Device.loss d)
+    , "buffer: size "
+        ++ String.fromInt (Buffer.size mapped)
+        ++ ", map state "
+        ++ mapState mapped
+        ++ ", label "
+        ++ Buffer.label mapped
+        ++ ", current mapping "
+        ++ some (Buffer.currentMapping mapped)
+    , "configuration: " ++ GpuShow.checked (Surface.getConfiguration surface) some
+    ]
+
+
+-- What the session's callback and an unrelated fiber run under the lease.
+type alias Made =
+    mapped : Buffer
+    mapping : Mapping
+    doomed : Buffer
+    texture : Gpu.Handle.Texture
+    queries : Gpu.Handle.QuerySet
+    surface : Gpu.Handle.Surface
+    receipt : Gpu.Handle.Submission
+    queue : Gpu.Handle.Queue
+    shader : Gpu.Handle.Shader
+
+
+made : Device → Made
+made d =
+    m = must (Gpu.Device.createMappedBuffer d (GpuKit.buffer 8 [ Flags.MapWrite, Flags.CopySrc ]))
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+    must (Surface.configure surface (Types.canvasConfiguration d Types.Rgba8unorm))
+    { mapped = m.buffer
+    , mapping = m.mapping
+    , doomed = must (Gpu.Device.createBuffer d (GpuKit.buffer 8 [ Flags.CopyDst ]))
+    , texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    extent
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureCopyDst ])
+                )
+            )
+    , queries =
+        must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 2)))
+    , surface = surface
+    , receipt = must (Gpu.Queue.submit (Gpu.Device.queue d) [])
+    , queue = Gpu.Device.queue d
+    , shader =
+        must
+            (Gpu.Device.createShaderModule
+                d
+                (Types.shaderModuleDescriptor "@compute @workgroup_size(1) fn main() {}")
+            )
+    }
+
+
+-- Mapped memory, teardown and a wait on earlier work.
+rest : Made → List String
+rest m =
+    mem = memory m.mapping
+    Buffer.unmap m.mapped
+    Buffer.destroy m.doomed
+    Gpu.Texture.destroy m.texture
+    Gpu.QuerySet.destroy m.queries
+    Surface.unconfigure m.surface
+    [ "mapped memory: " ++ mem
+    , "teardown: unmapped buffer " ++ mapState m.mapped
+    , "receipt: " ++ GpuShow.checked (Gpu.Submission.done m.receipt) λ_ → "done"
+    , "queue completion: " ++ GpuShow.checked (Gpu.Queue.onSubmittedWorkDone m.queue) λ_ → "done"
+    , "compilation info: " ++ GpuShow.checked (Gpu.Shader.getCompilationInfo m.shader) λ_ → "read"
+    ]
+
+
+-- What the teardown under the lease did, seen by ordinary calls after it.
+after : Device, Made → List String
+after d m =
+    write = Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (GpuKit.zeros 8))
+    [ "after: write into the destroyed buffer "
+        ++ GpuShow.checked (Gpu.Queue.writeBuffer (Gpu.Device.queue d) m.doomed write) λ_ →
+            "written"
+    , "after: surface configured " ++ GpuShow.checked (Surface.getConfiguration m.surface) some
+    , "after: ordinary call " ++ leased d
+    ]
+
+
+-- Note every line, after `prefix`.
+noteAll : List String, String → ⊤
+noteAll lines prefix = List.foldl lines ⊤ λline _ → GpuHost.note (prefix ++ line)
+
+
+callback : ⊤ → List String
+callback ⊤ = GpuKit.with "maps-held" λd →
+    m = made d
+    pending = must (Gpu.Device.createBuffer d (GpuKit.buffer 8 [ Flags.MapRead, Flags.CopyDst ]))
+    _ = GpuHost.notes ⊤
+    mapping = Task.spawn λ⊤ → GpuShow.checked (Buffer.map pending Buffer.mapRead) λ_ → "mapping"
+    Task.yieldNow ⊤
+    r = Diagnostics.run d λ_ →
+        lines = reads d m.mapped m.surface ++ rest m
+        GpuHost.releaseMaps ⊤
+        waited = Task.join mapping
+        noteAll [ …lines, "pending map: " ++ waited, "ordinary call: " ++ leased d ] ""
+        "⊤"
+    [ …GpuHost.notes ⊤, "session: " ++ GpuShow.sessionReport r λv → v, …after d m ]
+
+
+unrelated : ⊤ → List String
+unrelated ⊤ = GpuKit.with "none" λd →
+    m = made d
+    _ = GpuHost.notes ⊤
+    fiber = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        lines = reads d m.mapped m.surface ++ rest m
+        noteAll [ …lines, "ordinary call: " ++ leased d ] "unrelated fiber, "
+        GpuHost.raise "finished"
+    -- The session waits for the fiber without joining it: it looks at a flag
+    -- the fiber raises, between yields.
+    r = Diagnostics.run d λ_ →
+        waitFor "finished"
+        "⊤"
+    Task.join fiber
+    [ …GpuHost.notes ⊤, "session: " ++ GpuShow.sessionReport r λv → v, …after d m ]
+
+
+waitFor : String → ⊤
+waitFor flag =
+    if GpuHost.raised flag then
+        ⊤
+    else
+        Task.yieldNow ⊤
+        waitFor flag
+
+
+destroyed : ⊤ → List String
+destroyed ⊤ = GpuKit.with "none" λd →
+    _ = GpuHost.notes ⊤
+    listener = Task.spawn λ⊤ →
+        Gpu.Device.eachEvent d λevent → GpuHost.note ("listener: " ++ GpuShow.deviceEvent event)
+    waiter = Task.spawn λ⊤ → GpuHost.note ("awaitLost: " ++ GpuShow.loss (Gpu.Device.awaitLost d))
+    Task.yieldNow ⊤
+    r = Diagnostics.run d λsession →
+        Gpu.Device.destroy d
+        Task.join waiter
+        Task.join listener
+        GpuHost.note
+            ("forwarding after destroy: "
+                ++ GpuShow.checked
+                    (Gpu.Diagnostics.Device.createSampler session d Types.samplerDescriptor)
+                    λ_ → "sampler"
+            )
+        "⊤"
+    [ …GpuHost.notes ⊤
+    , "session: " ++ GpuShow.sessionReport r λv → v
+    , "after: ordinary call " ++ leased d
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "callback", callback ), ( "unrelated", unrelated ), ( "destroyed", destroyed ) ]

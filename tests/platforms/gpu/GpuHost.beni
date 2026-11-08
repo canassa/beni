@@ -8,7 +8,7 @@
 import Binary
 import Browser.Host.Uint32Array exposing (Uint32Array)
 import Browser.Host.Uint8Array exposing (Uint8Array)
-import Gpu.Handle exposing (Batch, Buffer)
+import Gpu.Handle exposing (Batch, Buffer, Device)
 import Task
 
 
@@ -125,3 +125,43 @@ pub foreign impure keepBatch : Batch → ⊤
 
 --| The batch `keepBatch` kept last.
 pub foreign impure keptBatch : ⊤ → Batch
+
+
+--| Make a call the engine never makes: a sampler the device refuses, made
+--| outside every error scope, so the device reports its error as
+--| uncaptured.
+pub foreign impure escape : Device → ⊤
+
+
+--| Dispatch an `uncapturederror` event on the device whose error is a
+--| plain object named like a GPU error.
+pub foreign impure escapeSpoofed : Device → ⊤
+
+
+--| Log how many error scopes of the device are open three tasks later.
+pub foreign impure logScopesLater : Device → ⊤
+
+
+--| Throw a native `TypeError` with `message`.
+pub foreign impure fail : String → ⊤
+
+
+--| How many error scopes of the device are open now.
+pub foreign impure openScopes : Device → Int
+
+
+--| Write `line` to the console: what a page that stops still shows.
+pub foreign impure log : String → ⊤
+
+
+--| Raise the flag `name`, until the next `inject`.
+pub foreign impure raise : String → ⊤
+
+
+--| Whether the flag `name` is raised.
+pub foreign impure raised : String → Bool
+
+
+--| Log `label` and what `probe` answers three tasks later: after a throw,
+--| once the runtime's teardown ran.
+pub foreign impure logLater : String, sync (⊤ → String) → ⊤
