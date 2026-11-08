@@ -1,0 +1,33 @@
+--! Render pipelines (`docs/design/webgpu.md` §4): made by
+--! `Gpu.Device.createRenderPipeline`, `createRenderPipelineAsync` or
+--! `Gpu.Batch.createRenderPipeline`.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Scalar as Scalar
+import Js
+
+
+--| The pipeline's label.
+pub label : Handle.RenderPipeline → String
+label pipeline = Js.to (Js.get (Js.from pipeline) "label")
+
+
+--| Set the pipeline's label.
+pub setLabel : Handle.RenderPipeline, String → ⊤
+setLabel pipeline text = Js.set (Js.from pipeline) "label" (Js.from text)
+
+
+--| The bind group layout of the pipeline at `index`, checked (§6.1): an
+--| index the pipeline has no group for is `Validation`, and the invalid
+--| layout is never returned. May suspend.
+pub getBindGroupLayout :
+      Handle.RenderPipeline
+    , Scalar.U32
+    → Result Error.Error Handle.BindGroupLayout
+getBindGroupLayout pipeline index =
+    native = Js.from pipeline
+    device = Js.get (Engine.recordOf native) "native"
+    Result.map (Make.checked device (Make.getBindGroupLayout native Js.null index)) λl → Js.to l

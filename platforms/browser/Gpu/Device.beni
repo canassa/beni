@@ -210,3 +210,71 @@ pipelineFailure operation error =
 --| suspend.
 pub createQuerySet : Handle.Device, Types.QuerySetDescriptor → Result Error.Error Handle.QuerySet
 createQuerySet device descriptor = made device (Make.querySet (Js.from device) descriptor)
+
+
+--| A render pipeline, made by the native synchronous call and checked
+--| (§6.1): its layout and modules must be usable, a color target or depth
+--| format whose feature the device lacks is `UnsupportedCapability` before
+--| any native call, and the host's refusal of such a format anyway is
+--| `FormatFeatureRejected`; a pipeline the device refuses is `Validation`.
+--| May suspend.
+pub createRenderPipeline :
+      Handle.Device
+    , Types.RenderPipelineDescriptor
+    → Result Error.Error Handle.RenderPipeline
+createRenderPipeline device descriptor =
+    made device (Make.renderPipeline (Js.from device) Js.null descriptor)
+
+
+--| A render pipeline, made by the native asynchronous call (ledger §3),
+--| with `createRenderPipeline`'s checks first: a `GPUPipelineError` of
+--| reason `validation` is `PipelineValidation`, of reason `internal`
+--| `PipelineInternal`, a `TypeError` for a feature-gated format
+--| `FormatFeatureRejected`; any other rejection or reason is a defect. A
+--| cancelled wait leaves the pipeline unpublished. May suspend.
+pub createRenderPipelineAsync :
+      Handle.Device
+    , Types.RenderPipelineDescriptor
+    → Result Error.Error Handle.RenderPipeline
+createRenderPipelineAsync device descriptor =
+    native = Js.from device
+    Make.renderHandles native Js.null descriptor?
+    formats = Make.renderFormats descriptor
+    converted = Native.renderPipelineDescriptor descriptor
+    r = Engine.recordOf native
+
+    result =
+        Engine.checkedAwait
+            native
+            "createRenderPipelineAsync"
+            (Make.labelsOf descriptor.label)
+            (λ⊤ → Ok (Js.call native "createRenderPipelineAsync" [ converted ]))
+            λfulfilled value →
+                if fulfilled then
+                    Engine.adoptInBatch value r Js.null
+                    Engine.Expected (Ok value)
+                else
+                    case Make.gated formats of
+                        Just ( format, required ) →
+                            if Engine.isTypeError value then
+                                Engine.Expected
+                                    (Err
+                                        (Error.FormatFeatureRejected
+                                            { format = format
+                                            , required = required
+                                            , message = Engine.messageOf value
+                                            }
+                                        )
+                                    )
+                            else
+                                pipelineFailure "createRenderPipelineAsync" value
+
+                        Nothing →
+                            pipelineFailure "createRenderPipelineAsync" value
+    case result of
+        Ok pipeline →
+            Engine.setStatus pipeline "accepted"
+            Ok (Js.to pipeline)
+
+        Err problem →
+            Err problem

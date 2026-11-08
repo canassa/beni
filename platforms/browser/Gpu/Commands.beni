@@ -1,0 +1,308 @@
+--! The commands that passes and render bundle encoders share
+--! (`docs/design/webgpu.md` §3 item 7, §6.2): the native mixins
+--! `GPUBindingCommandsMixin`, `GPUDebugCommandsMixin` and
+--! `GPURenderCommandsMixin`. `Gpu.ComputePass`, `Gpu.RenderPass` and
+--! `Gpu.RenderBundleEncoder` each give them the names of their native
+--! interface; an application never needs this module, and its signatures
+--! name `Js.Value`.
+--!
+--! Each command takes the native encoder and `at`, the session and record
+--! its owner checked first (`Gpu.Session.pass` or `Gpu.Session.encoder`), and
+--! issues one native call, after the local checks of its arguments. A
+--! refusal is latched for the run.
+
+import Binary
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Memory as Memory
+import Gpu.Native as Native
+import Gpu.Scalar as Scalar
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+--| What a command checked first: the session and the record of its encoder.
+pub type alias At =
+    session : V
+    record : V
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+-- An optional native argument: `undefined`, which Web IDL reads as omitted.
+optional : Maybe Int → V
+optional value =
+    case value of
+        Just n →
+            Js.from n
+
+        Nothing →
+            Js.undefined
+
+
+--| A size or an offset, as a `GPUSize64` accepts it, latched when refused.
+pub size64 : V, Int, String → Result InputError ⊤
+size64 s value path = Session.check s (Result.map (Memory.size64 value path) λ_ → ⊤)
+
+
+--| An optional size, as `size64` checks it.
+pub optionalSize : V, Maybe Int, String → Result InputError ⊤
+optionalSize s value path =
+    case value of
+        Just n →
+            size64 s n path
+
+        Nothing →
+            Ok ⊤
+
+
+--| Use `pipeline` for the work that follows.
+pub setPipeline : V, At, V → Result InputError ⊤
+setPipeline native at pipeline =
+    Session.usable at.session pipeline "pipeline"?
+    Js.call native "setPipeline" [ pipeline ] ▷ ignore
+    Ok ⊤
+
+
+-- A bind group slot's group, when there is one.
+group : V, Maybe V → Result InputError V
+group s bindGroup =
+    case bindGroup of
+        Just g →
+            Session.usable s g "bindGroup"?
+            Ok g
+
+        Nothing →
+            Ok Js.null
+
+
+--| Bind `bindGroup` at `index` — `Nothing` unbinds it — with its dynamic
+--| offsets, in binding order.
+pub setBindGroup : V, At, Scalar.U32, Maybe V, List Scalar.U32 → Result InputError ⊤
+setBindGroup native at index bindGroup offsets =
+    g = group at.session bindGroup?
+    Js.call native "setBindGroup"
+        [ Js.from (Scalar.u32ToInt index)
+        , g
+        , Native.array offsets λo → Js.from (Scalar.u32ToInt o)
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| The overload of `setBindGroup` whose dynamic offsets are `length`
+--| elements of a `Uint32Array` view, from element `start`: another view
+--| kind is `ViewKindRequired`, resizable or growable storage
+--| `ResizableBacking` (#1268), and a slice past the view `OutOfRange`.
+pub setBindGroupSlice :
+      V
+    , At
+    , Scalar.U32
+    , Maybe V
+    , Binary.View
+    , Int
+    , Int
+    → Result InputError ⊤
+setBindGroupSlice native at index bindGroup offsets start length =
+    s = at.session
+    g = group s bindGroup?
+    case offsets of
+        Binary.Uint32Array data →
+            case Memory.sourceInfo (Binary.ViewOf offsets) "dynamicOffsetsData" of
+                Err problem →
+                    Session.refuse s problem
+
+                Ok info →
+                    elements = info.elementLength
+                    if start < 0 || length < 0 || start > elements || length > elements - start then
+                        Session.refuse
+                            s
+                            (Error.OutOfRange
+                                { path = "dynamicOffsetsData"
+                                , offset = start
+                                , size = length
+                                , available = elements
+                                }
+                            )
+                    else
+                        Js.call native "setBindGroup"
+                            [ Js.from (Scalar.u32ToInt index)
+                            , g
+                            , Js.from data
+                            , Js.from start
+                            , Js.from length
+                            ]
+                            ▷ ignore
+                        Ok ⊤
+
+        _ →
+            Session.refuse
+                s
+                (Error.ViewKindRequired { path = "dynamicOffsetsData", kind = Binary.U32 })
+
+
+--| Write immediate data (ledger §5): `size` elements of `data` from element
+--| `dataOffset` at byte `rangeOffset` of the immediates. The part must stay
+--| in the data (`OutOfRange`) and be a multiple of 4 bytes, as
+--| `rangeOffset` must (`Misaligned`); fixed storage only. The host's
+--| `OperationError` at this call is `HostOperationRejected
+--| ImmediateWriteRejected`, latched for the run; a host without the method
+--| is `UnsupportedCapability (MissingHostMember "<interface>.setImmediates")`,
+--| latched too.
+pub setImmediates : V, At, String, Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
+setImmediates native at interface rangeOffset data dataOffset size =
+    s = at.session
+    Session.check s (immediatesPreflight rangeOffset data dataOffset size)?
+    if not (Js.typeIs (Js.get native "setImmediates") "function") then
+        Session.stopped
+            s
+            (Error.UnsupportedCapability (Error.MissingHostMember (interface ++ ".setImmediates")))
+    else
+        Js.catchIf
+            (λ⊤ →
+                Js.call native "setImmediates"
+                    [ Js.from rangeOffset
+                    , Memory.sourceObject data
+                    , Js.from dataOffset
+                    , optional size
+                    ]
+                    ▷ ignore
+                Ok ⊤
+            )
+            (λerror → Engine.isDomException error "OperationError")
+            λerror →
+                Session.stopped
+                    s
+                    (Error.HostOperationRejected
+                        (Error.ImmediateWriteRejected { message = Engine.messageOf error })
+                    )
+
+
+immediatesPreflight : Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
+immediatesPreflight rangeOffset data dataOffset size =
+    _ = Memory.size64 rangeOffset "rangeOffset"?
+    Memory.aligned rangeOffset 4 "rangeOffset"?
+    info = Memory.sourceInfo data "data"?
+    _ = Memory.size64 dataOffset "dataOffset"?
+    contents =
+        case size of
+            Just n →
+                Memory.size64 n "size"?
+
+            Nothing →
+                info.elementLength - dataOffset
+    if
+        dataOffset > info.elementLength
+            || contents < 0
+            || contents > info.elementLength - dataOffset
+    then
+        Err
+            (Error.OutOfRange
+                { path = "size"
+                , offset = dataOffset * info.bytesPerElement
+                , size = contents * info.bytesPerElement
+                , available = info.byteLength
+                }
+            )
+    else
+        Memory.aligned (contents * info.bytesPerElement) 4 "size"
+
+
+--| Open a debug group.
+pub pushDebugGroup : V, At, String, String → Result InputError ⊤
+pushDebugGroup native at path groupLabel =
+    Session.debug at.session at.record 1 path?
+    Js.call native "pushDebugGroup" [ Js.from groupLabel ] ▷ ignore
+    Ok ⊤
+
+
+--| Close the latest debug group; `DebugStackEmpty` when none is open.
+pub popDebugGroup : V, At, String → Result InputError ⊤
+popDebugGroup native at path =
+    Session.debug at.session at.record (-1) path?
+    Js.call native "popDebugGroup" [] ▷ ignore
+    Ok ⊤
+
+
+--| Insert a debug marker.
+pub insertDebugMarker : V, String → Result InputError ⊤
+insertDebugMarker native markerLabel =
+    Js.call native "insertDebugMarker" [ Js.from markerLabel ] ▷ ignore
+    Ok ⊤
+
+
+--| Use `buffer` for indexed draws: `format` names the index size, from byte
+--| `offset`, `size` bytes or the rest of the buffer.
+pub setIndexBuffer : V, At, V, Types.IndexFormat, Int, Maybe Int → Result InputError ⊤
+setIndexBuffer native at buffer format offset size =
+    s = at.session
+    Session.usable s buffer "buffer"?
+    size64 s offset "offset"?
+    optionalSize s size "size"?
+    Js.call native "setIndexBuffer"
+        [ buffer, Js.from (Types.indexFormatToString format), Js.from offset, optional size ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Use `buffer` for vertex buffer `slot` — `Nothing` unbinds it — from byte
+--| `offset`, `size` bytes or the rest of the buffer.
+pub setVertexBuffer : V, At, Scalar.U32, Maybe V, Int, Maybe Int → Result InputError ⊤
+setVertexBuffer native at slot buffer offset size =
+    s = at.session
+
+    bound =
+        case buffer of
+            Just b →
+                Session.usable s b "buffer"?
+                b
+
+            Nothing →
+                Js.null
+    size64 s offset "offset"?
+    optionalSize s size "size"?
+    Js.call native "setVertexBuffer"
+        [ Js.from (Scalar.u32ToInt slot), bound, Js.from offset, optional size ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Draw: every argument a `GPUSize32` already checked.
+pub draw : V, Int, Int, Int, Int → Result InputError ⊤
+draw native vertexCount instanceCount firstVertex firstInstance =
+    Js.call native "draw"
+        [ Js.from vertexCount, Js.from instanceCount, Js.from firstVertex, Js.from firstInstance ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Draw indexed: every argument checked, `baseVertex` signed.
+pub drawIndexed : V, Int, Int, Int, Int, Int → Result InputError ⊤
+drawIndexed native indexCount instanceCount firstIndex baseVertex firstInstance =
+    Js.call native "drawIndexed"
+        [ Js.from indexCount
+        , Js.from instanceCount
+        , Js.from firstIndex
+        , Js.from baseVertex
+        , Js.from firstInstance
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| An indirect draw, `method` `drawIndirect` or `drawIndexedIndirect`: its
+--| arguments are in `buffer` at `offset`.
+pub drawIndirect : V, At, String, V, Int → Result InputError ⊤
+drawIndirect native at method buffer offset =
+    s = at.session
+    Session.usable s buffer "indirectBuffer"?
+    size64 s offset "indirectOffset"?
+    Js.call native method [ buffer, Js.from offset ] ▷ ignore
+    Ok ⊤

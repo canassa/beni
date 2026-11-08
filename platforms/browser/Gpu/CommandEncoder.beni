@@ -13,6 +13,7 @@
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
 import Gpu.Handle as Handle
+import Gpu.Make as Make
 import Gpu.Memory as Memory
 import Gpu.Native as Native
 import Gpu.Scalar as Scalar
@@ -82,14 +83,77 @@ beginComputePass encoder descriptor =
         Types.Default →
             ⊤
     pass = Js.call native "beginComputePass" [ Native.computePassDescriptor descriptor ]
-    Engine.adoptInBatch pass (Js.get s "device") (Js.get s "batch")
-    p = Engine.recordOf pass
-    Js.set p "session" s
-    Js.set p "encoder" at.record
-    Js.set p "ended" (Js.from False)
-    Js.set p "debug" (Js.from 0)
-    Js.set at.record "state" (Js.from "locked")
+    Session.beginPass s at.record pass
     Ok (Js.to pass)
+
+
+--| Begin a render pass. The encoder is locked until the pass ends; prefer
+--| `Gpu.RenderPass.with`, which ends it. Every attachment, resolve target,
+--| occlusion query set and timestamp query set must be usable on the
+--| encoder's device (`InvalidInput` otherwise, latched).
+pub beginRenderPass :
+      Handle.CommandEncoder
+    , Types.RenderPassDescriptor
+    → Result InputError Handle.RenderPass
+beginRenderPass encoder descriptor =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Make.each descriptor.colorAttachments (colorAttachment s _)?
+    case descriptor.depthStencilAttachment of
+        Types.Value a →
+            attachment s a.view "depthStencilAttachment.view"?
+
+        Types.Default →
+            ⊤
+    occlusion =
+        case descriptor.occlusionQuerySet of
+            Types.Value q →
+                Session.usable s (Js.from q) "occlusionQuerySet"?
+                Js.from q
+
+            Types.Default →
+                Js.null
+    case descriptor.timestampWrites of
+        Types.Value writes →
+            Session.usable s (Js.from writes.querySet) "timestampWrites.querySet"?
+
+        Types.Default →
+            ⊤
+    pass = Js.call native "beginRenderPass" [ Native.renderPassDescriptor descriptor ]
+    Session.beginPass s at.record pass
+    p = Engine.recordOf pass
+    Js.set p "occlusionQuerySet" occlusion
+    Js.set p "occlusion" (Js.from False)
+    Ok (Js.to pass)
+
+
+-- A color attachment slot: its view and resolve target usable.
+colorAttachment : V, Maybe Types.RenderPassColorAttachment → Result InputError ⊤
+colorAttachment s slot =
+    case slot of
+        Just a →
+            attachment s a.view "colorAttachments.view"?
+            case a.resolveTarget of
+                Types.Value target →
+                    attachment s target "colorAttachments.resolveTarget"
+
+                Types.Default →
+                    Ok ⊤
+
+        Nothing →
+            Ok ⊤
+
+
+-- An attachment's texture or view, usable.
+attachment : V, Types.AttachmentView, String → Result InputError ⊤
+attachment s view path =
+    case view of
+        Types.AttachmentTexture t →
+            Session.usable s (Js.from t) path
+
+        Types.AttachmentTextureView v →
+            Session.usable s (Js.from v) path
 
 
 --| Copy `size` bytes from `source` at `sourceOffset` to `destination` at

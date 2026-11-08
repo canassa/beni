@@ -94,7 +94,10 @@ pub type Error
 --| `finish` or `end`; `DebugStackEmpty` a pop with no debug group pushed;
 --| `CommandBufferSubmitted` and `DuplicateCommandBuffer` a command buffer
 --| submitted before or twice in one submit; `ViewKindRequired` a binary view
---| of another kind than the one the call takes.
+--| of another kind than the one the call takes. `QueryActive` is an
+--| occlusion query begun while one is open, `QueryInactive` one ended while
+--| none is, and `QuerySetMissing` one begun in a pass with no occlusion
+--| query set.
 pub type InputError
     = NumericDomain { path : String, domain : Scalar.DomainError }
     | WrongDevice { path : String }
@@ -120,6 +123,9 @@ pub type InputError
     | CommandBufferSubmitted { path : String }
     | DuplicateCommandBuffer { path : String }
     | ViewKindRequired { path : String, kind : Binary.ViewKind }
+    | QueryActive { path : String }
+    | QueryInactive { path : String }
+    | QuerySetMissing { path : String }
     | SessionState SessionState
     | SessionStopped
 

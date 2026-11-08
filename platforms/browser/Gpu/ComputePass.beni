@@ -6,11 +6,11 @@
 
 import Binary
 import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Commands as Commands
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
 import Gpu.Handle as Handle
 import Gpu.Memory as Memory
-import Gpu.Native as Native
 import Gpu.Scalar as Scalar
 import Gpu.Session as Session
 import Gpu.Types as Types
@@ -35,27 +35,7 @@ pub with :
     → Result InputError a
 with encoder descriptor body =
     pass = CommandEncoder.beginComputePass encoder descriptor?
-    p = Engine.recordOf (Js.from pass)
-    s = Js.get p "session"
-    result = body pass
-    if not (Js.to (Js.get p "ended")) && Js.to (Js.get s "live") then
-        endPass p (Js.from pass)
-    else
-        ⊤
-    case result of
-        Ok value →
-            Ok value
-
-        Err problem →
-            Session.refuse s problem
-
-
--- End the pass: its encoder is unlocked.
-endPass : V, V → ⊤
-endPass p native =
-    Js.set p "ended" (Js.from True)
-    Js.set (Js.get p "encoder") "state" (Js.from "open")
-    Js.call native "end" [] ▷ ignore
+    Session.withPass (Js.from pass) (body pass)
 
 
 --| End the pass; its encoder takes commands again.
@@ -63,7 +43,7 @@ pub end : Handle.ComputePass → Result InputError ⊤
 end pass =
     native = Js.from pass
     at = Session.pass native "pass"?
-    endPass at.record native
+    Session.endPass at.record native
     Ok ⊤
 
 
@@ -72,21 +52,7 @@ pub setPipeline : Handle.ComputePass, Handle.ComputePipeline → Result InputErr
 setPipeline pass pipeline =
     native = Js.from pass
     at = Session.pass native "pass"?
-    Session.usable at.session (Js.from pipeline) "pipeline"?
-    Js.call native "setPipeline" [ Js.from pipeline ] ▷ ignore
-    Ok ⊤
-
-
--- A bind group slot's group, when there is one.
-group : V, Maybe Handle.BindGroup → Result InputError V
-group s bindGroup =
-    case bindGroup of
-        Just g →
-            Session.usable s (Js.from g) "bindGroup"?
-            Ok (Js.from g)
-
-        Nothing →
-            Ok Js.null
+    Commands.setPipeline native at (Js.from pipeline)
 
 
 --| Bind `bindGroup` at `index` — `Nothing` unbinds it — with its dynamic
@@ -100,14 +66,7 @@ pub setBindGroup :
 setBindGroup pass index bindGroup offsets =
     native = Js.from pass
     at = Session.pass native "pass"?
-    g = group at.session bindGroup?
-    Js.call native "setBindGroup"
-        [ Js.from (Scalar.u32ToInt index)
-        , g
-        , Native.array offsets λo → Js.from (Scalar.u32ToInt o)
-        ]
-        ▷ ignore
-    Ok ⊤
+    Commands.setBindGroup native at index (Maybe.map bindGroup Js.from) offsets
 
 
 --| The overload of `setBindGroup` whose dynamic offsets are `length`
@@ -125,41 +84,7 @@ pub setBindGroupSlice :
 setBindGroupSlice pass index bindGroup offsets start length =
     native = Js.from pass
     at = Session.pass native "pass"?
-    s = at.session
-    g = group s bindGroup?
-    case offsets of
-        Binary.Uint32Array data →
-            case Memory.sourceInfo (Binary.ViewOf offsets) "dynamicOffsetsData" of
-                Err problem →
-                    Session.refuse s problem
-
-                Ok info →
-                    elements = info.elementLength
-                    if start < 0 || length < 0 || start > elements || length > elements - start then
-                        Session.refuse
-                            s
-                            (Error.OutOfRange
-                                { path = "dynamicOffsetsData"
-                                , offset = start
-                                , size = length
-                                , available = elements
-                                }
-                            )
-                    else
-                        Js.call native "setBindGroup"
-                            [ Js.from (Scalar.u32ToInt index)
-                            , g
-                            , Js.from data
-                            , Js.from start
-                            , Js.from length
-                            ]
-                            ▷ ignore
-                        Ok ⊤
-
-        _ →
-            Session.refuse
-                s
-                (Error.ViewKindRequired { path = "dynamicOffsetsData", kind = Binary.U32 })
+    Commands.setBindGroupSlice native at index (Maybe.map bindGroup Js.from) offsets start length
 
 
 --| Dispatch `x × y × z` workgroups.
@@ -203,66 +128,7 @@ pub setImmediates : Handle.ComputePass, Int, Binary.Source, Int, Maybe Int → R
 setImmediates pass rangeOffset data dataOffset size =
     native = Js.from pass
     at = Session.pass native "pass"?
-    s = at.session
-    Session.check s (immediatesPreflight rangeOffset data dataOffset size)?
-    if not (Js.typeIs (Js.get native "setImmediates") "function") then
-        Session.stopped
-            s
-            (Error.UnsupportedCapability
-                (Error.MissingHostMember "GPUComputePassEncoder.setImmediates")
-            )
-    else
-        sizeArg =
-            case size of
-                Just n →
-                    Js.from n
-
-                Nothing →
-                    Js.undefined
-        Js.catchIf
-            (λ⊤ →
-                Js.call native "setImmediates"
-                    [ Js.from rangeOffset, Memory.sourceObject data, Js.from dataOffset, sizeArg ]
-                    ▷ ignore
-                Ok ⊤
-            )
-            (λerror → Engine.isDomException error "OperationError")
-            λerror →
-                Session.stopped
-                    s
-                    (Error.HostOperationRejected
-                        (Error.ImmediateWriteRejected { message = Engine.messageOf error })
-                    )
-
-
-immediatesPreflight : Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
-immediatesPreflight rangeOffset data dataOffset size =
-    _ = Memory.size64 rangeOffset "rangeOffset"?
-    Memory.aligned rangeOffset 4 "rangeOffset"?
-    info = Memory.sourceInfo data "data"?
-    _ = Memory.size64 dataOffset "dataOffset"?
-    contents =
-        case size of
-            Just n →
-                Memory.size64 n "size"?
-
-            Nothing →
-                info.elementLength - dataOffset
-    if
-        dataOffset > info.elementLength
-            || contents < 0
-            || contents > info.elementLength - dataOffset
-    then
-        Err
-            (Error.OutOfRange
-                { path = "size"
-                , offset = dataOffset * info.bytesPerElement
-                , size = contents * info.bytesPerElement
-                , available = info.byteLength
-                }
-            )
-    else
-        Memory.aligned (contents * info.bytesPerElement) 4 "size"
+    Commands.setImmediates native at "GPUComputePassEncoder" rangeOffset data dataOffset size
 
 
 --| Open a debug group.
@@ -270,9 +136,7 @@ pub pushDebugGroup : Handle.ComputePass, String → Result InputError ⊤
 pushDebugGroup pass groupLabel =
     native = Js.from pass
     at = Session.pass native "pass"?
-    Session.debug at.session at.record 1 "pass"?
-    Js.call native "pushDebugGroup" [ Js.from groupLabel ] ▷ ignore
-    Ok ⊤
+    Commands.pushDebugGroup native at "pass" groupLabel
 
 
 --| Close the latest debug group; `DebugStackEmpty` when none is open.
@@ -280,9 +144,7 @@ pub popDebugGroup : Handle.ComputePass → Result InputError ⊤
 popDebugGroup pass =
     native = Js.from pass
     at = Session.pass native "pass"?
-    Session.debug at.session at.record (-1) "pass"?
-    Js.call native "popDebugGroup" [] ▷ ignore
-    Ok ⊤
+    Commands.popDebugGroup native at "pass"
 
 
 --| Insert a debug marker.
@@ -290,8 +152,7 @@ pub insertDebugMarker : Handle.ComputePass, String → Result InputError ⊤
 insertDebugMarker pass markerLabel =
     native = Js.from pass
     _ = Session.pass native "pass"?
-    Js.call native "insertDebugMarker" [ Js.from markerLabel ] ▷ ignore
-    Ok ⊤
+    Commands.insertDebugMarker native markerLabel
 
 
 --| The pass's label.

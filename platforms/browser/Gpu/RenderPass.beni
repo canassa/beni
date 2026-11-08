@@ -1,0 +1,352 @@
+--! The commands of a render pass (`docs/design/webgpu.md` §6.2): a pass
+--! begins on an encoder inside its run (`Gpu.CommandEncoder.beginRenderPass`)
+--! and ends with `end`, or by itself when `with`'s callback returns. Each
+--! command is issued at once, under the same rules as
+--! `Gpu.CommandEncoder`'s; after `end`, a command gives `PassEnded`.
+--!
+--! An `Ok` means the command passed the local checks and was issued, not
+--! that the device accepted it: the run's error scopes say that.
+--!
+--!     triangle : Gpu.Handle.CommandEncoder, Gpu.Handle.TextureView, Gpu.Handle.RenderPipeline
+--!         → Result Gpu.Error.InputError ⊤
+--!     triangle encoder target pipeline =
+--!         color = Gpu.Types.renderPassColorAttachment (Gpu.Types.AttachmentTextureView target) Gpu.Types.Clear Gpu.Types.Store
+--!         Gpu.RenderPass.with encoder (Gpu.Types.renderPassDescriptor [ Just color ]) (drawTriangle pipeline _)
+--!
+--!     drawTriangle : Gpu.Handle.RenderPipeline, Gpu.Handle.RenderPass → Result Gpu.Error.InputError ⊤
+--!     drawTriangle pipeline pass =
+--!         Gpu.RenderPass.setPipeline pass pipeline?
+--!         Gpu.RenderPass.draw pass (Gpu.RenderPass.vertices three)
+
+import Binary
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Commands as Commands
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Native as Native
+import Gpu.Scalar as Scalar
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+--| The arguments of a draw (`draw`), in the native order.
+pub type alias DrawArguments =
+    vertexCount : Scalar.U32
+    instanceCount : Scalar.U32
+    firstVertex : Scalar.U32
+    firstInstance : Scalar.U32
+
+
+--| The arguments of an indexed draw (`drawIndexed`), in the native order;
+--| `baseVertex` is signed.
+pub type alias DrawIndexedArguments =
+    indexCount : Scalar.U32
+    instanceCount : Scalar.U32
+    firstIndex : Scalar.U32
+    baseVertex : Scalar.I32
+    firstInstance : Scalar.U32
+
+
+--| `count` vertices of one instance, from the first vertex: the native
+--| defaults of the other arguments.
+pub vertices : Scalar.U32 → DrawArguments
+vertices count =
+    { vertexCount = count
+    , instanceCount = Scalar.u32One
+    , firstVertex = Scalar.u32Zero
+    , firstInstance = Scalar.u32Zero
+    }
+
+
+--| `count` indices of one instance, from the first index, with no base
+--| vertex: the native defaults of the other arguments.
+pub indices : Scalar.U32 → DrawIndexedArguments
+indices count =
+    { indexCount = count
+    , instanceCount = Scalar.u32One
+    , firstIndex = Scalar.u32Zero
+    , baseVertex = Scalar.i32Zero
+    , firstInstance = Scalar.u32Zero
+    }
+
+
+--| Begin a render pass on `encoder`, run `body` with it, and end it, unless
+--| `body` ended it. `body`'s `Err` is latched for the run, as every refusal
+--| is.
+pub with :
+      Handle.CommandEncoder
+    , Types.RenderPassDescriptor
+    , sync (Handle.RenderPass → Result InputError a)
+    → Result InputError a
+with encoder descriptor body =
+    pass = CommandEncoder.beginRenderPass encoder descriptor?
+    Session.withPass (Js.from pass) (body pass)
+
+
+-- The pass a command is given, when the command may go on.
+open : Handle.RenderPass → Result InputError Commands.At
+open pass = Session.pass (Js.from pass) "pass"
+
+
+--| End the pass; its encoder takes commands again.
+pub end : Handle.RenderPass → Result InputError ⊤
+end pass =
+    at = open pass?
+    Session.endPass at.record (Js.from pass)
+    Ok ⊤
+
+
+--| Use `pipeline` for the draws that follow.
+pub setPipeline : Handle.RenderPass, Handle.RenderPipeline → Result InputError ⊤
+setPipeline pass pipeline =
+    at = open pass?
+    Commands.setPipeline (Js.from pass) at (Js.from pipeline)
+
+
+--| Bind `bindGroup` at `index` — `Nothing` unbinds it — with its dynamic
+--| offsets, in binding order.
+pub setBindGroup :
+      Handle.RenderPass
+    , Scalar.U32
+    , Maybe Handle.BindGroup
+    , List Scalar.U32
+    → Result InputError ⊤
+setBindGroup pass index bindGroup offsets =
+    at = open pass?
+    Commands.setBindGroup (Js.from pass) at index (Maybe.map bindGroup Js.from) offsets
+
+
+--| The overload of `setBindGroup` whose dynamic offsets are `length`
+--| elements of a `Uint32Array` view, from element `start`
+--| (`Gpu.ComputePass.setBindGroupSlice`'s checks).
+pub setBindGroupSlice :
+      Handle.RenderPass
+    , Scalar.U32
+    , Maybe Handle.BindGroup
+    , Binary.View
+    , Int
+    , Int
+    → Result InputError ⊤
+setBindGroupSlice pass index bindGroup offsets start length =
+    at = open pass?
+    Commands.setBindGroupSlice
+        (Js.from pass)
+        at
+        index
+        (Maybe.map bindGroup Js.from)
+        offsets
+        start
+        length
+
+
+--| Write immediate data (`Gpu.ComputePass.setImmediates`'s checks and
+--| failures).
+pub setImmediates : Handle.RenderPass, Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
+setImmediates pass rangeOffset data dataOffset size =
+    at = open pass?
+    Commands.setImmediates (Js.from pass) at "GPURenderPassEncoder" rangeOffset data dataOffset size
+
+
+--| Use `buffer` for indexed draws: `format` is the size of an index, from
+--| byte `offset`, `size` bytes or `Nothing` for the rest of the buffer.
+pub setIndexBuffer :
+      Handle.RenderPass
+    , Handle.Buffer
+    , Types.IndexFormat
+    , Int
+    , Maybe Int
+    → Result InputError ⊤
+setIndexBuffer pass buffer format offset size =
+    at = open pass?
+    Commands.setIndexBuffer (Js.from pass) at (Js.from buffer) format offset size
+
+
+--| Use `buffer` for vertex buffer `slot` — `Nothing` unbinds the slot —
+--| from byte `offset`, `size` bytes or `Nothing` for the rest.
+pub setVertexBuffer :
+      Handle.RenderPass
+    , Scalar.U32
+    , Maybe Handle.Buffer
+    , Int
+    , Maybe Int
+    → Result InputError ⊤
+setVertexBuffer pass slot buffer offset size =
+    at = open pass?
+    Commands.setVertexBuffer (Js.from pass) at slot (Maybe.map buffer Js.from) offset size
+
+
+--| Draw.
+pub draw : Handle.RenderPass, DrawArguments → Result InputError ⊤
+draw pass a =
+    _ = open pass?
+    Commands.draw
+        (Js.from pass)
+        (Scalar.u32ToInt a.vertexCount)
+        (Scalar.u32ToInt a.instanceCount)
+        (Scalar.u32ToInt a.firstVertex)
+        (Scalar.u32ToInt a.firstInstance)
+
+
+--| Draw with the index buffer.
+pub drawIndexed : Handle.RenderPass, DrawIndexedArguments → Result InputError ⊤
+drawIndexed pass a =
+    _ = open pass?
+    Commands.drawIndexed
+        (Js.from pass)
+        (Scalar.u32ToInt a.indexCount)
+        (Scalar.u32ToInt a.instanceCount)
+        (Scalar.u32ToInt a.firstIndex)
+        (Scalar.i32ToInt a.baseVertex)
+        (Scalar.u32ToInt a.firstInstance)
+
+
+--| Draw with the arguments that `buffer` holds at `offset`: four 32-bit
+--| words, as `DrawArguments` orders them.
+pub drawIndirect : Handle.RenderPass, Handle.Buffer, Int → Result InputError ⊤
+drawIndirect pass buffer offset =
+    at = open pass?
+    Commands.drawIndirect (Js.from pass) at "drawIndirect" (Js.from buffer) offset
+
+
+--| Draw indexed with the arguments that `buffer` holds at `offset`: five
+--| 32-bit words, as `DrawIndexedArguments` orders them.
+pub drawIndexedIndirect : Handle.RenderPass, Handle.Buffer, Int → Result InputError ⊤
+drawIndexedIndirect pass buffer offset =
+    at = open pass?
+    Commands.drawIndirect (Js.from pass) at "drawIndexedIndirect" (Js.from buffer) offset
+
+
+--| Set the viewport: `x`, `y`, `width` and `height` in pixels, and the
+--| depth range.
+pub setViewport :
+      Handle.RenderPass
+    , Scalar.FiniteF32
+    , Scalar.FiniteF32
+    , Scalar.FiniteF32
+    , Scalar.FiniteF32
+    , Scalar.FiniteF32
+    , Scalar.FiniteF32
+    → Result InputError ⊤
+setViewport pass x y width height minDepth maxDepth =
+    _ = open pass?
+    f = λv → Js.from (Scalar.finiteF32ToFloat v)
+    Js.call (Js.from pass) "setViewport" [ f x, f y, f width, f height, f minDepth, f maxDepth ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Set the scissor rectangle, in pixels.
+pub setScissorRect :
+      Handle.RenderPass
+    , Scalar.U32
+    , Scalar.U32
+    , Scalar.U32
+    , Scalar.U32
+    → Result InputError ⊤
+setScissorRect pass x y width height =
+    _ = open pass?
+    f = λv → Js.from (Scalar.u32ToInt v)
+    Js.call (Js.from pass) "setScissorRect" [ f x, f y, f width, f height ] ▷ ignore
+    Ok ⊤
+
+
+--| Set the constant color of the `Constant` blend factors.
+pub setBlendConstant : Handle.RenderPass, Types.Color → Result InputError ⊤
+setBlendConstant pass color =
+    _ = open pass?
+    Js.call (Js.from pass) "setBlendConstant" [ Native.color color ] ▷ ignore
+    Ok ⊤
+
+
+--| Set the stencil reference value.
+pub setStencilReference : Handle.RenderPass, Scalar.U32 → Result InputError ⊤
+setStencilReference pass reference =
+    _ = open pass?
+    Js.call (Js.from pass) "setStencilReference" [ Js.from (Scalar.u32ToInt reference) ] ▷ ignore
+    Ok ⊤
+
+
+--| Begin occlusion query `index` of the pass's occlusion query set: a pass
+--| with none is `QuerySetMissing`, an index past the set `OutOfRange`, and
+--| a query begun while one is open `QueryActive`.
+pub beginOcclusionQuery : Handle.RenderPass, Scalar.U32 → Result InputError ⊤
+beginOcclusionQuery pass index =
+    at = open pass?
+    s = at.session
+    set = Js.get at.record "occlusionQuerySet"
+    i = Scalar.u32ToInt index
+    if Js.isNull set then
+        Session.refuse s (Error.QuerySetMissing { path = "queryIndex" })
+    else
+        count : Int
+        count = Js.to (Js.get set "count")
+        if i ≥ count then
+            Session.refuse
+                s
+                (Error.OutOfRange { path = "queryIndex", offset = i, size = 1, available = count })
+        else if Js.to (Js.get at.record "occlusion") then
+            Session.refuse s (Error.QueryActive { path = "queryIndex" })
+        else
+            Js.set at.record "occlusion" (Js.from True)
+            Js.call (Js.from pass) "beginOcclusionQuery" [ Js.from i ] ▷ ignore
+            Ok ⊤
+
+
+--| End the open occlusion query; `QueryInactive` when none is open.
+pub endOcclusionQuery : Handle.RenderPass → Result InputError ⊤
+endOcclusionQuery pass =
+    at = open pass?
+    if not (Js.to (Js.get at.record "occlusion")) then
+        Session.refuse at.session (Error.QueryInactive { path = "pass" })
+    else
+        Js.set at.record "occlusion" (Js.from False)
+        Js.call (Js.from pass) "endOcclusionQuery" [] ▷ ignore
+        Ok ⊤
+
+
+--| Run `bundles`, in order. Each must be usable on the pass's device. As
+--| natively, the pipeline, bind groups, immediates and buffers the pass set
+--| before are unset after: set them again before the next draw.
+pub executeBundles : Handle.RenderPass, List Handle.RenderBundle → Result InputError ⊤
+executeBundles pass bundles =
+    at = open pass?
+    Make.each bundles (λb → Session.usable at.session (Js.from b) "bundles")?
+    Js.call (Js.from pass) "executeBundles" [ Native.array bundles λb → Js.from b ] ▷ ignore
+    Ok ⊤
+
+
+--| Open a debug group.
+pub pushDebugGroup : Handle.RenderPass, String → Result InputError ⊤
+pushDebugGroup pass groupLabel =
+    at = open pass?
+    Commands.pushDebugGroup (Js.from pass) at "pass" groupLabel
+
+
+--| Close the latest debug group; `DebugStackEmpty` when none is open.
+pub popDebugGroup : Handle.RenderPass → Result InputError ⊤
+popDebugGroup pass =
+    at = open pass?
+    Commands.popDebugGroup (Js.from pass) at "pass"
+
+
+--| Insert a debug marker.
+pub insertDebugMarker : Handle.RenderPass, String → Result InputError ⊤
+insertDebugMarker pass markerLabel =
+    _ = open pass?
+    Commands.insertDebugMarker (Js.from pass) markerLabel
+
+
+--| The pass's label.
+pub label : Handle.RenderPass → String
+label pass = Js.to (Js.get (Js.from pass) "label")

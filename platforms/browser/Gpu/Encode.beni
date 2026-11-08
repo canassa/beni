@@ -54,3 +54,39 @@ run device descriptor body =
 
         ( Err problem, _ ) →
             Err problem
+
+
+--| Run `body` with a new render bundle encoder of `device`, checked (§6.1),
+--| as `run` does: the encoder is made, `body` encodes, and the encoder is
+--| finished into a render bundle, all between the device's error scopes,
+--| in one host turn. A color or depth format of `descriptor` whose feature
+--| the device lacks is `UnsupportedCapability` before any native call; the
+--| host's refusal of such a format anyway is `FormatFeatureRejected`. A
+--| throw in `body` is a defect. May suspend; `body` never does.
+pub bundle :
+      Handle.Device
+    , Types.RenderBundleEncoderDescriptor
+    , sync (Handle.RenderBundleEncoder → Result InputError a)
+    → Result Error.Error { value : a, bundle : Handle.RenderBundle }
+bundle device descriptor body =
+    native = Js.from device
+    Make.formatsAvailable native (Make.bundleFormats descriptor)?
+    value = Js.ref Nothing
+
+    made =
+        Engine.checkedMaking
+            native
+            "encodeBundle"
+            (Make.labelsOf descriptor.label)
+            (λ⊤ → Session.bundle native Js.null descriptor (λenc → body (Js.to enc)) value)
+            (λ_ → ⊤)
+            λ_ → ⊤
+    case ( made, Js.read value ) of
+        ( Ok rendered, Just v ) →
+            Ok { value = v, bundle = Js.to rendered }
+
+        ( Ok _, Nothing ) →
+            Engine.defect "a bundle run published a bundle without a value"
+
+        ( Err problem, _ ) →
+            Err problem

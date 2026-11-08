@@ -1,0 +1,195 @@
+--! The commands of a render bundle encoder (`docs/design/webgpu.md` §6.2):
+--! an encoder exists only inside `Gpu.Encode.bundle` or
+--! `Gpu.Batch.encodeBundle`, and each command here is issued at once,
+--! without suspending, under the rules of `Gpu.RenderPass`'s commands.
+--! After `finish`, a command gives `EncoderFinished`; after the run,
+--! `SessionState SessionEnded`.
+
+import Binary
+import Gpu.Commands as Commands
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Native as Native
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+-- The encoder a command is given, when the command may go on.
+open : Handle.RenderBundleEncoder → Result InputError Commands.At
+open encoder = Session.encoder (Js.from encoder) "encoder"
+
+
+--| Use `pipeline` for the draws that follow.
+pub setPipeline : Handle.RenderBundleEncoder, Handle.RenderPipeline → Result InputError ⊤
+setPipeline encoder pipeline =
+    at = open encoder?
+    Commands.setPipeline (Js.from encoder) at (Js.from pipeline)
+
+
+--| Bind `bindGroup` at `index` — `Nothing` unbinds it — with its dynamic
+--| offsets, in binding order.
+pub setBindGroup :
+      Handle.RenderBundleEncoder
+    , Scalar.U32
+    , Maybe Handle.BindGroup
+    , List Scalar.U32
+    → Result InputError ⊤
+setBindGroup encoder index bindGroup offsets =
+    at = open encoder?
+    Commands.setBindGroup (Js.from encoder) at index (Maybe.map bindGroup Js.from) offsets
+
+
+--| The overload of `setBindGroup` whose dynamic offsets are `length`
+--| elements of a `Uint32Array` view, from element `start`
+--| (`Gpu.ComputePass.setBindGroupSlice`'s checks).
+pub setBindGroupSlice :
+      Handle.RenderBundleEncoder
+    , Scalar.U32
+    , Maybe Handle.BindGroup
+    , Binary.View
+    , Int
+    , Int
+    → Result InputError ⊤
+setBindGroupSlice encoder index bindGroup offsets start length =
+    at = open encoder?
+    Commands.setBindGroupSlice
+        (Js.from encoder)
+        at
+        index
+        (Maybe.map bindGroup Js.from)
+        offsets
+        start
+        length
+
+
+--| Write immediate data (`Gpu.ComputePass.setImmediates`'s checks and
+--| failures).
+pub setImmediates :
+      Handle.RenderBundleEncoder
+    , Int
+    , Binary.Source
+    , Int
+    , Maybe Int
+    → Result InputError ⊤
+setImmediates encoder rangeOffset data dataOffset size =
+    at = open encoder?
+    Commands.setImmediates
+        (Js.from encoder)
+        at
+        "GPURenderBundleEncoder"
+        rangeOffset
+        data
+        dataOffset
+        size
+
+
+--| Use `buffer` for indexed draws (`Gpu.RenderPass.setIndexBuffer`).
+pub setIndexBuffer :
+      Handle.RenderBundleEncoder
+    , Handle.Buffer
+    , Types.IndexFormat
+    , Int
+    , Maybe Int
+    → Result InputError ⊤
+setIndexBuffer encoder buffer format offset size =
+    at = open encoder?
+    Commands.setIndexBuffer (Js.from encoder) at (Js.from buffer) format offset size
+
+
+--| Use `buffer` for vertex buffer `slot` (`Gpu.RenderPass.setVertexBuffer`).
+pub setVertexBuffer :
+      Handle.RenderBundleEncoder
+    , Scalar.U32
+    , Maybe Handle.Buffer
+    , Int
+    , Maybe Int
+    → Result InputError ⊤
+setVertexBuffer encoder slot buffer offset size =
+    at = open encoder?
+    Commands.setVertexBuffer (Js.from encoder) at slot (Maybe.map buffer Js.from) offset size
+
+
+--| Draw.
+pub draw : Handle.RenderBundleEncoder, RenderPass.DrawArguments → Result InputError ⊤
+draw encoder a =
+    _ = open encoder?
+    Commands.draw
+        (Js.from encoder)
+        (Scalar.u32ToInt a.vertexCount)
+        (Scalar.u32ToInt a.instanceCount)
+        (Scalar.u32ToInt a.firstVertex)
+        (Scalar.u32ToInt a.firstInstance)
+
+
+--| Draw with the index buffer.
+pub drawIndexed : Handle.RenderBundleEncoder, RenderPass.DrawIndexedArguments → Result InputError ⊤
+drawIndexed encoder a =
+    _ = open encoder?
+    Commands.drawIndexed
+        (Js.from encoder)
+        (Scalar.u32ToInt a.indexCount)
+        (Scalar.u32ToInt a.instanceCount)
+        (Scalar.u32ToInt a.firstIndex)
+        (Scalar.i32ToInt a.baseVertex)
+        (Scalar.u32ToInt a.firstInstance)
+
+
+--| Draw with the arguments that `buffer` holds at `offset`
+--| (`Gpu.RenderPass.drawIndirect`).
+pub drawIndirect : Handle.RenderBundleEncoder, Handle.Buffer, Int → Result InputError ⊤
+drawIndirect encoder buffer offset =
+    at = open encoder?
+    Commands.drawIndirect (Js.from encoder) at "drawIndirect" (Js.from buffer) offset
+
+
+--| Draw indexed with the arguments that `buffer` holds at `offset`
+--| (`Gpu.RenderPass.drawIndexedIndirect`).
+pub drawIndexedIndirect : Handle.RenderBundleEncoder, Handle.Buffer, Int → Result InputError ⊤
+drawIndexedIndirect encoder buffer offset =
+    at = open encoder?
+    Commands.drawIndirect (Js.from encoder) at "drawIndexedIndirect" (Js.from buffer) offset
+
+
+--| Open a debug group.
+pub pushDebugGroup : Handle.RenderBundleEncoder, String → Result InputError ⊤
+pushDebugGroup encoder groupLabel =
+    at = open encoder?
+    Commands.pushDebugGroup (Js.from encoder) at "encoder" groupLabel
+
+
+--| Close the latest debug group; `DebugStackEmpty` when none is open.
+pub popDebugGroup : Handle.RenderBundleEncoder → Result InputError ⊤
+popDebugGroup encoder =
+    at = open encoder?
+    Commands.popDebugGroup (Js.from encoder) at "encoder"
+
+
+--| Insert a debug marker.
+pub insertDebugMarker : Handle.RenderBundleEncoder, String → Result InputError ⊤
+insertDebugMarker encoder markerLabel =
+    _ = open encoder?
+    Commands.insertDebugMarker (Js.from encoder) markerLabel
+
+
+--| Finish the encoder now, with `descriptor`'s label; its run gives this
+--| bundle, and finishes nothing again. Later commands give
+--| `EncoderFinished`.
+pub finish : Handle.RenderBundleEncoder, Types.RenderBundleDescriptor → Result InputError ⊤
+finish encoder descriptor =
+    at = open encoder?
+    bundle = Js.call (Js.from encoder) "finish" [ Native.renderBundleDescriptor descriptor ]
+    Session.finished at.record bundle
+    Ok ⊤
+
+
+--| The encoder's label.
+pub label : Handle.RenderBundleEncoder → String
+label encoder = Js.to (Js.get (Js.from encoder) "label")
+
+
+--| Set the encoder's label.
+pub setLabel : Handle.RenderBundleEncoder, String → ⊤
+setLabel encoder text = Js.set (Js.from encoder) "label" (Js.from text)

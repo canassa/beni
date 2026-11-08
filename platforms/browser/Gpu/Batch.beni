@@ -291,3 +291,66 @@ writeTexture b queue destination data layout extent =
     Result.map
         (inBatch batch λ⊤ → Make.writeTexture (Js.from queue) batch destination data layout extent)
         λ_ → ⊤
+
+
+--| A view of `texture`, provisional in the batch; the texture may be one the
+--| batch made (`Gpu.Texture.createView`'s checks).
+pub createView :
+      Handle.Batch
+    , Handle.Texture
+    , Types.TextureViewDescriptor
+    → Result InputError Handle.TextureView
+createView b texture descriptor = make b λd batch →
+    Make.textureView d batch (Js.from texture) descriptor
+
+
+--| A render pipeline by the native synchronous call, provisional in the
+--| batch (`Gpu.Device.createRenderPipeline`'s checks). There is no
+--| asynchronous form in a batch.
+pub createRenderPipeline :
+      Handle.Batch
+    , Types.RenderPipelineDescriptor
+    → Result InputError Handle.RenderPipeline
+createRenderPipeline b descriptor = make b λd batch → Make.renderPipeline d batch descriptor
+
+
+--| The bind group layout of a render pipeline at `index`, provisional in
+--| the batch.
+pub getRenderBindGroupLayout :
+      Handle.Batch
+    , Handle.RenderPipeline
+    , Scalar.U32
+    → Result InputError Handle.BindGroupLayout
+getRenderBindGroupLayout b pipeline index = make b λ_ batch →
+    Make.getBindGroupLayout (Js.from pipeline) batch index
+
+
+--| Encode a render bundle in the batch: `Gpu.Encode.bundle` without scopes
+--| of its own, under the batch's. The bundle is provisional in the batch.
+pub encodeBundle :
+      Handle.Batch
+    , Types.RenderBundleEncoderDescriptor
+    , sync (Handle.RenderBundleEncoder → Result InputError a)
+    → Result InputError { value : a, bundle : Handle.RenderBundle }
+encodeBundle b descriptor body =
+    batch = Js.from b
+    open batch?
+    value = Js.ref Nothing
+    case Session.bundle (deviceOf batch) batch descriptor (λenc → body (Js.to enc)) value of
+        Err (Error.InvalidInput problem) →
+            Session.refuse batch problem
+
+        Err problem →
+            Session.stopped batch problem
+
+        Ok rendered →
+            Engine.adoptInBatch rendered (Js.get batch "device") batch
+            Js.call (Js.get batch "made") "push"
+                [ Js.object [ ( "made", rendered ), ( "discard", Js.from ignore ) ] ]
+                ▷ ignore
+            case Js.read value of
+                Just v →
+                    Ok { value = v, bundle = Js.to rendered }
+
+                Nothing →
+                    Engine.defect "a bundle in a batch finished without a value"

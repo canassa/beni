@@ -553,3 +553,140 @@ writeTexture queue batch destination data layout extent =
         , adopt = Js.from ignore
         , discard = Js.from ignore
         }
+
+
+-- ---- Formats, views and render pipelines (S3) -------------------------------
+
+--| The first of `formats` that a feature gates, with the feature.
+pub gated : List Types.TextureFormat → Maybe (Types.TextureFormat × Types.FeatureName)
+gated formats =
+    case List.filterMap formats λf → Maybe.map (formatFeature f) λn → ( f, n ) of
+        [ first, …_ ] →
+            Just first
+
+        [] →
+            Nothing
+
+
+--| Every format of `formats` must have its feature on `device` (a native
+--| device): the first that lacks one is `UnsupportedCapability`, before any
+--| native call.
+pub formatsAvailable : V, List Types.TextureFormat → Result Error.Error ⊤
+formatsAvailable device formats =
+    features = Feature.fromNames (Engine.readNames device "features")
+    missing = List.filter (List.filterMap formats formatFeature) λf → not (Feature.has features f)
+    case missing of
+        [ f, …_ ] →
+            Err (Error.UnsupportedCapability (Error.MissingFeature f))
+
+        [] →
+            Ok ⊤
+
+
+--| Make the native call `call`, whose content timeline checks the features
+--| of `formats` (ledger §3, §5): a `TypeError` it throws is
+--| `FormatFeatureRejected` when one of them is feature-gated — the
+--| preflight saw the feature, the host refused it anyway — and goes on, a
+--| defect, otherwise.
+pub formatChecked : List Types.TextureFormat, sync (⊤ → V) → Result Error.Error V
+formatChecked formats call =
+    Js.catchIf (λ⊤ → Ok (call ⊤)) (λerror → Engine.isTypeError error && gated formats ≠ Nothing) λerror →
+        case gated formats of
+            Just ( format, required ) →
+                Err
+                    (Error.FormatFeatureRejected
+                        { format = format, required = required, message = Engine.messageOf error }
+                    )
+
+            Nothing →
+                Js.throw error
+
+
+--| A view of `texture` (a native texture of `device`, in `batch` or null):
+--| the texture must be usable, and a view format whose feature the device
+--| lacks is refused before the native call. The view keeps its texture in
+--| its record, so a check of the view can see the texture's state.
+pub textureView : V, V, V, Types.TextureViewDescriptor → Result Error.Error Op
+textureView device batch target descriptor =
+    handle target (Engine.recordOf device) batch "texture"?
+
+    formats =
+        case descriptor.format of
+            Types.Value f →
+                [ f ]
+
+            Types.Default →
+                []
+    formatsAvailable device formats?
+    converted = Native.textureViewDescriptor descriptor
+    Ok
+        { name = "createView"
+        , labels = labelsOf descriptor.label
+        , call = Js.from λ⊤ → formatChecked formats λ⊤ → Js.call target "createView" [ converted ]
+        , adopt = Js.from λmade → Js.set (Engine.recordOf made) "texture" target
+        , discard = Js.from ignore
+        }
+
+
+--| The formats a render pipeline names: its color targets' and its depth
+--| and stencil format.
+pub renderFormats : Types.RenderPipelineDescriptor → List Types.TextureFormat
+renderFormats descriptor =
+    targets =
+        case descriptor.fragment of
+            Types.Value fragment →
+                List.filterMap fragment.targets λt → Maybe.map t λc → c.format
+
+            Types.Default →
+                []
+    case descriptor.depthStencil of
+        Types.Value d →
+            [ …targets, d.format ]
+
+        Types.Default →
+            targets
+
+
+--| The handles a render pipeline names — its layout when explicit, its
+--| vertex and fragment modules — and the features of its formats.
+pub renderHandles : V, V, Types.RenderPipelineDescriptor → Result Error.Error ⊤
+renderHandles device batch descriptor =
+    r = Engine.recordOf device
+    case descriptor.layout of
+        Types.Explicit layout →
+            handle (Js.from layout) r batch "layout"?
+
+        Types.Auto →
+            ⊤
+    handle (Js.from descriptor.vertex.module) r batch "vertex.module"?
+    case descriptor.fragment of
+        Types.Value fragment →
+            handle (Js.from fragment.module) r batch "fragment.module"?
+
+        Types.Default →
+            ⊤
+    formatsAvailable device (renderFormats descriptor)
+
+
+--| A render pipeline, made at once (the synchronous form).
+pub renderPipeline : V, V, Types.RenderPipelineDescriptor → Result Error.Error Op
+renderPipeline device batch descriptor =
+    renderHandles device batch descriptor?
+    formats = renderFormats descriptor
+    converted = Native.renderPipelineDescriptor descriptor
+    Ok
+        (plain "createRenderPipeline" descriptor.label λ⊤ →
+            formatChecked formats λ⊤ → Js.call device "createRenderPipeline" [ converted ]
+        )
+
+
+--| The formats a render bundle encoder names.
+pub bundleFormats : Types.RenderBundleEncoderDescriptor → List Types.TextureFormat
+bundleFormats descriptor =
+    colors = List.filterMap descriptor.colorFormats λf → f
+    case descriptor.depthStencilFormat of
+        Types.Value f →
+            [ …colors, f ]
+
+        Types.Default →
+            colors
