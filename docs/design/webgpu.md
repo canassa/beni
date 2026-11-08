@@ -233,7 +233,13 @@ no Python and no network access at generation time.
 when a committed file differs, as `skill-api`'s check does. (The existing check
 for the shipped `Browser.Host` modules runs in `test-native-bindings`, outside
 the gates; the GPU files need the gated check.) The step that writes them is
-named by slice S1.
+`zig build gpu-bindings` (*As built — S1*, 2026-11-08: `tests/gpu_bindings.zig` holds
+the staleness check, the census of every declaration and the exposure assertion, and
+runs in `test-blackbox`; `src/native/Gpu.zig` holds the name maps, version 1). The
+generated `Gpu.Types`, `Gpu.Flags`, `Gpu.Limits` and `Gpu.Native` are held to the
+generator, not to `beni fmt` (`tests/fmt-exempt.txt`). Two `Gpu.Types` dictionaries are
+not descriptors and are not emitted: `GPUPipelineErrorInit` and
+`GPUUncapturedErrorEventInit`, the constructor inits that §3 replaces with pure values.
 
 ### 2.3 Realms
 
@@ -354,7 +360,11 @@ No arbitrary event dispatch into a native device is needed to render or compute.
 
 Do not treat an unbounded beni `Int` as a validated GPUSize32. Provide opaque
 `U32`, `I32`, `Size64`, `FiniteF32` and `FiniteF64` scalar constructors with
-`Result InputError` and conversion helpers. Their accepted domains cover every
+`Result InputError` and conversion helpers. *As built — S1 (2026-11-08), a refinement
+for the owner to confirm:* the constructors return `Result Gpu.Scalar.DomainError`, and
+`Gpu.Error.InputError` carries the same facts as `NumericDomain { path, expected, actual }`.
+`Gpu.Error` names `Gpu.Types` (a feature or a format in a failure) and `Gpu.Types` names
+`Gpu.Scalar`, so `Gpu.Scalar` cannot name `Gpu.Error` without a module cycle. Their accepted domains cover every
 value the corresponding Web IDL type accepts after conversion. Integer
 constructors require integral values; callers can request the standard's
 truncating conversion explicitly. Preserve signed baseVertex/depthBias, not
