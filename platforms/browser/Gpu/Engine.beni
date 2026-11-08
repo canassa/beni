@@ -365,6 +365,11 @@ pub isTypeError : V → Bool
 isTypeError error = Js.instanceOf error (Js.global "TypeError")
 
 
+--| Whether `error` is a native `RangeError`.
+pub isRangeError : V → Bool
+isRangeError error = Js.instanceOf error (Js.global "RangeError")
+
+
 --| The `message` of a native error.
 pub messageOf : V → String
 messageOf error = Js.to (Js.get error "message")
@@ -438,8 +443,11 @@ adoptDevice device ch =
             [ Js.from λinfo → guard ch (deviceContext r "lost") λ⊤ → lost r info
             , Js.from λerror → reportDefect r (contextual (deviceContext r "lost") error)
             ]
-    -- The queue belongs to the device: its record names the device.
-    _ = Js.call table "set" [ member device "queue", Js.object [ ( "device", r ) ] ]
+    -- The queue belongs to the device: its record names the device, and
+    -- the native device its checked operations run on.
+    _ =
+        Js.call table "set"
+            [ member device "queue", Js.object [ ( "device", r ), ( "native", device ) ] ]
     ⊤
 
 
@@ -621,6 +629,8 @@ newScopes ⊤ =
         , ( "taken", Js.from False )
         , ( "onLoss", Js.null )
         , ( "made", Js.null )
+        , ( "host", Js.null )
+        , ( "discard", Js.null )
         ]
 
 
@@ -646,7 +656,76 @@ type Waited
 --| a cancelled operation leaves, goes to the device's program. `labels`
 --| name the resources, for diagnostics.
 pub checked : V, String, List String, sync (⊤ → Result Error.Error V) → Result Error.Error V
-checked device operation labels call =
+checked device operation labels call = checkedMaking device operation labels call ignore ignore
+
+
+--| `checked` for an object that keeps more state than its status: `adopt`
+--| fills the made object's record while it is provisional, before anyone
+--| can use it, and `discard` releases an object that is rejected (a
+--| buffer's memory), whether a scope, a loss or a cancellation rejected it.
+pub checkedMaking :
+      V
+    , String
+    , List String
+    , sync (⊤ → Result Error.Error V)
+    , sync (V → ⊤)
+    , sync (V → ⊤)
+    → Result Error.Error V
+checkedMaking device operation labels call adopt discard =
+    case admit device operation of
+        Err problem →
+            Err problem
+
+        Ok _ →
+            r = recordOf device
+            scopes = newScopes ⊤
+            Js.set scopes "discard" (Js.from discard)
+            outcome = section device r scopes operation labels call
+            case outcome of
+                Ok made →
+                    Js.call table "set"
+                        [ made, Js.object [ ( "device", r ), ( "status", Js.from "provisional" ) ] ]
+                        ▷ ignore
+                    adopt made
+                    Js.set scopes "made" made
+
+                Err _ →
+                    ⊤
+            case settle r scopes operation of
+                Err problem →
+                    reject scopes
+                    Err problem
+
+                Ok observed →
+                    case failureOf (ownFailure outcome) observed of
+                        Just problem →
+                            reject scopes
+                            Err problem
+
+                        Nothing →
+                            -- `outcome` is `Ok made` here: a failed call is
+                            -- its own failure.
+                            made = Js.get scopes "made"
+                            Js.set (recordOf made) "status" (Js.from "accepted")
+                            Ok made
+
+
+--| A checked operation whose native call answers with a promise
+--| (`mapAsync`): `call` makes the call between the scopes, as for
+--| `checked`, and gives the promise; `classify` runs in its reaction —
+--| whether or not anyone still waits — and names what the ledger documents
+--| for it, as `Expected (Ok value)` or `Expected (Err failure)`, and what
+--| it does not as `Unexpected`. The operation waits for the pops and the
+--| promise, or for the device's loss; the promise's failure joins the
+--| scopes' observations, and a loss wins over both.
+pub checkedAwait :
+      V
+    , String
+    , List String
+    , sync (⊤ → Result Error.Error V)
+    , sync (Bool, V → Outcome (Result Error.Error V))
+    → Result Error.Error V
+checkedAwait device operation labels call classify =
     case admit device operation of
         Err problem →
             Err problem
@@ -656,86 +735,153 @@ checked device operation labels call =
             scopes = newScopes ⊤
             outcome = section device r scopes operation labels call
             case outcome of
-                Ok made →
-                    Js.call table "set"
-                        [ made, Js.object [ ( "device", r ), ( "status", Js.from "provisional" ) ] ]
+                Ok promise →
+                    Js.set scopes "owed" (Js.from (int (Js.get scopes "owed") + 1))
+                    Js.set r "pops" (Js.from (int (Js.get r "pops") + 1))
+                    ch = Js.get r "channel"
+                    context = deviceContext r operation
+                    Js.call promise "then"
+                        [ Js.from λvalue →
+                            guard ch context λ⊤ →
+                                hostSettled r scopes operation (classified classify True value)
+                            popped r
+                        , Js.from λerror →
+                            guard ch context λ⊤ →
+                                hostSettled r scopes operation (classified classify False error)
+                            popped r
+                        ]
                         ▷ ignore
-                    Js.set scopes "made" made
 
                 Err _ →
                     ⊤
-            waited = waitScopes r scopes
-            unexpected = Js.get scopes "unexpected"
-            if not (Js.isNull unexpected) then
-                Js.throw unexpected
-            else
-                observed = observations scopes
+            case settle r scopes operation of
+                Err problem →
+                    Err problem
 
-                observedLoss =
-                    case waited of
-                        LostWhile l →
-                            Just l
+                Ok observed →
+                    host = Js.get scopes "host"
 
-                        Scoped →
-                            l = Js.get r "loss"
-                            if Js.isNull l then Nothing else Just (Js.to l)
-                case observedLoss of
-                    Just l →
-                        mark outcome "rejected"
-                        Err
-                            (Error.DeviceLost
-                                { loss = l
-                                , operation = { operation = operation, observed = observed }
-                                }
-                            )
+                    own =
+                        case outcome of
+                            Err failed →
+                                Just failed
 
-                    Nothing →
-                        combined outcome observed
+                            Ok _ →
+                                if Js.isNull host then
+                                    defect "a checked promise settled without an outcome"
+                                else
+                                    case asResult host of
+                                        Err failed →
+                                            Just failed
+
+                                        Ok _ →
+                                            Nothing
+                    case failureOf own observed of
+                        Just problem →
+                            Err problem
+
+                        Nothing →
+                            Js.to host
 
 
--- Step 6 without a loss: the call's own failure and the scopes'
--- observations together, or the accepted object.
-combined : Result Error.Error V, List Observation → Result Error.Error V
-combined outcome observed =
+-- The promise of `checkedAwait` settled: its outcome is kept for the
+-- operation, or, when unexpected, handled as a pop's.
+hostSettled : V, V, String, Outcome (Result Error.Error V) → ⊤
+hostSettled r scopes operation outcome =
+    case outcome of
+        Expected result →
+            Js.set scopes "host" (Js.from result)
+            counted r scopes
+
+        Unexpected error →
+            unexpectedScope r scopes (contextual (deviceContext r operation) error)
+
+
+-- Steps 5 and 6 up to the combination: wait, throw what was unexpected,
+-- and give what the scopes observed, or the loss that wins.
+settle : V, V, String → Result Error.Error (List Observation)
+settle r scopes operation =
+    waited = waitScopes r scopes
+    unexpected = Js.get scopes "unexpected"
+    if not (Js.isNull unexpected) then
+        Js.throw unexpected
+    else
+        observed = observations scopes
+
+        observedLoss =
+            case waited of
+                LostWhile l →
+                    Just l
+
+                Scoped →
+                    l = Js.get r "loss"
+                    if Js.isNull l then Nothing else Just (Js.to l)
+        case observedLoss of
+            Just l →
+                Err
+                    (Error.DeviceLost
+                        { loss = l, operation = { operation = operation, observed = observed } }
+                    )
+
+            Nothing →
+                Ok observed
+
+
+ownFailure : Result Error.Error V → Maybe Error.Error
+ownFailure outcome =
     case outcome of
         Err failed →
+            Just failed
+
+        Ok _ →
+            Nothing
+
+
+-- Step 6 without a loss: the operation's own failure and the scopes'
+-- observations together, or none.
+failureOf : Maybe Error.Error, List Observation → Maybe Error.Error
+failureOf own observed =
+    case own of
+        Just failed →
             case ( observationOf failed, observed ) of
                 ( _, [] ) →
-                    Err failed
+                    Just failed
 
                 ( Just first, _ ) →
-                    Err (Error.RelatedFailures { first = first, rest = observed })
+                    Just (Error.RelatedFailures { first = first, rest = observed })
 
                 ( Nothing, _ ) →
-                    Err failed
+                    Just failed
 
-        Ok made →
+        Nothing →
             case observed of
                 [] →
-                    mark outcome "accepted"
-                    Ok made
+                    Nothing
 
                 [ one ] →
-                    mark outcome "rejected"
-                    Err (failure one)
+                    Just (failure one)
 
                 [ first, …rest ] →
-                    mark outcome "rejected"
-                    Err (Error.RelatedFailures { first = first, rest = rest })
+                    Just (Error.RelatedFailures { first = first, rest = rest })
 
 
 ignore : V → ⊤
 ignore _ = ⊤
 
 
-mark : Result Error.Error V, String → ⊤
-mark outcome status =
-    case outcome of
-        Ok made →
-            Js.set (recordOf made) "status" (Js.from status)
+asResult : V → Result Error.Error V
+asResult v = Js.to v
 
-        Err _ →
-            ⊤
+
+-- What a rejected operation made is rejected and released.
+reject : V → ⊤
+reject scopes =
+    made = Js.get scopes "made"
+    if Js.isNull made then
+        ⊤
+    else
+        Js.set (recordOf made) "status" (Js.from "rejected")
+        Js.to (Js.apply (Js.get scopes "discard") [ made ])
 
 
 -- Steps 2–4: enter the section, push the three scopes, make the call, and
@@ -916,9 +1062,7 @@ leaveScopes r scopes =
     Js.set scopes "done" (Js.from True)
     unwatch r scopes
     -- A cancelled operation publishes nothing: what its call made is rejected.
-    made = Js.get scopes "made"
-    if not (Js.to (Js.get scopes "taken")) && not (Js.isNull made) then
-        Js.set (recordOf made) "status" (Js.from "rejected")
+    if not (Js.to (Js.get scopes "taken")) then reject scopes
     unexpected = Js.get scopes "unexpected"
     if not (Js.to (Js.get scopes "taken")) && not (Js.isNull unexpected) then
         Js.set scopes "unexpected" Js.null
@@ -997,3 +1141,126 @@ observationOf problem =
 
         _ →
             Nothing
+
+
+-- ---- Waits on work issued earlier (§6.4, §8.3) ----------------------------------
+
+--| The outcome of one native promise of a device, for any number of
+--| later waits: a submission's completion, captured when it was issued.
+--| Its reactions are attached at once and always drain it; while it is
+--| pending the device keeps its channel to the program (§6.4, *Outcomes
+--| that outlive their caller*). `classify` names what the ledger documents
+--| for the promise; what it does not is unexpected: thrown in a fiber that
+--| waits for it, or, when none does, handed to the device's program.
+pub pendingOutcome : V, String, V, sync (Bool, V → Outcome ⊤) → V
+pendingOutcome device operation promise classify =
+    r = recordOf device
+    c =
+        Js.object
+            [ ( "device", r )
+            , ( "operation", Js.from operation )
+            , ( "state", Js.from "pending" )
+            , ( "error", Js.null )
+            , ( "waiters", Js.array [] )
+            ]
+    Js.set r "pops" (Js.from (int (Js.get r "pops") + 1))
+    ch = Js.get r "channel"
+    context = deviceContext r operation
+    Js.call promise "then"
+        [ Js.from λvalue →
+            guard ch context λ⊤ → arrived c (classified classify True value)
+            popped r
+        , Js.from λerror →
+            guard ch context λ⊤ → arrived c (classified classify False error)
+            popped r
+        ]
+        ▷ ignore
+    c
+
+
+-- A pending outcome arrived: every waiter wakes with it; an unexpected one
+-- nobody waits for goes to the device's program.
+arrived : V, Outcome ⊤ → ⊤
+arrived c outcome =
+    r = Js.get c "device"
+    waiters = Js.get c "waiters"
+    Js.set c "waiters" (Js.array [])
+    case outcome of
+        Expected _ →
+            Js.set c "state" (Js.from "done")
+
+        Unexpected error →
+            Js.set c "state" (Js.from "failed")
+            Js.set c "error" error
+            if Js.to (Js.get waiters "length") == 0 then
+                reportDefect
+                    r
+                    (contextual (deviceContext r (Js.to (Js.get c "operation"))) error)
+            else
+                ⊤
+    Js.each waiters λw → Js.to (Js.apply w [ Js.from outcome ])
+
+
+--| Wait for a pending outcome. One that arrived already is answered at
+--| once; otherwise a loss the device latched first, or latches while this
+--| waits, wins: `DeviceLost`. An unexpected outcome is a defect. A
+--| cancelled wait leaves the outcome pending, still drained.
+pub awaitPending : V → Result Error.Error ⊤
+awaitPending c =
+    r = Js.get c "device"
+    operation = Js.to (Js.get c "operation")
+    state = Js.get c "state"
+    if Js.same state (Js.from "done") then
+        Ok ⊤
+    else if Js.same state (Js.from "failed") then
+        Js.throw (contextual (deviceContext r operation) (Js.get c "error"))
+    else
+        l = Js.get r "loss"
+        if not (Js.isNull l) then
+            Err
+                (Error.DeviceLost
+                    { loss = Js.to l, operation = { operation = operation, observed = [] } }
+                )
+        else
+            fired = Js.ref False
+
+            got = Task.callback λresume →
+                onOutcome = Js.from λo →
+                    if Js.read fired then
+                        ⊤
+                    else
+                        Js.write fired True
+                        Task.resume resume (Ok o)
+                onLoss = Js.from λlatched →
+                    if Js.read fired then
+                        ⊤
+                    else
+                        Js.write fired True
+                        Task.resume resume (Err latched)
+                Js.call (Js.get c "waiters") "push" [ onOutcome ] ▷ ignore
+                Js.call (Js.get r "ops") "push" [ onLoss ] ▷ ignore
+                λ⊤ →
+                    Js.write fired True
+                    without (Js.get c "waiters") onOutcome
+                    without (Js.get r "ops") onLoss
+            case got of
+                Ok outcome →
+                    case outcome of
+                        Expected _ →
+                            Ok ⊤
+
+                        Unexpected error →
+                            Js.throw (contextual (deviceContext r operation) error)
+
+                Err latched →
+                    Err
+                        (Error.DeviceLost
+                            { loss = latched, operation = { operation = operation, observed = [] } }
+                        )
+
+
+-- Drop `item` from the array `list`, if it is there.
+without : V, V → ⊤
+without list item =
+    at = Js.call list "indexOf" [ item ]
+    if Js.to (Js.ge at (Js.from 0)) then Js.call list "splice" [ at, Js.from 1 ] ▷ ignore

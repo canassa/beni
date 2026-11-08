@@ -1,5 +1,6 @@
 --! A device's snapshots, its queue, its destruction and its loss
---! (`docs/design/webgpu.md` §4, §8). The loss is watched from the moment
+--! (`docs/design/webgpu.md` §4, §8), and the resources it makes, each a
+--! checked operation (§6.1). The loss is watched from the moment
 --! the device is made: it is latched once, every waiter wakes, and a late
 --! reader still sees it. There is no retry: after a loss, a program asks
 --! for a new adapter and a new device.
@@ -7,9 +8,12 @@
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Feature as Feature
+import Gpu.Flags as Flags
 import Gpu.Handle as Handle
 import Gpu.Limits as Limits
+import Gpu.Memory as Memory
 import Gpu.Native as Native
+import Gpu.Scalar as Scalar
 import Gpu.Types as Types
 import Js
 
@@ -78,3 +82,82 @@ createSampler device descriptor =
             Ok (Js.call native "createSampler" [ converted ])
         )
         λsampler → Js.to sampler
+
+
+--| A buffer, checked (§6.1, §7.1). With `mappedAtCreation = Value True` it
+--| is mapped once made, and `Gpu.Buffer.currentMapping` gives the mapping,
+--| writable whatever the usages; its size must then be a multiple of 4
+--| (`InvalidInput MappedSizeUnaligned`, before any native call), and a host
+--| with no memory for the mapping gives `MapFailed
+--| MappedAllocationFailed`. A buffer the device refuses is `Validation`
+--| and is destroyed, never returned; the other failures are those of
+--| `createSampler`. May suspend.
+pub createBuffer : Handle.Device, Types.BufferDescriptor → Result Error.Error Handle.Buffer
+createBuffer device descriptor =
+    native = Js.from device
+    bytes = Scalar.size64ToInt descriptor.size
+
+    mapped =
+        case descriptor.mappedAtCreation of
+            Types.Value True →
+                True
+
+            _ →
+                False
+    if mapped && Int.rem bytes 4 ≠ 0 then
+        Err (Error.InvalidInput (Error.MappedSizeUnaligned { path = "size", size = bytes }))
+    else
+        converted = Native.bufferDescriptor descriptor
+        usage = Flags.bufferUsagesBits descriptor.usage
+        Result.map
+            (Engine.checkedMaking
+                native
+                "createBuffer"
+                (labelsOf descriptor.label)
+                (λ⊤ →
+                    if mapped then
+                        -- The ledger's one synchronous failure (§3): the
+                        -- CPU memory of the mapping, once the size passed.
+                        Js.catchIf
+                            (λ⊤ → Ok (Js.call native "createBuffer" [ converted ]))
+                            Engine.isRangeError
+                            λerror →
+                                Err
+                                    (Error.MapFailed
+                                        (Error.MappedAllocationFailed
+                                            { bytes = bytes, message = Engine.messageOf error }
+                                        )
+                                    )
+                    else
+                        Ok (Js.call native "createBuffer" [ converted ])
+                )
+                (λmade → Memory.adoptBuffer native made bytes usage mapped)
+                λmade → Memory.destroy made
+            )
+            λbuffer → Js.to buffer
+
+
+--| `createBuffer` with `mappedAtCreation = Value True`, and the buffer's
+--| mapping from creation.
+pub createMappedBuffer :
+      Handle.Device
+    , Types.BufferDescriptor
+    → Result Error.Error { buffer : Handle.Buffer, mapping : Handle.Mapping }
+createMappedBuffer device descriptor =
+    buffer = createBuffer device { descriptor | mappedAtCreation = Types.Value True }?
+    case Memory.currentMapping (Js.from buffer) of
+        Just m →
+            Ok { buffer = buffer, mapping = Js.to m }
+
+        Nothing →
+            Engine.defect "a buffer created mapped has no mapping"
+
+
+labelsOf : Types.Option String → List String
+labelsOf l =
+    case l of
+        Types.Value text →
+            [ text ]
+
+        Types.Default →
+            []

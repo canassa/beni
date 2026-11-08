@@ -11,6 +11,7 @@
 --! checks an operation awaited reported no failure, not that the device
 --! stays healthy or that the work has run.
 
+import Gpu.Flags as Flags
 import Gpu.Limits as Limits
 import Gpu.Scalar as Scalar
 import Gpu.Types as Types
@@ -58,7 +59,8 @@ pub type LimitProblem
     | NotPowerOfTwo
 
 
---| A failed GPU operation.
+--| A failed GPU operation. `AllocationFailed` is a copy out of mapped
+--| memory (`Gpu.MappedRange.readBytes`) for which the host had no memory.
 pub type Error
     = InvalidInput InputError
     | UnsupportedCapability Capability
@@ -74,10 +76,19 @@ pub type Error
     | FormatFeatureRejected FormatFailure
     | HostOperationRejected OperationFailure
     | RelatedFailures FailureSet
+    | AllocationFailed { bytes : Int }
 
 
 --| An input refused before any native call: each names the descriptor
---| member or argument (`path`) it is about.
+--| member or argument (`path`) it is about. Ranges are in bytes: an
+--| `OutOfRange` gives the offset, the size and the bytes available; a
+--| `Misaligned` value must be a multiple of `alignment`. `DetachedSource`
+--| is a binary source whose storage was detached. `MappingState` is a
+--| buffer whose map state forbids the call (a second `map` while one is
+--| pending or live, a range of an unmapped buffer); `RangeOverlap` a mapped
+--| range that overlaps one taken before; `ReadOnlyMapping` a write to a
+--| mapping made for reading; `ResourceExpired` a mapping or a range of an
+--| earlier mapping generation.
 pub type InputError
     = NumericDomain { path : String, domain : Scalar.DomainError }
     | WrongDevice { path : String }
@@ -87,6 +98,15 @@ pub type InputError
     | ResourcePending { path : String }
     | MappedSizeUnaligned { path : String, size : Int }
     | ResizableBacking { path : String }
+    | DetachedSource { path : String }
+    | Misaligned { path : String, value : Int, alignment : Int }
+    | OutOfRange { path : String, offset : Int, size : Int, available : Int }
+    | InvalidValue { path : String, value : Float, minimum : Float, maximum : Float }
+    | InvalidMapMode { path : String, bits : Int }
+    | MissingBufferUsage { path : String, usage : Flags.BufferUsage }
+    | MappingState { path : String, state : Types.BufferMapState }
+    | RangeOverlap { path : String, offset : Int, size : Int }
+    | ReadOnlyMapping { path : String }
     | SessionState SessionState
     | SessionStopped
 
