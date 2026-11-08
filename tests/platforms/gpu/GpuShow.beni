@@ -155,6 +155,22 @@ error problem =
         Error.HostOperationRejected o →
             "HostOperationRejected " ++ operationFailure o
 
+        Error.ShaderRejected f →
+            "ShaderRejected, "
+                ++ String.fromInt (List.length (List.filter f.messages λm → m.type_ == Types.Error))
+                ++ " error messages"
+
+        Error.BatchFailed report →
+            "BatchFailed "
+                ++ report.batch
+                ++ ": "
+                ++ error report.failure
+                ++ "; issued ["
+                ++ String.join report.issued ", "
+                ++ "], refused ["
+                ++ String.join report.unissued ", "
+                ++ "]"
+
         Error.RelatedFailures set →
             "RelatedFailures ["
                 ++ String.join (List.map [ set.first, …set.rest ] observation) ", "
@@ -326,6 +342,12 @@ observation o =
 
         Error.ObservedHostRejection _ →
             "HostRejection"
+
+        Error.ObservedRefusal i →
+            "Refusal " ++ inputError i
+
+        Error.ObservedUnsupported _ →
+            "Unsupported"
 
 
 --| A checked result's constructor, with `f` for an `Ok` value.

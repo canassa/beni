@@ -2,8 +2,12 @@
 <body>
   <main>
     <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
     <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
     <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
     <ol></ol>
   </main>
 </body>
@@ -11,12 +15,34 @@
 <body>
   <main>
     <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
     <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
     <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
     <ol>
       <li>"batch: Ok"</li>
       <li>"done: Ok done"</li>
       <li>"read: Ok 7, 9"</li>
+    </ol>
+  </main>
+</body>
+-- click #forms
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
+    <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+      <li>"every batch form: Ok"</li>
     </ol>
   </main>
 </body>
@@ -24,14 +50,44 @@
 <body>
   <main>
     <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
     <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
     <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
     <ol>
       <li>"batch: Ok"</li>
       <li>"done: Ok done"</li>
       <li>"read: Ok 7, 9"</li>
-      <li>"a batch with a refused buffer: Err Validation, made"</li>
+      <li>"every batch form: Ok"</li>
+      <li>"a batch with a refused buffer: Err BatchFailed refused: Validation; issued [createBuffer, createBuffer], refused []"</li>
       <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #reports
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
+    <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+      <li>"every batch form: Ok"</li>
+      <li>"a batch with a refused buffer: Err BatchFailed refused: Validation; issued [createBuffer, createBuffer], refused []"</li>
+      <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"a refusal beside a validation error: Err BatchFailed both: RelatedFailures [Refusal MappedSizeUnaligned size 6, Validation]; issued [createBuffer], refused [createBuffer]"</li>
+      <li>"segments: the failure is in second"</li>
+      <li>"no segment: the failure is in batch whole"</li>
+      <li>"timestamp queries: Err UnsupportedCapability"</li>
+      <li>"run: Err BatchFailed capability: UnsupportedCapability; issued [], refused [createQuerySet]"</li>
     </ol>
   </main>
 </body>
@@ -39,17 +95,94 @@
 <body>
   <main>
     <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
     <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
     <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
     <ol>
       <li>"batch: Ok"</li>
       <li>"done: Ok done"</li>
       <li>"read: Ok 7, 9"</li>
-      <li>"a batch with a refused buffer: Err Validation, made"</li>
+      <li>"every batch form: Ok"</li>
+      <li>"a batch with a refused buffer: Err BatchFailed refused: Validation; issued [createBuffer, createBuffer], refused []"</li>
       <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
-      <li>"a batch after its run: Err SessionState SessionEnded"</li>
-      <li>"first Err MappedSizeUnaligned size 6, then Err SessionStopped; run: Err InvalidInput MappedSizeUnaligned size 6"</li>
-      <li>"on a leased device: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a refusal beside a validation error: Err BatchFailed both: RelatedFailures [Refusal MappedSizeUnaligned size 6, Validation]; issued [createBuffer], refused [createBuffer]"</li>
+      <li>"segments: the failure is in second"</li>
+      <li>"no segment: the failure is in batch whole"</li>
+      <li>"timestamp queries: Err UnsupportedCapability"</li>
+      <li>"run: Err BatchFailed capability: UnsupportedCapability; issued [], refused [createQuerySet]"</li>
+      <li>"a batch after its run: Err InvalidInput SessionState SessionEnded"</li>
+      <li>"first Err InvalidInput MappedSizeUnaligned size 6, then Err InvalidInput SessionStopped; run: Err BatchFailed latched: InvalidInput MappedSizeUnaligned size 6; issued [], refused [createBuffer, createBuffer]"</li>
+      <li>"on a leased device: Err BatchFailed leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
+    </ol>
+  </main>
+</body>
+-- click #waiting
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
+    <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+      <li>"every batch form: Ok"</li>
+      <li>"a batch with a refused buffer: Err BatchFailed refused: Validation; issued [createBuffer, createBuffer], refused []"</li>
+      <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"a refusal beside a validation error: Err BatchFailed both: RelatedFailures [Refusal MappedSizeUnaligned size 6, Validation]; issued [createBuffer], refused [createBuffer]"</li>
+      <li>"segments: the failure is in second"</li>
+      <li>"no segment: the failure is in batch whole"</li>
+      <li>"timestamp queries: Err UnsupportedCapability"</li>
+      <li>"run: Err BatchFailed capability: UnsupportedCapability; issued [], refused [createQuerySet]"</li>
+      <li>"a batch after its run: Err InvalidInput SessionState SessionEnded"</li>
+      <li>"first Err InvalidInput MappedSizeUnaligned size 6, then Err InvalidInput SessionStopped; run: Err BatchFailed latched: InvalidInput MappedSizeUnaligned size 6; issued [], refused [createBuffer, createBuffer]"</li>
+      <li>"on a leased device: Err BatchFailed leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
+      <li>"another fiber, while the batch waits: Err InvalidInput ResourcePending buffer"</li>
+      <li>"awaitReady: Ok ready, then Ok mapping"</li>
+      <li>"a cancelled batch's buffer: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"awaitReady on it: Err InvalidInput ResourceRejected batch"</li>
+    </ol>
+  </main>
+</body>
+-- click #cross-device
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="forms">"forms"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="reports">"reports"</button>
+    <button id="rules">"rules"</button>
+    <button id="waiting">"waiting"</button>
+    <button id="cross-device">"cross-device"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+      <li>"every batch form: Ok"</li>
+      <li>"a batch with a refused buffer: Err BatchFailed refused: Validation; issued [createBuffer, createBuffer], refused []"</li>
+      <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"a refusal beside a validation error: Err BatchFailed both: RelatedFailures [Refusal MappedSizeUnaligned size 6, Validation]; issued [createBuffer], refused [createBuffer]"</li>
+      <li>"segments: the failure is in second"</li>
+      <li>"no segment: the failure is in batch whole"</li>
+      <li>"timestamp queries: Err UnsupportedCapability"</li>
+      <li>"run: Err BatchFailed capability: UnsupportedCapability; issued [], refused [createQuerySet]"</li>
+      <li>"a batch after its run: Err InvalidInput SessionState SessionEnded"</li>
+      <li>"first Err InvalidInput MappedSizeUnaligned size 6, then Err InvalidInput SessionStopped; run: Err BatchFailed latched: InvalidInput MappedSizeUnaligned size 6; issued [], refused [createBuffer, createBuffer]"</li>
+      <li>"on a leased device: Err BatchFailed leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
+      <li>"another fiber, while the batch waits: Err InvalidInput ResourcePending buffer"</li>
+      <li>"awaitReady: Ok ready, then Ok mapping"</li>
+      <li>"a cancelled batch's buffer: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"awaitReady on it: Err InvalidInput ResourceRejected batch"</li>
+      <li>"another device's pipeline: Err BatchFailed their pipeline: InvalidInput WrongDevice pipeline; issued [], refused [getBindGroupLayout]"</li>
+      <li>"another device's queue, write: Err BatchFailed their queue: InvalidInput WrongDevice queue; issued [], refused [writeBuffer]"</li>
+      <li>"another device's queue, submit: Err BatchFailed their queue, submit: InvalidInput WrongDevice queue; issued [], refused [submit]"</li>
     </ol>
   </main>
 </body>

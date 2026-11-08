@@ -440,6 +440,39 @@ const faults = {
   // pipeline rejected with what is not a `GPUPipelineError`, compilation
   // messages rejected, and immediate data the host refuses after the
   // engine's checks passed.
+  // A pipeline the host refuses for an internal reason, and a
+  // GPUPipelineError of a reason outside the pin.
+  "pipeline-internal": () => {
+    bufferFaults.pipeline = () => globalThis.Promise.reject(new globalThis.GPUPipelineError("injected internal failure", { reason: "internal" }));
+  },
+  "pipeline-unknown-reason": () => {
+    bufferFaults.pipeline = () => {
+      const error = globalThis.Object.create(globalThis.GPUPipelineError.prototype);
+      globalThis.Object.defineProperty(error, "reason", { value: "exploded" });
+      globalThis.Object.defineProperty(error, "message", { value: "injected unknown reason" });
+      return globalThis.Promise.reject(error);
+    };
+  },
+  // A host without setImmediates on its compute passes.
+  "immediates-missing": () => {
+    bufferFaults.noImmediates = true;
+  },
+  // The adapter offers BC compression (the fake's own adapter only), and
+  // the native format check of createTexture refuses it anyway.
+  "adapter-bc": (gpu) => {
+    if (native()) return;
+    wrap(gpu, "requestAdapter", function (original, ...args) {
+      return original.apply(this, args).then((adapter) => {
+        if (adapter !== null) adapter.features.add("texture-compression-bc");
+        return adapter;
+      });
+    });
+  },
+  "texture-type-error": () => {
+    bufferFaults.texture = () => {
+      throw new globalThis.TypeError("injected format refusal");
+    };
+  },
   "pipeline-unlisted": () => {
     bufferFaults.pipeline = () => globalThis.Promise.reject(new globalThis.DOMException("injected unlisted pipeline failure", "AbortError"));
   },
@@ -646,6 +679,10 @@ const instrument = (device) => {
     });
     return buffer;
   });
+  wrap(device, "createTexture", function (original, ...args) {
+    if (bufferFaults.texture !== undefined) return bufferFaults.texture();
+    return original.apply(this, args);
+  });
   wrap(device, "createComputePipelineAsync", function (original, ...args) {
     if (bufferFaults.pipeline !== undefined) return asked(bufferFaults.pipeline());
     return asked(original.apply(this, args));
@@ -662,6 +699,7 @@ const instrument = (device) => {
     const encoder = original.apply(this, args);
     wrap(encoder, "beginComputePass", function (begin, ...rest) {
       const pass = begin.apply(this, rest);
+      if (bufferFaults.noImmediates === true) globalThis.Object.defineProperty(pass, "setImmediates", { configurable: true, value: undefined });
       if (typeof pass.setImmediates === "function") {
         wrap(pass, "setImmediates", function (set, ...data) {
           if (bufferFaults.immediates !== undefined) return bufferFaults.immediates();
@@ -874,3 +912,10 @@ export const keep = (buffer) => {
   return null;
 };
 export const kept = (_unit) => keptBuffer;
+
+let keptBatchValue = null;
+export const keepBatch = (batch) => {
+  keptBatchValue = batch;
+  return null;
+};
+export const keptBatch = (_unit) => keptBatchValue;

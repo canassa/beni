@@ -8,7 +8,7 @@
 import Binary
 import Browser.Host.Uint32Array exposing (Uint32Array)
 import Browser.Host.Uint8Array exposing (Uint8Array)
-import Gpu.Handle exposing (Buffer)
+import Gpu.Handle exposing (Batch, Buffer)
 import Task
 
 
@@ -102,3 +102,11 @@ pub foreign impure keep : Buffer → ⊤
 
 --| The buffer `keep` kept last.
 pub foreign impure kept : ⊤ → Buffer
+
+
+--| Keep a batch for `keptBatch`, past the callback it was given to.
+pub foreign impure keepBatch : Batch → ⊤
+
+
+--| The batch `keepBatch` kept last.
+pub foreign impure keptBatch : ⊤ → Batch
