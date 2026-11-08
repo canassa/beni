@@ -4365,79 +4365,140 @@ pub const Lowerer = struct {
     // emitted by a branch override; empty exclusions preserve whole-expression
     // queries. Omitted arm bodies and skipped definitions evaluate nothing.
     fn branchesReachProjected(l: *Lowerer, inst: Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
-        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index)) |branch| {
-            if (l.bir.instTag(branch) != .branch) continue;
-            if (l.reachesProjected(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), probe, omitted, skipped)) return true;
-        }
-        return false;
+        var w: ReachWalk(probe) = .{ .l = l, .omitted = omitted, .skipped = skipped };
+        return w.branches(inst) or w.run();
     }
 
     /// Whether evaluating `inst` reaches a call `probe` hits, outside any
     /// function it makes.
     fn reachesProjected(l: *Lowerer, inst: Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
-        if (std.mem.indexOfScalar(Inst.Index, omitted, inst) != null) return false;
-        const d = l.bir.instData(inst);
-        switch (l.bir.instTag(inst)) {
-            .call => {
-                if (l.callHits(inst, probe)) return true;
-                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
-                return l.anyReachesProjected(l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), probe, omitted, skipped);
-            },
-            .method_call => {
-                if (l.callHits(inst, probe)) return true;
-                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
-                const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
-                return l.anyReachesProjected(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe, omitted, skipped);
-            },
-            .type_dispatch => {
-                if (l.callHits(inst, probe)) return true;
-                const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
-                return l.anyReachesProjected(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe, omitted, skipped);
-            },
-            .let => {
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
-                    if (std.mem.indexOfScalar(Inst.Index, skipped, def) != null) continue;
-                    const dd = l.bir.instData(def);
-                    switch (l.bir.instTag(def)) {
-                        .let_def => {
-                            const payload = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
-                            if (payload.params_end != payload.params_start) continue;
-                            if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true;
-                        },
-                        .let_pattern => if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true,
-                        .let_stmt => if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true,
-                        else => {},
-                    }
-                }
-                return l.reachesProjected(@fromBackingInt(@intCast(d.rhs)), probe, omitted, skipped);
-            },
-            .case => {
-                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
-                return l.branchesReachProjected(inst, probe, omitted, skipped);
-            },
-            .@"try", .field_access, .tuple_index => return l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped),
-            .tuple, .list, .interp => return l.anyReachesProjected(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe, omitted, skipped),
-            .record => {
-                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reachesProjected(f.value, probe, omitted, skipped)) return true;
-                return false;
-            },
-            .record_update => {
-                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (l.reachesProjected(f.value, probe, omitted, skipped)) return true;
-                return false;
-            },
-            // Markup is not walked. For a suspension the answer stays no, as
-            // it always was: a hole whose lowering would nest a suspension
-            // point is refused (§16.3). For an effect it is yes, which costs
-            // a release build only the binding of a view nothing reads.
-            .markup => return probe == .effect,
-            else => return false,
-        }
+        var w: ReachWalk(probe) = .{ .l = l, .omitted = omitted, .skipped = skipped };
+        return w.push(inst) or w.run();
     }
 
     fn anyReachesProjected(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
-        for (insts) |inst| if (l.reachesProjected(inst, probe, omitted, skipped)) return true;
-        return false;
+        var w: ReachWalk(probe) = .{ .l = l, .omitted = omitted, .skipped = skipped };
+        return w.pushAll(insts) or w.run();
+    }
+
+    /// `reachesProjected`'s walk. The answer is whether ANY instruction
+    /// under the root hits, and asking one changes nothing, so the order is
+    /// free: the instructions still to ask wait on a fixed list, and only
+    /// an instruction that finds the list full is asked by recursion
+    /// (#1780). A written operator chain nests `Parse.max_depth` calls
+    /// deep, and a walk that recursed once per call ran out of the
+    /// engine's stack of the WebAssembly compiler on `run/WideArithmetic`.
+    /// A call's first argument, where a left-nested chain goes on, waits
+    /// first and so is asked last, after its shallow siblings: the list
+    /// stays a few entries long on such a chain. A chain nested anywhere
+    /// else fills it, and recurses once per `pending.len` levels.
+    fn ReachWalk(comptime probe: Probe) type {
+        return struct {
+            l: *Lowerer,
+            omitted: []const Inst.Index,
+            skipped: []const Inst.Index,
+            pending: [64]Inst.Index = undefined,
+            len: usize = 0,
+
+            const W = @This();
+
+            /// Put `inst` on the list, or ask it now when the list is full.
+            /// True when that answer is yes.
+            fn push(w: *W, inst: Inst.Index) bool {
+                if (w.len == w.pending.len) return w.l.reachesProjected(inst, probe, w.omitted, w.skipped);
+                w.pending[w.len] = inst;
+                w.len += 1;
+                return false;
+            }
+
+            fn pushAll(w: *W, insts: []const Inst.Index) bool {
+                for (insts) |inst| if (w.push(inst)) return true;
+                return false;
+            }
+
+            fn branches(w: *W, inst: Inst.Index) bool {
+                const bir = w.l.bir;
+                for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(inst).rhs))), Inst.Index)) |branch| {
+                    if (bir.instTag(branch) != .branch) continue;
+                    if (w.push(@fromBackingInt(@intCast(bir.instData(branch).rhs)))) return true;
+                }
+                return false;
+            }
+
+            /// Ask every instruction on the list, and what each puts on it.
+            fn run(w: *W) bool {
+                while (w.len != 0) {
+                    w.len -= 1;
+                    if (w.one(w.pending[w.len])) return true;
+                }
+                return false;
+            }
+
+            /// Whether `inst` itself hits; its operands go on the list.
+            fn one(w: *W, inst: Inst.Index) bool {
+                const l = w.l;
+                if (std.mem.indexOfScalar(Inst.Index, w.omitted, inst) != null) return false;
+                const d = l.bir.instData(inst);
+                switch (l.bir.instTag(inst)) {
+                    .call => {
+                        if (l.callHits(inst, probe)) return true;
+                        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+                        if (args.len != 0 and w.push(args[0])) return true;
+                        if (args.len > 1 and w.pushAll(args[1..])) return true;
+                        return w.push(@fromBackingInt(@intCast(d.lhs)));
+                    },
+                    .method_call => {
+                        if (l.callHits(inst, probe)) return true;
+                        if (w.push(@fromBackingInt(@intCast(d.lhs)))) return true;
+                        const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
+                        return w.pushAll(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index));
+                    },
+                    .type_dispatch => {
+                        if (l.callHits(inst, probe)) return true;
+                        const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
+                        return w.pushAll(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
+                    },
+                    .let => {
+                        if (w.push(@fromBackingInt(@intCast(d.rhs)))) return true;
+                        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                            if (std.mem.indexOfScalar(Inst.Index, w.skipped, def) != null) continue;
+                            const dd = l.bir.instData(def);
+                            switch (l.bir.instTag(def)) {
+                                .let_def => {
+                                    const payload = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
+                                    if (payload.params_end != payload.params_start) continue;
+                                    if (w.push(@fromBackingInt(@intCast(dd.rhs)))) return true;
+                                },
+                                .let_pattern, .let_stmt => if (w.push(@fromBackingInt(@intCast(dd.rhs)))) return true,
+                                else => {},
+                            }
+                        }
+                        return false;
+                    },
+                    .case => {
+                        if (w.branches(inst)) return true;
+                        return w.push(@fromBackingInt(@intCast(d.lhs)));
+                    },
+                    .@"try", .field_access, .tuple_index => return w.push(@fromBackingInt(@intCast(d.lhs))),
+                    .tuple, .list, .interp => return w.pushAll(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
+                    .record => {
+                        for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (w.push(f.value)) return true;
+                        return false;
+                    },
+                    .record_update => {
+                        if (w.push(@fromBackingInt(@intCast(d.lhs)))) return true;
+                        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (w.push(f.value)) return true;
+                        return false;
+                    },
+                    // Markup is not walked. For a suspension the answer stays no, as
+                    // it always was: a hole whose lowering would nest a suspension
+                    // point is refused (§16.3). For an effect it is yes, which costs
+                    // a release build only the binding of a view nothing reads.
+                    .markup => return probe == .effect,
+                    else => return false,
+                }
+            }
+        };
     }
 
     /// The names `Suspend` writes, each core value imported the first time a
@@ -10650,7 +10711,139 @@ pub const Lowerer = struct {
         return null;
     }
 
-    fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+    /// What `callPlan` makes of a call: the value one of its special cases
+    /// lowered, the `Operator` the call computes (§4, *Arithmetic is an
+    /// operator*), or the general n-ary call (§6).
+    const CallPlan = union(enum) {
+        value: Node.Index,
+        operator: Operator.Which,
+        general,
+    };
+
+    /// A call `callExpr` has planned and whose operands it is lowering: an
+    /// operator's arguments, or a general call's callee and then its
+    /// arguments. Each operand has a statement list of its own, as
+    /// `orderedExprs` gives it.
+    const CallFrame = struct {
+        inst: Inst.Index,
+        plan: CallPlan,
+        operands: []const Inst.Index,
+        held: []StmtList,
+        values: []Node.Index,
+        next: usize = 0,
+        /// Where the expression that is this call writes its statements:
+        /// the caller's `out` for the first frame, its parent's `held`
+        /// slot for every other.
+        out: *StmtList,
+        /// The parent's operand this call is, and `expr`'s entry state for
+        /// it (`finishExpr`). Unused for the first frame, which `expr`
+        /// itself entered and finishes.
+        slot: usize = 0,
+        before: usize = 0,
+        outer: u32 = 0,
+    };
+
+    fn callFrame(l: *Lowerer, out: *StmtList, inst: Inst.Index, plan: CallPlan) Allocator.Error!CallFrame {
+        const d = l.bir.instData(inst);
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        const operands: []const Inst.Index = switch (plan) {
+            .operator => args,
+            .general => blk: {
+                const with_head = try l.scratch.alloc(Inst.Index, args.len + 1);
+                with_head[0] = @fromBackingInt(@intCast(d.lhs));
+                @memcpy(with_head[1..], args);
+                break :blk with_head;
+            },
+            .value => unreachable,
+        };
+        const held = try l.scratch.alloc(StmtList, operands.len);
+        @memset(held, .empty);
+        return .{
+            .inst = inst,
+            .plan = plan,
+            .operands = operands,
+            .held = held,
+            .values = try l.scratch.alloc(Node.Index, operands.len),
+            .out = out,
+        };
+    }
+
+    /// Lower a call, and every call among its operands, with no native
+    /// frame per nested call (#1673, #1780). A written operator chain
+    /// `x // x // … // x` nests one call per operator, `Parse.max_depth`
+    /// deep, and a general call such as `Basics.idiv` recursed `expr` →
+    /// `callExpr` → `expr` once per term; arithmetic had its own walk and
+    /// nothing else did.
+    ///
+    /// **Every call is planned by `callPlan`, the one prelude.** A call
+    /// operand is entered exactly as `expr` would enter it — its worker
+    /// reference, `exprOverride`, then `callPlan` — so a special case
+    /// applies to an inner call as it does to the outer one. A plan that
+    /// is a value is finished at once (`finishExpr`); an operator or a
+    /// general call becomes a frame, and its operands are lowered in
+    /// written order into lists of their own and merged by `orderValues`,
+    /// as `orderedExprs` does. The JavaScript is the recursion's, byte for
+    /// byte.
+    fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        const plan = try l.callPlan(out, inst);
+        if (plan == .value) return plan.value;
+        var frames: std.ArrayList(CallFrame) = .empty;
+        try frames.append(l.scratch, try l.callFrame(out, inst, plan));
+        const saved = l.evidence_out;
+        defer l.evidence_out = saved;
+        while (true) {
+            const f = &frames.items[frames.items.len - 1];
+            l.evidence_out = f.out;
+            if (f.next < f.operands.len) {
+                const slot = f.next;
+                f.next += 1;
+                const operand = f.operands[slot];
+                const into = &f.held[slot];
+                if (l.bir.instTag(operand) != .call) {
+                    f.values[slot] = try l.expr(into, operand);
+                    continue;
+                }
+                // `expr`'s entry, then `exprValue`'s, for a call.
+                if (l.in.worker_descriptors.len != 0) if (try l.workerReference(operand)) |value| {
+                    f.values[slot] = value;
+                    continue;
+                };
+                l.evidence_out = into;
+                const outer = l.expr_height;
+                l.expr_height = 0;
+                const before = l.b.nodes.len;
+                const inner: CallPlan = if (try l.exprOverride(into, operand)) |value| .{ .value = value } else try l.callPlan(into, operand);
+                if (inner == .value) {
+                    f.values[slot] = try l.finishExpr(into, operand, inner.value, before, outer);
+                    continue;
+                }
+                var child = try l.callFrame(into, operand, inner);
+                child.slot = slot;
+                child.before = before;
+                child.outer = outer;
+                // `f` moves with the list; the loop reads the top again.
+                try frames.append(l.scratch, child);
+                continue;
+            }
+            const held = try l.scratch.alloc([]const Node.Index, f.held.len);
+            for (held, f.held) |*h, stmts| h.* = stmts.items;
+            try l.orderValues(f.out, f.operands, false, f.values, held);
+            const value = switch (f.plan) {
+                .operator => |which| try l.operatorValues(f.out, which, f.values, l.pos(f.inst)),
+                .general => try l.generalCall(f.out, f.inst, f.values),
+                .value => unreachable,
+            };
+            if (frames.items.len == 1) return value;
+            const finished = try l.finishExpr(f.out, f.inst, value, f.before, f.outer);
+            const slot = f.slot;
+            frames.items.len -= 1;
+            frames.items[frames.items.len - 1].values[slot] = finished;
+        }
+    }
+
+    /// `callExpr`'s special cases, in order: the value one of them lowers,
+    /// or what is left to do. Every call, outer or inner, is planned here.
+    noinline fn callPlan(l: *Lowerer, out: *StmtList, inst: Inst.Index) !CallPlan {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
         // this instruction is an evidence ARGUMENT and they are numbered
         // from 0.
@@ -10662,12 +10855,12 @@ pub const Lowerer = struct {
         // the callee's record and not this call's; the two disagreeing is
         // the miscompile §7.2 says the table exists to catch.
         if (try l.refuseEvidence(inst, roots, l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, callee_inst))) {
-            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            return .{ .value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused) };
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         // These built-in calls only read compiler plan metadata before the payload.
         if (std.mem.indexOfScalar(Inst.Index, l.in.worker_wire_direct_calls, inst) != null)
-            return l.expr(out, arg_insts[3]);
+            return .{ .value = try l.expr(out, arg_insts[3]) };
 
         // The build's markup state, which steers whether this call is a
         // program constructor's, the placements beside it, and every
@@ -10682,28 +10875,28 @@ pub const Lowerer = struct {
         // A program constructor's call is the program hook's (`boundary.md`
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.
-        if (l.programCallAt(inst)) |pc| return l.programCall(out, inst, pc, callee_inst);
+        if (l.programCallAt(inst)) |pc| return .{ .value = try l.programCall(out, inst, pc, callee_inst) };
         // A direct validator run calls its worker where it stands, and a
         // `Result.withDefault` or `Result.toMaybe` of one is written
         // beside it.
         if (l.valid_sites.defaults.len != 0 or l.valid_sites.maybes.len != 0)
             if (SchemaValid.has(l.valid_sites.defaults, inst.int()) or SchemaValid.has(l.valid_sites.maybes, inst.int()))
-                return l.validatorConsumer(out, inst, arg_insts, p);
+                return .{ .value = try l.validatorConsumer(out, inst, arg_insts, p) };
         if (l.valid_sites.direct_callees.len != 0 and SchemaValid.has(l.valid_sites.direct_callees, callee_inst.int()))
-            return l.directValidatorCall(out, inst, callee_inst, arg_insts, p);
+            return .{ .value = try l.directValidatorCall(out, inst, callee_inst, arg_insts, p) };
         // `S.schema ⊤` a validator run calls directly: `S`'s validator
         // worker (`SchemaValid`).
         if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| {
-            return SchemaLower.validWorker(l, ref, p);
+            return .{ .value = try SchemaLower.validWorker(l, ref, p) };
         };
         // `S.schema ⊤` a shape run reads: `S`'s shape.
         if (l.valid_sites.shape_args.len != 0) if (l.valid_sites.shapeOfArg(inst.int())) |ref| {
-            return SchemaLower.shapeName(l, ref, p);
+            return .{ .value = try SchemaLower.shapeName(l, ref, p) };
         };
         // Version 1.14: a placement the program's mount already made.
-        if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
+        if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return .{ .value = try l.expr(out, arg_insts[0]) };
         // Version 1.22: `Browser.prerender` (`prerender.md` §7.2).
-        if (l.prerender_calls.len != 0) if (try l.prerenderCall(out, inst, arg_insts)) |n| return n;
+        if (l.prerender_calls.len != 0) if (try l.prerenderCall(out, inst, arg_insts)) |n| return .{ .value = n };
 
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
@@ -10712,14 +10905,14 @@ pub const Lowerer = struct {
         if (try l.reconsOf(inst)) |recons| if (l.scalarOf(recons.tail)) |k| {
             const tail = try l.ident(try l.localName(recons.tail), p);
             const offset = try l.binary(.sub, tail, try l.intNode(recons.back, p), p);
-            if (l.isScalarRaw(inst)) return offset;
+            if (l.isScalarRaw(inst)) return .{ .value = offset };
             // Built, it may be the list the call was entered with: the
             // parameter's entry answers for it.
             const s = l.scalars.items[k];
             for (l.scalars.items, 0..) |other, j| {
-                if (other.label == s.label and other.slot == s.slot and other.entry != .none) return l.materialise(j, offset, p);
+                if (other.label == s.label and other.slot == s.slot and other.entry != .none) return .{ .value = try l.materialise(j, offset, p) };
             }
-            return l.materialise(k, offset, p);
+            return .{ .value = try l.materialise(k, offset, p) };
         };
         // ownership pin end: listConsScalar
 
@@ -10733,7 +10926,7 @@ pub const Lowerer = struct {
         // it is the semantics.
         if (arg_insts.len == 2) {
             if (l.logicalOp(callee_inst)) |op| {
-                return l.logicalExpr(out, op, arg_insts[0], arg_insts[1], p);
+                return .{ .value = try l.logicalExpr(out, op, arg_insts[0], arg_insts[1], p) };
             }
         }
 
@@ -10746,8 +10939,8 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p, inst, null));
-            return l.suspension(out, inst, try l.call(append, values, p));
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p, inst, null)) };
+            return .{ .value = try l.suspension(out, inst, try l.call(append, values, p)) };
         }
         // Under `--release`, a `++` one of whose operands is a string —
         // a literal, an interpolation, or another such `++` — is on
@@ -10760,10 +10953,10 @@ pub const Lowerer = struct {
             (l.stringy(arg_insts[0], 0) or l.stringy(arg_insts[1], 0)))
         {
             const v = try l.orderedExprs(out, arg_insts, false);
-            return l.binary(.add, v[0], v[1], p);
+            return .{ .value = try l.binary(.add, v[0], v[1], p) };
         }
 
-        if (try l.nativeCallExpr(out, callee_inst, arg_insts, p)) |native| return native;
+        if (try l.nativeCallExpr(out, callee_inst, arg_insts, p)) |native| return .{ .value = native };
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
         if (l.jsIntrinsicOf(callee_inst)) |which| {
@@ -10773,7 +10966,7 @@ pub const Lowerer = struct {
             if (which == .maySuspend) {
                 for (arg_insts) |a| try l.discard(out, a, p);
                 const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
-                return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+                return .{ .value = try l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused) };
             }
             // `Js.fingerprint x` is the identity its site carries, the last
             // root (`backend.md` §4, *`Js.fingerprint` is its type's
@@ -10782,21 +10975,21 @@ pub const Lowerer = struct {
                 for (arg_insts) |a| try l.discard(out, a, p);
                 if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
                     try l.reportEvidenceShape(inst);
-                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                    return .{ .value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused) };
                 }
-                return l.identityValue(roots[roots.len - 1], p);
+                return .{ .value = try l.identityValue(roots[roots.len - 1], p) };
             }
             // `Js.suspending`'s body is a suspension point where it is not
             // in tail position (`backend.md` §4, *`Js.suspending` is its
             // body*); a tail returns it before this is reached.
-            if (which == .suspending) return l.suspension(out, inst, try l.jsIntrinsicCall(out, which, arg_insts, p));
-            return l.jsIntrinsicCall(out, which, arg_insts, p);
+            if (which == .suspending) return .{ .value = try l.suspension(out, inst, try l.jsIntrinsicCall(out, which, arg_insts, p)) };
+            return .{ .value = try l.jsIntrinsicCall(out, which, arg_insts, p) };
         }
 
         // Arithmetic, `not` and `Int32`'s bit operations are the JavaScript
         // operators they compute (§4, *Arithmetic is an operator*).
         if (l.operatorOf(callee_inst)) |which| {
-            if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorExpr(out, inst, which, arg_insts, p);
+            if (which.arity() == arg_insts.len and roots.len == 0) return .{ .operator = which };
         }
 
         // A constructor is an object literal and never a call (§4); the
@@ -10812,7 +11005,7 @@ pub const Lowerer = struct {
                 else => false,
             };
             const args = try l.orderedExprs(out, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), reordered);
-            return l.ctorValue(rep, tag, args, p);
+            return .{ .value = try l.ctorValue(rep, tag, args, p) };
         }
 
         // A function called from this one place is written here (§9, *A
@@ -10820,7 +11013,7 @@ pub const Lowerer = struct {
         // Only a body that is an expression itself: one that needs
         // statements would need a temporary assigned in each arm, which
         // costs more than the call it replaces.
-        if (l.inlineTarget(inst)) |index| if (!l.inline_loops[index] and l.isExpressionBody(index) and l.atomArguments(inst)) return l.inlineExpr(out, inst, index);
+        if (l.inlineTarget(inst)) |index| if (!l.inline_loops[index] and l.isExpressionBody(index) and l.atomArguments(inst)) return .{ .value = try l.inlineExpr(out, inst, index) };
 
         // A `Debug.toString` or `Debug.log` whose type the checker knows
         // calls the typed printer, the descriptor first (§4, *`Debug.toString`
@@ -10831,13 +11024,13 @@ pub const Lowerer = struct {
             const args = try l.scratch.alloc(Node.Index, values.len + 1);
             args[0] = typed.descriptor;
             @memcpy(args[1..], values);
-            return l.suspension(out, inst, try l.call(typed.callee, args, p));
+            return .{ .value = try l.suspension(out, inst, try l.call(typed.callee, args, p)) };
         };
 
         // A `Json` validator or shape run (`schema.md` §6): one call of the
         // core runner. Out of line, so this recursive frame stays small.
         if (l.valid_sites.shape_json.len != 0 or l.valid_sites.json_calls.len != 0)
-            if (try l.jsonValidatorCall(out, inst, callee_inst, p)) |node| return node;
+            if (try l.jsonValidatorCall(out, inst, callee_inst, p)) |node| return .{ .value = node };
 
         // A `Json` call whose evidence is a derived codec of this module is
         // the codec's own `parse` or `print` (`schema.md` §12.10): what a
@@ -10852,7 +11045,7 @@ pub const Lowerer = struct {
             const values = try l.termValues(slots, null, p);
             for (values, args[0..slots.len]) |v, *a| a.* = try l.call(v, &.{try l.nullNode(p)}, p);
             @memcpy(args[slots.len..], written);
-            return l.suspension(out, inst, try l.call(try l.ident(member_name, p), args, p));
+            return .{ .value = try l.suspension(out, inst, try l.call(try l.ident(member_name, p), args, p)) };
         };
 
         // Everything else is one direct n-ary call (`backend.md` §6). The
@@ -10864,7 +11057,18 @@ pub const Lowerer = struct {
         // They are names and closures with no statements of their own, so
         // building them after the sequence changes no evaluation order.
         try l.markSanitizeChain(inst, arg_insts);
-        const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        return .general;
+    }
+
+    /// The general call's own JavaScript, once its callee and arguments are
+    /// lowered: `values` is the callee and then the written arguments, as
+    /// `exprListWithHead` returns them.
+    fn generalCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, values: []Node.Index) Allocator.Error!Node.Index {
+        const roots = l.rootsOf(inst);
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const callee_inst: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
         const callee = values[0];
         // A trailing `()` the callee does not take is not passed (§6, *A
         // parameter of type `()`*): `f ()` is `f()`.
@@ -11671,147 +11875,6 @@ pub const Lowerer = struct {
         const index = iface.findValue(l.interner.global, function.symbol()) orelse return false;
         const scheme = iface.values[@backingInt(index)].scheme;
         return scheme != .none and iface.schemes[@backingInt(scheme)].total;
-    }
-
-    /// Numeric and boolean primitives whose operands all run in order.
-    /// Short circuits and list operations keep their own lowering paths.
-    fn arithmetic(which: Operator.Which) bool {
-        return switch (which) {
-            .add,
-            .sub,
-            .mul,
-            .fdiv,
-            .pow,
-            .lt,
-            .gt,
-            .le,
-            .ge,
-            .not,
-            .negate,
-            .int32_fromInt,
-            .int32_toInt,
-            .int32_toUnsignedInt,
-            .int32_add,
-            .int32_sub,
-            .int32_and,
-            .int32_or,
-            .int32_xor,
-            .int32_shiftLeft,
-            .int32_shiftRight,
-            .int32_shiftRightZero,
-            => true,
-            else => false,
-        };
-    }
-
-    fn arithmeticAt(l: *Lowerer, inst: Inst.Index) ?Operator.Which {
-        const which = Operator.atCall(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.in.dispatch, l.interner) orelse return null;
-        return if (arithmetic(which) and l.rootsOf(inst).len == 0) which else null;
-    }
-
-    /// One expression entry and its suspended operand walk. The array is
-    /// collected before evaluation, so evidence_out can point into a held
-    /// statement list without a later append moving it.
-    const ArithmeticFrame = struct {
-        inst: Inst.Index,
-        which: Operator.Which,
-        args: []const Inst.Index,
-        parent: ?usize = null,
-        slot: u1 = 0,
-        children: [2]?usize = .{ null, null },
-        held: [2]StmtList = .{ .empty, .empty },
-        values: [2]Node.Index = undefined,
-        entered: bool = false,
-        next: u2 = 0,
-        before: usize = 0,
-        outer: u32 = 0,
-        replacement: ?Node.Index = null,
-    };
-
-    /// Walk arithmetic subtrees without a native frame per operator (#1673).
-    /// Each parent still sees the same operand statement lists, in the
-    /// same order, and finishes at the same spill/key boundary as expr.
-    fn operatorExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index, which: Operator.Which, args: []const Inst.Index, p: u32) Allocator.Error!Node.Index {
-        if (!arithmetic(which)) return l.operatorCall(out, which, args, p);
-        var nested = false;
-        for (args) |arg| if (l.arithmeticAt(arg) != null) {
-            nested = true;
-            break;
-        };
-        if (!nested) return l.operatorCall(out, which, args, p);
-
-        var frames: std.ArrayList(ArithmeticFrame) = .empty;
-        try frames.append(l.scratch, .{ .inst = inst, .which = which, .args = args, .entered = true });
-        var scan: usize = 0;
-        while (scan < frames.items.len) : (scan += 1) {
-            const operands = frames.items[scan].args;
-            for (operands, 0..) |arg, slot| {
-                const child = l.arithmeticAt(arg) orelse continue;
-                frames.items[scan].children[slot] = frames.items.len;
-                const d = l.bir.instData(arg);
-                try frames.append(l.scratch, .{
-                    .inst = arg,
-                    .which = child,
-                    .args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index),
-                    .parent = scan,
-                    .slot = @intCast(slot),
-                });
-            }
-        }
-
-        const saved = l.evidence_out;
-        defer l.evidence_out = saved;
-        var current: usize = 0;
-        while (true) {
-            const f = &frames.items[current];
-            const stmts = if (f.parent) |parent| &frames.items[parent].held[f.slot] else out;
-            l.evidence_out = stmts;
-            if (!f.entered) {
-                f.entered = true;
-                f.outer = l.expr_height;
-                l.expr_height = 0;
-                f.before = l.b.nodes.len;
-                f.replacement = try l.exprOverride(stmts, f.inst);
-                if (f.replacement == null) {
-                    const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(f.inst).lhs));
-                    if (try l.refuseEvidence(f.inst, l.rootsOf(f.inst), l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, callee))) {
-                        f.replacement = try l.add(.undefined_lit, l.pos(f.inst), Node.Data.unused, Node.Data.unused);
-                    } else {
-                        // The same build facts every callExpr records. These
-                        // exact core primitives cannot be program/schema calls.
-                        l.askSelf(.markup, l.mk != null, 0, 0);
-                        l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
-                    }
-                }
-            }
-            if (f.replacement == null and f.next < f.args.len) {
-                const slot = f.next;
-                f.next += 1;
-                if (f.children[slot]) |child| {
-                    current = child;
-                } else {
-                    f.values[slot] = try l.expr(&f.held[slot], f.args[slot]);
-                }
-                continue;
-            }
-            var value = f.replacement orelse blk: {
-                const held = [2][]const Node.Index{ f.held[0].items, f.held[1].items };
-                try l.orderValues(stmts, f.args, false, f.values[0..f.args.len], held[0..f.args.len]);
-                break :blk try l.operatorValues(stmts, f.which, f.values[0..f.args.len], l.pos(f.inst));
-            };
-            const parent = f.parent orelse return value;
-            value = try l.finishExpr(stmts, f.inst, value, f.before, f.outer);
-            frames.items[parent].values[f.slot] = value;
-            current = parent;
-        }
-    }
-
-    /// A saturated call of an `Operator` as the JavaScript it computes. The
-    /// operands are evaluated once each, in written order (`orderedExprs`),
-    /// which is the order the call evaluated them in.
-    fn operatorCall(l: *Lowerer, out: *StmtList, which: Operator.Which, args: []const Inst.Index, p: u32) !Node.Index {
-        const v = try l.orderedExprs(out, args, false);
-        return l.operatorValues(out, which, v, p);
     }
 
     fn operatorValues(l: *Lowerer, out: *StmtList, which: Operator.Which, v: []const Node.Index, p: u32) Allocator.Error!Node.Index {
