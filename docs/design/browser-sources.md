@@ -27,7 +27,9 @@ detached or inconsistent pixel storage before construction. Allocation
 RangeError is AllocationFailed. The HTML algorithms explicitly rethrow it.
 Native origin-clean state remains host owned and cannot be guessed from URLs.
 
-Image element decoding waits in a cancellable fiber and classifies only
+Image element decoding (`Image.decodeElement`; renamed 2026-11-08 so that it
+does not clash with webgpu.md §3.2's `decode`, which `bitmap` and
+`bitmapFromBytes` provide) waits in a cancellable fiber and classifies only
 DOMException EncodingError. Bitmap creation preserves all options and the crop
 overload, including negative crop widths/heights. Zero crops and zero resize
 sizes are rejected before the host call. InvalidStateError is typed; any other
@@ -45,23 +47,35 @@ CanvasImageSource). A timestamp is required except from a video element or a
 frame. Every option is checked before the host call; the residual expected
 failures are DOMException InvalidStateError (`InvalidSource`), SecurityError
 (`Security`), and the TypeError a visible rectangle outside an image or video
-element's private coded size raises (`InvalidRectangle`). A frame built from
+element's private coded size raises (`InvalidRectangle`; amended 2026-11-08:
+only for those two arms, whose coded size beni cannot read — every other
+arm's rectangle is bounds-checked first, so a TypeError there is a defect).
+The constructor checks the source before its rectangle, so `frame` does too:
+a closed bitmap or frame is `Closed`, and a source with no pixels (a loading
+or broken element, an empty canvas) is `InvalidSource`, before any rectangle
+check. A frame built from
 pixel buffers (VideoFrameBufferInit) is not offered yet (#2250).
 
-Canvas acquisition performs a native element type check. HTML canvas dimensions
-are unsigned long; OffscreenCanvas dimensions use EnforceRange unsigned long
-long, whose representable Number values must not be narrowed to uint32.
+Canvas acquisition performs a native element type check. An HTML canvas
+dimension reflects as `unsigned long`, whose setter resets a value above
+2^31 − 1 to the default, so `create` and `resize` refuse it
+(`InvalidDimension`). OffscreenCanvas dimensions are [EnforceRange] unsigned
+long long, which throws a TypeError above 2^53 − 1, so `offscreen` and
+`resizeOffscreen` refuse those first (amended 2026-11-08).
 The offscreen readiness state is ContextValidationRequired; native consuming
 operations test its private state.
 
 Source readiness is a point-in-time observation, and cannot prove origin-clean
 state or future validity. GPU operations repeat operation-specific checks and
-classify host errors after state changes.
+classify host errors after state changes. An `<img>` with no source at all is
+`Empty`; one whose source failed is `Broken`.
 
 Bitmaprenderer acquisition and presentation retain native context identity.
 Presenting consumes the bitmap. Offscreen snapshot uses the native
-transferToImageBitmap operation; a missing context or detached canvas is
-NoContextOrDetached, matched by DOMException InvalidStateError.
+transferToImageBitmap operation; a canvas without a context is `NoContext`,
+matched by DOMException InvalidStateError. `getContext("bitmaprenderer")` has
+no expected exception until a canvas can be handed to another realm (#1299):
+a canvas with another kind of context gives null, `ContextUnavailable`.
 
 **Not offered yet: worker transfer** (#1299). Moving or copying a bitmap, a
 frame, an OffscreenCanvas, ImageData or binary storage to or from a worker,

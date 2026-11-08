@@ -32,7 +32,7 @@ module Browser.Canvas
     NotFound
     WrongElement
     InvalidDimension
-    NoContextOrDetached
+    NoContext
     ContextUnavailable
     ClosedBitmap
   alias OffscreenCanvas
@@ -100,7 +100,8 @@ module Browser.Image
     WrongPixelView
     InconsistentPixels
     SharedPixels
-    BinaryError
+    PixelBacking
+    BytesCopy
     AllocationFailed
     DecodeFailed
     InvalidSource
@@ -124,7 +125,7 @@ module Browser.Image
   value close : Bitmap → ⊤  -- impure
   value data : Int, Int, Settings → Result Error Data  -- impure
   value dataFromView : View, Int, Maybe Int, Settings → Result Error Data  -- impure
-  value decode : Element → Result Error ⊤  -- suspends
+  value decodeElement : Element → Result Error ⊤  -- suspends
   value load : String, CrossOrigin → Result Error Element  -- suspends
   value pixels : Data → Result Error View  -- impure
   value settings : Settings

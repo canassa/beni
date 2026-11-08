@@ -38,14 +38,28 @@ already validated host result with `Js.to` into the constructor that names
 its kind; ordinary modules cannot import `Js`. The tag is the one allocation
 a view adds; the native object is never copied or wrapped further.
 
-`ViewKind` contains every Web IDL typed array kind plus DataView. View
-offsets are bytes; counts are elements, or bytes for DataView. Scalar access
-offsets are bytes relative to the view, with explicit little/big endian for
-multi-byte values. Every access validates current detachment and bounds,
-before invoking a host operation. Because a `Source` can be built from any
-native handle, every operation that takes one checks its backing then:
+`ViewKind` contains every Web IDL typed array kind plus DataView. `view` takes
+a `ByteRange` — `{ byteOffset, byteLength : Maybe Int }`, both in bytes,
+`Nothing` for the rest of the storage — so a call site cannot mix bytes and
+elements; the offset must be a multiple of the element size and the length a
+whole number of elements (`Misaligned`). `whole` is offset 0, the rest, and
+`dataView` a DataView over all of the storage. Scalar access offsets are
+bytes relative to the view, with explicit little/big endian for multi-byte
+values. Every range a failure reports is in bytes: offset, length, bytes
+available. Every access validates current detachment and bounds, before
+invoking a host operation. Because a `Source` can be built from any native
+handle, every operation that takes one checks its backing then:
 `sourceInfo`, `toList`, `copy`, `copyInto` and each scalar access. No
 detached view can be mistaken for an empty live view.
+
+Shared storage is recognised by a brand check that works across realms (the
+SharedArrayBuffer.prototype `byteLength` getter, which throws a TypeError for
+anything else; only that TypeError is caught), never by `instanceof`.
+
+Every native constructor is named by a literal `Js.global` per view kind, so
+a worker build proves each name on its realm's global object (workers.md §4,
+*The worker global allow-list*); `browser/dedicated/BinaryInWorker` keeps
+`view` and `Wgsl.encode` in a dedicated worker.
 
 Resizable ArrayBuffer and growable SharedArrayBuffer backing are refused by
 every entry point, even when it has never resized and the current view is in
@@ -67,21 +81,24 @@ ranges. `Word64` stores two validated unsigned 32-bit words; it never passes
 through an imprecise Number. Native BigInt64/BigUint64 views remain available as
 source variants and exact scalar word access preserves all their bits.
 
-Each documented failure is its own constructor of `Binary.Error`; every other
-host failure is a defect and is thrown, never typed:
+**Each function's error type names only the failures it can have** (amended
+2026-11-08; rule 9, webgpu.md §3.2). Every other host failure is a defect
+and is thrown, never typed:
 
-| Operation | Expected host failure | Error |
+| Type | Constructors | Returned by |
 |---|---|---|
-| `allocate`, `shared` | RangeError after the size checks (allocation) | `AllocationFailed bytes` |
-| `shared` | `crossOriginIsolated` is false | `IsolationRequired` |
-| `shared`, `view`, Float16 access | constructor or method absent | `Unsupported name` |
-| `transfer` | RangeError (allocation) | `AllocationFailed bytes` |
-| `transfer` | TypeError after the detached and shared checks: storage with a detach key, such as WebAssembly memory | `TransferDenied` |
-| every operation | detached storage, checked first | `Detached` |
-| every operation | resizable or growable storage, checked first | `ResizableBacking` |
+| `BackingError` | `Detached`, `ResizableBacking` (checked before any host call) | `backing`, `byteLength`, `dataView`, `sourceInfo`, `toList` |
+| `AllocationError` | `InvalidSize bytes` (outside ToIndex), `AllocationFailed bytes` (the constructor's RangeError) | `allocate` |
+| `SharedError` | `SharedAllocation AllocationError`, `IsolationRequired` (`crossOriginIsolated` is false), `NoSharedMemory` (no constructor) | `shared` |
+| `ViewError` | `ViewBacking`, `ViewOutOfRange offset length available`, `Misaligned value elementSize`, `NoViewConstructor name` (Float16Array absent) | `view` |
+| `AccessError` | `AccessBacking`, `OutOfBounds offset length available` | reads, float writes, word access, `copyInto` |
+| `WriteError` | `WriteAccess AccessError`, `InvalidValue value minimum maximum` | integer writes |
+| `Float16Error` | `Float16Access AccessError`, `NoFloat16` (no DataView Float16 methods) | `readF16`, `writeF16` |
+| `CopyError` | `CopyBacking`, `CopyAllocation` | `copy` |
+| `ListError` | `NotAByte value`, `ListAllocation` | `fromList` |
+| `TransferError` | `TransferBacking`, `NotTransferable` (shared storage, refused first; or the TypeError of storage with a detach key, such as WebAssembly memory), `TransferAllocation bytes` (RangeError), `NoTransfer` (no ArrayBuffer.prototype.transfer) | `transfer` |
+| `WordError` | `InvalidWord value minimum maximum`, `PrecisionLost` | `word64` and its conversions |
 
-Sizes, ranges, alignment and integer values are checked before any host call
-(`InvalidSize`, `InvalidRange`, `Misaligned`, `InvalidInteger`), and
 `word64ToInt`/`word64ToSignedInt` refuse a rounded answer (`PrecisionLost`).
 A view constructor has no residual expected failure after these checks.
 Detachment is read from ArrayBuffer.prototype.detached; on a host without
@@ -92,8 +109,9 @@ NaN/infinity; GPU descriptor numeric validation is a separate concern.
 Shared storage is explicit and never portrayed as immutable or implicitly
 copied. `Binary.Atomics.access` runs native Atomics on the integer views
 (`Int8Array` through `Uint32Array`, `BigInt64Array`, `BigUint64Array`; the
-others are `InvalidView`), with checked indices and integer values; BigInt
-views take and give exact `Word64` pairs. Ordinary scalar accesses have their
+others are `InvalidView`), with checked indices. A Number must be an integer
+in the view's element range, as `writeU8` refuses 256 (`InvalidValue`; decided
+2026-11-08), and BigInt views take and give exact `Word64` pairs. Ordinary scalar accesses have their
 native non-atomic semantics. `Atomics.wait` and `notify` are not offered:
 they need a worker to wait in (#1299).
 
@@ -141,3 +159,11 @@ only appear directly or as a structure's final direct member. Encoding a fresh
 buffer validates value shapes first and zero-initializes padding; writing into
 an existing view does not overwrite inaccessible padding. Checked size arithmetic
 refuses CPU sizes beyond ToIndex instead of silently rounding offsets.
+
+Its failures are three types (2026-11-08): `LayoutError` from the layout
+constructors, `UniformError` from `uniform`, and `CodecError` from `encode`,
+`write` and `decode`, which wraps `Binary.AccessError` and
+`Binary.AllocationError`. `uniform` checks member offsets against
+RequiredAlignOf(T, uniform), array strides, and the structure-gap rule;
+WGSL 12.1 exempts the uniform address space from the `` multiple rule,
+so a member's `` is checked only as a power of two at least AlignOf(T).

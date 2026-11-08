@@ -69,32 +69,49 @@ module Basics
   value turns : Float → Float
   value xor : Bool, Bool → Bool
 module Binary
+  type AccessError
+    AccessBacking
+    OutOfBounds
+  type AllocationError
+    InvalidSize
+    AllocationFailed
   type Backing
     Local
     Shared
+  type BackingError
+    Detached
+    ResizableBacking
   alias Buffer
+  alias ByteRange
+    ByteRange
+  type CopyError
+    CopyBacking
+    CopyAllocation
   type Endian
     Little
     Big
-  type Error
-    Unsupported
-    InvalidSize
-    InvalidRange
-    Misaligned
-    InvalidInteger
-    Detached
-    ResizableBacking
-    AllocationFailed
-    PrecisionLost
-    TransferDenied
-    IsolationRequired
+  type Float16Error
+    Float16Access
+    NoFloat16
+  type ListError
+    NotAByte
+    ListAllocation
   alias SharedBuffer
+  type SharedError
+    SharedAllocation
+    IsolationRequired
+    NoSharedMemory
   type Source
     WholeBuffer
     WholeShared
     ViewOf
   alias SourceInfo
     SourceInfo
+  type TransferError
+    TransferBacking
+    NotTransferable
+    TransferAllocation
+    NoTransfer
   type View
     Int8Array
     Uint8Array
@@ -109,6 +126,11 @@ module Binary
     Float32Array
     Float64Array
     DataView
+  type ViewError
+    ViewBacking
+    ViewOutOfRange
+    Misaligned
+    NoViewConstructor
   type ViewKind
     I8
     U8
@@ -124,53 +146,61 @@ module Binary
     F64
     Data
   opaque type Word64
-  value allocate : Int → Result Error Buffer  -- impure
-  value backing : View → Result Error Backing  -- impure
-  value byteLength : Backing → Result Error Int  -- impure
-  value copy : Source → Result Error Buffer  -- impure
-  value copyInto : View, Int, Source → Result Error ⊤  -- impure
+  type WordError
+    InvalidWord
+    PrecisionLost
+  type WriteError
+    WriteAccess
+    InvalidValue
+  value allocate : Int → Result AllocationError Buffer  -- impure
+  value backing : View → Result BackingError Backing  -- impure
+  value byteLength : Backing → Result BackingError Int  -- impure
+  value copy : Source → Result CopyError Buffer  -- impure
+  value copyInto : View, Int, Source → Result AccessError ⊤  -- impure
+  value dataView : Backing → Result BackingError View  -- impure
   value detached : Buffer → Bool  -- impure
   value elementSize : ViewKind → Int
-  value fromList : List Int → Result Error Buffer  -- impure
+  value fromList : List Int → Result ListError Buffer  -- impure
   value kind : View → ViewKind
-  value readF16 : View, Int, Endian → Result Error Float  -- impure
-  value readF32 : View, Int, Endian → Result Error Float  -- impure
-  value readF64 : View, Int, Endian → Result Error Float  -- impure
-  value readI16 : View, Int, Endian → Result Error Int  -- impure
-  value readI32 : View, Int, Endian → Result Error Int  -- impure
-  value readI8 : View, Int → Result Error Int  -- impure
-  value readU16 : View, Int, Endian → Result Error Int  -- impure
-  value readU32 : View, Int, Endian → Result Error Int  -- impure
-  value readU8 : View, Int → Result Error Int  -- impure
-  value readWord64 : View, Int, Endian → Result Error Word64  -- impure
-  value shared : Int → Result Error SharedBuffer  -- impure
-  value sourceInfo : Source → Result Error SourceInfo  -- impure
-  value toList : Source → Result Error (List Int)  -- impure
-  value transfer : Buffer → Result Error Buffer  -- impure
-  value view : Backing, ViewKind, Int, Maybe Int → Result Error View  -- impure
-  value word64 : Int, Int → Result Error Word64  -- impure
-  value word64FromInt : Int → Result Error Word64  -- impure
-  value word64FromSignedInt : Int → Result Error Word64  -- impure
-  value word64ToInt : Word64 → Result Error Int
-  value word64ToSignedInt : Word64 → Result Error Int  -- impure
+  value readF16 : View, Int, Endian → Result Float16Error Float  -- impure
+  value readF32 : View, Int, Endian → Result AccessError Float  -- impure
+  value readF64 : View, Int, Endian → Result AccessError Float  -- impure
+  value readI16 : View, Int, Endian → Result AccessError Int  -- impure
+  value readI32 : View, Int, Endian → Result AccessError Int  -- impure
+  value readI8 : View, Int → Result AccessError Int  -- impure
+  value readU16 : View, Int, Endian → Result AccessError Int  -- impure
+  value readU32 : View, Int, Endian → Result AccessError Int  -- impure
+  value readU8 : View, Int → Result AccessError Int  -- impure
+  value readWord64 : View, Int, Endian → Result AccessError Word64  -- impure
+  value shared : Int → Result SharedError SharedBuffer  -- impure
+  value sourceInfo : Source → Result BackingError SourceInfo  -- impure
+  value toList : Source → Result BackingError (List Int)  -- impure
+  value transfer : Buffer → Result TransferError Buffer  -- impure
+  value view : Backing, ViewKind, ByteRange → Result ViewError View  -- impure
+  value whole : ByteRange
+  value word64 : Int, Int → Result WordError Word64  -- impure
+  value word64FromInt : Int → Result WordError Word64  -- impure
+  value word64FromSignedInt : Int → Result WordError Word64  -- impure
+  value word64ToInt : Word64 → Result WordError Int
+  value word64ToSignedInt : Word64 → Result WordError Int  -- impure
   value words : Word64 → { high : Int, low : Int }
-  value writeF16 : View, Int, Endian, Float → Result Error ⊤  -- impure
-  value writeF32 : View, Int, Endian, Float → Result Error ⊤  -- impure
-  value writeF64 : View, Int, Endian, Float → Result Error ⊤  -- impure
-  value writeI16 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeI32 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeI8 : View, Int, Int → Result Error ⊤  -- impure
-  value writeU16 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeU32 : View, Int, Endian, Int → Result Error ⊤  -- impure
-  value writeU8 : View, Int, Int → Result Error ⊤  -- impure
-  value writeWord64 : View, Int, Endian, Word64 → Result Error ⊤  -- impure
+  value writeF16 : View, Int, Endian, Float → Result Float16Error ⊤  -- impure
+  value writeF32 : View, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeF64 : View, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeI16 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI32 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI8 : View, Int, Int → Result WriteError ⊤  -- impure
+  value writeU16 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU32 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU8 : View, Int, Int → Result WriteError ⊤  -- impure
+  value writeWord64 : View, Int, Endian, Word64 → Result AccessError ⊤  -- impure
 module Binary.Atomics
   type Error
-    BinaryError
+    Backing
     InvalidView
     InvalidIndex
     InvalidValue
-    Unsupported
+    NoAtomics
   type Operation
     Load
     Store
@@ -187,7 +217,19 @@ module Binary.Atomics
   value access : View, Int, Operation → Result Error Value  -- impure
   value isLockFree : Int → Bool  -- impure
 module Binary.Wgsl
-  type Error
+  type CodecError
+    ValueShape
+    ValueCount
+    EmptyRuntime
+    IntegerRange
+    SizeOverflow
+    Access
+    Allocation
+    NoFloat16
+  alias Field
+    Field
+  opaque type Layout
+  type LayoutError
     InvalidDimension
     InvalidScalar
     InvalidCount
@@ -197,18 +239,6 @@ module Binary.Wgsl
     InvalidAlignment
     InvalidMemberSize
     RuntimePlacement
-    UniformStride
-    UniformOffset
-    UniformStructureGap
-    AtomicInUniform
-    RuntimeInUniform
-    ValueShape
-    ValueCount
-    IntegerRange
-    BinaryError
-  alias Field
-    Field
-  opaque type Layout
   alias Member
     Member
   type Scalar
@@ -218,6 +248,12 @@ module Binary.Wgsl
     Float16
     AtomicSigned32
     AtomicUnsigned32
+  type UniformError
+    UniformStride
+    UniformOffset
+    UniformStructureGap
+    AtomicInUniform
+    RuntimeInUniform
   type UniformRules
     Standard
     Legacy
@@ -226,20 +262,20 @@ module Binary.Wgsl
     Floating
     Composite
   value alignment : Layout → Int
-  value array : Layout, Int → Result Error Layout  -- impure
+  value array : Layout, Int → Result LayoutError Layout  -- impure
   value byteSize : Layout → Maybe Int
-  value decode : View, Int, Layout → Result Error Value  -- impure
-  value encode : Layout, Value → Result Error Buffer  -- impure
+  value decode : View, Int, Layout → Result CodecError Value  -- impure
+  value encode : Layout, Value → Result CodecError Buffer  -- impure
   value field : String, Layout → Field
-  value matrix : Scalar, Int, Int → Result Error Layout  -- impure
+  value matrix : Scalar, Int, Int → Result LayoutError Layout  -- impure
   value members : Layout → List Member
-  value runtimeArray : Layout → Result Error Layout
+  value runtimeArray : Layout → Result LayoutError Layout
   value scalar : Scalar → Layout
   value stride : Layout → Maybe Int
-  value structure : List Field → Result Error Layout  -- impure
-  value uniform : UniformRules, Layout → Result Error ⊤
-  value vector : Scalar, Int → Result Error Layout  -- impure
-  value write : View, Int, Layout, Value → Result Error ⊤  -- impure
+  value structure : List Field → Result LayoutError Layout  -- impure
+  value uniform : UniformRules, Layout → Result UniformError ⊤
+  value vector : Scalar, Int → Result LayoutError Layout  -- impure
+  value write : View, Int, Layout, Value → Result CodecError ⊤  -- impure
 module Browser.Host.ArrayBuffer
   type ArrayBuffer
 module Browser.Host.BigInt64Array
