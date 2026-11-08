@@ -59,6 +59,16 @@ pub depthStencilState : Types.DepthStencilState → String
 depthStencilState d = json (Native.depthStencilState d)
 
 
+--| The native dictionary of the base every descriptor inherits.
+pub objectDescriptorBase : Types.ObjectDescriptorBase → String
+objectDescriptorBase d = json (Native.objectDescriptorBase d)
+
+
+--| The native dictionary of the base every pipeline descriptor inherits.
+pub pipelineDescriptorBase : Types.PipelineDescriptorBase → String
+pipelineDescriptorBase d = json (Native.pipelineDescriptorBase d)
+
+
 --| The native value of a color.
 pub color : Types.Color → String
 color c = json (Native.color c)

@@ -1,0 +1,279 @@
+-- Every WebGPU object's label (docs/design/webgpu.md §2.1, §4; coverage.md,
+-- `GPUObjectBase`): each of the twenty interfaces that include
+-- `GPUObjectBase` is made with a label in its descriptor where it has one,
+-- read, set and read again through its own module. The label is the native
+-- attribute itself, so the two reads are the descriptor's label and the
+-- one set: a host that dropped either would show here. The device and its
+-- queue take theirs from the device descriptor (`defaultQueue`). A pass
+-- keeps the label set while it was open after it is ended.
+import Browser.Video
+import Gpu
+import Gpu.Adapter
+import Gpu.Batch as Batch
+import Gpu.BindGroup as BindGroup
+import Gpu.BindGroupLayout as BindGroupLayout
+import Gpu.Buffer
+import Gpu.CommandBuffer as CommandBuffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePass as ComputePass
+import Gpu.ComputePipeline as ComputePipeline
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.ExternalTexture as ExternalTexture
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device)
+import Gpu.PipelineLayout as PipelineLayout
+import Gpu.QuerySet as QuerySet
+import Gpu.Queue
+import Gpu.RenderBundle as RenderBundle
+import Gpu.RenderBundleEncoder as RenderBundleEncoder
+import Gpu.RenderPass as RenderPass
+import Gpu.RenderPipeline as RenderPipeline
+import Gpu.Sampler as Sampler
+import Gpu.Shader as Shader
+import Gpu.Texture
+import Gpu.TextureView as TextureView
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuMedia
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- `name: <made>, <set>` for a getter, a setter and an object.
+twice : String, a, (a → String), (a, String → ⊤) → String
+twice name object get put =
+    made = get object
+    put object (name ++ " (set)")
+    name ++ ": " ++ made ++ ", " ++ get object
+
+
+labelled : String → Types.Option String
+labelled name = Types.Value (name ++ " (made)")
+
+
+wgsl : String
+wgsl =
+    "@compute @workgroup_size(1) fn main() {}\n"
+        ++ "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+
+
+target : Device → Gpu.Handle.Texture
+target d =
+    must
+        (Gpu.Device.createTexture d
+            { (Types.textureDescriptor
+                  (Types.Extent3DFields
+                      { width = u32 4
+                      , height = Types.Value (u32 4)
+                      , depthOrArrayLayers = Types.Default
+                      }
+                  )
+                  Types.Rgba8unorm
+                  (Flags.texture [ Flags.RenderAttachment, Flags.TextureBinding ])
+              )
+                | label = labelled "texture"
+            }
+        )
+
+
+resources : ⊤ → List String
+resources ⊤ =
+    GpuHost.inject "none"
+    descriptor =
+        { (Types.deviceDescriptor)
+            | label = labelled "device"
+            , defaultQueue = Types.Value { (Types.queueDescriptor) | label = labelled "queue" }
+        }
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter descriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok d →
+                    resourcesOn d
+
+
+resourcesOn : Device → List String
+resourcesOn d =
+    buffer =
+        must
+            (Gpu.Device.createBuffer d
+                { (GpuKit.buffer 16 [ Flags.CopyDst ]) | label = labelled "buffer" }
+            )
+    texture = target d
+    view =
+        must
+            (Gpu.Texture.createView texture
+                { (Types.textureViewDescriptor) | label = labelled "view" }
+            )
+    sampler =
+        must (Gpu.Device.createSampler d { (Types.samplerDescriptor) | label = labelled "sampler" })
+    layout =
+        must
+            (Gpu.Device.createBindGroupLayout d
+                { (Types.bindGroupLayoutDescriptor []) | label = labelled "bind group layout" }
+            )
+    group =
+        must
+            (Gpu.Device.createBindGroup d
+                { (Types.bindGroupDescriptor layout []) | label = labelled "bind group" }
+            )
+    pipelineLayout =
+        must
+            (Gpu.Device.createPipelineLayout d
+                { (Types.pipelineLayoutDescriptor [ Just layout ])
+                    | label = labelled "pipeline layout"
+                }
+            )
+    module =
+        must
+            (Gpu.Device.createShaderModule d
+                { (Types.shaderModuleDescriptor wgsl) | label = labelled "shader" }
+            )
+    compute =
+        must
+            (Gpu.Device.createComputePipeline d
+                { (Types.computePipelineDescriptor
+                      (Types.Explicit pipelineLayout)
+                      (Types.programmableStage module)
+                  )
+                    | label = labelled "compute pipeline"
+                }
+            )
+    render =
+        must
+            (Gpu.Device.createRenderPipeline d
+                { (Types.renderPipelineDescriptor Types.Auto (Types.vertexState module))
+                    | label = labelled "render pipeline"
+                    , fragment =
+                        Types.Value
+                            (Types.fragmentState module
+                                [ Just (Types.colorTargetState Types.Rgba8unorm) ]
+                            )
+                }
+            )
+    querySet =
+        must
+            (Gpu.Device.createQuerySet d
+                { (Types.querySetDescriptor Types.Occlusion (u32 1))
+                    | label = labelled "query set"
+                }
+            )
+    queue = Gpu.Device.queue d
+    [ twice "device" d Gpu.Device.label Gpu.Device.setLabel
+    , twice "queue" queue Gpu.Queue.label Gpu.Queue.setLabel
+    , twice "buffer" buffer Gpu.Buffer.label Gpu.Buffer.setLabel
+    , twice "texture" texture Gpu.Texture.label Gpu.Texture.setLabel
+    , twice "view" view TextureView.label TextureView.setLabel
+    , twice "sampler" sampler Sampler.label Sampler.setLabel
+    , twice "bind group layout" layout BindGroupLayout.label BindGroupLayout.setLabel
+    , twice "bind group" group BindGroup.label BindGroup.setLabel
+    , twice "pipeline layout" pipelineLayout PipelineLayout.label PipelineLayout.setLabel
+    , twice "shader" module Shader.label Shader.setLabel
+    , twice "compute pipeline" compute ComputePipeline.label ComputePipeline.setLabel
+    , twice "render pipeline" render RenderPipeline.label RenderPipeline.setLabel
+    , twice "query set" querySet QuerySet.label QuerySet.setLabel
+    ]
+
+
+encoding : ⊤ → List String
+encoding ⊤ = GpuKit.with "none" λd →
+    texture = target d
+    view = must (Gpu.Texture.createView texture Types.textureViewDescriptor)
+    ran = Encode.run d { label = labelled "encoder" } (passes view _)
+    bundled =
+        Encode.bundle
+            d
+            { (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+                | label = labelled "bundle encoder"
+            }
+            bundle
+    case ( ran, bundled ) of
+        ( Ok r, Ok b ) →
+            List.concat
+                [ r.value
+                , [ twice "command buffer" r.commands CommandBuffer.label CommandBuffer.setLabel
+                  , b.value
+                  , twice "bundle" b.bundle RenderBundle.label RenderBundle.setLabel
+                  ]
+                ]
+
+        ( Err problem, _ ) →
+            [ "encode: Err " ++ GpuShow.error problem ]
+
+        ( _, Err problem ) →
+            [ "bundle: Err " ++ GpuShow.error problem ]
+
+
+external : ⊤ → List String
+external ⊤ = GpuKit.with "none" λd →
+    frame = GpuMedia.frame ⊤
+    imported = Batch.run d "import" λb →
+        Batch.importExternalTexture b
+            { (Types.externalTextureDescriptor (Types.ExternalVideoFrame frame))
+                | label = labelled "external texture"
+            }
+    line =
+        case imported of
+            Ok texture →
+                twice "external texture" texture ExternalTexture.label ExternalTexture.setLabel
+
+            Err problem →
+                "external texture: Err " ++ GpuShow.error problem
+    Browser.Video.close frame
+    [ line ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "resources", resources )
+        , ( "encoding", encoding )
+        , ( "external", external )
+        ]
+
+
+passes : Gpu.Handle.TextureView, Gpu.Handle.CommandEncoder → Result Error.InputError (List String)
+passes view encoder =
+    first = twice "encoder" encoder CommandEncoder.label CommandEncoder.setLabel
+    compute =
+        CommandEncoder.beginComputePass encoder
+            { (Types.computePassDescriptor) | label = labelled "compute pass" }?
+    computeMade = ComputePass.label compute
+    ComputePass.setLabel compute "compute pass (set)"
+    ComputePass.pushDebugGroup compute "group"?
+    ComputePass.insertDebugMarker compute "marker"?
+    ComputePass.popDebugGroup compute?
+    ComputePass.end compute?
+    attachment =
+        Types.renderPassColorAttachment (Types.AttachmentTextureView view) Types.Clear Types.Store
+    render =
+        CommandEncoder.beginRenderPass encoder
+            { (Types.renderPassDescriptor [ Just attachment ]) | label = labelled "render pass" }?
+    renderMade = RenderPass.label render
+    RenderPass.setLabel render "render pass (set)"
+    RenderPass.end render?
+    CommandEncoder.finish encoder
+        { (Types.commandBufferDescriptor) | label = labelled "command buffer" }?
+    Ok
+        [ first
+        , "compute pass: " ++ computeMade ++ ", " ++ ComputePass.label compute
+        , "render pass: " ++ renderMade ++ ", " ++ RenderPass.label render
+        ]
+
+
+bundle : Gpu.Handle.RenderBundleEncoder → Result Error.InputError String
+bundle encoder =
+    line = twice "bundle encoder" encoder RenderBundleEncoder.label RenderBundleEncoder.setLabel
+    RenderBundleEncoder.finish encoder
+        { (Types.renderBundleDescriptor) | label = labelled "bundle" }?
+    Ok line

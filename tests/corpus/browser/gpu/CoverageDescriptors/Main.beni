@@ -1,0 +1,415 @@
+-- Descriptors that no other page builds, each handed to a real operation
+-- (docs/design/webgpu.md §3, §4; coverage.md). bindings: a bind group
+-- layout of a uniform buffer, a filtering sampler, a float texture and a
+-- write-only storage texture; a bind group of a buffer range, a sampler
+-- and two views; a pipeline layout of it; a compute pipeline on that
+-- layout from a module with a compilation hint, whose compiler says
+-- nothing. render: a render pipeline with a primitive state, a vertex
+-- buffer layout of two attributes, blending and multisampling, made, and
+-- the same pipeline asynchronously with a vertex entry point that does not
+-- exist, refused as `PipelineValidation`. copies: a copy from a buffer into
+-- a texture at an origin and extent given as dictionaries, and an image
+-- copied at a source origin given as a dictionary. canvas: a configuration
+-- with a tone mapping and an alpha mode, read back. bases: the two
+-- inherited base dictionaries, converted alone. spellings: each enum the
+-- engine reads back from the host, spelled and read again.
+import Browser.Canvas as Canvas
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, PipelineLayout, Sampler, Shader)
+import Gpu.Queue
+import Gpu.Shader
+import Gpu.Surface as Surface
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, size64, u32, yesNo)
+import GpuMedia
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+extent : Int, Int → Types.Extent3D
+extent w h = Types.Extent3DFields { (Types.extent3DDict (u32 w)) | height = Types.Value (u32 h) }
+
+
+computeWgsl : String
+computeWgsl = "@compute @workgroup_size(1) fn main() {}"
+
+
+bindings : ⊤ → List String
+bindings ⊤ = GpuKit.with "none" λd →
+    compute = Flags.shaderStages [ Flags.ComputeStage ]
+    entry = Types.bindGroupLayoutEntry
+    layout =
+        Gpu.Device.createBindGroupLayout
+            d
+            (Types.bindGroupLayoutDescriptor
+                [ { (entry (u32 0) compute)
+                    | buffer =
+                        Types.Value
+                            { (Types.bufferBindingLayout) | type_ = Types.Value Types.Uniform }
+                  }
+                , { (entry (u32 1) compute)
+                    | sampler =
+                        Types.Value
+                            { (Types.samplerBindingLayout) | type_ = Types.Value Types.Filtering }
+                  }
+                , { (entry (u32 2) compute)
+                    | texture =
+                        Types.Value
+                            { (Types.textureBindingLayout)
+                                | sampleType = Types.Value Types.Float
+                                , viewDimension = Types.Value Types.View2D
+                            }
+                  }
+                , { (entry (u32 3) compute)
+                    | storageTexture =
+                        Types.Value
+                            { (Types.storageTextureBindingLayout Types.R32float)
+                                | access = Types.Value Types.WriteOnly
+                                , viewDimension = Types.Value Types.View2D
+                            }
+                  }
+                ]
+            )
+    case layout of
+        Err problem →
+            [ "layout: Err " ++ GpuShow.error problem ]
+
+        Ok l →
+            uniform = must (Gpu.Device.createBuffer d (GpuKit.buffer 32 [ Flags.Uniform ]))
+            sampler : Sampler
+            sampler =
+                must
+                    (Gpu.Device.createSampler d
+                        { (Types.samplerDescriptor)
+                            | addressModeU = Types.Value Types.Repeat
+                            , addressModeV = Types.Value Types.MirrorRepeat
+                            , magFilter = Types.Value Types.Linear
+                            , minFilter = Types.Value Types.Linear
+                            , mipmapFilter = Types.Value Types.MipmapLinear
+                        }
+                    )
+            sampled =
+                must
+                    (Gpu.Device.createTexture
+                        d
+                        (Types.textureDescriptor
+                            (extent 4 4)
+                            Types.Rgba8unorm
+                            (Flags.texture [ Flags.TextureBinding ])
+                        )
+                    )
+            storage =
+                must
+                    (Gpu.Device.createTexture
+                        d
+                        (Types.textureDescriptor
+                            (extent 4 4)
+                            Types.R32float
+                            (Flags.texture [ Flags.StorageBinding ])
+                        )
+                    )
+            view =
+                λt →
+                    must
+                        (Gpu.Texture.createView t
+                            { (Types.textureViewDescriptor)
+                                | dimension = Types.Value Types.View2D
+                                , aspect = Types.Value Types.All
+                            }
+                        )
+            range =
+                { (Types.bufferBinding uniform)
+                    | offset = Types.Value (size64 0)
+                    , size = Types.Value (size64 16)
+                }
+            group =
+                Gpu.Device.createBindGroup
+                    d
+                    (Types.bindGroupDescriptor l
+                        [ Types.bindGroupEntry (u32 0) (Types.BufferRangeBinding range)
+                        , Types.bindGroupEntry (u32 1) (Types.SamplerBinding sampler)
+                        , Types.bindGroupEntry (u32 2) (Types.TextureViewBinding (view sampled))
+                        , Types.bindGroupEntry (u32 3) (Types.TextureViewBinding (view storage))
+                        ]
+                    )
+            pipelineLayout : Result Error.Error PipelineLayout
+            pipelineLayout =
+                Gpu.Device.createPipelineLayout d (Types.pipelineLayoutDescriptor [ Just l ])
+            case pipelineLayout of
+                Err problem →
+                    [ "bind group: " ++ GpuShow.checked group λ_ → "made"
+                    , "pipeline layout: Err " ++ GpuShow.error problem
+                    ]
+
+                Ok explicit →
+                    hint =
+                        { (Types.shaderModuleCompilationHint "main")
+                            | layout = Types.Value (Types.Explicit explicit)
+                        }
+                    module : Shader
+                    module =
+                        must
+                            (Gpu.Device.createShaderModule d
+                                { (Types.shaderModuleDescriptor computeWgsl)
+                                    | compilationHints = Types.Value [ hint ]
+                                }
+                            )
+                    info : Result Error.Error Gpu.Shader.CompilationInfo
+                    info = Gpu.Shader.getCompilationInfo module
+                    pipeline =
+                        Gpu.Device.createComputePipeline
+                            d
+                            (Types.computePipelineDescriptor (Types.Explicit explicit)
+                                { (Types.programmableStage module)
+                                    | entryPoint = Types.Value "main"
+                                }
+                            )
+                    [ "bind group: " ++ GpuShow.checked group λ_ → "made"
+                    , "pipeline layout: made"
+                    , "compute pipeline: " ++ GpuShow.checked pipeline λ_ → "made"
+                    , "compiler messages: "
+                        ++ GpuShow.checked info λi → kinds i.messages
+                    ]
+
+
+renderWgsl : String
+renderWgsl =
+    "@vertex fn vs(@location(0) at : vec2f, @location(1) shade : f32) -> @builtin(position) vec4f "
+        ++ "{ return vec4f(at, shade, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+
+
+renderDescriptor : Shader, String → Types.RenderPipelineDescriptor
+renderDescriptor module entry =
+    vertices =
+        { (Types.vertexBufferLayout (size64 12)
+              [ Types.vertexAttribute Types.Float32x2 (size64 0) (u32 0)
+              , Types.vertexAttribute Types.Float32 (size64 8) (u32 1)
+              ]
+          )
+            | stepMode = Types.Value Types.Vertex
+        }
+    blend =
+        Types.blendState
+            { (Types.blendComponent)
+                | operation = Types.Value Types.Add
+                , srcFactor = Types.Value Types.SrcAlpha
+                , dstFactor = Types.Value Types.OneMinusSrcAlpha
+            }
+            Types.blendComponent
+    target = { (Types.colorTargetState Types.Rgba8unorm) | blend = Types.Value blend }
+    base =
+        Types.renderPipelineDescriptor Types.Auto
+            { (Types.vertexState module)
+                | entryPoint = Types.Value entry
+                , buffers = Types.Value [ Just vertices ]
+            }
+    { base
+        | fragment = Types.Value (Types.fragmentState module [ Just target ])
+        , primitive =
+            Types.Value
+                { (Types.primitiveState)
+                    | topology = Types.Value Types.TriangleStrip
+                    , stripIndexFormat = Types.Value Types.IndexUint32
+                    , frontFace = Types.Value Types.Cw
+                    , cullMode = Types.Value Types.Back
+                }
+        , multisample = Types.Value { (Types.multisampleState) | count = Types.Value (u32 4) }
+    }
+
+
+render : ⊤ → List String
+render ⊤ = GpuKit.with "none" λd →
+    module = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor renderWgsl))
+    refused =
+        case Gpu.Device.createRenderPipelineAsync d (renderDescriptor module "missing") of
+            Ok _ →
+                "made"
+
+            Err (Error.PipelineValidation failure) →
+                "PipelineValidation, entry points " ++ String.join (failureEntries failure) ", "
+
+            Err problem →
+                "Err " ++ GpuShow.error problem
+    [ "render pipeline: "
+        ++ GpuShow.checked (Gpu.Device.createRenderPipeline d (renderDescriptor module "vs")) λ_ →
+            "made"
+    , "missing entry point, asynchronously: " ++ refused
+    ]
+
+
+failureEntries : Error.PipelineFailure → List String
+failureEntries failure = failure.entryPoints
+
+
+copies : ⊤ → List String
+copies ⊤ = GpuKit.with "none" λd →
+    source = must (Gpu.Device.createBuffer d (GpuKit.buffer 1024 [ Flags.CopySrc ]))
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    (extent 8 8)
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureCopyDst, Flags.RenderAttachment ])
+                )
+            )
+    origin =
+        Types.Origin3DFields
+            { (Types.origin3DDict) | x = Types.Value (u32 4), y = Types.Value (u32 4) }
+    copied = Encode.run d Types.commandEncoderDescriptor λencoder →
+        CommandEncoder.copyBufferToTexture
+            encoder
+            { (Types.texelCopyBufferInfo source) | bytesPerRow = Types.Value (u32 256) }
+            { (Types.texelCopyTextureInfo texture)
+                | origin = Types.Value origin
+                , aspect = Types.Value Types.All
+            }
+            (extent 4 4)
+    submitted =
+        case copied of
+            Ok ran →
+                GpuShow.checked (Gpu.Queue.submit (Gpu.Device.queue d) [ ran.commands ]) λ_ →
+                    "submitted"
+
+            Err problem →
+                "Err " ++ GpuShow.error problem
+    imageOrigin =
+        Types.Origin2DFields
+            { (Types.origin2DDict) | x = Types.Value (u32 2), y = Types.Value (u32 2) }
+    image =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            { (Types.copyExternalImageSourceInfo (Types.Bitmap (GpuMedia.bitmap ⊤)))
+                | origin = Types.Value imageOrigin
+            }
+            (Types.copyExternalImageDestInfo texture)
+            (extent 4 4)
+    [ "buffer to texture at (4, 4): " ++ submitted
+    , "image from (2, 2): " ++ GpuShow.checked image λ_ → "copied"
+    ]
+
+
+canvas : ⊤ → List String
+canvas ⊤ = GpuKit.with "none" λd →
+    surface = must (Surface.fromCanvas (must (Canvas.create 4 4)))
+    toneMapping : Types.CanvasToneMapping
+    toneMapping = { (Types.canvasToneMapping) | mode = Types.Value Types.Standard }
+    configured =
+        Surface.configure surface
+            { (Types.canvasConfiguration d Types.Rgba8unorm)
+                | toneMapping = Types.Value toneMapping
+                , alphaMode = Types.Value Types.Premultiplied
+            }
+    [ "configure: " ++ GpuShow.checked configured λ_ → "done"
+    , "read back: " ++ GpuShow.checked (Surface.getConfiguration surface) showConfiguration
+    ]
+
+
+showConfiguration : Maybe Types.CanvasConfiguration → String
+showConfiguration found =
+    case found of
+        Nothing →
+            "none"
+
+        Just c →
+            alpha =
+                case c.alphaMode of
+                    Types.Value a →
+                        Types.canvasAlphaModeToString a
+
+                    Types.Default →
+                        "default"
+            tone =
+                case c.toneMapping of
+                    Types.Value t →
+                        case t.mode of
+                            Types.Value m →
+                                Types.canvasToneMappingModeToString m
+
+                            Types.Default →
+                                "default"
+
+                    Types.Default →
+                        "default"
+            "alpha " ++ alpha ++ ", tone mapping " ++ tone
+
+
+bases : ⊤ → List String
+bases ⊤ =
+    labelled : Types.ObjectDescriptorBase
+    labelled = { (Types.objectDescriptorBase) | label = Types.Value "base" }
+    pipeline : Types.PipelineDescriptorBase
+    pipeline = Types.pipelineDescriptorBase Types.Auto
+    [ "object base, default: " ++ GpuProbe.objectDescriptorBase Types.objectDescriptorBase
+    , "object base, labelled: " ++ GpuProbe.objectDescriptorBase labelled
+    , "pipeline base: " ++ GpuProbe.pipelineDescriptorBase pipeline
+    , "pipeline base, labelled: "
+        ++ GpuProbe.pipelineDescriptorBase { pipeline | label = Types.Value "base" }
+    ]
+
+
+-- Each value spelled and read back: `yes` when every one comes back.
+spelled : List a, (a → String), (String → Maybe a) → String
+    where a.eq : a, a → Bool
+spelled values to from = yesNo (List.all values λv → from (to v) == Just v)
+
+
+spellings : ⊤ → List String
+spellings ⊤ =
+    lost : List Types.DeviceLostReason
+    lost = [ Types.Unknown, Types.Destroyed ]
+    reasons : List Types.PipelineErrorReason
+    reasons = [ Types.ReasonValidation, Types.ReasonInternal ]
+    messages : List Types.CompilationMessageType
+    messages = [ Types.Error, Types.Warning, Types.Info ]
+    layouts : List Types.AutoLayoutMode
+    layouts = [ Types.AutoLayout ]
+    [ "device lost reasons: "
+        ++ spelled lost Types.deviceLostReasonToString Types.deviceLostReasonFromString
+    , "pipeline error reasons: "
+        ++ spelled reasons Types.pipelineErrorReasonToString Types.pipelineErrorReasonFromString
+    , "compilation message types: "
+        ++ spelled
+            messages
+            Types.compilationMessageTypeToString
+            Types.compilationMessageTypeFromString
+    , "auto layout modes: "
+        ++ spelled layouts Types.autoLayoutModeToString Types.autoLayoutModeFromString
+    , "an unknown spelling: "
+        ++ (case Types.deviceLostReasonFromString "x-beni" of
+               Just _ →
+                   "read"
+
+               Nothing →
+                   "Nothing"
+           )
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "bindings", bindings )
+        , ( "render", render )
+        , ( "copies", copies )
+        , ( "canvas", canvas )
+        , ( "bases", bases )
+        , ( "spellings", spellings )
+        ]
+
+
+kinds : List Gpu.Shader.CompilationMessage → String
+kinds messages =
+    if List.isEmpty messages then
+        "none"
+    else
+        String.join (List.map messages λm → Types.compilationMessageTypeToString m.type_) ", "

@@ -1,0 +1,46 @@
+-- load
+<body>
+  <main>
+    <button id="snapshots">"snapshots"</button>
+    <button id="resources">"resources"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #snapshots
+<body>
+  <main>
+    <button id="snapshots">"snapshots"</button>
+    <button id="resources">"resources"</button>
+    <ol>
+      <li>"adapter limits that differ from their field: none"</li>
+      <li>"device limits that differ from their field: none"</li>
+      <li>"limit names: 36, each spelled back: yes"</li>
+      <li>"adapter features answer has: yes"</li>
+      <li>"device features answer has: yes"</li>
+      <li>"WGSL language features answer has: Ok yes"</li>
+      <li>"adapter info is the device's: yes"</li>
+    </ol>
+  </main>
+</body>
+-- click #resources
+<body>
+  <main>
+    <button id="snapshots">"snapshots"</button>
+    <button id="resources">"resources"</button>
+    <ol>
+      <li>"adapter limits that differ from their field: none"</li>
+      <li>"device limits that differ from their field: none"</li>
+      <li>"limit names: 36, each spelled back: yes"</li>
+      <li>"adapter features answer has: yes"</li>
+      <li>"device features answer has: yes"</li>
+      <li>"WGSL language features answer has: Ok yes"</li>
+      <li>"adapter info is the device's: yes"</li>
+      <li>"3d: 4×4×2, mips 2, samples 1, 3d, rgba8unorm, usage 6, binding view none"</li>
+      <li>"2d array: 8×2×3, mips 1, samples 1, 2d, r32float, usage 9, binding view none"</li>
+      <li>"1d: 16×1×1, mips 1, samples 1, 1d, rgba8unorm, usage 2, binding view none"</li>
+      <li>"multisampled: 4×4×1, mips 1, samples 4, 2d, rgba8unorm, usage 16, binding view none"</li>
+      <li>"buffer usage: 9, size 16"</li>
+      <li>"query set: occlusion × 3"</li>
+    </ol>
+  </main>
+</body>

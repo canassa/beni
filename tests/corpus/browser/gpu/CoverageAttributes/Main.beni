@@ -1,0 +1,232 @@
+-- The read-only attributes and snapshots of WebGPU (docs/design/webgpu.md
+-- §2.1, §3, §4; coverage.md): every member of `GPUSupportedLimits` read by
+-- its name agrees with the snapshot's field; a feature set and the WGSL
+-- language features answer `has` for exactly what they list; the adapter's
+-- info and the device's `adapterInfo` agree; a texture's attributes are
+-- those of its descriptor (a core device has no texture binding view
+-- dimension); a buffer's usage and a query set's type and count are those
+-- they were made with. Every line is decided by the specification, so the
+-- fake host and a GPU give the same transcript.
+import Gpu
+import Gpu.Adapter
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Feature as Feature
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device)
+import Gpu.Limits as Limits
+import Gpu.QuerySet as QuerySet
+import Gpu.Texture
+import Gpu.Types as Types
+import Gpu.WgslFeature as WgslFeature
+import GpuHost
+import GpuKit exposing (must, u32, yesNo)
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- Each limit's name, and its field of the snapshot.
+fields : List (Limits.LimitName × (Limits.Limits → Maybe Int))
+fields =
+    [ ( Limits.MaxTextureDimension1D, λl → Just l.maxTextureDimension1D )
+    , ( Limits.MaxTextureDimension2D, λl → Just l.maxTextureDimension2D )
+    , ( Limits.MaxTextureDimension3D, λl → Just l.maxTextureDimension3D )
+    , ( Limits.MaxTextureArrayLayers, λl → Just l.maxTextureArrayLayers )
+    , ( Limits.MaxBindGroups, λl → Just l.maxBindGroups )
+    , ( Limits.MaxBindGroupsPlusVertexBuffers, λl → Just l.maxBindGroupsPlusVertexBuffers )
+    , ( Limits.MaxImmediateSize, λl → l.maxImmediateSize )
+    , ( Limits.MaxBindingsPerBindGroup, λl → Just l.maxBindingsPerBindGroup )
+    , ( Limits.MaxDynamicUniformBuffersPerPipelineLayout
+      , λl → Just l.maxDynamicUniformBuffersPerPipelineLayout
+      )
+    , ( Limits.MaxDynamicStorageBuffersPerPipelineLayout
+      , λl → Just l.maxDynamicStorageBuffersPerPipelineLayout
+      )
+    , ( Limits.MaxSampledTexturesPerShaderStage, λl → Just l.maxSampledTexturesPerShaderStage )
+    , ( Limits.MaxSamplersPerShaderStage, λl → Just l.maxSamplersPerShaderStage )
+    , ( Limits.MaxStorageBuffersPerShaderStage, λl → Just l.maxStorageBuffersPerShaderStage )
+    , ( Limits.MaxStorageBuffersInVertexStage, λl → l.maxStorageBuffersInVertexStage )
+    , ( Limits.MaxStorageBuffersInFragmentStage, λl → l.maxStorageBuffersInFragmentStage )
+    , ( Limits.MaxStorageTexturesPerShaderStage, λl → Just l.maxStorageTexturesPerShaderStage )
+    , ( Limits.MaxStorageTexturesInVertexStage, λl → l.maxStorageTexturesInVertexStage )
+    , ( Limits.MaxStorageTexturesInFragmentStage, λl → l.maxStorageTexturesInFragmentStage )
+    , ( Limits.MaxUniformBuffersPerShaderStage, λl → Just l.maxUniformBuffersPerShaderStage )
+    , ( Limits.MaxUniformBufferBindingSize, λl → Just l.maxUniformBufferBindingSize )
+    , ( Limits.MaxStorageBufferBindingSize, λl → Just l.maxStorageBufferBindingSize )
+    , ( Limits.MinUniformBufferOffsetAlignment, λl → Just l.minUniformBufferOffsetAlignment )
+    , ( Limits.MinStorageBufferOffsetAlignment, λl → Just l.minStorageBufferOffsetAlignment )
+    , ( Limits.MaxVertexBuffers, λl → Just l.maxVertexBuffers )
+    , ( Limits.MaxBufferSize, λl → Just l.maxBufferSize )
+    , ( Limits.MaxVertexAttributes, λl → Just l.maxVertexAttributes )
+    , ( Limits.MaxVertexBufferArrayStride, λl → Just l.maxVertexBufferArrayStride )
+    , ( Limits.MaxInterStageShaderVariables, λl → Just l.maxInterStageShaderVariables )
+    , ( Limits.MaxColorAttachments, λl → Just l.maxColorAttachments )
+    , ( Limits.MaxColorAttachmentBytesPerSample, λl → Just l.maxColorAttachmentBytesPerSample )
+    , ( Limits.MaxComputeWorkgroupStorageSize, λl → Just l.maxComputeWorkgroupStorageSize )
+    , ( Limits.MaxComputeInvocationsPerWorkgroup, λl → Just l.maxComputeInvocationsPerWorkgroup )
+    , ( Limits.MaxComputeWorkgroupSizeX, λl → Just l.maxComputeWorkgroupSizeX )
+    , ( Limits.MaxComputeWorkgroupSizeY, λl → Just l.maxComputeWorkgroupSizeY )
+    , ( Limits.MaxComputeWorkgroupSizeZ, λl → Just l.maxComputeWorkgroupSizeZ )
+    , ( Limits.MaxComputeWorkgroupsPerDimension, λl → Just l.maxComputeWorkgroupsPerDimension )
+    ]
+
+
+-- The names whose `limit` differs from their field, or "none".
+disagreeing : Limits.Limits → String
+disagreeing l =
+    names = List.filterMap fields λ( name, field ) →
+        if Limits.limit l name == field l then
+            Nothing
+        else
+            Just (Limits.limitNameToString name)
+    if List.isEmpty names then "none" else String.join names ", "
+
+
+-- Whether `has` answers for exactly what `values` lists.
+featuresAgree : Feature.Features → Bool
+featuresAgree set = List.all (Feature.values set) λf →
+    case f of
+        Feature.Known name →
+            Feature.has set name
+
+        Feature.Unlisted name →
+            Feature.hasName set name
+
+
+wgslAgree : WgslFeature.WgslFeatures → Bool
+wgslAgree set =
+    List.all (WgslFeature.values set) (WgslFeature.has set _)
+        && not (WgslFeature.has set "x-beni-not-a-feature")
+
+
+snapshots : ⊤ → List String
+snapshots ⊤ =
+    GpuHost.inject "none"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            info = Gpu.Adapter.info adapter
+            adapterLimits = Gpu.Adapter.limits adapter
+            adapterFeatures = Gpu.Adapter.features adapter
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok d →
+                    deviceInfo : Types.AdapterInfo
+                    deviceInfo = Gpu.Device.adapterInfo d
+                    names = List.map Limits.allLimitNames λname →
+                        Limits.limitNameFromString (Limits.limitNameToString name) == Just name
+                    [ "adapter limits that differ from their field: " ++ disagreeing adapterLimits
+                    , "device limits that differ from their field: "
+                        ++ disagreeing (Gpu.Device.limits d)
+                    , "limit names: "
+                        ++ String.fromInt (List.length Limits.allLimitNames)
+                        ++ ", each spelled back: "
+                        ++ yesNo (List.all names λb → b)
+                    , "adapter features answer has: " ++ yesNo (featuresAgree adapterFeatures)
+                    , "device features answer has: "
+                        ++ yesNo (featuresAgree (Gpu.Device.features d))
+                    , "WGSL language features answer has: "
+                        ++ GpuShow.result (Gpu.wgslLanguageFeatures ⊤) λset → yesNo (wgslAgree set)
+                    , "adapter info is the device's: " ++ yesNo (info == deviceInfo)
+                    ]
+
+
+texture : Device, Types.TextureDescriptor → String
+texture d descriptor =
+    t = must (Gpu.Device.createTexture d descriptor)
+    usages : Flags.TextureUsages
+    usages = Gpu.Texture.usage t
+    viewDimension =
+        case Gpu.Texture.textureBindingViewDimension t of
+            Just v →
+                Types.textureViewDimensionToString v
+
+            Nothing →
+                "none"
+    String.join
+        [ String.fromInt (Gpu.Texture.width t)
+            ++ "×"
+            ++ String.fromInt (Gpu.Texture.height t)
+            ++ "×"
+            ++ String.fromInt (Gpu.Texture.depthOrArrayLayers t)
+        , "mips " ++ String.fromInt (Gpu.Texture.mipLevelCount t)
+        , "samples " ++ String.fromInt (Gpu.Texture.sampleCount t)
+        , Types.textureDimensionToString (Gpu.Texture.dimension t)
+        , Types.textureFormatToString (Gpu.Texture.format t)
+        , "usage " ++ String.fromInt (Flags.textureUsagesBits usages)
+        , "binding view " ++ viewDimension
+        ]
+        ", "
+
+
+extent : Int, Int, Int → Types.Extent3D
+extent w h layers =
+    Types.Extent3DFields
+        { width = u32 w
+        , height = Types.Value (u32 h)
+        , depthOrArrayLayers = Types.Value (u32 layers)
+        }
+
+
+resources : ⊤ → List String
+resources ⊤ = GpuKit.with "none" λd →
+    volume =
+        { (Types.textureDescriptor
+              (extent 4 4 2)
+              Types.Rgba8unorm
+              (Flags.texture [ Flags.TextureCopyDst, Flags.TextureBinding ])
+          )
+            | dimension = Types.Value Types.Dimension3D
+            , mipLevelCount = Types.Value (u32 2)
+        }
+    layers =
+        Types.textureDescriptor
+            (extent 8 2 3)
+            Types.R32float
+            (Flags.texture [ Flags.TextureCopySrc, Flags.StorageBinding ])
+    line =
+        { (Types.textureDescriptor
+              (extent 16 1 1)
+              Types.Rgba8unorm
+              (Flags.texture [ Flags.TextureCopyDst ])
+          )
+            | dimension = Types.Value Types.Dimension1D
+        }
+    multisampled =
+        { (Types.textureDescriptor
+              (extent 4 4 1)
+              Types.Rgba8unorm
+              (Flags.texture [ Flags.RenderAttachment ])
+          )
+            | sampleCount = Types.Value (u32 4)
+        }
+    buffer = must (Gpu.Device.createBuffer d (GpuKit.buffer 16 [ Flags.MapRead, Flags.CopyDst ]))
+    bufferUsages : Flags.BufferUsages
+    bufferUsages = Gpu.Buffer.usage buffer
+    queries = must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 3)))
+    [ "3d: " ++ texture d volume
+    , "2d array: " ++ texture d layers
+    , "1d: " ++ texture d line
+    , "multisampled: " ++ texture d multisampled
+    , "buffer usage: "
+        ++ String.fromInt (Flags.bufferUsagesBits bufferUsages)
+        ++ ", size "
+        ++ String.fromInt (Gpu.Buffer.size buffer)
+    , "query set: "
+        ++ Types.queryTypeToString (QuerySet.type_ queries)
+        ++ " × "
+        ++ String.fromInt (QuerySet.count queries)
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "snapshots", snapshots )
+        , ( "resources", resources )
+        ]

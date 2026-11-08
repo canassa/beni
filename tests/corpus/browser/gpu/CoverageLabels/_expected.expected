@@ -1,0 +1,91 @@
+-- load
+<body>
+  <main>
+    <button id="resources">"resources"</button>
+    <button id="encoding">"encoding"</button>
+    <button id="external">"external"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #resources
+<body>
+  <main>
+    <button id="resources">"resources"</button>
+    <button id="encoding">"encoding"</button>
+    <button id="external">"external"</button>
+    <ol>
+      <li>"device: device (made), device (set)"</li>
+      <li>"queue: queue (made), queue (set)"</li>
+      <li>"buffer: buffer (made), buffer (set)"</li>
+      <li>"texture: texture (made), texture (set)"</li>
+      <li>"view: view (made), view (set)"</li>
+      <li>"sampler: sampler (made), sampler (set)"</li>
+      <li>"bind group layout: bind group layout (made), bind group layout (set)"</li>
+      <li>"bind group: bind group (made), bind group (set)"</li>
+      <li>"pipeline layout: pipeline layout (made), pipeline layout (set)"</li>
+      <li>"shader: shader (made), shader (set)"</li>
+      <li>"compute pipeline: compute pipeline (made), compute pipeline (set)"</li>
+      <li>"render pipeline: render pipeline (made), render pipeline (set)"</li>
+      <li>"query set: query set (made), query set (set)"</li>
+    </ol>
+  </main>
+</body>
+-- click #encoding
+<body>
+  <main>
+    <button id="resources">"resources"</button>
+    <button id="encoding">"encoding"</button>
+    <button id="external">"external"</button>
+    <ol>
+      <li>"device: device (made), device (set)"</li>
+      <li>"queue: queue (made), queue (set)"</li>
+      <li>"buffer: buffer (made), buffer (set)"</li>
+      <li>"texture: texture (made), texture (set)"</li>
+      <li>"view: view (made), view (set)"</li>
+      <li>"sampler: sampler (made), sampler (set)"</li>
+      <li>"bind group layout: bind group layout (made), bind group layout (set)"</li>
+      <li>"bind group: bind group (made), bind group (set)"</li>
+      <li>"pipeline layout: pipeline layout (made), pipeline layout (set)"</li>
+      <li>"shader: shader (made), shader (set)"</li>
+      <li>"compute pipeline: compute pipeline (made), compute pipeline (set)"</li>
+      <li>"render pipeline: render pipeline (made), render pipeline (set)"</li>
+      <li>"query set: query set (made), query set (set)"</li>
+      <li>"encoder: encoder (made), encoder (set)"</li>
+      <li>"compute pass: compute pass (made), compute pass (set)"</li>
+      <li>"render pass: render pass (made), render pass (set)"</li>
+      <li>"command buffer: command buffer (made), command buffer (set)"</li>
+      <li>"bundle encoder: bundle encoder (made), bundle encoder (set)"</li>
+      <li>"bundle: bundle (made), bundle (set)"</li>
+    </ol>
+  </main>
+</body>
+-- click #external
+<body>
+  <main>
+    <button id="resources">"resources"</button>
+    <button id="encoding">"encoding"</button>
+    <button id="external">"external"</button>
+    <ol>
+      <li>"device: device (made), device (set)"</li>
+      <li>"queue: queue (made), queue (set)"</li>
+      <li>"buffer: buffer (made), buffer (set)"</li>
+      <li>"texture: texture (made), texture (set)"</li>
+      <li>"view: view (made), view (set)"</li>
+      <li>"sampler: sampler (made), sampler (set)"</li>
+      <li>"bind group layout: bind group layout (made), bind group layout (set)"</li>
+      <li>"bind group: bind group (made), bind group (set)"</li>
+      <li>"pipeline layout: pipeline layout (made), pipeline layout (set)"</li>
+      <li>"shader: shader (made), shader (set)"</li>
+      <li>"compute pipeline: compute pipeline (made), compute pipeline (set)"</li>
+      <li>"render pipeline: render pipeline (made), render pipeline (set)"</li>
+      <li>"query set: query set (made), query set (set)"</li>
+      <li>"encoder: encoder (made), encoder (set)"</li>
+      <li>"compute pass: compute pass (made), compute pass (set)"</li>
+      <li>"render pass: render pass (made), render pass (set)"</li>
+      <li>"command buffer: command buffer (made), command buffer (set)"</li>
+      <li>"bundle encoder: bundle encoder (made), bundle encoder (set)"</li>
+      <li>"bundle: bundle (made), bundle (set)"</li>
+      <li>"external texture: external texture (made), external texture (set)"</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,151 @@
+-- load
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #bindings
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol>
+      <li>"bind group: Ok made"</li>
+      <li>"pipeline layout: made"</li>
+      <li>"compute pipeline: Ok made"</li>
+      <li>"compiler messages: Ok none"</li>
+    </ol>
+  </main>
+</body>
+-- click #render
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol>
+      <li>"bind group: Ok made"</li>
+      <li>"pipeline layout: made"</li>
+      <li>"compute pipeline: Ok made"</li>
+      <li>"compiler messages: Ok none"</li>
+      <li>"render pipeline: Ok made"</li>
+      <li>"missing entry point, asynchronously: PipelineValidation, entry points missing"</li>
+    </ol>
+  </main>
+</body>
+-- click #copies
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol>
+      <li>"bind group: Ok made"</li>
+      <li>"pipeline layout: made"</li>
+      <li>"compute pipeline: Ok made"</li>
+      <li>"compiler messages: Ok none"</li>
+      <li>"render pipeline: Ok made"</li>
+      <li>"missing entry point, asynchronously: PipelineValidation, entry points missing"</li>
+      <li>"buffer to texture at (4, 4): Ok submitted"</li>
+      <li>"image from (2, 2): Ok copied"</li>
+    </ol>
+  </main>
+</body>
+-- click #canvas
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol>
+      <li>"bind group: Ok made"</li>
+      <li>"pipeline layout: made"</li>
+      <li>"compute pipeline: Ok made"</li>
+      <li>"compiler messages: Ok none"</li>
+      <li>"render pipeline: Ok made"</li>
+      <li>"missing entry point, asynchronously: PipelineValidation, entry points missing"</li>
+      <li>"buffer to texture at (4, 4): Ok submitted"</li>
+      <li>"image from (2, 2): Ok copied"</li>
+      <li>"configure: Ok done"</li>
+      <li>"read back: Ok alpha premultiplied, tone mapping standard"</li>
+    </ol>
+  </main>
+</body>
+-- click #bases
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol>
+      <li>"bind group: Ok made"</li>
+      <li>"pipeline layout: made"</li>
+      <li>"compute pipeline: Ok made"</li>
+      <li>"compiler messages: Ok none"</li>
+      <li>"render pipeline: Ok made"</li>
+      <li>"missing entry point, asynchronously: PipelineValidation, entry points missing"</li>
+      <li>"buffer to texture at (4, 4): Ok submitted"</li>
+      <li>"image from (2, 2): Ok copied"</li>
+      <li>"configure: Ok done"</li>
+      <li>"read back: Ok alpha premultiplied, tone mapping standard"</li>
+      <li>"object base, default: {}"</li>
+      <li>"object base, labelled: {\"label\":\"base\"}"</li>
+      <li>"pipeline base: {\"layout\":\"auto\"}"</li>
+      <li>"pipeline base, labelled: {\"label\":\"base\",\"layout\":\"auto\"}"</li>
+    </ol>
+  </main>
+</body>
+-- click #spellings
+<body>
+  <main>
+    <button id="bindings">"bindings"</button>
+    <button id="render">"render"</button>
+    <button id="copies">"copies"</button>
+    <button id="canvas">"canvas"</button>
+    <button id="bases">"bases"</button>
+    <button id="spellings">"spellings"</button>
+    <ol>
+      <li>"bind group: Ok made"</li>
+      <li>"pipeline layout: made"</li>
+      <li>"compute pipeline: Ok made"</li>
+      <li>"compiler messages: Ok none"</li>
+      <li>"render pipeline: Ok made"</li>
+      <li>"missing entry point, asynchronously: PipelineValidation, entry points missing"</li>
+      <li>"buffer to texture at (4, 4): Ok submitted"</li>
+      <li>"image from (2, 2): Ok copied"</li>
+      <li>"configure: Ok done"</li>
+      <li>"read back: Ok alpha premultiplied, tone mapping standard"</li>
+      <li>"object base, default: {}"</li>
+      <li>"object base, labelled: {\"label\":\"base\"}"</li>
+      <li>"pipeline base: {\"layout\":\"auto\"}"</li>
+      <li>"pipeline base, labelled: {\"label\":\"base\",\"layout\":\"auto\"}"</li>
+      <li>"device lost reasons: yes"</li>
+      <li>"pipeline error reasons: yes"</li>
+      <li>"compilation message types: yes"</li>
+      <li>"auto layout modes: yes"</li>
+      <li>"an unknown spelling: Nothing"</li>
+    </ol>
+  </main>
+</body>

@@ -119,7 +119,7 @@ const fakeDevice = (adapter, descriptor) => {
     features: new globalThis.Set(descriptor?.requiredFeatures ?? []),
     limits: globalThis.Object.freeze({ ...limitDefaults }),
     adapterInfo: adapter.info,
-    queue: { label: "" },
+    queue: { label: descriptor?.defaultQueue?.label ?? "" },
     label: descriptor?.label ?? "",
     lost: new globalThis.Promise((done) => (resolveLost = done)),
   };
