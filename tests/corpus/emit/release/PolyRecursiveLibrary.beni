@@ -1,0 +1,24 @@
+-- `Nest Int` holds a `Nest (List Int)`, which holds a `Nest (List (List Int))`,
+-- without end. A `--library` build keeps every named type JavaScript may see,
+-- so the release representation keys close their wild set through `Nest`; the
+-- closure stops at a bound and makes every key wild (`src/js/RepKeys.zig`,
+-- `max_closed_applications`). The claim is that the build ends.
+import List
+
+
+pub type Nest a
+    = Done a
+    | Deeper (Nest (List a))
+
+
+pub total : Nest a, (a → Int) → Int
+total nest count =
+    case nest of
+        Done value →
+            count value
+        Deeper inner →
+            total inner λvalues → List.sum (List.map values count)
+
+
+pub sample : Nest Int
+sample = Deeper (Done [ 1, 2 ])

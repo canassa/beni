@@ -2041,6 +2041,44 @@ test "worker Wire follows opaque payload layouts across warm caches" {
     }
 }
 
+test "worker Wire walks a message type that recurs with larger arguments" {
+    // A type whose recursive position takes larger arguments has no finite
+    // plan (workers.md §5, *Types that recur with growing arguments*). The
+    // build ends in both modes, and the plan's type-variable walk turns the
+    // List view inside the payload into an array before structured clone.
+    const cases = [_]struct { fixture: []const u8, stdout: []const u8 }{
+        .{ .fixture = "PolyRecursiveFork", .stdout = "{\"$\":\"Lists\",\"a\":{\"$\":\"Pairs\",\"a\":{\"$\":\"Leaf\",\"a\":{\"a\":[1,2,3],\"b\":[4]}}}}\n" },
+        .{ .fixture = "PolyRecursiveNest", .stdout = "{\"$\":\"Deeper\",\"a\":{\"$\":\"Deeper\",\"a\":{\"$\":\"Done\",\"a\":[[1,2,3],[4]]}}}\n" },
+    };
+    for (cases) |case| for ([_]bool{ false, true }) |release| {
+        // PREPARE
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(w.arena.allocator(), "tests/corpus/browser/dedicated/{s}/Main.beni", .{case.fixture}), w.arena.allocator(), .limited(world.max_stream_bytes));
+        try w.write("Main.beni", source);
+        try w.write("probe.mjs",
+            \\let click = null;
+            \\globalThis.Worker = class {
+            \\  addEventListener(name, callback) { if (name === 'message') this.message = callback; }
+            \\  postMessage(value) { console.log(JSON.stringify(structuredClone(value))); }
+            \\};
+            \\const element = () => ({dataset: {}, addEventListener(_, callback) { click = callback; }, appendChild() {}});
+            \\globalThis.document = {body: element(), createElement: element, querySelector: element};
+            \\await import('./out/_main.mjs');
+            \\click();
+            \\
+        );
+        // EXECUTE
+        const args: []const []const u8 = if (release) &.{ "build", "--release", "--platform=platform", "--out=out", "Main.beni" } else &.{ "build", "--platform=platform", "--out=out", "Main.beni" };
+        const built = try w.run(args);
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+        try w.expectProgram("probe.mjs", .{ .stdout = case.stdout });
+    };
+}
+
 test "obsolete platform-wide page host is refused before output" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

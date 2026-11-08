@@ -3,6 +3,19 @@
 const normalize = (plan, role, value) => {
   if (plan === null) return value;
   const [roles, nodes] = plan;
+  // A type-variable position walks the runtime value (workers.md §5).
+  const variable = (value) => {
+    if (value === null || typeof value !== "object") return value;
+    if (typeof value.$plain === "function") return variable(value.$plain());
+    let result = value;
+    for (const field of Object.keys(value)) {
+      const next = variable(value[field]);
+      if (next === value[field]) continue;
+      if (result === value) result = Array.isArray(value) ? [...value] : {...value};
+      result[field] = next;
+    }
+    return result;
+  };
   const visit = (index, value) => {
     const node = nodes[index];
     if (node === 0) return value;
@@ -11,6 +24,7 @@ const normalize = (plan, role, value) => {
       const array = Array.isArray(value) ? value : value.$plain();
       return nodes[edges[0][1]] === 0 ? array : array.map(item => visit(edges[0][1], item));
     }
+    if (kind === 5) return variable(value);
     if (kind === 4) {
       const variant = edges.find(edge => edge[0] === value.$);
       return visit(variant[1], value);

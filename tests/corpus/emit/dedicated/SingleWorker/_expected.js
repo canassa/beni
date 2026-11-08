@@ -1,10 +1,10 @@
 import { Page$initializer, Page$text, Page$button, Page$program } from "./_platform/Page.mjs";
 import { Worker$open, Worker$receive, Worker$send } from "./_platform/Worker.mjs";
 const SingleWorker$pageOnly = Page$initializer("page-only");
-const SingleWorker$worker = { $wire: [[[0, 2, [], []], [1, 3, [], []]], [0, 0, 0, 0, 0, 0]], id: "1c1928caf485efcb", fingerprint: "b7cccea740465a02-1c1928caf485efcb", url: new globalThis.URL("./_workers/1c1928caf485efcb/_main.mjs", import.meta.url).href };
-const SingleWorker$selected = { $wire: [[[0, 2, [], []], [1, 3, [], []]], [0, 0, 0, 0, 0, 0]], id: "1c1928caf485efcb", fingerprint: "b7cccea740465a02-1c1928caf485efcb", url: new globalThis.URL("./_workers/1c1928caf485efcb/_main.mjs", import.meta.url).href };
+const SingleWorker$worker = { $wire: [[[0, 2, [], []], [1, 3, [], []]], [0, 0, 0, 0, 0, 0]], id: "1c1928caf485efcb", fingerprint: "30f383bc1a19fb92-1c1928caf485efcb", url: new globalThis.URL("./_workers/1c1928caf485efcb/_main.mjs", import.meta.url).href };
+const SingleWorker$selected = { $wire: [[[0, 2, [], []], [1, 3, [], []]], [0, 0, 0, 0, 0, 0]], id: "1c1928caf485efcb", fingerprint: "30f383bc1a19fb92-1c1928caf485efcb", url: new globalThis.URL("./_workers/1c1928caf485efcb/_main.mjs", import.meta.url).href };
 const SingleWorker$launch = ($p$1) => {
-  const $t$2 = Worker$open(SingleWorker$pageOnly === "page-only" ? SingleWorker$selected : { $wire: [[[0, 2, [], []], [1, 3, [], []]], [0, 0, 0, 0, 0, 0]], id: "1c1928caf485efcb", fingerprint: "b7cccea740465a02-1c1928caf485efcb", url: new globalThis.URL("./_workers/1c1928caf485efcb/_main.mjs", import.meta.url).href });
+  const $t$2 = Worker$open(SingleWorker$pageOnly === "page-only" ? SingleWorker$selected : { $wire: [[[0, 2, [], []], [1, 3, [], []]], [0, 0, 0, 0, 0, 0]], id: "1c1928caf485efcb", fingerprint: "30f383bc1a19fb92-1c1928caf485efcb", url: new globalThis.URL("./_workers/1c1928caf485efcb/_main.mjs", import.meta.url).href });
   if ($t$2.$ === "Ok") {
     const handle$1 = $t$2.a;
     Worker$receive(handle$1, Page$text);

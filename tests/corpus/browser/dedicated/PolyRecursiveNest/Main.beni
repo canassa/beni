@@ -1,0 +1,52 @@
+-- `Nest Int` holds a `Nest (List Int)`, which holds a `Nest (List (List Int))`,
+-- without end. The plan takes the type-variable walk at the recursive
+-- position (workers.md §5, *Types that recur with growing arguments*): one
+-- small plan, not one node per nesting level, and the walk materializes the
+-- List views at every depth before structured clone.
+import List
+import Page
+import String
+import Worker
+
+
+type Nest a
+    = Done a
+    | Deeper (Nest (List a))
+
+
+total : Nest a, (a → Int) → Int
+total nest count =
+    case nest of
+        Done value →
+            count value
+        Deeper inner →
+            total inner λvalues → List.sum (List.map values count)
+
+
+worker : Worker.Program (Nest Int) String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → String.fromInt (total message λn → n)
+        }
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            values =
+                case [ 0, 1, 2, 3 ] of
+                    [ _, …tail ] →
+                        tail
+                    _ →
+                        []
+            Worker.receive handle λreply → Page.text reply
+            Worker.send handle (Deeper (Deeper (Done [ values, [ 4 ] ])))
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch
