@@ -184,7 +184,7 @@ const fakeDevice = (adapter, descriptor) => {
     if ((usage & MAP_READ) !== 0 && (usage & ~(MAP_READ | COPY_DST)) !== 0) valid = false;
     if ((usage & MAP_WRITE) !== 0 && (usage & ~(MAP_WRITE | COPY_SRC)) !== 0) valid = false;
     if (!valid) report("validation", new globalThis.GPUValidationError("invalid buffer descriptor"));
-    const s = { valid, size, usage, storage: new globalThis.Uint8Array(valid || atCreation ? size : 0), mapState: "unmapped", pending: null, mode: 0, offset: 0, length: 0, ranges: [], destroyed: false };
+    const s = { valid, size, usage, storage: new globalThis.Uint8Array(valid || atCreation ? size : 0), mapState: "unmapped", pending: null, mode: 0, offset: 0, length: 0, ranges: [], destroyed: false, device };
     const buffer = {
       label: descriptor.label ?? "",
       size,
@@ -347,6 +347,8 @@ const fakeDevice = (adapter, descriptor) => {
   };
   device.createCommandEncoder = (descriptor) => {
     const commands = [];
+    // The buffers the commands use, checked again at submit.
+    const used = [];
     let invalid = false;
     const encoder = plainObject(descriptor?.label);
     encoder.copyBufferToBuffer = (...args) => {
@@ -355,9 +357,11 @@ const fakeDevice = (adapter, descriptor) => {
       const length = size === undefined ? from.size - sourceOffset : size;
       const to = fakeBuffers.get(destination);
       if (length % 4 !== 0 || sourceOffset % 4 !== 0 || destinationOffset % 4 !== 0) invalid = true;
-      // The specification's other copy rules: both buffers valid and alive,
-      // distinct, with COPY_SRC and COPY_DST, and the copy inside each.
-      if (!from.valid || !to.valid || from.destroyed || to.destroyed || source === destination) invalid = true;
+      // The specification's other copy rules at encoding: both buffers valid
+      // to use with the device, distinct, with COPY_SRC and COPY_DST, and the
+      // copy inside each. A destroyed buffer is refused at submit.
+      if (!from.valid || !to.valid || from.device !== device || to.device !== device || source === destination) invalid = true;
+      used.push(from, to);
       if ((from.usage & COPY_SRC) === 0 || (to.usage & COPY_DST) === 0) invalid = true;
       if (sourceOffset + length > from.size || destinationOffset + length > to.size) invalid = true;
       commands.push(() => fakeBuffers.get(destination).storage.set(from.storage.subarray(sourceOffset, sourceOffset + length), destinationOffset));
@@ -366,7 +370,8 @@ const fakeDevice = (adapter, descriptor) => {
       const s = fakeBuffers.get(buffer);
       const length = size === undefined ? s.size - offset : size;
       if (length % 4 !== 0 || offset % 4 !== 0) invalid = true;
-      if (!s.valid || s.destroyed || (s.usage & COPY_DST) === 0 || offset + length > s.size) invalid = true;
+      if (!s.valid || s.device !== device || (s.usage & COPY_DST) === 0 || offset + length > s.size) invalid = true;
+      used.push(s);
       commands.push(() => s.storage.fill(0, offset, offset + length));
     };
     encoder.resolveQuerySet = (querySet, first, count, destination, offset) => {
@@ -410,8 +415,7 @@ const fakeDevice = (adapter, descriptor) => {
     encoder.finish = (finishDescriptor) => {
       if (invalid) report("validation", new globalThis.GPUValidationError("invalid encoder"));
       const buffer = plainObject(finishDescriptor?.label);
-      // An invalid command buffer runs nothing when it is submitted.
-      fakeCommands.set(buffer, invalid ? [] : commands);
+      fakeCommands.set(buffer, { invalid, commands, used, submitted: false });
       return buffer;
     };
     return encoder;
@@ -443,8 +447,19 @@ const fakeDevice = (adapter, descriptor) => {
     };
     return encoder;
   };
+  // The specification's submit validation: every command buffer valid and
+  // not submitted before, and every buffer it uses alive; otherwise a
+  // validation error, and nothing runs.
   device.queue.submit = (commandBuffers) => {
-    for (const b of commandBuffers) for (const run of fakeCommands.get(b) ?? []) run();
+    const recorded = commandBuffers.map((b) => fakeCommands.get(b)).filter((r) => r !== undefined);
+    if (recorded.some((r) => r.invalid || r.submitted || r.used.some((s) => s.destroyed))) {
+      report("validation", new globalThis.GPUValidationError("invalid submit"));
+      return;
+    }
+    for (const r of recorded) {
+      r.submitted = true;
+      for (const run of r.commands) run();
+    }
   };
   device.queue.writeTexture = () => {};
   // External images (docs/design/webgpu.md §8; ledger §6): the content-timeline
@@ -648,7 +663,7 @@ const fakeAdapter = () => {
 };
 
 const fakeGpu = () => ({
-  requestAdapter: (_options) => globalThis.Promise.resolve(fakeAdapter()),
+  requestAdapter: (options) => globalThis.Promise.resolve(fakeAdapter(options)),
   getPreferredCanvasFormat: () => "bgra8unorm",
   wgslLanguageFeatures: new globalThis.Set(["readonly_and_readwrite_storage_textures", "packed_4x8_integer_dot_product"]),
 });

@@ -23,7 +23,6 @@ const hex = (bytes) => globalThis.Array.from(bytes, (b) => b.toString(16).padSta
 // re-thrown.
 const expected = (e) =>
   e instanceof globalThis.RangeError ||
-  e instanceof globalThis.TypeError ||
   (e instanceof globalThis.DOMException && (e.name === "OperationError" || e.name === "AbortError"));
 
 // Run `body` between a validation and an out-of-memory scope. Its outcome
@@ -83,6 +82,19 @@ const step = (device, slots, i, text) => {
       device.queue.submit([encoder.finish()]);
     });
   }
+  if (kind === "late") {
+    // A copy encoded while both buffers live, its source destroyed before
+    // the submit.
+    const target = slots[n[1]];
+    if (target === null) return globalThis.Promise.resolve("error");
+    return scoped(device, () => {
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(buffer, n[2], target, n[3], n[4]);
+      const commands = encoder.finish();
+      buffer.destroy();
+      device.queue.submit([commands]);
+    });
+  }
   if (kind === "clear")
     return scoped(device, () => {
       const encoder = device.createCommandEncoder();
@@ -132,7 +144,10 @@ export const runNative = (text, done) => {
       device.destroy();
       done(out.join(" "));
     },
-    (e) => done(`native harness fault: ${e?.name}: ${e?.message}`),
+    (e) => {
+      device?.destroy();
+      done(`native harness fault: ${e?.name}: ${e?.message}`);
+    },
   );
   return null;
 };

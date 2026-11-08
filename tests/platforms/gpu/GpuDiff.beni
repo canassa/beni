@@ -55,11 +55,13 @@ pick g options =
 
 
 --| The sequence of `count` operations of `seed`, as text: operations
---| separated by `;`, each its name and its numbers.
+--| separated by `;`, each its name and its numbers. The last four read
+--| every slot back, so each sequence compares bytes.
 pub sequence : Int, Int → String
 sequence seed count =
     start = { seed = Int.mod (seed * 7919 + 1) 2147483647, ops = [], created = 0 }
-    String.join (generate start count).ops ";"
+    reads = [ "read 0", "read 1", "read 2", "read 3" ]
+    String.join (List.append (generate start (count - 4)).ops reads) ";"
 
 
 generate : Gen, Int → Gen
@@ -84,8 +86,11 @@ operation g =
         slot = String.fromInt k
         if kind < 3 then
             if g.created < 4 then create g1 else write g2 slot
-        else if kind < 6 || kind == 15 then
+        else if kind < 6 then
             write g2 slot
+        else if kind == 15 && k > 0 then
+            ( b, g3 ) = draw g2 g.created
+            ( words [ "late", slot, String.fromInt b, "0", "0", "4" ], g3 )
         else if kind < 8 then
             ( b, g3 ) = draw g2 g.created
             ( from, g4 ) = pick g3 [ 0, 4, 8, 0 ]
@@ -111,19 +116,24 @@ operation g =
             ( offset, g3 ) = pick g2 [ 0, 8, 4, 16 ]
             ( size, g4 ) = pick g3 [ 0, 4, 8, 2 ]
             ( words [ "map", slot, String.fromInt offset, String.fromInt size ], g4 )
-        else
+        else if k > 0 then
             ( words [ "destroy", slot ], g2 )
+        else
+            write g2 slot
 
 
 words : List String → String
 words parts = String.join parts " "
 
 
+-- Slot 0 is always a readable buffer (MAP_READ | COPY_DST, a valid size)
+-- that is never destroyed, so the closing reads compare bytes on every seed.
 create : Gen → String × Gen
 create g =
-    ( size, g1 ) = pick g [ 16, 32, 64, 32, 18 ]
+    first = g.created == 0
+    ( size, g1 ) = pick g (if first then [ 32, 64 ] else [ 16, 32, 64, 32, 18 ])
     -- MAP_READ | COPY_DST, COPY_SRC | COPY_DST, MAP_WRITE | COPY_SRC.
-    ( usage, g2 ) = pick g1 [ 9, 12, 6, 9, 9 ]
+    ( usage, g2 ) = pick g1 (if first then [ 9 ] else [ 9, 12, 6, 9, 9 ])
     ( atCreation, g3 ) = draw g2 2
     slot = if g.created < 4 then g.created else 3
     ( words
@@ -276,6 +286,34 @@ step d run i text =
                                 (n 4)
                                 (Just (n 5))
                         )
+
+                _ →
+                    emit run "error"
+
+        [ "late", …_ ] →
+            -- A copy encoded while both buffers live, its source destroyed
+            -- before the submit.
+            case ( at run (n 1), at run (n 2) ) of
+                ( Just a, Just b ) →
+                    case
+                        Gpu.Encode.run d Types.commandEncoderDescriptor λencoder →
+                            Gpu.CommandEncoder.copyBufferToBuffer
+                                encoder
+                                a
+                                (n 3)
+                                b
+                                (n 4)
+                                (Just (n 5))
+                    of
+                        Ok ran →
+                            Gpu.Buffer.destroy a
+                            emit
+                                run
+                                (token (Gpu.Queue.submit (Gpu.Device.queue d) [ ran.commands ]))
+
+                        Err _ →
+                            Gpu.Buffer.destroy a
+                            emit run "error"
 
                 _ →
                     emit run "error"

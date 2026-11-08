@@ -12,14 +12,14 @@
     <button id="seeds-1-8">"seeds-1-8"</button>
     <button id="seeds-9-16">"seeds-9-16"</button>
     <ol>
-      <li>"seed 1, 24 operations: agree, 12 refused, 3 read back"</li>
-      <li>"seed 2, 24 operations: agree, 17 refused, 1 read back"</li>
-      <li>"seed 3, 24 operations: agree, 17 refused, 0 read back"</li>
-      <li>"seed 4, 24 operations: agree, 15 refused, 1 read back"</li>
-      <li>"seed 5, 24 operations: agree, 10 refused, 3 read back"</li>
-      <li>"seed 6, 24 operations: agree, 14 refused, 2 read back"</li>
-      <li>"seed 7, 24 operations: agree, 10 refused, 4 read back"</li>
-      <li>"seed 8, 24 operations: agree, 12 refused, 3 read back"</li>
+      <li>"seed 1, 24 operations: agree, 10 refused, 6 read back"</li>
+      <li>"seed 2, 24 operations: agree, 13 refused, 4 read back"</li>
+      <li>"seed 3, 24 operations: agree, 8 refused, 3 read back"</li>
+      <li>"seed 4, 24 operations: agree, 7 refused, 7 read back"</li>
+      <li>"seed 5, 24 operations: agree, 7 refused, 6 read back"</li>
+      <li>"seed 6, 24 operations: agree, 13 refused, 4 read back"</li>
+      <li>"seed 7, 24 operations: agree, 9 refused, 6 read back"</li>
+      <li>"seed 8, 24 operations: agree, 11 refused, 5 read back"</li>
     </ol>
   </main>
 </body>
@@ -29,22 +29,22 @@
     <button id="seeds-1-8">"seeds-1-8"</button>
     <button id="seeds-9-16">"seeds-9-16"</button>
     <ol>
-      <li>"seed 1, 24 operations: agree, 12 refused, 3 read back"</li>
-      <li>"seed 2, 24 operations: agree, 17 refused, 1 read back"</li>
-      <li>"seed 3, 24 operations: agree, 17 refused, 0 read back"</li>
-      <li>"seed 4, 24 operations: agree, 15 refused, 1 read back"</li>
-      <li>"seed 5, 24 operations: agree, 10 refused, 3 read back"</li>
-      <li>"seed 6, 24 operations: agree, 14 refused, 2 read back"</li>
-      <li>"seed 7, 24 operations: agree, 10 refused, 4 read back"</li>
-      <li>"seed 8, 24 operations: agree, 12 refused, 3 read back"</li>
-      <li>"seed 9, 24 operations: agree, 13 refused, 3 read back"</li>
-      <li>"seed 10, 24 operations: agree, 13 refused, 0 read back"</li>
-      <li>"seed 11, 24 operations: agree, 16 refused, 1 read back"</li>
-      <li>"seed 12, 24 operations: agree, 15 refused, 0 read back"</li>
-      <li>"seed 13, 24 operations: agree, 14 refused, 2 read back"</li>
-      <li>"seed 14, 24 operations: agree, 17 refused, 3 read back"</li>
-      <li>"seed 15, 24 operations: agree, 9 refused, 3 read back"</li>
-      <li>"seed 16, 24 operations: agree, 20 refused, 0 read back"</li>
+      <li>"seed 1, 24 operations: agree, 10 refused, 6 read back"</li>
+      <li>"seed 2, 24 operations: agree, 13 refused, 4 read back"</li>
+      <li>"seed 3, 24 operations: agree, 8 refused, 3 read back"</li>
+      <li>"seed 4, 24 operations: agree, 7 refused, 7 read back"</li>
+      <li>"seed 5, 24 operations: agree, 7 refused, 6 read back"</li>
+      <li>"seed 6, 24 operations: agree, 13 refused, 4 read back"</li>
+      <li>"seed 7, 24 operations: agree, 9 refused, 6 read back"</li>
+      <li>"seed 8, 24 operations: agree, 11 refused, 5 read back"</li>
+      <li>"seed 9, 24 operations: agree, 12 refused, 5 read back"</li>
+      <li>"seed 10, 24 operations: agree, 8 refused, 4 read back"</li>
+      <li>"seed 11, 24 operations: agree, 10 refused, 5 read back"</li>
+      <li>"seed 12, 24 operations: agree, 7 refused, 8 read back"</li>
+      <li>"seed 13, 24 operations: agree, 12 refused, 4 read back"</li>
+      <li>"seed 14, 24 operations: agree, 14 refused, 4 read back"</li>
+      <li>"seed 15, 24 operations: agree, 13 refused, 4 read back"</li>
+      <li>"seed 16, 24 operations: agree, 12 refused, 4 read back"</li>
     </ol>
   </main>
 </body>
