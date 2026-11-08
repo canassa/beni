@@ -1,0 +1,70 @@
+-- Every copy that involves a texture (docs/design/webgpu.md §6.2; ledger
+-- §5): 32 bytes 0 … 31 written into a 4×2 `rgba8unorm` texture by the
+-- queue, copied texture to texture, then texture to buffer with rows 256
+-- bytes apart, and read back. The expected words are written out by hand:
+-- the first row is bytes 0 … 15, little-endian words 50462976, 117835012,
+-- 185207048, 252579084, and the second row starts with 319951120. The
+-- gates' fake host keeps no texels, so its transcript shows zeros;
+-- `test-webgpu`'s shows the GPU's bytes (`_expected.webgpu-expected`).
+import Binary
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags exposing (CopyDst, MapRead)
+import Gpu.Handle exposing (Buffer, CommandEncoder, Texture)
+import Gpu.Queue
+import Gpu.Submission
+import Gpu.Types as Types
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+extent : Types.Extent3D
+extent = Types.Extent3DFields { width = u32 4, height = Types.Value (u32 2), depthOrArrayLayers = Types.Default }
+
+
+texels : ⊤ → Binary.Source
+texels ⊤ = Binary.WholeBuffer (must (Binary.fromList (List.range 0 31)))
+
+
+copies : Texture, Texture, Buffer, CommandEncoder → Result Error.InputError ⊤
+copies first second target encoder =
+    CommandEncoder.copyTextureToTexture
+        encoder
+        (Types.texelCopyTextureInfo first)
+        (Types.texelCopyTextureInfo second)
+        extent
+    ?
+    CommandEncoder.copyTextureToBuffer
+        encoder
+        (Types.texelCopyTextureInfo second)
+        { (Types.texelCopyBufferInfo target) | bytesPerRow = Types.Value (u32 256) }
+        extent
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuKit.with "none" λd →
+        usage = Flags.texture [ Flags.TextureCopySrc, Flags.TextureCopyDst ]
+        first = must (Gpu.Device.createTexture d (Types.textureDescriptor extent Types.Rgba8unorm usage))
+        second = must (Gpu.Device.createTexture d (Types.textureDescriptor extent Types.Rgba8unorm usage))
+        target = must (Gpu.Device.createBuffer d (buffer 512 [ MapRead, CopyDst ]))
+        queue = Gpu.Device.queue d
+        layout = { (Types.texelCopyBufferLayout) | bytesPerRow = Types.Value (u32 16) }
+        wrote = Gpu.Queue.writeTexture queue (Types.texelCopyTextureInfo first) (texels ⊤) layout extent
+        encoded = must (Encode.run d Types.commandEncoderDescriptor (copies first second target _))
+        receipt = must (Gpu.Queue.submit queue [ encoded.commands ])
+        _ = Gpu.Submission.done receipt
+        words = GpuKit.readU32s target 65
+        [ "write: " ++ GpuShow.checked wrote (λ_ → "done")
+        , "read back: "
+            ++ GpuShow.checked words λxs →
+                String.join (List.map [ …(List.take xs 4), …(List.drop xs 64) ] String.fromInt) ", "
+        ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

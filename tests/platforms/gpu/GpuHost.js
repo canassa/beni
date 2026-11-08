@@ -45,6 +45,9 @@ const operationError = (message) => new globalThis.DOMException(message, "Operat
 const abortError = (message) => new globalThis.DOMException(message, "AbortError");
 // Every fake buffer: its storage and map state.
 const fakeBuffers = new globalThis.WeakMap();
+// Every fake shader module's source, and every command buffer's commands.
+const fakeModules = new globalThis.WeakMap();
+const fakeCommands = new globalThis.WeakMap();
 
 const fakeDevice = (adapter, descriptor) => {
   let resolveLost = null;
@@ -184,7 +187,122 @@ const fakeDevice = (adapter, descriptor) => {
     const start = (whole ? 0 : data.byteOffset) + dataOffset * per;
     s.storage.set(new globalThis.Uint8Array(whole ? data : data.buffer, start, bytes), bufferOffset);
   };
-  device.queue.submit = (_commandBuffers) => {};
+  // Shaders, pipelines, bind groups, query sets, textures and command
+  // encoders (docs/design/webgpu.md §4, §6.2): enough of their shapes and
+  // validation for the fixtures. The fake runs no shader: a dispatch
+  // encodes nothing, and a fixture that needs the GPU's answer reads it
+  // under `test-webgpu`. Copies and clears run when their command buffer
+  // is submitted, as on a GPU.
+  const plainObject = (label) => ({ label: label ?? "" });
+  // WGSL as the fake sees it: any source with a `fn`; an entry point
+  // exists when its `fn` does.
+  const wgslValid = (code) => /\bfn\b/.test(code);
+  const hasEntry = (code, entry) => entry === undefined || new globalThis.RegExp(`\\bfn\\s+${entry}\\b`).test(code);
+  device.createShaderModule = (descriptor) => {
+    const valid = wgslValid(descriptor.code);
+    if (!valid) report("validation", new globalThis.GPUValidationError("invalid WGSL"));
+    const module = plainObject(descriptor.label);
+    module.getCompilationInfo = () =>
+      globalThis.Promise.resolve({ messages: valid ? [] : [{ message: "expected a declaration", type: "error", lineNum: 1, linePos: 1, offset: 0, length: descriptor.code.length }] });
+    fakeModules.set(module, descriptor.code);
+    return module;
+  };
+  device.createBindGroupLayout = (descriptor) => plainObject(descriptor.label);
+  device.createPipelineLayout = (descriptor) => plainObject(descriptor.label);
+  device.createBindGroup = (descriptor) => plainObject(descriptor.label);
+  const pipelineValid = (descriptor) => {
+    const code = fakeModules.get(descriptor.compute.module);
+    return code !== undefined && wgslValid(code) && hasEntry(code, descriptor.compute.entryPoint);
+  };
+  const pipeline = (descriptor) => {
+    const p = plainObject(descriptor.label);
+    p.getBindGroupLayout = (index) => {
+      if (index >= limitDefaults.maxBindGroups) report("validation", new globalThis.GPUValidationError("no bind group at that index"));
+      return plainObject("");
+    };
+    return p;
+  };
+  device.createComputePipeline = (descriptor) => {
+    if (!pipelineValid(descriptor)) report("validation", new globalThis.GPUValidationError("invalid compute pipeline"));
+    return pipeline(descriptor);
+  };
+  device.createComputePipelineAsync = (descriptor) =>
+    pipelineValid(descriptor)
+      ? globalThis.Promise.resolve(pipeline(descriptor))
+      : globalThis.Promise.reject(new globalThis.GPUPipelineError("invalid compute pipeline", { reason: "validation" }));
+  device.createQuerySet = (descriptor) => {
+    if (descriptor.type === "timestamp" && !device.features.has("timestamp-query")) throw new globalThis.TypeError("timestamp-query is not enabled");
+    const q = plainObject(descriptor.label);
+    q.type = descriptor.type;
+    q.count = descriptor.count;
+    q.destroy = () => {};
+    return q;
+  };
+  device.createTexture = (descriptor) => {
+    const size = descriptor.size;
+    const t = plainObject(descriptor.label);
+    t.width = size.width ?? size[0];
+    t.height = size.height ?? size[1] ?? 1;
+    t.depthOrArrayLayers = size.depthOrArrayLayers ?? size[2] ?? 1;
+    t.mipLevelCount = descriptor.mipLevelCount ?? 1;
+    t.sampleCount = descriptor.sampleCount ?? 1;
+    t.dimension = descriptor.dimension ?? "2d";
+    t.format = descriptor.format;
+    t.usage = descriptor.usage;
+    t.destroy = () => {};
+    return t;
+  };
+  device.createCommandEncoder = (descriptor) => {
+    const commands = [];
+    let invalid = false;
+    const encoder = plainObject(descriptor?.label);
+    encoder.copyBufferToBuffer = (...args) => {
+      const [source, sourceOffset, destination, destinationOffset, size] = args.length >= 4 ? args : [args[0], 0, args[1], 0, args[2]];
+      const from = fakeBuffers.get(source);
+      const length = size === undefined ? from.size - sourceOffset : size;
+      if (length % 4 !== 0 || sourceOffset % 4 !== 0 || destinationOffset % 4 !== 0) invalid = true;
+      commands.push(() => fakeBuffers.get(destination).storage.set(from.storage.subarray(sourceOffset, sourceOffset + length), destinationOffset));
+    };
+    encoder.clearBuffer = (buffer, offset = 0, size = undefined) => {
+      const s = fakeBuffers.get(buffer);
+      const length = size === undefined ? s.size - offset : size;
+      if (length % 4 !== 0 || offset % 4 !== 0) invalid = true;
+      commands.push(() => s.storage.fill(0, offset, offset + length));
+    };
+    encoder.resolveQuerySet = (querySet, first, count, destination, offset) => {
+      if (offset % 256 !== 0) invalid = true;
+      commands.push(() => fakeBuffers.get(destination).storage.fill(0, offset, offset + count * 8));
+    };
+    encoder.copyBufferToTexture = () => {};
+    encoder.copyTextureToBuffer = () => {};
+    encoder.copyTextureToTexture = () => {};
+    encoder.pushDebugGroup = () => {};
+    encoder.popDebugGroup = () => {};
+    encoder.insertDebugMarker = () => {};
+    encoder.beginComputePass = (passDescriptor) => {
+      const pass = plainObject(passDescriptor?.label);
+      for (const name of ["setPipeline", "setBindGroup", "dispatchWorkgroups", "dispatchWorkgroupsIndirect", "pushDebugGroup", "popDebugGroup", "insertDebugMarker", "end"]) pass[name] = () => {};
+      pass.setImmediates = (rangeOffset, data, dataOffset = 0, size = undefined) => {
+        const per = data instanceof globalThis.ArrayBuffer || data instanceof globalThis.DataView ? 1 : data.BYTES_PER_ELEMENT;
+        const available = data.byteLength / per;
+        const contents = size === undefined ? available - dataOffset : size;
+        if (dataOffset + contents > available || (contents * per) % 4 !== 0) throw operationError("the immediate data is outside its source");
+        if (rangeOffset + contents * per > limitDefaults.maxImmediateSize) invalid = true;
+      };
+      return pass;
+    };
+    encoder.finish = (finishDescriptor) => {
+      if (invalid) report("validation", new globalThis.GPUValidationError("invalid encoder"));
+      const buffer = plainObject(finishDescriptor?.label);
+      fakeCommands.set(buffer, commands);
+      return buffer;
+    };
+    return encoder;
+  };
+  device.queue.submit = (commandBuffers) => {
+    for (const b of commandBuffers) for (const run of fakeCommands.get(b) ?? []) run();
+  };
+  device.queue.writeTexture = () => {};
   device.queue.onSubmittedWorkDone = () => globalThis.Promise.resolve(undefined);
   return device;
 };
@@ -198,6 +316,10 @@ function FakeOutOfMemoryError(message) {
 }
 function FakeInternalError(message) {
   this.message = message;
+}
+function FakePipelineError(message, options) {
+  this.message = message;
+  this.reason = options.reason;
 }
 
 const fakeAdapter = () => {
@@ -288,6 +410,21 @@ const onAdapters = (gpu, fault, once = true) =>
 
 const faults = {
   none: () => {},
+  // Shaders, pipelines and passes (ledger §3, §5): an asynchronous
+  // pipeline rejected with what is not a `GPUPipelineError`, compilation
+  // messages rejected, and immediate data the host refuses after the
+  // engine's checks passed.
+  "pipeline-unlisted": () => {
+    bufferFaults.pipeline = () => globalThis.Promise.reject(new globalThis.DOMException("injected unlisted pipeline failure", "AbortError"));
+  },
+  "compilation-rejected": () => {
+    bufferFaults.compilation = () => globalThis.Promise.reject(new globalThis.DOMException("injected compilation failure", "AbortError"));
+  },
+  "immediates-rejected": () => {
+    bufferFaults.immediates = () => {
+      throw new globalThis.DOMException("injected immediate refusal", "OperationError");
+    };
+  },
   // Buffers and the queue (docs/design/webgpu.md §7, §8.3; ledger §3–§5).
   // The CPU memory of a buffer mapped at creation runs out.
   "buffer-allocation-fails": () => {
@@ -451,6 +588,32 @@ const instrument = (device) => {
     });
     return buffer;
   });
+  wrap(device, "createComputePipelineAsync", function (original, ...args) {
+    if (bufferFaults.pipeline !== undefined) return asked(bufferFaults.pipeline());
+    return asked(original.apply(this, args));
+  });
+  wrap(device, "createShaderModule", function (original, ...args) {
+    const module = original.apply(this, args);
+    wrap(module, "getCompilationInfo", function (info) {
+      return asked(bufferFaults.compilation === undefined ? info.call(this) : bufferFaults.compilation());
+    });
+    return module;
+  });
+  wrap(device, "createCommandEncoder", function (original, ...args) {
+    count("createCommandEncoder");
+    const encoder = original.apply(this, args);
+    wrap(encoder, "beginComputePass", function (begin, ...rest) {
+      const pass = begin.apply(this, rest);
+      if (typeof pass.setImmediates === "function") {
+        wrap(pass, "setImmediates", function (set, ...data) {
+          if (bufferFaults.immediates !== undefined) return bufferFaults.immediates();
+          return set.apply(this, data);
+        });
+      }
+      return pass;
+    });
+    return encoder;
+  });
   const queue = device.queue;
   wrap(queue, "writeBuffer", function (original, ...args) {
     count("writeBuffer");
@@ -514,6 +677,7 @@ function prepare() {
     globalThis.Object.defineProperty(globalThis, "GPUValidationError", { configurable: true, value: FakeValidationError });
     globalThis.Object.defineProperty(globalThis, "GPUOutOfMemoryError", { configurable: true, value: FakeOutOfMemoryError });
     globalThis.Object.defineProperty(globalThis, "GPUInternalError", { configurable: true, value: FakeInternalError });
+    globalThis.Object.defineProperty(globalThis, "GPUPipelineError", { configurable: true, value: FakePipelineError });
   }
   if (host !== null) {
     if (!native()) globalThis.Object.defineProperty(globalThis.navigator, "gpu", { configurable: true, value: host });
@@ -636,3 +800,18 @@ export const sharedMemory = (_unit) => globalThis.SharedArrayBuffer !== undefine
 export const growable = (bytes) => new globalThis.SharedArrayBuffer(bytes, { maxByteLength: bytes * 2 });
 export const resizableBytes = (bytes) => new globalThis.Uint8Array(resizable(bytes));
 export const growableBytes = (bytes) => new globalThis.Uint8Array(growable(bytes));
+export const resizableWords = (count) => new globalThis.Uint32Array(resizable(count * 4));
+
+const noted = [];
+export const note = (line) => {
+  noted.push(line);
+  return null;
+};
+export const notes = (_unit) => noted.splice(0);
+
+let keptBuffer = null;
+export const keep = (buffer) => {
+  keptBuffer = buffer;
+  return null;
+};
+export const kept = (_unit) => keptBuffer;

@@ -1,0 +1,96 @@
+-- What the device checks of encoded work (docs/design/webgpu.md §6.2,
+-- §8.3; ledger §5): a copy whose size is not a multiple of 4 passes the
+-- local checks but the device refuses the encoder at `finish`, so the run
+-- is `Validation` and publishes no command buffer. A command buffer is
+-- single-use: submitting it again is `CommandBufferSubmitted`, naming it
+-- twice in one submit `DuplicateCommandBuffer`, both before any native
+-- call; a command buffer of another device is `WrongDevice`. Clears and
+-- copies run on submit: the bytes read back are the copied ones.
+import Binary
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error
+import Gpu.Flags exposing (CopyDst, CopySrc, MapRead)
+import Gpu.Handle exposing (Buffer, CommandEncoder)
+import Gpu.Queue
+import Gpu.Submission
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer)
+import GpuPage
+import GpuShow
+import Tea
+
+
+refused : ⊤ → List String
+refused ⊤ = GpuKit.with "none" λd →
+    a = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+    run = Encode.run d Types.commandEncoderDescriptor λencoder →
+        CommandEncoder.copyBuffer encoder a b (Just 6)
+    [ "copy 6 bytes: " ++ GpuShow.checked run λ_ → "commands" ]
+
+
+submits : ⊤ → List String
+submits ⊤ = GpuKit.with "none" λd →
+    GpuKit.with "none" λother →
+        queue = Gpu.Device.queue d
+        first = must (Encode.run d Types.commandEncoderDescriptor λ_ → Ok ⊤)
+        second = must (Encode.run d Types.commandEncoderDescriptor λ_ → Ok ⊤)
+        theirs = must (Encode.run other Types.commandEncoderDescriptor λ_ → Ok ⊤)
+        once = Gpu.Queue.submit queue [ first.commands ]
+        before = GpuHost.calls "submit"
+        again = Gpu.Queue.submit queue [ first.commands ]
+        twice = Gpu.Queue.submit queue [ second.commands, second.commands ]
+        theirsSubmitted = Gpu.Queue.submit queue [ theirs.commands ]
+        calls = GpuHost.calls "submit" - before
+        [ "submit: " ++ GpuShow.checked once λ_ → "receipt"
+        , "submit it again: " ++ GpuShow.checked again λ_ → "receipt"
+        , "one buffer twice: " ++ GpuShow.checked twice λ_ → "receipt"
+        , "another device's: " ++ GpuShow.checked theirsSubmitted λ_ → "receipt"
+        , "native submits for the refusals: " ++ String.fromInt calls
+        ]
+
+
+-- 16 bytes 1, 2, 3, 4 as u32s.
+payload : ⊤ → Binary.Source
+payload ⊤ =
+    storage = must (Binary.allocate 16)
+    view = must (Binary.dataView (Binary.Local storage))
+    must (Binary.writeU32 view 0 Binary.Little 1)
+    must (Binary.writeU32 view 4 Binary.Little 2)
+    must (Binary.writeU32 view 8 Binary.Little 3)
+    must (Binary.writeU32 view 12 Binary.Little 4)
+    Binary.WholeBuffer storage
+
+
+copies : CommandEncoder, Buffer, Buffer → Result Gpu.Error.InputError ⊤
+copies encoder source target =
+    CommandEncoder.copyBufferToBuffer encoder source 0 target 0 Nothing?
+    CommandEncoder.clearBuffer encoder target 4 (Just 8)
+
+
+cleared : ⊤ → List String
+cleared ⊤ = GpuKit.with "none" λd →
+    queue = Gpu.Device.queue d
+    source = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+    target = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+    _ = must (Gpu.Queue.writeBuffer queue source (Gpu.Queue.bufferWrite 0 (payload ⊤)))
+    run = must (Encode.run d Types.commandEncoderDescriptor (copies _ source target))
+    receipt = must (Gpu.Queue.submit queue [ run.commands ])
+    _ = Gpu.Submission.done receipt
+    [ "copied, then cleared 4+8: "
+        ++ GpuShow.checked (GpuKit.readU32s target 4) λxs →
+            String.join (List.map xs String.fromInt) ", "
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "refused", refused )
+        , ( "submits", submits )
+        , ( "cleared", cleared )
+        ]

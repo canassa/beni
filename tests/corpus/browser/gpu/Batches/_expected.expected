@@ -1,0 +1,55 @@
+-- load
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="rules">"rules"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #accepted
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="rules">"rules"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+    </ol>
+  </main>
+</body>
+-- click #rejected
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="rules">"rules"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+      <li>"a batch with a refused buffer: Err Validation, made"</li>
+      <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #rules
+<body>
+  <main>
+    <button id="accepted">"accepted"</button>
+    <button id="rejected">"rejected"</button>
+    <button id="rules">"rules"</button>
+    <ol>
+      <li>"batch: Ok"</li>
+      <li>"done: Ok done"</li>
+      <li>"read: Ok 7, 9"</li>
+      <li>"a batch with a refused buffer: Err Validation, made"</li>
+      <li>"its buffer, kept: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"a batch after its run: Err SessionState SessionEnded"</li>
+      <li>"first Err MappedSizeUnaligned size 6, then Err SessionStopped; run: Err InvalidInput MappedSizeUnaligned size 6"</li>
+      <li>"on a leased device: Err InvalidInput SessionState DeviceLeased"</li>
+    </ol>
+  </main>
+</body>

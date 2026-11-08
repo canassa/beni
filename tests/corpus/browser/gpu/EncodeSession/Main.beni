@@ -1,0 +1,198 @@
+-- The rules of an encoding session (docs/design/webgpu.md §6.2, §6.4;
+-- ledger §5), each refused locally with no GPU error: an encoder command
+-- while a pass is open, after `finish`, a pass command after `end`, a
+-- debug pop with nothing pushed, a buffer of another device or destroyed,
+-- a dynamic-offset slice of the wrong view kind, past its view or on
+-- resizable storage (#1268), immediate data out of its source or
+-- misaligned. The first refusal is latched: later commands give
+-- `SessionStopped`, and the run returns that first refusal even when the
+-- callback ignored it. An encoder kept past its run gives `SessionEnded`;
+-- the callback's own `Err` is the run's result; an encoding run on a
+-- leased device is refused at once. Immediate data the host refuses after
+-- the checks passed is `HostOperationRejected ImmediateWriteRejected`.
+import Binary
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePass as ComputePass
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags exposing (CopyDst, CopySrc, Storage)
+import Gpu.Handle exposing (Buffer, CommandEncoder, Device)
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer, u32, zeros)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+result : Result Error.InputError a → String
+result r = GpuShow.inputResult r λ_ → "Ok"
+
+
+-- A run whose callback returns the lines it saw, and the run's result.
+session : Device, (CommandEncoder → List String) → List String
+session d body =
+    ran = Encode.run d Types.commandEncoderDescriptor λencoder →
+        List.foldl (body encoder) ⊤ λline _ → GpuHost.note line
+        Ok ⊤
+    [ …(GpuHost.notes ⊤), "run: " ++ GpuShow.checked ran λ_ → "commands" ]
+
+
+locks : ⊤ → List String
+locks ⊤ = GpuKit.with "none" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+    open = session d λencoder →
+        pass = must (CommandEncoder.beginComputePass encoder Types.computePassDescriptor)
+        during = CommandEncoder.clearBuffer encoder b 0 Nothing
+        after = CommandEncoder.clearBuffer encoder b 0 Nothing
+        [ "clear while a pass is open: " ++ result during
+        , "then, after the pass is ended too: "
+            ++ result (ComputePass.end pass)
+            ++ ", "
+            ++ result after
+        ]
+    ended = session d λencoder →
+        pass = must (CommandEncoder.beginComputePass encoder Types.computePassDescriptor)
+        _ = ComputePass.end pass
+        [ "a pass command after end: " ++ result (ComputePass.insertDebugMarker pass "late") ]
+    finished = session d λencoder →
+        _ = CommandEncoder.finish encoder { label = Types.Default }
+        [ "a command after finish: " ++ result (CommandEncoder.clearBuffer encoder b 0 Nothing) ]
+    debug = session d λencoder →
+        [ "pop with nothing pushed: " ++ result (CommandEncoder.popDebugGroup encoder) ]
+    balanced = session d λencoder →
+        _ = CommandEncoder.pushDebugGroup encoder "group"
+        _ = CommandEncoder.insertDebugMarker encoder "marker"
+        [ "push, mark and pop: " ++ result (CommandEncoder.popDebugGroup encoder) ]
+    List.concat [ open, ended, finished, debug, balanced ]
+
+
+resources : ⊤ → List String
+resources ⊤ = GpuKit.with "none" λd →
+    GpuKit.with "none" λother →
+        theirs = must (Gpu.Device.createBuffer other (buffer 16 [ CopySrc, CopyDst ]))
+        mine = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+        gone = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+        Gpu.Buffer.destroy gone
+        List.concat
+            [ session d λencoder →
+                [ "another device's buffer: "
+                    ++ result (CommandEncoder.copyBuffer encoder theirs mine Nothing)
+                ]
+            , session d λencoder →
+                [ "a destroyed buffer: "
+                    ++ result (CommandEncoder.clearBuffer encoder gone 0 Nothing)
+                ]
+            , session d λencoder →
+                [ "a negative offset: "
+                    ++ result (CommandEncoder.clearBuffer encoder mine (-4) Nothing)
+                ]
+            ]
+
+
+u32View : Int → Binary.View
+u32View n = must (Binary.view (Binary.Local (zeros (n * 4))) Binary.U32 Binary.whole)
+
+
+slices : ⊤ → List String
+slices ⊤ = GpuKit.with "none" λd →
+    inPass =
+        λf →
+            session d λencoder →
+                pass = must (CommandEncoder.beginComputePass encoder Types.computePassDescriptor)
+                f pass
+    u8s = must (Binary.view (Binary.Local (zeros 8)) Binary.U8 Binary.whole)
+    List.concat
+        [ inPass λpass →
+            [ "a Uint8Array of offsets: "
+                ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing u8s 0 1)
+            ]
+        , inPass λpass →
+            [ "elements 1+2 of 2: "
+                ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing (u32View 2) 1 2)
+            ]
+        , inPass λpass →
+            resizable = Binary.Uint32Array (GpuHost.resizableWords 2)
+            [ "offsets on resizable storage: "
+                ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing resizable 0 1)
+            ]
+        , inPass λpass →
+            [ "elements 1+1 of 2, unbound: "
+                ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing (u32View 2) 1 1)
+            ]
+        ]
+
+
+immediates : ⊤ → List String
+immediates ⊤ =
+    local = GpuKit.with "none" λd →
+        inPass =
+            λf →
+                session d λencoder →
+                    pass =
+                        must (CommandEncoder.beginComputePass encoder Types.computePassDescriptor)
+                    f pass
+        data = Binary.WholeBuffer (zeros 8)
+        List.concat
+            [ inPass λpass →
+                [ "range offset 2: " ++ result (ComputePass.setImmediates pass 2 data 0 Nothing) ]
+            , inPass λpass →
+                [ "6 bytes: " ++ result (ComputePass.setImmediates pass 0 data 2 Nothing) ]
+            , inPass λpass →
+                [ "bytes 4+8 of 8: " ++ result (ComputePass.setImmediates pass 0 data 4 (Just 8)) ]
+            ]
+    host = GpuKit.with "immediates-rejected" λd2 →
+        session d2 λencoder →
+            pass = must (CommandEncoder.beginComputePass encoder Types.computePassDescriptor)
+            [ "refused by the host: "
+                ++ result
+                    (ComputePass.setImmediates pass 0 (Binary.WholeBuffer (zeros 8)) 0 Nothing)
+            ]
+    List.concat [ local, host ]
+
+
+latching : ⊤ → List String
+latching ⊤ = GpuKit.with "none" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
+    ignored = session d λencoder →
+        _ = CommandEncoder.popDebugGroup encoder
+        [ "after an ignored refusal: " ++ result (CommandEncoder.clearBuffer encoder b 0 Nothing) ]
+
+    late =
+        case Encode.run d Types.commandEncoderDescriptor λencoder → Ok encoder of
+            Ok ran →
+                result (CommandEncoder.clearBuffer ran.value b 0 Nothing)
+
+            Err problem →
+                "Err " ++ GpuShow.error problem
+    own = Encode.run d Types.commandEncoderDescriptor λ_ →
+        Err (Error.ResourceExpired { path = "mine" })
+    _ = GpuProbe.lease d
+    before = GpuHost.calls "createCommandEncoder"
+    leased = Encode.run d Types.commandEncoderDescriptor λ_ → Ok ⊤
+    calls = GpuHost.calls "createCommandEncoder" - before
+    GpuProbe.releaseLease d
+    List.concat
+        [ ignored
+        , [ "the encoder after its run: " ++ late
+          , "the callback's own Err: " ++ GpuShow.checked own λ_ → "commands"
+          , "on a leased device: "
+              ++ GpuShow.checked leased λ_ → "commands"
+              ++ ", native encoders "
+              ++ String.fromInt calls
+          ]
+        ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "locks", locks )
+        , ( "resources", resources )
+        , ( "slices", slices )
+        , ( "immediates", immediates )
+        , ( "latching", latching )
+        ]

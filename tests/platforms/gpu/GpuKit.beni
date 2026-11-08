@@ -4,8 +4,11 @@
 import Binary
 import Gpu
 import Gpu.Adapter
+import Gpu.Buffer
+import Gpu.Error
 import Gpu.Flags as Flags
-import Gpu.Handle exposing (Device)
+import Gpu.Handle exposing (Device, Buffer, Mapping)
+import Gpu.MappedRange
 import Gpu.Scalar as Scalar
 import Gpu.Types as Types
 import GpuHost
@@ -71,3 +74,40 @@ showWord w =
 --| `yes` or `no`.
 pub yesNo : Bool → String
 yesNo b = if b then "yes" else "no"
+
+
+--| A `U32` a fixture knows to be in range.
+pub u32 : Int → Scalar.U32
+u32 n = must (Scalar.u32 n)
+
+
+--| A `Size64` a fixture knows to be in range.
+pub size64 : Int → Scalar.Size64
+size64 n = must (Scalar.size64 n)
+
+
+--| Read `count` u32 words of `buffer` through a read mapping, or why not.
+pub readU32s : Buffer, Int → Result Gpu.Error.Error (List Int)
+readU32s b n = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead (wordsOf n _)
+
+
+wordsOf : Int, Mapping → Result Gpu.Error.Error (List Int)
+wordsOf n mapping =
+    range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+    Result.mapError
+        (collect (List.map (List.range 0 (n - 1)) λi → Gpu.MappedRange.readU32 range (i * 4)))
+        Gpu.Error.InvalidInput
+
+
+--| Every value, or the first `Err`.
+pub collect : List (Result e a) → Result e (List a)
+collect results = List.foldl results (Ok []) λr acc →
+    case ( acc, r ) of
+        ( Ok xs, Ok x ) →
+            Ok [ …xs, x ]
+
+        ( Err problem, _ ) →
+            Err problem
+
+        ( _, Err problem ) →
+            Err problem

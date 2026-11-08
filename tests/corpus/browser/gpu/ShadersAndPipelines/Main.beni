@@ -1,0 +1,147 @@
+-- Shader modules, pipelines, query sets and textures (docs/design/webgpu.md
+-- §4, §5; ledger §3): invalid WGSL is `Validation` and its compilation
+-- messages include an error; a missing entry point is `Validation` for the
+-- synchronous pipeline and `PipelineValidation` for the asynchronous one;
+-- a bind group index the pipeline has no group for is `Validation`. A
+-- timestamp query set without its feature and a BC texture format without
+-- its feature are `UnsupportedCapability` before any native call. A
+-- destroyed query set or texture is refused by later work. Labels and
+-- snapshots read back.
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePipeline as ComputePipeline
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Flags as Flags exposing (QueryResolve, CopySrc)
+import Gpu.QuerySet as QuerySet
+import Gpu.Shader as Shader
+import Gpu.Texture as Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+valid : String
+valid = "@compute @workgroup_size(1) fn main() {}"
+
+
+shaders : ⊤ → List String
+shaders ⊤ = GpuKit.with "none" λd →
+    bad = Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor "this is not wgsl")
+    good =
+        must
+            (Gpu.Device.createShaderModule d
+                { (Types.shaderModuleDescriptor valid) | label = Types.Value "kernel" }
+            )
+
+    errors =
+        case Shader.getCompilationInfo good of
+            Ok info →
+                String.fromInt (List.length (List.filter info.messages λm → m.type_ == Types.Error))
+
+            Err problem →
+                "Err " ++ GpuShow.error problem
+    [ "invalid WGSL: " ++ GpuShow.checked bad λ_ → "shader"
+    , "valid WGSL, errors: " ++ errors ++ ", label " ++ Shader.label good
+    , "source kept: " ++ GpuKit.yesNo (Shader.source good == valid)
+    ]
+
+
+pipelines : ⊤ → List String
+pipelines ⊤ = GpuKit.with "none" λd →
+    shader = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor valid))
+    missing = { module = shader, entryPoint = Types.Value "absent", constants = Types.Default }
+    sync = Gpu.Device.createComputePipeline d (Types.computePipelineDescriptor Types.Auto missing)
+    async =
+        Gpu.Device.createComputePipelineAsync d (Types.computePipelineDescriptor Types.Auto missing)
+    good =
+        must
+            (Gpu.Device.createComputePipeline
+                d
+                (Types.computePipelineDescriptor Types.Auto (Types.programmableStage shader))
+            )
+    [ "missing entry point, synchronous: " ++ GpuShow.checked sync λ_ → "pipeline"
+    , "missing entry point, asynchronous: " ++ GpuShow.checked async λ_ → "pipeline"
+    , "bind group layout 7: "
+        ++ GpuShow.checked (ComputePipeline.getBindGroupLayout good (u32 7)) λ_ → "layout"
+    ]
+
+
+capabilities : ⊤ → List String
+capabilities ⊤ = GpuKit.with "none" λd →
+    timestamps = Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Timestamp (u32 2))
+    extent =
+        Types.Extent3DFields
+            { width = u32 4, height = Types.Value (u32 4), depthOrArrayLayers = Types.Default }
+    bc =
+        Gpu.Device.createTexture
+            d
+            (Types.textureDescriptor
+                extent
+                Types.Bc1RgbaUnorm
+                (Flags.texture [ Flags.TextureCopyDst ])
+            )
+    [ "timestamp queries without the feature: " ++ GpuShow.checked timestamps λ_ → "query set"
+    , "a BC texture without the feature: " ++ GpuShow.checked bc λ_ → "texture"
+    ]
+
+
+destroyed : ⊤ → List String
+destroyed ⊤ = GpuKit.with "none" λd →
+    queries =
+        must
+            (Gpu.Device.createQuerySet d
+                { (Types.querySetDescriptor Types.Occlusion (u32 2)) | label = Types.Value "q" }
+            )
+    target = must (Gpu.Device.createBuffer d (buffer 256 [ QueryResolve, CopySrc ]))
+    extent =
+        Types.Extent3DFields
+            { width = u32 4, height = Types.Value (u32 2), depthOrArrayLayers = Types.Default }
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    extent
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureCopySrc ])
+                )
+            )
+    snapshot =
+        QuerySet.label queries
+            ++ " "
+            ++ Types.queryTypeToString (QuerySet.type_ queries)
+            ++ " "
+            ++ String.fromInt (QuerySet.count queries)
+            ++ ", texture "
+            ++ String.fromInt (Texture.width texture)
+            ++ "x"
+            ++ String.fromInt (Texture.height texture)
+            ++ " "
+            ++ Types.textureFormatToString (Texture.format texture)
+    QuerySet.destroy queries
+    QuerySet.destroy queries
+    Texture.destroy texture
+    resolve = Encode.run d Types.commandEncoderDescriptor λencoder →
+        CommandEncoder.resolveQuerySet encoder queries (u32 0) (u32 2) target 0
+    copy = Encode.run d Types.commandEncoderDescriptor λencoder →
+        CommandEncoder.copyTextureToBuffer
+            encoder
+            (Types.texelCopyTextureInfo texture)
+            (Types.texelCopyBufferInfo target)
+            extent
+    [ "snapshots: " ++ snapshot
+    , "resolve a destroyed query set: " ++ GpuShow.checked resolve λ_ → "commands"
+    , "copy a destroyed texture: " ++ GpuShow.checked copy λ_ → "commands"
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "shaders", shaders )
+        , ( "pipelines", pipelines )
+        , ( "capabilities", capabilities )
+        , ( "destroyed", destroyed )
+        ]

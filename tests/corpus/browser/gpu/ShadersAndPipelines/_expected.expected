@@ -1,0 +1,82 @@
+-- load
+<body>
+  <main>
+    <button id="shaders">"shaders"</button>
+    <button id="pipelines">"pipelines"</button>
+    <button id="capabilities">"capabilities"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #shaders
+<body>
+  <main>
+    <button id="shaders">"shaders"</button>
+    <button id="pipelines">"pipelines"</button>
+    <button id="capabilities">"capabilities"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"invalid WGSL: Err Validation"</li>
+      <li>"valid WGSL, errors: 0, label kernel"</li>
+      <li>"source kept: yes"</li>
+    </ol>
+  </main>
+</body>
+-- click #pipelines
+<body>
+  <main>
+    <button id="shaders">"shaders"</button>
+    <button id="pipelines">"pipelines"</button>
+    <button id="capabilities">"capabilities"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"invalid WGSL: Err Validation"</li>
+      <li>"valid WGSL, errors: 0, label kernel"</li>
+      <li>"source kept: yes"</li>
+      <li>"missing entry point, synchronous: Err Validation"</li>
+      <li>"missing entry point, asynchronous: Err PipelineValidation"</li>
+      <li>"bind group layout 7: Err Validation"</li>
+    </ol>
+  </main>
+</body>
+-- click #capabilities
+<body>
+  <main>
+    <button id="shaders">"shaders"</button>
+    <button id="pipelines">"pipelines"</button>
+    <button id="capabilities">"capabilities"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"invalid WGSL: Err Validation"</li>
+      <li>"valid WGSL, errors: 0, label kernel"</li>
+      <li>"source kept: yes"</li>
+      <li>"missing entry point, synchronous: Err Validation"</li>
+      <li>"missing entry point, asynchronous: Err PipelineValidation"</li>
+      <li>"bind group layout 7: Err Validation"</li>
+      <li>"timestamp queries without the feature: Err UnsupportedCapability"</li>
+      <li>"a BC texture without the feature: Err UnsupportedCapability"</li>
+    </ol>
+  </main>
+</body>
+-- click #destroyed
+<body>
+  <main>
+    <button id="shaders">"shaders"</button>
+    <button id="pipelines">"pipelines"</button>
+    <button id="capabilities">"capabilities"</button>
+    <button id="destroyed">"destroyed"</button>
+    <ol>
+      <li>"invalid WGSL: Err Validation"</li>
+      <li>"valid WGSL, errors: 0, label kernel"</li>
+      <li>"source kept: yes"</li>
+      <li>"missing entry point, synchronous: Err Validation"</li>
+      <li>"missing entry point, asynchronous: Err PipelineValidation"</li>
+      <li>"bind group layout 7: Err Validation"</li>
+      <li>"timestamp queries without the feature: Err UnsupportedCapability"</li>
+      <li>"a BC texture without the feature: Err UnsupportedCapability"</li>
+      <li>"snapshots: q occlusion 2, texture 4x2 rgba8unorm"</li>
+      <li>"resolve a destroyed query set: Err InvalidInput ResourceDestroyed querySet"</li>
+      <li>"copy a destroyed texture: Err InvalidInput ResourceDestroyed source.texture"</li>
+    </ol>
+  </main>
+</body>

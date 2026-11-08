@@ -1,0 +1,201 @@
+-- A compute shader's answer, read back (docs/design/webgpu.md §6.2, §8.3,
+-- §10's acceptance for #2240): eight u32 inputs 1 … 8 go into a storage
+-- buffer, a shader writes `input[i] * 2 + i` into another, an encoding run
+-- dispatches it, copies the result into a mappable buffer and resolves an
+-- occlusion query set no pass wrote, and the receipt's `done` waits for it.
+-- The answer is compared with the expected words written out below by
+-- hand — 2, 5, 8, 11, 14, 17, 20, 23 — never computed by the code under
+-- test; the query results are exact 64-bit zeros. The gates' fake host runs
+-- no shader, so its transcript shows zeros and `no`; `test-webgpu`'s shows
+-- the GPU's answer (`_expected.webgpu-expected`). The synchronous and the
+-- asynchronous pipeline give the same answer.
+import Binary
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePass as ComputePass
+import Gpu.ComputePipeline as ComputePipeline
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags exposing (Storage, CopyDst, CopySrc, MapRead, QueryResolve)
+import Gpu.Handle exposing (Device, Buffer, ComputePipeline, CommandEncoder)
+import Gpu.MappedRange
+import Gpu.Queue
+import Gpu.Shader as Shader
+import Gpu.Submission
+import Gpu.Types as Types
+import GpuKit exposing (must, buffer, u32, size64)
+import GpuPage
+import GpuShow
+import Tea
+
+
+wgsl : String
+wgsl =
+    String.join
+        [ "@group(0) @binding(0) var<storage, read> input : array<u32>;"
+        , "@group(0) @binding(1) var<storage, read_write> output : array<u32>;"
+        , "@compute @workgroup_size(4)"
+        , "fn main(@builtin(global_invocation_id) id : vec3u) {"
+        , "    let i = id.x;"
+        , "    if (i < arrayLength(&input)) {"
+        , "        output[i] = input[i] * 2u + i;"
+        , "    }"
+        , "}"
+        ]
+        "\n"
+
+
+-- The answer, worked out by hand.
+expected : List Int
+expected = [ 2, 5, 8, 11, 14, 17, 20, 23 ]
+
+
+inputs : ⊤ → Binary.Source
+inputs ⊤ =
+    storage = must (Binary.allocate 32)
+    view = must (Binary.dataView (Binary.Local storage))
+    _ = List.foldl [ 1, 2, 3, 4, 5, 6, 7, 8 ] 0 λx at →
+        must (Binary.writeU32 view at Binary.Little x)
+        at + 4
+    Binary.WholeBuffer storage
+
+
+-- What one encoding records: the dispatch, the copy of the answer, and the
+-- resolve of the query set into its own mappable buffer.
+encode :
+      ComputePipeline
+    , Gpu.Handle.BindGroup
+    , Gpu.Handle.QuerySet
+    , Buffer
+    , Buffer
+    , Buffer
+    , Buffer
+    , CommandEncoder
+    → Result Error.InputError ⊤
+encode pipeline group queries output readback resolved queryReadback encoder =
+    ComputePass.with encoder Types.computePassDescriptor (dispatch pipeline group _)?
+    CommandEncoder.copyBufferToBuffer encoder output 0 readback 0 (Just 32)?
+    CommandEncoder.resolveQuerySet encoder queries (u32 0) (u32 2) resolved 0?
+    CommandEncoder.copyBuffer encoder resolved queryReadback (Just 16)
+
+
+dispatch : ComputePipeline, Gpu.Handle.BindGroup, Gpu.Handle.ComputePass → Result Error.InputError ⊤
+dispatch pipeline group pass =
+    ComputePass.setPipeline pass pipeline?
+    ComputePass.setBindGroup pass (u32 0) (Just group) []?
+    ComputePass.dispatchWorkgroups pass (u32 2) (u32 1) (u32 1)
+
+
+run : Device, ComputePipeline → Result Error.Error (List String)
+run d pipeline =
+    layout = ComputePipeline.getBindGroupLayout pipeline (u32 0)?
+    input = Gpu.Device.createBuffer d (buffer 32 [ Storage, CopyDst ])?
+    output = Gpu.Device.createBuffer d (buffer 32 [ Storage, CopySrc ])?
+    readback = Gpu.Device.createBuffer d (buffer 32 [ MapRead, CopyDst ])?
+    resolved = Gpu.Device.createBuffer d (buffer 256 [ QueryResolve, CopySrc ])?
+    queryReadback = Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ])?
+    queries = Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 2))?
+    queue = Gpu.Device.queue d
+    Gpu.Queue.writeBuffer queue input (Gpu.Queue.bufferWrite 0 (inputs ⊤))?
+
+    group =
+        Gpu.Device.createBindGroup
+            d
+            (Types.bindGroupDescriptor layout
+                [ Types.bindGroupEntry (u32 0) (Types.WholeBufferBinding input)
+                , Types.bindGroupEntry (u32 1) (Types.WholeBufferBinding output)
+                ]
+            )?
+    encoded =
+        Encode.run
+            d
+            Types.commandEncoderDescriptor
+            (encode pipeline group queries output readback resolved queryReadback _)?
+    receipt = Gpu.Queue.submit queue [ encoded.commands ]?
+    Gpu.Submission.done receipt?
+    answer = GpuKit.readU32s readback 8?
+    words = Gpu.Buffer.withMapped queryReadback Gpu.Buffer.mapRead queryWords?
+    Ok
+        [ "answer: " ++ String.join (List.map answer String.fromInt) ", "
+        , "matches the expected answer: " ++ GpuKit.yesNo (answer == expected)
+        , "query results: " ++ words
+        ]
+
+
+queryWords : Gpu.Handle.Mapping → Result Error.Error String
+queryWords mapping =
+    range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+    first = Result.mapError (Gpu.MappedRange.readWord64 range 0) Error.InvalidInput?
+    second = Result.mapError (Gpu.MappedRange.readWord64 range 8) Error.InvalidInput?
+    Ok (GpuKit.showWord first ++ ", " ++ GpuKit.showWord second)
+
+
+lines : Result Error.Error (List String) → List String
+lines r =
+    case r of
+        Ok xs →
+            xs
+
+        Err problem →
+            [ "Err " ++ GpuShow.error problem ]
+
+
+synchronous : ⊤ → List String
+synchronous ⊤ = GpuKit.with "none" λd →
+    compiled = Shader.compile d (Types.shaderModuleDescriptor wgsl)
+
+    result =
+        case compiled of
+            Err problem →
+                Err problem
+
+            Ok c →
+                errors = List.filter c.diagnostics.messages λm → m.type_ == Types.Error
+                pipeline =
+                    Gpu.Device.createComputePipeline
+                        d
+                        (Types.computePipelineDescriptor Types.Auto
+                            { module = c.shader
+                            , entryPoint = Types.Value "main"
+                            , constants = Types.Default
+                            }
+                        )
+                case pipeline of
+                    Err problem →
+                        Err problem
+
+                    Ok p →
+                        Result.map (run d p) λxs →
+                            [ "compile errors: " ++ String.fromInt (List.length errors), …xs ]
+    lines result
+
+
+asynchronous : ⊤ → List String
+asynchronous ⊤ = GpuKit.with "none" λd →
+    result =
+        case Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl) of
+            Err problem →
+                Err problem
+
+            Ok shader →
+                case
+                    Gpu.Device.createComputePipelineAsync
+                        d
+                        (Types.computePipelineDescriptor Types.Auto (Types.programmableStage shader)
+                        )
+                of
+                    Err problem →
+                        Err problem
+
+                    Ok p →
+                        run d p
+    lines result
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "synchronous", synchronous )
+        , ( "asynchronous", asynchronous )
+        ]

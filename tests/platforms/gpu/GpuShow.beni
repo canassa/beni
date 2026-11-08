@@ -235,6 +235,27 @@ inputError input =
         Error.ReadOnlyMapping d →
             "ReadOnlyMapping " ++ d.path
 
+        Error.EncoderLocked d →
+            "EncoderLocked " ++ d.path
+
+        Error.EncoderFinished d →
+            "EncoderFinished " ++ d.path
+
+        Error.PassEnded d →
+            "PassEnded " ++ d.path
+
+        Error.DebugStackEmpty d →
+            "DebugStackEmpty " ++ d.path
+
+        Error.CommandBufferSubmitted d →
+            "CommandBufferSubmitted " ++ d.path
+
+        Error.DuplicateCommandBuffer d →
+            "DuplicateCommandBuffer " ++ d.path
+
+        Error.ViewKindRequired d →
+            "ViewKindRequired " ++ d.path
+
         Error.SessionState Error.DeviceLeased →
             "SessionState DeviceLeased"
 

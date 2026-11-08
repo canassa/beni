@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"write: Ok done"</li>
+      <li>"read back: Ok 0, 0, 0, 0, 0"</li>
+    </ol>
+  </main>
+</body>

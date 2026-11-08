@@ -1,0 +1,136 @@
+-- Batches (docs/design/webgpu.md §6.3, §7.1, §8.3): one batch makes a
+-- buffer mapped at creation and writes its mapping at once, makes a
+-- readable buffer, encodes a copy between them and submits it, all
+-- provisional — usable by the batch itself — and accepted together; the
+-- copied bytes read back after the receipt's `done`. A batch whose buffer
+-- the device refuses fails as a whole: what it made is rejected (a kept
+-- handle gives `ResourceRejected`) and its writes are not undone. A batch
+-- kept past its run gives `SessionEnded`; its first refusal is latched
+-- (`SessionStopped` after it, the refusal the run's result); a batch on a
+-- leased device is refused at once.
+import Gpu.Batch as Batch
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Flags exposing (CopyDst, CopySrc, MapRead, Storage)
+import Gpu.Handle exposing (Batch, Buffer, Device)
+import Gpu.MappedRange as MappedRange
+import Gpu.Submission
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+-- Write 7 and 9 into a mapping from creation, inside the batch.
+fill : Buffer → Result Error.InputError ⊤
+fill source =
+    case Gpu.Buffer.currentMapping source of
+        Nothing →
+            Err (Error.ResourceExpired { path = "mapping" })
+
+        Just mapping →
+            case Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole of
+                Err _ →
+                    Err (Error.ResourceExpired { path = "range" })
+
+                Ok range →
+                    MappedRange.writeU32 range 0 7?
+                    MappedRange.writeU32 range 4 9?
+                    Gpu.Buffer.unmap source
+                    Ok ⊤
+
+
+work : Device, Batch → Result Error.InputError { target : Buffer, receipt : Gpu.Handle.Submission }
+work d b =
+    source = Batch.createBuffer b { buffer 8 [ CopySrc ] | mappedAtCreation = Types.Value True }?
+    target = Batch.createBuffer b (buffer 8 [ MapRead, CopyDst ])?
+    fill source?
+    encoded =
+        (Batch.encode b Types.commandEncoderDescriptor λencoder →
+            CommandEncoder.copyBuffer encoder source target Nothing
+        )?
+    receipt = Batch.submit b (Gpu.Device.queue d) [ encoded.commands ]?
+    Ok { target = target, receipt = receipt }
+
+
+accepted : ⊤ → List String
+accepted ⊤ = GpuKit.with "none" λd →
+    case Batch.run d "copy" (work d _) of
+        Err problem →
+            [ "batch: Err " ++ GpuShow.error problem ]
+
+        Ok made →
+            done = Gpu.Submission.done made.receipt
+            [ "batch: Ok"
+            , "done: " ++ GpuShow.checked done λ_ → "done"
+            , "read: "
+                ++ GpuShow.checked (GpuKit.readU32s made.target 2) λxs →
+                    String.join (List.map xs String.fromInt) ", "
+            ]
+
+
+rejected : ⊤ → List String
+rejected ⊤ = GpuKit.with "none" λd →
+    failed = Batch.run d "refused" refusedBatch
+    lines = GpuHost.notes ⊤
+    keptLater = Gpu.Buffer.map (GpuHost.kept ⊤) Gpu.Buffer.mapRead
+    [ "a batch with a refused buffer: "
+        ++ GpuShow.checked failed λ_ → "buffers"
+        ++ ", "
+        ++ String.join lines " "
+    , "its buffer, kept: " ++ GpuShow.checked keptLater λ_ → "mapping"
+    ]
+
+
+rules : ⊤ → List String
+rules ⊤ = GpuKit.with "none" λd →
+    kept = Batch.run d "kept" λb → Ok b
+    late =
+        case kept of
+            Ok b →
+                GpuShow.inputResult (Batch.createBuffer b (buffer 8 [ CopyDst ])) λ_ → "buffer"
+
+            Err problem →
+                "Err " ++ GpuShow.error problem
+    latched = Batch.run d "latched" λb →
+        first = Batch.createBuffer b { buffer 6 [ CopyDst ] | mappedAtCreation = Types.Value True }
+        second = Batch.createBuffer b (buffer 8 [ CopyDst ])
+        GpuHost.note
+            ("first "
+                ++ GpuShow.inputResult first λ_ → "buffer"
+                ++ ", then "
+                ++ GpuShow.inputResult second λ_ → "buffer"
+            )
+        Ok ⊤
+    seen = GpuHost.notes ⊤
+    _ = GpuProbe.lease d
+    leased = Batch.run d "leased" λ_ → Ok ⊤
+    GpuProbe.releaseLease d
+    [ "a batch after its run: " ++ late
+    , String.join seen " " ++ "; run: " ++ GpuShow.checked latched λ_ → "done"
+    , "on a leased device: " ++ GpuShow.checked leased λ_ → "done"
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "accepted", accepted )
+        , ( "rejected", rejected )
+        , ( "rules", rules )
+        ]
+
+
+-- A batch whose second buffer the device refuses; the first is kept.
+refusedBatch : Batch → Result Error.InputError Buffer
+refusedBatch b =
+    kept = Batch.createBuffer b (buffer 8 [ MapRead, CopyDst ])?
+    GpuHost.keep kept
+    GpuHost.note "made"
+    _ = Batch.createBuffer b (buffer 8 [ MapRead, Storage ])?
+    Ok kept

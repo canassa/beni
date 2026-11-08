@@ -1,0 +1,7 @@
+-- UNIT DISCARDED ----------------------------------------------- Main.beni:82:9
+
+This `_ =` throws away a `⊤`, which a statement line does already. Write the
+line without it.
+
+82|        _ = must (Gpu.Queue.writeBuffer queue source (Gpu.Queue.bufferWrite 0 (payload ⊤)))
+           ^^^
