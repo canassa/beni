@@ -917,8 +917,6 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         if (@import("Mutate.zig").on(.contract_no_reads)) break;
         const b = w.bindings[u.local];
         if (b.value == none) continue;
-        var ps: std.ArrayList(Relation.Proj) = .empty;
-        defer ps.deinit(gpa);
         const lroot = try f.places.rootPath(gpa, try e.ctx.placeOfLocal(e.ctx.ctx, u.local));
         const rel = (try f.slots.relBelow(gpa, f.account, f.places, lroot, u.path)) orelse Slots.root;
         // A call use reads what its callee's footprint reads of the
@@ -932,16 +930,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             for (e.contracts.readsOf(h.reads)) |x| if (x[0] == ft[1]) try readsThrough(s, b.value, f.slots.relWords(rel), x[1], pass);
             continue;
         }
-        // A choice is read by route sets, a value two arms reach once.
-        if (f.val(b.value).kind == .alt) {
-            const req = [1]Routed.Req{.{ .words = f.slots.relWords(rel), .deep = true, .out = &ps }};
-            try Routed.project(&e.ev, b.value, &req, 0, pass);
-        } else {
-            e.ev.pass = pass;
-            defer e.ev.pass = 0;
-            try e.ev.project(b.value, f.slots.relWords(rel), true, 0, 0, &ps);
-        }
-        for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
+        try readsDeep(s, b.value, f.slots.relWords(rel), pass);
     }
     // Writes: every demand's parameter targets, whatever its verdict.
     for (0..e.demands.items.len) |di| try demandFacts(e, di);
@@ -962,11 +951,8 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 const ap = f.val(a).place;
                 const root = if (ap != .none) try f.places.rootPath(gpa, ap) else rpath;
                 try describe(s, a, root, .{ .label = at, .k = @intCast(k) });
-                // What the frame supplies a callback is read where it is
-                // handed on: the code that runs reads all of it, as a store
-                // or a return does (§2.10 `reads`, §2.11.3 *A supply is
-                // read*). A temporary has no local whose use says so (#2297).
-                if (!@import("Mutate.zig").on(.supply_no_reads)) try readsWhole(s, a, cb_pass);
+                // A supply is read, all of it, temporary or not (§2.11.3 *a supply is read*, #2297).
+                if (!@import("Mutate.zig").on(.supply_no_reads)) try readsDeep(s, a, &.{}, cb_pass);
             }
         }
     }
@@ -1018,10 +1004,8 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 // *An arrival's level*). Marked open, it would also open every plain arrival there.
                 var parts: std.ArrayList(SplitRow.Part) = .empty;
                 for (x.arrivals) |a| {
-                    // A callee's supply of its argument is this frame's supply
-                    // of what the argument holds there, read as a direct one is.
-                    if (a.kind == .param and a.j < call.args.len and !@import("Mutate.zig").on(.supply_no_reads))
-                        try readsWhole(s, try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot)), cb_pass);
+                    // A passed-on supply is read at the argument, as a direct one is.
+                    if (a.kind == .param and a.j < call.args.len and !@import("Mutate.zig").on(.supply_no_reads)) try readsDeep(s, try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot)), &.{}, cb_pass);
                     try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
                 }
                 const placed = for (parts.items) |pt| {
@@ -1061,21 +1045,19 @@ fn supplyPart(s: *Sink, q: u32, pt: SplitRow.Part, out: Put.ResList, entry: Slot
     for (ls.items) |l| try supplyArrive(s, l, key, out);
 }
 
-/// Every parameter slot value `v` holds, read deep: a whole use of a value
-/// that may be a temporary (§2.7's `whole` kind, on no local).
-fn readsWhole(s: *Sink, v: u32, pass: u32) Error!void {
+/// Every parameter slot value `v` holds at `words` and below, read (a local's use, or a supply).
+fn readsDeep(s: *Sink, v: u32, words: []const u32, pass: u32) Error!void {
     const e = s.e;
-    const f = e.fr();
-    const gpa = e.gpa();
     var ps: std.ArrayList(Relation.Proj) = .empty;
-    defer ps.deinit(gpa);
-    if (f.val(v).kind == .alt) {
-        const req = [1]Routed.Req{.{ .words = &.{}, .deep = true, .out = &ps }};
+    defer ps.deinit(e.gpa());
+    // A choice is read by route sets, a value two arms reach once.
+    if (e.fr().val(v).kind == .alt) {
+        const req = [1]Routed.Req{.{ .words = words, .deep = true, .out = &ps }};
         try Routed.project(&e.ev, v, &req, 0, pass);
     } else {
         e.ev.pass = pass;
         defer e.ev.pass = 0;
-        try e.ev.project(v, &.{}, true, 0, 0, &ps);
+        try e.ev.project(v, words, true, 0, 0, &ps);
     }
     for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
 }
