@@ -144,7 +144,11 @@ pub fn memberKey(a: std.mem.Allocator, source: []const u8) ![]const u8 {
         try out.append(a, ')');
         return out.toOwnedSlice(a);
     }
-    const end = std.mem.findScalar(u8, t, ';') orelse t.len;
+    // A constant: `const T NAME = value;`.
+    const end = if (std.mem.startsWith(u8, t, "const "))
+        std.mem.findScalar(u8, t, '=') orelse return error.MemberWithoutName
+    else
+        std.mem.findScalar(u8, t, ';') orelse t.len;
     const head = std.mem.trimEnd(u8, t[0..end], " \t\r\n");
     return head[(std.mem.findLastAny(u8, head, " \t\r\n") orelse return error.MemberWithoutName) + 1 ..];
 }
@@ -471,6 +475,153 @@ fn fixture(a: std.mem.Allocator, files: *Files, path: []const u8) !?Fixture {
     return .{ .own = try own.toOwnedSlice(a), .platform = try platform.toOwnedSlice(a), .golden = try golden.toOwnedSlice(a) };
 }
 
+/// IDL text with its comments and every space and `;` removed.
+fn squeezed(a: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        const end = std.mem.find(u8, line, "//") orelse line.len;
+        for (line[0..end]) |c| if (!std.ascii.isWhitespace(c) and c != ';') try out.append(a, c);
+    }
+    return out.toOwnedSlice(a);
+}
+
+/// The quoted values of an enum, in order.
+fn enumValues(a: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |whole| {
+        var line = whole[0 .. std.mem.find(u8, whole, "//") orelse whole.len];
+        while (std.mem.findScalar(u8, line, '"')) |open| {
+            const close = std.mem.findScalarPos(u8, line, open + 1, '"') orelse break;
+            try out.appendSlice(a, line[open .. close + 1]);
+            try out.append(a, ' ');
+            line = line[close + 1 ..];
+        }
+    }
+    return out.toOwnedSlice(a);
+}
+
+const IdlSection = struct { heading: []const u8, parent: []const u8, block: ?[]const u8, values: ?[]const u8, line: usize };
+
+/// The IDL text of coverage.md, which research/webgpu/inventory.py once
+/// generated and this check now holds to the pin: each section in IDL
+/// order with its heading and parent, every member's text, every enum's
+/// values, and the counts line.
+fn checkIdl(a: std.mem.Allocator, c: Native.Catalogue, text: []const u8, quiet: bool) !usize {
+    var count: usize = 0;
+    var sections: std.ArrayList(IdlSection) = .empty;
+    var counts_line: ?[]const u8 = null;
+    var in_block = false;
+    var block: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    var number: usize = 0;
+    while (lines.next()) |line| {
+        number += 1;
+        if (std.mem.startsWith(u8, line, "Counts: ")) counts_line = line;
+        if (in_block) {
+            if (std.mem.startsWith(u8, line, "```")) {
+                in_block = false;
+                sections.items[sections.items.len - 1].block = try a.dupe(u8, block.items);
+            } else {
+                try block.appendSlice(a, line);
+                try block.append(a, '\n');
+            }
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "## ") and std.mem.findScalar(u8, line, '`') != null) {
+            const open = std.mem.findScalar(u8, line, '`').?;
+            const close = std.mem.findScalarPos(u8, line, open + 1, '`') orelse continue;
+            var parent: []const u8 = "";
+            if (std.mem.find(u8, line[close..], "`: ")) |at| {
+                const from = close + at + 3;
+                parent = line[from .. std.mem.findScalarPos(u8, line, from, '`') orelse line.len];
+            }
+            try sections.append(a, .{ .heading = try std.fmt.allocPrint(a, "{s} {s}", .{ trim(line[3..open]), line[open + 1 .. close] }), .parent = parent, .block = null, .values = null, .line = number });
+            continue;
+        }
+        if (sections.items.len == 0) continue;
+        if (std.mem.startsWith(u8, line, "```webidl")) {
+            in_block = true;
+            block.clearRetainingCapacity();
+        } else if (std.mem.startsWith(u8, line, "`\"")) {
+            sections.items[sections.items.len - 1].values = try enumValues(a, line);
+        }
+    }
+    var kinds = [_]struct { word: []const u8, n: usize }{
+        .{ .word = "dictionary", .n = 0 },      .{ .word = "enum", .n = 0 },               .{ .word = "includes", .n = 0 },
+        .{ .word = "interface", .n = 0 },       .{ .word = "interface mixin", .n = 0 },    .{ .word = "namespace", .n = 0 },
+        .{ .word = "partial interface", .n = 0 }, .{ .word = "typedef", .n = 0 },
+    };
+    var at: usize = 0;
+    for (c.declarations) |d| {
+        if (!std.mem.eql(u8, c.files[d.file].path, Gpu.idl_file)) continue;
+        const words = kindWords(d);
+        for (&kinds) |*k| if (std.mem.eql(u8, k.word, words)) {
+            k.n += 1;
+        };
+        const heading = if (d.kind == .includes)
+            try std.fmt.allocPrint(a, "includes {s} includes {s};", .{ d.name, d.parent.? })
+        else
+            try std.fmt.allocPrint(a, "{s} {s}", .{ words, d.name });
+        if (at >= sections.items.len or !std.mem.eql(u8, sections.items[at].heading, heading)) {
+            count += 1;
+            if (!quiet) std.debug.print("coverage.md: the IDL's next declaration is `{s}`, the file's is `{s}`\n", .{ heading, if (at < sections.items.len) sections.items[at].heading else "(none)" });
+            return count;
+        }
+        const s = sections.items[at];
+        at += 1;
+        const parent = if (d.kind != .includes and d.parent != null) d.parent.? else "";
+        if (!std.mem.eql(u8, s.parent, parent)) {
+            count += 1;
+            if (!quiet) std.debug.print("coverage.md:{d}: {s}: parent `{s}`, the IDL's `{s}`\n", .{ s.line, heading, s.parent, parent });
+        }
+        const source = c.files[d.file].source;
+        switch (d.kind) {
+            .enumeration => {
+                const want = try enumValues(a, d.source_span.text(source));
+                if (s.values == null or !std.mem.eql(u8, s.values.?, want)) {
+                    count += 1;
+                    if (!quiet) std.debug.print("coverage.md:{d}: {s}: its values are not the IDL's\n", .{ s.line, heading });
+                }
+            },
+            .includes => if (s.block != null) {
+                count += 1;
+                if (!quiet) std.debug.print("coverage.md:{d}: {s}: an includes has no IDL block\n", .{ s.line, heading });
+            },
+            else => {
+                var want: std.ArrayList(u8) = .empty;
+                if (d.kind == .typedef) {
+                    try want.appendSlice(a, try squeezed(a, d.source_span.text(source)));
+                } else for (c.members[d.members_start..d.members_end]) |m| {
+                    try want.appendSlice(a, try squeezed(a, m.source_span.text(c.files[m.file].source)));
+                }
+                const have = if (s.block) |b| try squeezed(a, b) else "";
+                if (!std.mem.eql(u8, have, want.items)) {
+                    count += 1;
+                    if (!quiet) std.debug.print("coverage.md:{d}: {s}: its IDL block is not the IDL's members\n", .{ s.line, heading });
+                }
+            },
+        }
+    }
+    if (at != sections.items.len) {
+        count += 1;
+        if (!quiet) std.debug.print("coverage.md: {d} sections, the IDL has {d} declarations\n", .{ sections.items.len, at });
+    }
+    var want_counts: std.ArrayList(u8) = .empty;
+    try want_counts.appendSlice(a, "Counts: ");
+    for (kinds, 0..) |k, i| {
+        if (i > 0) try want_counts.appendSlice(a, ", ");
+        try want_counts.print(a, "{d} {s}", .{ k.n, k.word });
+    }
+    try want_counts.append(a, '.');
+    if (counts_line == null or !std.mem.eql(u8, trim(counts_line.?), want_counts.items)) {
+        count += 1;
+        if (!quiet) std.debug.print("coverage.md: the counts line is not `{s}`\n", .{want_counts.items});
+    }
+    return count;
+}
+
 /// The `browser/gpu/` fixtures that use `module.name`, printed to help
 /// rebind a row.
 fn suggest(a: std.mem.Allocator, files: *Files, module: []const u8, name: []const u8, ctors: []const []const u8) !void {
@@ -498,7 +649,7 @@ fn problem(quiet: bool, count: *usize, row: anytype, comptime what: []const u8, 
 /// Check `text`, a coverage table, against the IDL and the repository;
 /// the number of problems, each printed unless `quiet`.
 pub fn check(a: std.mem.Allocator, io: std.Io, c: Native.Catalogue, text: []const u8, quiet: bool) !usize {
-    var count: usize = 0;
+    var count: usize = try checkIdl(a, c, text, quiet);
     const coverage = try parse(a, text);
     var files: Files = .{ .a = a, .io = io };
     const manifest = (try files.read(public_manifest)) orelse return error.NoManifest;
@@ -658,6 +809,36 @@ test "member keys name each overload by its parameters" {
     try std.testing.expectEqualStrings("setBindGroup(index, bindGroup, dynamicOffsets)", try memberKey(a, "undefined setBindGroup(GPUIndex32 index, GPUBindGroup? bindGroup,\n optional sequence<GPUBufferDynamicOffset> dynamicOffsets = []);"));
     try std.testing.expectEqualStrings("constructor(message, options)", try memberKey(a, "constructor(optional DOMString message = \"\", GPUPipelineErrorInit options);"));
     try std.testing.expectEqualStrings("popDebugGroup()", try memberKey(a, "undefined popDebugGroup();"));
+}
+
+test "a constant is keyed by its name" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectEqualStrings("MAP_READ", try memberKey(arena.allocator(), "const GPUFlagsConstant MAP_READ = 0x0001;"));
+}
+
+test "the coverage gate fails when the IDL text drifts from the pin" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const c = try catalogue(a);
+    const text = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, coverage_path, a, .limited(max_file));
+    const cases = [_][2][]const u8{
+        // An enum value.
+        .{ "`\"r8snorm\"`", "`\"r8snorn\"`" },
+        // A member's signature.
+        .{ "Promise<undefined> mapAsync(GPUMapModeFlags mode,", "Promise<undefined> mapAsync(GPUMapModeFlags modes," },
+        // A default.
+        .{ "GPUTextureUsageFlags usage = 0x10;", "GPUTextureUsageFlags usage = 0x11;" },
+        // The counts.
+        .{ "Counts: 62 dictionary", "Counts: 61 dictionary" },
+        // A parent.
+        .{ "## interface `GPUDevice` `: EventTarget`", "## interface `GPUDevice`" },
+    };
+    for (cases) |case| {
+        const broken = try replaced(a, text, case[0], case[1]);
+        try std.testing.expect(try check(a, std.testing.io, c, broken, true) > 0);
+    }
 }
 
 fn fixtureOf(a: std.mem.Allocator, source: []const u8, golden: []const u8) !Fixture {
