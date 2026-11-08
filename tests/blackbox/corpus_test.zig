@@ -4209,6 +4209,24 @@ const Case = struct {
             detail("{s}: the checker v2's verdict lines differ from {s}\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, golden, want, got });
             return error.OwnershipV2Differs;
         }
+        // A `.v2-short` (its reason): every candidate short on purpose
+        // (`--ownership-short-candidates`: the groups validated from ⊥), so
+        // §2.12's validation round must find the defects, join them and
+        // validate again, and give the same verdict lines (`ownership-v2.md`
+        // §2.12 step 3, §8 S4).
+        if (c.goldenExists("v2-short")) {
+            const s = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-short-candidates" }, flags, &.{path} }));
+            try expectExit(0, s);
+            const short = try verdictLines(c.arena, s.stdout);
+            if (!std.mem.eql(u8, want, short)) {
+                detail("{s}: with every candidate short on purpose, the checker v2's verdict lines differ from {s}\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, golden, want, short });
+                return error.OwnershipV2ShortDiffers;
+            }
+            if (std.mem.indexOf(u8, s.stdout, ", inference defects ") == null) {
+                detail("{s}: with every candidate short on purpose, no validation round found a defect\n", .{c.fixture.name});
+                return error.OwnershipV2ShortUnseen;
+            }
+        }
     }
 
     /// An ownership fixture with no `.v2` is still checked by v2 (§7.2's

@@ -107,6 +107,10 @@ pub const Input = struct {
     interner: ?*const InternPool.Global = null,
     /// The imports' published contracts (§3.6), or none.
     imports: ?Imports = null,
+    /// Test-only (`dump --ownership-short-candidates`): every group skips
+    /// its inference rounds and starts validating at ⊥, so each candidate is
+    /// short on purpose and the validation round must catch it (§2.12 step 3).
+    short_candidates: bool = false,
 
     pub fn isCore(in: *const Input, m: u32) bool {
         return m < in.core.len and in.core[m];
@@ -1470,7 +1474,9 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
     // Inference rounds deliver facts between the members (§2.12 step 2), their judgements
     // kept across rounds; then a validation round evaluates each code once more, plainly,
     // under the candidates, and its verdicts are the lines (step 3).
-    var validating = false;
+    // Short on purpose, the test's switch: the candidates stay ⊥ and the
+    // validation round alone must reach the fixed point (§8 S4).
+    var validating = in.short_candidates;
     var kg = try Kept.Group.init(gpa, order.items.len);
     defer kg.deinit(gpa);
     while (true) : (round += 1) {

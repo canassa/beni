@@ -1,0 +1,44 @@
+module ShortCandidates
+  16:9 ShortCandidates.pushAll <call List.push>: accepted param
+  16:18 List.push acc: accepted param
+  20:34 ShortCandidates.pushAll xs: rejected later-use: xs is read again at 20:50
+  24:35 ShortCandidates.pushAll xs: accepted param
+  32:9 ShortCandidates.ring2 acc: accepted param
+  36:15 ShortCandidates.ring3 acc: accepted param
+  40:15 ShortCandidates.ring1 <call List.push>: accepted param
+  40:22 List.push acc: accepted param
+  44:18 ShortCandidates.ring1 xs: rejected later-use: xs is read again at 44:31
+  48:19 ShortCandidates.ring1 xs: accepted param
+  56:9 ShortCandidates.pushEven acc: accepted param
+  64:9 ShortCandidates.pushOdd <call List.push>: accepted param
+  64:18 List.push acc: accepted param
+  68:31 ShortCandidates.pushOdd xs: rejected later-use: xs is read again at 68:47
+  72:32 ShortCandidates.pushOdd xs: accepted param
+  account pushAll: source 31, baseline 782, growth 0 of 65536, total 782, continuation 759 of 31744, demands 183, walks 1, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary pushAll: res ε π1ε; nondup ⇐ sel π1{ε}; reads π1ε*; writes π1ε; req yes
+  account pushAllRefused: source 17, baseline 150, growth 0 of 65536, total 150, continuation 145 of 17408, demands 67, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary pushAllRefused: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account pushAllAccepted: source 12, baseline 78, growth 0 of 65536, total 78, continuation 76 of 12288, demands 16, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary pushAllAccepted: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account ring1: source 28, baseline 445, growth 0 of 65536, total 445, continuation 430 of 28672, demands 58, walks 1, rounds 5, liveness_index lanes 4, transfer_settlement lanes 3
+  summary ring1: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account ring2: source 12, baseline 316, growth 0 of 65536, total 316, continuation 311 of 12288, demands 63, walks 1, rounds 5, liveness_index lanes 2, transfer_settlement lanes 1
+  summary ring2: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account ring3: source 15, baseline 525, growth 0 of 65536, total 525, continuation 515 of 15360, demands 129, walks 1, rounds 5, liveness_index lanes 3, transfer_settlement lanes 1
+  summary ring3: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account ringRefused: source 15, baseline 141, growth 0 of 65536, total 141, continuation 136 of 15360, demands 67, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary ringRefused: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account ringAccepted: source 10, baseline 68, growth 0 of 65536, total 68, continuation 66 of 10240, demands 16, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary ringAccepted: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account pushEven: source 31, baseline 785, growth 0 of 65536, total 785, continuation 762 of 31744, demands 183, walks 1, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary pushEven: res ε π1ε; nondup ⇐ sel π1{ε}; reads π1ε*; writes π1ε; req yes
+  account pushOdd: source 28, baseline 586, growth 0 of 65536, total 586, continuation 571 of 28672, demands 134, walks 1, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary pushOdd: res ε π1ε; nondup ⇐ sel π1{ε}; reads π1ε*; writes π1ε; req yes
+  account pairRefused: source 17, baseline 150, growth 0 of 65536, total 150, continuation 145 of 17408, demands 67, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary pairRefused: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account pairAccepted: source 12, baseline 78, growth 0 of 65536, total 78, continuation 76 of 12288, demands 16, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary pairAccepted: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  block: 20 bytes, hash 8f07960fda0af7a5
+  demands 15: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 15: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 3

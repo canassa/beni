@@ -28,9 +28,8 @@ labels_add_up_off redundant #2188: `Once.demands` refuses the probes
 word_unknown equivalent #2188: no answer reads it
 each_kept_ignored open #2188: a gate of `each`
 made_meets_off open #2188
-inst_memo_under_cut open #2188, #2146
-within_always open #2188: `within` is false on 8 fixtures, and with it ignored no verdict moves
-weaker_always open #2188: as `within_always`
+inst_memo_under_cut dead #2188, #2146: `instAt` met its own key on its stack on no program: instrumented over the corpus, tests/pending and core under `--ownership-everywhere`, 0 cuts. Outside a group a fill never expands a leaf while it expands (`Relation`, a panic under safety), and a group's inference reads drafts through `instAtLive`
+weaker_always open #2188: the validation round's conditions; `ownership/ShortCandidates` makes no condition short
 stack_agg_off open #2188: a fast path's other half
 word_builderdone open #2188
 word_lentoptional open #2188
