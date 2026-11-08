@@ -1,0 +1,2 @@
+# v2 refuses the write of zs's elements, which join the local `s` and a fresh arrival (the kappa join, no top-level list); ys's write is accepted. The edit would change what the program prints.
+25:55 list_may_be_shared List.map

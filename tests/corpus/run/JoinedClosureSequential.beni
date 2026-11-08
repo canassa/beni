@@ -1,0 +1,27 @@
+-- JoinedClosureSequential (Appendix B, S4 J×G; R-5.4.2, R-5.5.5): the arms of
+-- `if` join two closures that edit their captures, and the joined closure is
+-- called twice in sequence. Each call is refused: the second call finds the
+-- capture already edited.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+twice : Bool → String
+twice c =
+    a = [ 1 ]
+    b = [ 2 ]
+    f = if c then λ⊤ → List.push a 7 else λ⊤ → List.push b 8
+    r = f ⊤
+    s = f ⊤
+    "${ints r} ${ints s}"
+
+
+main : Program
+main = Node.print (twice True)

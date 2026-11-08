@@ -1,0 +1,2 @@
+# v2 refuses the push onto cur, which hist holds at another depth; the edit would change what the program prints.
+20:58 list_still_used List.push

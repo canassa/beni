@@ -1,0 +1,30 @@
+-- RefinementFeedbackPositive (Appendix B, S4 R×G; R-5.3.2, R-3.1): the two
+-- positive controls of RefinementFeedbackTwice. One traversal of an exclusive
+-- list edits each taken list once and answers it at its own position, and a
+-- fold from `[]` whose callback pushes the current item onto the accumulator
+-- and answers it: both writes are accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+edit : Int → List (List Int)
+edit n = List.map [ [ n ], [ n, n ] ] λl → List.push l 5
+
+
+store : List Int → List Int
+store xs = List.foldl xs [] λx acc → List.push acc x
+
+
+main : Program
+main = Node.print "${show (edit 1)} ${ints (store [ 1, 2 ])}"

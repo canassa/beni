@@ -1,0 +1,31 @@
+-- ProjectedKappaLabel (Appendix B, S4; R-4.6.4, R-4.10.3): the S4 half of
+-- ProjectedKappa, through `List.map`'s label. The callback writes the `.1` of
+-- each pair, and the `.0`s are one shared list, which the write does not
+-- reach: accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pairs : List (List Int × List Int) → String
+pairs ps = String.join (List.map ps λ( p, q ) → "${ints p}/${ints q}") ";"
+
+
+secondShared : Int → List (List Int × List Int)
+secondShared n =
+    s = [ 0 ]
+    List.map [ ( s, [ n ] ), ( s, [ n, n ] ) ] λ( p, q ) → ( p, List.push q 1 )
+
+
+main : Program
+main = Node.print (pairs (secondShared 4))

@@ -1,0 +1,5 @@
+import List
+
+
+pub mapCap : List Int, List Int → List (List Int)
+mapCap s xs = List.map xs λ_ → s

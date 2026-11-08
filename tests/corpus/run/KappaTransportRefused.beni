@@ -1,0 +1,37 @@
+-- KappaTransportRefused (Appendix B, S4; R-5.2.9, R-5.7.1): the refused rows of
+-- KappaTransport. Through the wrapper, a callback that answers its capture
+-- puts one list at every position, and `[ x, x ]` hands one list to the
+-- element writer twice. Each is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+wrap : List a, (a → b) → List b
+wrap xs f = List.map xs f
+
+
+captured : List Int → String
+captured c =
+    ys = List.map (wrap [ 1, 2 ] λ_ → c) λl → List.push l 0
+    "${show ys} ${ints c}"
+
+
+twice : List Int → String
+twice x =
+    ys = wrap [ x, x ] λl → List.push l 0
+    "${show ys} ${ints x}"
+
+
+main : Program
+main = Node.print "${captured [ 5 ]} ${twice [ 6 ]}"

@@ -1,0 +1,26 @@
+-- SplitTraversalJoinTwice (Appendix B, S4 R×J; R-4.6.2, R-5.4.2): one branch
+-- of the callback answers the taken element twice, so the joined result holds
+-- one list at two positions and the element write is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List (List Int)
+build xs =
+    ys = List.concatMap xs λl → if List.length l > 1 then [ l ] else [ l, l ]
+    List.map ys λl → List.push l 1
+
+
+main : Program
+main = Node.print (show (build [ [ 1 ], [ 2, 3 ] ]))

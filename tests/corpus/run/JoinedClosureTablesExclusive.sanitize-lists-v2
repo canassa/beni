@@ -1,0 +1,1 @@
+The accepted twin of JoinedClosureTables (Appendix B, S4 J×G): built again under --ownership=v2 and the list stale-read sanitiser. v2 accepts every write of the joined closures.

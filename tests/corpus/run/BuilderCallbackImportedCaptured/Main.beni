@@ -1,0 +1,26 @@
+-- BuilderCallbackImportedCaptured (Appendix B, S4; R-5.2.9, R-4.6.3):
+-- BuilderCallbackImportedShared with a PARAMETER in place of a top-level
+-- list. `Lib.mapCap s xs` maps a callback that answers its caller's `s`, and
+-- its block says so: the inner write of the result is refused, because the
+-- refusal comes from the imported block, not from a top-level list.
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main =
+    s = [ 5 ]
+    ys = List.update (Lib.mapCap s [ 1, 2 ]) 1 λl → List.push l 7
+    Node.print "${show ys} ${ints s}"

@@ -1,0 +1,26 @@
+-- JoinedClosureExclusiveCalls (Appendix B, S4 J×G; R-5.4.2, R-5.5.5): the
+-- accepted twin of JoinedClosureSequential and JoinedClosureAlias. The same
+-- joined closure is called in two mutually exclusive arms, one through an
+-- alias, so it runs at most once and its edit of the capture is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+once : Bool, Bool → List Int
+once c d =
+    a = [ 1 ]
+    b = [ 2 ]
+    f = if c then λ⊤ → List.push a 7 else λ⊤ → List.push b 8
+    g = f
+    if d then f ⊤ else g ⊤
+
+
+main : Program
+main = Node.print "${ints (once True True)} ${ints (once True False)} ${ints (once False True)}"

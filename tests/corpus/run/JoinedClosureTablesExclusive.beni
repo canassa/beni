@@ -1,0 +1,40 @@
+-- JoinedClosureTablesExclusive (Appendix B, S4 J×G; R-5.4.2, R-5.5.5): the
+-- accepted twin of JoinedClosureTables. The joined closures write their
+-- captures, which nothing reads after the call, so every write is accepted
+-- and each arm runs.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+reordered : Bool → String
+reordered c =
+    a = [ 1 ]
+    b = [ 2 ]
+    f = if c then λ⊤ → ( List.push a 7, b ) else λ⊤ → ( List.push b 7, a )
+    ( r, s ) = f ⊤
+    "${ints r} ${ints s}"
+
+
+unequal : Bool → String
+unequal c =
+    a = [ 1 ]
+    b = [ 2 ]
+    d = [ 3 ]
+    f =
+        if c then
+            λ⊤ → List.push a 7
+        else
+            λ⊤ → List.push (List.push b 7) (List.length a + List.length d)
+    r = f ⊤
+    ints r
+
+
+main : Program
+main = Node.print "${reordered True} ${reordered False} ${unequal True} ${unequal False}"

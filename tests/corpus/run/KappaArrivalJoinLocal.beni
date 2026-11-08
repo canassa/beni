@@ -1,0 +1,29 @@
+-- KappaArrivalJoinLocal (Appendix B, S4; R-4.6.3, R-5.5.5): KappaArrivalJoin
+-- with a LOCAL shared alternative, so the refusal comes from the kappa join
+-- of `zs`'s elements and not from a top-level list. `ys`'s elements are
+-- single fresh arrivals and their write is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+joined : Bool → String
+joined c =
+    s = [ 9 ]
+    ys = List.map [ 1, 2 ] λn → [ n ]
+    zs = List.map [ 1, 2 ] λn → if c then s else [ n ]
+    "${show (List.map ys λl → List.push l 0)} ${show (List.map zs λl → List.push l 0)} ${ints s}"
+
+
+main : Program
+main = Node.print (joined True)
