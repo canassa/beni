@@ -79,12 +79,21 @@ writeFloat range f =
     Result.mapError (f v) λproblem → Memory.access problem "offset"
 
 
+--| Why `readBytes` gave no copy: the range refused the read (`Refused`:
+--| expired, or out of the range), or the host had no memory for the copy
+--| (`Allocation`), a CPU allocation of its own and no GPU failure (ledger
+--| §4).
+pub type ReadError
+    = Refused InputError
+    | Allocation Binary.AllocationError
+
+
 --| Copy `bytes` of the range into new, fixed storage: `byteOffset` and
 --| `byteLength` are in the range, `Nothing` as the length for the rest of
 --| it. The copy is the caller's: it outlives the mapping.
-pub readBytes : Handle.MappedRange, Binary.ByteRange → Result Error.Error Binary.Buffer
+pub readBytes : Handle.MappedRange, Binary.ByteRange → Result ReadError Binary.Buffer
 readBytes range bytes =
-    _ = Result.mapError (view range False) Error.InvalidInput?
+    _ = Result.mapError (view range False) Refused?
     r = Js.from range
     total = size range
     length = Maybe.withDefault bytes.byteLength (total - bytes.byteOffset)
@@ -95,7 +104,7 @@ readBytes range bytes =
             || length > total - bytes.byteOffset
     then
         Err
-            (Error.InvalidInput
+            (Refused
                 (Error.OutOfRange
                     { path = "bytes", offset = bytes.byteOffset, size = length, available = total }
                 )
@@ -115,21 +124,39 @@ readBytes range bytes =
                     Ok copied →
                         Ok copied
 
-                    Err (Binary.CopyAllocation (Binary.AllocationFailed n)) →
-                        Err (Error.AllocationFailed { bytes = n })
+                    Err (Binary.CopyAllocation problem) →
+                        Err (Allocation problem)
 
                     Err _ →
                         Engine.defect "a copy of live mapped storage failed"
 
 
---| Copy every byte of `source` into the range at `at`. The source's
---| storage must be fixed and attached (`ResizableBacking`,
---| `DetachedSource`).
+--| Copy every byte of `source` into the range at `at`. Any attached
+--| storage will do, resizable or growable included: this is a copy in CPU
+--| memory, not a GPU input. Detached storage is `DetachedSource`.
 pub writeBytes : Handle.MappedRange, Int, Binary.Source → Result InputError ⊤
 writeBytes range at source =
-    v = view range True?
-    _ = Memory.sourceInfo source "source"?
-    Result.mapError (Binary.copyInto v at source) λproblem → Memory.access problem "offset"
+    _ = view range True?
+    case Binary.sourceInfo source of
+        Err Binary.Detached →
+            Err (Error.DetachedSource { path = "source" })
+
+        _ →
+            r = Js.from range
+            bytes = Memory.rawBytes source
+            length : Int
+            length = Js.to (Js.get bytes "byteLength")
+            total = size range
+            if at < 0 || at > total || length > total - at then
+                Err (Error.OutOfRange { path = "offset", offset = at, size = length, available = total })
+            else
+                target = Js.construct (Js.global "Uint8Array") [ Js.get r "storage" ]
+                Js.call target "set" [ bytes, Js.from at ] ▷ ignore
+                Ok ⊤
+
+
+ignore : V → ⊤
+ignore _ = ⊤
 
 
 --| The unsigned byte at `at`.

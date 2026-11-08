@@ -392,3 +392,17 @@ mapUsage mode =
 
         Flags.Write →
             Flags.MapWrite
+
+
+--| The bytes a binary source holds now, as a `Uint8Array` over its
+--| storage, whatever kind the storage is.
+pub rawBytes : Binary.Source → V
+rawBytes source =
+    native = sourceObject source
+    case source of
+        Binary.ViewOf _ →
+            Js.construct (Js.global "Uint8Array")
+                [ Js.get native "buffer", Js.get native "byteOffset", Js.get native "byteLength" ]
+
+        _ →
+            Js.construct (Js.global "Uint8Array") [ native ]
