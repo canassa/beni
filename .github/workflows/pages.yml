@@ -24,7 +24,7 @@ permissions: {}
 jobs:
   build:
     name: build the examples
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 30
@@ -33,23 +33,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # The same pinned installer as ci.yml.
-      - name: nix-installer v3.23.2
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
-            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
-          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          source-binary: ${{ runner.temp }}/nix-installer
-          diagnostic-endpoint: ""
-
-      # ci.yml's caches, read only: this workflow saves nothing.
-      - name: restore the Nix store
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
       - name: dev shell
         run: nix develop --command true
       # As in ci.yml: the global cache stays `~/.cache/zig`, the path that
@@ -58,14 +41,15 @@ jobs:
         run: |
           echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
           ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+      # ci.yml's Zig caches, read only: this workflow saves nothing.
       - name: restore the Zig caches
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-azathoth-${{ hashFiles('flake.lock') }}-
 
       - name: zig build
         run: nix develop --command zig build
