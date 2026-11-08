@@ -2851,7 +2851,8 @@ Fixture: a two-module project under `tests/corpus/check/bad/PrivateMethod/`, a t
 
 *Amended 2026-11-08* (#1755): the text names the use as the program wrote it. A use written as an
 operator (`==`, `<` and the others of §10.3) never says `x.eq`; the **Region** is the operator token,
-and the second paragraph names the operator and the type:
+and the second paragraph names the operator and the type. The operator is printed in its
+canonical spelling (`language.md` §12.7): a program that wrote `/=` or `<=` reads `≠` or `≤`.
 
 > `<op>` needs the `<m>` of `<Type>`, and `<Module>` declares `<m>` without `pub`, so it is
 > private to that module and cannot be used from here.
