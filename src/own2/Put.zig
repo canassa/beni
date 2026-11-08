@@ -1,7 +1,7 @@
 //! L11: where the read-off puts what it describes, split from `ReadOff`
 //! (`docs/design/ownership-v2.md` §2.10 *Read-off*): the draft's result and
 //! supply lists, an arrival at a slot (plain or by structure), and the
-//! stack of subtrees described once per place, with their memo.
+//! stack of subtrees described once per place (their memo is `PutMemo`).
 //!
 //! Obligations kept here: none of §2.14's directly (each arrival is put
 //! where the read-off says, and a new fact of a member is delivered).
@@ -149,23 +149,4 @@ pub fn emitPart(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!void 
     if (try Contract.Draft.addNode(try resList(s, out), s.arena, r, n)) {
         if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, false, .{ .kind = .top }, n);
     }
-}
-
-/// A subtree described before at the same place (`key`, with `q`'s place):
-/// its node, `none` while it is described, or null when it is not yet.
-pub fn memoGet(s: *Sink, key: [6]u32) ?u32 {
-    const v = s.nodes.get(key) orelse return null;
-    if (v == none - 2) return null;
-    // Met again while it is described (a fold's answer feeding itself):
-    // it adds nothing here, and nothing made meanwhile is kept.
-    if (v == none) s.cut = 0;
-    return v;
-}
-
-pub fn memoPut(s: *Sink, key: [6]u32, n: Contract.Node) Error!void {
-    const depth = s.building.items.len;
-    if (s.cut > depth) {
-        try s.nodes.put(s.e.gpa(), key, n);
-    } else try s.nodes.put(s.e.gpa(), key, none - 2);
-    if (s.cut >= depth) s.cut = std.math.maxInt(usize);
 }
