@@ -46,8 +46,12 @@ fromElement id =
         Err (Canvas.WrongElement _) →
             Err (Error.CanvasFailed (Error.WrongElementKind id))
 
-        Err _ →
+        Err (Canvas.NotFound _) →
             Err (Error.CanvasFailed (Error.CanvasNotFound id))
+
+        Err _ →
+            -- No document: no canvas can have a WebGPU context here.
+            Err (Error.CanvasFailed Error.CanvasContextUnavailable)
 
 
 --| The surface of a canvas element: its `webgpu` context, the same one every
@@ -95,10 +99,13 @@ configure surface configuration =
 
             Types.Default →
                 []
+    -- A refusal before the native call changes nothing of the surface.
+    Engine.admit device "configure"?
     Make.formatsAvailable device [ configuration.format, …views ]?
     converted = Native.canvasConfiguration configuration
     Engine.nextGeneration s
     Js.set s "device" Js.null
+    generation = Js.get s "generation"
 
     result = Engine.checked device "configure" [] λ⊤ →
         Js.catchIf
@@ -114,7 +121,9 @@ configure surface configuration =
                     )
     case result of
         Ok _ →
-            Js.set s "device" device
+            -- Unless the surface was configured or unconfigured again while
+            -- this configuration was checked.
+            if Js.same (Js.get s "generation") generation then Js.set s "device" device else ⊤
             Ok ⊤
 
         Err problem →
@@ -135,18 +144,31 @@ unconfigure surface =
 
 --| The configuration the host keeps, read back from it, or `Nothing` when
 --| the surface is not configured: a member the host does not report is
---| `Default`, so a program can see what this browser supports. A value
---| outside the pin is a defect.
-pub getConfiguration : Handle.Surface → Maybe Types.CanvasConfiguration
+--| `Default`, so a program can see what this browser supports. A host
+--| without the method is `UnsupportedCapability (MissingHostMember
+--| "GPUCanvasContext.getConfiguration")`; a value outside the pin is a
+--| defect. Never suspends.
+pub getConfiguration : Handle.Surface → Result Error.Error (Maybe Types.CanvasConfiguration)
 getConfiguration surface =
-    c = Js.call (Js.from surface) "getConfiguration" []
+    native = Js.from surface
+    if not (Js.typeIs (Js.get native "getConfiguration") "function") then
+        Err
+            (Error.UnsupportedCapability
+                (Error.MissingHostMember "GPUCanvasContext.getConfiguration")
+            )
+    else
+        Ok (readConfiguration (Js.call native "getConfiguration" []))
+
+
+readConfiguration : V → Maybe Types.CanvasConfiguration
+readConfiguration c =
     if Js.isNull c then
         Nothing
     else
         Just
             { device = Js.to (Engine.member c "device")
             , format = enum (Js.get c "format") Types.textureFormatFromString "format"
-            , usage = optional c "usage" λbits → usages (Js.to bits)
+            , usage = optional c "usage" usages
             , viewFormats =
                 optional c "viewFormats" λlist →
                     List.map (Js.to (Js.call (Js.global "Array") "from" [ list ])) λf →
@@ -186,12 +208,25 @@ enum value parse name =
                 Engine.defect ("the host's configuration has a `" ++ name ++ "` outside the pin")
 
 
-usages : Int → Flags.TextureUsages
-usages bits =
-    Flags.texture
-        (List.filter Flags.allTextureUsages λu →
+-- The usages of the host's bits: a value that is not a non-negative
+-- integer, or a bit outside the pin's usages, is a defect.
+usages : V → Flags.TextureUsages
+usages value =
+    if
+        not (Js.typeIs value "number")
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ value ]))
+            || not (Js.to (Js.ge value (Js.from 0)))
+    then
+        Engine.defect "the host's configuration has a `usage` that is not a set of usages"
+    else
+        bits : Int
+        bits = Js.to value
+        known = List.filter Flags.allTextureUsages λu →
             Js.bitAnd bits (Flags.textureUsageBits u) == Flags.textureUsageBits u
-        )
+        if List.foldl known 0 (λu sum → sum + Flags.textureUsageBits u) ≠ bits then
+            Engine.defect "the host's configuration has a `usage` bit outside the pin"
+        else
+            Flags.texture known
 
 
 --| The canvas the surface draws to.
