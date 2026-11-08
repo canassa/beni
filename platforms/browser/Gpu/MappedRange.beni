@@ -148,7 +148,10 @@ writeBytes range at source =
             length = Js.to (Js.get bytes "byteLength")
             total = size range
             if at < 0 || at > total || length > total - at then
-                Err (Error.OutOfRange { path = "offset", offset = at, size = length, available = total })
+                Err
+                    (Error.OutOfRange
+                        { path = "offset", offset = at, size = length, available = total }
+                    )
             else
                 target = Js.construct (Js.global "Uint8Array") [ Js.get r "storage" ]
                 Js.call target "set" [ bytes, Js.from at ] ▷ ignore

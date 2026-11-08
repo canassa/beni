@@ -99,7 +99,8 @@ contents range =
     u64s = List.map [ 16, 24 ] λat → GpuShow.inputResult (MappedRange.readWord64 range at) showWord
     -- The u64 slots read as 32-bit words, low word first (little-endian):
     -- 2⁶⁴ − 1 is 4294967295, 4294967295 and 2⁵³ + 1 is 1, 2097152.
-    halves = List.map [ 16, 20, 24, 28 ] λat → GpuShow.inputResult (MappedRange.readU32 range at) String.fromInt
+    halves = List.map [ 16, 20, 24, 28 ] λat →
+        GpuShow.inputResult (MappedRange.readU32 range at) String.fromInt
     String.join (List.concat [ u32s, u64s, halves ]) ", "
 
 
