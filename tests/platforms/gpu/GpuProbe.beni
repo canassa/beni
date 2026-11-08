@@ -3,6 +3,8 @@
 --! member is left out, a `Value` set even to its default, a `Nothing`
 --! written as `null`, and each union arm in its native shape.
 
+import Gpu.Engine as Engine
+import Gpu.Handle as Handle
 import Gpu.Native as Native
 import Gpu.Types as Types
 import Js
@@ -60,3 +62,14 @@ depthStencilState d = json (Native.depthStencilState d)
 --| The native value of a color.
 pub color : Types.Color → String
 color c = json (Native.color c)
+
+
+--| Take the device's diagnostic lease, as a session will: `True` when it
+--| was free.
+pub lease : Handle.Device → Bool
+lease device = Engine.tryLease (Js.from device)
+
+
+--| Give the device's lease back.
+pub releaseLease : Handle.Device → ⊤
+releaseLease device = Engine.releaseLease (Js.from device)

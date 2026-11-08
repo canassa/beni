@@ -5,9 +5,10 @@
 --! `navigator.gpu`; under `zig build test-webgpu` it is Chrome's own, and
 --! each fault wraps the native method it is about.
 
---| Prepare the host for a scenario: `"none"` leaves it as it is, and each
---| other name, listed in `GpuHost.js`, makes one native call fail as the
---| ledger describes or as it never documents.
+--| Prepare the host for scenarios, named and separated by commas: the host
+--| starts as no fault touched it; `"none"` leaves it so, and each other
+--| name, listed in `GpuHost.js`, makes one native call fail as the ledger
+--| describes or as it never documents.
 pub foreign impure inject : String → ⊤
 
 
@@ -15,3 +16,11 @@ pub foreign impure inject : String → ⊤
 --| "lost-controlled"`: `"reject"` rejects its `lost` promise, and any other
 --| text resolves it with that reason.
 pub foreign impure lose : String → ⊤
+
+
+--| Release every pop held since `inject "pops-held"`, the latest first.
+pub foreign impure releasePops : ⊤ → ⊤
+
+
+--| How many times the page called the native method `name` of a device.
+pub foreign impure calls : String → Int

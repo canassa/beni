@@ -1,0 +1,10 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: Error: webgpu: an error scope reported what its filter does not: createSampler)
+(the DOM did not change)

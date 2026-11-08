@@ -49,8 +49,47 @@ const fakeDevice = (adapter, descriptor) => {
   device.destroy = () => {
     resolveLost(lostInfo("destroyed", "the device was destroyed"));
   };
+  // The error scopes: a stack of `{ filter, error }`, each keeping the first
+  // error of its filter that a call reports.
+  const scopes = [];
+  device.pushErrorScope = (filter) => {
+    scopes.push({ filter, error: null });
+  };
+  device.popErrorScope = () => {
+    const scope = scopes.pop();
+    if (scope === undefined) return globalThis.Promise.reject(new globalThis.DOMException("the error scope stack is empty", "OperationError"));
+    return globalThis.Promise.resolve(scope.error);
+  };
+  const report = (filter, error) => {
+    for (let i = scopes.length - 1; i >= 0; i -= 1) {
+      if (scopes[i].filter !== filter) continue;
+      if (scopes[i].error === null) scopes[i].error = error;
+      return;
+    }
+  };
+  // Two of the specification's sampler rules, enough for the fixtures.
+  device.createSampler = (descriptor) => {
+    const d = descriptor ?? {};
+    const min = d.lodMinClamp ?? 0;
+    const max = d.lodMaxClamp ?? 32;
+    const anisotropic = (d.maxAnisotropy ?? 1) > 1;
+    const linear = d.magFilter === "linear" && d.minFilter === "linear" && d.mipmapFilter === "linear";
+    if (min < 0 || max < min || (anisotropic && !linear)) report("validation", new globalThis.GPUValidationError("invalid sampler descriptor"));
+    return { label: d.label ?? "" };
+  };
   return device;
 };
+
+// The three error classes of a scope, where the host has none (the fake's).
+function FakeValidationError(message) {
+  this.message = message;
+}
+function FakeOutOfMemoryError(message) {
+  this.message = message;
+}
+function FakeInternalError(message) {
+  this.message = message;
+}
 
 const fakeAdapter = () => {
   const adapter = {
@@ -74,6 +113,17 @@ const fakeGpu = () => ({
 // settles its injected `lost`.
 const controlled = [];
 let controlLoss = false;
+
+// The scope faults of the scenario: per filter, what a pop of that filter
+// gives in place of the host's answer (the host's pop is made all the
+// same, so its stack stays balanced); whether pops are held until
+// `releasePops`; whether `createSampler` throws. And how many times each
+// native method of a device was called.
+let popFaults = {};
+let holdPops = false;
+let createThrows = false;
+const held = [];
+const callCounts = {};
 
 // Wrap `method` of `object` with `wrap(original, ...args)`.
 const wrap = (object, method, wrapper) => {
@@ -125,6 +175,53 @@ const faults = {
   "lost-controlled": () => {
     controlLoss = true;
   },
+  "pop-oom": () => {
+    popFaults["out-of-memory"] = () => new globalThis.GPUOutOfMemoryError("injected out of memory");
+  },
+  "pop-internal": () => {
+    popFaults.internal = () => new globalThis.GPUInternalError("injected internal error");
+  },
+  // A pop of the engine's own scopes that rejects: the ledger documents
+  // none, so it is a defect.
+  "pop-rejected": () => {
+    popFaults.internal = () => globalThis.Promise.reject(new globalThis.DOMException("injected pop failure", "OperationError"));
+  },
+  // A validation scope that reports a plain object named like the error.
+  "pop-spoofed": () => {
+    popFaults.validation = () => ({ name: "GPUValidationError", message: "a plain object, not a GPUValidationError" });
+  },
+  "pops-held": () => {
+    holdPops = true;
+  },
+  "create-throws": () => {
+    createThrows = true;
+  },
+};
+
+// Every device: its scope stack as the page pushed it, so a pop knows its
+// filter; its pops, held or faulted; its `createSampler`, counted or made
+// to throw.
+const instrument = (device) => {
+  const stack = [];
+  wrap(device, "pushErrorScope", function (original, filter) {
+    stack.push(filter);
+    return original.call(this, filter);
+  });
+  wrap(device, "popErrorScope", function (original) {
+    const fault = popFaults[stack.pop()];
+    let promise = original.call(this);
+    if (fault !== undefined) promise = promise.then(() => fault());
+    if (!holdPops) return promise;
+    return new globalThis.Promise((resolve, reject) => held.push({ promise, resolve, reject }));
+  });
+  wrap(device, "createSampler", function (original, ...args) {
+    callCounts.createSampler = (callCounts.createSampler ?? 0) + 1;
+    if (createThrows) {
+      globalThis.queueMicrotask(() => globalThis.console.log(`error scopes left open after the throw: ${stack.length}`));
+      throw new globalThis.RangeError("injected createSampler failure");
+    }
+    return original.apply(this, args);
+  });
 };
 
 let host = null;
@@ -138,6 +235,9 @@ let secureContext = null;
 // holds. Each `inject` starts from it, so faults never pile up.
 function prepare() {
   controlLoss = false;
+  popFaults = {};
+  holdPops = false;
+  createThrows = false;
   if (native()) {
     delete globalThis.navigator.gpu;
     if (secureContext === null) secureContext = globalThis.Object.getOwnPropertyDescriptor(globalThis, "isSecureContext") ?? false;
@@ -145,6 +245,9 @@ function prepare() {
     else globalThis.Object.defineProperty(globalThis, "isSecureContext", secureContext);
   } else {
     globalThis.Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
+    globalThis.Object.defineProperty(globalThis, "GPUValidationError", { configurable: true, value: FakeValidationError });
+    globalThis.Object.defineProperty(globalThis, "GPUOutOfMemoryError", { configurable: true, value: FakeOutOfMemoryError });
+    globalThis.Object.defineProperty(globalThis, "GPUInternalError", { configurable: true, value: FakeInternalError });
   }
   if (host !== null) {
     if (!native()) globalThis.Object.defineProperty(globalThis.navigator, "gpu", { configurable: true, value: host });
@@ -155,6 +258,7 @@ function prepare() {
   host = globalThis.navigator.gpu;
   onAdapters(host, function (original, ...args) {
     return original.apply(this, args).then((device) => {
+      instrument(device);
       if (controlLoss) {
         controlLoss = false;
         const entry = {};
@@ -172,12 +276,24 @@ function prepare() {
   return host;
 }
 
-export const inject = (scenario) => {
-  const fault = faults[scenario];
-  if (fault === undefined) throw new globalThis.Error(`GpuHost.inject: no scenario "${scenario}"`);
-  fault(prepare());
+export const inject = (scenarios) => {
+  const gpu = prepare();
+  for (const scenario of scenarios.split(",")) {
+    const fault = faults[scenario];
+    if (fault === undefined) throw new globalThis.Error(`GpuHost.inject: no scenario "${scenario}"`);
+    fault(gpu);
+  }
   return null;
 };
+
+// Every held pop, the latest first, each settled as its host pop did.
+export const releasePops = (_unit) => {
+  let chain = globalThis.Promise.resolve();
+  for (const entry of held.splice(0).reverse()) chain = chain.then(() => entry.promise.then(entry.resolve, entry.reject));
+  return null;
+};
+
+export const calls = (name) => callCounts[name] ?? 0;
 
 export const lose = (reason) => {
   const entry = controlled[controlled.length - 1];

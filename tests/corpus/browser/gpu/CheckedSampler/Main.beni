@@ -1,0 +1,162 @@
+-- One checked host operation (docs/design/webgpu.md §6.1, ledger §1, §3),
+-- through `Gpu.Device.createSampler`. A valid descriptor is accepted; an
+-- invalid one is `Validation` and its sampler is never returned. The
+-- out-of-memory and internal scopes are typed too, and two failures of
+-- one operation are `RelatedFailures`. Two fibers on one device keep their
+-- scopes apart, and pops that resolve out of order — each operation's in
+-- reverse, the later operation's first — still reach their own operation.
+-- A destroyed device, and a device whose lease is held (§6.4), refuse at
+-- once, with no native call; a lease is refused while held, and the loss
+-- getter runs under it. A loss while the scopes are pending wins, with
+-- what was observed; the pops are drained after. A loss after publication
+-- leaves the accepted sampler as it was.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Handle exposing (Device)
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuProbe
+import GpuShow
+import Task
+import Tea
+
+
+-- A fresh device after `scenarios` are injected, or why there is none.
+device : String → Result String Device
+device scenarios =
+    GpuHost.inject scenarios
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            Err ("adapter: " ++ GpuShow.initError problem)
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    Err ("device: " ++ GpuShow.initError problem)
+
+                Ok d →
+                    Ok d
+
+
+f32 : Float → Scalar.FiniteF32
+f32 x =
+    case Scalar.finiteF32 x of
+        Ok v →
+            v
+
+        Err _ →
+            Debug.todo "not a FiniteF32"
+
+
+valid : Types.SamplerDescriptor
+valid = Types.samplerDescriptor
+
+
+labelled : Types.SamplerDescriptor
+labelled = { valid | label = Types.Value "nearest" }
+
+
+-- `lodMinClamp` above `lodMaxClamp`: refused by the device.
+invalid : Types.SamplerDescriptor
+invalid = { valid | lodMinClamp = Types.Value (f32 10.0), lodMaxClamp = Types.Value (f32 1.0) }
+
+
+-- Anisotropy with a nearest filter: refused by the device.
+anisotropic : Types.SamplerDescriptor
+anisotropic = { valid | maxAnisotropy = Types.Value 4 }
+
+
+sampler : Device, Types.SamplerDescriptor → String
+sampler d descriptor = GpuShow.checked (Gpu.Device.createSampler d descriptor) λ_ → "sampler"
+
+
+with : String, (Device → List String) → List String
+with scenarios run =
+    case device scenarios of
+        Err why →
+            [ why ]
+
+        Ok d →
+            run d
+
+
+scopes : ⊤ → List String
+scopes ⊤ = with "none" λd →
+    [ "valid: " ++ sampler d valid
+    , "labelled: " ++ sampler d labelled
+    , "lodMinClamp above lodMaxClamp: " ++ sampler d invalid
+    , "anisotropy with nearest filters: " ++ sampler d anisotropic
+    ]
+        ++ with "pop-oom" λd2 → [ "out of memory: " ++ sampler d2 valid ]
+        ++ with "pop-internal" λd3 → [ "internal: " ++ sampler d3 valid ]
+        ++ with "pop-oom" λd4 → [ "invalid and out of memory: " ++ sampler d4 invalid ]
+
+
+fibers : ⊤ → List String
+fibers ⊤ = with "none" λd →
+    ( one, two ) = Task.par (λ⊤ → sampler d invalid) λ⊤ → sampler d valid
+    [ "two fibers, one device: " ++ one ++ " / " ++ two ]
+        ++ with "pops-held" λd2 →
+            first = Task.spawn λ⊤ → sampler d2 invalid
+            second = Task.spawn λ⊤ → sampler d2 valid
+            Task.yieldNow ⊤
+            GpuHost.releasePops ⊤
+            [ "pops released in reverse: " ++ Task.join first ++ " / " ++ Task.join second ]
+
+
+refusals : ⊤ → List String
+refusals ⊤ = with "none" λd →
+    Gpu.Device.destroy d
+    before = GpuHost.calls "createSampler"
+    destroyed = sampler d valid
+    [ "destroyed: "
+        ++ destroyed
+        ++ ", native calls "
+        ++ String.fromInt (GpuHost.calls "createSampler" - before)
+    ]
+        ++ with "none" λd2 →
+            taken = GpuProbe.lease d2
+            again = GpuProbe.lease d2
+            at = GpuHost.calls "createSampler"
+            leased = sampler d2 valid
+            calls = GpuHost.calls "createSampler" - at
+            loss = GpuShow.latched (Gpu.Device.loss d2)
+            GpuProbe.releaseLease d2
+            [ "lease taken: "
+                ++ (if taken then "yes" else "no")
+                ++ ", taken again: "
+                ++ (if again then "yes" else "no")
+            , "leased: " ++ leased ++ ", native calls " ++ String.fromInt calls
+            , "loss under the lease: " ++ loss
+            , "after the lease: " ++ sampler d2 valid
+            ]
+
+
+losses : ⊤ → List String
+losses ⊤ = with "lost-controlled,pops-held" λd →
+    op = Task.spawn λ⊤ → sampler d invalid
+    Task.yieldNow ⊤
+    GpuHost.lose "unknown"
+    during = Task.join op
+    GpuHost.releasePops ⊤
+    [ "lost while checked: " ++ during ]
+        ++ with "lost-controlled" λd2 →
+            accepted = sampler d2 valid
+            GpuHost.lose "unknown"
+            latched = GpuShow.loss (Gpu.Device.awaitLost d2)
+            [ "accepted, then lost: " ++ accepted ++ ", loss " ++ latched
+            , "after the loss: " ++ sampler d2 valid
+            ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "scopes", scopes )
+        , ( "fibers", fibers )
+        , ( "refusals", refusals )
+        , ( "losses", losses )
+        ]

@@ -1,0 +1,51 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; docs/design/webgpu.md
+-- §6.1, ledger §7): a pop that rejects after its operation already went on, because the device was lost first. Nobody waits for it, so the device's sentinel, a fiber of the program that requested the device, throws it, and the page stops after showing the loss.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+f32 : Float → Scalar.FiniteF32
+f32 x =
+    case Scalar.finiteF32 x of
+        Ok v →
+            v
+
+        Err _ →
+            Debug.todo "not a FiniteF32"
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "lost-controlled,pops-held,pop-rejected"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok device →
+                    base = Types.samplerDescriptor
+                    descriptor = base
+                    op = Task.spawn λ⊤ →
+                        GpuShow.checked (Gpu.Device.createSampler device descriptor) λ_ → "sampler"
+                    Task.yieldNow ⊤
+                    GpuHost.lose "unknown"
+                    lostWhile = Task.join op
+                    GpuHost.releasePops ⊤
+                    Task.yieldNow ⊤
+                    [ "lost while checked: " ++ lostWhile ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

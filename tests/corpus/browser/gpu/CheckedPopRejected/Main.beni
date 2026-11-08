@@ -1,0 +1,47 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; docs/design/webgpu.md
+-- §6.1, ledger §7): a pop of the engine's own scopes that rejects. The page stops with its crash screen; the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+f32 : Float → Scalar.FiniteF32
+f32 x =
+    case Scalar.finiteF32 x of
+        Ok v →
+            v
+
+        Err _ →
+            Debug.todo "not a FiniteF32"
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "pop-rejected"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok device →
+                    base = Types.samplerDescriptor
+                    descriptor = base
+                    [ "sampler: "
+                        ++ GpuShow.checked (Gpu.Device.createSampler device descriptor) λ_ →
+                            "sampler"
+                    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]
