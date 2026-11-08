@@ -1,0 +1,46 @@
+-- A device's events (docs/design/webgpu.md §8): `eachEvent` hands each
+-- event to its handler in the calling fiber and returns after the loss,
+-- which is sent once. A listener that starts after the loss gets it at
+-- once, so none misses it by starting late. Every listener gets each
+-- event, in the order they started. A cancelled listener is removed and
+-- gets nothing more.
+import Gpu.Device
+import Gpu.Handle exposing (Device)
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+listener : Device, String → Task.Fiber ⊤
+listener d name = Task.spawn λ⊤ →
+    Gpu.Device.eachEvent d λevent → GpuHost.note (name ++ ": " ++ GpuShow.deviceEvent event)
+    GpuHost.note (name ++ " returned")
+
+
+late : ⊤ → List String
+late ⊤ = GpuKit.with "none" λd →
+    _ = GpuHost.notes ⊤
+    Gpu.Device.destroy d
+    Gpu.Device.eachEvent d λevent → GpuHost.note ("after the loss: " ++ GpuShow.deviceEvent event)
+    GpuHost.notes ⊤
+
+
+several : ⊤ → List String
+several ⊤ = GpuKit.with "lost-controlled" λd →
+    _ = GpuHost.notes ⊤
+    first = listener d "first"
+    second = listener d "second"
+    gone = listener d "cancelled"
+    Task.yieldNow ⊤
+    Task.cancel gone
+    GpuHost.lose "unknown"
+    Task.join first
+    Task.join second
+    GpuHost.notes ⊤
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "late", late ), ( "several", several ) ]

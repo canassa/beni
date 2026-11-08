@@ -20,8 +20,9 @@ pub writeBuffer :
     , Queue.WriteBufferSource
     → Result Error.Error ⊤
 writeBuffer session queue buffer write =
-    Result.map (Make.checkedIn (Js.from session) (Make.writeBuffer (Js.from queue) Js.null buffer write)) λ_ →
-        ⊤
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.writeBuffer (Js.from queue) Js.null buffer write))
+        λ_ → ⊤
 
 
 --| `Gpu.Queue.submit` under the session: one native submit, and its
@@ -32,7 +33,9 @@ pub submit :
     , List Handle.CommandBuffer
     → Result Error.Error Handle.Submission
 submit session queue commands =
-    Result.map (Make.checkedIn (Js.from session) (Make.submit (Js.from queue) Js.null commands)) Js.to
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.submit (Js.from queue) Js.null commands))
+        Js.to
 
 
 --| `Gpu.Queue.writeTexture` under the session.

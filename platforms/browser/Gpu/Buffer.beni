@@ -23,6 +23,7 @@ import Gpu.Handle as Handle
 import Gpu.Memory as Memory
 import Gpu.Types as Types
 import Js
+import Task
 
 
 type alias V =
@@ -211,7 +212,11 @@ pub withMapped :
     , MapRequest
     , (Handle.Mapping → Result Error.Error a)
     → Result Error.Error a
-withMapped buffer request body = Memory.withMappedIn Js.null buffer request body
+withMapped buffer request body =
+    mapping = map buffer request?
+    generation : Int
+    generation = Js.to (Js.get (Js.from mapping) "generation")
+    Task.onExit (λ⊤ → body mapping) λ_ → Memory.release (Js.from buffer) generation
 
 
 --| Unmap the buffer: its mapping and every range of it expire at once, for

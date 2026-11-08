@@ -1,0 +1,293 @@
+-- load
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #captured
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #clean
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+    </ol>
+  </main>
+</body>
+-- click #escaped
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #underflow
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow"</li>
+      <li>"session: Ok pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow, observed []"</li>
+      <li>"write after: Ok written"</li>
+    </ol>
+  </main>
+</body>
+-- click #unclosed
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow"</li>
+      <li>"session: Ok pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, no pop"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #filters
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow"</li>
+      <li>"session: Ok pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, no pop"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push out-of-memory Ok pushed, push internal Ok pushed, invalid sampler Ok sampler, pop Ok none, pop Ok none"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #nested
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow"</li>
+      <li>"session: Ok pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, no pop"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push out-of-memory Ok pushed, push internal Ok pushed, invalid sampler Ok sampler, pop Ok none, pop Ok none"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"nested callback: outer forwarding: Err InvalidInput SessionState DeviceLeased; outer push: Err SessionState DeviceLeased; outer pop: Err SessionRefused SessionState DeviceLeased; second nested: Err InvalidInput SessionState DeviceLeased; inner invalid sampler: Ok sampler"</li>
+      <li>"callback: push Ok pushed; nested: Err Validation; after it, outer pop Ok none, outer forwarding Ok sampler"</li>
+      <li>"session: Ok push Ok pushed; nested: Err Validation; after it, outer pop Ok none, outer forwarding Ok sampler, observed []"</li>
+      <li>"write after: Ok written"</li>
+    </ol>
+  </main>
+</body>
+-- click #ended
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow"</li>
+      <li>"session: Ok pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, no pop"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push out-of-memory Ok pushed, push internal Ok pushed, invalid sampler Ok sampler, pop Ok none, pop Ok none"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"nested callback: outer forwarding: Err InvalidInput SessionState DeviceLeased; outer push: Err SessionState DeviceLeased; outer pop: Err SessionRefused SessionState DeviceLeased; second nested: Err InvalidInput SessionState DeviceLeased; inner invalid sampler: Ok sampler"</li>
+      <li>"callback: push Ok pushed; nested: Err Validation; after it, outer pop Ok none, outer forwarding Ok sampler"</li>
+      <li>"session: Ok push Ok pushed; nested: Err Validation; after it, outer pop Ok none, outer forwarding Ok sampler, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"kept after its lease: state SessionEnded, forwarding Err InvalidInput SessionState SessionEnded, push Err SessionState SessionEnded, pop Err SessionRefused SessionState SessionEnded"</li>
+      <li>"under a later lease: Ok state SessionEnded, forwarding Err InvalidInput SessionState SessionEnded, push Err SessionState SessionEnded, pop Err SessionRefused SessionState SessionEnded, observed []"</li>
+    </ol>
+  </main>
+</body>
+-- click #wrongDevice
+<body>
+  <main>
+    <button id="captured">"captured"</button>
+    <button id="clean">"clean"</button>
+    <button id="escaped">"escaped"</button>
+    <button id="underflow">"underflow"</button>
+    <button id="unclosed">"unclosed"</button>
+    <button id="filters">"filters"</button>
+    <button id="nested">"nested"</button>
+    <button id="ended">"ended"</button>
+    <button id="wrongDevice">"wrongDevice"</button>
+    <ol>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, pop Ok ValidationError"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push Ok pushed, sampler Ok sampler, pop Ok none"</li>
+      <li>"session: Ok push Ok pushed, sampler Ok sampler, pop Ok none, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: invalid sampler Ok sampler"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow"</li>
+      <li>"session: Ok pop of none Err ScopeUnderflow, push Ok pushed, pop Ok none, pop Err ScopeUnderflow, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"callback: push Ok pushed, invalid sampler Ok sampler, no pop"</li>
+      <li>"session: Ok withheld, observed [ValidationError]"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"callback: push out-of-memory Ok pushed, push internal Ok pushed, invalid sampler Ok sampler, pop Ok none, pop Ok none"</li>
+      <li>"session: Err Validation"</li>
+      <li>"write after: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"nested callback: outer forwarding: Err InvalidInput SessionState DeviceLeased; outer push: Err SessionState DeviceLeased; outer pop: Err SessionRefused SessionState DeviceLeased; second nested: Err InvalidInput SessionState DeviceLeased; inner invalid sampler: Ok sampler"</li>
+      <li>"callback: push Ok pushed; nested: Err Validation; after it, outer pop Ok none, outer forwarding Ok sampler"</li>
+      <li>"session: Ok push Ok pushed; nested: Err Validation; after it, outer pop Ok none, outer forwarding Ok sampler, observed []"</li>
+      <li>"write after: Ok written"</li>
+      <li>"kept after its lease: state SessionEnded, forwarding Err InvalidInput SessionState SessionEnded, push Err SessionState SessionEnded, pop Err SessionRefused SessionState SessionEnded"</li>
+      <li>"under a later lease: Ok state SessionEnded, forwarding Err InvalidInput SessionState SessionEnded, push Err SessionState SessionEnded, pop Err SessionRefused SessionState SessionEnded, observed []"</li>
+      <li>"session: Ok another device: Err InvalidInput WrongDevice session, observed []"</li>
+    </ol>
+  </main>
+</body>

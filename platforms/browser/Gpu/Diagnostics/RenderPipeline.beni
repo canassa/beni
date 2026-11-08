@@ -16,5 +16,6 @@ pub getBindGroupLayout :
     → Result Error.Error Handle.BindGroupLayout
 getBindGroupLayout session pipeline index =
     Result.map
-        (Make.checkedIn (Js.from session) (Make.getBindGroupLayout (Js.from pipeline) Js.null index))
+        (Make.checkedIn (Js.from session) (Make.getBindGroupLayout (Js.from pipeline) Js.null index)
+        )
         Js.to

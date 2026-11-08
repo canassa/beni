@@ -1,0 +1,262 @@
+-- Every forwarding call of a diagnostic session (docs/design/webgpu.md
+-- §6.4, *the explicit session forwarding surface*): each checked
+-- operation of `Gpu.Device`, `Gpu.Texture`, `Gpu.ComputePipeline`,
+-- `Gpu.RenderPipeline`, `Gpu.Queue`, `Gpu.Buffer`, `Gpu.Surface`,
+-- `Gpu.Encode`, `Gpu.Batch` and `Gpu.Frame` runs under the session's
+-- lease and scopes, on what the session made before it, and returns at
+-- once, or after its own promise for the asynchronous forms. A session
+-- whose scopes report nothing accepts what it made: the batch it ran is
+-- ready and its receipt and buffer are usable after it. A session whose
+-- own scope reports an error rejects all of it: the batch is
+-- `ResourceRejected`, the buffer too, and the surface it configured is
+-- unconfigured for frames again.
+import Binary
+import Browser.Canvas as Canvas
+import Gpu.Batch as Batch
+import Gpu.Buffer as Buffer
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Batch
+import Gpu.Diagnostics.Buffer
+import Gpu.Diagnostics.ComputePipeline
+import Gpu.Diagnostics.Device as D
+import Gpu.Diagnostics.Encode
+import Gpu.Diagnostics.Frame
+import Gpu.Diagnostics.Queue
+import Gpu.Diagnostics.RenderPipeline
+import Gpu.Diagnostics.Surface
+import Gpu.Diagnostics.Texture
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Batch, Buffer, Device, DiagnosticSession, Submission, Surface)
+import Gpu.Queue
+import Gpu.Scalar as Scalar
+import Gpu.Submission
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+extent : Types.Extent3D
+extent =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 1), depthOrArrayLayers = Types.Default }
+
+
+compute : String
+compute = "@compute @workgroup_size(1) fn main() {}"
+
+
+render : String
+render =
+    "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+
+
+-- Note the line `name: …` for a forwarding call's result, and give it on.
+step : String, Result Error.Error a → Result Error.Error a
+step name result =
+    GpuHost.note (name ++ ": " ++ GpuShow.checked result λ_ → "made")
+    result
+
+
+-- Every forwarding call, each on what the session made before it.
+everything : DiagnosticSession, Device, Surface → Result Error.Error Submission
+everything s d surface =
+    queue = Gpu.Device.queue d
+    storage =
+        step "createBuffer" (D.createBuffer s d (GpuKit.buffer 16 [ Flags.Storage, Flags.CopyDst ]))?
+    GpuHost.keep storage
+    created =
+        step
+            "createMappedBuffer"
+            (D.createMappedBuffer s d (GpuKit.buffer 8 [ Flags.MapWrite, Flags.CopySrc ]))?
+    _ = step "getMappedRange" (Buffer.getMappedRange created.mapping Buffer.whole)?
+    _ = step "createSampler" (D.createSampler s d Types.samplerDescriptor)?
+    texture =
+        step
+            "createTexture"
+            (D.createTexture
+                s
+                d
+                (Types.textureDescriptor
+                    extent
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureCopyDst, Flags.RenderAttachment ])
+                )
+            )?
+    _ =
+        step "createView" (Gpu.Diagnostics.Texture.createView s texture Types.textureViewDescriptor)?
+    entry =
+        { (Types.bindGroupLayoutEntry (u32 0) (Flags.shaderStages [ Flags.ComputeStage ]))
+            | buffer =
+                Types.Value { (Types.bufferBindingLayout) | type_ = Types.Value Types.Storage }
+        }
+    layout =
+        step
+            "createBindGroupLayout"
+            (D.createBindGroupLayout s d (Types.bindGroupLayoutDescriptor [ entry ]))?
+    _ =
+        step
+            "createBindGroup"
+            (D.createBindGroup
+                s
+                d
+                (Types.bindGroupDescriptor layout
+                    [ Types.bindGroupEntry (u32 0) (Types.WholeBufferBinding storage) ]
+                )
+            )?
+    _ =
+        step
+            "createPipelineLayout"
+            (D.createPipelineLayout s d (Types.pipelineLayoutDescriptor [ Just layout ]))?
+    computeShader =
+        step "createShaderModule" (D.createShaderModule s d (Types.shaderModuleDescriptor compute))?
+    computeDescriptor =
+        Types.computePipelineDescriptor Types.Auto (Types.programmableStage computeShader)
+    pipeline = step "createComputePipeline" (D.createComputePipeline s d computeDescriptor)?
+    _ = step "createComputePipelineAsync" (D.createComputePipelineAsync s d computeDescriptor)?
+    _ =
+        step
+            "ComputePipeline.getBindGroupLayout"
+            (Gpu.Diagnostics.ComputePipeline.getBindGroupLayout s pipeline (u32 0))?
+    renderShader = D.createShaderModule s d (Types.shaderModuleDescriptor render)?
+    renderBase = Types.renderPipelineDescriptor Types.Auto (Types.vertexState renderShader)
+    renderDescriptor =
+        { renderBase
+            | fragment =
+                Types.Value
+                    (Types.fragmentState renderShader
+                        [ Just (Types.colorTargetState Types.Rgba8unorm) ]
+                    )
+        }
+    renderPipeline = step "createRenderPipeline" (D.createRenderPipeline s d renderDescriptor)?
+    _ = step "createRenderPipelineAsync" (D.createRenderPipelineAsync s d renderDescriptor)?
+    _ =
+        step
+            "RenderPipeline.getBindGroupLayout"
+            (Gpu.Diagnostics.RenderPipeline.getBindGroupLayout s renderPipeline (u32 0))?
+    _ =
+        step
+            "createQuerySet"
+            (D.createQuerySet s d (Types.querySetDescriptor Types.Occlusion (u32 2)))?
+    step
+        "writeBuffer"
+        (Gpu.Diagnostics.Queue.writeBuffer
+            s
+            queue
+            storage
+            (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (GpuKit.zeros 8)))
+        )?
+    step
+        "writeTexture"
+        (Gpu.Diagnostics.Queue.writeTexture
+            s
+            queue
+            (Types.texelCopyTextureInfo texture)
+            (Binary.WholeBuffer (GpuKit.zeros 16))
+            Types.texelCopyBufferLayout
+            extent
+        )?
+    encoded =
+        step "Encode.run" (Gpu.Diagnostics.Encode.run s d Types.commandEncoderDescriptor λ_ → Ok ⊤)?
+    receipt = step "submit" (Gpu.Diagnostics.Queue.submit s queue [ encoded.commands ])?
+    _ =
+        step
+            "Encode.bundle"
+            (Gpu.Diagnostics.Encode.bundle
+                s
+                d
+                (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+                λ_ → Ok ⊤
+            )?
+    readable = D.createBuffer s d (GpuKit.buffer 8 [ Flags.MapRead, Flags.CopyDst ])?
+    _ = step "map" (Gpu.Diagnostics.Buffer.map s readable Buffer.mapRead)?
+    Buffer.unmap readable
+    step "withMapped" (Gpu.Diagnostics.Buffer.withMapped s readable Buffer.mapRead λ_ → Ok ⊤)?
+    step
+        "configure"
+        (Gpu.Diagnostics.Surface.configure s surface (Types.canvasConfiguration d Types.Rgba8unorm))?
+    _ = step "Frame.submit" (Gpu.Diagnostics.Frame.submit s surface "frame" acquire)?
+    step
+        "Batch.run"
+        (Gpu.Diagnostics.Batch.run s d "batch" inBatch)?
+    Ok receipt
+
+
+inBatch : Batch → Result Error.Error ⊤
+inBatch b =
+    GpuHost.keepBatch b
+    _ = Batch.createBuffer b (GpuKit.buffer 8 [ Flags.CopyDst ])?
+    Batch.segment b "named"
+
+
+acquire : Gpu.Handle.Frame → Result Error.Error ⊤
+acquire frame = Result.map (Frame.getCurrentTexture frame) λ_ → ⊤
+
+
+-- A session of every forwarding call, `spoil` run in it last, and what the
+-- page sees of what it made afterwards: the buffer and the batch it kept,
+-- the surface it configured, and its receipt when it is published.
+session : Device, (DiagnosticSession → ⊤) → List String
+session d spoil =
+    _ = GpuHost.notes ⊤
+    surface = must (Surface.fromCanvas (must (Canvas.create 4 4)))
+    r = Diagnostics.run d λs →
+        made = everything s d surface
+        spoil s
+        made
+    lines = GpuHost.notes ⊤
+    write = Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (GpuKit.zeros 8))
+
+    published =
+        case r of
+            Ok got →
+                got.value
+
+            Err _ →
+                Nothing
+
+    receipt =
+        case published of
+            Just (Ok submission) →
+                [ "receipt after: " ++ GpuShow.checked (Gpu.Submission.done submission) λ_ → "done"
+                ]
+
+            _ →
+                []
+    [ …lines
+    , "session: " ++ GpuShow.sessionReport r λmade → GpuShow.checked made λ_ → "made"
+    , "batch after: " ++ GpuShow.checked (Batch.awaitReady (GpuHost.keptBatch ⊤)) λ_ → "ready"
+    , "buffer after: "
+        ++ GpuShow.checked (Gpu.Queue.writeBuffer (Gpu.Device.queue d) (GpuHost.kept ⊤) write) λ_ →
+            "written"
+    , "frame after: " ++ GpuShow.checked (Frame.submit surface "after" acquire) λ_ → "drawn"
+    , …receipt
+    ]
+
+
+accepted : ⊤ → List String
+accepted ⊤ = GpuKit.with "none" λd → session d λ_ → ⊤
+
+
+rejected : ⊤ → List String
+rejected ⊤ = GpuKit.with "none" λd →
+    session d λs →
+        _ = Diagnostics.pushErrorScope s Types.FilterValidation
+        invalid =
+            { (Types.samplerDescriptor)
+                | lodMinClamp = Types.Value (must (Scalar.finiteF32 10.0))
+                , lodMaxClamp = Types.Value (must (Scalar.finiteF32 1.0))
+            }
+        _ = D.createSampler s d invalid
+        ⊤
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "accepted", accepted ), ( "rejected", rejected ) ]

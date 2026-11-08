@@ -1,0 +1,20 @@
+-- load
+<body>
+  <main>
+    <button id="destroy">"destroy"</button>
+    <ol>
+      <li>"device made"</li>
+    </ol>
+  </main>
+</body>
+-- click #destroy
+<body>
+  <main>
+    <button id="destroy">"destroy"</button>
+    <ol>
+      <li>"device made"</li>
+      <li>"destroyed"</li>
+      <li>"event: Lost Destroyed"</li>
+    </ol>
+  </main>
+</body>

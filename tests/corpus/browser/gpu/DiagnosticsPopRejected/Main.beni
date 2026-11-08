@@ -1,0 +1,24 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §7, *Scope
+-- promise rejects unexpectedly*): a diagnostic session's own internal scope
+-- is popped by `popErrorScope` and the pop rejects with an
+-- `OperationError`. The engine pops a user scope only when one is open, so
+-- that is not `ScopeUnderflow`: it is a defect, thrown in the fiber that
+-- waits for the pop, and the page stops.
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Types as Types
+import GpuKit
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "pop-rejected" λd →
+    r = Diagnostics.run d λsession →
+        _ = Diagnostics.pushErrorScope session Types.FilterInternal
+        GpuShow.popped (Diagnostics.popErrorScope session)
+    [ "unreachable: " ++ GpuShow.sessionReport r λv → v ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

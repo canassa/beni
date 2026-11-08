@@ -1,0 +1,27 @@
+-- An error that escaped every error scope (docs/design/webgpu.md §8;
+-- ledger §7, `uncapturederror`): the page makes a native call the engine
+-- never makes, outside every scope. The device's listener is handed the
+-- decoded error as an `Uncaptured` event, telemetry, and then, since every
+-- call the engine makes is scoped, the program that made the device stops
+-- with a defect that names the error's class.
+import Gpu.Device
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    _ = Task.spawn λ⊤ →
+        Gpu.Device.eachEvent d λevent → GpuHost.log ("listener: " ++ GpuShow.deviceEvent event)
+    Task.yieldNow ⊤
+    GpuHost.escape d
+    GpuHost.drain ⊤
+    GpuHost.notes ⊤
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

@@ -1,0 +1,246 @@
+-- The native error scopes of a diagnostic session (docs/design/webgpu.md
+-- §6.4; ledger §7, `pushErrorScope` and `popErrorScope`). An error a
+-- session's own scope caught is popped as itself, and the session then
+-- withholds its value and rejects what it made, which may be invalid; with
+-- no error the value is published and what it made is accepted. An error
+-- no user scope caught reaches the session's own outer scopes and is the
+-- run's failure. A pop with no user scope open is `ScopeUnderflow`, never
+-- a pop of the engine's scopes; a scope the callback left open is popped
+-- when it returns. A scope of one filter lets an error of another through.
+-- A nested session's scopes are inside its parent's, and while it is open
+-- the parent's calls are `DeviceLeased`. A session kept after its lease
+-- ended, or of an earlier lease, is `SessionEnded`; a forwarding call on
+-- another device is `WrongDevice`.
+import Binary
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Device
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Buffer, Device, DiagnosticSession)
+import Gpu.Queue
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must)
+import GpuPage
+import GpuShow
+import Tea
+
+
+f32 : Float → Scalar.FiniteF32
+f32 x = must (Scalar.finiteF32 x)
+
+
+valid : Types.SamplerDescriptor
+valid = Types.samplerDescriptor
+
+
+-- `lodMinClamp` above `lodMaxClamp`: refused by the device.
+invalid : Types.SamplerDescriptor
+invalid = { valid | lodMinClamp = Types.Value (f32 10.0), lodMaxClamp = Types.Value (f32 1.0) }
+
+
+forwarded : DiagnosticSession, Device, Types.SamplerDescriptor → String
+forwarded session d descriptor =
+    GpuShow.checked (Gpu.Diagnostics.Device.createSampler session d descriptor) λ_ → "sampler"
+
+
+-- A buffer the session makes, to write into after it.
+target : DiagnosticSession, Device → Buffer
+target session d =
+    must (Gpu.Diagnostics.Device.createBuffer session d (GpuKit.buffer 8 [ Flags.CopyDst ]))
+
+
+-- An ordinary write into the buffer after the session: what the session
+-- settled it as.
+afterwards : Device, Buffer → String
+afterwards d buffer =
+    write = Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (GpuKit.zeros 8))
+    "write after: "
+        ++ GpuShow.checked (Gpu.Queue.writeBuffer (Gpu.Device.queue d) buffer write) λ_ → "written"
+
+
+report : Result Error.Error (Diagnostics.DiagnosticReport String) → String
+report r = "session: " ++ GpuShow.sessionReport r λv → v
+
+
+push : DiagnosticSession, Types.ErrorFilter → String
+push session filter = GpuShow.inputResult (Diagnostics.pushErrorScope session filter) λ_ → "pushed"
+
+
+pop : DiagnosticSession → String
+pop session = GpuShow.popped (Diagnostics.popErrorScope session)
+
+
+-- A session whose callback keeps the buffer it made, then runs `body`,
+-- whose line is noted whether or not the session publishes it.
+withTarget : Device, (DiagnosticSession → String) → List String
+withTarget d body =
+    _ = GpuHost.notes ⊤
+    r = Diagnostics.run d λsession →
+        GpuHost.keep (target session d)
+        line = body session
+        GpuHost.note ("callback: " ++ line)
+        line
+    [ …GpuHost.notes ⊤, report r, afterwards d (GpuHost.kept ⊤) ]
+
+
+captured : ⊤ → List String
+captured ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession →
+        p = push session Types.FilterValidation
+        made = forwarded session d invalid
+        "push " ++ p ++ ", invalid sampler " ++ made ++ ", pop " ++ pop session
+
+
+clean : ⊤ → List String
+clean ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession →
+        p = push session Types.FilterValidation
+        made = forwarded session d valid
+        "push " ++ p ++ ", sampler " ++ made ++ ", pop " ++ pop session
+
+
+escaped : ⊤ → List String
+escaped ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession → "invalid sampler " ++ forwarded session d invalid
+
+
+underflow : ⊤ → List String
+underflow ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession →
+        first = pop session
+        p = push session Types.FilterValidation
+        "pop of none "
+            ++ first
+            ++ ", push "
+            ++ p
+            ++ ", pop "
+            ++ pop session
+            ++ ", pop "
+            ++ pop session
+
+
+unclosed : ⊤ → List String
+unclosed ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession →
+        p = push session Types.FilterValidation
+        "push " ++ p ++ ", invalid sampler " ++ forwarded session d invalid ++ ", no pop"
+
+
+filters : ⊤ → List String
+filters ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession →
+        p = push session Types.FilterOutOfMemory
+        q = push session Types.FilterInternal
+        made = forwarded session d invalid
+        "push out-of-memory "
+            ++ p
+            ++ ", push internal "
+            ++ q
+            ++ ", invalid sampler "
+            ++ made
+            ++ ", pop "
+            ++ pop session
+            ++ ", pop "
+            ++ pop session
+
+
+nested : ⊤ → List String
+nested ⊤ = GpuKit.with "none" λd →
+    withTarget d λsession →
+        p = push session Types.FilterValidation
+        inner = Diagnostics.nested session λchild →
+            during =
+                [ "outer forwarding: " ++ forwarded session d valid
+                , "outer push: " ++ push session Types.FilterValidation
+                , "outer pop: " ++ pop session
+                , "second nested: "
+                    ++ GpuShow.sessionReport (Diagnostics.nested session λ_ → "⊤") λv → v
+                , "inner invalid sampler: " ++ forwarded child d invalid
+                ]
+            GpuHost.note ("nested callback: " ++ String.join during "; ")
+            "⊤"
+        "push "
+            ++ p
+            ++ "; nested: "
+            ++ GpuShow.sessionReport inner λv → v
+            ++ "; after it, outer pop "
+            ++ pop session
+            ++ ", outer forwarding "
+            ++ forwarded session d valid
+
+
+ended : ⊤ → List String
+ended ⊤ = GpuKit.with "none" λd →
+    first = Diagnostics.run d λsession → session
+    kept =
+        case first of
+            Ok got →
+                got.value
+
+            Err _ →
+                Nothing
+    case kept of
+        Just session →
+            stale = Diagnostics.run d λ_ →
+                String.join
+                    [ "state " ++ state session
+                    , "forwarding " ++ forwarded session d valid
+                    , "push " ++ push session Types.FilterValidation
+                    , "pop " ++ pop session
+                    ]
+                    ", "
+            [ "kept after its lease: state "
+                ++ state session
+                ++ ", forwarding "
+                ++ forwarded session d valid
+                ++ ", push "
+                ++ push session Types.FilterValidation
+                ++ ", pop "
+                ++ pop session
+            , "under a later lease: " ++ GpuShow.sessionReport stale λv → v
+            ]
+
+        _ →
+            [ "the first session failed" ]
+
+
+state : DiagnosticSession → String
+state session =
+    case Diagnostics.state session of
+        Ok _ →
+            "live"
+
+        Err Error.SessionEnded →
+            "SessionEnded"
+
+        Err Error.DeviceLeased →
+            "DeviceLeased"
+
+
+wrongDevice : ⊤ → List String
+wrongDevice ⊤ = GpuKit.with "none" λd →
+    case GpuKit.device "none" of
+        Err why →
+            [ why ]
+
+        Ok other →
+            r = Diagnostics.run d λsession → "another device: " ++ forwarded session other valid
+            [ report r ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "captured", captured )
+        , ( "clean", clean )
+        , ( "escaped", escaped )
+        , ( "underflow", underflow )
+        , ( "unclosed", unclosed )
+        , ( "filters", filters )
+        , ( "nested", nested )
+        , ( "ended", ended )
+        , ( "wrongDevice", wrongDevice )
+        ]

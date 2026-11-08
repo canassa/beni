@@ -148,3 +148,11 @@ pub foreign impure logScopesLater : Device → ⊤
 
 --| Throw a native `TypeError` with `message`.
 pub foreign impure fail : String → ⊤
+
+
+--| How many error scopes of the device are open now.
+pub foreign impure openScopes : Device → Int
+
+
+--| Write `line` to the console: what a page that stops still shows.
+pub foreign impure log : String → ⊤

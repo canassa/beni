@@ -131,3 +131,8 @@ keepView v = Js.write keptViews (Just (Js.from v))
 --| The texture view kept last.
 pub keptView : ⊤ → Maybe Handle.TextureView
 keptView ⊤ = Maybe.map (Js.read keptViews) Js.to
+
+
+--| Whether a diagnostic lease of the device is held now.
+pub leased : Handle.Device → Bool
+leased device = Js.to (Js.get (Engine.recordOf (Js.from device)) "leased")

@@ -1,0 +1,13 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: TypeError: injected failure of push 4)
+(the DOM did not change)
+-- advance 10
+console.log: error scopes open: 0
+(the DOM did not change)

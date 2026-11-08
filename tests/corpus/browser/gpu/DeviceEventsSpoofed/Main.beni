@@ -1,0 +1,25 @@
+-- A defect, never telemetry (CLAUDE.md rule 9; ledger §1, §7): an
+-- `uncapturederror` event whose error is a plain object named like a
+-- `GPUValidationError`. No listener is handed it: the program that made
+-- the device stops at once.
+import Gpu.Device
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    _ = Task.spawn λ⊤ →
+        Gpu.Device.eachEvent d λevent → GpuHost.log ("listener: " ++ GpuShow.deviceEvent event)
+    Task.yieldNow ⊤
+    GpuHost.escapeSpoofed d
+    GpuHost.drain ⊤
+    GpuHost.notes ⊤
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

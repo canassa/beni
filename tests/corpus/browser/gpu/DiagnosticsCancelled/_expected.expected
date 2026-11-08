@@ -1,0 +1,124 @@
+-- load
+<body>
+  <main>
+    <button id="inCallback">"inCallback"</button>
+    <button id="inMap">"inMap"</button>
+    <button id="inPop">"inPop"</button>
+    <button id="inNested">"inNested"</button>
+    <button id="afterCallback">"afterCallback"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #inCallback
+<body>
+  <main>
+    <button id="inCallback">"inCallback"</button>
+    <button id="inMap">"inMap"</button>
+    <button id="inPop">"inPop"</button>
+    <button id="inNested">"inNested"</button>
+    <button id="afterCallback">"afterCallback"</button>
+    <ol>
+      <li>"while running: leased yes, scopes open 4"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #inMap
+<body>
+  <main>
+    <button id="inCallback">"inCallback"</button>
+    <button id="inMap">"inMap"</button>
+    <button id="inPop">"inPop"</button>
+    <button id="inNested">"inNested"</button>
+    <button id="afterCallback">"afterCallback"</button>
+    <ol>
+      <li>"while running: leased yes, scopes open 4"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"the map's buffer: unmapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #inPop
+<body>
+  <main>
+    <button id="inCallback">"inCallback"</button>
+    <button id="inMap">"inMap"</button>
+    <button id="inPop">"inPop"</button>
+    <button id="inNested">"inNested"</button>
+    <button id="afterCallback">"afterCallback"</button>
+    <ol>
+      <li>"while running: leased yes, scopes open 4"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"the map's buffer: unmapped"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"pops released: drained"</li>
+    </ol>
+  </main>
+</body>
+-- click #inNested
+<body>
+  <main>
+    <button id="inCallback">"inCallback"</button>
+    <button id="inMap">"inMap"</button>
+    <button id="inPop">"inPop"</button>
+    <button id="inNested">"inNested"</button>
+    <button id="afterCallback">"afterCallback"</button>
+    <ol>
+      <li>"while running: leased yes, scopes open 4"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"the map's buffer: unmapped"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"pops released: drained"</li>
+      <li>"while running: leased yes, scopes open 7"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>
+-- click #afterCallback
+<body>
+  <main>
+    <button id="inCallback">"inCallback"</button>
+    <button id="inMap">"inMap"</button>
+    <button id="inPop">"inPop"</button>
+    <button id="inNested">"inNested"</button>
+    <button id="afterCallback">"afterCallback"</button>
+    <ol>
+      <li>"while running: leased yes, scopes open 4"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"the map's buffer: unmapped"</li>
+      <li>"while running: leased yes, scopes open 3"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"pops released: drained"</li>
+      <li>"while running: leased yes, scopes open 7"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"while running: leased no, scopes open 0"</li>
+      <li>"cancelled: leased no, scopes open 0"</li>
+      <li>"what it made: Err InvalidInput ResourceRejected buffer"</li>
+      <li>"pops released: drained"</li>
+    </ol>
+  </main>
+</body>

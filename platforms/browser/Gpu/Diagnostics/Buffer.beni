@@ -10,6 +10,7 @@ import Gpu.Error as Error
 import Gpu.Handle as Handle
 import Gpu.Memory as Memory
 import Js
+import Task
 
 
 --| `Gpu.Buffer.map` under the session. May suspend.
@@ -29,4 +30,8 @@ pub withMapped :
     , Buffer.MapRequest
     , (Handle.Mapping → Result Error.Error a)
     → Result Error.Error a
-withMapped session buffer request body = Memory.withMappedIn (Js.from session) buffer request body
+withMapped session buffer request body =
+    mapping = map session buffer request?
+    generation : Int
+    generation = Js.to (Js.get (Js.from mapping) "generation")
+    Task.onExit (λ⊤ → body mapping) λ_ → Memory.release (Js.from buffer) generation

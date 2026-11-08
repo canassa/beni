@@ -1,0 +1,11 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+console.log: listener: Uncaptured ValidationError
+(threw: Error: webgpu: device 1, an error escaped every error scope (GPUValidationError: invalid sampler descriptor): [object Object])
+(the DOM did not change)

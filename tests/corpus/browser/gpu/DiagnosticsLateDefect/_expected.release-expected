@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: Error: webgpu: device 1, diagnostics: OperationError: injected pop failure)
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"cancelled after the callback: leased no"</li>
+    </ol>
+  </main>
+</body>

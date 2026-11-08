@@ -20,7 +20,8 @@ pub run :
     , Types.CommandEncoderDescriptor
     , sync (Handle.CommandEncoder → Result InputError a)
     → Result Error.Error { value : a, commands : Handle.CommandBuffer }
-run session device descriptor body = Make.encodeIn (Js.from session) (Js.from device) descriptor body
+run session device descriptor body =
+    Make.encodeIn (Js.from session) (Js.from device) descriptor body
 
 
 --| `Gpu.Encode.bundle` under the session.

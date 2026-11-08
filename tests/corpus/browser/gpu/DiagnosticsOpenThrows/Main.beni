@@ -1,0 +1,21 @@
+-- A defect, never a typed error (ledger §7, `pushErrorScope`): the second
+-- of the three scopes a diagnostic session pushes for itself throws a
+-- `TypeError`. The scope pushed before it is popped and the lease given
+-- back before the throw goes on: the host logs no scope left open.
+import Gpu.Diagnostics as Diagnostics
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "push-throws-open" λd →
+    GpuHost.logScopesLater d
+    r = Diagnostics.run d λ_ → "⊤"
+    [ "unreachable: " ++ GpuShow.sessionReport r λv → v ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

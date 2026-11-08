@@ -1,0 +1,22 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §7): a user
+-- validation scope of a diagnostic session reports a plain object named
+-- like a `GPUValidationError`. Only the realm's own class is that error,
+-- so the pop's outcome is a defect, thrown in the fiber that waits for it.
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Types as Types
+import GpuKit
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "pop-spoofed" λd →
+    r = Diagnostics.run d λsession →
+        _ = Diagnostics.pushErrorScope session Types.FilterValidation
+        GpuShow.popped (Diagnostics.popErrorScope session)
+    [ "unreachable: " ++ GpuShow.sessionReport r λv → v ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

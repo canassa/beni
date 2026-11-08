@@ -502,7 +502,8 @@ preflight b request =
         if state ≠ Types.Unmapped then
             Err (Error.MappingState { path = "buffer", state = state })
         else
-            needed = mapUsage (if bits == Flags.mapModeBits Flags.Read then Flags.Read else Flags.Write)
+            needed =
+                mapUsage (if bits == Flags.mapModeBits Flags.Read then Flags.Read else Flags.Write)
             if Js.bitAnd (usageOf b) (Flags.bufferUsageBits needed) == 0 then
                 Err (Error.MissingBufferUsage { path = "buffer", usage = needed })
             else
@@ -528,21 +529,6 @@ preflight b request =
                         )
                 else
                     Ok ⊤
-
-
---| Map, run `body` with the mapping, and unmap however `body` ends
---| (`Gpu.Buffer.withMapped`), the map ordinary or forwarded by `session`.
-pub withMappedIn :
-      V
-    , Handle.Buffer
-    , MapRequest
-    , (Handle.Mapping → Result Error.Error a)
-    → Result Error.Error a
-withMappedIn session buffer request body =
-    mapping = mapIn session buffer request?
-    generation : Int
-    generation = Js.to (Js.get mapping "generation")
-    Task.onExit (λ⊤ → body (Js.to mapping)) λ_ → release (Js.from buffer) generation
 
 
 -- An optional native argument: `undefined`, which Web IDL reads as omitted.

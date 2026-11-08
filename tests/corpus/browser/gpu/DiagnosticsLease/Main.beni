@@ -48,8 +48,7 @@ lease ⊤ = GpuKit.with "none" λd →
         Task.join child
         again = Gpu.Diagnostics.run d λ_ → ⊤
         GpuHost.note ("second session: " ++ GpuShow.sessionReport again λ_ → "⊤")
-        forwarded =
-            Gpu.Diagnostics.Device.createSampler session d Types.samplerDescriptor
+        forwarded = Gpu.Diagnostics.Device.createSampler session d Types.samplerDescriptor
         GpuHost.note ("forwarded: " ++ GpuShow.checked forwarded λ_ → "sampler")
         "done"
     Task.join other
@@ -83,7 +82,7 @@ twoDevices ⊤ = GpuKit.with "none" λd →
 
                     Err _ →
                         []
-            [ "leased device: " ++ GpuShow.sessionReport report (λ_ → "done"), …lines ]
+            [ "leased device: " ++ GpuShow.sessionReport report λ_ → "done", …lines ]
 
 
 main : Tea.Program

@@ -1,0 +1,128 @@
+-- Cancellation of a diagnostic session in every phase (docs/design/webgpu.md
+-- §6.4, *End of the lease*; §8.1): however the run is cancelled — while its
+-- callback waits, while a forwarding map waits, while an explicit pop
+-- waits, inside a nested session, or after the callback returned, while
+-- the run waits for the session's pops — every scope the session pushed is
+-- popped and the lease is free again in that turn, with nothing waited
+-- for. What the session made is rejected. Pops still held are drained when
+-- they settle, with no defect.
+import Binary
+import Gpu.Buffer as Buffer
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Buffer
+import Gpu.Diagnostics.Device
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, DiagnosticSession)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Task
+import Tea
+
+
+-- A buffer the session makes, kept for after it.
+keepOne : DiagnosticSession, Device → ⊤
+keepOne session d =
+    GpuHost.keep
+        (must (Gpu.Diagnostics.Device.createBuffer session d (GpuKit.buffer 8 [ Flags.CopyDst ])))
+
+
+-- The session's fiber started and parked, then cancelled; what is left.
+cancelled : Device, (DiagnosticSession → String) → List String
+cancelled d body =
+    fiber = Task.spawn λ⊤ →
+        Diagnostics.run d λsession →
+            keepOne session d
+            body session
+    Task.yieldNow ⊤
+    during =
+        "while running: leased "
+            ++ GpuKit.yesNo (GpuProbe.leased d)
+            ++ ", scopes open "
+            ++ String.fromInt (GpuHost.openScopes d)
+    Task.cancel fiber
+    write = Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (GpuKit.zeros 8))
+    [ during
+    , "cancelled: leased "
+        ++ GpuKit.yesNo (GpuProbe.leased d)
+        ++ ", scopes open "
+        ++ String.fromInt (GpuHost.openScopes d)
+    , "what it made: "
+        ++ GpuShow.checked (Gpu.Queue.writeBuffer (Gpu.Device.queue d) (GpuHost.kept ⊤) write) λ_ →
+            "written"
+    ]
+
+
+mapState : Gpu.Handle.Buffer → String
+mapState b =
+    case Buffer.mapState b of
+        Types.Unmapped →
+            "unmapped"
+
+        Types.Pending →
+            "pending"
+
+        Types.Mapped →
+            "mapped"
+
+
+inCallback : ⊤ → List String
+inCallback ⊤ = GpuKit.with "none" λd →
+    cancelled d λsession →
+        _ = Diagnostics.pushErrorScope session Types.FilterValidation
+        Task.never ⊤
+
+
+inMap : ⊤ → List String
+inMap ⊤ = GpuKit.with "maps-held" λd →
+    readable = must (Gpu.Device.createBuffer d (GpuKit.buffer 8 [ Flags.MapRead, Flags.CopyDst ]))
+    lines = cancelled d λsession →
+        GpuShow.checked (Gpu.Diagnostics.Buffer.map session readable Buffer.mapRead) λ_ → "mapping"
+    GpuHost.releaseMaps ⊤
+    GpuHost.drain ⊤
+    [ …lines, "the map's buffer: " ++ mapState readable ]
+
+
+inPop : ⊤ → List String
+inPop ⊤ = GpuKit.with "pops-held" λd →
+    lines = cancelled d λsession →
+        _ = Diagnostics.pushErrorScope session Types.FilterValidation
+        GpuShow.popped (Diagnostics.popErrorScope session)
+    GpuHost.releasePops ⊤
+    GpuHost.drain ⊤
+    [ …lines, "pops released: drained" ]
+
+
+inNested : ⊤ → List String
+inNested ⊤ = GpuKit.with "none" λd →
+    cancelled d λsession →
+        inner = Diagnostics.nested session λchild →
+            _ = Diagnostics.pushErrorScope child Types.FilterInternal
+            Task.never ⊤
+        GpuShow.sessionReport inner λ_ → "⊤"
+
+
+afterCallback : ⊤ → List String
+afterCallback ⊤ = GpuKit.with "pops-held" λd →
+    lines = cancelled d λsession →
+        _ = Diagnostics.pushErrorScope session Types.FilterValidation
+        "returned"
+    GpuHost.releasePops ⊤
+    GpuHost.drain ⊤
+    [ …lines, "pops released: drained" ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "inCallback", inCallback )
+        , ( "inMap", inMap )
+        , ( "inPop", inPop )
+        , ( "inNested", inNested )
+        , ( "afterCallback", afterCallback )
+        ]

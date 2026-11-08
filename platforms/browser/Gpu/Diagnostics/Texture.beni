@@ -19,4 +19,6 @@ pub createView :
 createView session texture descriptor =
     native = Js.from texture
     device = Js.get (Engine.recordOf native) "native"
-    Result.map (Make.checkedIn (Js.from session) (Make.textureView device Js.null native descriptor)) Js.to
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.textureView device Js.null native descriptor))
+        Js.to

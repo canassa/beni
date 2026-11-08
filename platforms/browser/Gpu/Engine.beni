@@ -1051,14 +1051,23 @@ uncaptured r event =
         Nothing →
             reportDefect
                 r
-                (contextual (deviceContext r "an uncaptured error of a class outside the pin") error)
+                (contextual (deviceContext r "an uncaptured error of a class outside the pin") error
+                )
 
         Just found →
             emit r (Error.Uncaptured found)
             reportDefect
                 r
                 (contextual
-                    (deviceContext r ("an error escaped every error scope (" ++ className found ++ ")"))
+                    (deviceContext
+                        r
+                        ("an error escaped every error scope ("
+                            ++ className found
+                            ++ ": "
+                            ++ messageOf error
+                            ++ ")"
+                        )
+                    )
                     error
                 )
 

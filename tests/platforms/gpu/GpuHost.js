@@ -649,6 +649,7 @@ let controlLoss = false;
 // native method of a device was called.
 let popFaults = {};
 let holdPops = false;
+let pushThrowsAt = 0;
 let createThrows = false;
 let moreFeatures = false;
 // The buffer and queue faults of the scenario, by the native call they
@@ -930,6 +931,14 @@ const faults = {
   "pops-held": () => {
     holdPops = true;
   },
+  // A device's second push throws (a diagnostic session's own scopes), or
+  // its fourth (the first scope a session pushes for its user).
+  "push-throws-open": () => {
+    pushThrowsAt = 2;
+  },
+  "push-throws-user": () => {
+    pushThrowsAt = 4;
+  },
   "create-throws": () => {
     createThrows = true;
   },
@@ -1099,7 +1108,10 @@ const instrument = (device) => {
   wrap(queue, "onSubmittedWorkDone", function (original, ...args) {
     return asked(bufferFaults.workDone === undefined ? original.apply(this, args) : bufferFaults.workDone());
   });
+  let pushes = 0;
   wrap(device, "pushErrorScope", function (original, filter) {
+    pushes += 1;
+    if (pushes === pushThrowsAt) throw new globalThis.TypeError(`injected failure of push ${pushes}`);
     stack.push(filter);
     return original.call(this, filter);
   });
@@ -1183,6 +1195,7 @@ function prepare() {
   controlLoss = false;
   popFaults = {};
   holdPops = false;
+  pushThrowsAt = 0;
   createThrows = false;
   moreFeatures = false;
   holdRequests = false;
@@ -1387,4 +1400,13 @@ export const logScopesLater = (device) => {
 // Throw a native `TypeError`, as application code might.
 export const fail = (message) => {
   throw new globalThis.TypeError(message);
+};
+
+// How many error scopes of the device are open now, as the page pushed them.
+export const openScopes = (device) => (scopeStacks.get(device) ?? []).length;
+
+// Write `line` to the console, where a page that stops still shows it.
+export const log = (line) => {
+  globalThis.console.log(line);
+  return null;
 };
