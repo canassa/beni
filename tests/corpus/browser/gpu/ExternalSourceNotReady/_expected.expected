@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"copy of a video with no frame: Err SourceFailed SourceNotReady"</li>
+      <li>"import of a video with no frame: Err BatchFailed import: SourceFailed SourceNotReady; issued [], refused [importExternalTexture]"</li>
+      <li>"copy of an image still loading: Err SourceFailed SourceNotReady"</li>
+      <li>"native calls: 0 copies, 0 imports"</li>
+    </ol>
+  </main>
+</body>

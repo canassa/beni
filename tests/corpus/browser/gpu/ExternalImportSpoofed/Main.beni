@@ -1,0 +1,18 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §6): the
+-- native `importExternalTexture` throws a plain object named
+-- `InvalidStateError`, which is not a native `DOMException`. The page
+-- stops.
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "import-spoofed" λd →
+    [ "import: " ++ GpuMedia.importOnce d (Types.ExternalVideoFrame (GpuMedia.frame ⊤)) ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

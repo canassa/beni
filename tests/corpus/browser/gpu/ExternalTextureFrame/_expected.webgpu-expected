@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"import: Ok"</li>
+      <li>"texels: 64 of 64 pixels match"</li>
+      <li>"the same group in a later batch: Ok done"</li>
+      <li>"texels: 64 of 64 pixels match"</li>
+      <li>"after the frame is closed: Err BatchFailed closed: InvalidInput ResourceExpired bindGroup; issued [encode], refused []"</li>
+      <li>"a new group of the texture: Err BatchFailed regroup: InvalidInput ResourceExpired entries.resource; issued [], refused [createBindGroup]"</li>
+    </ol>
+  </main>
+</body>

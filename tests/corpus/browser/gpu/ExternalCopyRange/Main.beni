@@ -1,0 +1,41 @@
+-- A copy outside its source (docs/design/webgpu.md §8; ledger §6): 16×16
+-- pixels of the 8×8 test image, and 4×4 pixels from its origin (6, 6), are
+-- refused by the host with an `OperationError`, which is `SourceFailed
+-- ExternalImageCopyRangeRejected`; 4×4 pixels from (4, 4) copy.
+import Gpu.Device
+import Gpu.Handle exposing (Device)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuKit exposing (u32)
+import GpuMedia
+import GpuPage
+import GpuShow
+import Tea
+
+
+copy : Device, Int, Int → String
+copy d at size =
+    origin = Types.Origin2DFields { x = Types.Value (u32 at), y = Types.Value (u32 at) }
+    source =
+        { (Types.copyExternalImageSourceInfo (Types.Bitmap (GpuMedia.bitmap ⊤)))
+            | origin = Types.Value origin
+        }
+    result =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            source
+            (Types.copyExternalImageDestInfo (GpuMedia.target d))
+            (GpuMedia.square size)
+    GpuShow.checked result λ_ → "done"
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    [ "16×16 from (0, 0): " ++ copy d 0 16
+    , "4×4 from (6, 6): " ++ copy d 6 4
+    , "4×4 from (4, 4): " ++ copy d 4 4
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

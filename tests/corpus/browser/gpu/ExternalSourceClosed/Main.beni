@@ -1,0 +1,29 @@
+-- Closed sources (docs/design/webgpu.md §8, §10's S5 acceptance; ledger
+-- §6): a bitmap and a video frame, closed, are what the host's usability
+-- check refuses (HTML, *check the usability of the image argument*), so a
+-- copy of either and an import of the frame are `SourceFailed
+-- SourceClosed`, refused before any native call: the page made none.
+import Browser.Image
+import Browser.Video
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    bitmap = GpuMedia.bitmap ⊤
+    Browser.Image.close bitmap
+    frame = GpuMedia.frame ⊤
+    Browser.Video.close frame
+    [ "copy of a closed bitmap: " ++ GpuMedia.copyOnce d (Types.Bitmap bitmap)
+    , "copy of a closed frame: " ++ GpuMedia.copyOnce d (Types.VideoFrame frame)
+    , "import of a closed frame: " ++ GpuMedia.importOnce d (Types.ExternalVideoFrame frame)
+    , GpuMedia.nativeCalls ⊤
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

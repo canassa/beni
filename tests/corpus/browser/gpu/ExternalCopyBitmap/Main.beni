@@ -1,0 +1,75 @@
+-- A copy of an `ImageBitmap` into a texture, read back
+-- (docs/design/webgpu.md §8, §10's S5 acceptance; ledger §6): the 8×8 test
+-- image of four quadrants (`GpuMedia.colour`, written out by hand) as a
+-- bitmap made with no change of colour or alpha, copied whole into an
+-- `rgba8unorm` texture, which reads back exactly as the image's bytes; then
+-- with `flipY`, which reads back upside down; then its top-right quadrant
+-- alone, from the source origin (4, 0) to the texture's origin, which reads
+-- back as that quadrant's colour in the 4×4 corner it was copied to. The
+-- gates' fake host keeps no texels, so its transcript reads zeros;
+-- `test-webgpu`'s is the GPU's (`_expected.webgpu-expected`).
+import Gpu.Device
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuKit exposing (must, u32)
+import GpuMedia
+import GpuPage
+import GpuShow
+import Tea
+
+
+source : ⊤ → Types.CopyExternalImageSourceInfo
+source ⊤ = Types.copyExternalImageSourceInfo (Types.Bitmap (GpuMedia.bitmap ⊤))
+
+
+whole : ⊤ → List String
+whole ⊤ = GpuKit.with "none" λd →
+    t = GpuMedia.target d
+    copied =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            (source ⊤)
+            (Types.copyExternalImageDestInfo t)
+            GpuMedia.extent
+    [ "copy: " ++ GpuShow.checked copied λ_ → "done"
+    , "pixels: " ++ GpuMedia.check (GpuMedia.read d t) GpuMedia.colour 0
+    ]
+
+
+flipped : ⊤ → List String
+flipped ⊤ = GpuKit.with "none" λd →
+    t = GpuMedia.target d
+    copied =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            { (source ⊤) | flipY = Types.Value True }
+            (Types.copyExternalImageDestInfo t)
+            GpuMedia.extent
+    [ "copy: " ++ GpuShow.checked copied λ_ → "done"
+    , "pixels: " ++ GpuMedia.check (GpuMedia.read d t) GpuMedia.flipped 0
+    ]
+
+
+-- The texture after the top-right quadrant was copied to its top-left
+-- corner: that quadrant's colour there, and zeros elsewhere.
+corner : Int, Int → List Int
+corner x y = if x < 4 && y < 4 then GpuMedia.colour 4 0 else [ 0, 0, 0, 0 ]
+
+
+quadrant : ⊤ → List String
+quadrant ⊤ = GpuKit.with "none" λd →
+    t = GpuMedia.target d
+    origin = Types.Origin2DFields { x = Types.Value (u32 4), y = Types.Default }
+    copied =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            { (source ⊤) | origin = Types.Value origin }
+            (Types.copyExternalImageDestInfo t)
+            (GpuMedia.square 4)
+    [ "copy: " ++ GpuShow.checked copied λ_ → "done"
+    , "pixels: " ++ GpuMedia.check (GpuMedia.read d t) corner 0
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "whole", whole ), ( "flipped", flipped ), ( "quadrant", quadrant ) ]

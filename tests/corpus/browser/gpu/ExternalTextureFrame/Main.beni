@@ -1,0 +1,69 @@
+-- An external texture imported from a `VideoFrame` (docs/design/webgpu.md
+-- §8, §8.2, §10's S5 acceptance; ledger §6): the 8×8 test image of four
+-- opaque quadrants (`GpuMedia.colour`, written out by hand) as a frame,
+-- imported in a batch, bound, and read texel by texel by a compute shader
+-- into a buffer that is read back and compared with the image's bytes, each
+-- within 2 for the external texture's colour conversion (sRGB to sRGB). A
+-- frame's texture lives until the frame is closed (the specification's
+-- `[[expired]]`): a second batch uses the same bind group and reads the
+-- same texels; once the frame is closed, that bind group and the texture
+-- are `ResourceExpired`, refused before any native call. The gates' fake
+-- host runs no shader, so its transcript reads zeros; `test-webgpu`'s is
+-- the GPU's (`_expected.webgpu-expected`).
+import Browser.Video
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Handle exposing (BindGroup, Batch, ExternalTexture, Queue)
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuMedia exposing (Reader)
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- In one batch: import the frame, bind it and read it.
+imported :
+      Reader
+    , Browser.Video.Frame
+    , Queue
+    , Batch
+    → Result Error.Error (ExternalTexture × BindGroup)
+imported r frame queue b =
+    texture =
+        Batch.importExternalTexture
+            b
+            (Types.externalTextureDescriptor (Types.ExternalVideoFrame frame))?
+    bound = GpuMedia.group b r texture?
+    GpuMedia.sample b queue r bound?
+    Ok ( texture, bound )
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    r = must (GpuMedia.reader d)
+    frame = GpuMedia.frame ⊤
+    queue = Gpu.Device.queue d
+    case Batch.run d "import" (imported r frame queue _) of
+        Err problem →
+            [ "import: Err " ++ GpuShow.error problem ]
+
+        Ok ( texture, bound ) →
+            first = GpuMedia.check (GpuMedia.sampled r) GpuMedia.colour 2
+            again = Batch.run d "again" (GpuMedia.sample _ queue r bound)
+            second = GpuMedia.check (GpuMedia.sampled r) GpuMedia.colour 2
+            Browser.Video.close frame
+            closed = Batch.run d "closed" (GpuMedia.sample _ queue r bound)
+            regrouped = Batch.run d "regroup" (GpuMedia.group _ r texture)
+            [ "import: Ok"
+            , "texels: " ++ first
+            , "the same group in a later batch: " ++ GpuShow.checked again λ_ → "done"
+            , "texels: " ++ second
+            , "after the frame is closed: " ++ GpuShow.checked closed λ_ → "done"
+            , "a new group of the texture: " ++ GpuShow.checked regrouped λ_ → "made"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

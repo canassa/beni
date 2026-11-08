@@ -16,6 +16,7 @@
 --! `sync` function type: #2271.)
 
 import Binary
+import Browser.Video as Video
 import Dict
 import Gpu.Engine as Engine
 import Gpu.Error as Error
@@ -54,6 +55,8 @@ pub type Action
     | WriteBuffer (List V)
     | WriteTexture (List V)
     | Submit (List Handle.CommandBuffer)
+    | CopyExternalImage (List V)
+    | ImportExternalTexture V V
 
 
 --| One prepared operation: its name, the labels of what it touches, the
@@ -144,6 +147,37 @@ perform op =
                 _ →
                     Engine.defect "a writeTexture prepared without its four arguments"
 
+        CopyExternalImage args →
+            case args of
+                [ a1, a2, a3 ] →
+                    -- The ledger's three content-timeline failures (§6).
+                    Js.catchIf
+                        (λ⊤ →
+                            Js.call target "copyExternalImageToTexture" [ a1, a2, a3 ] ▷ ignore
+                            Ok (Js.object [])
+                        )
+                        (λerror →
+                            Engine.isDomException error "SecurityError"
+                                || Engine.isDomException error "OperationError"
+                                || Engine.isDomException error "InvalidStateError"
+                        )
+                        λerror → Err (Error.SourceFailed (sourceFailure error))
+
+                _ →
+                    Engine.defect
+                        "a copyExternalImageToTexture prepared without its three arguments"
+
+        ImportExternalTexture converted _ →
+            -- The ledger's two content-timeline failures (§6); a source the
+            -- host finds bad without throwing is the device's validation error.
+            Js.catchIf
+                (λ⊤ → Ok (Js.call target "importExternalTexture" [ converted ]))
+                (λerror →
+                    Engine.isDomException error "SecurityError"
+                        || Engine.isDomException error "InvalidStateError"
+                )
+                λerror → Err (Error.SourceFailed (sourceFailure error))
+
         Submit commands →
             List.foldl commands ⊤ λc _ →
                 Js.set (Engine.recordOf (Js.from c)) "submitted" (Js.from True)
@@ -155,6 +189,18 @@ perform op =
                     (Js.call target "onSubmittedWorkDone" [])
                     workDone
                 )
+
+
+-- A source failure the host threw, already known to be one of the
+-- ledger's: `SecurityError`, `OperationError` or `InvalidStateError`.
+sourceFailure : V → Error.SourceError
+sourceFailure error =
+    if Engine.isDomException error "SecurityError" then
+        Error.SourceNotOriginClean
+    else if Engine.isDomException error "OperationError" then
+        Error.ExternalImageCopyRangeRejected { message = Engine.messageOf error }
+    else
+        Error.SourceUnusable { message = Engine.messageOf error }
 
 
 -- The creations with no failure of their own, by the method's name.
@@ -196,6 +242,9 @@ adopt op made =
 
         CreateBindGroup _ uses →
             Js.set (Engine.recordOf made) "uses" uses
+
+        ImportExternalTexture _ frame →
+            Engine.expiresExternal made (Js.get (Engine.recordOf made) "batch") frame
 
         _ →
             ⊤
@@ -1060,7 +1109,9 @@ configureIn session native configuration =
                     λerror →
                         Err
                             (Error.CanvasFailed
-                                (Error.CanvasConfigurationRejected { message = Engine.messageOf error })
+                                (Error.CanvasConfigurationRejected
+                                    { message = Engine.messageOf error }
+                                )
                             )
             )
             ignore
@@ -1277,3 +1328,160 @@ inFrame surface receipts body b =
     Js.set frame "surface" surface
     Js.set frame "submissions" receipts
     body (Js.to frame)
+
+
+-- ---- External images (§8; ledger §6) -------------------------------------------
+
+--| A copy of an external image into a texture (ledger §6): the queue of the
+--| batch's device in a batch, the destination texture usable there, and a
+--| source the host's usability check accepts (`sourceState`). Then the
+--| host's `SecurityError` is `SourceNotOriginClean`, its `OperationError`
+--| (a copy outside the source) `ExternalImageCopyRangeRejected` and its
+--| `InvalidStateError` `SourceUnusable`; the destination's usage, format and
+--| bounds are the device's to validate. The call makes nothing of its own.
+pub copyExternalImage :
+      V
+    , V
+    , Types.CopyExternalImageSourceInfo
+    , Types.CopyExternalImageDestInfo
+    , Types.Extent3D
+    → Result Error.Error Op
+copyExternalImage queue batch source destination extent =
+    ofBatch queue batch "queue"?
+    q = Engine.recordOf queue
+    Result.mapError
+        (Engine.usable (Js.from destination.texture) (Js.get q "device") batch "destination.texture"
+        )
+        Error.InvalidInput?
+    sourceState (copySource source.source)?
+    Ok
+        { name = "copyExternalImageToTexture"
+        , labels = [ Js.to (Js.get (Js.from destination.texture) "label") ]
+        , target = queue
+        , device = Js.get q "native"
+        , action =
+            CopyExternalImage
+                [ Native.copyExternalImageSourceInfo source
+                , Native.copyExternalImageDestInfo destination
+                , Native.extent3D extent
+                ]
+        }
+
+
+--| An external texture imported in `batch` (§8.2; ledger §6): a source the
+--| host's usability check accepts (`sourceState`), then the host's
+--| `SecurityError` is `SourceNotOriginClean` and its `InvalidStateError`
+--| `SourceUnusable`. The texture expires when the batch's run ends, for a
+--| video element, or when its video frame is closed (`ResourceExpired`).
+pub externalTexture : V, Types.ExternalTextureDescriptor → Result Error.Error Op
+externalTexture device descriptor =
+    frame =
+        case descriptor.source of
+            Types.ExternalVideoElement video →
+                sourceState (VideoElementSource (Js.from video))?
+                Js.null
+
+            Types.ExternalVideoFrame f →
+                sourceState (VideoFrameSource (Js.from f))?
+                Js.from f
+    Ok
+        { name = "importExternalTexture"
+        , labels = labelsOf descriptor.label
+        , target = device
+        , device = device
+        , action = ImportExternalTexture (Native.externalTextureDescriptor descriptor) frame
+        }
+
+
+-- The kinds of external source, by the state the host's usability check
+-- reads of each.
+type Source
+    = BitmapSource V
+    | DataSource V
+    | ImageSource V
+    | VideoElementSource V
+    | VideoFrameSource V
+    | CanvasSource V
+
+
+copySource : Types.CopyExternalImageSource → Source
+copySource source =
+    case source of
+        Types.Bitmap b →
+            BitmapSource (Js.from b)
+
+        Types.ImageData d →
+            DataSource (Js.from d)
+
+        Types.ImageElement i →
+            ImageSource (Js.from i)
+
+        Types.VideoElement v →
+            VideoElementSource (Js.from v)
+
+        Types.VideoFrame f →
+            VideoFrameSource (Js.from f)
+
+        Types.CanvasElement c →
+            CanvasSource (Js.from c)
+
+        Types.OffscreenCanvas c →
+            CanvasSource (Js.from c)
+
+
+--| A source the host's usability check accepts (HTML, *check the usability
+--| of the image argument*), read from the state that check reads, before the
+--| native call: a closed bitmap or video frame is `SourceClosed`, image data
+--| whose pixels were detached `SourceDetached`, a canvas with a width or a
+--| height of 0 or an image element with no source `SourceEmpty`, an image
+--| element whose image failed or has no natural size `SourceBroken`, and an
+--| image element still loading or a video element with no current frame
+--| (`readyState` below `HAVE_CURRENT_DATA`) `SourceNotReady`. The state is
+--| read in the host turn of the call, so it is the state the host sees.
+sourceState : Source → Result Error.Error ⊤
+sourceState source =
+    problem =
+        case source of
+            BitmapSource b →
+                if number b "width" == 0 || number b "height" == 0 then
+                    Just Error.SourceClosed
+                else
+                    Nothing
+
+            DataSource d →
+                if Binary.detached (Js.to (Js.get (Js.get d "data") "buffer")) then
+                    Just Error.SourceDetached
+                else
+                    Nothing
+
+            ImageSource i →
+                if not (Js.to (Js.get i "complete")) then
+                    Just Error.SourceNotReady
+                else if Js.same (Js.get i "currentSrc") (Js.from "") then
+                    Just Error.SourceEmpty
+                else if number i "naturalWidth" == 0 || number i "naturalHeight" == 0 then
+                    Just Error.SourceBroken
+                else
+                    Nothing
+
+            VideoElementSource v →
+                if number v "readyState" < 2 then Just Error.SourceNotReady else Nothing
+
+            VideoFrameSource f →
+                if Video.closed (Js.to f) then Just Error.SourceClosed else Nothing
+
+            CanvasSource c →
+                if number c "width" == 0 || number c "height" == 0 then
+                    Just Error.SourceEmpty
+                else
+                    Nothing
+    case problem of
+        Just p →
+            Err (Error.SourceFailed p)
+
+        Nothing →
+            Ok ⊤
+
+
+number : V, String → Int
+number value field = Js.to (Js.get value field)

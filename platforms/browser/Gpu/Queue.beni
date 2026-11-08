@@ -122,3 +122,28 @@ writeTexture queue destination data layout extent =
             (Make.writeTexture (Js.from queue) Js.null destination data layout extent)
         )
         λ_ → ⊤
+
+
+--| Copy an image, a video's current frame or a canvas into a texture,
+--| checked (§6.1, §8; ledger §6), converting its colours as `destination`
+--| asks (`colorSpace`, `premultipliedAlpha`), with no flip unless `source`
+--| asks (`flipY`). Refused before any native call: a destination texture
+--| that is not usable on this device, and a source the host's usability
+--| check would refuse — `SourceClosed`, `SourceDetached`, `SourceEmpty`,
+--| `SourceBroken`, `SourceNotReady` (`Gpu.Error.SourceError`). Then the host
+--| decides `SourceNotOriginClean` (a source tainted by another origin),
+--| `ExternalImageCopyRangeRejected` (a copy outside the source) and
+--| `SourceUnusable`; the destination's usage (`RenderAttachment` and
+--| `CopyDst`), format and bounds are the device's to check (`Validation`).
+--| May suspend: a video element's frame is the one current when the copy is
+--| issued, not when it is checked.
+pub copyExternalImageToTexture :
+      Handle.Queue
+    , Types.CopyExternalImageSourceInfo
+    , Types.CopyExternalImageDestInfo
+    , Types.Extent3D
+    → Result Error.Error ⊤
+copyExternalImageToTexture queue source destination extent =
+    Result.map
+        (Make.checked (Make.copyExternalImage (Js.from queue) Js.null source destination extent))
+        λ_ → ⊤

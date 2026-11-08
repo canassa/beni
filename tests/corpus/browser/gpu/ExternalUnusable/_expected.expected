@@ -1,0 +1,29 @@
+-- load
+<body>
+  <main>
+    <button id="copy">"copy"</button>
+    <button id="import">"import"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #copy
+<body>
+  <main>
+    <button id="copy">"copy"</button>
+    <button id="import">"import"</button>
+    <ol>
+      <li>"copy: Err SourceFailed SourceUnusable"</li>
+    </ol>
+  </main>
+</body>
+-- click #import
+<body>
+  <main>
+    <button id="copy">"copy"</button>
+    <button id="import">"import"</button>
+    <ol>
+      <li>"copy: Err SourceFailed SourceUnusable"</li>
+      <li>"import: Err BatchFailed import: SourceFailed SourceUnusable; issued [importExternalTexture], refused []"</li>
+    </ol>
+  </main>
+</body>

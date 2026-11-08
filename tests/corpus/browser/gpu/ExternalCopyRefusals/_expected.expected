@@ -1,0 +1,20 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"a destroyed texture: Err InvalidInput ResourceDestroyed destination.texture"</li>
+      <li>"a texture of another device: Err InvalidInput WrongDevice destination.texture"</li>
+      <li>"a batch, another device's queue: Err BatchFailed copy: InvalidInput WrongDevice queue; issued [], refused [copyExternalImageToTexture]"</li>
+      <li>"a texture without RenderAttachment: Err Validation"</li>
+      <li>"a texture that can take it: Ok done"</li>
+    </ol>
+  </main>
+</body>

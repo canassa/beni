@@ -1,0 +1,25 @@
+-- A source the host finds unusable after every check the engine makes
+-- (docs/design/webgpu.md §8; ledger §6): the host's `InvalidStateError`
+-- at `copyExternalImageToTexture` and at `importExternalTexture` is
+-- `SourceFailed SourceUnusable`, with the host's message. A browser cannot
+-- be made to give it on demand once the engine's checks passed, so the
+-- native call is made to throw it (`copy-unusable`, `import-unusable`).
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+copy : ⊤ → List String
+copy ⊤ = GpuKit.with "copy-unusable" λd →
+    [ "copy: " ++ GpuMedia.copyOnce d (Types.Bitmap (GpuMedia.bitmap ⊤)) ]
+
+
+import_ : ⊤ → List String
+import_ ⊤ = GpuKit.with "import-unusable" λd →
+    [ "import: " ++ GpuMedia.importOnce d (Types.ExternalVideoFrame (GpuMedia.frame ⊤)) ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "copy", copy ), ( "import", import_ ) ]

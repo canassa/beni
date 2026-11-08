@@ -1,0 +1,71 @@
+-- What a copy of an external image refuses for its destination
+-- (docs/design/webgpu.md §8, §6.3; ledger §6). Before any native call: a
+-- destroyed texture is `ResourceDestroyed`, a texture of another device
+-- `WrongDevice`, and in a batch, the queue of another device `WrongDevice`.
+-- Then the device's own rules: a texture without `RenderAttachment` usage
+-- is the device's `Validation`.
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Batch, Device, Queue, Texture)
+import Gpu.Queue
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuMedia
+import GpuPage
+import GpuShow
+import Tea
+
+
+copyTo : Device, Texture → String
+copyTo d t =
+    source = Types.copyExternalImageSourceInfo (Types.Bitmap (GpuMedia.bitmap ⊤))
+    result =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            source
+            (Types.copyExternalImageDestInfo t)
+            GpuMedia.extent
+    GpuShow.checked result λ_ → "done"
+
+
+inBatch : Queue, Types.CopyExternalImageSourceInfo, Texture, Batch → Result Error.Error ⊤
+inBatch queue source t b =
+    Batch.copyExternalImageToTexture
+        b
+        queue
+        source
+        (Types.copyExternalImageDestInfo t)
+        GpuMedia.extent
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    other = must (GpuKit.device "none")
+    destroyed = GpuMedia.target d
+    Gpu.Texture.destroy destroyed
+    plain =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    GpuMedia.extent
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureCopyDst ])
+                )
+            )
+    source = Types.copyExternalImageSourceInfo (Types.Bitmap (GpuMedia.bitmap ⊤))
+    t = GpuMedia.target d
+    batched = Batch.run d "copy" (inBatch (Gpu.Device.queue other) source t _)
+    [ "a destroyed texture: " ++ copyTo d destroyed
+    , "a texture of another device: " ++ copyTo d (GpuMedia.target other)
+    , "a batch, another device's queue: " ++ GpuShow.checked batched λ_ → "done"
+    , "a texture without RenderAttachment: " ++ copyTo d plain
+    , "a texture that can take it: " ++ copyTo d (GpuMedia.target d)
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

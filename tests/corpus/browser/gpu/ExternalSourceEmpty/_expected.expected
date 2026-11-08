@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"canvas 0×8: Err SourceFailed SourceEmpty"</li>
+      <li>"offscreen 8×0: Err SourceFailed SourceEmpty"</li>
+      <li>"image with no source: Err SourceFailed SourceEmpty"</li>
+      <li>"native calls: 0 copies, 0 imports"</li>
+    </ol>
+  </main>
+</body>

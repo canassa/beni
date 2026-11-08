@@ -1,0 +1,21 @@
+-- A canvas element showing the test image (a bitmap presented by its
+-- bitmap renderer), copied
+-- whole into an `rgba8unorm` texture and read back
+-- (docs/design/webgpu.md §8, §10's S5 acceptance; ledger §6). The image is
+-- the 8×8 test image of four opaque quadrants whose bytes
+-- `GpuMedia.colour` writes out by hand; every pixel read back is compared
+-- with those bytes, never with anything the code under test computed. The
+-- gates' fake host keeps no texels, so its transcript reads zeros;
+-- `test-webgpu`'s is the GPU's (`_expected.webgpu-expected`).
+import Gpu.Types as Types
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuMedia.copied (λ⊤ → Types.CanvasElement (GpuMedia.canvas ⊤)) 0
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

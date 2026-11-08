@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"copy before the transfer: Ok done"</li>
+      <li>"copy after the transfer: Err SourceFailed SourceDetached"</li>
+      <li>"native calls: 1 copies, 0 imports"</li>
+    </ol>
+  </main>
+</body>

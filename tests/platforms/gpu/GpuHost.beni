@@ -6,6 +6,8 @@
 --! each fault wraps the native method it is about.
 
 import Binary
+import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
+import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
 import Browser.Host.Uint32Array exposing (Uint32Array)
 import Browser.Host.Uint8Array exposing (Uint8Array)
 import Gpu.Handle exposing (Batch, Buffer, Device)
@@ -164,3 +166,19 @@ pub foreign impure raise : String → ⊤
 
 --| Whether the flag `name` is raised.
 pub foreign impure raised : String → Bool
+
+
+--| Make an image element of the opaque RGBA `pixels`, `width` wide, in the
+--| state `kind` names, and call `done` with it once it is in that state:
+--| `"same"` loaded from the page's origin, `"cross"` loaded from another
+--| origin without CORS (not origin-clean), `"broken"` whose load failed,
+--| `"loading"` still loading, `"empty"` with no source. On the fake host
+--| the element only reports that state.
+pub foreign impure image : String, Binary.Buffer, Int, sync (HTMLImageElement → ⊤) → ⊤
+
+
+--| Make a video element showing the opaque RGBA `pixels`, `width` wide, and
+--| call `done` with it: `"ready"` once it shows a frame of them, `"empty"`
+--| with no source at all. On the fake host the element only reports that
+--| state.
+pub foreign impure video : String, Binary.Buffer, Int, sync (HTMLVideoElement → ⊤) → ⊤

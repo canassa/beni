@@ -1,0 +1,33 @@
+-- Sources that are not origin-clean (docs/design/webgpu.md §8, §10's S5
+-- acceptance; ledger §6). copy: an image element loaded from another
+-- origin without CORS (in Chrome, the driver's image from `localhost`, not
+-- the page's `127.0.0.1`; on the fake host, an element it treats as
+-- tainted) is refused by the host with a `SecurityError`, which is
+-- `SourceFailed SourceNotOriginClean`; the same image from the page's own
+-- origin copies. import: a browser cannot be made to taint a video on
+-- demand, so the host's `importExternalTexture` is made to throw its
+-- `SecurityError` (`import-tainted`): the batch fails with
+-- `SourceNotOriginClean`.
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+copy : ⊤ → List String
+copy ⊤ = GpuKit.with "none" λd →
+    [ "copy from another origin: "
+        ++ GpuMedia.copyOnce d (Types.ImageElement (GpuMedia.image "cross"))
+    , "copy from the page's origin: "
+        ++ GpuMedia.copyOnce d (Types.ImageElement (GpuMedia.image "same"))
+    ]
+
+
+import_ : ⊤ → List String
+import_ ⊤ = GpuKit.with "import-tainted" λd →
+    [ "import: " ++ GpuMedia.importOnce d (Types.ExternalVideoFrame (GpuMedia.frame ⊤)) ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "copy", copy ), ( "import", import_ ) ]

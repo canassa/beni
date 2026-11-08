@@ -1,0 +1,17 @@
+--! External textures (`docs/design/webgpu.md` §8, §8.2): a video element's
+--! current frame or a video frame, imported by
+--! `Gpu.Batch.importExternalTexture` or `Gpu.Frame.importExternalTexture`
+--! and bound with `Gpu.Types.ExternalTextureBinding`.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The external texture's label.
+pub label : Handle.ExternalTexture → String
+label texture = Js.to (Js.get (Js.from texture) "label")
+
+
+--| Set the external texture's label.
+pub setLabel : Handle.ExternalTexture, String → ⊤
+setLabel texture text = Js.set (Js.from texture) "label" (Js.from text)

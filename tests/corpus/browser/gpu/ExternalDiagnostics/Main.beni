@@ -1,0 +1,96 @@
+-- Copies of external images under a diagnostic session
+-- (docs/design/webgpu.md §6.4). lease: while the session holds the
+-- device's lease, an ordinary `Gpu.Queue.copyExternalImageToTexture` from
+-- the session's callback is `DeviceLeased` at once, with no native call,
+-- and the forwarding form `Gpu.Diagnostics.Queue.copyExternalImageToTexture`
+-- copies under the session; the texture then reads back as the test image
+-- (`GpuMedia.colour`, written out by hand; zeros on the gates' fake host).
+-- scope: a copy into a texture without `RenderAttachment` under a user
+-- validation scope is the error that scope pops, so the engine's own
+-- scopes see nothing; a session whose scopes saw an error withholds its
+-- value and reports what they saw.
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Queue
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, DiagnosticSession, Texture)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must)
+import GpuMedia
+import GpuPage
+import GpuShow
+import Tea
+
+
+source : ⊤ → Types.CopyExternalImageSourceInfo
+source ⊤ = Types.copyExternalImageSourceInfo (Types.Bitmap (GpuMedia.bitmap ⊤))
+
+
+leased : Device, Texture, DiagnosticSession → List String
+leased d t s =
+    queue = Gpu.Device.queue d
+    plain =
+        Gpu.Queue.copyExternalImageToTexture
+            queue
+            (source ⊤)
+            (Types.copyExternalImageDestInfo t)
+            GpuMedia.extent
+    calls = GpuMedia.nativeCalls ⊤
+    forwarded =
+        Gpu.Diagnostics.Queue.copyExternalImageToTexture
+            s
+            queue
+            (source ⊤)
+            (Types.copyExternalImageDestInfo t)
+            GpuMedia.extent
+    [ "ordinary copy: " ++ GpuShow.checked plain λ_ → "done"
+    , calls
+    , "forwarded copy: " ++ GpuShow.checked forwarded λ_ → "done"
+    ]
+
+
+lease : ⊤ → List String
+lease ⊤ = GpuKit.with "none" λd →
+    t = GpuMedia.target d
+    report = Diagnostics.run d (leased d t _)
+    [ "session: " ++ GpuShow.sessionReport report λxs → String.join xs "; "
+    , "pixels: " ++ GpuMedia.check (GpuMedia.read d t) GpuMedia.colour 0
+    ]
+
+
+scoped : Device, Texture, DiagnosticSession → ⊤
+scoped d t s =
+    pushed = GpuShow.inputResult (Diagnostics.pushErrorScope s Types.FilterValidation) λ_ → "pushed"
+    copied =
+        Gpu.Diagnostics.Queue.copyExternalImageToTexture
+            s
+            (Gpu.Device.queue d)
+            (source ⊤)
+            (Types.copyExternalImageDestInfo t)
+            GpuMedia.extent
+    popped = GpuShow.popped (Diagnostics.popErrorScope s)
+    GpuHost.note ("push: " ++ pushed)
+    GpuHost.note ("copy: " ++ GpuShow.checked copied λ_ → "done")
+    GpuHost.note ("pop: " ++ popped)
+
+
+scope : ⊤ → List String
+scope ⊤ = GpuKit.with "none" λd →
+    plain =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    GpuMedia.extent
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureCopyDst ])
+                )
+            )
+    report = Diagnostics.run d (scoped d plain _)
+    [ …(GpuHost.notes ⊤), "session: " ++ GpuShow.sessionReport report λ_ → "done" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "lease", lease ), ( "scope", scope ) ]

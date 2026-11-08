@@ -1,0 +1,93 @@
+-- External textures imported from a video element (docs/design/webgpu.md
+-- §8, §8.2, §10's S5 acceptance; ledger §6): a video playing the 8×8 test
+-- image of four opaque quadrants (`GpuMedia.colour`, written out by hand),
+-- each pixel an 8×8 block, imported, bound and read block by block (the
+-- texel at its centre) by a compute shader into a buffer
+-- that is read back and compared with the image's bytes, each within 12,
+-- for the host's YUV conversion of a video frame. batch: imported in a
+-- batch; the texture lives no longer than the batch's task, so the batch's
+-- bind group used by a later batch, and a new group of the texture, are
+-- `ResourceExpired`, refused before any native call; imported again in a
+-- new batch, it reads the same texels. frame: imported in a frame of an
+-- `OffscreenCanvas` surface with `Gpu.Frame.importExternalTexture`, read
+-- in the frame, whose receipt lists that one submission. The gates' fake
+-- host runs no shader, so its transcript reads zeros; `test-webgpu`'s is
+-- the GPU's (`_expected.webgpu-expected`).
+import Browser.Canvas
+import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (BindGroup, Batch, ExternalTexture, Frame, Queue)
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuMedia exposing (Reader)
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- Import the video, bind it and read it in `b`.
+imported : Reader, HTMLVideoElement, Queue, Batch → Result Error.Error (ExternalTexture × BindGroup)
+imported r video queue b =
+    texture =
+        Batch.importExternalTexture
+            b
+            (Types.externalTextureDescriptor (Types.ExternalVideoElement video))?
+    bound = GpuMedia.group b r texture?
+    GpuMedia.sample b queue r bound?
+    Ok ( texture, bound )
+
+
+batch : ⊤ → List String
+batch ⊤ = GpuKit.with "none" λd →
+    r = must (GpuMedia.reader d)
+    video = GpuMedia.video "ready"
+    queue = Gpu.Device.queue d
+    case Batch.run d "import" (imported r video queue _) of
+        Err problem →
+            [ "import: Err " ++ GpuShow.error problem ]
+
+        Ok ( texture, bound ) →
+            first = GpuMedia.check (GpuMedia.sampled r) GpuMedia.colour 12
+            stale = Batch.run d "stale" (GpuMedia.sample _ queue r bound)
+            regrouped = Batch.run d "regroup" (GpuMedia.group _ r texture)
+            again = Batch.run d "again" (imported r video queue _)
+            second = GpuMedia.check (GpuMedia.sampled r) GpuMedia.colour 12
+            [ "import: Ok"
+            , "texels: " ++ first
+            , "the batch's group in a later batch: " ++ GpuShow.checked stale λ_ → "done"
+            , "a new group of the texture: " ++ GpuShow.checked regrouped λ_ → "made"
+            , "imported again: " ++ GpuShow.checked again λ_ → "done"
+            , "texels: " ++ second
+            ]
+
+
+-- Import the video in the frame, bind it and read it.
+inFrame : Reader, HTMLVideoElement, Queue, Frame → Result Error.Error ⊤
+inFrame r video queue f =
+    texture =
+        Frame.importExternalTexture
+            f
+            (Types.externalTextureDescriptor (Types.ExternalVideoElement video))?
+    bound = GpuMedia.group (Frame.batch f) r texture?
+    GpuMedia.sample (Frame.batch f) queue r bound
+
+
+frame : ⊤ → List String
+frame ⊤ = GpuKit.with "none" λd →
+    r = must (GpuMedia.reader d)
+    video = GpuMedia.video "ready"
+    surface = must (Surface.fromOffscreen (must (Browser.Canvas.offscreen 4 4)))
+    must (Surface.configure surface (Types.canvasConfiguration d Types.Rgba8unorm))
+    drawn = Frame.submit surface "video" (inFrame r video (Gpu.Device.queue d) _)
+    [ "frame: "
+        ++ GpuShow.checked drawn λx → String.fromInt (List.length x.submissions) ++ " submission"
+    , "texels: " ++ GpuMedia.check (GpuMedia.sampled r) GpuMedia.colour 12
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "batch", batch ), ( "frame", frame ) ]

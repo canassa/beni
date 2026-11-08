@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <button id="batch">"batch"</button>
+    <button id="frame">"frame"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #batch
+(the DOM did not change)
+-- click #frame
+<body>
+  <main>
+    <button id="batch">"batch"</button>
+    <button id="frame">"frame"</button>
+    <ol>
+      <li>"import: Ok"</li>
+      <li>"texels: 36 of 64 pixels match; first miss at 3,0: 143 59 29 255"</li>
+      <li>"the batch's group in a later batch: Err BatchFailed stale: InvalidInput ResourceExpired bindGroup; issued [encode], refused []"</li>
+      <li>"a new group of the texture: Err BatchFailed regroup: InvalidInput ResourceExpired entries.resource; issued [], refused [createBindGroup]"</li>
+      <li>"imported again: Ok done"</li>
+      <li>"texels: 36 of 64 pixels match; first miss at 3,0: 143 59 29 255"</li>
+    </ol>
+  </main>
+</body>

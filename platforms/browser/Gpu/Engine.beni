@@ -24,6 +24,7 @@
 --! survives.
 
 import Browser.Canvas as Canvas
+import Browser.Video as Video
 import Gpu.Error as Error exposing (DeviceLoss, LossReason, UnknownLoss, Destroyed, Observation)
 import Js
 import Task
@@ -2110,6 +2111,17 @@ expiresWith texture frame surface =
         )
 
 
+--| Mark `texture`, an external texture imported in `batch` (§8.2; the
+--| specification's `[[expired]]`): imported from a video element (`frame`
+--| null), it expires when the batch's run ends, in the task the host gives
+--| it; imported from the video frame `frame`, when that frame is closed. A
+--| reimport the host answers with the same object marks it again, so what
+--| holds it (a bind group, a command buffer) is usable again.
+pub expiresExternal : V, V, V → ⊤
+expiresExternal texture batch frame =
+    Js.set (recordOf texture) "external" (Js.object [ ( "batch", batch ), ( "frame", frame ) ])
+
+
 --| Give `view` the frame mark of `texture` as it is now, if it has one: a
 --| view made in one frame expires with that frame, even when a later frame
 --| has the same texture again.
@@ -2188,4 +2200,19 @@ expired o =
                 || resizesOf canvas ≠ Js.to (Js.get marks "resizes")
                 || not (Js.same (Js.get canvas "width") (Js.get marks "width"))
                 || not (Js.same (Js.get canvas "height") (Js.get marks "height"))
-    own || (not (Js.isNullish texture) && expired (recordOf texture))
+    own || importExpired o || (not (Js.isNullish texture) && expired (recordOf texture))
+
+
+-- An external texture whose batch's run ended (a video element's) or whose
+-- video frame was closed.
+importExpired : V → Bool
+importExpired o =
+    marks = Js.get o "external"
+    if Js.isNullish marks then
+        False
+    else
+        frame = Js.get marks "frame"
+        if Js.isNull frame then
+            not (Js.to (Js.get (Js.get marks "batch") "live"))
+        else
+            Video.closed (Js.to frame)

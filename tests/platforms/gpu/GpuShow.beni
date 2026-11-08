@@ -144,8 +144,8 @@ error problem =
         Error.MapFailed m →
             "MapFailed " ++ mapError m
 
-        Error.SourceFailed _ →
-            "SourceFailed"
+        Error.SourceFailed s →
+            "SourceFailed " ++ sourceError s
 
         Error.CanvasFailed c →
             "CanvasFailed " ++ canvasError c
@@ -372,6 +372,35 @@ checked r f =
 
         Err problem →
             "Err " ++ error problem
+
+
+--| A source failure, without the host's message.
+pub sourceError : Error.SourceError → String
+sourceError s =
+    case s of
+        Error.SourceNotOriginClean →
+            "SourceNotOriginClean"
+
+        Error.SourceUnusable _ →
+            "SourceUnusable"
+
+        Error.ExternalImageCopyRangeRejected _ →
+            "ExternalImageCopyRangeRejected"
+
+        Error.SourceClosed →
+            "SourceClosed"
+
+        Error.SourceDetached →
+            "SourceDetached"
+
+        Error.SourceEmpty →
+            "SourceEmpty"
+
+        Error.SourceBroken →
+            "SourceBroken"
+
+        Error.SourceNotReady →
+            "SourceNotReady"
 
 
 --| A canvas failure, without the host's message.
