@@ -1,0 +1,5 @@
+# v2 refuses each write: what a wrapped callback is supplied sits where the frame names its structure (§2.1, An arrival's level; §2.11.3).
+83:16 list_still_used List.push
+89:16 list_still_used List.push
+95:16 list_still_used List.push
+100:16 list_still_used List.push
