@@ -2083,6 +2083,78 @@ test "the checker v2 derives core's loops from their bodies, as Appendix C.2–C
     try testing.expectEqualStrings(want.items, got.items);
 }
 
+/// Helpers that hand a list's elements to a callback, written into a copy of
+/// core only: a supply is read where it is handed on (§2.10 `reads`, §2.11.3
+/// *A supply is read*). A direct caller of `mapHelp` or `foldlFrom`, a
+/// callback handed `traverseAt`'s element directly, and one handed it through
+/// a callee that supplies its argument (#2297).
+const supply_probes =
+    \\
+    \\
+    \\pub probeMap : List a, (a → b) → List b
+    \\probeMap xs func = mapHelp xs 0 0 (length xs) func (builder (length xs))
+    \\
+    \\
+    \\pub probeFold : List a, b, (a, b → b) → b
+    \\probeFold xs acc func = foldlFrom xs 0 (length xs) acc func
+    \\
+    \\
+    \\applyTo : a, (a → b) → b
+    \\applyTo x func = func x
+    \\
+    \\
+    \\pub probePass : List a, (a → b) → b
+    \\probePass xs func = applyTo (traverseAt xs 0) func
+    \\
+    \\
+    \\pub probeHand : List a, (a → b) → b
+    \\probeHand xs func = func (traverseAt xs 0)
+    \\
+;
+
+test "the checker v2 reads what a helper supplies its callback, so an element written before the call is refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.copyTreeInto("core", "tcore", "_");
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, "core/List.beni", arena, .limited(1 << 22));
+    try w.write("tcore/List.beni", try std.mem.concat(arena, u8, &.{ list, supply_probes }));
+    const dump = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core-root=tcore", "--core", "tcore/List.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    for ([_][]const u8{ "probeMap", "probeFold", "probePass", "probeHand" }) |name| {
+        const head = try std.fmt.allocPrint(arena, "  summary {s}:", .{name});
+        var lines = std.mem.splitScalar(u8, dump.stdout, '\n');
+        const line = while (lines.next()) |l| {
+            if (std.mem.startsWith(u8, l, head)) break l;
+        } else return error.SummaryMissing;
+        const reads = std.mem.indexOf(u8, line, "; reads ") orelse return error.NoReads;
+        const end = std.mem.indexOfPos(u8, line, reads + 1, ";") orelse line.len;
+        if (std.mem.indexOf(u8, line[reads..end], " π1[*]*") == null) {
+            std.debug.print("{s} does not read π1's elements:\n{s}\n", .{ name, line });
+            return error.SupplyNotRead;
+        }
+    }
+    // The issue's program, through the callee that supplies its argument:
+    // `List.map` writes `xs`'s elements in place unless `probePass` reads them.
+    try w.write("Main.beni",
+        \\import List
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    xs = [ [ 1 ], [ 2 ] ]
+        \\    a = List.map xs λl → List.push l 9
+        \\    b = List.probePass xs λl → List.length l
+        \\    Node.print (String.fromInt (List.length a + b))
+        \\
+    );
+    const r = try w.runWith(&.{ "check", "--platform=node", "--core-root=tcore", "--ownership=v2", "--ownership-everywhere", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "later-use: xs is read again at 10:9") != null);
+}
+
 test "growing full cast types settle on the composed path" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

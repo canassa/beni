@@ -2160,6 +2160,17 @@ function slot `(j, s)` and the call's instruction (its origin). In the frame:
   over the supply's leaves as a family;
 - the arguments are used whole at the call (the callee's footprint is not known).
 
+*Amended 2026-11-08 (#2297): **a supply is read.*** "Used whole" is a read in the frame's `reads` (§2.10) of
+every parameter slot the argument holds, deep, whether or not the argument is a local's. A use is a local's
+(§2.7), so an argument that is a temporary — `func (traverseAt a (o + i))` — had no use, and its parameter slots
+no read: `mapHelp`, `indexedMapHelp`, `filterMapHelp`, `foldlFrom` and `foldrFrom` said `reads π1ε` where C.2 and
+C.4 say `[*] R`. A label passed on is read the same way: a callee's supply arrival `π_j·s` is a read of what the
+call's argument `j` holds at `s`, deep (`applyTo (traverseAt xs 0) func`, with `applyTo x f = f x`). Sound
+because the code that runs is unknown to the callee and may read all it is handed (O5): before, a direct caller
+of `mapHelp` could write an element of `π1` in place before the call, and the callback read the changed element.
+`List.map`, `List.foldl` and `List.foldr` read `π1ε*` already, through `base`'s row (C.1), so no caller of core's
+surface changes, and nothing outside `core/List` can name `traverseAt`.
+
 A label of a callee whose function slot is projected from one of the caller's parameters becomes a label of
 the caller, its supplies projected onto the caller's arguments, its origin kept: so a callback handed through
 `List.map` to `mapHelp` and back to itself is one label, and a recursive group's labels are finite (one per
