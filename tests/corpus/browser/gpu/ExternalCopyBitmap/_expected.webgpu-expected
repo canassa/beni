@@ -1,0 +1,51 @@
+-- load
+<body>
+  <main>
+    <button id="whole">"whole"</button>
+    <button id="flipped">"flipped"</button>
+    <button id="quadrant">"quadrant"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #whole
+<body>
+  <main>
+    <button id="whole">"whole"</button>
+    <button id="flipped">"flipped"</button>
+    <button id="quadrant">"quadrant"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+    </ol>
+  </main>
+</body>
+-- click #flipped
+<body>
+  <main>
+    <button id="whole">"whole"</button>
+    <button id="flipped">"flipped"</button>
+    <button id="quadrant">"quadrant"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+    </ol>
+  </main>
+</body>
+-- click #quadrant
+<body>
+  <main>
+    <button id="whole">"whole"</button>
+    <button id="flipped">"flipped"</button>
+    <button id="quadrant">"quadrant"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+    </ol>
+  </main>
+</body>

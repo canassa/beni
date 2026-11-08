@@ -1,9 +1,11 @@
 --! The page every WebGPU fixture is: a button per scenario, which runs the
 --! scenario as a command and appends the lines it returns to a list. A
 --! scenario does its GPU work in the command's fiber, so a defect there
---! stops the page as any program's would.
+--! stops the page as any program's would. Media loads hold the step until the
+--! scenario returned (`GpuHost.releaseMedia`).
 
 import Cmd exposing (Cmd)
+import GpuHost
 import Html exposing (Html)
 import Sub
 import Tea
@@ -31,13 +33,21 @@ update scenarios msg lines =
         Run i →
             case List.head (List.drop scenarios i) of
                 Just ( _, scenario ) →
-                    ( lines, Cmd.task scenario Got )
+                    ( lines, Cmd.task (finished scenario _) Got )
 
                 Nothing →
                     ( lines, Cmd.none )
 
         Got more →
             ( lines ++ more, Cmd.none )
+
+
+-- Run `scenario`, then end the holds its media loads put on the step.
+finished : (⊤ → List String), ⊤ → List String
+finished scenario ⊤ =
+    lines = scenario ⊤
+    GpuHost.releaseMedia ⊤
+    lines
 
 
 view : List (String × (⊤ → List String)), List String → Html Msg

@@ -1,0 +1,31 @@
+-- An image element of the test image, loaded from the page's origin as a
+-- BMP the driver serves, copied
+-- whole into an `rgba8unorm` texture and read back
+-- (docs/design/webgpu.md §8, §10's S5 acceptance; ledger §6). The image is
+-- the 8×8 test image of four opaque quadrants whose bytes
+-- `GpuMedia.colour` writes out by hand; every pixel read back is compared
+-- with those bytes, never with anything the code under test computed. The
+-- gates' fake host keeps no texels, so its transcript reads zeros;
+-- `test-webgpu`'s is the GPU's (`_expected.webgpu-expected`). reloading: the
+-- same image, loaded, then given a new source the driver holds back, so
+-- `complete` is false. The engine reads the current request, not
+-- `complete`: where it still holds the loaded image (its natural size is
+-- not 0), as HTML specifies and the fake host models, the copy is the
+-- host's and succeeds; Chrome 153 clears the current image at once (its
+-- natural size is 0), so there the copy is `SourceNotReady`.
+import Gpu.Types as Types
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuMedia.copied (λ⊤ → Types.ImageElement (GpuMedia.image "same")) 0
+
+
+reloading : ⊤ → List String
+reloading ⊤ = GpuMedia.copied (λ⊤ → Types.ImageElement (GpuMedia.image "reloading")) 0
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ), ( "reloading", reloading ) ]

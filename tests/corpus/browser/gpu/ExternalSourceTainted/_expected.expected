@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="copy">"copy"</button>
+    <button id="import">"import"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #copy
+<body>
+  <main>
+    <button id="copy">"copy"</button>
+    <button id="import">"import"</button>
+    <ol>
+      <li>"copy from another origin: Err SourceFailed SourceNotOriginClean"</li>
+      <li>"copy from the page's origin: Ok done"</li>
+    </ol>
+  </main>
+</body>
+-- click #import
+<body>
+  <main>
+    <button id="copy">"copy"</button>
+    <button id="import">"import"</button>
+    <ol>
+      <li>"copy from another origin: Err SourceFailed SourceNotOriginClean"</li>
+      <li>"copy from the page's origin: Ok done"</li>
+      <li>"import: Err BatchFailed import: SourceFailed SourceNotOriginClean; issued [importExternalTexture], refused []"</li>
+    </ol>
+  </main>
+</body>

@@ -285,11 +285,26 @@ pub type MapError
     | MappedRangeRejected HostMessage
 
 
---| Why an image or video source could not be used.
+--| Why an image or video source could not be used (ledger §6). The host
+--| decides `SourceNotOriginClean` (its `SecurityError`), `SourceUnusable`
+--| (its `InvalidStateError`) and `ExternalImageCopyRangeRejected` (a copy
+--| outside the source, its `OperationError`). The others are refused before
+--| the native call, from the state the host's own usability check reads
+--| (HTML, *check the usability of the image argument*): `SourceClosed` a
+--| closed bitmap or video frame, `SourceDetached` image data whose pixels
+--| were detached, `SourceEmpty` a canvas with no pixels (a width or a height
+--| of 0) or an image element with no source, `SourceBroken` an image element
+--| whose image failed to load or decode, and `SourceNotReady` an image
+--| element with no image yet or a video element with no current frame.
 pub type SourceError
     = SourceNotOriginClean
     | SourceUnusable HostMessage
     | ExternalImageCopyRangeRejected HostMessage
+    | SourceClosed
+    | SourceDetached
+    | SourceEmpty
+    | SourceBroken
+    | SourceNotReady
 
 
 --| Why a canvas could not be used.

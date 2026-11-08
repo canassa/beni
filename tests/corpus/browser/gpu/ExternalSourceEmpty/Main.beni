@@ -1,0 +1,26 @@
+-- Sources with no pixels (docs/design/webgpu.md §8, §10's S5 acceptance;
+-- ledger §6): a canvas element 0 pixels wide, an `OffscreenCanvas` 0
+-- pixels high and an image element with no source are what the host's
+-- usability check refuses (HTML, *check the usability of the image
+-- argument*), so a copy of each is `SourceFailed SourceEmpty`, refused
+-- before any native call: the page made none.
+import Browser.Canvas
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    [ "canvas 0×8: " ++ GpuMedia.copyOnce d (Types.CanvasElement (must (Browser.Canvas.create 0 8)))
+    , "offscreen 8×0: "
+        ++ GpuMedia.copyOnce d (Types.OffscreenCanvas (must (Browser.Canvas.offscreen 8 0)))
+    , "image with no source: " ++ GpuMedia.copyOnce d (Types.ImageElement (GpuMedia.image "empty"))
+    , GpuMedia.nativeCalls ⊤
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

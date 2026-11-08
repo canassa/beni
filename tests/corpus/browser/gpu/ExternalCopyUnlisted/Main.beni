@@ -1,0 +1,19 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §6): the
+-- native `copyExternalImageToTexture` throws a `TypeError`, where the
+-- ledger documents only a `SecurityError`, an `OperationError` and an
+-- `InvalidStateError`. Every scope the engine pushed is popped first. The
+-- page stops.
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "copy-unlisted" λd →
+    [ "copy: " ++ GpuMedia.copyOnce d (Types.Bitmap (GpuMedia.bitmap ⊤)) ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

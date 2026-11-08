@@ -54,3 +54,20 @@ writeTexture session queue destination data layout extent =
             (Make.writeTexture (Js.from queue) Js.null destination data layout extent)
         )
         λ_ → ⊤
+
+
+--| `Gpu.Queue.copyExternalImageToTexture` under the session.
+pub copyExternalImageToTexture :
+      Handle.DiagnosticSession
+    , Handle.Queue
+    , Types.CopyExternalImageSourceInfo
+    , Types.CopyExternalImageDestInfo
+    , Types.Extent3D
+    → Result Error.Error ⊤
+copyExternalImageToTexture session queue source destination extent =
+    Result.map
+        (Make.checkedIn
+            (Js.from session)
+            (Make.copyExternalImage (Js.from queue) Js.null source destination extent)
+        )
+        λ_ → ⊤

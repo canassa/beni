@@ -50,6 +50,10 @@ browser's WebGPU API with types. Only the main thread has them now.
   `.RenderPipeline`, `.Queue`, `.Buffer`, `.Surface`, `.Encode`, `.Batch` and `.Frame`: the
   forwarding form of each checked operation, with the session as the first argument.
 - `Gpu.Device.eachEvent` and `Gpu.Device.onEvent`: the device's events, `Gpu.Error.DeviceEvent`.
+- `Gpu.Queue.copyExternalImageToTexture`, `Gpu.Batch.copyExternalImageToTexture`: copy an image,
+  a bitmap, image data, a video, a video frame or a canvas into a texture.
+- `Gpu.Batch.importExternalTexture`, `Gpu.Frame.importExternalTexture`: a video element or a video
+  frame as an external texture. `Gpu.ExternalTexture`: `label`, `setLabel`.
 
 ## Rules
 
@@ -138,6 +142,11 @@ Encoding, batches, compute and render passes are in `references/webgpu-render.md
    surface again.
 7. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
    `UnsupportedCapability`. A field the browser does not report is `Default`.
+
+## Images, videos and canvases
+
+Copies of images, videos and canvases into textures, and external textures, are in
+`references/webgpu-render.md`.
 
 ## Diagnostic sessions
 

@@ -420,6 +420,7 @@ module Gpu.Adapter
   value requestDevice : Adapter, DeviceDescriptor → Result InitError Device  -- suspends
 module Gpu.Batch
   value awaitReady : Batch → Result Error ⊤  -- suspends
+  value copyExternalImageToTexture : Batch, Queue, CopyExternalImageSourceInfo, CopyExternalImageDestInfo, Extent3D → Result Error ⊤  -- impure
   value createBindGroup : Batch, BindGroupDescriptor → Result Error BindGroup  -- impure
   value createBindGroupLayout : Batch, BindGroupLayoutDescriptor → Result Error BindGroupLayout  -- impure
   value createBuffer : Batch, BufferDescriptor → Result Error Buffer  -- impure
@@ -435,6 +436,7 @@ module Gpu.Batch
   value encodeBundle : Batch, RenderBundleEncoderDescriptor, (RenderBundleEncoder → Result InputError a) → Result Error { bundle : RenderBundle, value : a }  -- impure
   value getBindGroupLayout : Batch, ComputePipeline, U32 → Result Error BindGroupLayout  -- impure
   value getRenderBindGroupLayout : Batch, RenderPipeline, U32 → Result Error BindGroupLayout  -- impure
+  value importExternalTexture : Batch, ExternalTextureDescriptor → Result Error ExternalTexture  -- impure
   value live : Batch → Bool  -- impure
   value run : Device, String, (Batch → Result Error a) → Result Error a  -- suspends
   value segment : Batch, String → Result Error ⊤  -- impure
@@ -577,6 +579,7 @@ module Gpu.Diagnostics.Encode
 module Gpu.Diagnostics.Frame
   value submit : DiagnosticSession, Surface, String, (Frame → Result Error a) → Result Error { submissions : List Submission, value : a }  -- suspends
 module Gpu.Diagnostics.Queue
+  value copyExternalImageToTexture : DiagnosticSession, Queue, CopyExternalImageSourceInfo, CopyExternalImageDestInfo, Extent3D → Result Error ⊤  -- suspends
   value submit : DiagnosticSession, Queue, List CommandBuffer → Result Error Submission  -- suspends
   value writeBuffer : DiagnosticSession, Queue, Buffer, WriteBufferSource → Result Error ⊤  -- suspends
   value writeTexture : DiagnosticSession, Queue, TexelCopyTextureInfo, Source, TexelCopyBufferLayout, Extent3D → Result Error ⊤  -- suspends
@@ -624,6 +627,7 @@ module Gpu.Engine
   value deviceId : V → Int  -- impure
   value eachEvent : V, (DeviceEvent → ⊤) → ⊤  -- suspends
   value entry : ⊤ → Result Missing V  -- impure
+  value expiresExternal : V, V, V → ⊤  -- impure
   value expiresWith : V, V, V → ⊤  -- impure
   value finishSession : V → Result Error (List GpuError)  -- suspends
   value guard : V, String, (⊤ → ⊤) → ⊤  -- impure
@@ -797,6 +801,11 @@ module Gpu.Error
     SourceNotOriginClean
     SourceUnusable
     ExternalImageCopyRangeRejected
+    SourceClosed
+    SourceDetached
+    SourceEmpty
+    SourceBroken
+    SourceNotReady
   type Stage
     Content
     DeviceValidation
@@ -804,6 +813,9 @@ module Gpu.Error
     Mapping
     PipelineCreation
   value atPath : String, DomainError → InputError
+module Gpu.ExternalTexture
+  value label : ExternalTexture → String  -- impure
+  value setLabel : ExternalTexture, String → ⊤  -- impure
 module Gpu.Feature
   type Feature
     Known
@@ -887,6 +899,7 @@ module Gpu.Frame
   value batch : Frame → Batch
   value encode : Frame, CommandEncoderDescriptor, (CommandEncoder → Result InputError a) → Result Error { commands : CommandBuffer, value : a }  -- impure
   value getCurrentTexture : Frame → Result Error Texture  -- impure
+  value importExternalTexture : Frame, ExternalTextureDescriptor → Result Error ExternalTexture  -- impure
   value submit : Surface, String, (Frame → Result Error a) → Result Error { submissions : List Submission, value : a }  -- suspends
   value submitCommands : Frame, List CommandBuffer → Result Error Submission  -- impure
 module Gpu.Handle
@@ -980,9 +993,12 @@ module Gpu.Make
     WriteBuffer
     WriteTexture
     Submit
+    CopyExternalImage
+    ImportExternalTexture
   alias Op
     Op
   value adopt : Op, V → ⊤  -- impure
+  value adoptInBatch : Op, V, V, V → Bool  -- impure
   value batchIn : V, Device, String, (Batch → Result Error a) → Result Error a  -- suspends
   value bindGroup : V, V, BindGroupDescriptor → Result Error Op  -- impure
   value bindGroupLayout : V, BindGroupLayoutDescriptor → Result Error Op  -- impure
@@ -995,9 +1011,11 @@ module Gpu.Make
   value computePipeline : V, V, ComputePipelineDescriptor → Result Error Op  -- impure
   value computePipelineAsyncIn : V, V, ComputePipelineDescriptor → Result Error V  -- suspends
   value configureIn : V, V, CanvasConfiguration → Result Error ⊤  -- suspends
+  value copyExternalImage : V, V, CopyExternalImageSourceInfo, CopyExternalImageDestInfo, Extent3D → Result Error Op  -- impure
   value discard : Op, V → ⊤  -- impure
   value each : List a, (a → Result e ⊤) → Result e ⊤
   value encodeIn : V, V, CommandEncoderDescriptor, (CommandEncoder → Result InputError a) → Result Error { commands : CommandBuffer, value : a }  -- suspends
+  value externalTexture : V, ExternalTextureDescriptor → Result Error Op  -- impure
   value frameIn : V, V, String, (Frame → Result Error a) → Result Error { submissions : List Submission, value : a }  -- suspends
   value getBindGroupLayout : V, V, U32 → Result Error Op  -- impure
   value labelsOf : Option String → List String
@@ -1164,6 +1182,7 @@ module Gpu.QuerySet
 module Gpu.Queue
   alias WriteBufferSource
   value bufferWrite : Int, Source → WriteBufferSource
+  value copyExternalImageToTexture : Queue, CopyExternalImageSourceInfo, CopyExternalImageDestInfo, Extent3D → Result Error ⊤  -- suspends
   value label : Queue → String  -- impure
   value onSubmittedWorkDone : Queue → Result Error ⊤  -- suspends
   value setLabel : Queue, String → ⊤  -- impure

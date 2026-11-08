@@ -1,0 +1,424 @@
+--! What the external-image fixtures share (`docs/design/webgpu.md` §8;
+--! ledger §6): the test image, an 8×8 square of four opaque quadrants whose
+--! colours `colour` writes out by hand; every kind of source made of it; a
+--! texture it is copied into, read back; and the comparison of what was
+--! read with `colour`, never with anything the code under test computed.
+
+import Binary
+import Browser.Canvas
+import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
+import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
+import Browser.Image
+import Browser.Source
+import Browser.Video
+import Gpu.Batch as Batch
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePass as ComputePass
+import Gpu.ComputePipeline as ComputePipeline
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Batch, Buffer, ComputePipeline, Device, ExternalTexture, Texture)
+import Gpu.Queue
+import Gpu.Submission
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32, buffer)
+import GpuShow
+import Task
+
+
+--| The side of the test image, in pixels.
+pub side : Int
+side = 8
+
+
+--| The bytes (red, green, blue, alpha) of the test image's pixel at column
+--| `x`, row `y`: four quadrants, written out by hand.
+pub colour : Int, Int → List Int
+colour x y =
+    half = side // 2
+    if y < half then
+        if x < half then [ 200, 40, 40, 255 ] else [ 40, 180, 60, 255 ]
+    else if x < half then
+        [ 50, 60, 200, 255 ]
+    else
+        [ 230, 220, 70, 255 ]
+
+
+--| The test image's bytes, row by row.
+pub pixels : ⊤ → Binary.Buffer
+pixels ⊤ =
+    rows = List.range 0 (side - 1)
+    must (Binary.fromList (List.concatMap rows λy → List.concatMap rows λx → colour x y))
+
+
+--| The test image as `ImageData`, over fresh storage.
+pub imageData : ⊤ → Browser.Image.Data
+imageData ⊤ = dataOver (pixels ⊤)
+
+
+--| The test image as `ImageData` over `storage`.
+pub dataOver : Binary.Buffer → Browser.Image.Data
+dataOver storage =
+    view = must (Binary.view (Binary.Local storage) Binary.U8Clamped Binary.whole)
+    must (Browser.Image.dataFromView view side Nothing Browser.Image.settings)
+
+
+--| The test image as a bitmap, with no change of its colours or alpha.
+pub bitmap : ⊤ → Browser.Image.Bitmap
+bitmap ⊤ =
+    options =
+        { Browser.Image.bitmapOptions
+            | alpha = Browser.Image.Straight
+            , conversion = Browser.Image.NoConversion
+        }
+    must (Browser.Image.bitmap (Browser.Source.FromPixels (imageData ⊤)) Nothing options)
+
+
+--| The test image as a video frame, made from its bitmap.
+pub frame : ⊤ → Browser.Video.Frame
+frame ⊤ =
+    must
+        (Browser.Video.frame (Browser.Source.FromBitmap (bitmap ⊤))
+            { Browser.Video.frameOptions | timestamp = Just 0 }
+        )
+
+
+--| A canvas element showing the test image, by a bitmap renderer.
+pub canvas : ⊤ → Browser.Canvas.Canvas
+canvas ⊤ =
+    c = must (Browser.Canvas.create side side)
+    must (Browser.Canvas.present (must (Browser.Canvas.bitmapRenderer c)) (bitmap ⊤))
+    c
+
+
+--| An `OffscreenCanvas` showing the test image, by a bitmap renderer.
+pub offscreen : ⊤ → Browser.Canvas.OffscreenCanvas
+offscreen ⊤ =
+    c = must (Browser.Canvas.offscreen side side)
+    must (Browser.Canvas.present (must (Browser.Canvas.offscreenBitmapRenderer c)) (bitmap ⊤))
+    c
+
+
+--| An image element of the test image, in the state `kind` names
+--| (`GpuHost.image`). May suspend.
+pub image : String → HTMLImageElement
+image kind = Task.callback λresume →
+    GpuHost.image kind (pixels ⊤) side λelement → Task.resume resume element
+    λ⊤ → ⊤
+
+
+--| How much larger than the test image a video shows it: a video's colours
+--| bleed a pixel or two across an edge (its chroma is subsampled), so a
+--| video shows each pixel of the image as an 8×8 block, and a read takes
+--| each block's centre.
+pub videoScale : Int
+videoScale = 8
+
+
+--| The test image, each pixel an `n`×`n` block.
+pub scaled : Int → Binary.Buffer
+scaled n =
+    rows = List.range 0 (side * n - 1)
+    must
+        (Binary.fromList
+            (List.concatMap rows λy → List.concatMap rows λx → colour (x // n) (y // n))
+        )
+
+
+--| A video element showing the test image scaled by `videoScale`, in the
+--| state `kind` names (`GpuHost.video`). May suspend.
+pub video : String → HTMLVideoElement
+video kind = Task.callback λresume →
+    GpuHost.video kind (scaled videoScale) (side * videoScale) λelement → Task.resume resume element
+    λ⊤ → ⊤
+
+
+--| The extent of the test image.
+pub extent : Types.Extent3D
+extent = square side
+
+
+--| A square extent of `n` pixels.
+pub square : Int → Types.Extent3D
+square n =
+    Types.Extent3DFields
+        { width = u32 n, height = Types.Value (u32 n), depthOrArrayLayers = Types.Default }
+
+
+--| A texture of the test image's size that a copy of an external image may
+--| write and a read may copy from.
+pub target : Device → Texture
+target d = targetOf d 1
+
+
+--| A texture of the test image's size scaled by `n`.
+pub targetOf : Device, Int → Texture
+targetOf d n =
+    usage = Flags.texture [ Flags.RenderAttachment, Flags.TextureCopyDst, Flags.TextureCopySrc ]
+    must
+        (Gpu.Device.createTexture
+            d
+            (Types.textureDescriptor (square (side * n)) Types.Rgba8unorm usage)
+        )
+
+
+--| The pixels of `texture`, of the test image's size, row by row, each as
+--| its four bytes.
+pub read : Device, Texture → Result Error.Error (List (List Int))
+read d texture = readAt d texture 1
+
+
+--| The centre pixel of each `n`×`n` block of `texture`, of the test
+--| image's size scaled by `n`, row by row, each as its four bytes.
+pub readAt : Device, Texture, Int → Result Error.Error (List (List Int))
+readAt d texture n =
+    out = Gpu.Device.createBuffer d (buffer (256 * side * n) [ Flags.MapRead, Flags.CopyDst ])?
+    layout = { (Types.texelCopyBufferInfo out) | bytesPerRow = Types.Value (u32 256) }
+
+    encoded = Encode.run d Types.commandEncoderDescriptor (copyOut texture layout n _)?
+    receipt = Gpu.Queue.submit (Gpu.Device.queue d) [ encoded.commands ]?
+    Gpu.Submission.done receipt?
+    words = GpuKit.readU32s out (64 * side * n)?
+    Ok (centres words n)
+
+
+copyOut :
+      Texture
+    , Types.TexelCopyBufferInfo
+    , Int
+    , Gpu.Handle.CommandEncoder
+    → Result Error.InputError ⊤
+copyOut texture layout n encoder =
+    CommandEncoder.copyTextureToBuffer
+        encoder
+        (Types.texelCopyTextureInfo texture)
+        layout
+        (square (side * n))
+
+
+-- Words of rows 256 bytes apart: the centre pixel of each `n`×`n` block.
+centres : List Int, Int → List (List Int)
+centres words n =
+    at = λi → i * n + n // 2
+    cells = List.range 0 (side - 1)
+    List.concatMap cells λy →
+        List.map cells λx →
+            bytesOf (Maybe.withDefault (List.head (List.drop words (at y * 64 + at x))) 0)
+
+
+--| A little-endian word's four bytes.
+pub bytesOf : Int → List Int
+bytesOf w = [ Int.rem w 256, Int.rem (w // 256) 256, Int.rem (w // 65536) 256, w // 16777216 ]
+
+
+--| How `got`, the pixels of an image of the test image's size, compares
+--| with `expected` at each column and row, every byte within `tolerance`:
+--| how many match, and the first that does not.
+pub compare : List (List Int), (Int, Int → List Int), Int → String
+compare got expected tolerance =
+    misses =
+        List.filter (List.indexedMap got λi p → ( Int.rem i side, i // side, p )) λ( x, y, p ) →
+            not (near p (expected x y) tolerance)
+    count =
+        String.fromInt (List.length got - List.length misses)
+            ++ " of "
+            ++ String.fromInt (List.length got)
+            ++ " pixels match"
+    case misses of
+        [] →
+            count
+
+        [ ( x, y, p ), …_ ] →
+            count
+                ++ "; first miss at "
+                ++ String.fromInt x
+                ++ ","
+                ++ String.fromInt y
+                ++ ": "
+                ++ String.join (List.map p String.fromInt) " "
+
+
+near : List Int, List Int, Int → Bool
+near got want tolerance =
+    List.length got == List.length want
+        && List.all (List.map2 got want λa b → abs (a - b) ≤ tolerance) λok → ok
+
+
+abs : Int → Int
+abs n = if n < 0 then -n else n
+
+
+--| The test image as it reads after a vertical flip.
+pub flipped : Int, Int → List Int
+flipped x y = colour x (side - 1 - y)
+
+
+--| What `compare` says of `read`'s result, or the failure.
+pub check : Result Error.Error (List (List Int)), (Int, Int → List Int), Int → String
+check got expected tolerance =
+    case got of
+        Ok rows →
+            compare rows expected tolerance
+
+        Err problem →
+            "read: Err " ++ GpuShow.error problem
+
+
+--| Copy the source `make` gives, made once the host is ready, whole into a
+--| fresh texture, and compare the texture with the test image, each byte
+--| within `tolerance`.
+pub copied : (⊤ → Types.CopyExternalImageSource), Int → List String
+copied make tolerance = GpuKit.with "none" λd →
+    t = target d
+    result =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            (Types.copyExternalImageSourceInfo (make ⊤))
+            (Types.copyExternalImageDestInfo t)
+            extent
+    [ "copy: " ++ GpuShow.checked result λ_ → "done"
+    , "pixels: " ++ check (read d t) colour tolerance
+    ]
+
+
+-- ---- External textures --------------------------------------------------------
+
+--| A compute shader that writes, for each pixel of the test image, the
+--| centre texel of its block of an external texture (the texel itself when
+--| the texture is the image's size; see `videoScale`), as its four bytes
+--| packed in one word, into a storage buffer, row by row.
+pub wgsl : String
+wgsl =
+    String.join
+        [ "@group(0) @binding(0) var source : texture_external;"
+        , "@group(0) @binding(1) var<storage, read_write> texels : array<u32>;"
+        , "@compute @workgroup_size(1)"
+        , "fn main(@builtin(global_invocation_id) id : vec3u) {"
+        , "    let size = textureDimensions(source);"
+        , "    let at = id.xy * size / vec2u(8u) + size / vec2u(16u);"
+        , "    texels[id.y * 8u + id.x] = pack4x8unorm(textureLoad(source, at));"
+        , "}"
+        ]
+        "\n"
+
+
+--| What sampling needs: the pipeline, its group layout, the storage buffer
+--| the shader writes and the buffer it is read back from.
+pub type alias Reader =
+    pipeline : ComputePipeline
+    layout : Gpu.Handle.BindGroupLayout
+    texels : Buffer
+    readback : Buffer
+
+
+--| A reader on `d`.
+pub reader : Device → Result Error.Error Reader
+reader d =
+    shader = Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl)?
+    pipeline =
+        Gpu.Device.createComputePipeline
+            d
+            (Types.computePipelineDescriptor Types.Auto (Types.programmableStage shader))?
+    layout = ComputePipeline.getBindGroupLayout pipeline (u32 0)?
+    texels = Gpu.Device.createBuffer d (buffer (4 * side * side) [ Flags.Storage, Flags.CopySrc ])?
+    readback =
+        Gpu.Device.createBuffer d (buffer (4 * side * side) [ Flags.MapRead, Flags.CopyDst ])?
+    Ok { pipeline = pipeline, layout = layout, texels = texels, readback = readback }
+
+
+--| A bind group of `texture` for the reader, made in `b`.
+pub group : Batch, Reader, ExternalTexture → Result Error.Error Gpu.Handle.BindGroup
+group b r texture =
+    Batch.createBindGroup
+        b
+        (Types.bindGroupDescriptor r.layout
+            [ Types.bindGroupEntry (u32 0) (Types.ExternalTextureBinding texture)
+            , Types.bindGroupEntry (u32 1) (Types.WholeBufferBinding r.texels)
+            ]
+        )
+
+
+--| In `b`, run the reader over `bound` (a bind group of a texture) and copy
+--| what it wrote into the read-back buffer; submit it on `queue`.
+pub sample : Batch, Gpu.Handle.Queue, Reader, Gpu.Handle.BindGroup → Result Error.Error ⊤
+sample b queue r bound =
+    encoded = Batch.encode b Types.commandEncoderDescriptor (passes r bound _)?
+    _ = Batch.submit b queue [ encoded.commands ]?
+    Ok ⊤
+
+
+--| The commands of a sampling: the dispatch, and the copy of what it wrote.
+pub passes : Reader, Gpu.Handle.BindGroup, Gpu.Handle.CommandEncoder → Result Error.InputError ⊤
+passes r bound encoder =
+    ComputePass.with encoder Types.computePassDescriptor (dispatch r bound _)?
+    CommandEncoder.copyBuffer encoder r.texels r.readback (Just (4 * side * side))
+
+
+dispatch : Reader, Gpu.Handle.BindGroup, Gpu.Handle.ComputePass → Result Error.InputError ⊤
+dispatch r bound pass =
+    ComputePass.setPipeline pass r.pipeline?
+    ComputePass.setBindGroup pass (u32 0) (Just bound) []?
+    ComputePass.dispatchWorkgroups pass (u32 side) (u32 side) (u32 1)
+
+
+--| The texels the reader read back, row by row, each as its four bytes.
+pub sampled : Reader → Result Error.Error (List (List Int))
+sampled r = Result.map (GpuKit.readU32s r.readback (side * side)) λwords → List.map words bytesOf
+
+
+-- ---- Refusals ---------------------------------------------------------------
+
+--| A whole copy of `source` into a fresh texture on `d`: its result.
+pub copyOnce : Device, Types.CopyExternalImageSource → String
+copyOnce d source =
+    result =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            (Types.copyExternalImageSourceInfo source)
+            (Types.copyExternalImageDestInfo (target d))
+            extent
+    GpuShow.checked result λ_ → "done"
+
+
+--| An import of `source` in a batch of `d`: the batch's result.
+pub importOnce : Device, Types.ExternalTextureSource → String
+importOnce d source =
+    result = Batch.run d "import" (importIn source _)
+    GpuShow.checked result λ_ → "done"
+
+
+importIn : Types.ExternalTextureSource, Batch → Result Error.Error ⊤
+importIn source b =
+    _ = Batch.importExternalTexture b (Types.externalTextureDescriptor source)?
+    Ok ⊤
+
+
+--| How many native copies and imports the page made.
+pub nativeCalls : ⊤ → String
+nativeCalls ⊤ =
+    "native calls: "
+        ++ String.fromInt (GpuHost.calls "copyExternalImageToTexture")
+        ++ " copies, "
+        ++ String.fromInt (GpuHost.calls "importExternalTexture")
+        ++ " imports"
+
+
+--| Copy the current frame of a video showing the test image scaled by
+--| `videoScale` whole into a texture of its size, and compare the centre of
+--| each block with the test image, each byte within `tolerance`.
+pub copiedVideo : Int → List String
+copiedVideo tolerance = GpuKit.with "none" λd →
+    t = targetOf d videoScale
+    source = Types.VideoElement (video "ready")
+    result =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            (Types.copyExternalImageSourceInfo source)
+            (Types.copyExternalImageDestInfo t)
+            (square (side * videoScale))
+    [ "copy: " ++ GpuShow.checked result λ_ → "done"
+    , "pixels: " ++ check (readAt d t videoScale) colour tolerance
+    ]

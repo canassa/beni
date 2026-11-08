@@ -127,6 +127,16 @@ getCurrentTexture frame =
             Ok (Js.to texture)
 
 
+--| Import an external texture for this frame: `Gpu.Batch.importExternalTexture`
+--| on the frame's batch. One of a video element expires when the frame
+--| ends, so import it again in every frame that samples it.
+pub importExternalTexture :
+      Handle.Frame
+    , Types.ExternalTextureDescriptor
+    → Result Error.Error Handle.ExternalTexture
+importExternalTexture frame descriptor = Batch.importExternalTexture (batch frame) descriptor
+
+
 --| Encode in the frame: `Gpu.Batch.encode` on the frame's batch.
 pub encode :
       Handle.Frame

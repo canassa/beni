@@ -2526,6 +2526,42 @@ async function serve() {
       response.writeHead(200, { "content-type": "text/plain" });
       return void response.end("worker-http");
     }
+    // The WebGPU fixtures' images (tests/platforms/gpu/GpuHost.js `image`):
+    // a 24-bit BMP of the opaque RGBA pixels `px` (hex), `w` wide, with
+    // CORS only when asked; `delay` holds the answer back that many ms.
+    if (path === "/_media/image.bmp") {
+      const query = new URL(request.url, "http://127.0.0.1").searchParams;
+      const pixels = Buffer.from(query.get("px") ?? "", "hex");
+      const width = Number(query.get("w"));
+      const height = pixels.length / 4 / width;
+      const stride = (width * 3 + 3) & ~3;
+      const bmp = Buffer.alloc(54 + stride * height);
+      bmp.write("BM", 0, "latin1");
+      bmp.writeUInt32LE(bmp.length, 2);
+      bmp.writeUInt32LE(54, 10);
+      bmp.writeUInt32LE(40, 14);
+      bmp.writeInt32LE(width, 18);
+      bmp.writeInt32LE(-height, 22);
+      bmp.writeUInt16LE(1, 26);
+      bmp.writeUInt16LE(24, 28);
+      bmp.writeUInt32LE(stride * height, 34);
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          const at = (y * width + x) * 4;
+          const to = 54 + y * stride + x * 3;
+          bmp[to] = pixels[at + 2];
+          bmp[to + 1] = pixels[at + 1];
+          bmp[to + 2] = pixels[at];
+        }
+      const cors = query.has("cors") ? { "access-control-allow-origin": "*" } : {};
+      const answer = () => {
+        if (response.destroyed) return;
+        response.writeHead(200, { "content-type": "image/bmp", "cache-control": "no-store", ...cors });
+        response.end(bmp);
+      };
+      const delay = Number(query.get("delay") ?? "0");
+      return void (delay > 0 ? setTimeout(answer, delay).unref() : answer());
+    }
     if (path === "/_page.html") {
       response.writeHead(200, { "content-type": "text/html" });
       return void response.end(blank);

@@ -1,0 +1,10 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: SecurityError: a plain object, not a DOMException)
+(the DOM did not change)

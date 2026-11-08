@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"copy of a closed bitmap: Err SourceFailed SourceClosed"</li>
+      <li>"copy of a closed frame: Err SourceFailed SourceClosed"</li>
+      <li>"import of a closed frame: Err BatchFailed import: SourceFailed SourceClosed; issued [], refused [importExternalTexture]"</li>
+      <li>"native calls: 0 copies, 0 imports"</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,27 @@
+-- Detached pixels (docs/design/webgpu.md §8, §10's S5 acceptance; ledger
+-- §6): `ImageData` over storage that was then transferred away has no
+-- pixels left, so a copy of it is `SourceFailed SourceDetached`, refused
+-- before any native call: the page made none. The same `ImageData` copies
+-- before the transfer.
+import Binary
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    storage = GpuMedia.pixels ⊤
+    data = GpuMedia.dataOver storage
+    before = GpuMedia.copyOnce d (Types.ImageData data)
+    _ = must (Binary.transfer storage)
+    [ "copy before the transfer: " ++ before
+    , "copy after the transfer: " ++ GpuMedia.copyOnce d (Types.ImageData data)
+    , GpuMedia.nativeCalls ⊤
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

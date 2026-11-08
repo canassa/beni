@@ -1,0 +1,29 @@
+-- Sources not ready yet (docs/design/webgpu.md §8, §10's S5 acceptance;
+-- ledger §6): a video element with no current frame (`readyState` below
+-- `HAVE_CURRENT_DATA`) and an image element still loading are what the
+-- host's usability check finds bad (HTML, *check the usability of the
+-- image argument*), which would be the device's validation error; the
+-- engine reads the same state first, so a copy of either, and an import of
+-- the video, are `SourceFailed SourceNotReady` before any native call: the
+-- page made none.
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    video = GpuMedia.video "empty"
+    [ "copy of a video with no frame: " ++ GpuMedia.copyOnce d (Types.VideoElement video)
+    , "import of a video with no frame: "
+        ++ GpuMedia.importOnce d (Types.ExternalVideoElement video)
+    , "copy of an image still loading: "
+        ++ GpuMedia.copyOnce d (Types.ImageElement (GpuMedia.image "loading"))
+    , GpuMedia.nativeCalls ⊤
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

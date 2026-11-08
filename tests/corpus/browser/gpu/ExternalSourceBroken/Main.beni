@@ -1,0 +1,22 @@
+-- A broken image (docs/design/webgpu.md §8, §10's S5 acceptance; ledger
+-- §6): an image element whose source failed to load is what the host's
+-- usability check refuses (HTML, *check the usability of the image
+-- argument*: its request is broken), so a copy of it is `SourceFailed
+-- SourceBroken`, refused before any native call: the page made none.
+import Gpu.Types as Types
+import GpuKit
+import GpuMedia
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    [ "copy of a broken image: "
+        ++ GpuMedia.copyOnce d (Types.ImageElement (GpuMedia.image "broken"))
+    , GpuMedia.nativeCalls ⊤
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

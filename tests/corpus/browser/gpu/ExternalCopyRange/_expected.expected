@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"16×16 from (0, 0): Err SourceFailed ExternalImageCopyRangeRejected"</li>
+      <li>"4×4 from (6, 6): Err SourceFailed ExternalImageCopyRangeRejected"</li>
+      <li>"4×4 from (4, 4): Ok done"</li>
+    </ol>
+  </main>
+</body>
