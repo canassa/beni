@@ -37,6 +37,7 @@ const Canon = @import("Canon.zig");
 const AtomGraft = @import("AtomGraft.zig");
 const Put = @import("Put.zig");
 const Needs = @import("Needs.zig");
+const PastPayload = @import("PastPayload.zig");
 const Made = @import("Made.zig");
 const Host = @import("Host.zig");
 const Cells = @import("Cells.zig");
@@ -172,7 +173,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             try describeOrigin(s, l, q, out);
         },
         .host => try Put.arrive(s, q, .{ .kind = .host }, out),
-        .answer => try Put.arrive(s, q, try Made.answer(s, l.atom, l.extra), out),
+        .answer => try Put.arrive(s, q, try Made.answer(s, l.atom, l.extra, l.whole), out),
         .recons => unreachable,
         .ref => {
             const r = f.roots.items[l.root];
@@ -619,7 +620,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
             try describeOrigin(s, l, q, out);
         },
         .host => try Put.arriveWide(s, q, .{ .kind = .host }, out),
-        .answer => try Put.arriveWide(s, q, try Made.answer(s, l.atom, l.extra), out),
+        .answer => try Put.arriveWide(s, q, try Made.answer(s, l.atom, l.extra, l.whole), out),
         .recons => unreachable,
         .ref => {
             const r = f.roots.items[l.root];
@@ -694,7 +695,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                     },
                     .cb => {
                         const crel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, Slots.pathOf(sl))) orelse Slots.root;
-                        const a = try Made.answer(s, r.a, crel);
+                        const a = try Made.answer(s, r.a, crel, PastPayload.answerWhole(f.places, sl));
                         try Put.arrive(s, q, a, out);
                         for (qs_all) |qs| try Put.arrive(s, .from(qs), a, out);
                     },
@@ -739,7 +740,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                     },
                     .cb => {
                         const crel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, Slots.pathOf(sl))) orelse Slots.root;
-                        const a = try Made.answer(s, r.a, crel);
+                        const a = try Made.answer(s, r.a, crel, PastPayload.answerWhole(f.places, sl));
                         if (whole or Slots.isSub(sl)) try Put.arriveWide(s, .from(dest), a, out) else try Put.arrive(s, .from(dest), a, out);
                     },
                     .call, .supply => if (whole or Slots.isSub(sl)) try describeCallWide(s, l, Slots.pathOf(sl), .from(dest), out) else {
@@ -763,7 +764,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
         },
         .cb => {
             const rel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
-            try Put.arrive(s, at, try Made.answer(s, r.a, rel), out);
+            try Put.arrive(s, at, try Made.answer(s, r.a, rel, PastPayload.answerWhole(f.places, sl)), out);
         },
         .call, .supply => {
             const one = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{sl}), .tags = l.tags });
@@ -807,7 +808,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
         if ((try s.effected.getOrPut(gpa, .{ x, @intFromBool(deep), @backingInt(out) })).found_existing) continue;
         const l = f.leafAt(x);
-        if (l.kind == .answer and out == .writes) _ = try Needs.publish(s, l.atom, l.extra, deep);
+        if (l.kind == .answer and out == .writes) _ = try Needs.publish(s, l.atom, l.extra, deep or l.whole);
         if (l.kind == .answer and out == .escapes) _ = try Contract.Draft.addEffect(Put.effList(s, out), s.arena, .{ .j = f.cbs.items[l.atom].j, .slot = f.cbs.items[l.atom].slot, .deep = true });
         if (out == .escapes and try Made.selfEscape(s, l)) continue;
         if (out == .escapes and l.kind == .top and l.root != Value.none) try Origin.leaves(&e.ev, l, &stack);
@@ -835,7 +836,9 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
             .cb => if (out == .escapes) {
                 s.d.labels.items[try s.labelIndex(r.a)].answer_left = true;
             } else if (out == .writes) for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
-                _ = try Needs.publish(s, r.a, (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root, deep);
+                // Deep where a step names no level (a payload's `var`), and whole where no slot names it.
+                const rel = try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl));
+                _ = try Needs.publish(s, r.a, rel orelse Slots.root, deep or rel == null or f.places.kind(f.places.pathPlace(.from(sl))) == .@"var");
             },
         }
     }
@@ -1117,7 +1120,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
                 break :blk .{ .kind = .top };
             },
             .host => .{ .kind = .host },
-            .answer => try Made.answer(s, l.atom, l.extra),
+            .answer => try Made.answer(s, l.atom, l.extra, l.whole),
             .recons => unreachable,
             .ref => {
                 const r = f.roots.items[l.root];
@@ -1129,7 +1132,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
                     },
                     .cb => for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
                         const below = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
-                        _ = try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, try Made.answer(s, r.a, below));
+                        _ = try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, try Made.answer(s, r.a, below, PastPayload.answerWhole(f.places, sl)));
                     },
                     .call, .supply => {
                         var ls: std.ArrayList(u32) = .empty;

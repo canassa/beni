@@ -10,6 +10,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Replay = @import("Replay.zig");
+const Slots = @import("Slots.zig");
 
 pub fn payload(pl: *const Place.Table, p: Ids.PlaceId) bool {
     return pl.kind(p) == .@"var" and pl.steps(p).steps.len != 0;
@@ -80,4 +81,10 @@ pub fn read(e: anytype, v: u32, words: []const u32, out: *std.ArrayList(u32)) !v
         if (e.f.roots.items[x.root].kind == .param) return e.leavesOf(at, 0, out);
         return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
     }
+}
+
+/// Whether answer slot `sl` holds all below it: a symbol, a `var`'s or an opaque's place (§2.1).
+pub fn answerWhole(pl: *const Place.Table, sl: u32) bool {
+    const k = pl.kind(pl.pathPlace(Slots.pathOf(sl)));
+    return Slots.isSub(sl) or k == .@"var" or k == .@"opaque";
 }

@@ -368,7 +368,7 @@ pub const Frame = struct {
 
     pub fn leaf(f: *Frame, l: Leaf) Error!u32 {
         try f.charge(.cell, 1);
-        const key: [8]u32 = .{ @backingInt(l.kind) | (@as(u32, @intFromBool(l.at_pos)) << 8), l.atom, l.extra, l.root, l.pos, l.slots, l.tags, l.routes };
+        const key: [8]u32 = .{ @backingInt(l.kind) | (@as(u32, @intFromBool(l.at_pos)) << 8) | (@as(u32, @intFromBool(l.whole)) << 9), l.atom, l.extra, l.root, l.pos, l.slots, l.tags, l.routes };
         if (f.leaf_index.get(key)) |hit| return hit;
         const id: u32 = @intCast(f.leaves.items.len);
         try f.leaves.append(f.gpa, l);
