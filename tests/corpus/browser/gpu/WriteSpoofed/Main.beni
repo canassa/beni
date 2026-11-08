@@ -13,11 +13,14 @@ import Tea
 
 
 run : ⊤ → List String
-run ⊤ =
-    GpuKit.with "write-spoofed" λd →
-        b = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst ]))
-        w = Gpu.Queue.writeBuffer (Gpu.Device.queue d) b (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 8)))
-        [ "write: " ++ GpuShow.checked w (λ_ → "written") ]
+run ⊤ = GpuKit.with "write-spoofed" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst ]))
+    w =
+        Gpu.Queue.writeBuffer
+            (Gpu.Device.queue d)
+            b
+            (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 8)))
+    [ "write: " ++ GpuShow.checked w λ_ → "written" ]
 
 
 main : Tea.Program

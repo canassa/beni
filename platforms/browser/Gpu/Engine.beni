@@ -520,7 +520,10 @@ expireMappings r =
 pub trackMapped : V, V, Bool → ⊤
 trackMapped r buffer mapped =
     set = Js.get r "mapped"
-    if mapped then Js.call set "add" [ buffer ] ▷ ignore else Js.call set "delete" [ buffer ] ▷ ignore
+    if mapped then
+        Js.call set "add" [ buffer ] ▷ ignore
+    else
+        Js.call set "delete" [ buffer ] ▷ ignore
 
 
 --| Whether `destroy` was called on the device.

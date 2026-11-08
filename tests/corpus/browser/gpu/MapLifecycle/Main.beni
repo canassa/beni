@@ -210,38 +210,38 @@ main =
 -- for a read mapping and a mapping from creation alike, and nothing reads
 -- the detached memory.
 deviceDestroyed : ⊤ → List String
-deviceDestroyed ⊤ =
-    GpuKit.with "none" λd →
-        b = readable d
-        m = must (Gpu.Buffer.map b Gpu.Buffer.mapRead)
-        r = must (Gpu.Buffer.getMappedRange m Gpu.Buffer.whole)
-        made = must (Gpu.Device.createMappedBuffer d (buffer 8 [ CopyDst ]))
-        w = must (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole)
-        Gpu.Device.destroy d
-        [ "read mapping's range after device destroy: "
-            ++ GpuShow.inputResult (MappedRange.readU32 r 0) String.fromInt
-        , "a new range of it: " ++ GpuShow.checked (Gpu.Buffer.getMappedRange m Gpu.Buffer.whole) (λ_ → "range")
-        , "creation mapping's range: " ++ GpuShow.inputResult (MappedRange.writeU32 w 0 1) (λ_ → "done")
-        , "copied out: "
-            ++ GpuShow.readResult (MappedRange.readBytes r { byteOffset = 0, byteLength = Nothing }) (λ_ → "bytes")
-        , "map states: " ++ state b ++ ", " ++ state made.buffer
-        ]
+deviceDestroyed ⊤ = GpuKit.with "none" λd →
+    b = readable d
+    m = must (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+    r = must (Gpu.Buffer.getMappedRange m Gpu.Buffer.whole)
+    made = must (Gpu.Device.createMappedBuffer d (buffer 8 [ CopyDst ]))
+    w = must (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole)
+    Gpu.Device.destroy d
+    [ "read mapping's range after device destroy: "
+        ++ GpuShow.inputResult (MappedRange.readU32 r 0) String.fromInt
+    , "a new range of it: "
+        ++ GpuShow.checked (Gpu.Buffer.getMappedRange m Gpu.Buffer.whole) λ_ → "range"
+    , "creation mapping's range: " ++ GpuShow.inputResult (MappedRange.writeU32 w 0 1) λ_ → "done"
+    , "copied out: "
+        ++ GpuShow.readResult (MappedRange.readBytes r { byteOffset = 0, byteLength = Nothing }) λ_ →
+            "bytes"
+    , "map states: " ++ state b ++ ", " ++ state made.buffer
+    ]
 
 
 -- `withMapped` whose body suspends, cancelled while it waits: the
 -- finaliser unmaps its own mapping, and a map someone makes after it is
 -- left alone.
 suspendedBody : ⊤ → List String
-suspendedBody ⊤ =
-    GpuKit.with "none" λd →
-        b = readable d
-        f = Task.spawn λ⊤ → Gpu.Buffer.withMapped b Gpu.Buffer.mapRead λ_ → Task.never ⊤
-        GpuHost.drain ⊤
-        during = state b
-        Task.cancel f
-        after = state b
-        again = mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
-        GpuHost.drain ⊤
-        [ "withMapped body waiting: " ++ during ++ ", cancelled: " ++ after
-        , "a later map: " ++ again ++ ", still " ++ state b
-        ]
+suspendedBody ⊤ = GpuKit.with "none" λd →
+    b = readable d
+    f = Task.spawn λ⊤ → Gpu.Buffer.withMapped b Gpu.Buffer.mapRead λ_ → Task.never ⊤
+    GpuHost.drain ⊤
+    during = state b
+    Task.cancel f
+    after = state b
+    again = mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+    GpuHost.drain ⊤
+    [ "withMapped body waiting: " ++ during ++ ", cancelled: " ++ after
+    , "a later map: " ++ again ++ ", still " ++ state b
+    ]

@@ -13,10 +13,11 @@ import Tea
 
 
 run : ⊤ → List String
-run ⊤ =
-    GpuKit.with "range-spoofed" λd →
-        made = must (Gpu.Device.createMappedBuffer d (buffer 16 [ CopySrc ]))
-        [ "range: " ++ GpuShow.checked (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole) (λ_ → "range") ]
+run ⊤ = GpuKit.with "range-spoofed" λd →
+    made = must (Gpu.Device.createMappedBuffer d (buffer 16 [ CopySrc ]))
+    [ "range: "
+        ++ GpuShow.checked (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole) λ_ → "range"
+    ]
 
 
 main : Tea.Program

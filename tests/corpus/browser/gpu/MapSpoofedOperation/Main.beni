@@ -13,10 +13,9 @@ import Tea
 
 
 run : ⊤ → List String
-run ⊤ =
-    GpuKit.with "map-spoofed-operation" λd →
-        b = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
-        [ "map: " ++ GpuShow.checked (Gpu.Buffer.map b Gpu.Buffer.mapRead) (λ_ → "mapping") ]
+run ⊤ = GpuKit.with "map-spoofed-operation" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+    [ "map: " ++ GpuShow.checked (Gpu.Buffer.map b Gpu.Buffer.mapRead) λ_ → "mapping" ]
 
 
 main : Tea.Program
