@@ -4302,6 +4302,13 @@ a`) and `Task.join` (`cellread Fiber a → lent a`) have v2 words. `ownership-v2
 reading: `fork` makes a new record with an empty `outcome` and only queues it, and `complete` alone writes the
 `outcome`, with the work's answer or `Cancelled`. Their bodies and the 103 helpers of `Task` they run are pinned.
 
+*Amended 2026-11-06 (#1154):* three of those helpers changed, and I read them again. `cleanups` and `teardown`
+also take the finalisers that a throwing `update` left apart on a record (`withStranded`), and `finished`, when
+its fiber holds such finalisers, puts them on the fiber's own stack under one more entry that calls `finished`
+again (`boundary.md` §9.8.16 (b), amended the same day). None of them writes `outcome`: `complete` alone still
+does, and `finished` still calls it with the work's answer. So the words of `spawn`, `spawnIn`, `spawnDetached`
+and `join` hold. The new helpers `withStranded`, `stranded` and `stranding` are pinned.
+
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
 
