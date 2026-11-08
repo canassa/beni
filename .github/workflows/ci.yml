@@ -2,15 +2,16 @@
 # push to master, with the Zig and Node that flake.nix pins, so CI and every
 # developer run the same toolchain.
 #
-# Every job runs on azathoth (the owner, 2026-11-08): four ephemeral
-# self-hosted runners, label `azathoth`, NixOS, in a slice of 8 CPUs and
+# Every job runs on azathoth (the owner, 2026-11-08): ephemeral
+# self-hosted runners, label `azathoth`, NixOS, in a slice of 10 CPUs and
 # 14 GiB, fenced off the host's services (infra repository,
 # hosts/azathoth/github-runners.nix). The host's Nix daemon serves `nix
-# develop`, so the dev shells' closures stay in its store between runs and
-# no job installs Nix or caches a store. Each job starts in an empty work
-# directory, so the Zig and run-hash caches still come from actions/cache,
-# under keys of their own (`-azathoth-`). Fork pull requests run only after
-# the owner approves them.
+# develop`, and the host keeps the dev shells' closures in its store, so no
+# job installs Nix or caches a store. Each job starts in an empty work
+# directory and takes master's Zig and run-hash caches from the host
+# (.github/ci-cache.sh): every job reads them, and only a master run of
+# this workflow, proven by GitHub's OIDC token, writes them. Fork pull
+# requests run only after the owner approves them.
 #
 name: ci
 
@@ -43,6 +44,8 @@ jobs:
     runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
+      # The OIDC token that proves a master run to the cache store.
+      id-token: write
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,13 +87,7 @@ jobs:
       # Zig's local and global caches, from master's newest build.
       - name: restore the Zig caches
         id: zig-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: zig-azathoth-${{ hashFiles('flake.lock') }}-
+        run: .github/ci-cache.sh restore "zig-azathoth-${{ hashFiles('flake.lock') }}"
 
       # Zig never prunes its cache, and each master run saves the restored
       # cache plus its own additions. When a master run restores more than
@@ -106,23 +103,16 @@ jobs:
             rm -rf .zig-cache ~/.cache/zig
           fi
 
-      # The run-hash cache, from the newest run of this pull request, else
-      # from master's newest. A pull request's key is its own merge
-      # commit's, so a second push to it restores what the first verified.
-      # Restoring takes master's entries into a pull request, never the
-      # other way: a pull request saves in its own scope, which master
-      # never restores, so CI's verdict on master depends on no pull
-      # request's cache and on no developer's. The key hashes the harness
+      # The run-hash cache, from master's newest run. Restoring takes
+      # master's entries into a pull request, never the other way: a pull
+      # request saves nothing, so CI's verdict on master depends on no pull
+      # request's cache and on no developer's. The name hashes the harness
       # that decides "passed" (the owner, 2026-10-28): a digest does not
       # cover it, so a run with a changed harness restores no entry an
       # older one wrote.
       - name: restore the run-hash cache
         id: run-hash-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/beni-run-hashes
-          key: run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
-          restore-keys: run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-
+        run: .github/ci-cache.sh restore "run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}"
 
       # A digest is never removed, and each master run saves the restored
       # cache plus its own additions. When a master run restores more than
@@ -144,29 +134,18 @@ jobs:
 
       # Only a push to master saves, also when a test fails, so every pull
       # request starts from master's newest build. A pull request's run
-      # writes no cache entry, and its scope is its own: it cannot change
-      # what master restores. The key is new for each commit: it exists
-      # already only on a re-run, and then there is nothing to save.
+      # writes no cache entry: it cannot change what master restores. A save
+      # replaces the entry of the same name.
       - name: save the Zig caches
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: .github/ci-cache.sh save "zig-azathoth-${{ hashFiles('flake.lock') }}" .zig-cache ~/.cache/zig
 
-      # The run-hash cache is saved from every run, also when a test fails:
-      # a failed program writes no digest, and the programs that passed
-      # are verified. A push to master saves in master's scope, which
-      # every later run restores; a pull request saves in its own. The key
-      # is new for each commit, so only a re-run finds it saved already.
+      # The run-hash cache is saved by a push to master, also when a test
+      # fails: a failed program writes no digest, and the programs that
+      # passed are verified.
       - name: save the run-hash cache
-        if: ${{ !cancelled() && steps.run-hash-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/beni-run-hashes
-          key: run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: .github/ci-cache.sh save "run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}" ~/.cache/beni-run-hashes
 
   # The playground's shipped compiler against the native one, byte for
   # byte, on the corpus (docs/design/playground.md §6): `zig build
@@ -179,6 +158,8 @@ jobs:
     runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
+      # The OIDC token that proves a master run to the cache store.
+      id-token: write
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,15 +177,7 @@ jobs:
 
       - name: restore the Zig caches
         id: zig-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-playground-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: |
-            zig-playground-azathoth-${{ hashFiles('flake.lock') }}-
-            zig-azathoth-${{ hashFiles('flake.lock') }}-
+        run: .github/ci-cache.sh restore "zig-playground-azathoth-${{ hashFiles('flake.lock') }}" "zig-azathoth-${{ hashFiles('flake.lock') }}"
 
       # As in `tests`: a master run that restores more than 3 GiB starts
       # from nothing.
@@ -221,13 +194,8 @@ jobs:
         run: nix develop --command zig build test-playground
 
       - name: save the Zig caches
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-playground-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: .github/ci-cache.sh save "zig-playground-azathoth-${{ hashFiles('flake.lock') }}" .zig-cache ~/.cache/zig
 
   # The Lean ownership proofs (proofs/ownership/README.md):
   # `scripts/audit.sh`, the independent audit, then `lake build`, the
@@ -423,6 +391,8 @@ jobs:
     runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
+      # The OIDC token that proves a master run to the cache store.
+      id-token: write
     timeout-minutes: 60
     # `deploy-pages` deploys only a site whose check passed.
     outputs:
@@ -447,15 +417,7 @@ jobs:
           ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop .#browser --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
       - name: restore the Zig caches
         id: zig-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-browser-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: |
-            zig-browser-azathoth-${{ hashFiles('flake.lock') }}-
-            zig-azathoth-${{ hashFiles('flake.lock') }}-
+        run: .github/ci-cache.sh restore "zig-browser-azathoth-${{ hashFiles('flake.lock') }}" "zig-azathoth-${{ hashFiles('flake.lock') }}"
       - name: bound the Zig caches
         if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
         run: |
@@ -484,13 +446,8 @@ jobs:
         if: ${{ !cancelled() && steps.dev-shell.outcome == 'success' && needs.browser-plan.outputs.pages == 'true' }}
         run: nix develop .#browser --command zig build test-pages --summary all
       - name: save the Zig caches
-        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.zig-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-browser-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') }}
+        run: .github/ci-cache.sh save "zig-browser-azathoth-${{ hashFiles('flake.lock') }}" .zig-cache ~/.cache/zig
 
   # The `workers/` corpus (docs/design/boundary.md §9.12 (k)): Workers
   # built for the `cloudflare` platform, run under Miniflare's `workerd` by
@@ -529,13 +486,7 @@ jobs:
       # The tests job's Zig caches, from master's newest build. This job
       # saves none, so it cannot grow them.
       - name: restore the Zig caches
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: zig-azathoth-${{ hashFiles('flake.lock') }}-
+        run: .github/ci-cache.sh restore "zig-azathoth-${{ hashFiles('flake.lock') }}"
       - name: zig build test-workers
         run: nix develop .#workers --command zig build test-workers --summary all
 
