@@ -146,3 +146,20 @@ keptView ⊤ = Maybe.map (Js.read keptViews) Js.to
 --| Whether a diagnostic lease of the device is held now.
 pub leased : Handle.Device → Bool
 leased device = Js.to (Js.get (Engine.recordOf (Js.from device)) "leased")
+
+
+--| The host's own value of limit `name` of an adapter, read from its
+--| native `limits`, never from beni's snapshot: `Nothing` when it has none.
+pub adapterLimit : Handle.Adapter, String → Maybe Int
+adapterLimit adapter name = rawLimit (Js.get (Js.from adapter) "limits") name
+
+
+--| The host's own value of limit `name` of a device.
+pub deviceLimit : Handle.Device, String → Maybe Int
+deviceLimit device name = rawLimit (Js.get (Js.from device) "limits") name
+
+
+rawLimit : Js.Value, String → Maybe Int
+rawLimit limits name =
+    value = Js.get limits name
+    if Js.isUndefined value then Nothing else Just (Js.to value)

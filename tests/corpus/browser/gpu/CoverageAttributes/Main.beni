@@ -1,6 +1,7 @@
 -- The read-only attributes and snapshots of WebGPU (docs/design/webgpu.md
 -- §2.1, §3, §4; coverage.md): every member of `GPUSupportedLimits` read by
--- its name agrees with the snapshot's field; a feature set and the WGSL
+-- its name agrees with the snapshot's field and with the host's own
+-- native value; a feature set and the WGSL
 -- language features answer `has` for exactly what they list; the adapter's
 -- info and the device's `adapterInfo` agree; a texture's attributes are
 -- those of its descriptor (a core device has no texture binding view
@@ -22,6 +23,7 @@ import Gpu.WgslFeature as WgslFeature
 import GpuHost
 import GpuKit exposing (must, u32, yesNo)
 import GpuPage
+import GpuProbe
 import GpuShow
 import Tea
 
@@ -72,11 +74,13 @@ fields =
     ]
 
 
--- The names whose `limit` differs from their field, or "none".
-disagreeing : Limits.Limits → String
-disagreeing l =
+-- The names whose `limit` differs from their field or from the host's own
+-- value (`raw`, read from the native object), or "none".
+disagreeing : Limits.Limits, (String → Maybe Int) → String
+disagreeing l raw =
     names = List.filterMap fields λ( name, field ) →
-        if Limits.limit l name == field l then
+        value = Limits.limit l name
+        if value == field l && value == raw (Limits.limitNameToString name) then
             Nothing
         else
             Just (Limits.limitNameToString name)
@@ -120,9 +124,10 @@ snapshots ⊤ =
                     deviceInfo = Gpu.Device.adapterInfo d
                     names = List.map Limits.allLimitNames λname →
                         Limits.limitNameFromString (Limits.limitNameToString name) == Just name
-                    [ "adapter limits that differ from their field: " ++ disagreeing adapterLimits
-                    , "device limits that differ from their field: "
-                        ++ disagreeing (Gpu.Device.limits d)
+                    [ "adapter limits that differ from their field or the host: "
+                        ++ disagreeing adapterLimits (GpuProbe.adapterLimit adapter _)
+                    , "device limits that differ from their field or the host: "
+                        ++ disagreeing (Gpu.Device.limits d) (GpuProbe.deviceLimit d _)
                     , "limit names: "
                         ++ String.fromInt (List.length Limits.allLimitNames)
                         ++ ", each spelled back: "

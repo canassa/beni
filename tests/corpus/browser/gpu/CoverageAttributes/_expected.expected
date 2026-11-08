@@ -12,8 +12,8 @@
     <button id="snapshots">"snapshots"</button>
     <button id="resources">"resources"</button>
     <ol>
-      <li>"adapter limits that differ from their field: none"</li>
-      <li>"device limits that differ from their field: none"</li>
+      <li>"adapter limits that differ from their field or the host: none"</li>
+      <li>"device limits that differ from their field or the host: none"</li>
       <li>"limit names: 36, each spelled back: yes"</li>
       <li>"adapter features answer has: yes"</li>
       <li>"device features answer has: yes"</li>
@@ -28,8 +28,8 @@
     <button id="snapshots">"snapshots"</button>
     <button id="resources">"resources"</button>
     <ol>
-      <li>"adapter limits that differ from their field: none"</li>
-      <li>"device limits that differ from their field: none"</li>
+      <li>"adapter limits that differ from their field or the host: none"</li>
+      <li>"device limits that differ from their field or the host: none"</li>
       <li>"limit names: 36, each spelled back: yes"</li>
       <li>"adapter features answer has: yes"</li>
       <li>"device features answer has: yes"</li>
