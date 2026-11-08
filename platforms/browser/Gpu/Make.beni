@@ -174,7 +174,8 @@ texture device descriptor =
     Ok
         { name = "createTexture"
         , labels = labelsOf descriptor.label
-        , call = Js.from λ⊤ → formatChecked formats λ⊤ → Js.call device "createTexture" [ converted ]
+        , call =
+            Js.from λ⊤ → formatChecked formats λ⊤ → Js.call device "createTexture" [ converted ]
         , adopt = Js.from λmade → Js.set (Engine.recordOf made) "destroyed" (Js.from False)
         , discard = Js.from λmade → Js.call made "destroy" [] ▷ ignore
         }
@@ -532,14 +533,13 @@ writeTexture queue batch destination data layout extent =
 --| Every format of `formats` that a feature gates, with the feature, in
 --| order and once each.
 pub gated : List Types.TextureFormat → List (Types.TextureFormat × Types.FeatureName)
-gated formats =
-    List.foldl formats [] λf found →
-        case formatFeature f of
-            Just n →
-                if List.member found ( f, n ) then found else [ …found, ( f, n ) ]
+gated formats = List.foldl formats [] λf found →
+    case formatFeature f of
+        Just n →
+            if List.member found ( f, n ) then found else [ …found, ( f, n ) ]
 
-            Nothing →
-                found
+        Nothing →
+            found
 
 
 --| The failure of a host that refused one of `candidates` (not empty).
@@ -581,10 +581,8 @@ formatsAvailable device formats =
 pub formatChecked : List Types.TextureFormat, sync (⊤ → V) → Result Error.Error V
 formatChecked formats call =
     candidates = gated formats
-    Js.catchIf
-        (λ⊤ → Ok (call ⊤))
-        (λerror → Engine.isTypeError error && candidates ≠ [])
-        λerror → Err (formatFailure candidates error)
+    Js.catchIf (λ⊤ → Ok (call ⊤)) (λerror → Engine.isTypeError error && candidates ≠ []) λerror →
+        Err (formatFailure candidates error)
 
 
 --| A view of `texture` (a native texture of `device`, in `batch` or null):

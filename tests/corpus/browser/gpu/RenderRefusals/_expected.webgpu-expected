@@ -7,6 +7,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -28,6 +31,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -51,6 +57,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -75,6 +84,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -100,6 +112,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -126,6 +141,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -153,6 +171,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -172,7 +193,7 @@
     </ol>
   </main>
 </body>
--- click #negativeOffset
+-- click #leftOpen
 <body>
   <main>
     <button id="locked">"locked"</button>
@@ -181,6 +202,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -197,6 +221,108 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+    </ol>
+  </main>
+</body>
+-- click #endedOpen
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+    </ol>
+  </main>
+</body>
+-- click #reused
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #negativeOffset
+<body>
+  <main>
+    <button id="locked">"locked"</button>
+    <button id="ended">"ended"</button>
+    <button id="noQuerySet">"noQuerySet"</button>
+    <button id="pastTheSet">"pastTheSet"</button>
+    <button id="beganTwice">"beganTwice"</button>
+    <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
+    <button id="negativeOffset">"negativeOffset"</button>
+    <button id="destroyedView">"destroyedView"</button>
+    <button id="otherDevice">"otherDevice"</button>
+    <button id="noPipeline">"noPipeline"</button>
+    <button id="afterFinish">"afterFinish"</button>
+    <button id="bundleFeature">"bundleFeature"</button>
+    <button id="immediatesRejected">"immediatesRejected"</button>
+    <button id="immediatesMissing">"immediatesMissing"</button>
+    <button id="commands">"commands"</button>
+    <ol>
+      <li>"locked: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"ended: Err InvalidInput PassEnded pass"</li>
+      <li>"no query set: Err InvalidInput QuerySetMissing queryIndex"</li>
+      <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
+      <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
+      <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
     </ol>
   </main>
@@ -210,6 +336,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -226,6 +355,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
     </ol>
@@ -240,6 +372,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -256,6 +391,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
@@ -271,6 +409,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -287,6 +428,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
@@ -303,6 +447,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -319,6 +466,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
@@ -336,6 +486,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -352,6 +505,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
@@ -370,6 +526,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -386,6 +545,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
@@ -405,6 +567,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -421,6 +586,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>
@@ -441,6 +609,9 @@
     <button id="pastTheSet">"pastTheSet"</button>
     <button id="beganTwice">"beganTwice"</button>
     <button id="noneOpen">"noneOpen"</button>
+    <button id="leftOpen">"leftOpen"</button>
+    <button id="endedOpen">"endedOpen"</button>
+    <button id="reused">"reused"</button>
     <button id="negativeOffset">"negativeOffset"</button>
     <button id="destroyedView">"destroyedView"</button>
     <button id="otherDevice">"otherDevice"</button>
@@ -457,6 +628,9 @@
       <li>"past the set: Err InvalidInput OutOfRange queryIndex 1+1 of 1"</li>
       <li>"began twice: Err InvalidInput QueryActive queryIndex"</li>
       <li>"none open: Err InvalidInput QueryInactive pass"</li>
+      <li>"left open: Err InvalidInput QueryActive pass"</li>
+      <li>"ended open: Err InvalidInput QueryActive pass"</li>
+      <li>"reused: Err InvalidInput QueryReused queryIndex 0"</li>
       <li>"negative offset: Err InvalidInput NumericDomain offset"</li>
       <li>"destroyed view: Err InvalidInput ResourceDestroyed colorAttachments.view"</li>
       <li>"other device: Err InvalidInput WrongDevice colorAttachments.view"</li>

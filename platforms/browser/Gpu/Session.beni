@@ -230,13 +230,32 @@ endPass p native =
     Js.call native "end" [] ▷ ignore
 
 
+--| A pass may end: no occlusion query of it is open (`QueryActive`,
+--| latched).
+pub queriesClosed : { session : V, record : V } → Result InputError ⊤
+queriesClosed at =
+    if Js.same (Js.get at.record "occlusion") (Js.from True) then
+        refuse at.session (Error.QueryActive { path = "pass" })
+    else
+        Ok ⊤
+
+
 --| What a pass's `with` does once its callback gave `result`: end the pass
 --| unless the callback ended it or the session is over, and latch an `Err`.
+--| A pass with an open occlusion query is `QueryActive`, and is not ended.
 pub withPass : V, Result InputError a → Result InputError a
 withPass native result =
     p = Engine.recordOf native
     s = Js.get p "session"
-    if not (Js.to (Js.get p "ended")) && Js.to (Js.get s "live") then endPass p native else ⊤
+    if not (Js.to (Js.get p "ended")) && Js.to (Js.get s "live") then
+        case queriesClosed { session = s, record = p } of
+            Ok _ →
+                endPass p native
+
+            Err _ →
+                ⊤
+    else
+        ⊤
     case result of
         Ok v →
             Ok v

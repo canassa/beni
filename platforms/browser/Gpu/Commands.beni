@@ -36,8 +36,8 @@ ignore : V → ⊤
 ignore _ = ⊤
 
 
--- An optional native argument: `undefined`, which Web IDL reads as omitted.
-optional : Maybe Int → V
+--| An optional native argument: `undefined`, which Web IDL reads as omitted.
+pub optional : Maybe Int → V
 optional value =
     case value of
         Just n →

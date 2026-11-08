@@ -4,6 +4,9 @@ click #noQuerySet
 click #pastTheSet
 click #beganTwice
 click #noneOpen
+click #leftOpen
+click #endedOpen
+click #reused
 click #negativeOffset
 click #destroyedView
 click #otherDevice
