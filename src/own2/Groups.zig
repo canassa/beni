@@ -66,6 +66,7 @@ const Contents = @import("Contents.zig");
 const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
 const Needs = @import("Needs.zig");
+const NeedLeaves = @import("NeedLeaves.zig");
 const ComparisonWalks = @import("ComparisonWalks.zig");
 const EntryHeld = @import("EntryHeld.zig");
 const FnRun = @import("FnRun.zig");
@@ -1534,7 +1535,8 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             if (!called) try EntryHeld.demands(e);
             try Outward.finishDemands(e);
             try Needs.finish(e);
-            if (!called) try Needs.escaped(e);
+            if (!called) try NeedLeaves.escaped(e);
+            try NeedLeaves.stored(e);
             if (mod.comparison[r.decl]) try Needs.compared(e, &drafts[i]);
             if (!called) for ([_]bool{ false, true }) |w| if (w) try Closures.escapedWrites(e) else try @import("ClosureRuns.zig").labels(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);

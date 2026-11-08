@@ -201,29 +201,3 @@ pub fn finish(e: *Evaluation) Error!void {
         d.relies = try Contract.Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, c, d.res_of));
     }
 }
-
-/// A closure with a need where it escapes: no caller reads its contract.
-pub fn escaped(e: *Evaluation) Error!void {
-    const f = e.fr();
-    const gpa = e.gpa();
-    var out: std.ArrayList(u32) = .empty;
-    defer out.deinit(gpa);
-    var read = false;
-    for (e.w.closures.items) |cl| {
-        const c = e.ctx.contractOf(e.ctx.ctx, cl.code) orelse continue;
-        const wants = for (e.contracts.labelsOf(e.contracts.head(c).labels)) |l| {
-            if (l.need.len != 0) break true;
-        } else false;
-        if (!wants) continue;
-        if (!read and e.w.result != none) try e.ev.leavesOf(e.w.result, 0, &out);
-        read = true;
-        const left = blk: {
-            for ([_][]const Eval.Escape{ e.escapes.items, e.fn_escapes.items }) |list| for (list) |es| {
-                if (f.leafAt(es.leaf).kind == .site and f.leafAt(es.leaf).atom == cl.inst) break :blk true;
-            };
-            for (out.items) |lf| if (f.leafAt(lf).kind == .site and f.leafAt(lf).atom == cl.inst) break :blk true;
-            break :blk false;
-        };
-        if (left) try e.demands.append(gpa, .{ .point = cl.point, .kind = .callsite, .token = Eval.tokenOf(e, cl.inst), .base_inst = cl.inst, .callback = true, .need = true });
-    }
-}

@@ -264,6 +264,8 @@ const layers = [_]Entry{
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
     // A label's need published and discharged (§2.11.3).
     .{ .file = "Needs.zig", .layer = 11, .max_lines = 260 },
+    // Where a closure with a need goes, split from `Needs` (§2.11.3).
+    .{ .file = "NeedLeaves.zig", .layer = 11, .max_lines = 90 },
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     // What a closure's creation asks of its writes, split from `Eval` (#2028).
     .{ .file = "Once.zig", .layer = 11, .max_lines = 60 },
@@ -837,7 +839,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 144), layers.len);
+    try testing.expectEqual(@as(usize, 145), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
