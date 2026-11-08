@@ -126,11 +126,12 @@ inBatch batch name prepare =
                             Err problem
 
                         Ok made →
-                            Engine.adoptInBatch made (Js.get batch "device") batch
+                            settles = Make.adoptInBatch op made (Js.get batch "device") batch
                             Make.adopt op made
-                            Js.call (Js.get batch "made") "push"
-                                [ Js.object [ ( "made", made ), ( "op", Js.from op ) ] ]
-                                ▷ ignore
+                            if settles then
+                                Js.call (Js.get batch "made") "push"
+                                    [ Js.object [ ( "made", made ), ( "op", Js.from op ) ] ]
+                                    ▷ ignore
                             Ok made
 
 
