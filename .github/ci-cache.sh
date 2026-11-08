@@ -12,24 +12,40 @@
 # event and workflow before it unpacks anything. A pull request therefore
 # reads master's caches and can never change them, as with actions/cache's
 # scopes. A job that finds no cache starts cold.
-set -euo pipefail
+#
+# A cache only saves time, so neither command fails the job: a restore that
+# fails leaves nothing behind and the job runs cold, and a save that fails is
+# reported as a warning on the run with the store's answer.
+set -uo pipefail
 
 store=/var/cache/beni-ci
 socket=/run/beni-ci-cache.sock
+
+warn() { echo "::warning title=ci-cache::$*"; }
 
 case "${1-}" in
 restore)
   shift
   for name in "$@"; do
-    if [ -d "$store/$name/" ]; then
-      start=$SECONDS
-      # Copies on ZFS share blocks with the store (block cloning), so a
-      # gigabyte takes a second; the files are this job's to change.
+    [ -d "$store/$name/" ] || continue
+    start=$SECONDS
+    # Copied whole into a scratch directory first, so that a copy that fails
+    # half-way leaves no partial cache in the job. On ZFS both copies share
+    # blocks with the store (block cloning): a gigabyte takes a second.
+    staging=$(mktemp -d "${RUNNER_TEMP:-$HOME}/ci-cache.XXXXXX")
+    if cp -R --no-dereference --preserve=mode,timestamps,links --reflink=auto \
+      "$store/$name/." "$staging/" 2> "$staging.err" &&
       cp -R --no-dereference --preserve=mode,timestamps,links --reflink=auto \
-        "$store/$name/." "$HOME/"
+        "$staging/." "$HOME/" 2>> "$staging.err"; then
+      rm -rf "$staging" "$staging.err"
       echo "restored $name in $((SECONDS - start)) s"
       exit 0
     fi
+    echo "$(wc -l < "$staging.err") errors, the first:"
+    head -3 "$staging.err"
+    rm -rf "$staging" "$staging.err"
+    warn "could not restore $name; this job runs without it"
+    exit 0
   done
   echo "no cache: $*"
   ;;
@@ -45,15 +61,22 @@ save)
     echo "nothing to save"
     exit 0
   fi
-  token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-    "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=beni-ci-cache" | jq -r .value)
+  if ! token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+    "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=beni-ci-cache" | jq -er .value); then
+    warn "could not get the OIDC token; $name is not saved"
+    exit 0
+  fi
   start=$SECONDS
   reply=$({
     printf 'PUT %s\n%s\n' "$name" "$token"
     tar -C "$HOME" -c "${paths[@]}" | zstd -1 -T0 -q
   } | socat -t 900 - "UNIX-CONNECT:$socket")
-  echo "$reply ($name, ${paths[*]}, $((SECONDS - start)) s)"
-  case "$reply" in ok*) ;; *) exit 1 ;; esac
+  status=$?
+  echo "store answered: ${reply:-nothing} (exit $status; $name, ${paths[*]}, $((SECONDS - start)) s)"
+  case "$status:$reply" in
+  0:ok*) ;;
+  *) warn "$name is not saved: ${reply:-no answer} (exit $status)" ;;
+  esac
   ;;
 *)
   echo "usage: ci-cache.sh restore NAME... | save NAME PATH..." >&2
