@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="cancelled">"cancelled"</button>
+    <button id="lost-with-pops">"lost-with-pops"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #cancelled
+<body>
+  <main>
+    <button id="cancelled">"cancelled"</button>
+    <button id="lost-with-pops">"lost-with-pops"</button>
+    <ol>
+      <li>"after a cancelled operation: Ok sampler"</li>
+    </ol>
+  </main>
+</body>
+-- click #lost-with-pops
+<body>
+  <main>
+    <button id="cancelled">"cancelled"</button>
+    <button id="lost-with-pops">"lost-with-pops"</button>
+    <ol>
+      <li>"after a cancelled operation: Ok sampler"</li>
+      <li>"lost while checked: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"lost, pops pending: open channels 1"</li>
+      <li>"pops settled: open channels 0"</li>
+    </ol>
+  </main>
+</body>

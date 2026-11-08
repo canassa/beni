@@ -84,72 +84,83 @@ with scenarios run =
 
 
 scopes : ⊤ → List String
-scopes ⊤ = with "none" λd →
-    [ "valid: " ++ sampler d valid
-    , "labelled: " ++ sampler d labelled
-    , "lodMinClamp above lodMaxClamp: " ++ sampler d invalid
-    , "anisotropy with nearest filters: " ++ sampler d anisotropic
-    ]
-        ++ with "pop-oom" λd2 → [ "out of memory: " ++ sampler d2 valid ]
-        ++ with "pop-internal" λd3 → [ "internal: " ++ sampler d3 valid ]
-        ++ with "pop-oom" λd4 → [ "invalid and out of memory: " ++ sampler d4 invalid ]
+scopes ⊤ =
+    plain = with "none" λd →
+        [ "valid: " ++ sampler d valid
+        , "labelled: " ++ sampler d labelled
+        , "lodMinClamp above lodMaxClamp: " ++ sampler d invalid
+        , "anisotropy with nearest filters: " ++ sampler d anisotropic
+        ]
+    oom = with "pop-oom" λd2 → [ "out of memory: " ++ sampler d2 valid ]
+    internal = with "pop-internal" λd3 → [ "internal: " ++ sampler d3 valid ]
+    related = with "pop-oom" λd4 → [ "invalid and out of memory: " ++ sampler d4 invalid ]
+    List.concat [ plain, oom, internal, related ]
 
 
 fibers : ⊤ → List String
-fibers ⊤ = with "none" λd →
-    ( one, two ) = Task.par (λ⊤ → sampler d invalid) λ⊤ → sampler d valid
-    [ "two fibers, one device: " ++ one ++ " / " ++ two ]
-        ++ with "pops-held" λd2 →
-            first = Task.spawn λ⊤ → sampler d2 invalid
-            second = Task.spawn λ⊤ → sampler d2 valid
-            Task.yieldNow ⊤
-            GpuHost.releasePops ⊤
-            [ "pops released in reverse: " ++ Task.join first ++ " / " ++ Task.join second ]
+fibers ⊤ =
+    interleaved = with "none" λd →
+        ( one, two ) = Task.par (λ⊤ → sampler d invalid) λ⊤ → sampler d valid
+        [ "two fibers, one device: " ++ one ++ " / " ++ two ]
+
+    reversed = with "pops-held" λd2 →
+        first = Task.spawn λ⊤ → sampler d2 invalid
+        second = Task.spawn λ⊤ → sampler d2 valid
+        Task.yieldNow ⊤
+        GpuHost.releasePops ⊤
+        [ "pops released in reverse: " ++ Task.join first ++ " / " ++ Task.join second ]
+    List.concat [ interleaved, reversed ]
 
 
 refusals : ⊤ → List String
-refusals ⊤ = with "none" λd →
-    Gpu.Device.destroy d
-    before = GpuHost.calls "createSampler"
-    destroyed = sampler d valid
-    [ "destroyed: "
-        ++ destroyed
-        ++ ", native calls "
-        ++ String.fromInt (GpuHost.calls "createSampler" - before)
-    ]
-        ++ with "none" λd2 →
-            taken = GpuProbe.lease d2
-            again = GpuProbe.lease d2
-            at = GpuHost.calls "createSampler"
-            leased = sampler d2 valid
-            calls = GpuHost.calls "createSampler" - at
-            loss = GpuShow.latched (Gpu.Device.loss d2)
-            GpuProbe.releaseLease d2
-            [ "lease taken: "
-                ++ (if taken then "yes" else "no")
-                ++ ", taken again: "
-                ++ (if again then "yes" else "no")
-            , "leased: " ++ leased ++ ", native calls " ++ String.fromInt calls
-            , "loss under the lease: " ++ loss
-            , "after the lease: " ++ sampler d2 valid
-            ]
+refusals ⊤ =
+    destroyedLines = with "none" λd →
+        Gpu.Device.destroy d
+        before = GpuHost.calls "createSampler"
+        destroyed = sampler d valid
+        [ "destroyed: "
+            ++ destroyed
+            ++ ", native calls "
+            ++ String.fromInt (GpuHost.calls "createSampler" - before)
+        ]
+
+    leasedLines = with "none" λd2 →
+        taken = GpuProbe.lease d2
+        again = GpuProbe.lease d2
+        at = GpuHost.calls "createSampler"
+        leased = sampler d2 valid
+        calls = GpuHost.calls "createSampler" - at
+        loss = GpuShow.latched (Gpu.Device.loss d2)
+        GpuProbe.releaseLease d2
+        [ "lease taken: "
+            ++ (if taken then "yes" else "no")
+            ++ ", taken again: "
+            ++ (if again then "yes" else "no")
+        , "leased: " ++ leased ++ ", native calls " ++ String.fromInt calls
+        , "loss under the lease: " ++ loss
+        , "after the lease: " ++ sampler d2 valid
+        ]
+    List.concat [ destroyedLines, leasedLines ]
 
 
 losses : ⊤ → List String
-losses ⊤ = with "lost-controlled,pops-held" λd →
-    op = Task.spawn λ⊤ → sampler d invalid
-    Task.yieldNow ⊤
-    GpuHost.lose "unknown"
-    during = Task.join op
-    GpuHost.releasePops ⊤
-    [ "lost while checked: " ++ during ]
-        ++ with "lost-controlled" λd2 →
-            accepted = sampler d2 valid
-            GpuHost.lose "unknown"
-            latched = GpuShow.loss (Gpu.Device.awaitLost d2)
-            [ "accepted, then lost: " ++ accepted ++ ", loss " ++ latched
-            , "after the loss: " ++ sampler d2 valid
-            ]
+losses ⊤ =
+    during = with "lost-controlled,pops-held" λd →
+        op = Task.spawn λ⊤ → sampler d invalid
+        Task.yieldNow ⊤
+        GpuHost.lose "unknown"
+        lost = Task.join op
+        GpuHost.releasePops ⊤
+        [ "lost while checked: " ++ lost ]
+
+    after = with "lost-controlled" λd2 →
+        accepted = sampler d2 valid
+        GpuHost.lose "unknown"
+        latched = GpuShow.loss (Gpu.Device.awaitLost d2)
+        [ "accepted, then lost: " ++ accepted ++ ", loss " ++ latched
+        , "after the loss: " ++ sampler d2 valid
+        ]
+    List.concat [ during, after ]
 
 
 main : Tea.Program

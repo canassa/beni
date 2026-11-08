@@ -28,7 +28,9 @@ run ⊤ =
                     [ "device: " ++ GpuShow.initError problem ]
 
                 Ok device →
-                    op = Task.spawn λ⊤ → GpuShow.checked (Gpu.Device.createSampler device Types.samplerDescriptor) λ_ → "sampler"
+                    op = Task.spawn λ⊤ →
+                        GpuShow.checked (Gpu.Device.createSampler device Types.samplerDescriptor) λ_ →
+                            "sampler"
                     Task.yieldNow ⊤
                     GpuHost.releaseOnePop ⊤
                     GpuHost.drain ⊤

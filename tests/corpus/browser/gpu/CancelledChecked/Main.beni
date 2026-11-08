@@ -42,15 +42,14 @@ channels before = "open channels " ++ String.fromInt (GpuProbe.openChannels ⊤ 
 
 
 cancelled : ⊤ → List String
-cancelled ⊤ =
-    with "pops-held" λd →
-        op = Task.spawn λ⊤ → sampler d
-        Task.yieldNow ⊤
-        Task.cancel op
-        GpuHost.releasePops ⊤
-        GpuHost.drain ⊤
-        GpuHost.inject "none"
-        [ "after a cancelled operation: " ++ sampler d ]
+cancelled ⊤ = with "pops-held" λd →
+    op = Task.spawn λ⊤ → sampler d
+    Task.yieldNow ⊤
+    Task.cancel op
+    GpuHost.releasePops ⊤
+    GpuHost.drain ⊤
+    GpuHost.inject "none"
+    [ "after a cancelled operation: " ++ sampler d ]
 
 
 lostWithPops : ⊤ → List String

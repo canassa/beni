@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: OperationError: injected pop failure)
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"the operation was cancelled"</li>
+    </ol>
+  </main>
+</body>
