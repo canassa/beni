@@ -64,8 +64,9 @@ Textures, shaders, pipelines, command encoders, passes and canvases come in late
 1. **Map a buffer to read or write its memory.** `Gpu.Buffer.map buffer Gpu.Buffer.mapRead` gives a
    `Mapping`. `Gpu.Buffer.getMappedRange` gives a `MappedRange` of it. `Gpu.Buffer.withMapped`
    maps, calls your function, and unmaps after it, also when it returns `Err` or is cancelled.
-2. **A mapping ends at `unmap`, at `destroy` and at the next `map`.** After that, the mapping and
-   all its ranges give `ResourceExpired`, also where you kept a copy of them.
+2. **A mapping ends at `unmap`, at `destroy`, at the next `map`, and when its device is
+   destroyed.** After that, the mapping and all its ranges give `ResourceExpired`, also where
+   you kept a copy of them.
 3. **A buffer made with `mappedAtCreation = Value True` is mapped.** Get its mapping with
    `Gpu.Buffer.currentMapping`, or use `Gpu.Device.createMappedBuffer`. You can write that mapping
    without the `MapWrite` usage. Its size must be a multiple of 4 (`MappedSizeUnaligned`).

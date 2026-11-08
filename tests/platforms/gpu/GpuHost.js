@@ -56,7 +56,11 @@ const fakeDevice = (adapter, descriptor) => {
     label: descriptor?.label ?? "",
     lost: new globalThis.Promise((done) => (resolveLost = done)),
   };
+  // Every buffer the device made: `destroy` unmaps each, as the
+  // specification's device destruction does.
+  const buffers = [];
   device.destroy = () => {
+    for (const b of buffers) b.unmap();
     resolveLost(lostInfo("destroyed", "the device was destroyed"));
   };
   // The error scopes: a stack of `{ filter, error }`, each keeping the first
@@ -108,6 +112,7 @@ const fakeDevice = (adapter, descriptor) => {
     };
     globalThis.Object.defineProperty(buffer, "mapState", { get: () => s.mapState });
     fakeBuffers.set(buffer, s);
+    buffers.push(buffer);
     if (atCreation) {
       s.mapState = "mapped";
       s.mode = MAP_WRITE;
