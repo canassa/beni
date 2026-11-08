@@ -980,7 +980,7 @@ Gpu.Buffer.destroy : Buffer → ⊤
 Gpu.Texture.destroy : Texture → ⊤
 Gpu.QuerySet.destroy : QuerySet → ⊤
 
-Gpu.MappedRange.readBytes : MappedRange, Binary.ByteRange → Result Error Binary.Buffer
+Gpu.MappedRange.readBytes : MappedRange, Binary.ByteRange → Result ReadError Binary.Buffer
 Gpu.MappedRange.writeBytes : MappedRange, Int, Binary.Source → Result InputError ⊤
 Gpu.MappedRange.readU32 : MappedRange, Int → Result InputError Int
 Gpu.MappedRange.writeF32 : MappedRange, Int, Float → Result InputError ⊤
@@ -994,11 +994,12 @@ bulk copies and exact bit access, not only the representative methods above.
 Expose read/write modes, size and mapState. `mappedAtCreation` produces a mapping
 handle without pretending `MAP_WRITE` was required (§7.1). Ranges track overlap,
 alignment, mapping generation and read/write permission. Every access validates
-the generation, including one saved outside `withMapped`. `unmap`/destroy
-detaches all native ranges and invalidates every alias before any subsequent use.
+the generation, including one saved outside `withMapped`. `unmap`/destroy, and
+the destruction of the buffer's device, detach all native ranges and invalidates every alias before any subsequent use.
 
-The bracket helper unmaps in a finalizer even if the callback suspends, cancels,
-returns an error or defects. Concurrent map requests are refused precisely;
+The bracket helper unmaps in a finalizer even if the callback suspends, is
+cancelled or returns an error. A defect stops the program that owns the
+mapping (§8.1), so nothing of that program runs again, the finalizer included. Concurrent map requests are refused precisely;
 cancelling the fiber waiting for a pending map calls unmap only for that owned
 map generation. It cannot cancel a later independent mapping. Native map
 promises are still drained. Direct map/unmap remains available for full native
@@ -1059,19 +1060,22 @@ an earlier generation reads `ResourceExpired`. `map` is a checked operation whos
 answers with a promise (`Gpu.Engine.checkedAwait`): the operation waits for the three pops and
 the map promise, or for the loss, and a rejection joins the scopes' observations (a map the
 device refuses is `RelatedFailures [MapFailed MapRejected, Validation]`). *Amended the same
-day:* `MapRequest` is `{ mode : MapModes, offset : Int, size : Maybe Int }` with `mapRead` and
+day by the manager, under the owner's delegation of names (2026-11-08):* `MapRequest` is `{ mode : MapModes, offset : Int, size : Maybe Int }` with `mapRead` and
 `mapWrite` for the whole buffer, and `Range` is `{ offset : Int, size : Maybe Int }`; offsets and
 sizes are `Int`s checked as `GPUSize64` (`NumericDomain`), not `Size64`, as `Binary` takes its
 byte ranges. A mapped range's integer reads give `Int` and its writes take `Int`, as `Binary`'s
 do — a payload is raw bits (§3.1), not a descriptor domain — with `InvalidValue` for a value
-outside the width; values are little-endian. `readBytes` returns `Result Error`, since the copy
-allocates: a host with no memory for it is `Error.AllocationFailed { bytes }`. The new
+outside the width; values are little-endian. `readBytes` returns its own `ReadError`, since the copy
+allocates on the CPU (ledger §4: a host allocation has its own classifier, outside the GPU
+error): `Refused InputError` or `Allocation Binary.AllocationError`; `Gpu.Error.Error` gains
+no arm. `writeBytes` is a CPU copy, not a GPU input, so it takes any attached storage,
+resizable or growable included (CLAUDE.md rule 7). Destroying a device expires the mappings
+of all its buffers first, as `unmap` does. The new
 `InputError` arms are `DetachedSource`, `Misaligned`, `OutOfRange`, `InvalidValue`,
 `InvalidMapMode`, `MissingBufferUsage`, `MappingState`, `RangeOverlap` and `ReadOnlyMapping`.
 `Gpu.Queue.writeBuffer` takes a `WriteBufferSource` (`{ bufferOffset, data, dataOffset, size }`,
 `bufferWrite` for the whole data), which is §6.3's `Batch.writeBuffer` argument too.
-`withMapped` unmaps in a `Task.onExit` finaliser; a defect stops the program, which unmaps
-nothing further. Fixtures: `browser/gpu/BufferRoundTrip` (exact u32 and u64 round trips, read
+`withMapped` unmaps in a `Task.onExit` finaliser (above: a defect stops the program). Fixtures: `browser/gpu/BufferRoundTrip` (exact u32 and u64 round trips, read
 back natively under `test-webgpu`), `BufferRefusals`, `MapFailures`, `MapLifecycle`,
 `Submissions` and the defects `MapUnlisted`, `RangeUnlisted`, `WriteUnlisted`,
 `WorkDoneRejected`. `GPUBufferUsage` validity beyond what the engine checks stays the device's
@@ -1252,7 +1256,9 @@ submit has none. Nothing is fabricated.
   submission and the earlier ones on the queue, which complete first anyway,
   and never a later submission.
 - `Gpu.Submission.done : Submission → Result Error ⊤` waits for that promise;
-  observed device loss wins, as for every wait. Nothing waits unless `done`
+  observed device loss wins, as for every wait, even for work done before the
+  loss (*as built — S2a*: `done` gives `DeviceLost` once the loss is
+  observed). Nothing waits unless `done`
   is called, so a receipt does not stall a frame.
 - `Gpu.Queue.onSubmittedWorkDone` stays the faithful native form: it captures
   at its own call, so it also covers unrelated work submitted before it. Use a

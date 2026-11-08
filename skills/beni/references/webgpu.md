@@ -78,7 +78,8 @@ Textures, shaders, pipelines, command encoders, passes and canvases come in late
    `readWord64` and `writeWord64` keep all 64 bits: use them for `u64` and `i64` values.
 6. **Binary data for the GPU must have a fixed length.** A resizable `ArrayBuffer` or a growable
    `SharedArrayBuffer` gives `ResizableBacking`, also through a view and also when it never
-   resized. Detached data gives `DetachedSource`.
+   resized. Detached data gives `DetachedSource`. `Gpu.MappedRange.writeBytes` is a copy in
+   CPU memory: it takes any attached storage.
 7. **`Gpu.Queue.writeBuffer` counts `dataOffset` and `size` in elements of the data**, as the
    browser does: bytes for an `ArrayBuffer` or a `DataView`, elements for a typed array.
 8. **Each `Gpu.Queue.submit` gives one receipt.** `Gpu.Submission.done` waits for the work of that

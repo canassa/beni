@@ -7,6 +7,21 @@
 // whichever host is there.
 //
 // The fake is not WebGPU: it validates nothing a fixture does not ask it to.
+// Where it differs from Chrome's, on purpose:
+// - every promise settles on a microtask, never after GPU work:
+//   `onSubmittedWorkDone` resolves at once, a map one microtask after it is
+//   asked for (or, under "maps-held", when `releaseMaps` says);
+// - a device's loss changes no outcome of its own: a pending map is not
+//   rejected by a loss, and work submitted on a lost device still "runs";
+// - it runs no shader and keeps no texels, so a dispatch writes nothing
+//   and a texture reads back as zeros (those pages have a
+//   `.webgpu-expected` for Chrome's answer);
+// - its validation is the handful of rules the fixtures reach (buffer
+//   usages and sizes, map ranges, writeBuffer bounds, sampler clamps), and
+//   its error messages are its own;
+// - its error classes (`GPUValidationError` and the rest) are plain
+//   functions installed on the page, and `SharedArrayBuffer` exists where
+//   a Chrome page without cross-origin isolation has none.
 
 const native = () => globalThis.__beniWebGpuNative === true;
 
