@@ -11,7 +11,8 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Types`: one record for each IDL dictionary, one type for each IDL enum, one sum for each
   IDL union. These are generated from the pinned IDL.
 - `Gpu.Flags`: the five flag domains. A buffer usage set is not a texture usage set.
-- `Gpu.Limits`, `Gpu.Feature`, `Gpu.WgslFeature`: snapshots that the host reports.
+- `Gpu.Limits`, `Gpu.Feature`, `Gpu.WgslFeature`: snapshots that the host reports. A limit
+  that some browsers do not report yet is `Maybe Int`, and `Gpu.Limits.limit` gives `Maybe Int`.
 - `Gpu.Scalar`: `U32`, `I32`, `Size64`, `FiniteF32`, `FiniteF64`.
 - `Gpu.Error`: `InitError`, `Error` and their parts.
 - `Gpu.Handle`: the handle types, for example `Adapter` and `Device`.
@@ -29,7 +30,11 @@ Buffers, textures, shaders, pipelines, passes and canvases come in later release
    field with a record update.
 3. **A number in a descriptor is a scalar.** Make it with `Gpu.Scalar.u32`, `size64`, `finiteF32`
    and the others. Each returns `Err` for a value outside the IDL type. A constructor with
-   `Truncating` in its name removes the fraction first.
+   `Truncating` in its name removes the fraction first. A `Size64` is at most 2⁵³ − 1, as
+   in the browser. `Gpu.Error.atPath` puts a scalar's error at a descriptor path.
+   A color, origin or extent written as a list is a `ColorList`, `Origin2DList`, `Origin3DList`
+   or `Extent3DList`: `Gpu.Types.colorList` and the others return `Nothing` for a list whose
+   length the browser refuses.
 4. **A failure that the standard documents is a value.** `requestAdapter` and `requestDevice`
    return `Result Gpu.Error.InitError`. An adapter gives one device. A second request is
    `AdapterConsumed`. A feature or a limit that the adapter does not support is refused before

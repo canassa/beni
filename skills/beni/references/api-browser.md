@@ -294,31 +294,37 @@ module Gpu.Engine
   type Missing
     NotSecure
     NoApi
-  type Requested
-    Granted
-    Refused
-  type Settled
-    Fulfilled
-    Rejected
+  type Outcome a
+    Expected
+    Unexpected
   value adapterFree : V → Bool  -- impure
   value adoptAdapter : V → ⊤  -- impure
+  value adoptDevice : V, V → ⊤  -- impure
+  value awaitHost : V, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
   value awaitLost : V → DeviceLoss  -- suspends
+  value channel : ⊤ → V  -- impure
+  value channelDefect : V, V → ⊤  -- impure
   value consumeAdapter : V → ⊤  -- impure
   value defect : String → a  -- impure
   value destroy : V → ⊤  -- impure
   value destroyed : V → Bool  -- impure
   value deviceId : V → Int  -- impure
   value entry : ⊤ → Result Missing V  -- impure
+  value guard : V, (⊤ → ⊤) → ⊤  -- impure
+  value hold : V → ⊤  -- impure
   value isDomException : V, String → Bool  -- impure
   value isTypeError : V → Bool  -- impure
   value known : V → Bool  -- impure
   value loss : V → Maybe DeviceLoss  -- impure
+  value member : V, String → V  -- impure
   value messageOf : V → String  -- impure
+  value openChannelCount : ⊤ → Int  -- impure
+  value readNames : V, String → List String  -- impure
   value recordOf : V → V  -- impure
-  value requestDevice : V, V → Requested  -- suspends
+  value release : V → ⊤  -- impure
+  value reportDefect : V, V → ⊤  -- impure
   value reserveAdapter : V, Bool → ⊤  -- impure
-  value settle : (⊤ → V) → Settled  -- suspends
-  value watchDefects : V → ⊤  -- impure
+  value settleDevice : V → ⊤  -- impure
 module Gpu.Error
   type CanvasError
     CanvasNotFound
@@ -422,6 +428,7 @@ module Gpu.Error
     Submission
     Mapping
     PipelineCreation
+  value atPath : String, DomainError → InputError
 module Gpu.Feature
   type Feature
     Known
@@ -567,7 +574,7 @@ module Gpu.Limits
   alias Limits
     Limits
   value allLimitNames : List LimitName
-  value limit : Limits, LimitName → Int
+  value limit : Limits, LimitName → Maybe Int
   value limitClass : LimitName → LimitClass
   value limitNameFromString : String → Maybe LimitName
   value limitNameToString : LimitName → String
@@ -762,6 +769,7 @@ module Gpu.Types
     ColorFields
   alias ColorDict
     ColorDict
+  opaque type ColorList
   alias ColorTargetState
     ColorTargetState
   alias CommandBufferDescriptor
@@ -819,6 +827,7 @@ module Gpu.Types
     Extent3DFields
   alias Extent3DDict
     Extent3DDict
+  opaque type Extent3DList
   alias ExternalTextureBindingLayout
     ExternalTextureBindingLayout
   alias ExternalTextureDescriptor
@@ -881,11 +890,13 @@ module Gpu.Types
     Origin2DFields
   alias Origin2DDict
     Origin2DDict
+  opaque type Origin2DList
   type Origin3D
     Origin3DSequence
     Origin3DFields
   alias Origin3DDict
     Origin3DDict
+  opaque type Origin3DList
   alias PipelineDescriptorBase
     PipelineDescriptorBase
   type PipelineErrorReason
@@ -1185,6 +1196,8 @@ module Gpu.Types
   value canvasToneMappingModeFromString : String → Maybe CanvasToneMappingMode
   value canvasToneMappingModeToString : CanvasToneMappingMode → String
   value colorDict : FiniteF64, FiniteF64, FiniteF64, FiniteF64 → ColorDict
+  value colorList : List FiniteF64 → Maybe ColorList
+  value colorListValues : ColorList → List FiniteF64
   value colorTargetState : TextureFormat → ColorTargetState
   value commandBufferDescriptor : CommandBufferDescriptor
   value commandEncoderDescriptor : CommandEncoderDescriptor
@@ -1206,6 +1219,8 @@ module Gpu.Types
   value errorFilterFromString : String → Maybe ErrorFilter
   value errorFilterToString : ErrorFilter → String
   value extent3DDict : U32 → Extent3DDict
+  value extent3DList : List U32 → Maybe Extent3DList
+  value extent3DListValues : Extent3DList → List U32
   value externalTextureBindingLayout : ExternalTextureBindingLayout
   value externalTextureDescriptor : ExternalTextureSource → ExternalTextureDescriptor
   value featureNameFromString : String → Maybe FeatureName
@@ -1224,7 +1239,11 @@ module Gpu.Types
   value multisampleState : MultisampleState
   value objectDescriptorBase : ObjectDescriptorBase
   value origin2DDict : Origin2DDict
+  value origin2DList : List U32 → Maybe Origin2DList
+  value origin2DListValues : Origin2DList → List U32
   value origin3DDict : Origin3DDict
+  value origin3DList : List U32 → Maybe Origin3DList
+  value origin3DListValues : Origin3DList → List U32
   value pipelineDescriptorBase : PipelineLayoutMode → PipelineDescriptorBase
   value pipelineErrorReasonFromString : String → Maybe PipelineErrorReason
   value pipelineErrorReasonToString : PipelineErrorReason → String
