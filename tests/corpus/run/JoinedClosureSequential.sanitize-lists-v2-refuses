@@ -1,0 +1,5 @@
+# v2 refuses both sequential calls of the joined closure: each finds the capture the other edits; the edit would change what the program prints.
+21:9 list_still_used f
+21:9 list_still_used f
+22:9 list_still_used f
+22:9 list_still_used f

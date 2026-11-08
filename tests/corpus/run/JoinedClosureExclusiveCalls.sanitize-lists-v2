@@ -1,0 +1,1 @@
+v2 accepts every write of the joined closure: its calls are mutually exclusive, so it runs at most once. The accepted twin of JoinedClosureSequential and JoinedClosureAlias, built again under --ownership=v2 and the list stale-read sanitiser.
