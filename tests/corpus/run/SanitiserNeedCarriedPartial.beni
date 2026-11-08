@@ -1,0 +1,36 @@
+-- A partial application whose argument is a writer of its function's answer
+-- (`ownership-v2.md` §2.11.3, *A value that carries a need*): `konst _ wr`
+-- holds `wr` as an argument it has not yet been called with, and answers it.
+-- `Dict.singleton` stores it, and `appE` runs the writer it answers as unknown
+-- code with `k`'s list: refused where the writer is made. Without the rule,
+-- `k` is edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+konst : ⊤, b → b
+konst _ x = x
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = λs → List.push (s ⊤) 2
+    y = appE (Dict.singleton 1 (konst _ wr)) k
+    Node.print (show y ++ "|" ++ show k)

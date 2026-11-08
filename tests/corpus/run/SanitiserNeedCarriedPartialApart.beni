@@ -1,0 +1,40 @@
+-- The twin of `SanitiserNeedCarriedPartial` (`ownership-v2.md` §2.11.3): the
+-- stored partial application holds a reader, and the writer is run through a
+-- partial application of `writer2`, whose label takes a fresh answer:
+-- accepted, and edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+konst : ⊤, b → b
+konst _ x = x
+
+
+writer2 : (⊤ → List Int), Int → List Int
+writer2 s n = List.push (s ⊤) n
+
+
+main : Program
+main =
+    k = [ 1 ]
+    rd = λs → s ⊤
+    y = appE (Dict.singleton 1 (konst _ rd)) k
+    w = writer2 _ 3
+    z = w λ⊤ → [ 7 ]
+    Node.print (show y ++ "|" ++ show z ++ "|" ++ show k)

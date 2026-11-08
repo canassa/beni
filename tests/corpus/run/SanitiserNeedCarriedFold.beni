@@ -1,0 +1,31 @@
+-- A fold's initial value that holds a closure capturing a writer of its
+-- function's answer (`ownership-v2.md` §2.11.3, *A value that carries a
+-- need*): the `Dict` goes through `List.foldl` and back out, and `appE` runs
+-- what it holds as unknown code with `k`'s list. Refused where the writer is
+-- made. Without the rule, `k` is edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = λs → List.push (s ⊤) 2
+    y = appE (List.foldl [ 1, 2 ] (Dict.singleton 1 λ⊤ → wr) λ_ d → d) k
+    Node.print (show y ++ "|" ++ show k)

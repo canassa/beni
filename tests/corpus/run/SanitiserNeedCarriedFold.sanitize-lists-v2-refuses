@@ -1,0 +1,2 @@
+# The initial value carries its closure's capture's need, which no caller reads: refused where the writer is made (§2.11.3, A value that carries a need).
+29:10 list_still_used value
