@@ -48,5 +48,6 @@ drain ⊤ = Task.callback λresume →
     λ⊤ → ⊤
 
 
---| Release only the latest pop held since `inject "pops-held"`.
-pub foreign impure releaseOnePop : ⊤ → ⊤
+--| Release only the latest pop of `filter` (`"validation"`,
+--| `"out-of-memory"`, `"internal"`) held since `inject "pops-held"`.
+pub foreign impure releasePop : String → ⊤

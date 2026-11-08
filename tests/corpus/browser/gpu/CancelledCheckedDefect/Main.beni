@@ -32,7 +32,7 @@ run ⊤ =
                         GpuShow.checked (Gpu.Device.createSampler device Types.samplerDescriptor) λ_ →
                             "sampler"
                     Task.yieldNow ⊤
-                    GpuHost.releaseOnePop ⊤
+                    GpuHost.releasePop "internal"
                     GpuHost.drain ⊤
                     Task.cancel op
                     [ "the operation was cancelled" ]

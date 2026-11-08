@@ -6,7 +6,7 @@
   </main>
 </body>
 -- throws click #run
-(threw: OperationError: injected pop failure)
+(threw: Error: webgpu: device 1, createSampler: OperationError: injected pop failure)
 <body>
   <main>
     <button id="run">"run"</button>

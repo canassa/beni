@@ -263,11 +263,13 @@ const instrument = (device) => {
     return original.call(this, filter);
   });
   wrap(device, "popErrorScope", function (original) {
-    const fault = popFaults[stack.pop()];
-    let promise = asked(original.call(this));
-    if (fault !== undefined) promise = promise.then(() => fault());
-    if (!holdPops) return promise;
-    return new globalThis.Promise((resolve, reject) => held.push({ promise, resolve, reject }));
+    const filter = stack.pop();
+    const fault = popFaults[filter];
+    const native = asked(original.call(this));
+    if (!holdPops) return answer(native, fault);
+    // A held pop's fault is applied only when it is released, so no
+    // rejected promise waits unhandled in the stub while it is held.
+    return new globalThis.Promise((resolve, reject) => held.push({ filter, native, fault, resolve, reject }));
   });
   wrap(device, "createSampler", function (original, ...args) {
     callCounts.createSampler = (callCounts.createSampler ?? 0) + 1;
@@ -359,10 +361,14 @@ export const inject = (scenarios) => {
   return null;
 };
 
+// A pop's answer: the host's, or the fault's once the host has answered.
+const answer = (native, fault) => (fault === undefined ? native : native.then(() => fault()));
+const settle = (entry) => answer(entry.native, entry.fault).then(entry.resolve, entry.reject);
+
 // Every held pop, the latest first, each settled as its host pop did.
 export const releasePops = (_unit) => {
   let chain = globalThis.Promise.resolve();
-  for (const entry of held.splice(0).reverse()) chain = chain.then(() => entry.promise.then(entry.resolve, entry.reject));
+  for (const entry of held.splice(0).reverse()) chain = chain.then(() => settle(entry));
   return null;
 };
 
@@ -399,10 +405,10 @@ export const later = (f) => {
   return null;
 };
 
-// Only the latest held pop, settled as its host pop did.
-export const releaseOnePop = (_unit) => {
-  const entry = held.pop();
-  if (entry === undefined) throw new globalThis.Error("GpuHost.releaseOnePop: no pop is held");
-  entry.promise.then(entry.resolve, entry.reject);
+// The latest held pop of `filter` alone, settled as its host pop did.
+export const releasePop = (filter) => {
+  const at = held.findLastIndex((entry) => entry.filter === filter);
+  if (at < 0) throw new globalThis.Error(`GpuHost.releasePop: no "${filter}" pop is held`);
+  settle(held.splice(at, 1)[0]);
   return null;
 };
