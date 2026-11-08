@@ -185,7 +185,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             // by structure at its own place, with no cycle below, is one open arrival,
             // never one a slot below it (§2.10, *Arrivals by structure*). So is one in
             // the result at its own path, whatever its size (§2.11.2).
-            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
+            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try Eval.acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
             // A call's or a supply's whole subtree by structure: one key below it (§2.10).
             if (by_structure and (r.kind == .call or r.kind == .supply) and Subtree.wholeOf(f.slots, l.slots) == pslot) return describeCallWide(s, l, pslot, q, out);
             // A whole subtree (`↓p`, §2.3.1): a call's or a supply's through one key
@@ -313,19 +313,7 @@ fn canNode(s: *Sink, q: PathId, out: Put.ResList) Error!bool {
             s.frozen = 2;
         };
     }
-    return s.frozen == 1 and try acyclicBelow(s, e.fr().places.pathPlace(q));
-}
-
-fn acyclicBelow(s: *Sink, p: PlaceId) Error!bool {
-    if (s.acyclic.get(.{p.int()})) |x| return x == 1;
-    const places = s.e.fr().places;
-    var ok = !places.cyclic(p);
-    if (ok) for (places.steps(p).children) |c| if (!try acyclicBelow(s, c)) {
-        ok = false;
-        break;
-    };
-    try s.acyclic.put(s.e.gpa(), .{p.int()}, if (ok) 1 else 2);
-    return ok;
+    return s.frozen == 1 and try Eval.acyclicBelow(s, e.fr().places.pathPlace(q));
 }
 
 /// Value `v` at result slot `q`, as a subtree relative to `q`, once per
@@ -1077,7 +1065,7 @@ fn readsThrough(s: *Sink, v: u32, at: []const u32, n: Contract.Node, pass: u32) 
         if (x.kind != .ref or x.family != Slots.empty or f.roots.items[x.root].kind != .param) break :whole;
         const sl = f.pos.items[x.pos].slot;
         const k = f.places.kind(f.places.pathPlace(sl));
-        if (k == .@"var" or k == .@"opaque" or !try acyclicBelow(s, f.places.pathPlace(sl))) break :whole;
+        if (k == .@"var" or k == .@"opaque" or !try Eval.acyclicBelow(s, f.places.pathPlace(sl))) break :whole;
         // A subtree written out (at most `Slots.below_min` objects) is read
         // slot by slot: what a slot holds no object of reads nothing.
         if (!Subtree.symbolic(f.slots, try Subtree.below(f.slots, gpa, f.account, f.places, sl))) break :whole;
