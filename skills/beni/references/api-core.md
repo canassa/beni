@@ -68,6 +68,186 @@ module Basics
   value truncate : Float → Int
   value turns : Float → Float
   value xor : Bool, Bool → Bool
+module Binary
+  type Backing
+    Local
+    Shared
+  alias Buffer
+  type Endian
+    Little
+    Big
+  type Error
+    Unsupported
+    InvalidSize
+    InvalidRange
+    Misaligned
+    InvalidInteger
+    Detached
+    ResizableBacking
+    AllocationFailed
+    PrecisionLost
+    TransferDenied
+    IsolationRequired
+  alias SharedBuffer
+  type Source
+    WholeBuffer
+    WholeShared
+    ViewOf
+  alias SourceInfo
+    SourceInfo
+  type View
+    Int8Array
+    Uint8Array
+    Uint8ClampedArray
+    Int16Array
+    Uint16Array
+    Int32Array
+    Uint32Array
+    BigInt64Array
+    BigUint64Array
+    Float16Array
+    Float32Array
+    Float64Array
+    DataView
+  type ViewKind
+    I8
+    U8
+    U8Clamped
+    I16
+    U16
+    I32
+    U32
+    I64
+    U64
+    F16
+    F32
+    F64
+    Data
+  opaque type Word64
+  value allocate : Int → Result Error Buffer  -- impure
+  value backing : View → Result Error Backing  -- impure
+  value byteLength : Backing → Result Error Int  -- impure
+  value copy : Source → Result Error Buffer  -- impure
+  value copyInto : View, Int, Source → Result Error ⊤  -- impure
+  value detached : Buffer → Bool  -- impure
+  value elementSize : ViewKind → Int
+  value fromList : List Int → Result Error Buffer  -- impure
+  value kind : View → ViewKind
+  value readF16 : View, Int, Endian → Result Error Float  -- impure
+  value readF32 : View, Int, Endian → Result Error Float  -- impure
+  value readF64 : View, Int, Endian → Result Error Float  -- impure
+  value readI16 : View, Int, Endian → Result Error Int  -- impure
+  value readI32 : View, Int, Endian → Result Error Int  -- impure
+  value readI8 : View, Int → Result Error Int  -- impure
+  value readU16 : View, Int, Endian → Result Error Int  -- impure
+  value readU32 : View, Int, Endian → Result Error Int  -- impure
+  value readU8 : View, Int → Result Error Int  -- impure
+  value readWord64 : View, Int, Endian → Result Error Word64  -- impure
+  value shared : Int → Result Error SharedBuffer  -- impure
+  value sourceInfo : Source → Result Error SourceInfo  -- impure
+  value toList : Source → Result Error (List Int)  -- impure
+  value transfer : Buffer → Result Error Buffer  -- impure
+  value view : Backing, ViewKind, Int, Maybe Int → Result Error View  -- impure
+  value word64 : Int, Int → Result Error Word64  -- impure
+  value word64FromInt : Int → Result Error Word64  -- impure
+  value word64FromSignedInt : Int → Result Error Word64  -- impure
+  value word64ToInt : Word64 → Result Error Int
+  value word64ToSignedInt : Word64 → Result Error Int  -- impure
+  value words : Word64 → { high : Int, low : Int }
+  value writeF16 : View, Int, Endian, Float → Result Error ⊤  -- impure
+  value writeF32 : View, Int, Endian, Float → Result Error ⊤  -- impure
+  value writeF64 : View, Int, Endian, Float → Result Error ⊤  -- impure
+  value writeI16 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeI32 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeI8 : View, Int, Int → Result Error ⊤  -- impure
+  value writeU16 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeU32 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeU8 : View, Int, Int → Result Error ⊤  -- impure
+  value writeWord64 : View, Int, Endian, Word64 → Result Error ⊤  -- impure
+module Binary.Atomics
+  type Error
+    BinaryError
+    InvalidView
+    InvalidIndex
+    InvalidValue
+    Unsupported
+  type Operation
+    Load
+    Store
+    Add
+    Subtract
+    And
+    Or
+    Xor
+    Exchange
+    CompareExchange
+  type Value
+    Number
+    Words
+  value access : View, Int, Operation → Result Error Value  -- impure
+  value isLockFree : Int → Bool  -- impure
+module Binary.Wgsl
+  type Error
+    InvalidDimension
+    InvalidScalar
+    InvalidCount
+    Overflow
+    EmptyStructure
+    DuplicateMember
+    InvalidAlignment
+    InvalidMemberSize
+    RuntimePlacement
+    UniformStride
+    UniformOffset
+    UniformStructureGap
+    AtomicInUniform
+    RuntimeInUniform
+    ValueShape
+    ValueCount
+    IntegerRange
+    BinaryError
+  alias Field
+    Field
+  opaque type Layout
+  alias Member
+    Member
+  type Scalar
+    Signed32
+    Unsigned32
+    Float32
+    Float16
+    AtomicSigned32
+    AtomicUnsigned32
+  type UniformRules
+    Standard
+    Legacy
+  type Value
+    Integer
+    Floating
+    Composite
+  value alignment : Layout → Int
+  value array : Layout, Int → Result Error Layout  -- impure
+  value byteSize : Layout → Maybe Int
+  value decode : View, Int, Layout → Result Error Value  -- impure
+  value encode : Layout, Value → Result Error Buffer  -- impure
+  value field : String, Layout → Field
+  value matrix : Scalar, Int, Int → Result Error Layout  -- impure
+  value members : Layout → List Member
+  value runtimeArray : Layout → Result Error Layout
+  value scalar : Scalar → Layout
+  value stride : Layout → Maybe Int
+  value structure : List Field → Result Error Layout  -- impure
+  value uniform : UniformRules, Layout → Result Error ⊤
+  value vector : Scalar, Int → Result Error Layout  -- impure
+  value write : View, Int, Layout, Value → Result Error ⊤  -- impure
+module Browser.Host.ArrayBuffer
+  type ArrayBuffer
+module Browser.Host.BigInt64Array
+  type BigInt64Array
+module Browser.Host.BigUint64Array
+  type BigUint64Array
+module Browser.Host.DataView
+  type DataView
 module Browser.Host.Document
   type Document
   type QueryError
@@ -76,19 +256,55 @@ module Browser.Host.Document
 module Browser.Host.Element
   type Element
   value toNode : Element → Node
+module Browser.Host.Float16Array
+  type Float16Array
+module Browser.Host.Float32Array
+  type Float32Array
+module Browser.Host.Float64Array
+  type Float64Array
+module Browser.Host.HTMLCanvasElement
+  type HTMLCanvasElement
+module Browser.Host.HTMLImageElement
+  type HTMLImageElement
+module Browser.Host.HTMLVideoElement
+  type HTMLVideoElement
+module Browser.Host.ImageBitmap
+  type ImageBitmap
+module Browser.Host.ImageBitmapRenderingContext
+  type ImageBitmapRenderingContext
+module Browser.Host.ImageData
+  type ImageData
+module Browser.Host.Int16Array
+  type Int16Array
+module Browser.Host.Int32Array
+  type Int32Array
+module Browser.Host.Int8Array
+  type Int8Array
 module Browser.Host.Node
   type Node
   value setTextContent : Node, String → ⊤  -- impure
   value textContent : Node → Maybe String  -- impure
+module Browser.Host.OffscreenCanvas
+  type OffscreenCanvas
+module Browser.Host.SharedArrayBuffer
+  type SharedArrayBuffer
 module Browser.Host.TextEncoder
   type TextEncoder
   value create : ⊤ → TextEncoder  -- impure
   value encode : TextEncoder, String → Uint8Array  -- impure
 module Browser.Host.Timers
   value setTimeout : (⊤ → ⊤), Int → Int  -- impure
+module Browser.Host.Uint16Array
+  type Uint16Array
+module Browser.Host.Uint32Array
+  type Uint32Array
 module Browser.Host.Uint8Array
   type Uint8Array
   value byteLength : Uint8Array → Int
+module Browser.Host.Uint8ClampedArray
+  type Uint8ClampedArray
+module Browser.Host.VideoFrame
+  type VideoFrame
 module Browser.Host.Window
   type Window
   value document : ⊤ → Document  -- impure
