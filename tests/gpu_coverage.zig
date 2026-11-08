@@ -549,8 +549,8 @@ fn checkIdl(a: std.mem.Allocator, c: Native.Catalogue, text: []const u8, quiet: 
         }
     }
     var kinds = [_]struct { word: []const u8, n: usize }{
-        .{ .word = "dictionary", .n = 0 },      .{ .word = "enum", .n = 0 },               .{ .word = "includes", .n = 0 },
-        .{ .word = "interface", .n = 0 },       .{ .word = "interface mixin", .n = 0 },    .{ .word = "namespace", .n = 0 },
+        .{ .word = "dictionary", .n = 0 },        .{ .word = "enum", .n = 0 },            .{ .word = "includes", .n = 0 },
+        .{ .word = "interface", .n = 0 },         .{ .word = "interface mixin", .n = 0 }, .{ .word = "namespace", .n = 0 },
         .{ .word = "partial interface", .n = 0 }, .{ .word = "typedef", .n = 0 },
     };
     var at: usize = 0;
