@@ -1,0 +1,13 @@
+-- A defect, never `FormatFeatureRejected` (CLAUDE.md rule 9; ledger §3, §7):
+-- `createRenderPipeline` throws a `RangeError`, while the call names a feature-gated format: the ledger documents only a `TypeError` there. The page stops.
+import GpuFormats
+import GpuPage
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuFormats.withFeature "render-throws-range" λd → [ GpuFormats.render d ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]
