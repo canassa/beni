@@ -76,10 +76,92 @@ module Browser.Host.Document
 module Browser.Host.Element
   type Element
   value toNode : Element → Node
+module Browser.Host.GPU
+  type GPU
+module Browser.Host.GPUAdapter
+  type GPUAdapter
+module Browser.Host.GPUAdapterInfo
+  type GPUAdapterInfo
+module Browser.Host.GPUBindGroup
+  type GPUBindGroup
+module Browser.Host.GPUBindGroupLayout
+  type GPUBindGroupLayout
+module Browser.Host.GPUBuffer
+  type GPUBuffer
+module Browser.Host.GPUCanvasContext
+  type GPUCanvasContext
+module Browser.Host.GPUCommandBuffer
+  type GPUCommandBuffer
+module Browser.Host.GPUCommandEncoder
+  type GPUCommandEncoder
+module Browser.Host.GPUCompilationInfo
+  type GPUCompilationInfo
+module Browser.Host.GPUCompilationMessage
+  type GPUCompilationMessage
+module Browser.Host.GPUComputePassEncoder
+  type GPUComputePassEncoder
+module Browser.Host.GPUComputePipeline
+  type GPUComputePipeline
+module Browser.Host.GPUDevice
+  type GPUDevice
+module Browser.Host.GPUDeviceLostInfo
+  type GPUDeviceLostInfo
+module Browser.Host.GPUError
+  type GPUError
+module Browser.Host.GPUExternalTexture
+  type GPUExternalTexture
+module Browser.Host.GPUInternalError
+  type GPUInternalError
+module Browser.Host.GPUOutOfMemoryError
+  type GPUOutOfMemoryError
+module Browser.Host.GPUPipelineError
+  type GPUPipelineError
+module Browser.Host.GPUPipelineLayout
+  type GPUPipelineLayout
+module Browser.Host.GPUQuerySet
+  type GPUQuerySet
+module Browser.Host.GPUQueue
+  type GPUQueue
+module Browser.Host.GPURenderBundle
+  type GPURenderBundle
+module Browser.Host.GPURenderBundleEncoder
+  type GPURenderBundleEncoder
+module Browser.Host.GPURenderPassEncoder
+  type GPURenderPassEncoder
+module Browser.Host.GPURenderPipeline
+  type GPURenderPipeline
+module Browser.Host.GPUSampler
+  type GPUSampler
+module Browser.Host.GPUShaderModule
+  type GPUShaderModule
+module Browser.Host.GPUSupportedFeatures
+  type GPUSupportedFeatures
+module Browser.Host.GPUSupportedLimits
+  type GPUSupportedLimits
+module Browser.Host.GPUTexture
+  type GPUTexture
+module Browser.Host.GPUTextureView
+  type GPUTextureView
+module Browser.Host.GPUUncapturedErrorEvent
+  type GPUUncapturedErrorEvent
+module Browser.Host.GPUValidationError
+  type GPUValidationError
+module Browser.Host.HTMLCanvasElement
+  type HTMLCanvasElement
+module Browser.Host.HTMLImageElement
+  type HTMLImageElement
+module Browser.Host.HTMLVideoElement
+  type HTMLVideoElement
+module Browser.Host.ImageBitmap
+  type ImageBitmap
+module Browser.Host.ImageData
+  type ImageData
 module Browser.Host.Node
   type Node
   value setTextContent : Node, String → ⊤  -- impure
   value textContent : Node → Maybe String  -- impure
+module Browser.Host.OffscreenCanvas
+  type OffscreenCanvas
 module Browser.Host.TextEncoder
   type TextEncoder
   value create : ⊤ → TextEncoder  -- impure
@@ -89,6 +171,10 @@ module Browser.Host.Timers
 module Browser.Host.Uint8Array
   type Uint8Array
   value byteLength : Uint8Array → Int
+module Browser.Host.VideoFrame
+  type VideoFrame
+module Browser.Host.WGSLLanguageFeatures
+  type WGSLLanguageFeatures
 module Browser.Host.Window
   type Window
   value document : ⊤ → Document  -- impure
