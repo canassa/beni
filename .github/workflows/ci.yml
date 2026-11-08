@@ -2,6 +2,16 @@
 # push to master, with the Zig and Node that flake.nix pins, so CI and every
 # developer run the same toolchain.
 #
+# Every job runs on azathoth (the owner, 2026-11-08): four ephemeral
+# self-hosted runners, label `azathoth`, NixOS, in a slice of 8 CPUs and
+# 14 GiB, fenced off the host's services (infra repository,
+# hosts/azathoth/github-runners.nix). The host's Nix daemon serves `nix
+# develop`, so the dev shells' closures stay in its store between runs and
+# no job installs Nix or caches a store. Each job starts in an empty work
+# directory, so the Zig and run-hash caches still come from actions/cache,
+# under keys of their own (`-azathoth-`). Fork pull requests run only after
+# the owner approves them.
+#
 name: ci
 
 on:
@@ -30,7 +40,7 @@ concurrency:
 jobs:
   tests:
     name: tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 60
@@ -39,35 +49,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # The installer the action runs, pinned: this release's asset, checked
-      # against the SHA-256 that GitHub publishes for it. The action's own
-      # pin (`source-tag` with `source-checksums-url`) needs a checksums file,
-      # and the release has none. Given a binary, the action also does not
-      # cache its own copy, which it did in every pull request's cache scope.
-      - name: nix-installer v3.23.2
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
-            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
-          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          source-binary: ${{ runner.temp }}/nix-installer
-          diagnostic-endpoint: ""
-
-      # The dev shell's closure: Node 24, the stdenv, and Zig 0.17.0, which
-      # comes from ziglang.org and not from a binary cache. With the store
-      # restored, a run does not download Zig again. The key changes only
-      # with the flake.
-      - name: restore the Nix store
-        id: nix-cache
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
-
-      # The profile is a garbage-collector root for the shell's closure, so
-      # the bound on the saved store removes only what this flake no longer
-      # needs.
+      # The profile is a garbage-collector root for the shell's closure
+      # while the job runs, so the host's weekly collection cannot remove it
+      # under a running job.
       - name: dev shell
         id: dev-shell
         run: nix develop --profile "$RUNNER_TEMP/dev-shell" --command true
@@ -105,8 +89,8 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-azathoth-${{ hashFiles('flake.lock') }}-
 
       # Zig never prunes its cache, and each master run saves the restored
       # cache plus its own additions. When a master run restores more than
@@ -137,8 +121,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/beni-run-hashes
-          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
-          restore-keys: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-
+          key: run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
+          restore-keys: run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-
 
       # A digest is never removed, and each master run saves the restored
       # cache plus its own additions. When a master run restores more than
@@ -161,17 +145,8 @@ jobs:
       # Only a push to master saves, also when a test fails, so every pull
       # request starts from master's newest build. A pull request's run
       # writes no cache entry, and its scope is its own: it cannot change
-      # what master restores. The store is saved only when the dev shell
-      # came up, at most 2 GiB (a cold store is 1.4 GB).
-      - name: save the Nix store
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
-        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          gc-max-store-size-linux: 2G
-
-      # The key is new for each commit. It exists already only on a re-run,
-      # and then there is nothing to save.
+      # what master restores. The key is new for each commit: it exists
+      # already only on a re-run, and then there is nothing to save.
       - name: save the Zig caches
         if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -179,7 +154,7 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
       # The run-hash cache is saved from every run, also when a test fails:
       # a failed program writes no digest, and the programs that passed
@@ -191,7 +166,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/beni-run-hashes
-          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
+          key: run-hashes-azathoth-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
 
   # The playground's shipped compiler against the native one, byte for
   # byte, on the corpus (docs/design/playground.md §6): `zig build
@@ -201,7 +176,7 @@ jobs:
   # the `tests` job's, so the two jobs never save one key.
   playground:
     name: playground (wasm against native)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 60
@@ -209,23 +184,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: nix-installer v3.23.2
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
-            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
-          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          source-binary: ${{ runner.temp }}/nix-installer
-          diagnostic-endpoint: ""
-
-      # The `tests` job saves the store; this job only restores it.
-      - name: restore the Nix store
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
 
       - name: dev shell
         run: nix develop --command true
@@ -243,10 +201,10 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          key: zig-playground-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
           restore-keys: |
-            zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
-            zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+            zig-playground-azathoth-${{ hashFiles('flake.lock') }}-
+            zig-azathoth-${{ hashFiles('flake.lock') }}-
 
       # As in `tests`: a master run that restores more than 3 GiB starts
       # from nothing.
@@ -269,7 +227,7 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          key: zig-playground-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
   # The Lean ownership proofs (proofs/ownership/README.md):
   # `scripts/audit.sh`, the independent audit, then `lake build`, the
@@ -309,12 +267,11 @@ jobs:
   # HEAD^1 HEAD` lists every file that the merge changes. That diff fails
   # when HEAD is not a merge commit: a wrong diff must not skip the proofs.
   #
-  # The job restores the Nix store that `tests` saves. Lean is not in that
-  # store, and it comes from cache.nixos.org. It is 2.7 GB, more than the
-  # 2 GiB bound on a saved store.
+  # Lean, 2.7 GB, comes from cache.nixos.org into azathoth's Nix store,
+  # where it stays between runs.
   lean:
     name: lean (ownership proofs)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 60
@@ -350,25 +307,6 @@ jobs:
             echo "the pull request changes no file of the proofs: the next steps are skipped"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: nix-installer v3.23.2
-        if: ${{ steps.changes.outputs.run == 'true' }}
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
-            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
-          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
-      - if: ${{ steps.changes.outputs.run == 'true' }}
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          source-binary: ${{ runner.temp }}/nix-installer
-          diagnostic-endpoint: ""
-
-      - name: restore the Nix store
-        if: ${{ steps.changes.outputs.run == 'true' }}
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
 
       - name: dev shell
         if: ${{ steps.changes.outputs.run == 'true' }}
@@ -422,7 +360,7 @@ jobs:
   # 2026-11-05).
   browser-plan:
     name: choose Chrome corpus
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 5
@@ -482,7 +420,7 @@ jobs:
     name: Chrome
     needs: browser-plan
     if: ${{ needs.browser-plan.outputs.run == 'true' || needs.browser-plan.outputs.pages == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 60
@@ -497,30 +435,9 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/b"
           echo "TMPDIR=$RUNNER_TEMP/b" >> "$GITHUB_ENV"
-      # Ubuntu restricts user namespaces to AppArmor-listed binaries. The
-      # Nix store Chromium is not on that list; allow its user-namespace
-      # sandbox on this disposable runner, rather than disabling sandboxing.
-      - name: allow the Chromium user-namespace sandbox
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: nix-installer v3.23.2
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
-            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
-          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          source-binary: ${{ runner.temp }}/nix-installer
-          diagnostic-endpoint: ""
-      # Chromium enlarges the closure, so its cache has its own key and
-      # profile root; fall back to the store that the tests job saves.
-      - name: restore the Nix store
-        id: nix-cache
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: |
-            nix-browser-${{ runner.os }}-${{ runner.arch }}-
-            nix-${{ runner.os }}-${{ runner.arch }}-
+      # Chromium keeps its user-namespace sandbox: NixOS allows user
+      # namespaces, and the runner's unit lets a job create them, so nothing
+      # is switched on here.
       - name: browser dev shell
         id: dev-shell
         run: nix develop .#browser --profile "$RUNNER_TEMP/browser-shell" --command true
@@ -535,10 +452,10 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          key: zig-browser-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
           restore-keys: |
-            zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
-            zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+            zig-browser-azathoth-${{ hashFiles('flake.lock') }}-
+            zig-azathoth-${{ hashFiles('flake.lock') }}-
       - name: bound the Zig caches
         if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
         run: |
@@ -566,12 +483,6 @@ jobs:
         id: site
         if: ${{ !cancelled() && steps.dev-shell.outcome == 'success' && needs.browser-plan.outputs.pages == 'true' }}
         run: nix develop .#browser --command zig build test-pages --summary all
-      - name: save the Nix store
-        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
-        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          gc-max-store-size-linux: 4G
       - name: save the Zig caches
         if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.zig-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -579,15 +490,14 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          key: zig-browser-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
   # The `workers/` corpus (docs/design/boundary.md §9.12 (k)): Workers
   # built for the `cloudflare` platform, run under Miniflare's `workerd` by
   # tests/workers/driver.mjs, on 127.0.0.1, with nothing deployed and no
   # account used: `zig build test-workers`. Its shell, `.#workers`, adds
   # nixpkgs' wrangler to the default shell (a closure of 3.05 GB, against
-  # 1.0 GB), so its Nix store has a key and a bound of its own and the
-  # `tests` job's store stays under 2 GiB. It runs on every pull request,
+  # 1.0 GB), which stays in azathoth's Nix store. It runs on every pull request,
   # because a change to `core/`, the emitter or the platform can break a
   # Worker, and `check` needs it. It uses no run-hash cache: an empty
   # BENI_RUN_HASH_DIR, which the shell keeps, so every program runs every
@@ -595,7 +505,7 @@ jobs:
   # builds, so it restores that job's Zig caches and saves none.
   workers:
     name: workers
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 45
@@ -603,26 +513,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: nix-installer v3.23.2
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
-            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
-          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          source-binary: ${{ runner.temp }}/nix-installer
-          diagnostic-endpoint: ""
-      # Wrangler enlarges the closure, so its cache has its own key and
-      # profile root; fall back to the store that the tests job saves,
-      # which holds Zig.
-      - name: restore the Nix store
-        id: nix-cache
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: |
-            nix-workers-${{ runner.os }}-${{ runner.arch }}-
-            nix-${{ runner.os }}-${{ runner.arch }}-
       - name: workers dev shell
         id: dev-shell
         run: nix develop .#workers --profile "$RUNNER_TEMP/workers-shell" --command true
@@ -644,18 +534,10 @@ jobs:
           path: |
             .zig-cache
             ~/.cache/zig
-          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-azathoth-${{ hashFiles('flake.lock') }}-
       - name: zig build test-workers
         run: nix develop .#workers --command zig build test-workers --summary all
-      # Only a push to master saves, as the tests job does: every pull
-      # request starts from master's store, and its own run writes none.
-      - name: save the Nix store
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
-        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          gc-max-store-size-linux: 4G
 
   # The examples' site (pages.yml), on every run. ci.yml calls it, and it
   # is not a workflow of its own, so that the deploy below can need the
@@ -681,7 +563,7 @@ jobs:
     name: compare with master's head
     needs: [pages, browser]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.browser.outputs.site == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 5
@@ -707,7 +589,7 @@ jobs:
     name: deploy to GitHub Pages
     needs: pages-head
     if: ${{ needs.pages-head.outputs.current == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, azathoth]
     permissions:
       pages: write
       id-token: write
@@ -744,7 +626,7 @@ jobs:
     name: check
     if: always()
     needs: [tests, playground, lean, browser-plan, browser, workers, pages]
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, azathoth]
     permissions:
       contents: read
     timeout-minutes: 5
