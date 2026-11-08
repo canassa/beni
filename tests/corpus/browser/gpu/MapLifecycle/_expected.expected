@@ -7,6 +7,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol></ol>
   </main>
 </body>
@@ -19,6 +20,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol>
       <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
       <li>"destroyed while pending: Err MapFailed MapAborted"</li>
@@ -38,6 +40,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol>
       <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
       <li>"destroyed while pending: Err MapFailed MapAborted"</li>
@@ -59,6 +62,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol>
       <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
       <li>"destroyed while pending: Err MapFailed MapAborted"</li>
@@ -85,6 +89,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol>
       <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
       <li>"destroyed while pending: Err MapFailed MapAborted"</li>
@@ -113,6 +118,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol>
       <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
       <li>"destroyed while pending: Err MapFailed MapAborted"</li>
@@ -144,6 +150,7 @@
     <button id="bracket">"bracket"</button>
     <button id="leased">"leased"</button>
     <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
     <ol>
       <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
       <li>"destroyed while pending: Err MapFailed MapAborted"</li>
@@ -166,8 +173,47 @@
       <li>"read mapping's range after device destroy: Err ResourceExpired range"</li>
       <li>"a new range of it: Err InvalidInput ResourceExpired mapping"</li>
       <li>"creation mapping's range: Err ResourceExpired range"</li>
-      <li>"copied out: Err InvalidInput ResourceExpired range"</li>
+      <li>"copied out: Err Refused ResourceExpired range"</li>
       <li>"map states: unmapped, unmapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #suspended-body
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <button id="device-destroy">"device-destroy"</button>
+    <button id="suspended-body">"suspended-body"</button>
+    <ol>
+      <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
+      <li>"destroyed while pending: Err MapFailed MapAborted"</li>
+      <li>"map after destroy: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"lost while pending: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"a second map while pending: Err InvalidInput MappingState buffer pending"</li>
+      <li>"the first: Ok mapping, then mapped"</li>
+      <li>"cancelled while pending, then unmapped"</li>
+      <li>"map again: Ok mapping, then mapped"</li>
+      <li>"the first range after a remap: Err ResourceExpired range"</li>
+      <li>"a range of the first mapping: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"current mapping: the second"</li>
+      <li>"second mapping live after destroy: no"</li>
+      <li>"a range of it after destroy: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"a body that fails: Err InvalidInput SessionStopped, then unmapped"</li>
+      <li>"a body that maps again: Ok done, then mapped"</li>
+      <li>"map under the lease: Err InvalidInput SessionState DeviceLeased, native calls 0"</li>
+      <li>"under the lease: range read Ok 0, current mapping Just, unmap unmapped"</li>
+      <li>"map after the lease, of the buffer destroyed under it: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"read mapping's range after device destroy: Err ResourceExpired range"</li>
+      <li>"a new range of it: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"creation mapping's range: Err ResourceExpired range"</li>
+      <li>"copied out: Err Refused ResourceExpired range"</li>
+      <li>"map states: unmapped, unmapped"</li>
+      <li>"withMapped body waiting: mapped, cancelled: unmapped"</li>
+      <li>"a later map: Ok mapping, still mapped"</li>
     </ol>
   </main>
 </body>
