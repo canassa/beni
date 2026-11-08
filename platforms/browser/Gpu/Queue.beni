@@ -1,0 +1,215 @@
+--! A device's queue (`docs/design/webgpu.md` §6.2, §8.3): writes into
+--! buffers and submissions of command buffers. `Gpu.Device.queue` gives it.
+--!
+--! Each `submit` gives the receipt of the one native submit it issued, a
+--! `Submission`; `Gpu.Submission.done` waits for that submission's work.
+--! Nothing waits unless asked to.
+
+import Binary
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Memory as Memory
+import Gpu.Native as Native
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+--| One `writeBuffer`: the destination offset in bytes, the data, and the
+--| part of it to write. As in the native API, `dataOffset` and `size`
+--| count the data's elements — bytes for an `ArrayBuffer` or a
+--| `DataView`, elements for a typed array — and `Nothing` as the size
+--| writes the rest of the data. The bytes written are a multiple of 4.
+pub type alias WriteBufferSource =
+    bufferOffset : Int
+    data : Binary.Source
+    dataOffset : Int
+    size : Maybe Int
+
+
+--| All of `data`, at `bufferOffset`.
+pub bufferWrite : Int, Binary.Source → WriteBufferSource
+bufferWrite bufferOffset data =
+    { bufferOffset = bufferOffset, data = data, dataOffset = 0, size = Nothing }
+
+
+--| The queue's label.
+pub label : Handle.Queue → String
+label queue = Js.to (Js.get (Js.from queue) "label")
+
+
+--| Set the queue's label.
+pub setLabel : Handle.Queue, String → ⊤
+setLabel queue text = Js.set (Js.from queue) "label" (Js.from text)
+
+
+-- The queue's record: its device's record and the native device.
+recordOf : Handle.Queue → V
+recordOf queue = Engine.recordOf (Js.from queue)
+
+
+--| Write `source` into `buffer`, checked (§6.1; ledger §5). Refused before
+--| any native call: a buffer that was destroyed or belongs to another
+--| device, data whose storage is detached (`DetachedSource`) or resizable
+--| (`ResizableBacking`, #1268), a part that leaves the data (`OutOfRange`)
+--| or is not a multiple of 4 bytes (`Misaligned`), an offset outside
+--| `GPUSize64`. Then `Validation` for what the device refuses (the
+--| buffer's usage, the offset's alignment, the bounds), and
+--| `HostOperationRejected BufferWriteSourceRejected` for the source range
+--| the host refuses anyway. May suspend.
+pub writeBuffer : Handle.Queue, Handle.Buffer, WriteBufferSource → Result Error.Error ⊤
+writeBuffer queue buffer write =
+    q = recordOf queue
+    b = Memory.record buffer
+    Result.mapError (writePreflight q b write) Error.InvalidInput?
+    native = Js.from queue
+
+    -- An `undefined` argument is an omitted one (Web IDL): the native default.
+    sizeArg =
+        case write.size of
+            Just s →
+                Js.from s
+
+            Nothing →
+                Js.undefined
+    Result.map
+        (Engine.checked
+            (Js.get q "native")
+            "writeBuffer"
+            [ Js.to (Js.get (Js.from buffer) "label") ]
+            λ⊤ →
+                Js.catchIf
+                    (λ⊤ →
+                        _ =
+                            Js.call native "writeBuffer"
+                                [ Js.from buffer
+                                , Js.from write.bufferOffset
+                                , Memory.sourceObject write.data
+                                , Js.from write.dataOffset
+                                , sizeArg
+                                ]
+                        -- What the call made: nothing but its outcome.
+                        Ok (Js.object [])
+                    )
+                    (λerror → Engine.isDomException error "OperationError")
+                    λerror →
+                        Err
+                            (Error.HostOperationRejected
+                                (Error.BufferWriteSourceRejected
+                                    { message = Engine.messageOf error }
+                                )
+                            )
+        )
+        λ_ → ⊤
+
+
+writePreflight : V, V, WriteBufferSource → Result Error.InputError ⊤
+writePreflight q b write =
+    Memory.usable b (Js.get q "device") "buffer"?
+    _ = Memory.size64 write.bufferOffset "bufferOffset"?
+    info = Memory.sourceInfo write.data "data"?
+    -- The content timeline's checks of `writeBuffer`, in the data's units.
+    dataSize = info.elementLength
+    dataOffset = Memory.size64 write.dataOffset "dataOffset"?
+    if dataOffset > dataSize then
+        Err
+            (Error.OutOfRange
+                { path = "dataOffset", offset = dataOffset, size = 0, available = dataSize }
+            )
+    else
+        contents =
+            case write.size of
+                Just s →
+                    Memory.size64 s "size"?
+
+                Nothing →
+                    dataSize - dataOffset
+        if contents > dataSize - dataOffset then
+            Err
+                (Error.OutOfRange
+                    { path = "size"
+                    , offset = dataOffset * info.bytesPerElement
+                    , size = contents * info.bytesPerElement
+                    , available = info.byteLength
+                    }
+                )
+        else
+            Memory.aligned (contents * info.bytesPerElement) 4 "size"
+
+
+--| Submit `commands`, checked (§6.1, §8.3): one native submit, whose
+--| receipt is returned once no scope reported a failure. Right after the
+--| submit, in the same host turn, the receipt captures the queue's
+--| completion promise, so it covers this submission and the work before
+--| it, never a later one. An empty list is a native submit too, with its
+--| receipt. A command buffer from another device is refused before any
+--| native call. May suspend.
+pub submit : Handle.Queue, List Handle.CommandBuffer → Result Error.Error Handle.Submission
+submit queue commands =
+    q = recordOf queue
+    Result.mapError (submitPreflight q commands) Error.InvalidInput?
+    native = Js.from queue
+    Result.map
+        (Engine.checked (Js.get q "native") "submit" [] λ⊤ →
+            _ = Js.call native "submit" [ Native.array commands λc → Js.from c ]
+            Ok
+                (Engine.pendingOutcome
+                    (Js.get q "native")
+                    "onSubmittedWorkDone"
+                    (Js.call native "onSubmittedWorkDone" [])
+                    workDone
+                )
+        )
+        λreceipt → Js.to receipt
+
+
+submitPreflight : V, List Handle.CommandBuffer → Result Error.InputError ⊤
+submitPreflight q commands = List.foldl commands (Ok ⊤) λcommand verdict →
+    case verdict of
+        Err _ →
+            verdict
+
+        Ok _ →
+            c = Engine.recordOf (Js.from command)
+            if Js.same (Js.get c "device") (Js.get q "device") then
+                Ok ⊤
+            else
+                Err (Error.WrongDevice { path = "commands" })
+
+
+-- `onSubmittedWorkDone` documents no rejection (ledger §5).
+workDone : Bool, V → Engine.Outcome ⊤
+workDone fulfilled value = if fulfilled then Engine.Expected ⊤ else Engine.Unexpected value
+
+
+--| Wait until every piece of work submitted to the queue so far is done:
+--| the native `onSubmittedWorkDone`, captured now, so it also covers work
+--| other code submitted before. To wait for one submission, use its
+--| receipt (`Gpu.Submission.done`). `DeviceLost` when the device is lost
+--| first. May suspend.
+pub onSubmittedWorkDone : Handle.Queue → Result Error.Error ⊤
+onSubmittedWorkDone queue =
+    q = recordOf queue
+    device = Js.get q "native"
+    case Engine.loss device of
+        Just l →
+            Err
+                (Error.DeviceLost
+                    { loss = l, operation = { operation = "onSubmittedWorkDone", observed = [] } }
+                )
+
+        Nothing →
+            Engine.awaitPending
+                (Engine.pendingOutcome
+                    device
+                    "onSubmittedWorkDone"
+                    (Js.call (Js.from queue) "onSubmittedWorkDone" [])
+                    workDone
+                )

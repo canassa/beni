@@ -1,0 +1,386 @@
+--! The engine's state of buffers, mappings and mapped ranges
+--! (`docs/design/webgpu.md` §7, §7.1), shared by `Gpu.Device`,
+--! `Gpu.Buffer`, `Gpu.MappedRange` and `Gpu.Queue`; an application never
+--! needs it, and its signatures name `Js.Value`.
+--!
+--! A buffer's record in the engine's table holds, beside its device and
+--! status: its size and usages, whether it was destroyed, its map state as
+--! the engine latched it, its mapping generation and its live mapping. The
+--! generation changes with every map request, unmap and destroy, so a
+--! mapping or a range of an earlier generation is expired for every alias.
+--! A mapping and a range are objects of the engine, never native ones.
+
+import Binary
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle as Handle
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+int : V → Int
+int v = Js.to v
+
+
+--| Fill the record of a buffer `checked` made on `device`: `mapped` when it
+--| was created mapped, which makes its first mapping, writable whatever
+--| its usages (§7.1).
+pub adoptBuffer : V, V, Int, Int, Bool → ⊤
+adoptBuffer device buffer size usage mapped =
+    b = Engine.recordOf buffer
+    Js.set b "native" device
+    Js.set b "size" (Js.from size)
+    Js.set b "usage" (Js.from usage)
+    Js.set b "destroyed" (Js.from False)
+    Js.set b "generation" (Js.from 0)
+    Js.set b "state" (Js.from "unmapped")
+    Js.set b "mapping" Js.null
+    if mapped then mapped_ buffer 0 "creation" 0 size else ⊤
+
+
+-- The buffer is mapped, for generation `generation`: its live mapping.
+mapped_ : V, Int, String, Int, Int → ⊤
+mapped_ buffer generation mode offset size =
+    b = Engine.recordOf buffer
+
+    mapping =
+        Js.object
+            [ ( "buffer", buffer )
+            , ( "generation", Js.from generation )
+            , ( "mode", Js.from mode )
+            , ( "offset", Js.from offset )
+            , ( "size", Js.from size )
+            , ( "ranges", Js.array [] )
+            ]
+    Js.set b "state" (Js.from "mapped")
+    Js.set b "mapping" mapping
+
+
+--| The record of a buffer.
+pub record : Handle.Buffer → V
+record buffer = Engine.recordOf (Js.from buffer)
+
+
+--| The native device a buffer belongs to.
+pub deviceOf : V → V
+deviceOf b = Js.get b "native"
+
+
+--| The size of a buffer, in bytes.
+pub sizeOf : V → Int
+sizeOf b = int (Js.get b "size")
+
+
+--| The usage bits of a buffer.
+pub usageOf : V → Int
+usageOf b = int (Js.get b "usage")
+
+
+--| The map state the engine latched for a buffer.
+pub stateOf : V → Types.BufferMapState
+stateOf b =
+    state = Js.get b "state"
+    if Js.same state (Js.from "mapped") then
+        Types.Mapped
+    else if Js.same state (Js.from "pending") then
+        Types.Pending
+    else
+        Types.Unmapped
+
+
+--| Whether `destroy` was called on the buffer.
+pub isDestroyed : V → Bool
+isDestroyed b = Js.to (Js.get b "destroyed")
+
+
+--| A buffer argument at `path`, usable on the device of record `onDevice`
+--| (a device record, or null for any): it was accepted, not destroyed,
+--| and made on that device.
+pub usable : V, V, String → Result Error.InputError ⊤
+usable b onDevice path =
+    status = Js.get b "status"
+    if Js.same status (Js.from "rejected") then
+        Err (Error.ResourceRejected { path = path })
+    else if Js.same status (Js.from "provisional") then
+        Err (Error.ResourcePending { path = path })
+    else if isDestroyed b then
+        Err (Error.ResourceDestroyed { path = path })
+    else if not (Js.isNull onDevice) && not (Js.same (Js.get b "device") onDevice) then
+        Err (Error.WrongDevice { path = path })
+    else
+        Ok ⊤
+
+
+--| A size or an offset at `path`, as a `GPUSize64` accepts it.
+pub size64 : Int, String → Result Error.InputError Int
+size64 value path =
+    case Scalar.size64 value of
+        Ok _ →
+            Ok value
+
+        Err domain →
+            Err (Error.atPath path domain)
+
+
+--| `value` is a multiple of `alignment`.
+pub aligned : Int, Int, String → Result Error.InputError ⊤
+aligned value alignment path =
+    if Int.rem value alignment == 0 then
+        Ok ⊤
+    else
+        Err (Error.Misaligned { path = path, value = value, alignment = alignment })
+
+
+-- ---- Mapping ------------------------------------------------------------------
+
+--| Start a map request of generation `generation + 1`: the buffer is
+--| pending. Gives the new generation.
+pub startMap : V → Int
+startMap buffer =
+    b = Engine.recordOf buffer
+    generation = int (Js.get b "generation") + 1
+    Js.set b "generation" (Js.from generation)
+    Js.set b "state" (Js.from "pending")
+    generation
+
+
+--| The map request of `generation` settled. Fulfilled while it is still
+--| the buffer's request: the buffer is mapped, and the mapping is the
+--| outcome. Rejected with what the ledger documents for `mapAsync` (§4):
+--| `AbortError` is `MapAborted`, `OperationError` `MapRejected`, the CPU
+--| backing's `RangeError` `MappedAllocationFailed`; anything else is
+--| unexpected. A request an unmap or a destroy superseded is `MapAborted`.
+pub mapSettled : V, Int, String, Int, Int, Bool, V → Engine.Outcome (Result Error.Error V)
+mapSettled buffer generation mode offset size fulfilled value =
+    b = Engine.recordOf buffer
+    current = int (Js.get b "generation") == generation && not (isDestroyed b)
+    if fulfilled then
+        if current then
+            mapped_ buffer generation mode offset size
+            Engine.Expected (Ok (Js.get b "mapping"))
+        else
+            Engine.Expected (Err (Error.MapFailed Error.MapAborted))
+    else
+        failure =
+            if Engine.isDomException value "AbortError" then
+                Just Error.MapAborted
+            else if Engine.isDomException value "OperationError" then
+                Just (Error.MapRejected { message = Engine.messageOf value })
+            else if Engine.isRangeError value then
+                Just
+                    (Error.MappedAllocationFailed { bytes = size, message = Engine.messageOf value }
+                    )
+            else
+                Nothing
+        case failure of
+            Nothing →
+                Engine.Unexpected value
+
+            Just problem →
+                if current then Js.set b "state" (Js.from "unmapped")
+                Engine.Expected (Err (Error.MapFailed problem))
+
+
+--| Unmap the buffer, whatever generation is live: every mapping and range
+--| of it expires before the native call, for every alias.
+pub unmap : V → ⊤
+unmap buffer =
+    b = Engine.recordOf buffer
+    if Js.same (Js.get b "state") (Js.from "unmapped") then
+        ⊤
+    else
+        Js.set b "generation" (Js.from (int (Js.get b "generation") + 1))
+        Js.set b "state" (Js.from "unmapped")
+        Js.set b "mapping" Js.null
+        Js.call buffer "unmap" [] ▷ ignore
+
+
+--| Unmap the buffer only while `generation` is still its live or pending
+--| one: what a cancelled map or a finished `withMapped` releases, never a
+--| later, independent mapping.
+pub release : V, Int → ⊤
+release buffer generation =
+    b = Engine.recordOf buffer
+    if int (Js.get b "generation") == generation then unmap buffer else ⊤
+
+
+--| Destroy the buffer: latched first, so every alias, mapping and range
+--| sees it; destroying it again does nothing.
+pub destroy : V → ⊤
+destroy buffer =
+    b = Engine.recordOf buffer
+    if isDestroyed b then
+        ⊤
+    else
+        Js.set b "destroyed" (Js.from True)
+        Js.set b "generation" (Js.from (int (Js.get b "generation") + 1))
+        Js.set b "state" (Js.from "unmapped")
+        Js.set b "mapping" Js.null
+        Js.call buffer "destroy" [] ▷ ignore
+
+
+--| The live mapping of the buffer, if it is mapped.
+pub currentMapping : V → Maybe V
+currentMapping buffer =
+    b = Engine.recordOf buffer
+    m = Js.get b "mapping"
+    if Js.isNull m || isDestroyed b then Nothing else Just m
+
+
+--| Whether a mapping is still the live mapping of its buffer.
+pub live : V → Bool
+live m =
+    b = Engine.recordOf (Js.get m "buffer")
+    Js.same (Js.get b "mapping") m && not (isDestroyed b)
+
+
+--| A mapping's buffer record, when the mapping is live; `ResourceExpired`
+--| at `path` otherwise.
+pub liveBuffer : V, String → Result Error.InputError V
+liveBuffer m path =
+    if live m then
+        Ok (Engine.recordOf (Js.get m "buffer"))
+    else
+        Err (Error.ResourceExpired { path = path })
+
+
+--| A mapped range of `m`: its native storage, wrapped in a range of the
+--| engine that names its mapping.
+pub newRange : V, Int, Int, V → V
+newRange m offset size storage =
+    Js.call (Js.get m "ranges") "push"
+        [ Js.object [ ( "offset", Js.from offset ), ( "size", Js.from size ) ] ]
+        ▷ ignore
+    Js.object
+        [ ( "mapping", m )
+        , ( "offset", Js.from offset )
+        , ( "size", Js.from size )
+        , ( "storage", storage )
+        , ( "view", Js.construct (Js.global "DataView") [ storage ] )
+        ]
+
+
+--| Whether `offset … offset + size` overlaps a range of the mapping taken
+--| before.
+pub overlaps : V, Int, Int → Bool
+overlaps m offset size =
+    Js.to
+        (Js.call (Js.get m "ranges") "some"
+            [ Js.from λr →
+                start : Int
+                start = Js.to (Js.get r "offset")
+                length : Int
+                length = Js.to (Js.get r "size")
+                offset < start + length && start < offset + size
+            ]
+        )
+
+
+-- ---- Binary sources ---------------------------------------------------------------
+
+--| The native object of a binary source.
+pub sourceObject : Binary.Source → V
+sourceObject source =
+    case source of
+        Binary.WholeBuffer b →
+            Js.from b
+
+        Binary.WholeShared s →
+            Js.from s
+
+        Binary.ViewOf view →
+            viewObject view
+
+
+--| The native object of a binary view.
+pub viewObject : Binary.View → V
+viewObject view =
+    case view of
+        Binary.Int8Array v →
+            Js.from v
+
+        Binary.Uint8Array v →
+            Js.from v
+
+        Binary.Uint8ClampedArray v →
+            Js.from v
+
+        Binary.Int16Array v →
+            Js.from v
+
+        Binary.Uint16Array v →
+            Js.from v
+
+        Binary.Int32Array v →
+            Js.from v
+
+        Binary.Uint32Array v →
+            Js.from v
+
+        Binary.BigInt64Array v →
+            Js.from v
+
+        Binary.BigUint64Array v →
+            Js.from v
+
+        Binary.Float16Array v →
+            Js.from v
+
+        Binary.Float32Array v →
+            Js.from v
+
+        Binary.Float64Array v →
+            Js.from v
+
+        Binary.DataView v →
+            Js.from v
+
+
+--| A binary source at `path`, with its backing checked (§3.1, #1268):
+--| detached storage is `DetachedSource`, resizable or growable storage
+--| `ResizableBacking`, even when it never resized.
+pub sourceInfo : Binary.Source, String → Result Error.InputError Binary.SourceInfo
+sourceInfo source path =
+    case Binary.sourceInfo source of
+        Ok info →
+            Ok info
+
+        Err Binary.Detached →
+            Err (Error.DetachedSource { path = path })
+
+        Err Binary.ResizableBacking →
+            Err (Error.ResizableBacking { path = path })
+
+
+--| A binary access failure on a live range, at `path`: out of the range's
+--| bounds, in bytes. Its storage cannot be detached while the mapping is
+--| live; if it is, a wrapper invariant broke.
+pub access : Binary.AccessError, String → Error.InputError
+access problem path =
+    case problem of
+        Binary.OutOfBounds offset length available →
+            Error.OutOfRange { path = path, offset = offset, size = length, available = available }
+
+        Binary.AccessBacking _ →
+            Engine.defect "the storage of a live mapped range was detached"
+
+
+--| The usage a buffer must have to be mapped in `mode`.
+pub mapUsage : Flags.MapMode → Flags.BufferUsage
+mapUsage mode =
+    case mode of
+        Flags.Read →
+            Flags.MapRead
+
+        Flags.Write →
+            Flags.MapWrite

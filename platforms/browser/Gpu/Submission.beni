@@ -1,0 +1,16 @@
+--! The receipt of one native submit (`docs/design/webgpu.md` §8.3), from
+--! `Gpu.Queue.submit`. It holds the queue's completion promise captured
+--! right after that submit, always drained, so it covers its own
+--! submission and the earlier work on the queue, never a later one.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Js
+
+
+--| Wait until the submission's work is done; at once when it is already.
+--| `DeviceLost` when the device is lost first. Work done is not display
+--| done. May suspend; runs under a diagnostic session's lease (§6.4).
+pub done : Handle.Submission → Result Error.Error ⊤
+done submission = Engine.awaitPending (Js.from submission)

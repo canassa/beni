@@ -1,0 +1,260 @@
+--! A range of a buffer's mapped memory (`docs/design/webgpu.md` §7), from
+--! `Gpu.Buffer.getMappedRange`. Reads and writes go to the mapped memory
+--! itself, in place; `readBytes` copies out into new storage, and
+--! `writeBytes` copies in from any binary source.
+--!
+--! Offsets are bytes from the start of the range. Values wider than a byte
+--! are little-endian, as WGSL lays out host-shareable memory. Every access
+--! checks first that the range's mapping is still its buffer's live one
+--! (`ResourceExpired` otherwise, wherever the range was kept), that a write
+--! is to a writable mapping (`ReadOnlyMapping`), and that it stays in the
+--! range (`OutOfRange`). The memory is never handed out as storage of its
+--! own: it is detached when the mapping ends. None of these suspend, and
+--! they run under a diagnostic session's lease (§6.4).
+
+import Binary
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Memory as Memory
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+--| The range's offset in its buffer, in bytes.
+pub offset : Handle.MappedRange → Int
+offset range = Js.to (Js.get (Js.from range) "offset")
+
+
+--| The range's size in bytes.
+pub size : Handle.MappedRange → Int
+size range = Js.to (Js.get (Js.from range) "size")
+
+
+-- The range's view, when the access may go on.
+view : Handle.MappedRange, Bool → Result InputError Binary.View
+view range writing =
+    r = Js.from range
+    m = Js.get r "mapping"
+    _ = Memory.liveBuffer m "range"?
+    if writing && Js.same (Js.get m "mode") (Js.from "read") then
+        Err (Error.ReadOnlyMapping { path = "range" })
+    else
+        Ok (Binary.DataView (Js.to (Js.get r "view")))
+
+
+read : Handle.MappedRange, (Binary.View → Result Binary.AccessError a) → Result InputError a
+read range f =
+    v = view range False?
+    Result.mapError (f v) λproblem → Memory.access problem "offset"
+
+
+write : Handle.MappedRange, (Binary.View → Result Binary.WriteError ⊤) → Result InputError ⊤
+write range f =
+    v = view range True?
+    case f v of
+        Ok _ →
+            Ok ⊤
+
+        Err (Binary.WriteAccess problem) →
+            Err (Memory.access problem "offset")
+
+        Err (Binary.InvalidValue value minimum maximum) →
+            Err
+                (Error.InvalidValue
+                    { path = "value"
+                    , value = toFloat value
+                    , minimum = toFloat minimum
+                    , maximum = toFloat maximum
+                    }
+                )
+
+
+writeFloat : Handle.MappedRange, (Binary.View → Result Binary.AccessError ⊤) → Result InputError ⊤
+writeFloat range f =
+    v = view range True?
+    Result.mapError (f v) λproblem → Memory.access problem "offset"
+
+
+--| Copy `bytes` of the range into new, fixed storage: `byteOffset` and
+--| `byteLength` are in the range, `Nothing` as the length for the rest of
+--| it. The copy is the caller's: it outlives the mapping.
+pub readBytes : Handle.MappedRange, Binary.ByteRange → Result Error.Error Binary.Buffer
+readBytes range bytes =
+    _ = Result.mapError (view range False) Error.InvalidInput?
+    r = Js.from range
+    total = size range
+    length = Maybe.withDefault bytes.byteLength (total - bytes.byteOffset)
+    if
+        bytes.byteOffset < 0
+            || length < 0
+            || bytes.byteOffset > total
+            || length > total - bytes.byteOffset
+    then
+        Err
+            (Error.InvalidInput
+                (Error.OutOfRange
+                    { path = "bytes", offset = bytes.byteOffset, size = length, available = total }
+                )
+            )
+    else
+        storage : Binary.Buffer
+        storage = Js.to (Js.get r "storage")
+        case
+            Binary.view (Binary.Local storage) Binary.U8
+                { byteOffset = bytes.byteOffset, byteLength = Just length }
+        of
+            Err _ →
+                Engine.defect "a checked range of live mapped storage refused a view"
+
+            Ok part →
+                case Binary.copy (Binary.ViewOf part) of
+                    Ok copied →
+                        Ok copied
+
+                    Err (Binary.CopyAllocation (Binary.AllocationFailed n)) →
+                        Err (Error.AllocationFailed { bytes = n })
+
+                    Err _ →
+                        Engine.defect "a copy of live mapped storage failed"
+
+
+--| Copy every byte of `source` into the range at `at`. The source's
+--| storage must be fixed and attached (`ResizableBacking`,
+--| `DetachedSource`).
+pub writeBytes : Handle.MappedRange, Int, Binary.Source → Result InputError ⊤
+writeBytes range at source =
+    v = view range True?
+    _ = Memory.sourceInfo source "source"?
+    Result.mapError (Binary.copyInto v at source) λproblem → Memory.access problem "offset"
+
+
+--| The unsigned byte at `at`.
+pub readU8 : Handle.MappedRange, Int → Result InputError Int
+readU8 range at = read range λv → Binary.readU8 v at
+
+
+--| The signed byte at `at`.
+pub readI8 : Handle.MappedRange, Int → Result InputError Int
+readI8 range at = read range λv → Binary.readI8 v at
+
+
+--| The unsigned 16-bit integer at `at`.
+pub readU16 : Handle.MappedRange, Int → Result InputError Int
+readU16 range at = read range λv → Binary.readU16 v at Binary.Little
+
+
+--| The signed 16-bit integer at `at`.
+pub readI16 : Handle.MappedRange, Int → Result InputError Int
+readI16 range at = read range λv → Binary.readI16 v at Binary.Little
+
+
+--| The unsigned 32-bit integer at `at`.
+pub readU32 : Handle.MappedRange, Int → Result InputError Int
+readU32 range at = read range λv → Binary.readU32 v at Binary.Little
+
+
+--| The signed 32-bit integer at `at`.
+pub readI32 : Handle.MappedRange, Int → Result InputError Int
+readI32 range at = read range λv → Binary.readI32 v at Binary.Little
+
+
+--| The 32-bit float at `at`, NaN and the infinities included.
+pub readF32 : Handle.MappedRange, Int → Result InputError Float
+readF32 range at = read range λv → Binary.readF32 v at Binary.Little
+
+
+--| The 64-bit float at `at`.
+pub readF64 : Handle.MappedRange, Int → Result InputError Float
+readF64 range at = read range λv → Binary.readF64 v at Binary.Little
+
+
+--| The exact 64-bit word at `at`, `u64` or `i64` bits alike.
+pub readWord64 : Handle.MappedRange, Int → Result InputError Binary.Word64
+readWord64 range at = read range λv → Binary.readWord64 v at Binary.Little
+
+
+--| The 16-bit float at `at`; `UnsupportedCapability` on a host without
+--| DataView's Float16 methods.
+pub readF16 : Handle.MappedRange, Int → Result Error.Error Float
+readF16 range at =
+    v = Result.mapError (view range False) Error.InvalidInput?
+    case Binary.readF16 v at Binary.Little of
+        Ok x →
+            Ok x
+
+        Err (Binary.Float16Access problem) →
+            Err (Error.InvalidInput (Memory.access problem "offset"))
+
+        Err Binary.NoFloat16 →
+            Err
+                (Error.UnsupportedCapability
+                    (Error.MissingHostMember "DataView.prototype.getFloat16")
+                )
+
+
+--| Write the unsigned byte `value` at `at`.
+pub writeU8 : Handle.MappedRange, Int, Int → Result InputError ⊤
+writeU8 range at value = write range λv → Binary.writeU8 v at value
+
+
+--| Write the signed byte `value` at `at`.
+pub writeI8 : Handle.MappedRange, Int, Int → Result InputError ⊤
+writeI8 range at value = write range λv → Binary.writeI8 v at value
+
+
+--| Write the unsigned 16-bit integer `value` at `at`.
+pub writeU16 : Handle.MappedRange, Int, Int → Result InputError ⊤
+writeU16 range at value = write range λv → Binary.writeU16 v at Binary.Little value
+
+
+--| Write the signed 16-bit integer `value` at `at`.
+pub writeI16 : Handle.MappedRange, Int, Int → Result InputError ⊤
+writeI16 range at value = write range λv → Binary.writeI16 v at Binary.Little value
+
+
+--| Write the unsigned 32-bit integer `value` at `at`.
+pub writeU32 : Handle.MappedRange, Int, Int → Result InputError ⊤
+writeU32 range at value = write range λv → Binary.writeU32 v at Binary.Little value
+
+
+--| Write the signed 32-bit integer `value` at `at`.
+pub writeI32 : Handle.MappedRange, Int, Int → Result InputError ⊤
+writeI32 range at value = write range λv → Binary.writeI32 v at Binary.Little value
+
+
+--| Write `value` at `at` as a 32-bit float, rounded as the host rounds.
+pub writeF32 : Handle.MappedRange, Int, Float → Result InputError ⊤
+writeF32 range at value = writeFloat range λv → Binary.writeF32 v at Binary.Little value
+
+
+--| Write `value` at `at` as a 64-bit float.
+pub writeF64 : Handle.MappedRange, Int, Float → Result InputError ⊤
+writeF64 range at value = writeFloat range λv → Binary.writeF64 v at Binary.Little value
+
+
+--| Write the exact 64-bit word at `at`.
+pub writeWord64 : Handle.MappedRange, Int, Binary.Word64 → Result InputError ⊤
+writeWord64 range at word = writeFloat range λv → Binary.writeWord64 v at Binary.Little word
+
+
+--| Write `value` at `at` as a 16-bit float; `UnsupportedCapability` on a
+--| host without DataView's Float16 methods.
+pub writeF16 : Handle.MappedRange, Int, Float → Result Error.Error ⊤
+writeF16 range at value =
+    v = Result.mapError (view range True) Error.InvalidInput?
+    case Binary.writeF16 v at Binary.Little value of
+        Ok _ →
+            Ok ⊤
+
+        Err (Binary.Float16Access problem) →
+            Err (Error.InvalidInput (Memory.access problem "offset"))
+
+        Err Binary.NoFloat16 →
+            Err
+                (Error.UnsupportedCapability
+                    (Error.MissingHostMember "DataView.prototype.setFloat16")
+                )

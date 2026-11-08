@@ -1,0 +1,344 @@
+--! Buffers and their mapping (`docs/design/webgpu.md` §7, §7.1). A buffer
+--! is made by `Gpu.Device.createBuffer`; its memory is reached through a
+--! `Mapping`, from `map` or from creation, and the `MappedRange`s taken from
+--! it (`Gpu.MappedRange`).
+--!
+--! Every alias of a buffer sees one state. A mapping belongs to one mapping
+--! generation of its buffer: `unmap`, `destroy` and the next `map` end it,
+--! and from then on the mapping and every range of it are expired, wherever
+--! they were kept. `withMapped` maps, runs its callback and unmaps however
+--! the callback ends.
+--!
+--!     firstWord : Gpu.Handle.Mapping → Result Gpu.Error.Error Int
+--!     firstWord mapping =
+--!         range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+--!         Result.mapError (Gpu.MappedRange.readU32 range 0) Gpu.Error.InvalidInput
+--!
+--!     Gpu.Buffer.withMapped buffer Gpu.Buffer.mapRead firstWord
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle as Handle
+import Gpu.Memory as Memory
+import Gpu.Types as Types
+import Js
+import Task
+
+
+type alias V =
+    Js.Value
+
+
+--| What `map` maps: a mode — read or write, exactly one — and a range in
+--| bytes, `Nothing` as the size for the rest of the buffer. The offset is
+--| a multiple of 8 and the size of 4.
+pub type alias MapRequest =
+    mode : Flags.MapModes
+    offset : Int
+    size : Maybe Int
+
+
+--| The whole buffer, for reading.
+pub mapRead : MapRequest
+mapRead = { mode = Flags.mapModes [ Flags.Read ], offset = 0, size = Nothing }
+
+
+--| The whole buffer, for writing.
+pub mapWrite : MapRequest
+mapWrite = { mode = Flags.mapModes [ Flags.Write ], offset = 0, size = Nothing }
+
+
+--| A range of a buffer, in bytes: `Nothing` as the size for the rest of the
+--| buffer from the offset, as the native API defaults it.
+pub type alias Range =
+    offset : Int
+    size : Maybe Int
+
+
+--| From offset 0, the rest of the buffer.
+pub whole : Range
+whole = { offset = 0, size = Nothing }
+
+
+--| What a mapping was made for: reading or writing by `map`, or the
+--| mapping a buffer has from creation, which is writable whatever the
+--| buffer's usages (§7.1).
+pub type MappingMode
+    = ReadMapping
+    | WriteMapping
+    | CreationMapping
+
+
+--| The buffer's size in bytes.
+pub size : Handle.Buffer → Int
+size buffer = Memory.sizeOf (Memory.record buffer)
+
+
+--| The buffer's usages.
+pub usage : Handle.Buffer → Flags.BufferUsages
+usage buffer =
+    bits = Memory.usageOf (Memory.record buffer)
+    Flags.buffer
+        (List.filter Flags.allBufferUsages λu →
+            Js.bitAnd bits (Flags.bufferUsageBits u) == Flags.bufferUsageBits u
+        )
+
+
+--| The buffer's map state: what the engine latched, which changes before
+--| the native call that follows it.
+pub mapState : Handle.Buffer → Types.BufferMapState
+mapState buffer = Memory.stateOf (Memory.record buffer)
+
+
+--| The buffer's label.
+pub label : Handle.Buffer → String
+label buffer = Js.to (Js.get (Js.from buffer) "label")
+
+
+--| Set the buffer's label.
+pub setLabel : Handle.Buffer, String → ⊤
+setLabel buffer text = Js.set (Js.from buffer) "label" (Js.from text)
+
+
+--| Map the buffer for reading or writing, checked (§6.1, §7): the request
+--| is refused before any native call when its mode is not exactly read or
+--| write (`InvalidMapMode`), the buffer lacks the usage the mode needs
+--| (`MissingBufferUsage`), is mapped or pending already (`MappingState`),
+--| was destroyed, the offset is not a multiple of 8 or the size of 4
+--| (`Misaligned`), or the range leaves the buffer (`OutOfRange`). Then
+--| `mapAsync` runs between the device's error scopes and the operation
+--| waits for it: `MapFailed MapRejected` when the host refuses it,
+--| `MapAborted` when an unmap or a destroy ends the request first,
+--| `MappedAllocationFailed` when the host has no memory for it, beside any
+--| scope's observation, and `DeviceLost` when the device is lost first.
+--| A cancelled wait unmaps this request, and only it. May suspend.
+pub map : Handle.Buffer, MapRequest → Result Error.Error Handle.Mapping
+map buffer request =
+    native = Js.from buffer
+    b = Memory.record buffer
+    Result.mapError (preflight b request) Error.InvalidInput?
+    bufferSize = Memory.sizeOf b
+    rangeSize = Maybe.withDefault request.size (max 0 (bufferSize - request.offset))
+    mode = if Flags.mapModesHas request.mode Flags.Read then "read" else "write"
+    generation = Js.ref (-1)
+    finished = Js.ref False
+
+    -- An `undefined` argument is an omitted one (Web IDL): the native default.
+    sizeArg = optional request.size
+
+    result =
+        Task.onExit
+            (λ⊤ →
+                r =
+                    Engine.checkedAwait
+                        (Memory.deviceOf b)
+                        "mapAsync"
+                        [ label buffer ]
+                        (λ⊤ →
+                            Js.write generation (Memory.startMap native)
+                            Ok
+                                (Js.call native "mapAsync"
+                                    [ Js.from (Flags.mapModesBits request.mode)
+                                    , Js.from request.offset
+                                    , sizeArg
+                                    ]
+                                )
+                        )
+                        λfulfilled value →
+                            Memory.mapSettled
+                                native
+                                (Js.read generation)
+                                mode
+                                request.offset
+                                rangeSize
+                                fulfilled
+                                value
+                Js.write finished True
+                r
+            )
+            λ_ →
+                if Js.read finished || Js.read generation < 0 then
+                    ⊤
+                else
+                    Memory.release native (Js.read generation)
+    case result of
+        Ok mapping →
+            Ok (Js.to mapping)
+
+        Err problem →
+            -- A mapping the operation does not publish is not left live.
+            if Js.read generation ≥ 0 then Memory.release native (Js.read generation)
+            Err problem
+
+
+-- The checks of `map` before any native call.
+preflight : V, MapRequest → Result Error.InputError ⊤
+preflight b request =
+    bits = Flags.mapModesBits request.mode
+    if bits ≠ Flags.mapModeBits Flags.Read && bits ≠ Flags.mapModeBits Flags.Write then
+        Err (Error.InvalidMapMode { path = "mode", bits = bits })
+    else
+        Memory.usable b Js.null "buffer"?
+        state = Memory.stateOf b
+        if state ≠ Types.Unmapped then
+            Err (Error.MappingState { path = "buffer", state = state })
+        else
+            needed =
+                Memory.mapUsage
+                    (if bits == Flags.mapModeBits Flags.Read then Flags.Read else Flags.Write)
+            if Js.bitAnd (Memory.usageOf b) (Flags.bufferUsageBits needed) == 0 then
+                Err (Error.MissingBufferUsage { path = "buffer", usage = needed })
+            else
+                bufferSize = Memory.sizeOf b
+                offset = Memory.size64 request.offset "offset"?
+                Memory.aligned offset 8 "offset"?
+                rangeSize =
+                    case request.size of
+                        Just s →
+                            Memory.size64 s "size"?
+
+                        Nothing →
+                            max 0 (bufferSize - offset)
+                Memory.aligned rangeSize 4 "size"?
+                if offset > bufferSize || rangeSize > bufferSize - offset then
+                    Err
+                        (Error.OutOfRange
+                            { path = "size"
+                            , offset = offset
+                            , size = rangeSize
+                            , available = bufferSize
+                            }
+                        )
+                else
+                    Ok ⊤
+
+
+--| The buffer's live mapping: from creation or from `map`, `Nothing`
+--| while it is unmapped, its map is pending, or it was destroyed (§7.1).
+pub currentMapping : Handle.Buffer → Maybe Handle.Mapping
+currentMapping buffer = Maybe.map (Memory.currentMapping (Js.from buffer)) λm → Js.to m
+
+
+--| The buffer a mapping maps.
+pub mappingBuffer : Handle.Mapping → Handle.Buffer
+mappingBuffer mapping = Js.to (Js.get (Js.from mapping) "buffer")
+
+
+--| What the mapping was made for.
+pub mappingMode : Handle.Mapping → MappingMode
+mappingMode mapping =
+    mode = Js.get (Js.from mapping) "mode"
+    if Js.same mode (Js.from "read") then
+        ReadMapping
+    else if Js.same mode (Js.from "write") then
+        WriteMapping
+    else
+        CreationMapping
+
+
+--| The mapped range of the buffer, in bytes: offset and size.
+pub mappingRange : Handle.Mapping → { offset : Int, size : Int }
+mappingRange mapping =
+    m = Js.from mapping
+    { offset = Js.to (Js.get m "offset"), size = Js.to (Js.get m "size") }
+
+
+--| Whether the mapping is still its buffer's live mapping.
+pub mappingLive : Handle.Mapping → Bool
+mappingLive mapping = Memory.live (Js.from mapping)
+
+
+--| A range of the mapping's memory (§7): refused when the mapping expired
+--| (`ResourceExpired`), the offset is not a multiple of 8 or the size of 4
+--| (`Misaligned`), the range leaves the mapping (`OutOfRange`) or overlaps
+--| a range taken from it before (`RangeOverlap`); `MapFailed
+--| MappedRangeRejected` when the host refuses it anyway. Never suspends,
+--| and runs under a diagnostic session's lease (§6.4).
+pub getMappedRange : Handle.Mapping, Range → Result Error.Error Handle.MappedRange
+getMappedRange mapping range =
+    m = Js.from mapping
+    native = Js.get m "buffer"
+    checked = Result.mapError (rangePreflight m range) Error.InvalidInput?
+    offset = checked.offset
+    rangeSize = checked.size
+
+    sizeArg = optional range.size
+    Js.catchIf
+        (λ⊤ →
+            storage = Js.call native "getMappedRange" [ Js.from offset, sizeArg ]
+            Ok (Js.to (Memory.newRange m offset rangeSize storage))
+        )
+        (λerror → Engine.isDomException error "OperationError")
+        λerror →
+            Err (Error.MapFailed (Error.MappedRangeRejected { message = Engine.messageOf error }))
+
+
+rangePreflight : V, Range → Result Error.InputError { offset : Int, size : Int }
+rangePreflight m range =
+    b = Memory.liveBuffer m "mapping"?
+    Memory.usable b Js.null "mapping"?
+    bufferSize = Memory.sizeOf b
+    offset = Memory.size64 range.offset "offset"?
+    Memory.aligned offset 8 "offset"?
+    rangeSize =
+        case range.size of
+            Just s →
+                Memory.size64 s "size"?
+
+            Nothing →
+                max 0 (bufferSize - offset)
+    Memory.aligned rangeSize 4 "size"?
+    start : Int
+    start = Js.to (Js.get m "offset")
+    end : Int
+    end = start + Js.to (Js.get m "size")
+    if offset < start || offset > end || rangeSize > end - offset then
+        Err
+            (Error.OutOfRange { path = "range", offset = offset, size = rangeSize, available = end }
+            )
+    else if Memory.overlaps m offset rangeSize then
+        Err (Error.RangeOverlap { path = "range", offset = offset, size = rangeSize })
+    else
+        Ok { offset = offset, size = rangeSize }
+
+
+--| Map the buffer, run `body` with the mapping, and unmap it however
+--| `body` ends — with a value, an `Err`, or cancelled — unless the
+--| mapping already ended. May suspend, and `body` may too.
+pub withMapped :
+      Handle.Buffer
+    , MapRequest
+    , (Handle.Mapping → Result Error.Error a)
+    → Result Error.Error a
+withMapped buffer request body =
+    mapping = map buffer request?
+    generation : Int
+    generation = Js.to (Js.get (Js.from mapping) "generation")
+    Task.onExit (λ⊤ → body mapping) λ_ → Memory.release (Js.from buffer) generation
+
+
+--| Unmap the buffer: its mapping and every range of it expire at once, for
+--| every alias, and a pending map ends with `MapAborted`. Unmapping an
+--| unmapped buffer does nothing. Not checked by an error scope, and runs
+--| under a diagnostic session's lease (§6.4).
+pub unmap : Handle.Buffer → ⊤
+unmap buffer = Memory.unmap (Js.from buffer)
+
+
+--| Destroy the buffer: it is unmapped as `unmap` does, and later work with
+--| it is refused (`ResourceDestroyed`). Destroying it again does nothing.
+--| Runs under a diagnostic session's lease (§6.4).
+pub destroy : Handle.Buffer → ⊤
+destroy buffer = Memory.destroy (Js.from buffer)
+
+
+-- An optional native argument: `undefined`, which Web IDL reads as omitted.
+optional : Maybe Int → V
+optional value =
+    case value of
+        Just n →
+            Js.from n
+
+        Nothing →
+            Js.undefined
