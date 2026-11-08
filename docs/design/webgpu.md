@@ -1,11 +1,18 @@
 # WebGPU for beni
 
-**Status: proposal for owner review, 2026-10-29; not adopted or implemented.**
-[Issue #1257](https://github.com/canassa/beni/issues/1257) requests research and
-API design only. This document proposes the contract; existing browser APIs
-and compiler behavior do not change. Evidence: [research](research/webgpu-api-research.md),
-[failure ledger](research/webgpu-errors.md), [source pins](research/webgpu/sources.json)
-and [complete coverage inventory](research/webgpu/coverage.md).
+**Status: adopted 2026-11-08; not yet implemented.** The owner adopted this
+contract with all six §11 recommendations as decisions
+([#1277](https://github.com/canassa/beni/issues/1277#issuecomment-6714461181)),
+together with the handle layout of §2.1 ([#1281](https://github.com/canassa/beni/issues/1281)),
+the typed lease refusal of §6.4 ([#1270](https://github.com/canassa/beni/issues/1270))
+and main thread first (§2, §10). The research issue was
+[#1257](https://github.com/canassa/beni/issues/1257); the adoption slice is
+[#2238](https://github.com/canassa/beni/issues/2238); implementation follows
+the slices of §10. Evidence: [research](research/webgpu-api-research.md),
+[failure ledger](research/webgpu-errors.md), [source pins](research/webgpu/sources.json),
+[complete coverage inventory](research/webgpu/coverage.md) and
+[the independent review](research/webgpu-spec-review.md), whose six findings
+this revision closes (§3.1, §6.4, §7.1, §8.2, §8.3).
 
 **Owner decision, 2026-10-30:** expose WebGPU directly. Elm WebGL informs API
 ergonomics; the additional mesh/entity/view abstraction is removed.
@@ -35,7 +42,7 @@ devices suppress ordinary errors; WGSL dynamic errors can be undetectable.
 Therefore “all errors” cannot literally mean a complete list of every shader
 fault. We guarantee all standard failure **channels** and honest success
 semantics, not observations the browser does not provide. This constraint is
-part of the proposed contract and must be visible in the public API docs.
+part of the contract and must be visible in the public API docs.
 
 Native-only extensions and non-normative GPUWeb extension documents are outside
 this browser contract. New standard revisions require an explicit inventory,
@@ -46,47 +53,246 @@ meaning or substitutes another rendering API.
 ## 2. Placement and layers
 
 Implement `Gpu.*` in the shipped browser platform and reexport through its
-browser/TEA/direct page layers where applicable. Core stays platform-independent.
-GPU objects are opaque platform-owned handles; ordinary modules never import
-`Js` or pass raw JavaScript objects. Implement orchestration, descriptors,
-validation, lifetimes and error classification in beni over `Js`, following the
-existing Task/Http boundary discipline. New host primitives need the same exact
+browser/TEA/direct page layers where applicable. Core stays platform-independent;
+the generated native GPU types live with the other generated
+`Browser.Host.*` modules in core (§2.1, §2.2). GPU objects are opaque
+platform-owned handles; ordinary modules never import `Js` or pass raw
+JavaScript objects. Implement orchestration, descriptors, validation, lifetimes
+and error classification in beni over `Js`, following the existing Task/Http
+boundary discipline. New host primitives need the same exact
 foreign/type/arity/effect checks as other platform primitives.
 
 | Layer | Purpose | Completeness rule |
 |---|---|---|
-| `Gpu`, `Gpu.Types`, `Gpu.Flags`, `Gpu.Feature`, `Gpu.Limits`, `Gpu.WgslFeature` | Availability, typed descriptors/scalars/unions/constants, capability negotiation | Entire IDL and standard feature/format tables |
+| `Gpu.Handle` | The handle types: aliases of the generated native types and the engine's own handles (§2.1) | Every native GPU object interface of the inventory |
+| `Gpu`, `Gpu.Types`, `Gpu.Flags`, `Gpu.Feature`, `Gpu.Limits`, `Gpu.WgslFeature`, `Gpu.Scalar`, `Gpu.Error` | Availability, typed descriptors/scalars/unions/constants, capability negotiation, the error sums of §5 | Entire IDL and standard feature/format tables; descriptors, enums and flags are generated (§2.2) |
 | Resource and command modules | Checked native capabilities with managed state, mapping and encoding | Every inventoried interface/member/overload |
 | `Gpu.Batch`, `Gpu.Frame`, `Gpu.Diagnostics` | Scope-safe grouped operations, presentation and explicit diagnostics | Same native operations and typed errors; no hidden capability gap |
 | Supporting `Binary`, `Browser.Image`, `Browser.Video`, `Browser.Canvas`, worker transfers | Typed binary/source/canvas interoperability | Every native input union arm is constructible; no application FFI |
 
 The last row is **new API work**, not an assertion that those modules exist.
-The repository currently lacks general binary/source wrappers. Their delivery
-is required before claiming full coverage. Page markup integration belongs to
-the browser runtime, not compiler special knowledge of GPU descriptors.
-DedicatedWorker entry/transfer integration must be designed in that supporting
-work too; an existing Cloudflare `Worker` module is not a browser worker host.
-The foundation follows the specification's `Window` and `Worker` exposure, not
-only the main window. SharedWorker/ServiceWorker realms that expose the API
-must be usable by the same headless modules; missing host capabilities are
-typed availability outcomes. DedicatedWorker is the first proposed worker
-integration fixture, not an exclusion of the other standard Worker realms.
+Its main-thread part is [#1278](https://github.com/canassa/beni/issues/1278)
+(binary storage, WGSL layout codecs and the image, video and canvas sources;
+`binary.md` on its branch). Their delivery is required before claiming full
+coverage. Page markup integration belongs to the browser runtime, not compiler
+special knowledge of GPU descriptors.
+
+**Main thread first** (the owner, 2026-11-08). The slices S1–S6 of §10 build
+and test the `Window` realm. WebGPU in a worker realm, `OffscreenCanvas`
+transfer (not a main-thread `OffscreenCanvas`, which S3 and S5 cover), and
+typed transfers of bitmaps, video frames and binary backing wait
+for [#1299](https://github.com/canassa/beni/issues/1299), the native transfer
+families of the worker design ([`workers.md`](workers.md)), and form a later
+slice of §10. They stay in the completeness scope (§1, §11 item 5): completeness
+is claimed only after that slice. The foundation still follows the
+specification's `Window` and `Worker` exposure, not only the main window
+(§2.3), so the worker slice adds entries, transfers and fixtures, not a
+redesign. SharedWorker/ServiceWorker realms that expose the API must be usable
+by the same headless modules; missing host capabilities are typed availability
+outcomes. DedicatedWorker is the first worker integration fixture, not an
+exclusion of the other standard Worker realms.
+
+### 2.1 Handles and module layout (#1281)
+
+*Decided by the owner, 2026-11-08: the handle types live in one acyclic
+`Gpu.Handle` module; `Gpu.Types` and the operation modules import it.*
+
+**Native handles are generated native types.** Under the selected option C
+([`workers.md`](workers.md) §4, *Generated bindings and ordinary types*;
+[`workers-native-bindings.md`](workers-native-bindings.md);
+[#1315](https://github.com/canassa/beni/issues/1315)) every WebGPU interface of
+the pin has a generated module `Browser.Host.GPU<Name>` that exports
+`pub foreign type GPU<Name>`. Its representation is the native object itself:
+no wrapper record, proxy or allocation. **For a GPU interface that module holds
+the type and nothing else.** No GPU member becomes a reviewed callable row of
+`src/native/Operations.zig`: a raw native GPU call returns an invalid object
+and sends its validation error to the uncaptured-error event, which would
+publish an unchecked handle (§5). The checked engine of §6 is the only route to
+a GPU operation, and it calls the host through private code (non-`pub`
+`foreign` declarations or `Js`), never through a `pub` value an application
+can import.
+
+**`Gpu.Handle`** imports only core, including those generated modules, and no
+`Gpu` module. It declares:
+
+- a transparent alias for every native object handle, named by dropping `GPU`
+  with the exceptions of §3: `pub type alias Device = Browser.Host.GPUDevice.GPUDevice`,
+  and likewise `Adapter`, `Queue`, `Buffer`, `Texture`, `TextureView`,
+  `Sampler`, `ExternalTexture`, `BindGroupLayout`, `PipelineLayout`,
+  `BindGroup`, `Shader` (`GPUShaderModule`), `ComputePipeline`,
+  `RenderPipeline`, `CommandEncoder`, `CommandBuffer`, `ComputePass`
+  (`GPUComputePassEncoder`), `RenderPass` (`GPURenderPassEncoder`),
+  `RenderBundleEncoder`, `RenderBundle`, `QuerySet` and `Surface`
+  (`GPUCanvasContext`);
+- a `pub foreign type` for each handle the engine makes with no native object
+  of its own: `Mapping`, `MappedRange`, `Submission`, `Batch`, `Frame` and
+  `DiagnosticSession`. Only privileged platform code constructs them; an
+  application cannot.
+
+`Gpu.Types` imports `Gpu.Handle` (descriptors name handles: a bind-group entry's
+resource, a canvas configuration's device). The engine imports both, and the
+operation modules (`Gpu.Device`, `Gpu.Buffer`, …) import all three and may
+re-export the aliases for readable signatures. The graph is
+`Browser.Host.GPU*` ← `Gpu.Handle` ← `Gpu.Types` ← engine ← operation modules ←
+`Gpu`, with no cycle.
+
+**Per-object state lives beside the native object, not on it.** Device
+identity, `Provisional`/`Accepted`/`Rejected` status, destroyed state, mapping
+generation and encoder state live in an engine-owned side table keyed by native
+identity (a `WeakMap` per realm). The engine never writes a property onto a
+native object. Every alias of a handle is the same native object, so aliases
+share state as §6.3 and §7 require. A native GPU object with no table entry was
+not produced by the engine; meeting one is a defect.
+
+**What static dispatch reaches** (the owner, 2026-11-08: every GPU operation is
+a qualified call or a `▷` pipe, with no exceptions). By
+[`static-dispatch-spike.md`](static-dispatch-spike.md) §1.2, `x.m a` on a value
+of nominal type `T` resolves only to a `pub` value of the module that declares
+`T`, and an alias is looked through to what it names. No module can hold the
+operations as methods:
+
+- **Native handles.** The alias in `Gpu.Handle` is looked through to
+  `Browser.Host.GPU<Name>`, so a forwarding method written in `Gpu.Handle`
+  can never be reached from a native handle. The declaring module itself
+  cannot hold them either: under option C it is generated into core, core
+  cannot import the browser platform's engine, and §2.1 keeps those modules
+  free of callable GPU rows.
+- **Engine handles.** `Gpu.Handle` declares all six, and a module's values are
+  one namespace: one value is the method of every type the module declares
+  ([`checker-v2.md`](checker-v2.md) §11.3; `static-dispatch-spike.md` §3.3
+  step 1). A `destroy` or `label` written there would be one value for
+  `Mapping`, `Batch`, `Frame` and the rest, and the types would clash.
+  `Gpu.Handle` also cannot import `Gpu.Types`, `Gpu.Error` or the engine
+  without a cycle.
+
+So **dot-call does not reach GPU operations**: `device.createBuffer desc` is
+`unknown_method`. An operation is called qualified, or through the
+receiver-first pipe, which §1.2 names as the way to reach a function the
+type's module does not own:
+
+```text
+buffer = Gpu.Device.createBuffer device desc
+buffer = device ▷ Gpu.Device.createBuffer desc
+```
+
+No language or module feature is added to move method ownership. `==` on a GPU
+handle is `unknown_method`, as for every other host handle
+(`static-dispatch-spike.md` §3.5); an identity `eq` would be a later, separate
+decision.
+
+**Every GPU interface, classified.** The pin has 36 interfaces. Each is one
+of three kinds:
+
+| Kind | Interfaces | In beni |
+|---|---|---|
+| **Handle** (22), aliased in `Gpu.Handle` | `GPUAdapter`, `GPUDevice`, `GPUQueue`, `GPUBuffer`, `GPUTexture`, `GPUTextureView`, `GPUSampler`, `GPUExternalTexture`, `GPUBindGroupLayout`, `GPUPipelineLayout`, `GPUBindGroup`, `GPUShaderModule`, `GPUComputePipeline`, `GPURenderPipeline`, `GPUCommandEncoder`, `GPUCommandBuffer`, `GPUComputePassEncoder`, `GPURenderPassEncoder`, `GPURenderBundleEncoder`, `GPURenderBundle`, `GPUQuerySet`, `GPUCanvasContext` | The native object, with state in the side table; operations in `Gpu.<Name>` |
+| **Snapshot** (13), an immutable beni value | `GPUAdapterInfo` → `Gpu.Types.AdapterInfo`; `GPUSupportedFeatures` → `Gpu.Feature.Features`; `GPUSupportedLimits` → `Gpu.Limits.Limits`; `WGSLLanguageFeatures` → `Gpu.WgslFeature.WgslFeatures`; `GPUCompilationInfo` and `GPUCompilationMessage` → `Gpu.Types.CompilationInfo` and its message records; `GPUError`, `GPUValidationError`, `GPUOutOfMemoryError`, `GPUInternalError` and `GPUPipelineError` → the `Gpu.Error` sums of §5; `GPUDeviceLostInfo` → `Gpu.Error.DeviceLoss`; `GPUUncapturedErrorEvent` → `Gpu.Device.DeviceEvent` | Read once by the engine into records and sums with every native field; the native object is never a beni value |
+| **Entry point** (1) | `GPU` (`navigator.gpu`) | Engine-internal; its members are the functions of the `Gpu` module |
+
+The generated `Browser.Host` types of snapshot and entry-point interfaces are
+used only inside the engine. A snapshot of a readonly setlike
+(`GPUSupportedFeatures`, `WGSLLanguageFeatures`) is the total-set adapter of §3.
+
+### 2.2 Generated inputs and their pin
+
+**The IDL of record** is `webgpu.idl` in the `@webref/idl` 3.86.0 archive that
+[`research/workers/sources.json`](research/workers/sources.json) pins and the
+native-bindings tool already verifies by SHA-256. Checked on 2026-11-08: with
+its four-line generated-file comment removed and whitespace collapsed, that
+file is token-identical to [the extract](research/webgpu/webgpu.idl) from gpuweb
+`a1a1e79f35f93ad6db255dc170621ae7e411eba0` (both normalise to SHA-256
+`fda59effe3c6c1cc11cfc2ffe7d3595d4310e460c14388dd1d9c49c58434664b`). The two
+pins therefore agree on the API surface. [`research/webgpu/sources.json`](research/webgpu/sources.json)
+still pins the prose, WGSL and CTS that the ledger and acceptance tests cite.
+Bumping either pin repeats this comparison and updates the inventory, the
+ledger and the generated files together (§1). The archive also holds
+`webxr-webgpu-binding.idl`; its `XRGPU*` declarations are WebXR's and are
+outside this contract (§4, `xrCompatible`).
+
+**One generator.** The existing Zig native-bindings tool (`src/native/`,
+`zig build native-bindings`) gains a WebGPU emitter over the dictionary, enum,
+typedef, callback and constant-namespace rows it already retains. From
+`webgpu.idl` it writes:
+
+- the `Browser.Host.GPU*` type modules of §2.1;
+- `Gpu.Types`: one record per dictionary with every inherited member
+  (required, `Option a` or `Option (Maybe a)` per §3 item 2), one closed ADT per
+  enum with total spelling conversions both ways, one sum per union, and the
+  descriptor-to-native conversions that omit every `Default` member;
+- `Gpu.Flags`: the five flag domains and the exact values of their constant
+  namespaces.
+
+Names follow a versioned map in the generator (`GPUBufferDescriptor` →
+`Gpu.Types.BufferDescriptor`, with §3's exceptions); a collision is a generator
+error, never a silent rename. Hand-written beni (`Gpu.Scalar`, descriptor
+convenience constructors, the engine) never lives in a generated file. There is
+no Python and no network access at generation time.
+
+**Staleness is a gate.** The generated files are committed. A test inside
+`zig build gates` regenerates them in memory from the pinned archive and fails
+when a committed file differs, as `skill-api`'s check does. (The existing check
+for the shipped `Browser.Host` modules runs in `test-native-bindings`, outside
+the gates; the GPU files need the gated check.) The step that writes them is
+named by slice S1.
+
+### 2.3 Realms
+
+All 41 exposure-annotated declarations of the pinned `webgpu.idl` are
+`Exposed=(Window, Worker)`, and both `Navigator` and `WorkerNavigator` include
+`NavigatorGPU`. Window-only types reach WebGPU only through HTML element arms:
+`HTMLCanvasElement`, `HTMLVideoElement` and `HTMLImageElement` in
+`GPUCopyExternalImageSource`, the external-texture source and
+`GPUCanvasContext.canvas`.
+
+**What is proved, and what is assumed.** Realm summaries are inferred
+([`workers.md`](workers.md) §4, *How access is proved*); no realm word is
+written. But the engine calls the GPU through private code (non-`pub`
+`foreign` declarations or `Js`), not through reviewed callable rows, so no
+GPU operation carries an availability seed of its own. The inferred summary
+of a GPU operation sees only the engine's global access, `navigator.gpu`, a
+literal member read of the `navigator` global that the kept-code check allows
+in every worker realm. The engine never reads `window` or `document`. **A GPU
+operation is therefore admitted in a worker only because every WebGPU
+declaration of the pin is `Exposed=(Window, Worker)`**, not because the realm
+check proves it per operation.
+
+The assumption is made a check: **the generator asserts uniform exposure.**
+When any declaration of `webgpu.idl` — an interface, a partial interface, a
+mixin's including interface or a member with its own `[Exposed]` — is exposed
+other than exactly `(Window, Worker)`, generation fails with a diagnostic that
+names it and writes no output. Such a member then needs a reviewed availability
+seed before the engine may call it. A future Window-only member cannot slip
+into a worker build unnoticed.
+
+The Window-only parts reach the engine through other modules whose summaries
+are proved: the element arms come from generated HTML element types and the
+`Browser.Canvas`, `Browser.Image` and `Browser.Video` intake (§3.2).
+Window-only GPU operations (`Gpu.Surface.fromElement`, the element arm of
+`Gpu.Surface.canvas`) are separate declarations, so reachability drops them
+from an entry that does not call them, and they are never stored in the same
+nominal value as a portable callback (§4's conservative nominal join). Any
+engine sibling obeys the same kept-code check, its lexical scopes and timers
+included ([#2211](https://github.com/canassa/beni/issues/2211)).
 
 ## 3. Mechanical translation of the whole native API
 
-[coverage.md](research/webgpu/coverage.md) is normative for this proposal's
+[coverage.md](research/webgpu/coverage.md) is normative for this contract's
 surface, including empty declarations, inheritance, partial interfaces and all
-37 mixin inclusions. Its owner column names where each capability lives. Most
-interfaces map directly to `Gpu.<name without GPU>`; shader modules use
-`Gpu.Shader`, pass encoders use `Gpu.ComputePass`/`Gpu.RenderPass`, canvas
-contexts use `Gpu.Surface`. Constructors of errors/events become typed beni
+37 mixin inclusions. Its owner column names the operation module where each capability lives.
+Each interface's handle is the alias `Gpu.Handle.<name without GPU>` of its
+generated native type, and its operations live in the operation module
+`Gpu.<name without GPU>` (§2.1); shader modules use `Gpu.Shader`, pass
+encoders use `Gpu.ComputePass`/`Gpu.RenderPass`, canvas contexts use
+`Gpu.Surface`. Constructors of errors/events become typed beni
 values, not raw JavaScript constructors. Host errors retain their diagnostic
 metadata; synthetic values cannot fabricate GPU failure dispatch.
 
 For each member the translation is deterministic:
 
 1. The receiver is the first argument; remaining arguments stay in native order.
-   Functions use saturated n-ary beni types and subject-first dot-call support.
+   Functions use saturated n-ary beni types with the receiver first, so that
+   `▷` reaches them. Every GPU operation is called qualified or with `▷`;
+   dot-call is not supported (§2.1).
 2. Every descriptor has a typed `Gpu.Types` record with all inherited fields.
    Required fields remain required. Optional fields use `Option a = Default |
    Value a`. `Default` means **omit the property**, preserving the native
@@ -116,9 +322,9 @@ For each member the translation is deterministic:
 7. Shared mixin methods are available on each including encoder/pipeline type.
    The `setBindGroup` slice overload gets the distinct beni name
    `setBindGroupSlice`; source element offset/length remain explicit.
-   Label access uses `Gpu.Object.label`/`setLabel` over the known handle kinds,
-   or equivalent receiver-specific forwarding methods. It is not restricted
-   to buffers or only present in development builds.
+   Label access is `label`/`setLabel` in each handle's operation module
+   (`Gpu.Buffer.label`, …), since beni has no overloading over the handle
+   kinds. It is not restricted to buffers or only present in development builds.
 8. Native `mapAsync` is `Gpu.Buffer.map`; `getMappedRange` becomes the scoped
    range API in §7. Native `lost`/`onuncapturederror` become lifecycle/event
    APIs in §8. Encoding methods get the non-suspending session form in §6.
@@ -179,10 +385,27 @@ BigInt64/BigUint64 and Float16/Float32/Float64 arrays, plus DataView. Retain
 into beni's Number-backed `Int`. Feature-detect optional host constructors;
 their absence returns `UnsupportedCapability`, not a lossy substitute.
 
+**Fixed-length backing (#1268).** Web IDL refuses a resizable `ArrayBuffer`
+or a growable `SharedArrayBuffer` behind a buffer source unless the parameter
+carries `[AllowResizable]`, even when the view is in bounds and the buffer has
+never been resized ([buffer source types](https://webidl.spec.whatwg.org/#es-buffer-source-types)).
+Neither `AllowSharedBufferSource` nor the `Uint32Array` of the `setBindGroup`
+slice overload grants it. Every GPU binary input therefore checks its backing
+before the native call: resizable or growable backing returns
+`InvalidInput (ResizableBacking { path })` (§5), for ordinary and shared
+sources and for typed views on either, including backing that has never been
+resized. `Binary`'s source constructors refuse the same backing first
+(`binary.md` §1 on the `feat/webgpu-inputs` branch, [#1278](https://github.com/canassa/beni/issues/1278));
+the GPU check repeats it at the operation, where the path names the
+descriptor field or argument. Acceptance: a never-resized resizable
+`ArrayBuffer`, a growable `SharedArrayBuffer`, a typed view on each, and the
+array of `setBindGroupSlice` each return `ResizableBacking`; the fixed-length
+equivalents pass.
+
 ### 3.2 Typed intake for every host source
 
 The supporting API must provide typed acquisition, not just types with no
-public constructors. The minimum proposed intake is:
+public constructors. The minimum intake is:
 
 ```text
 Binary.allocate : Size64 → Result Binary.AllocationError Binary.Buffer
@@ -209,6 +432,7 @@ native object. Typed worker message transfers can also receive Bitmap, Frame,
 OffscreenCanvas and transferable binary handles; the source side becomes
 detached and all aliases observe that state. Receiving rebinds the wrapper to
 the destination realm. Shared buffers are shared explicitly, not transferred.
+These transfers are the worker slice's, after #1299 (§2, §10).
 
 This scope does not imply full WebCodecs or the entire HTML media API. It does
 require all GPU source forms to be usable, along with readiness/close/size and
@@ -219,9 +443,10 @@ as `Error String`, and none is claimed to exist today.
 
 ## 4. Public surface and typical use
 
-The snippets below are **proposed signatures and fragments**, tagged `text`
-because they do not name shipped modules. Effects are inferred: this proposal
-does not add `Task Error a`, `async` syntax or a new language feature.
+The snippets below are **contract signatures and fragments**, tagged `text`
+until their modules ship. Operations are called qualified or with `▷` (§2.1).
+Effects are inferred: this contract does not add `Task Error a`, `async`
+syntax or a new language feature.
 
 ```text
 Gpu.available : ⊤ → Availability
@@ -359,7 +584,10 @@ DeviceLossReport = { loss : DeviceLoss, operation : OperationReport }
 `InputError` is a closed sum for numeric domain/overflow/alignment, source or
 dynamic-offset ranges, wrong device, destroyed/expired/rejected/pending resource,
 encoder/pass/query/debug stack state, already-submitted command buffer,
-overlapping mapped range, and unsupported required format/capability. Each
+overlapping mapped range, unsupported required format/capability, a
+mapped-at-creation size that is not a multiple of 4 (`MappedSizeUnaligned`,
+§7.1), resizable or growable binary backing (`ResizableBacking`, §3.1), and
+session state (`SessionState`: `DeviceLeased`, `SessionEnded`, §6.4, §8.2). Each
 variant carries a descriptor path/operation and relevant values. Stable wrapper
 preflight details remain separate from opaque native validation messages.
 `OperationFailure` is also closed: device-specific documented writeBuffer,
@@ -396,7 +624,9 @@ it must not label that report a complete error list.
 For a checked operation the engine follows this order:
 
 1. Validate beni inputs and shared handle state. Reject an already-observed
-   lost/destroyed device. Resolve the owning realm and negotiated capabilities.
+   lost/destroyed device. Refuse a device whose diagnostic lease is held with
+   `SessionState DeviceLeased`, never waiting (§6.4). Resolve the owning realm
+   and negotiated capabilities.
 2. Enter a non-suspending device stack section. Push validation, out-of-memory
    and internal scopes. Record exactly which pushes succeeded.
 3. Invoke only the intended native call, with its per-operation synchronous
@@ -482,7 +712,7 @@ Gpu.Batch.createBuffer : Batch, BufferDescriptor → Result InputError Buffer
 Gpu.Batch.createTexture : Batch, TextureDescriptor → Result InputError Texture
 Gpu.Batch.importExternalTexture : Batch, ExternalTextureDescriptor → Result InputError ExternalTexture
 Gpu.Batch.writeBuffer : Batch, Queue, Buffer, WriteBufferSource → Result InputError ⊤
-Gpu.Batch.submit : Batch, Queue, List CommandBuffer → Result InputError ⊤
+Gpu.Batch.submit : Batch, Queue, List CommandBuffer → Result InputError Submission
 ```
 
 There is a non-suspending batch form for every native synchronous GPU operation
@@ -518,33 +748,136 @@ as uncontrolled global mutations interleaved with automatic wrappers:
 
 ```text
 Gpu.Diagnostics.run : Device, (DiagnosticSession → a) → Result Error (DiagnosticReport a)
+Gpu.Diagnostics.nested : DiagnosticSession, (DiagnosticSession → a) → Result Error (DiagnosticReport a)
 Gpu.Diagnostics.pushErrorScope : DiagnosticSession, ErrorFilter → Result InputError ⊤
 Gpu.Diagnostics.popErrorScope : DiagnosticSession → Result DiagnosticError (Maybe GpuError)
 ```
 
-The session acquires an exclusive, cancellation-safe per-device lease **before**
-pushing scopes. Its callback may suspend; only session-associated operations
-may access that device until the lease ends. Other operations wait before
-entering their native stack section. A sync frame callback never waits for
-this lease: `Frame.submit` acquires it before the frame starts. Nested diagnostic
-sessions reuse the owner's lease; cross-device lock ordering/cycles must produce
-a typed session-state error or be avoided by explicit acquisition ordering.
+**The lease.** A session takes an exclusive per-device lease **before** it
+pushes scopes. Taking the lease never waits: when the device's lease is held
+already, `run` returns `InvalidInput (SessionState DeviceLeased)` at once.
+While the lease is held, the device accepts only calls that present the
+session (the forwarding surface below). **An ordinary checked operation on a
+leased device returns `InvalidInput (SessionState DeviceLeased)` immediately
+and does not wait**. The rule is the same for a call from the session's own
+callback, from a fiber the callback spawns or joins, and from an unrelated
+fiber (the owner, 2026-11-08: [#1270](https://github.com/canassa/beni/issues/1270)
+for the session's owner, extended the same day to every fiber). `Frame.submit`,
+`Batch.run` and `Encode.run` are ordinary operations and follow it.
+
+**No task identity.** The engine does not need to know which fiber calls
+(there is no `Task.Identity`; [#1280](https://github.com/canassa/beni/issues/1280)
+is closed). The lease is a per-device flag and a lease generation in the
+engine's state table (§2.1). The authority to use a leased device is the
+`DiagnosticSession` value: a token whose engine record names its device and the
+lease generation it was issued under. A forwarding call checks that the
+session's device is the target's device and that its generation is the live
+one. An ordinary call carries no token, so it is refused.
+
+**What the lease refuses.** Exactly the operations that enter §6.1's
+scope-stack section: every operation that pushes the engine's scopes around
+a native call. These are every checked operation (each `Result Error`
+function that creates, writes, copies, encodes, submits, maps or creates a
+pipeline), and the batch, encode and frame runs. The exemptions never enter
+a scope section, so they are never refused and run at once under a lease:
+
+- **Teardown that returns `⊤`:** `Gpu.Device.destroy`, `Gpu.Buffer.destroy`,
+  `Gpu.Texture.destroy`, `Gpu.QuerySet.destroy`, `Gpu.Buffer.unmap` and
+  `Gpu.Surface.unconfigure`. The pinned specification gives them no GPU error
+  ([ledger](research/webgpu-errors.md) §2–§4 and §6). They latch wrapper state at
+  once, so the session's later calls see it. An error the host raises for one
+  anyway escapes every scope and is a defect (§8).
+- **Reads of state:** snapshot getters (features, limits, adapter info,
+  size, usage, `mapState`, `getConfiguration`, `label`), `Gpu.Device.loss`,
+  `Gpu.Device.queue`, `Gpu.Buffer.currentMapping`, and `setLabel`. They read or
+  write native attributes or engine state and issue no GPU command.
+- **Mapped memory:** `getMappedRange` and every `Gpu.MappedRange` read and
+  write. They touch CPU memory of an existing mapping. `getMappedRange`'s
+  only failure is a synchronous content-timeline `OperationError` (ledger §4),
+  not a scoped GPU error.
+- **Waits on work issued earlier:** `Gpu.Submission.done`, a pending `map`'s
+  wait, `Gpu.Device.awaitLost`, `eachEvent` and `onEvent`. They issue no
+  scoped native call.
+
+**Why it cannot deadlock.** The lease adds no wait: an ordinary operation
+refuses, `run` on a leased device refuses, and a forwarding call holds the lease
+already. Within one device and across devices, no wait for a lease exists for a
+cycle to close, so no lock order is needed. The session's callback can still
+wait on other things — `Task.join`, `Task.sleep`, a message, a `Deferred`, a
+GPU outcome — and none of these waits is on the lease:
+
+- a fiber it joins that makes an ordinary call on the leased device gets
+  `DeviceLeased` at once and goes on, so the lease does not block the join;
+- a sleep or a message depends on the clock or on other code, not on GPU state;
+- a GPU outcome (scope pop, map, pipeline, completion) is settled by the host
+  without running beni code.
+
+**The livelock hazard is the application's.** A session that waits on a fiber
+that retries its ordinary call after `DeviceLeased` until it succeeds never
+returns: the retry needs the lease to end, and the lease needs the callback to
+return. The engine cannot see this cycle, because it runs through application
+code (a retry loop, a message the fiber sends only after its GPU call). The
+public API documentation of `Gpu.Diagnostics` states the hazard and the rule:
+work that a session waits on must not touch the leased device through ordinary
+calls; route it through the session, or do it after the session ends.
+
+**Consequence.** During a session, other work on that device is refused, not
+delayed. An application that runs a render loop while it diagnoses the same
+device routes that work through the session or pauses it; the typed refusal
+makes the conflict visible instead of silently serialising it.
+
+**Nesting.** `Gpu.Diagnostics.nested` opens an inner session under the outer
+session's lease, with the outer token as authority; its scopes nest inside the
+outer session's and it ends before the outer one. `Gpu.Diagnostics.run` called
+from inside a session's callback is an ordinary acquisition: on the same device
+it refuses, on another device it follows the rule above.
+
+**End of the lease.** The lease ends when the callback returns, fails, defects
+or is cancelled. A finalizer pops every unclosed user scope and the engine's
+outer scopes, keeps draining their results, and clears the flag in the turn in
+which the callback exits. A session used after its lease ended — kept in a
+model, or by a child fiber that outlives the callback — returns
+`InvalidInput (SessionState SessionEnded)`; the generation check also refuses a
+session of an earlier lease on the same device. The lease does not join child
+fibers: a child still running when the callback exits gets `SessionEnded` from
+its forwarding calls, and its ordinary calls proceed once the lease is gone.
+
+**Destruction and loss.** `Gpu.Device.destroy` is exempt from the lease (above);
+it latches destroyed state as everywhere else (§8). Later forwarding calls in
+the session return the device-loss outcome; the finalizer still invokes the
+pops and releases the lease. Loss observed during a session does not end it
+early.
+
+**Outcomes that outlive their caller** (CLAUDE.md rule 9). The engine keeps
+draining scope pops after a session or lease ended, and the completion
+promises of receipts that nobody waits for (§8.3). Their expected outcomes
+are dropped once nobody can receive them. An **unexpected** outcome — a
+rejection, an unknown error class, a pop failure in the engine's own scopes —
+goes to the defect path, never to a log line or a dropped value. Its owner is
+the **program that created the device**: the engine records, in the device's
+table entry, the program whose fiber called `requestDevice`, and a defect
+from a drained outcome enters that program's defect boundary with the
+operation context, even when the issuing fiber or session has ended. Under
+`Browser.programs`, that is the one program that requested the device, not
+every program on the page.
 
 Session operations issue native calls under the user's diagnostic scopes, so
 automatic inner scopes do not steal the errors being inspected. Engine-owned
 outer scopes capture any class the user did not capture. Public native scope
 semantics (filter nesting and representative selection) remain intact. Popping
 an empty user stack returns `ScopeUnderflow`; underflow in the engine's own
-outer scopes is a defect. A finalizer pops unclosed scopes, drains their results
-and releases the lease on completion, cancellation or defect.
+outer scopes is a defect.
 
 The explicit session forwarding surface is
 `Gpu.Diagnostics.<owner>.<member> session …` for every inventoried operation;
 the session argument is the lease authority. This includes async pipeline/map
-waits and sync encoder calls. Ordinary checked operations are not implicitly
-reclassified merely because a fiber happens to hold a session. Session-scoped
-native errors remain typed observations even when deliberately requested by the
-caller, and no engine-owned inner scope hides them from `popErrorScope`.
+waits, sync encoder calls, `Gpu.Diagnostics.Batch.run` and
+`Gpu.Diagnostics.Frame.submit`; a sync frame callback never waits for a lease,
+because the frame holds the session's lease before it starts. An ordinary call
+is never treated as a session call because a session happens to be live; it is
+refused as above. Session-scoped native errors remain typed observations even
+when deliberately requested by the caller, and no engine-owned inner scope
+hides them from `popErrorScope`.
 
 Created handles are provisional until the diagnostic session accepts them;
 an invalid native diagnostic object can never escape as an accepted resource.
@@ -565,6 +898,7 @@ without native destroy methods drop references when no longer needed.
 
 ```text
 Gpu.Buffer.map : Buffer, MapRequest → Result Error Mapping
+Gpu.Buffer.currentMapping : Buffer → Maybe Mapping
 Gpu.Buffer.getMappedRange : Mapping, Range → Result Error MappedRange
 Gpu.Buffer.withMapped :
     Buffer, MapRequest, (Mapping → Result Error a) → Result Error a
@@ -583,7 +917,7 @@ Mapped ranges access native mapped storage directly through typed reads/writes;
 `readBytes` explicitly copies into persistent bytes. Include all numeric views,
 bulk copies and exact bit access, not only the representative methods above.
 Expose read/write modes, size and mapState. `mappedAtCreation` produces a mapping
-handle without pretending `MAP_WRITE` was required. Ranges track overlap,
+handle without pretending `MAP_WRITE` was required (§7.1). Ranges track overlap,
 alignment, mapping generation and read/write permission. Every access validates
 the generation, including one saved outside `withMapped`. `unmap`/destroy
 detaches all native ranges and invalidates every alias before any subsequent use.
@@ -602,6 +936,43 @@ runtime arrays, uniform vs storage constraints and f16 encoding. Raw bytes are
 always available. Binary encoders/decoders use explicit WGSL layout
 descriptions; a GPU layout cannot be inferred from an arbitrary beni record.
 
+### 7.1 Mapped at creation (#1266, #1269)
+
+A buffer created with `mappedAtCreation = Value True` is mapped when it is
+created, and native `mapAsync` on it rejects, so `map` cannot produce its
+mapping. The producer is an accessor:
+
+```text
+Gpu.Buffer.currentMapping : Buffer → Maybe Mapping
+Gpu.Device.createMappedBuffer : Device, BufferDescriptor → Result Error { buffer : Buffer, mapping : Mapping }
+```
+
+`currentMapping` returns the live mapping of the buffer's current mapping
+generation, whether it came from creation or from `map`, and `Nothing` when
+the buffer is unmapped or its map is pending. A mapping from creation is
+writable, whatever the buffer's usages: `MAP_WRITE` is not required, and its
+mode is not reported as if it were. `createMappedBuffer` is the convenience
+form: it sets `mappedAtCreation = Value True` and returns both values, and is
+defined as `createBuffer` followed by `currentMapping`. The route is the same
+everywhere a buffer is created: `Gpu.Batch.createBuffer` and
+`Gpu.Diagnostics.Device.createBuffer` return a buffer whose `currentMapping` is
+`Just`. Inside its own batch or session the provisional buffer's mapping can be
+written at once, as native WebGPU permits even for a buffer that later fails
+validation; outside it, use returns `ResourcePending` until the buffer is
+accepted. A rejected buffer's mapping is detached with it. `map` on a buffer
+that is mapped returns the precise mapped-state input error before any native
+call.
+
+**Size preflight (#1269).** When `mappedAtCreation` is `Value True` and the size
+is not a multiple of 4, every creation form returns
+`InvalidInput (MappedSizeUnaligned { path, size })` before any native call;
+the native call would throw `RangeError` before it allocates. Only after this
+check passes is a native `RangeError` from `createBuffer` classified as
+`MapFailed (MappedAllocationFailed …)` ([ledger](research/webgpu-errors.md)
+§3). Acceptance needs two separate fixtures: a size of 6 returns
+`MappedSizeUnaligned` with no native call, and an aligned size whose CPU
+allocation fails (host fault injection) returns `MappedAllocationFailed`.
+
 ## 8. Canvas, media, events, fibers and page integration
 
 ```text
@@ -615,12 +986,13 @@ Gpu.Surface.canvas : Surface → CanvasSource
 
 Gpu.Frame.submit :
     Surface, String, sync (Frame → Result InputError a)
-    → Result Error { value : a, submission : Submission }
+    → Result Error { value : a, submissions : List Submission }
+Gpu.Frame.batch : Frame → Batch
 Gpu.Frame.getCurrentTexture : Frame → Result InputError Texture
 Gpu.Frame.importExternalTexture : Frame, ExternalTextureDescriptor → Result InputError ExternalTexture
 Gpu.Frame.encode : Frame, CommandEncoderDescriptor, sync (CommandEncoder → Result InputError a)
     → Result InputError { value : a, commands : CommandBuffer }
-Gpu.Frame.submitCommands : Frame, List CommandBuffer → Result InputError ⊤
+Gpu.Frame.submitCommands : Frame, List CommandBuffer → Result InputError Submission
 
 Gpu.Device.loss : Device → Maybe DeviceLoss
 Gpu.Device.awaitLost : Device → DeviceLoss
@@ -628,9 +1000,11 @@ Gpu.Device.eachEvent : Device, (DeviceEvent → ⊤) → ⊤
 Gpu.Device.onEvent : Device, (DeviceEvent → msg) → Sub msg
 ```
 
-`Frame.submit` obtains any needed device lease before starting the synchronous
-callback. It acquires/imports ephemeral sources, issues writes, encodes and
-submits in the **same host task**, invokes scope pops, then suspends to deliver
+`Frame.submit` refuses a device whose diagnostic lease is held before it
+starts the synchronous callback, and `Gpu.Diagnostics.Frame.submit` runs
+under the session's lease (§6.4), so the callback never waits for a lease.
+It acquires/imports ephemeral sources, issues writes, encodes and submits in
+the **same host task**, invokes scope pops, then suspends to deliver
 checked completion. It must not yield through the fiber scheduler between
 acquisition and submit, including implicit fairness checkpoints. A compile-time
 `sync` callback alone is insufficient if the scheduler can still yield there;
@@ -639,11 +1013,13 @@ must prove this in a real browser. If that primitive is missing, add it rather
 than promise frame safety based on microtask timing assumptions.
 
 Explicit submission inside the frame supports multiple command buffers and
-submit groups, intervening writes, external textures and query work. `submit`
-does not silently issue a second submission. An empty frame is legal; nothing
-is fabricated. The outer success confirms validation observations, not display
-completion. `Submission` identifies the queue submission boundary and supports
-waiting for work done when required, without an unconditional per-frame stall.
+submit groups, intervening writes, external textures and query work; the
+frame's batch (§8.2) supplies its synchronous resource operations. `submit`
+does not silently issue a second submission. An empty frame is legal and
+returns no receipt; nothing is fabricated. The outer success confirms
+validation observations, not display completion. Each `Submission` is the
+receipt of one native submit and supports waiting for its work when required,
+without an unconditional per-frame stall (§8.3).
 
 All standard canvas formats/usages/viewFormats/colorSpace/toneMapping/alphaMode
 are exposed, with `getConfiguration` readback for specified support detection.
@@ -659,8 +1035,12 @@ native identity reuse is preserved so bind groups may be reused where the host
 permits it. VideoFrame imports track explicit source closure. Image copies
 expose origin, extent, flipY, colorSpace and premultipliedAlpha without hidden
 coordinate flips or conversions inherited from Elm WebGL. Offscreen surfaces
-and compute need no HTML view. DedicatedWorker support uses that realm's GPU
-and typed transferables; GPU handles cannot be sent between workers.
+and compute need no HTML view. A main-thread `OffscreenCanvas`
+(`Browser.Canvas.offscreen`, §3.2) is a surface in S3 and an image source in
+S5. DedicatedWorker support uses that realm's GPU and typed transferables; GPU
+handles cannot be sent between workers. Worker realms and `OffscreenCanvas`
+**transfer** (`Browser.Canvas.transfer`) are the worker slice's, after #1299
+(§2, §10).
 
 `device.lost` is observed from device creation, before the handle is exposed.
 Loss latches, wakes pending operations and sends a typed lifecycle event.
@@ -704,6 +1084,80 @@ screen and release logs/stops under the existing contract. A GPU error expected
 for that operation stays a value; an application intentionally choosing to
 escalate that value is a separate application decision.
 
+### 8.2 Synchronous resource operations inside a frame (#1267)
+
+A frame's callback is synchronous, so it cannot call a checked operation such
+as `Gpu.Device.createBindGroup`, which may suspend. **A frame runs in a
+batch**, and the frame hands it out:
+
+```text
+Gpu.Frame.batch : Frame → Batch
+```
+
+Every `Gpu.Batch` operation therefore works inside the frame callback, with
+no suspension: it returns `Result InputError` and provisional handles, and the
+frame's scopes are popped before the callback's host turn ends. §6.3's rule is
+the list: there is a batch form for every native synchronous GPU operation,
+among them `createBindGroup`, `createBindGroupLayout`, `createView` (a texture
+view), `createSampler`, `createBuffer`, `createTexture`, `createQuerySet`,
+`getBindGroupLayout`, `writeBuffer`, `writeTexture`, `encode` (a command
+encoder session), `submit` and `destroy`. Async operations (async pipeline
+creation, `map`, `Submission.done`) are never batch forms. The frame-only
+operations stay on `Frame`, because their results expire with the host task:
+`getCurrentTexture` and `importExternalTexture`. `Frame.encode` and
+`Frame.submitCommands` are the batch forms on the frame's surface device.
+Provisional handles from `Frame.batch` are accepted or rejected with the
+frame's result. A `Batch` used after its `Batch.run` or its frame ended
+returns `SessionState SessionEnded`.
+
+The type flow for a video frame, with no suspension between import and
+submit:
+
+```text
+drawVideo : Surface, Scene → Result Error { value : Submission, submissions : List Submission }
+drawVideo surface scene =
+    Gpu.Frame.submit surface "video" λframe →
+        batch = Gpu.Frame.batch frame
+        video = (Gpu.Frame.importExternalTexture frame (Gpu.Types.externalTextureDescriptor (Gpu.Types.VideoElement scene.video)))?
+        group = (Gpu.Batch.createBindGroup batch { layout = scene.layout, entries = [ { binding = scene.slot, resource = Gpu.Types.ExternalTextureBinding video } ], label = Default })?
+        target = (Gpu.Frame.getCurrentTexture frame)?
+        view = (Gpu.Batch.createView batch target Gpu.Types.textureViewDescriptor)?
+        encoded = (Gpu.Frame.encode frame Gpu.Types.commandEncoderDescriptor λencoder → drawQuad encoder scene group view)?
+        Gpu.Frame.submitCommands frame [ encoded.commands ]
+```
+
+### 8.3 Submission receipts (#1271)
+
+A `Submission` is the receipt of **exactly one native `GPUQueue.submit` call**
+that the engine issued, from `Queue.submit`, `Batch.submit`,
+`Frame.submitCommands` or a forwarding form. A submit of an empty command
+buffer list is a native call and has a receipt; a call that issues no native
+submit has none. Nothing is fabricated.
+
+- `Gpu.Queue.submit` returns one receipt. `Gpu.Batch.submit` returns
+  `Result InputError Submission`, published when the batch is accepted.
+  `Gpu.Encode.run` submits nothing.
+- `Gpu.Frame.submit`'s `submissions` lists the frame's receipts in issue
+  order: empty for a frame that submitted nothing, one per native submit
+  otherwise.
+- **Completion is captured at the submission.** Right after it issues the
+  native submit, in the same host turn and before any other beni code can
+  submit on that queue, the engine calls the queue's `onSubmittedWorkDone`
+  and keeps the promise in the receipt, always draining it. The native promise
+  covers all work submitted before its call, so the receipt covers its own
+  submission and the earlier ones on the queue, which complete first anyway,
+  and never a later submission.
+- `Gpu.Submission.done : Submission → Result Error ⊤` waits for that promise;
+  observed device loss wins, as for every wait. Nothing waits unless `done`
+  is called, so a receipt does not stall a frame.
+- `Gpu.Queue.onSubmittedWorkDone` stays the faithful native form: it captures
+  at its own call, so it also covers unrelated work submitted before it. Use a
+  receipt to wait for one submission.
+- A receipt confirms validation observations and offers a completion wait;
+  neither is display completion. A failed batch or frame publishes no
+  receipts; its native submissions may still have happened (§6.3: a batch is
+  not a transaction), and its failure report lists them as issued.
+
 ## 9. Reserved
 
 The additional rendering abstraction was removed by the owner on 2026-10-30.
@@ -711,28 +1165,46 @@ The section number is retained for existing references.
 
 ## 10. Verification and delivery plan
 
-No implementation lands before the owner accepts the contract and resolves §11.
-Implementation is staged for review, but completeness is claimed only when
-the entire inventory and supporting adapters are delivered. Each implementation
-slice gets its own issue, checked public API docs, and skill API regeneration
-where it adds a shipped surface.
+The contract is adopted (2026-11-08). Implementation lands in the slices
+below, each with its own issue, a pull request, checked public API docs and
+`skills/beni/` updated with `zig build skill-api` where it adds a shipped
+surface. **Before a slice's public signatures ship, the slice confirms their
+names with the owner** (§11 item 6). Delivery is main thread first (§2).
+Completeness is claimed only when
+the entire inventory and the supporting adapters, worker realms included, are
+delivered (S6 and the worker slice).
 
-| Stage | Deliverable | Acceptance evidence |
-|---|---|---|
-| Boundary types and supporting binary/source contracts | Exact descriptors/enums/flags/scalars, binary/source/canvas/worker types, per-adapter imported failure contracts | Generate/compare all IDL entries; conversion/default/null/overload tests; no `Js.Value` in public signatures |
-| Checked device/resource engine | Capability negotiation, resource state, all error channels, three-filter scope sections, cancellation and defects | Controlled host fault injection for every ledger row; interleaved fiber/cleanup tests; unexpected-class defects |
-| Complete compute and transfers | Pipelines/layouts, buffers/mapping, all copies/writes, command states, queries, immediate data | Native-vs-beni compute/readback differentials, alignment/limit/usage failures and exact u64 round trips |
-| Complete rendering and presentation | All graphics state, render bundles/queries, surfaces, all external sources, worker/offscreen path | Real-browser multi-pass/MSAA/depth/stencil/MRT/indirect/media/resize/loss tests; same-task expiry adversaries |
-| Completeness and performance audit | Every inventory entry tied to public declaration and behavioral fixture; new standard delta process | CTS-derived boundary cases and native differential harness on available real implementations; measured overhead/output bytes |
+**Build first, optimize later** (the owner, 2026-11-01): S1–S5 carry no
+benchmark and no byte budget; measurements belong to the performance slice.
+One size fact stays, as a correctness check in every slice: **a program that
+does not import `Gpu` ships zero GPU runtime**, so no `emit/` golden of an
+existing fixture changes because of this work.
 
-The current browser harness commonly disables the GPU and happy-dom is not a
-WebGPU implementation. It is useful for canvas mount/unmount and deterministic
-wrapper tests, **not evidence of GPU correctness**. Add a separate opt-in
-WebGPU browser runner with explicit backend/adapter metadata. Exercise hardware
-and software backends where available; distinguish `unsupported`/`skipped`
-from `passed`. Do not add a software emulation fallback to the user API merely
-to satisfy tests. Cross-browser runs are needed for browser-specific errors and
-feature negotiation; no browser/version support matrix is invented by this research.
+| Slice | Issue | Deliverable | Acceptance evidence |
+|---|---|---|---|
+| S1 foundation | [#2239](https://github.com/canassa/beni/issues/2239) | Generated `Browser.Host.GPU*` types, `Gpu.Types` and `Gpu.Flags` with the gated staleness check (§2.2) and the uniform-exposure assertion (§2.3); `Gpu.Handle` (§2.1), `Gpu.Scalar`, `Gpu.Error`; availability, adapter, device, `destroy`, loss latch; the checked-operation engine of §6.1 with the state table and the lease flag of §6.4; the `test-webgpu` runner | Generated-vs-IDL comparison of every descriptor, enum, flag and constant; conversion/default/null/overload tests; no `Js.Value` in public signatures; host fault injection for every S1 ledger row; interleaved fiber and cleanup tests; unexpected classes defect; `test-webgpu` reports adapter metadata and `passed`/`unsupported`/`skipped` |
+| S2 compute and mapping | [#2240](https://github.com/canassa/beni/issues/2240) | Buffers, `map`/`withMapped`/`currentMapping` and mapped ranges (§7, §7.1), queue writes and receipts (§8.3), shader modules, compute pipelines and layouts, bind groups, command encoders, compute passes, copies, clears, queries, immediate data, `Gpu.Encode` (§6.2) and `Gpu.Batch` (§6.3) for these | Compute results read back and compared with independent expected answers; alignment, limit, usage and fixed-length-backing (§3.1) failures; the two `mappedAtCreation` cases of §7.1; exact u64 round trips |
+| S3 render and presentation | [#2241](https://github.com/canassa/beni/issues/2241) | `Gpu.Surface` on a canvas element and on a main-thread `OffscreenCanvas` (`fromOffscreen`), configuration, `Gpu.Frame` with §8.2's batch bridge, render pipelines and passes, bundles, occlusion queries, indirect draws, the non-yielding host-turn section, direct and TEA program integration | Multi-pass, MSAA, depth/stencil, MRT and indirect scenes compared by read-back pixels; resize/reconfigure invalidation; same-task expiry adversaries; zero and multiple receipts (§8.3) |
+| S4 diagnostics and events | [#2242](https://github.com/canassa/beni/issues/2242) | `Gpu.Diagnostics` (§6.4), its forwarding surface, uncaptured-error telemetry, `eachEvent`, `onEvent`, cancellation (§8.1) | `DeviceLeased` for an ordinary call from the callback, a joined child and an unrelated fiber, each without waiting; every exemption of §6.4 (teardown, state reads, mapped memory, waits on earlier work) runs under a lease; a drained outcome's unexpected failure reaches the device's program as a defect; nesting; every cancellation and defect phase releases the lease; `ScopeUnderflow`; an escaped native error defects |
+| S5 media sources | [#2243](https://github.com/canassa/beni/issues/2243) | External textures and `copyExternalImageToTexture` from every main-thread source arm, the main-thread `OffscreenCanvas` arm included, with #1278's sources | Every source arm compared by read-back pixels; closed, detached and not-origin-clean sources return their typed errors |
+| S6 completeness audit | [#2244](https://github.com/canassa/beni/issues/2244) | Every inventory row tied to a public declaration and a behavioural fixture, or to its later slice; new-standard delta process | A gate fails for a row with neither; CTS-derived boundary cases and the native-vs-beni differential harness in `test-webgpu` |
+| Later: workers | after [#1299](https://github.com/canassa/beni/issues/1299) | WebGPU in DedicatedWorker, SharedWorker and ServiceWorker realms; `OffscreenCanvas` transfer and worker surfaces; worker transfers of bitmaps, frames and binary | Worker entries run the S1–S5 scenarios; transfer detachment and typed transfer errors |
+| Later: WGSL | [#1276](https://github.com/canassa/beni/issues/1276) | Built-in WGSL validation and minification | As that issue specifies |
+| Later: performance | [#2245](https://github.com/canassa/beni/issues/2245) | Measurements and budgets | Below |
+
+**The WebGPU runner.** The current browser harness commonly disables the GPU,
+and happy-dom is not a WebGPU implementation: it is useful for canvas
+mount/unmount and deterministic wrapper tests, **not evidence of GPU
+correctness**. S1 adds `zig build test-webgpu`, an opt-in runner (not a gate)
+in headless Chrome with a real WebGPU adapter (the owner, 2026-11-08; whether
+CI runs it is a later decision). Chrome's software adapter
+(SwiftShader) is allowed: it is the browser's own WebGPU implementation, not a
+fallback in beni's API. The runner records backend and adapter metadata and
+distinguishes `unsupported`/`skipped` from `passed`. It is a heavy job and takes
+the shared lock as `test-browser` does. Do not add a software emulation
+fallback to the user API merely to satisfy tests. Cross-browser runs are needed
+for browser-specific errors and feature negotiation; no browser/version support
+matrix is invented here.
 
 Use the pinned CTS to select and, where feasible, adapt validation/operation
 cases. Running the native CTS alone tests the browser, not beni's conversion,
@@ -741,43 +1213,74 @@ the wrapper, compare bytes/results and error categories, and preserve labels
 and diagnostics without comparing localized message text. GPU OOM/internal
 failures need deterministic host injection; do not make hardware OOM a gate.
 
-Required adversarial scenarios include: throw a user TypeError inside the frame;
-reject a native promise with an unlisted DOM exception; spoof an error name;
-interleave two same-device fibers; resolve scope pops out of order; report both
-map rejection and validation; lose the device before/during/after publication;
-cancel each wait and every cleanup phase; retain stale mapped/frame/provisional
-handles; use a wrong-device resource; mutate source state between prepare/use;
-submit a command buffer twice; exercise all null/omitted descriptors; transfer
-and close sources; and return diagnostics around non-BMP source characters.
+Required adversarial scenarios, each landing with the slice that owns the
+operation: throw a user TypeError inside the frame; reject a native promise
+with an unlisted DOM exception; spoof an error name; interleave two
+same-device fibers; resolve scope pops out of order; report both map rejection
+and validation; lose the device before/during/after publication; cancel each
+wait and every cleanup phase; retain stale mapped/frame/provisional handles;
+use a wrong-device resource; mutate source state between prepare/use; submit a
+command buffer twice; exercise all null/omitted descriptors; transfer and close
+sources (worker slice); and return diagnostics around non-BMP source
+characters.
 
-Measure against equivalent direct JavaScript on the same backend: CPU encoding
-and submission medians, native scope overhead separately, per-frame allocations,
-mapping/transfer copies, initialization/pipeline work, brotli/raw bytes and idle
-retention. A validated batch can trade diagnostic granularity for fewer scopes;
-it may not disable error handling in release. Existing projects that do not
-import Gpu must ship zero GPU runtime, and compute-only projects must not ship
-canvas/media helpers. No performance claim is made before those measurements.
+**The performance slice** (#2245, after S6) measures against equivalent direct
+JavaScript on the same backend: CPU encoding and submission medians, native
+scope overhead separately, per-frame allocations, mapping/transfer copies,
+initialization/pipeline work, brotli/raw bytes and idle retention, and that a
+compute-only project ships no canvas or media helpers. A validated batch can
+trade diagnostic granularity for fewer scopes; it may not disable error
+handling in release. No performance claim is made before those measurements.
 
-## 11. Proposed decisions for owner review
+## 11. Decisions
 
-1. Adopt full pinned standard coverage, with the explicit observability limit
-   in §1. Literal capture of undetectable WGSL faults cannot be guaranteed by
-   this host API. Future standard additions require tracked updates.
-2. Adopt browser-owned `Gpu.*` direct Result functions, typed descriptors and
-   complete WGSL source access.
-3. Adopt checked completion for resources, sync encode/frame callbacks for
-   task-lived sources, provisional shared handle state and explicit batch
-   failure semantics. Do not add linear/rank-2 types solely for GPU handles.
-4. Adopt the operation-specific ledger and typed `GPUInternalError`/`UnknownLoss`
-   distinction; unexpected observations defect. Keep all validation in release.
-5. Include typed binary/source/OffscreenCanvas/DedicatedWorker support in the
-   completeness scope. Those prerequisites need their own detailed imported-API
-   contracts and implementation issues; they are not existing APIs or optional
-   debt hidden behind a claim of 100%.
-6. Confirm naming and diagnostic-session ergonomics before public signatures
-   freeze. The lease-based explicit scope adapter is more complex than only
-   automatic scopes but preserves native diagnostic functionality safely.
+*Adopted by the owner on 2026-11-08*
+([#1277](https://github.com/canassa/beni/issues/1277#issuecomment-6714461181)).
+Items 1–6 were this document's recommendations and are now decisions; items
+7–10 were taken the same day.
 
-These are recommendations, not recorded owner decisions. This research PR
-closes the research task only; it neither authorizes implementation nor claims
-that any of the proposed WebGPU API is already usable.
+1. **Decided 2026-11-08.** Full pinned standard coverage, with the explicit
+   observability limit in §1. Literal capture of undetectable WGSL faults
+   cannot be guaranteed by this host API. Future standard additions require
+   tracked updates.
+2. **Decided 2026-11-08.** Browser-owned `Gpu.*` direct Result functions, typed
+   descriptors and complete WGSL source access.
+3. **Decided 2026-11-08.** Checked completion for resources, sync encode/frame
+   callbacks for task-lived sources, provisional shared handle state and
+   explicit batch failure semantics. No linear/rank-2 types solely for GPU
+   handles.
+4. **Decided 2026-11-08.** The operation-specific ledger and typed
+   `GPUInternalError`/`UnknownLoss` distinction; unexpected observations
+   defect. All validation stays in release.
+5. **Decided 2026-11-08.** Typed binary/source/OffscreenCanvas/DedicatedWorker
+   support is in the completeness scope. Those prerequisites have their own
+   imported-API contracts and implementation issues (#1278, #1299); they are not
+   existing APIs or optional debt hidden behind a claim of 100%.
+6. **Decided 2026-11-08.** The lease-based explicit scope adapter, which is more
+   complex than only automatic scopes but preserves native diagnostic
+   functionality safely. Naming is not frozen by this document: as
+   recommended, each slice confirms the names of its public signatures with
+   the owner before they ship (§10).
+7. **Decided 2026-11-08** ([#1281](https://github.com/canassa/beni/issues/1281)).
+   The handle types live in one acyclic `Gpu.Handle` module; `Gpu.Types` and the
+   operation modules import it; under option C the native handles are generated
+   native types (§2.1). The same day the owner decided that every GPU operation
+   is a qualified call or a `▷` pipe, with no exceptions, and that every handle
+   type, the engine-made ones included, stays in `Gpu.Handle`.
+8. **Decided 2026-11-08** ([#1270](https://github.com/canassa/beni/issues/1270)).
+   D3 as decided: "a same-owner call gets a typed refusal (a session-state
+   error) and does not wait. No `Task.Identity`" ([#1280](https://github.com/canassa/beni/issues/1280)
+   closed). Later the same day the owner extended it: while a diagnostic
+   session holds a device's lease, an ordinary checked operation from **any**
+   fiber on that device returns `SessionState DeviceLeased` at once. Nothing
+   waits on a lease and no core slot is added. The session value is the lease
+   token (§6.4).
+9. **Decided 2026-11-08.** Main thread first. WebGPU in workers and
+   `OffscreenCanvas` transfer wait for
+   [#1299](https://github.com/canassa/beni/issues/1299) and stay in the
+   completeness scope as a later slice (§2, §10).
+
+10. **Decided 2026-11-08.** `zig build test-webgpu` is opt-in and not a gate;
+    whether CI runs it is decided later (§10).
+
+Nothing in this contract is open for the owner as of 2026-11-08.
