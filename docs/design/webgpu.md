@@ -690,7 +690,15 @@ returned. The lease of §6.4 is the record's flag and generation, taken with `tr
 (no session API yet). The first operation over it is `Gpu.Device.createSampler`; the
 `browser/gpu/Checked*` fixtures cover §10's interleaved fibers, pops out of order, an
 unexpected pop beside a validation error, a spoofed error, a throwing call, and a loss
-before, during and after publication.
+before, during and after publication. *Amended 2026-11-08 (review of S1):* the call is `sync (⊤ → Result
+Error V)`, so step 3's classifier is the operation's own: it gives `Ok` with what the call
+made, or the precise `Error` of a failure the ledger documents at that call (S2's
+`MappedAllocationFailed`, `FormatFeatureRejected`), which joins the scopes' observations.
+However the fiber leaves the wait — cancelled, or interrupted before it waited — the
+operation is done; an unexpected outcome it kept goes to the device's program then, and
+one that settles later goes there too. Each pending pop holds the device's channel to
+that program (a detached fiber the request made), which ends once the loss is reported
+and no pop is pending (`browser/gpu/Cancelled*`).
 
 ### 6.2 Synchronous encoding with checked completion
 

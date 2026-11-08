@@ -285,6 +285,7 @@ module Gpu.Adapter
 module Gpu.Device
   value adapterInfo : Device → AdapterInfo  -- impure
   value awaitLost : Device → DeviceLoss  -- suspends
+  value createSampler : Device, SamplerDescriptor → Result Error Sampler  -- suspends
   value destroy : Device → ⊤  -- impure
   value features : Device → Features  -- impure
   value limits : Device → Limits  -- impure
@@ -298,12 +299,14 @@ module Gpu.Engine
     Expected
     Unexpected
   value adapterFree : V → Bool  -- impure
+  value admit : V, String → Result Error ⊤  -- impure
   value adoptAdapter : V → ⊤  -- impure
   value adoptDevice : V, V → ⊤  -- impure
   value awaitHost : V, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
   value awaitLost : V → DeviceLoss  -- suspends
   value channel : ⊤ → V  -- impure
   value channelDefect : V, V → ⊤  -- impure
+  value checked : V, String, List String, (⊤ → Result Error V) → Result Error V  -- suspends
   value consumeAdapter : V → ⊤  -- impure
   value defect : String → a  -- impure
   value destroy : V → ⊤  -- impure
@@ -322,9 +325,11 @@ module Gpu.Engine
   value readNames : V, String → List String  -- impure
   value recordOf : V → V  -- impure
   value release : V → ⊤  -- impure
+  value releaseLease : V → ⊤  -- impure
   value reportDefect : V, V → ⊤  -- impure
   value reserveAdapter : V, Bool → ⊤  -- impure
   value settleDevice : V → ⊤  -- impure
+  value tryLease : V → Bool  -- impure
 module Gpu.Error
   type CanvasError
     CanvasNotFound
