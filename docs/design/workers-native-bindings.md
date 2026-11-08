@@ -145,7 +145,14 @@ The first callable rows are `Window.document`, `Document.querySelector`
 (from ParentNode), `Node.textContent` get/set, `Element.toNode`,
 `TextEncoder.create`/`encode`, `Timers.setTimeout`, and
 `WorkerGlobalScope.self`. `Uint8Array.byteLength` is an ECMAScript intrinsic
-under intrinsic revision 1. The pinned catalogue resolves the reviewed rows
+under intrinsic revision 1. Intrinsic revision 2 (2026-11-08, #1278) adds the
+buffer and view types `Binary` holds — ArrayBuffer, SharedArrayBuffer, DataView
+and every typed array — as ordinary nominal types with no operation of their
+own (`Operations.intrinsic_types`); an IDL interface of the same name is a
+duplicate identity. The GPU sources' IDL types (`HTMLImageElement`,
+`ImageBitmap`, `ImageData`, `HTMLVideoElement`, `VideoFrame`,
+`HTMLCanvasElement`, `OffscreenCanvas`, `ImageBitmapRenderingContext`) ship as
+the generator writes them, also without operations. The pinned catalogue resolves the reviewed rows
 in `src/native/Operations.zig` to native declarations and member spans;
 unreviewed members still require adapters. Generation emits source-linked
 callable rows, ordinary typed modules and precise-error siblings. The first
