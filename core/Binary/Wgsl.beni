@@ -549,9 +549,7 @@ readMembersLoop view offset available fields output =
 
 
 viewInfo : Binary.View → Result Error Binary.SourceInfo
-viewInfo view =
-    source = Result.mapError (Binary.viewSource view) BinaryError?
-    Result.mapError (Binary.sourceInfo source) BinaryError
+viewInfo view = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) BinaryError
 
 
 checkRange : Binary.View, Int, Int → Result Error ⊤
