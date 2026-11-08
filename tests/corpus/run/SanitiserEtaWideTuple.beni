@@ -1,0 +1,101 @@
+-- A record of ten objects twice in a tuple, handed through a wrapped callback whose origin is a type variable
+-- (`run2`'s `h : a → b`). The supply sat at that variable's place, so what the frame knew of it was written as the
+-- leaves of a deep read at an open key, and a caller's `.1.n.z` appended to them named nothing. A supply now sits
+-- where the frame names its structure (§2.1, An arrival's level; §2.11.3).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+type alias R =
+    a : L
+    b : L
+    c : L
+    d : L
+    e : L
+    g : L
+    n :
+        x : L
+        z : L
+
+
+unj : Maybe q → q
+unj m =
+    case m of
+        Just x →
+            x
+
+        Nothing →
+            unj m
+
+
+run2 : (a → b), a → b
+run2 h x = h x
+
+
+fwd : (a → y), a → y
+fwd h x = h x
+
+
+app : R, Maybe (R × R → y) → y
+app rec o = run2 (unj o) ( rec, rec )
+
+
+appF : R, { p : { q : R × R → y } } → y
+appF rec o = run2 o.p.q ( rec, rec )
+
+
+eta : R, Maybe (R × R → y) → y
+eta rec o = app rec (Just λq → (unj o) q)
+
+
+held : R, Maybe (R × R → y) → y
+held rec o = app rec (Just (fwd (unj o) _))
+
+
+mk : Maybe (R × R → y) → (R × R → y)
+mk o = λq → (unj o) q
+
+
+made : R, Maybe (R × R → y) → y
+made rec o = app rec (Just (mk o))
+
+
+field : R, { p : { q : R × R → y } } → y
+field rec o = appF rec { p = { q = λq → o.p.q q } }
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 =
+        eta
+            { a = [], b = [ 2 ], c = [ 3 ], d = [], e = [], g = [], n = { x = [ 4 ], z = k1 } }
+            (Just λs → s.1)
+    u1 = show (List.push y1.n.z 1)
+    k2 = [ 2 ]
+    y2 =
+        held
+            { a = [], b = [ 2 ], c = [ 3 ], d = [], e = [], g = [], n = { x = [ 4 ], z = k2 } }
+            (Just λs → s.1)
+    u2 = show (List.push y2.n.z 1)
+    k3 = [ 3 ]
+    y3 =
+        made
+            { a = [], b = [ 2 ], c = [ 3 ], d = [], e = [], g = [], n = { x = [ 4 ], z = k3 } }
+            (Just λs → s.1)
+    u3 = show (List.push y3.n.z 1)
+    k4 = [ 4 ]
+    y4 =
+        field { a = [], b = [ 2 ], c = [ 3 ], d = [], e = [], g = [], n = { x = [ 4 ], z = k4 } }
+            { p = { q = λs → s.1 } }
+    u4 = show (List.push y4.n.z 1)
+    Node.print (u1 ++ show k1 ++ u2 ++ show k2 ++ u3 ++ show k3 ++ u4 ++ show k4)
