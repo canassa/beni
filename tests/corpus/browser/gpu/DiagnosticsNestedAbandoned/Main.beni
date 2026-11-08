@@ -1,0 +1,88 @@
+-- A nested session its parent abandons (docs/design/webgpu.md §6.4,
+-- *Nesting*): the outer callback returns while a fiber it started is
+-- inside a nested session, so the nested session closes with its parent,
+-- what it made is rejected, and its pops drain. When the nested callback
+-- returns later, its run is `SessionState SessionEnded` at once: it never
+-- waits for pops that will never be its own (`goFirst`, the pops still
+-- held), and never reports a success for what was rejected (`popsFirst`,
+-- the pops settled first).
+import Binary
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Device
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device)
+import Gpu.Queue
+import GpuHost
+import GpuKit exposing (must)
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+waitFor : String → ⊤
+waitFor flag =
+    if GpuHost.raised flag then
+        ⊤
+    else
+        Task.yieldNow ⊤
+        waitFor flag
+
+
+-- The outer session, whose callback leaves a nested session open in a
+-- fiber of its own, detached so that it outlives the outer run; `between` runs once the outer callback returned, then
+-- the nested callback is let go.
+abandoned : Device, (⊤ → ⊤) → List String
+abandoned d between =
+    _ = GpuHost.notes ⊤
+    outer = Task.spawn λ⊤ →
+        Diagnostics.run d λs →
+            _ = Task.spawnDetached λ⊤ →
+                inner = Diagnostics.nested s λc →
+                    GpuHost.keep
+                        (must
+                            (Gpu.Diagnostics.Device.createBuffer
+                                c
+                                d
+                                (GpuKit.buffer 8 [ Flags.CopyDst ])
+                            )
+                        )
+                    waitFor "go"
+                    "nested value"
+                GpuHost.note ("nested: " ++ GpuShow.sessionReport inner λv → v)
+                GpuHost.raise "nested ended"
+            Task.yieldNow ⊤
+            "outer value"
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    between ⊤
+    GpuHost.raise "go"
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    GpuHost.releasePops ⊤
+    GpuHost.drain ⊤
+    waitFor "nested ended"
+    outerReport = Task.join outer
+    write = Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (GpuKit.zeros 8))
+    [ …GpuHost.notes ⊤
+    , "outer: " ++ GpuShow.sessionReport outerReport λv → v
+    , "what the nested session made: "
+        ++ GpuShow.checked (Gpu.Queue.writeBuffer (Gpu.Device.queue d) (GpuHost.kept ⊤) write) λ_ →
+            "written"
+    ]
+
+
+goFirst : ⊤ → List String
+goFirst ⊤ = GpuKit.with "pops-held" λd → abandoned d λ⊤ → ⊤
+
+
+popsFirst : ⊤ → List String
+popsFirst ⊤ = GpuKit.with "pops-held" λd →
+    abandoned d λ⊤ →
+        GpuHost.releasePops ⊤
+        GpuHost.drain ⊤
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "goFirst", goFirst ), ( "popsFirst", popsFirst ) ]

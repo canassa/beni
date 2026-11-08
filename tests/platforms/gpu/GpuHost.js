@@ -1381,13 +1381,6 @@ export const escapeSpoofed = (device) => {
   return null;
 };
 
-// A native pop the engine never makes: the device's innermost scope, which
-// is the engine's, popped behind its back.
-export const popBehind = (device) => {
-  device.popErrorScope().then(null, () => null);
-  return null;
-};
-
 // Every instrumented device's error scope stack, as the page pushed it.
 const scopeStacks = new globalThis.WeakMap();
 
@@ -1422,3 +1415,11 @@ export const raise = (name) => {
   return null;
 };
 export const raised = (name) => raisedFlags.has(name);
+
+// Log what `probe` answers three tasks later, as `logScopesLater` does:
+// after a throw, what the runtime's teardown left.
+export const logLater = (label, probe) => {
+  const log = () => globalThis.console.log(`${label}: ${probe(null)}`);
+  globalThis.setTimeout(() => globalThis.setTimeout(() => globalThis.setTimeout(log, 0), 0), 0);
+  return null;
+};

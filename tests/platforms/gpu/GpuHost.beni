@@ -138,10 +138,6 @@ pub foreign impure escape : Device → ⊤
 pub foreign impure escapeSpoofed : Device → ⊤
 
 
---| Pop the device's innermost error scope behind the engine's back.
-pub foreign impure popBehind : Device → ⊤
-
-
 --| Log how many error scopes of the device are open three tasks later.
 pub foreign impure logScopesLater : Device → ⊤
 
@@ -164,3 +160,8 @@ pub foreign impure raise : String → ⊤
 
 --| Whether the flag `name` is raised.
 pub foreign impure raised : String → Bool
+
+
+--| Log `label` and what `probe` answers three tasks later: after a throw,
+--| once the runtime's teardown ran.
+pub foreign impure logLater : String, sync (⊤ → String) → ⊤
