@@ -1,0 +1,390 @@
+--! Batches of synchronous GPU operations (`docs/design/webgpu.md` §6.3): a
+--! callback makes resources, writes, encodes and submits without
+--! suspending, between the device's error scopes, and the run checks them
+--! together.
+--!
+--! What a batch makes is provisional: the batch itself may use it at once,
+--! as native WebGPU permits, but anywhere else it is `ResourcePending` until
+--! the run accepts it — `awaitReady` waits for that — and
+--! `ResourceRejected` once a failed or cancelled run rejected it. A batch
+--! is not a transaction: a write or a submit it issued before a failure
+--! stays issued, and the failure's report says which operations were
+--! issued and which were not. A batch's scopes cover the whole run unless
+--! `segment` starts a named segment of its own. A `Batch` used after its
+--! run gives `SessionState SessionEnded`; after its first failure,
+--! `SessionStopped`.
+
+import Binary
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Queue as Queue
+import Gpu.Scalar as Scalar
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+import Task
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+--| Run `body` with a new batch of `device`, checked (§6.1): every operation
+--| of it runs between the device's error scopes, in one host turn, and the
+--| run waits for them. `body`'s value is the result when no scope reported
+--| a failure, no operation failed and no loss was observed; then every
+--| resource the batch made is accepted. Otherwise each is rejected — a
+--| buffer, a texture or a query set destroyed — and the result is
+--| `BatchFailed`: the batch's name, its failure (the first operation's
+--| own, with what the scopes observed beside it, or the scopes', or the
+--| loss), and which operations were issued and which were refused. A
+--| cancelled run rejects what it made too. A throw in `body` is a defect.
+--| May suspend; `body` never does.
+pub run : Handle.Device, String, sync (Handle.Batch → Result Error.Error a) → Result Error.Error a
+run device name body =
+    native = Js.from device
+    r = Engine.recordOf native
+
+    batch =
+        Js.object
+            [ ( "device", r )
+            , ( "native", native )
+            , ( "name", Js.from name )
+            , ( "live", Js.from False )
+            , ( "failure", Js.null )
+            , ( "made", Js.array [] )
+            , ( "issued", Js.array [] )
+            , ( "refused", Js.array [] )
+            , ( "settled", Js.null )
+            , ( "waiters", Js.array [] )
+            ]
+    value = Js.ref Nothing
+
+    checked =
+        Engine.checkedMaking
+            native
+            ("batch " ++ name)
+            [ name ]
+            (λ⊤ →
+                Js.set batch "live" (Js.from True)
+                outcome = Js.finally (λ⊤ → body (Js.to batch)) λ⊤ →
+                    Js.set batch "live" (Js.from False)
+                case outcome of
+                    Ok v →
+                        Js.write value (Just v)
+
+                    Err problem →
+                        Session.latch batch problem
+                failure = Js.get batch "failure"
+                if Js.isNull failure then Ok (Js.object []) else Err (Js.to failure)
+            )
+            (λ_ → ⊤)
+            -- A run rejected after its call — by a scope, a loss or a
+            -- cancellation — rejects what the batch made.
+            λ_ → settle batch "rejected"
+    case ( checked, Js.read value ) of
+        ( Ok _, Just v ) →
+            settle batch "accepted"
+            Ok v
+
+        ( Ok _, Nothing ) →
+            Engine.defect "a batch was accepted without a value"
+
+        ( Err problem, _ ) →
+            settle batch "rejected"
+            Err
+                (Error.BatchFailed
+                    { batch = name
+                    , failure = problem
+                    , issued = Js.to (Js.get batch "issued")
+                    , unissued = Js.to (Js.get batch "refused")
+                    }
+                )
+
+
+-- Every resource the batch made takes its status, once; a rejected one is
+-- released. Whoever waits for the batch wakes.
+settle : V, String → ⊤
+settle batch status =
+    if not (Js.isNull (Js.get batch "settled")) then
+        ⊤
+    else
+        Js.set batch "settled" (Js.from status)
+        Js.each (Js.get batch "made") λentry →
+            made = Js.get entry "made"
+            Engine.setStatus made status
+            op = Js.get entry "op"
+            if status == "rejected" && not (Js.isNull op) then Make.discard (Js.to op) made else ⊤
+        waiters = Js.get batch "waiters"
+        Js.set batch "waiters" (Js.array [])
+        Js.each waiters λw → Js.to (Js.apply w [ Js.from status ])
+
+
+--| Wait until the batch's run has settled what it made (§6.3): `Ok` once it
+--| is accepted, `ResourceRejected` once it is rejected; at once when it
+--| has. A cancelled wait leaves the batch as it was. May suspend.
+pub awaitReady : Handle.Batch → Result Error.Error ⊤
+awaitReady b =
+    batch = Js.from b
+    settled = Js.get batch "settled"
+
+    status =
+        if Js.isNull settled then
+            Task.callback λresume →
+                w = Js.from λs → Task.resume resume s
+                Js.call (Js.get batch "waiters") "push" [ w ] ▷ ignore
+                λ⊤ →
+                    waiters = Js.get batch "waiters"
+                    at = Js.call waiters "indexOf" [ w ]
+                    if Js.to (Js.ge at (Js.from 0)) then
+                        Js.call waiters "splice" [ at, Js.from 1 ] ▷ ignore
+        else
+            Js.to settled
+    if status == "accepted" then
+        Ok ⊤
+    else
+        Err (Error.InvalidInput (Error.ResourceRejected { path = "batch" }))
+
+
+--| Close the batch's current scope segment and start one named `name`: an
+--| error the device reports from then on is attributed to `name`, and what
+--| came before to the segment before it. Without `segment`, one segment,
+--| named after the batch, covers the whole run. Finer segments name the
+--| part of the batch that failed; they cost three scopes each.
+pub segment : Handle.Batch, String → Result Error.Error ⊤
+segment b name =
+    batch = Js.from b
+    Result.mapError (open batch) Error.InvalidInput?
+    Engine.segment (Js.get batch "native") name
+    Ok ⊤
+
+
+-- The batch may go on: live, and no failure latched.
+open : V → Result InputError ⊤
+open batch =
+    if not (Js.to (Js.get batch "live")) then
+        Err (Error.SessionState Error.SessionEnded)
+    else if not (Js.isNull (Js.get batch "failure")) then
+        Err Error.SessionStopped
+    else
+        Ok ⊤
+
+
+-- Run a prepared operation inside the batch: every failure — a refusal, a
+-- missing capability, a documented host failure — is latched and returned
+-- as itself; what the call made is the batch's, provisional. Each
+-- operation is listed as issued or refused, for the failure's report.
+inBatch : V, String, (⊤ → Result Error.Error Make.Op) → Result Error.Error V
+inBatch batch name prepare =
+    case open batch of
+        Err problem →
+            refused batch name
+            Err (Error.InvalidInput problem)
+
+        Ok _ →
+            case prepare ⊤ of
+                Err problem →
+                    refused batch name
+                    Session.latch batch problem
+                    Err problem
+
+                Ok op →
+                    issued batch op.name
+                    case Make.perform op of
+                        Err problem →
+                            Session.latch batch problem
+                            Err problem
+
+                        Ok made →
+                            Engine.adoptInBatch made (Js.get batch "device") batch
+                            Make.adopt op made
+                            Js.call (Js.get batch "made") "push"
+                                [ Js.object [ ( "made", made ), ( "op", Js.from op ) ] ]
+                                ▷ ignore
+                            Ok made
+
+
+issued : V, String → ⊤
+issued batch name = Js.call (Js.get batch "issued") "push" [ Js.from name ] ▷ ignore
+
+
+refused : V, String → ⊤
+refused batch name = Js.call (Js.get batch "refused") "push" [ Js.from name ] ▷ ignore
+
+
+deviceOf : V → V
+deviceOf batch = Js.get batch "native"
+
+
+make : Handle.Batch, String, (V, V → Result Error.Error Make.Op) → Result Error.Error a
+make b name prepare =
+    batch = Js.from b
+    Result.map (inBatch batch name λ⊤ → prepare (deviceOf batch) batch) λm → Js.to m
+
+
+--| A buffer, provisional in the batch (§7.1: a buffer created mapped has
+--| its mapping at once, which the batch may write).
+pub createBuffer : Handle.Batch, Types.BufferDescriptor → Result Error.Error Handle.Buffer
+createBuffer b descriptor = make b "createBuffer" λd _ → Make.buffer d descriptor
+
+
+--| A texture, provisional in the batch; a format whose feature the device
+--| lacks is `UnsupportedCapability`.
+pub createTexture : Handle.Batch, Types.TextureDescriptor → Result Error.Error Handle.Texture
+createTexture b descriptor = make b "createTexture" λd _ → Make.texture d descriptor
+
+
+--| A sampler, provisional in the batch.
+pub createSampler : Handle.Batch, Types.SamplerDescriptor → Result Error.Error Handle.Sampler
+createSampler b descriptor = make b "createSampler" λd _ → Make.sampler d descriptor
+
+
+--| A bind group layout, provisional in the batch.
+pub createBindGroupLayout :
+      Handle.Batch
+    , Types.BindGroupLayoutDescriptor
+    → Result Error.Error Handle.BindGroupLayout
+createBindGroupLayout b descriptor = make b "createBindGroupLayout" λd _ →
+    Make.bindGroupLayout d descriptor
+
+
+--| A bind group, provisional in the batch; it may bind what the batch made.
+pub createBindGroup : Handle.Batch, Types.BindGroupDescriptor → Result Error.Error Handle.BindGroup
+createBindGroup b descriptor = make b "createBindGroup" λd batch → Make.bindGroup d batch descriptor
+
+
+--| A pipeline layout, provisional in the batch.
+pub createPipelineLayout :
+      Handle.Batch
+    , Types.PipelineLayoutDescriptor
+    → Result Error.Error Handle.PipelineLayout
+createPipelineLayout b descriptor = make b "createPipelineLayout" λd batch →
+    Make.pipelineLayout d batch descriptor
+
+
+--| A shader module, provisional in the batch.
+pub createShaderModule :
+      Handle.Batch
+    , Types.ShaderModuleDescriptor
+    → Result Error.Error Handle.Shader
+createShaderModule b descriptor = make b "createShaderModule" λd _ → Make.shaderModule d descriptor
+
+
+--| A compute pipeline by the native synchronous call, provisional in the
+--| batch. There is no asynchronous form in a batch.
+pub createComputePipeline :
+      Handle.Batch
+    , Types.ComputePipelineDescriptor
+    → Result Error.Error Handle.ComputePipeline
+createComputePipeline b descriptor = make b "createComputePipeline" λd batch →
+    Make.computePipeline d batch descriptor
+
+
+--| A query set, provisional in the batch; a timestamp set without its
+--| feature is `UnsupportedCapability`.
+pub createQuerySet : Handle.Batch, Types.QuerySetDescriptor → Result Error.Error Handle.QuerySet
+createQuerySet b descriptor = make b "createQuerySet" λd _ → Make.querySet d descriptor
+
+
+--| The bind group layout of a pipeline at `index`, provisional in the
+--| batch; the pipeline must be of the batch's device (`WrongDevice`).
+pub getBindGroupLayout :
+      Handle.Batch
+    , Handle.ComputePipeline
+    , Scalar.U32
+    → Result Error.Error Handle.BindGroupLayout
+getBindGroupLayout b pipeline index = make b "getBindGroupLayout" λ_ batch →
+    Make.getBindGroupLayout (Js.from pipeline) batch index
+
+
+--| A queue write in the batch (`Gpu.Queue.writeBuffer`'s checks); it may
+--| write what the batch made. The queue must be of the batch's device.
+pub writeBuffer :
+      Handle.Batch
+    , Handle.Queue
+    , Handle.Buffer
+    , Queue.WriteBufferSource
+    → Result Error.Error ⊤
+writeBuffer b queue buffer write =
+    batch = Js.from b
+    Result.map
+        (inBatch batch "writeBuffer" λ⊤ → Make.writeBuffer (Js.from queue) batch buffer write)
+        λ_ → ⊤
+
+
+--| A queue write into a texture in the batch (`Gpu.Queue.writeTexture`'s
+--| checks); it may write a texture the batch made. The queue must be of
+--| the batch's device.
+pub writeTexture :
+      Handle.Batch
+    , Handle.Queue
+    , Types.TexelCopyTextureInfo
+    , Binary.Source
+    , Types.TexelCopyBufferLayout
+    , Types.Extent3D
+    → Result Error.Error ⊤
+writeTexture b queue destination data layout extent =
+    batch = Js.from b
+    Result.map
+        (inBatch batch "writeTexture" λ⊤ →
+            Make.writeTexture (Js.from queue) batch destination data layout extent
+        )
+        λ_ → ⊤
+
+
+--| A submit in the batch: one native submit, and its receipt, published
+--| when the batch is accepted. The queue must be of the batch's device.
+pub submit :
+      Handle.Batch
+    , Handle.Queue
+    , List Handle.CommandBuffer
+    → Result Error.Error Handle.Submission
+submit b queue commands =
+    batch = Js.from b
+    Result.map (inBatch batch "submit" λ⊤ → Make.submit (Js.from queue) batch commands) λm → Js.to m
+
+
+--| Encode in the batch: `Gpu.Encode.run` without scopes of its own, under
+--| the batch's. The command buffer is provisional in the batch.
+pub encode :
+      Handle.Batch
+    , Types.CommandEncoderDescriptor
+    , sync (Handle.CommandEncoder → Result InputError a)
+    → Result Error.Error { value : a, commands : Handle.CommandBuffer }
+encode b descriptor body =
+    batch = Js.from b
+    case open batch of
+        Err problem →
+            refused batch "encode"
+            Err (Error.InvalidInput problem)
+
+        Ok _ →
+            issued batch "encode"
+            value = Js.ref Nothing
+            case Session.encode (deviceOf batch) batch descriptor (λenc → body (Js.to enc)) value of
+                Err problem →
+                    Session.latch batch problem
+                    Err problem
+
+                Ok commands →
+                    Engine.adoptInBatch commands (Js.get batch "device") batch
+                    Js.call (Js.get batch "made") "push"
+                        [ Js.object [ ( "made", commands ), ( "op", Js.null ) ] ]
+                        ▷ ignore
+                    case Js.read value of
+                        Just v →
+                            Ok { value = v, commands = Js.to commands }
+
+                        Nothing →
+                            Engine.defect "an encoding in a batch finished without a value"
+
+
+--| Whether the batch's run is still going.
+pub live : Handle.Batch → Bool
+live b = Js.to (Js.get (Js.from b) "live")

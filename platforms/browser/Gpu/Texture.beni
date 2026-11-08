@@ -1,0 +1,83 @@
+--! Textures (`docs/design/webgpu.md` §4, §7): made by
+--! `Gpu.Device.createTexture`, copied to and from buffers and textures by
+--! `Gpu.CommandEncoder`. Views and sampling come with rendering.
+
+import Gpu.Engine as Engine
+import Gpu.Flags as Flags
+import Gpu.Handle as Handle
+import Gpu.Types as Types
+import Js
+
+
+int : Handle.Texture, String → Int
+int texture name = Js.to (Js.get (Js.from texture) name)
+
+
+--| The texture's width in texels.
+pub width : Handle.Texture → Int
+width texture = int texture "width"
+
+
+--| The texture's height in texels.
+pub height : Handle.Texture → Int
+height texture = int texture "height"
+
+
+--| The texture's depth or number of array layers.
+pub depthOrArrayLayers : Handle.Texture → Int
+depthOrArrayLayers texture = int texture "depthOrArrayLayers"
+
+
+--| The texture's mip level count.
+pub mipLevelCount : Handle.Texture → Int
+mipLevelCount texture = int texture "mipLevelCount"
+
+
+--| The texture's sample count.
+pub sampleCount : Handle.Texture → Int
+sampleCount texture = int texture "sampleCount"
+
+
+--| The texture's format. A format outside the pin is a defect.
+pub format : Handle.Texture → Types.TextureFormat
+format texture =
+    case Types.textureFormatFromString (Js.to (Js.get (Js.from texture) "format")) of
+        Just f →
+            f
+
+        Nothing →
+            Engine.defect "a texture of a format outside the pin"
+
+
+--| The texture's usages.
+pub usage : Handle.Texture → Flags.TextureUsages
+usage texture =
+    bits = int texture "usage"
+    Flags.texture
+        (List.filter Flags.allTextureUsages λu →
+            Js.bitAnd bits (Flags.textureUsageBits u) == Flags.textureUsageBits u
+        )
+
+
+--| The texture's label.
+pub label : Handle.Texture → String
+label texture = Js.to (Js.get (Js.from texture) "label")
+
+
+--| Set the texture's label.
+pub setLabel : Handle.Texture, String → ⊤
+setLabel texture text = Js.set (Js.from texture) "label" (Js.from text)
+
+
+--| Destroy the texture: latched first, so later work with it is refused
+--| (`ResourceDestroyed`); destroying it again does nothing. Runs under a
+--| diagnostic session's lease (§6.4).
+pub destroy : Handle.Texture → ⊤
+destroy texture =
+    native = Js.from texture
+    r = Engine.recordOf native
+    if Js.same (Js.get r "destroyed") (Js.from True) then
+        ⊤
+    else
+        Js.set r "destroyed" (Js.from True)
+        Js.to (Js.call native "destroy" [])

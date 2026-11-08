@@ -1,0 +1,53 @@
+-- load
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="submits">"submits"</button>
+    <button id="cleared">"cleared"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #refused
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="submits">"submits"</button>
+    <button id="cleared">"cleared"</button>
+    <ol>
+      <li>"copy 6 bytes: Err Validation"</li>
+    </ol>
+  </main>
+</body>
+-- click #submits
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="submits">"submits"</button>
+    <button id="cleared">"cleared"</button>
+    <ol>
+      <li>"copy 6 bytes: Err Validation"</li>
+      <li>"submit: Ok receipt"</li>
+      <li>"submit it again: Err InvalidInput CommandBufferSubmitted commands"</li>
+      <li>"one buffer twice: Err InvalidInput DuplicateCommandBuffer commands"</li>
+      <li>"another device's: Err InvalidInput WrongDevice commands"</li>
+      <li>"native submits for the refusals: 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #cleared
+<body>
+  <main>
+    <button id="refused">"refused"</button>
+    <button id="submits">"submits"</button>
+    <button id="cleared">"cleared"</button>
+    <ol>
+      <li>"copy 6 bytes: Err Validation"</li>
+      <li>"submit: Ok receipt"</li>
+      <li>"submit it again: Err InvalidInput CommandBufferSubmitted commands"</li>
+      <li>"one buffer twice: Err InvalidInput DuplicateCommandBuffer commands"</li>
+      <li>"another device's: Err InvalidInput WrongDevice commands"</li>
+      <li>"native submits for the refusals: 0"</li>
+      <li>"copied, then cleared 4+8: Ok 1, 0, 0, 4"</li>
+    </ol>
+  </main>
+</body>

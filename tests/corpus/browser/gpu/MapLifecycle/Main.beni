@@ -138,23 +138,34 @@ failing _ = Err (Error.InvalidInput Error.SessionStopped)
 
 -- Unmaps its own mapping and maps again: `withMapped` must not end the
 -- later mapping.
-remapping : Buffer, Mapping → Result Error.Error ⊤
-remapping b _ =
+remapping : Mapping → Result Error.Error ⊤
+remapping m =
+    b = Gpu.Buffer.mappingBuffer m
     Gpu.Buffer.unmap b
     _ = Gpu.Buffer.map b Gpu.Buffer.mapRead?
     Ok ⊤
 
 
 bracket : ⊤ → List String
-bracket ⊤ = GpuKit.with "none" λd →
-    b = readable d
-    failed = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead failing
-    afterFailure = state b
-    remapped = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead (remapping b _)
+bracket ⊤ = GpuKit.with "none" bracketOn
 
-    [ "a body that fails: " ++ GpuShow.checked failed (λ_ → "done") ++ ", then " ++ afterFailure
-    , "a body that maps again: " ++ GpuShow.checked remapped (λ_ → "done") ++ ", then " ++ state b
-    ]
+
+bracketOn : Device → List String
+bracketOn d =
+    b = readable d
+    [ "a body that fails: " ++ failedBody b, "a body that maps again: " ++ remappedBody b ]
+
+
+failedBody : Buffer → String
+failedBody b =
+    failed = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead failing
+    GpuShow.checked failed (λ_ → "done") ++ ", then " ++ state b
+
+
+remappedBody : Buffer → String
+remappedBody b =
+    remapped = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead remapping
+    GpuShow.checked remapped (λ_ → "done") ++ ", then " ++ state b
 
 
 leased : ⊤ → List String

@@ -113,7 +113,9 @@ a GPU operation, and it calls the host through private code (non-`pub`
 can import. *As built — S1 (2026-11-08):* `browser-tea` re-exports the public `Gpu`
 modules only, so a TEA program cannot import `Gpu.Engine` or `Gpu.Native`; a direct
 `browser` program can, since a platform cannot keep a module from the program it is the
-top of (#2256). Their signatures name `Js.Value`, which such a program cannot make.
+top of (#2256). Their signatures name `Js.Value`, which such a program cannot make. The
+private `Gpu.Memory` (S2a), `Gpu.Make` and `Gpu.Session` (S2b) are in the same position,
+accepted as debt under #2256.
 
 **`Gpu.Handle`** imports only core, including those generated modules, and no
 `Gpu` module. It declares:
@@ -189,7 +191,7 @@ of three kinds:
 | Kind | Interfaces | In beni |
 |---|---|---|
 | **Handle** (22), aliased in `Gpu.Handle` | `GPUAdapter`, `GPUDevice`, `GPUQueue`, `GPUBuffer`, `GPUTexture`, `GPUTextureView`, `GPUSampler`, `GPUExternalTexture`, `GPUBindGroupLayout`, `GPUPipelineLayout`, `GPUBindGroup`, `GPUShaderModule`, `GPUComputePipeline`, `GPURenderPipeline`, `GPUCommandEncoder`, `GPUCommandBuffer`, `GPUComputePassEncoder`, `GPURenderPassEncoder`, `GPURenderBundleEncoder`, `GPURenderBundle`, `GPUQuerySet`, `GPUCanvasContext` | The native object, with state in the side table; operations in `Gpu.<Name>` |
-| **Snapshot** (13), an immutable beni value | `GPUAdapterInfo` → `Gpu.Types.AdapterInfo`; `GPUSupportedFeatures` → `Gpu.Feature.Features`; `GPUSupportedLimits` → `Gpu.Limits.Limits`; `WGSLLanguageFeatures` → `Gpu.WgslFeature.WgslFeatures`; `GPUCompilationInfo` and `GPUCompilationMessage` → `Gpu.Types.CompilationInfo` and its message records; `GPUError`, `GPUValidationError`, `GPUOutOfMemoryError`, `GPUInternalError` and `GPUPipelineError` → the `Gpu.Error` sums of §5; `GPUDeviceLostInfo` → `Gpu.Error.DeviceLoss`; `GPUUncapturedErrorEvent` → `Gpu.Device.DeviceEvent` | Read once by the engine into records and sums with every native field; the native object is never a beni value |
+| **Snapshot** (13), an immutable beni value | `GPUAdapterInfo` → `Gpu.Types.AdapterInfo`; `GPUSupportedFeatures` → `Gpu.Feature.Features`; `GPUSupportedLimits` → `Gpu.Limits.Limits`; `WGSLLanguageFeatures` → `Gpu.WgslFeature.WgslFeatures`; `GPUCompilationInfo` and `GPUCompilationMessage` → `Gpu.Shader.CompilationInfo` and its message records; `GPUError`, `GPUValidationError`, `GPUOutOfMemoryError`, `GPUInternalError` and `GPUPipelineError` → the `Gpu.Error` sums of §5; `GPUDeviceLostInfo` → `Gpu.Error.DeviceLoss`; `GPUUncapturedErrorEvent` → `Gpu.Device.DeviceEvent` | Read once by the engine into records and sums with every native field; the native object is never a beni value |
 | **Entry point** (1) | `GPU` (`navigator.gpu`) | Engine-internal; its members are the functions of the `Gpu` module |
 
 The generated `Browser.Host` types of snapshot and entry-point interfaces are
@@ -813,6 +815,55 @@ user side effects or submitted work. Its failure report identifies issued vs
 unissued wrapper stages and validation/submission observations. Helpers for
 atomic application initialization can publish a new resource bundle only after
 success, but cannot claim native rollback.
+
+*As built — S2b (2026-11-08, #2240).* `Gpu.Encode.run` is one checked operation (`encode`):
+`createCommandEncoder`, the callback and `finish` run between the device's scopes in one host
+turn; `Gpu.CommandEncoder` and `Gpu.ComputePass` hold the commands (`beginComputePass`,
+`ComputePass.with`/`end`, `setPipeline`, `setBindGroup`, `setBindGroupSlice`,
+`dispatchWorkgroups`, `dispatchWorkgroupsIndirect`, `setImmediates`, the debug commands,
+`copyBufferToBuffer` and its offset-free overload `copyBuffer`, the three texture copies,
+`clearBuffer`, `resolveQuerySet`, `finish`). A session latches its first refusal or
+documented host failure, and the run returns it; the new `InputError` arms are
+`EncoderLocked`, `EncoderFinished`, `PassEnded`, `DebugStackEmpty`, `CommandBufferSubmitted`,
+`DuplicateCommandBuffer` and `ViewKindRequired`. The ledger's `DynamicOffsetSliceOutOfBounds`
+and `ImmediateSourceRange` are `OutOfRange` (and `Misaligned`) at the paths
+`dynamicOffsetsData` and `size`, the same arms every other range uses. `Gpu.Batch` has
+`run`, `createBuffer`, `createTexture`, `createSampler`, `createBindGroupLayout`,
+`createBindGroup`, `createPipelineLayout`, `createShaderModule`, `createComputePipeline`,
+`createQuerySet`, `getBindGroupLayout`, `writeBuffer`, `writeTexture`, `encode` and `submit`;
+each creation is prepared once (`Gpu.Make`) and runs either as its own checked operation or
+inside a batch. A provisional object is usable while the batch that made it runs — a batch is
+synchronous, so whatever runs then is that batch's — and `ResourcePending` otherwise. A failed
+batch rejects what it made and destroys its buffers, textures and query sets.
+`createComputePipelineAsync` is checked like `map`, its promise's `GPUPipelineError` joining
+the scopes. *Amended the same day:* compilation info is `Gpu.Shader.CompilationInfo`, beside
+the operation that reads it, since `Gpu.Types` is generated from dictionaries and
+`GPUCompilationInfo` is an interface. Texture views, render pipelines and passes are S3's.
+Fixtures: `browser/gpu/ComputeDoubles` (a shader's answer read back, compared with words
+written by hand, under `test-webgpu`), `TextureCopies`, `EncodeSession`, `EncodeValidation`,
+`ShadersAndPipelines`, `Batches`, and the defects `PipelineAsyncUnlisted` and
+`CompilationInfoRejected`.
+
+*Amended after review, 2026-11-08, by the manager, under the owner's delegation of names.* A
+batch operation returns `Result Error a` and the batch's callback `Result Error a`, so a
+local failure that is not an input error (a feature a format or a query type needs) surfaces
+as itself; `Batch.run`'s failure is `BatchFailed { batch, failure, issued, unissued }`, the
+issued and refused operations by name (this section's failure report). `Gpu.Batch.segment`
+starts a named scope segment (three scopes each), whose name a scope's failure carries;
+`Gpu.Batch.awaitReady` waits until the batch settles. A cancelled run rejects what it made.
+In a batch, a pipeline or a queue of another device is `WrongDevice` before any native call.
+A prepared operation is a record with a tagged `Action` that a `sync` `perform` switches on,
+so the checker proves nothing in the scope section suspends; a record field cannot have a
+`sync` function type (#2271). Invalid WGSL is `ShaderRejected { failure, messages }`, the
+compiler's messages read before the failure is returned; `CompilationInfo` and
+`CompilationMessage` live in `Gpu.Error` (aliased by `Gpu.Shader`), since `Gpu.Error` must
+name them and `Gpu.Shader` imports `Gpu.Device`. A rejected asynchronous pipeline's
+`PipelineFailure` keeps the entry points asked for. A failure set may hold a refusal
+(`ObservedRefusal`) or a missing capability (`ObservedUnsupported`), so an operation's own
+refusal and the scopes' observations are both kept. `Queue.submit` refuses a command buffer
+using, directly or through a bind group, a resource destroyed (`ResourceDestroyed`) or
+mapped (`MappingState`) since it was encoded. `getBindGroupLayout` refuses an index at or
+above `maxBindGroups` (`OutOfRange`).
 
 ### 6.4 Explicit error-scope diagnostics without an unsafe escape hatch
 

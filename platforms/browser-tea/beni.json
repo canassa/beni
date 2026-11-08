@@ -2,5 +2,5 @@
   "platform": true,
   "name": "browser-tea",
   "platforms": ["browser"],
-  "reexports": ["Html", "Html.Markdown", "Browser", "Browser.Worker", "Browser.WorkerStream", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "WebSocket", "Browser.Source", "Browser.Image", "Browser.Video", "Browser.Canvas", "Gpu", "Gpu.Adapter", "Gpu.Buffer", "Gpu.Device", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.MappedRange", "Gpu.Queue", "Gpu.Scalar", "Gpu.Submission", "Gpu.Types", "Gpu.WgslFeature"]
+  "reexports": ["Html", "Html.Markdown", "Browser", "Browser.Worker", "Browser.WorkerStream", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "WebSocket", "Browser.Source", "Browser.Image", "Browser.Video", "Browser.Canvas", "Gpu", "Gpu.Adapter", "Gpu.Batch", "Gpu.Buffer", "Gpu.CommandEncoder", "Gpu.ComputePass", "Gpu.ComputePipeline", "Gpu.Device", "Gpu.Encode", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.MappedRange", "Gpu.QuerySet", "Gpu.Queue", "Gpu.Scalar", "Gpu.Shader", "Gpu.Submission", "Gpu.Texture", "Gpu.Types", "Gpu.WgslFeature"]
 }

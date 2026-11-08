@@ -1,0 +1,211 @@
+-- load
+<body>
+  <main>
+    <button id="locks">"locks"</button>
+    <button id="resources">"resources"</button>
+    <button id="slices">"slices"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="latching">"latching"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #locks
+<body>
+  <main>
+    <button id="locks">"locks"</button>
+    <button id="resources">"resources"</button>
+    <button id="slices">"slices"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="latching">"latching"</button>
+    <ol>
+      <li>"clear while a pass is open: Err EncoderLocked encoder"</li>
+      <li>"then, after the pass is ended too: Err SessionStopped, Err SessionStopped"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"a pass command after end: Err PassEnded pass"</li>
+      <li>"run: Err InvalidInput PassEnded pass"</li>
+      <li>"a command after finish: Err EncoderFinished encoder"</li>
+      <li>"run: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"pop with nothing pushed: Err DebugStackEmpty encoder"</li>
+      <li>"run: Err InvalidInput DebugStackEmpty encoder"</li>
+      <li>"push, mark and pop: Ok Ok"</li>
+      <li>"run: Ok commands"</li>
+    </ol>
+  </main>
+</body>
+-- click #resources
+<body>
+  <main>
+    <button id="locks">"locks"</button>
+    <button id="resources">"resources"</button>
+    <button id="slices">"slices"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="latching">"latching"</button>
+    <ol>
+      <li>"clear while a pass is open: Err EncoderLocked encoder"</li>
+      <li>"then, after the pass is ended too: Err SessionStopped, Err SessionStopped"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"a pass command after end: Err PassEnded pass"</li>
+      <li>"run: Err InvalidInput PassEnded pass"</li>
+      <li>"a command after finish: Err EncoderFinished encoder"</li>
+      <li>"run: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"pop with nothing pushed: Err DebugStackEmpty encoder"</li>
+      <li>"run: Err InvalidInput DebugStackEmpty encoder"</li>
+      <li>"push, mark and pop: Ok Ok"</li>
+      <li>"run: Ok commands"</li>
+      <li>"another device's buffer: Err WrongDevice source"</li>
+      <li>"run: Err InvalidInput WrongDevice source"</li>
+      <li>"a destroyed buffer: Err ResourceDestroyed buffer"</li>
+      <li>"run: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"a negative offset: Err NumericDomain offset"</li>
+      <li>"run: Err InvalidInput NumericDomain offset"</li>
+    </ol>
+  </main>
+</body>
+-- click #slices
+<body>
+  <main>
+    <button id="locks">"locks"</button>
+    <button id="resources">"resources"</button>
+    <button id="slices">"slices"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="latching">"latching"</button>
+    <ol>
+      <li>"clear while a pass is open: Err EncoderLocked encoder"</li>
+      <li>"then, after the pass is ended too: Err SessionStopped, Err SessionStopped"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"a pass command after end: Err PassEnded pass"</li>
+      <li>"run: Err InvalidInput PassEnded pass"</li>
+      <li>"a command after finish: Err EncoderFinished encoder"</li>
+      <li>"run: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"pop with nothing pushed: Err DebugStackEmpty encoder"</li>
+      <li>"run: Err InvalidInput DebugStackEmpty encoder"</li>
+      <li>"push, mark and pop: Ok Ok"</li>
+      <li>"run: Ok commands"</li>
+      <li>"another device's buffer: Err WrongDevice source"</li>
+      <li>"run: Err InvalidInput WrongDevice source"</li>
+      <li>"a destroyed buffer: Err ResourceDestroyed buffer"</li>
+      <li>"run: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"a negative offset: Err NumericDomain offset"</li>
+      <li>"run: Err InvalidInput NumericDomain offset"</li>
+      <li>"a Uint8Array of offsets: Err ViewKindRequired dynamicOffsetsData"</li>
+      <li>"run: Err InvalidInput ViewKindRequired dynamicOffsetsData"</li>
+      <li>"elements 1+2 of 2: Err OutOfRange dynamicOffsetsData 1+2 of 2"</li>
+      <li>"run: Err InvalidInput OutOfRange dynamicOffsetsData 1+2 of 2"</li>
+      <li>"offsets on resizable storage: Err ResizableBacking dynamicOffsetsData"</li>
+      <li>"run: Err InvalidInput ResizableBacking dynamicOffsetsData"</li>
+      <li>"start -1: Err NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"length -1: Err NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"elements 1+1 of 2, unbound: Ok Ok"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+    </ol>
+  </main>
+</body>
+-- click #immediates
+<body>
+  <main>
+    <button id="locks">"locks"</button>
+    <button id="resources">"resources"</button>
+    <button id="slices">"slices"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="latching">"latching"</button>
+    <ol>
+      <li>"clear while a pass is open: Err EncoderLocked encoder"</li>
+      <li>"then, after the pass is ended too: Err SessionStopped, Err SessionStopped"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"a pass command after end: Err PassEnded pass"</li>
+      <li>"run: Err InvalidInput PassEnded pass"</li>
+      <li>"a command after finish: Err EncoderFinished encoder"</li>
+      <li>"run: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"pop with nothing pushed: Err DebugStackEmpty encoder"</li>
+      <li>"run: Err InvalidInput DebugStackEmpty encoder"</li>
+      <li>"push, mark and pop: Ok Ok"</li>
+      <li>"run: Ok commands"</li>
+      <li>"another device's buffer: Err WrongDevice source"</li>
+      <li>"run: Err InvalidInput WrongDevice source"</li>
+      <li>"a destroyed buffer: Err ResourceDestroyed buffer"</li>
+      <li>"run: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"a negative offset: Err NumericDomain offset"</li>
+      <li>"run: Err InvalidInput NumericDomain offset"</li>
+      <li>"a Uint8Array of offsets: Err ViewKindRequired dynamicOffsetsData"</li>
+      <li>"run: Err InvalidInput ViewKindRequired dynamicOffsetsData"</li>
+      <li>"elements 1+2 of 2: Err OutOfRange dynamicOffsetsData 1+2 of 2"</li>
+      <li>"run: Err InvalidInput OutOfRange dynamicOffsetsData 1+2 of 2"</li>
+      <li>"offsets on resizable storage: Err ResizableBacking dynamicOffsetsData"</li>
+      <li>"run: Err InvalidInput ResizableBacking dynamicOffsetsData"</li>
+      <li>"start -1: Err NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"length -1: Err NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"elements 1+1 of 2, unbound: Ok Ok"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"range offset 2: Err Misaligned rangeOffset 2 by 4"</li>
+      <li>"run: Err InvalidInput Misaligned rangeOffset 2 by 4"</li>
+      <li>"range offset 2³²: Err NumericDomain rangeOffset"</li>
+      <li>"run: Err InvalidInput NumericDomain rangeOffset"</li>
+      <li>"6 bytes: Err Misaligned size 6 by 4"</li>
+      <li>"run: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"bytes 4+8 of 8: Err OutOfRange size 4+8 of 8"</li>
+      <li>"run: Err InvalidInput OutOfRange size 4+8 of 8"</li>
+      <li>"refused by the host: Err SessionStopped"</li>
+      <li>"run: Err HostOperationRejected ImmediateWriteRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #latching
+<body>
+  <main>
+    <button id="locks">"locks"</button>
+    <button id="resources">"resources"</button>
+    <button id="slices">"slices"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="latching">"latching"</button>
+    <ol>
+      <li>"clear while a pass is open: Err EncoderLocked encoder"</li>
+      <li>"then, after the pass is ended too: Err SessionStopped, Err SessionStopped"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"a pass command after end: Err PassEnded pass"</li>
+      <li>"run: Err InvalidInput PassEnded pass"</li>
+      <li>"a command after finish: Err EncoderFinished encoder"</li>
+      <li>"run: Err InvalidInput EncoderFinished encoder"</li>
+      <li>"pop with nothing pushed: Err DebugStackEmpty encoder"</li>
+      <li>"run: Err InvalidInput DebugStackEmpty encoder"</li>
+      <li>"push, mark and pop: Ok Ok"</li>
+      <li>"run: Ok commands"</li>
+      <li>"another device's buffer: Err WrongDevice source"</li>
+      <li>"run: Err InvalidInput WrongDevice source"</li>
+      <li>"a destroyed buffer: Err ResourceDestroyed buffer"</li>
+      <li>"run: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"a negative offset: Err NumericDomain offset"</li>
+      <li>"run: Err InvalidInput NumericDomain offset"</li>
+      <li>"a Uint8Array of offsets: Err ViewKindRequired dynamicOffsetsData"</li>
+      <li>"run: Err InvalidInput ViewKindRequired dynamicOffsetsData"</li>
+      <li>"elements 1+2 of 2: Err OutOfRange dynamicOffsetsData 1+2 of 2"</li>
+      <li>"run: Err InvalidInput OutOfRange dynamicOffsetsData 1+2 of 2"</li>
+      <li>"offsets on resizable storage: Err ResizableBacking dynamicOffsetsData"</li>
+      <li>"run: Err InvalidInput ResizableBacking dynamicOffsetsData"</li>
+      <li>"start -1: Err NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"length -1: Err NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"elements 1+1 of 2, unbound: Ok Ok"</li>
+      <li>"run: Err InvalidInput EncoderLocked encoder"</li>
+      <li>"range offset 2: Err Misaligned rangeOffset 2 by 4"</li>
+      <li>"run: Err InvalidInput Misaligned rangeOffset 2 by 4"</li>
+      <li>"range offset 2³²: Err NumericDomain rangeOffset"</li>
+      <li>"run: Err InvalidInput NumericDomain rangeOffset"</li>
+      <li>"6 bytes: Err Misaligned size 6 by 4"</li>
+      <li>"run: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"bytes 4+8 of 8: Err OutOfRange size 4+8 of 8"</li>
+      <li>"run: Err InvalidInput OutOfRange size 4+8 of 8"</li>
+      <li>"refused by the host: Err SessionStopped"</li>
+      <li>"run: Err HostOperationRejected ImmediateWriteRejected"</li>
+      <li>"after an ignored refusal: Err SessionStopped"</li>
+      <li>"run: Err InvalidInput DebugStackEmpty encoder"</li>
+      <li>"the encoder after its run: Err SessionState SessionEnded"</li>
+      <li>"the callback's own Err: Err InvalidInput ResourceExpired mine"</li>
+      <li>"on a leased device: Err InvalidInput SessionState DeviceLeased, native encoders 0"</li>
+    </ol>
+  </main>
+</body>

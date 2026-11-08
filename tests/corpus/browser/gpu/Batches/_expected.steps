@@ -1,0 +1,7 @@
+click #accepted
+click #forms
+click #rejected
+click #reports
+click #rules
+click #waiting
+click #cross-device

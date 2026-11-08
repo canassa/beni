@@ -1,0 +1,68 @@
+--! Shader modules (`docs/design/webgpu.md` §4): made by
+--! `Gpu.Device.createShaderModule`, which reports invalid WGSL as
+--! `ShaderRejected` with the host's message and the compiler's messages.
+--! Every message the compiler gave an accepted module — warnings and notes
+--! — is `getCompilationInfo`'s.
+
+import Gpu.Device as Device
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+--| One message of the WGSL compiler (`Gpu.Error.CompilationMessage`).
+pub type alias CompilationMessage =
+    Error.CompilationMessage
+
+
+--| What the compiler said of a module (`Gpu.Error.CompilationInfo`).
+pub type alias CompilationInfo =
+    Error.CompilationInfo
+
+
+--| The module's label.
+pub label : Handle.Shader → String
+label shader = Js.to (Js.get (Js.from shader) "label")
+
+
+--| Set the module's label.
+pub setLabel : Handle.Shader, String → ⊤
+setLabel shader text = Js.set (Js.from shader) "label" (Js.from text)
+
+
+--| The WGSL source the module was made from.
+pub source : Handle.Shader → String
+source shader = Js.to (Js.get (Engine.recordOf (Js.from shader)) "code")
+
+
+--| Every message the compiler gave for the module. The host documents no
+--| rejection (ledger §3): one is a defect, and so is a message kind
+--| outside the pin or a position that is not a non-negative integer. `DeviceLost` when the device is lost first. May
+--| suspend.
+pub getCompilationInfo : Handle.Shader → Result Error.Error CompilationInfo
+getCompilationInfo shader =
+    native = Js.from shader
+    record = Engine.recordOf native
+    Result.mapError
+        (Engine.usable native (Js.get record "device") Js.null "shader")
+        Error.InvalidInput?
+    Make.compilationInfo native
+
+
+--| `Gpu.Device.createShaderModule` and the module's compilation messages
+--| together.
+pub compile :
+      Handle.Device
+    , Types.ShaderModuleDescriptor
+    → Result Error.Error { shader : Handle.Shader, diagnostics : CompilationInfo }
+compile device descriptor =
+    shader = Device.createShaderModule device descriptor?
+    diagnostics = getCompilationInfo shader?
+    Ok { shader = shader, diagnostics = diagnostics }

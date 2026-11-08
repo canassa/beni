@@ -6,7 +6,9 @@
 --! each fault wraps the native method it is about.
 
 import Binary
+import Browser.Host.Uint32Array exposing (Uint32Array)
 import Browser.Host.Uint8Array exposing (Uint8Array)
+import Gpu.Handle exposing (Batch, Buffer)
 import Task
 
 
@@ -79,3 +81,32 @@ pub foreign impure resizableBytes : Int → Uint8Array
 --| A `Uint8Array` over a growable `SharedArrayBuffer` of `bytes`; only
 --| where `sharedMemory`.
 pub foreign impure growableBytes : Int → Uint8Array
+
+
+--| A `Uint32Array` of `count` words over a resizable `ArrayBuffer`.
+pub foreign impure resizableWords : Int → Uint32Array
+
+
+--| Keep `line` for `notes`: a fixture's record of what a synchronous
+--| callback saw, whatever the callback's run returns.
+pub foreign impure note : String → ⊤
+
+
+--| Every line kept since the last call, in order.
+pub foreign impure notes : ⊤ → List String
+
+
+--| Keep a buffer for `kept`, past the callback that made it.
+pub foreign impure keep : Buffer → ⊤
+
+
+--| The buffer `keep` kept last.
+pub foreign impure kept : ⊤ → Buffer
+
+
+--| Keep a batch for `keptBatch`, past the callback it was given to.
+pub foreign impure keepBatch : Batch → ⊤
+
+
+--| The batch `keepBatch` kept last.
+pub foreign impure keptBatch : ⊤ → Batch

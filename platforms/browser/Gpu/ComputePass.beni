@@ -1,0 +1,314 @@
+--! The commands of a compute pass (`docs/design/webgpu.md` §6.2): a pass
+--! begins on an encoder inside its run, and ends with `end`, or by itself
+--! when `with`'s callback returns. Each command is issued at once, under the
+--! same rules as `Gpu.CommandEncoder`'s; after `end`, a command gives
+--! `PassEnded`.
+
+import Binary
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Memory as Memory
+import Gpu.Native as Native
+import Gpu.Scalar as Scalar
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+--| Begin a compute pass on `encoder`, run `body` with it, and end it, unless
+--| `body` ended it. `body`'s `Err` is latched for the run, as every refusal
+--| is.
+pub with :
+      Handle.CommandEncoder
+    , Types.ComputePassDescriptor
+    , sync (Handle.ComputePass → Result InputError a)
+    → Result InputError a
+with encoder descriptor body =
+    pass = CommandEncoder.beginComputePass encoder descriptor?
+    p = Engine.recordOf (Js.from pass)
+    s = Js.get p "session"
+    result = body pass
+    if not (Js.to (Js.get p "ended")) && Js.to (Js.get s "live") then
+        endPass p (Js.from pass)
+    else
+        ⊤
+    case result of
+        Ok value →
+            Ok value
+
+        Err problem →
+            Session.refuse s problem
+
+
+-- End the pass: its encoder is unlocked.
+endPass : V, V → ⊤
+endPass p native =
+    Js.set p "ended" (Js.from True)
+    Js.set (Js.get p "encoder") "state" (Js.from "open")
+    Js.call native "end" [] ▷ ignore
+
+
+--| End the pass; its encoder takes commands again.
+pub end : Handle.ComputePass → Result InputError ⊤
+end pass =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    endPass at.record native
+    Ok ⊤
+
+
+--| Use `pipeline` for the dispatches that follow.
+pub setPipeline : Handle.ComputePass, Handle.ComputePipeline → Result InputError ⊤
+setPipeline pass pipeline =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    Session.usable at.session (Js.from pipeline) "pipeline"?
+    Js.call native "setPipeline" [ Js.from pipeline ] ▷ ignore
+    Ok ⊤
+
+
+-- A bind group slot's group, when there is one.
+group : V, Maybe Handle.BindGroup → Result InputError V
+group s bindGroup =
+    case bindGroup of
+        Just g →
+            Session.usable s (Js.from g) "bindGroup"?
+            Ok (Js.from g)
+
+        Nothing →
+            Ok Js.null
+
+
+--| Bind `bindGroup` at `index` — `Nothing` unbinds it — with its dynamic
+--| offsets, in binding order.
+pub setBindGroup :
+      Handle.ComputePass
+    , Scalar.U32
+    , Maybe Handle.BindGroup
+    , List Scalar.U32
+    → Result InputError ⊤
+setBindGroup pass index bindGroup offsets =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    g = group at.session bindGroup?
+    Js.call native "setBindGroup"
+        [ Js.from (Scalar.u32ToInt index)
+        , g
+        , Native.array offsets λo → Js.from (Scalar.u32ToInt o)
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| The overload of `setBindGroup` whose dynamic offsets are `length`
+--| elements of a `Uint32Array` view, from element `start`: another view
+--| kind is `ViewKindRequired`, resizable or growable storage
+--| `ResizableBacking` (#1268), and a slice past the view `OutOfRange`.
+pub setBindGroupSlice :
+      Handle.ComputePass
+    , Scalar.U32
+    , Maybe Handle.BindGroup
+    , Binary.View
+    , Int
+    , Int
+    → Result InputError ⊤
+setBindGroupSlice pass index bindGroup offsets start length =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    s = at.session
+    g = group s bindGroup?
+    -- `dynamicOffsetsDataStart` is a `GPUSize64`, the length a `GPUSize32`.
+    Session.check s (Result.map (Memory.size64 start "dynamicOffsetsDataStart") λ_ → ⊤)?
+    Session.check s (u32 length "dynamicOffsetsDataLength")?
+    case offsets of
+        Binary.Uint32Array data →
+            case Memory.sourceInfo (Binary.ViewOf offsets) "dynamicOffsetsData" of
+                Err problem →
+                    Session.refuse s problem
+
+                Ok info →
+                    elements = info.elementLength
+                    if start < 0 || length < 0 || start > elements || length > elements - start then
+                        Session.refuse
+                            s
+                            (Error.OutOfRange
+                                { path = "dynamicOffsetsData"
+                                , offset = start
+                                , size = length
+                                , available = elements
+                                }
+                            )
+                    else
+                        Js.call native "setBindGroup"
+                            [ Js.from (Scalar.u32ToInt index)
+                            , g
+                            , Js.from data
+                            , Js.from start
+                            , Js.from length
+                            ]
+                            ▷ ignore
+                        Ok ⊤
+
+        _ →
+            Session.refuse
+                s
+                (Error.ViewKindRequired { path = "dynamicOffsetsData", kind = Binary.U32 })
+
+
+--| Dispatch `x × y × z` workgroups.
+pub dispatchWorkgroups :
+      Handle.ComputePass
+    , Scalar.U32
+    , Scalar.U32
+    , Scalar.U32
+    → Result InputError ⊤
+dispatchWorkgroups pass x y z =
+    native = Js.from pass
+    _ = Session.pass native "pass"?
+    Js.call native "dispatchWorkgroups"
+        [ Js.from (Scalar.u32ToInt x), Js.from (Scalar.u32ToInt y), Js.from (Scalar.u32ToInt z) ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Dispatch the workgroup counts that `buffer` holds at `offset`: three
+--| 32-bit counts.
+pub dispatchWorkgroupsIndirect : Handle.ComputePass, Handle.Buffer, Int → Result InputError ⊤
+dispatchWorkgroupsIndirect pass buffer offset =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    s = at.session
+    Session.usable s (Js.from buffer) "indirectBuffer"?
+    Session.check s (Result.map (Memory.size64 offset "indirectOffset") λ_ → ⊤)?
+    Js.call native "dispatchWorkgroupsIndirect" [ Js.from buffer, Js.from offset ] ▷ ignore
+    Ok ⊤
+
+
+--| Write immediate data (ledger §5): `size` elements of `data` from element
+--| `dataOffset` — bytes for an `ArrayBuffer` or a `DataView` — at byte
+--| `rangeOffset` of the immediates, `Nothing` for the rest of the data.
+--| The part must stay in the data (`OutOfRange`) and be a multiple of 4
+--| bytes, as `rangeOffset` must (`Misaligned`); fixed storage only. The
+--| host's `OperationError` at this call is `HostOperationRejected
+--| ImmediateWriteRejected`, latched for the run; a host without the method
+--| is `UnsupportedCapability`, latched too.
+pub setImmediates : Handle.ComputePass, Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
+setImmediates pass rangeOffset data dataOffset size =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    s = at.session
+    Session.check s (immediatesPreflight rangeOffset data dataOffset size)?
+    if not (Js.typeIs (Js.get native "setImmediates") "function") then
+        Session.stopped
+            s
+            (Error.UnsupportedCapability
+                (Error.MissingHostMember "GPUComputePassEncoder.setImmediates")
+            )
+    else
+        sizeArg =
+            case size of
+                Just n →
+                    Js.from n
+
+                Nothing →
+                    Js.undefined
+        Js.catchIf
+            (λ⊤ →
+                Js.call native "setImmediates"
+                    [ Js.from rangeOffset, Memory.sourceObject data, Js.from dataOffset, sizeArg ]
+                    ▷ ignore
+                Ok ⊤
+            )
+            (λerror → Engine.isDomException error "OperationError")
+            λerror →
+                Session.stopped
+                    s
+                    (Error.HostOperationRejected
+                        (Error.ImmediateWriteRejected { message = Engine.messageOf error })
+                    )
+
+
+immediatesPreflight : Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
+immediatesPreflight rangeOffset data dataOffset size =
+    -- `rangeOffset` is a `GPUSize32`.
+    u32 rangeOffset "rangeOffset"?
+    Memory.aligned rangeOffset 4 "rangeOffset"?
+    info = Memory.sourceInfo data "data"?
+    _ = Memory.size64 dataOffset "dataOffset"?
+    contents =
+        case size of
+            Just n →
+                Memory.size64 n "size"?
+
+            Nothing →
+                info.elementLength - dataOffset
+    if
+        dataOffset > info.elementLength
+            || contents < 0
+            || contents > info.elementLength - dataOffset
+    then
+        Err
+            (Error.OutOfRange
+                { path = "size"
+                , offset = dataOffset * info.bytesPerElement
+                , size = contents * info.bytesPerElement
+                , available = info.byteLength
+                }
+            )
+    else
+        Memory.aligned (contents * info.bytesPerElement) 4 "size"
+
+
+--| Open a debug group.
+pub pushDebugGroup : Handle.ComputePass, String → Result InputError ⊤
+pushDebugGroup pass groupLabel =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    Session.debug at.session at.record 1 "pass"?
+    Js.call native "pushDebugGroup" [ Js.from groupLabel ] ▷ ignore
+    Ok ⊤
+
+
+--| Close the latest debug group; `DebugStackEmpty` when none is open.
+pub popDebugGroup : Handle.ComputePass → Result InputError ⊤
+popDebugGroup pass =
+    native = Js.from pass
+    at = Session.pass native "pass"?
+    Session.debug at.session at.record (-1) "pass"?
+    Js.call native "popDebugGroup" [] ▷ ignore
+    Ok ⊤
+
+
+--| Insert a debug marker.
+pub insertDebugMarker : Handle.ComputePass, String → Result InputError ⊤
+insertDebugMarker pass markerLabel =
+    native = Js.from pass
+    _ = Session.pass native "pass"?
+    Js.call native "insertDebugMarker" [ Js.from markerLabel ] ▷ ignore
+    Ok ⊤
+
+
+--| The pass's label.
+pub label : Handle.ComputePass → String
+label pass = Js.to (Js.get (Js.from pass) "label")
+
+
+-- A value at `path` as a `GPUSize32` (`unsigned long`) accepts it.
+u32 : Int, String → Result InputError ⊤
+u32 value path =
+    case Scalar.u32 value of
+        Ok _ →
+            Ok ⊤
+
+        Err domain →
+            Err (Error.atPath path domain)

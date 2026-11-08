@@ -1,0 +1,255 @@
+-- The rest of the compute surface (docs/design/webgpu.md §4, §6.2; ledger
+-- §3, §5): a buffer copied into a texture, an indirect dispatch, a
+-- compute pass's timestamp writes naming a destroyed query set; a submit
+-- refused before any native call when a command buffer uses a buffer
+-- destroyed or mapped since it was encoded, directly or through a bind
+-- group; the queue's texture writes refused for a destroyed texture,
+-- another device's, and resizable data; immediate data on a host without
+-- the method; a pipeline the host refuses for an internal reason, with the
+-- entry point asked for; and a feature-gated texture format the host's
+-- own check refuses although the device has the feature.
+import Binary
+import Gpu
+import Gpu.Adapter
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.ComputePass as ComputePass
+import Gpu.ComputePipeline
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags exposing (CopyDst, CopySrc, Indirect, MapRead, Storage)
+import Gpu.Handle exposing (BindGroup, Buffer, ComputePipeline, Device, Texture)
+import Gpu.QuerySet as QuerySet
+import Gpu.Queue
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (buffer, must, u32, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+extent : Types.Extent3D
+extent =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 1), depthOrArrayLayers = Types.Default }
+
+
+rgba : Device, List Flags.TextureUsage → Texture
+rgba d usages =
+    must
+        (Gpu.Device.createTexture
+            d
+            (Types.textureDescriptor extent Types.Rgba8unorm (Flags.texture usages))
+        )
+
+
+wgsl : String
+wgsl =
+    "@group(0) @binding(0) var<storage, read_write> data : array<u32>;\n@compute @workgroup_size(1) fn main() { data[0] = 1u; }"
+
+
+-- A pipeline over one storage buffer, and a bind group of `storage`.
+kernel : Device, Buffer → { pipeline : ComputePipeline, group : BindGroup }
+kernel d storage =
+    shader = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+    pipeline =
+        must
+            (Gpu.Device.createComputePipeline
+                d
+                (Types.computePipelineDescriptor Types.Auto (Types.programmableStage shader))
+            )
+    layout = must (Gpu.ComputePipeline.getBindGroupLayout pipeline (u32 0))
+    group =
+        must
+            (Gpu.Device.createBindGroup
+                d
+                (Types.bindGroupDescriptor layout
+                    [ Types.bindGroupEntry (u32 0) (Types.WholeBufferBinding storage) ]
+                )
+            )
+    { pipeline = pipeline, group = group }
+
+
+indirect : ComputePipeline, BindGroup, Buffer, Gpu.Handle.ComputePass → Result Error.InputError ⊤
+indirect pipeline group args pass =
+    ComputePass.setPipeline pass pipeline?
+    ComputePass.setBindGroup pass (u32 0) (Just group) []?
+    ComputePass.dispatchWorkgroupsIndirect pass args 0
+
+
+commands : ⊤ → List String
+commands ⊤ = GpuKit.with "none" λd →
+    source = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc ]))
+    texture = rgba d [ Flags.TextureCopyDst ]
+    toTexture = Encode.run d Types.commandEncoderDescriptor λencoder →
+        CommandEncoder.copyBufferToTexture
+            encoder
+            (Types.texelCopyBufferInfo source)
+            (Types.texelCopyTextureInfo texture)
+            extent
+    storage = must (Gpu.Device.createBuffer d (buffer 16 [ Storage ]))
+    k = kernel d storage
+    args = must (Gpu.Device.createBuffer d (buffer 12 [ Indirect, CopyDst ]))
+    dispatched = Encode.run d Types.commandEncoderDescriptor λencoder →
+        ComputePass.with encoder Types.computePassDescriptor (indirect k.pipeline k.group args _)
+    queries = must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 2)))
+    QuerySet.destroy queries
+    timestamps = Encode.run d Types.commandEncoderDescriptor λencoder →
+        ComputePass.with
+            encoder
+            { (Types.computePassDescriptor)
+                | timestampWrites = Types.Value (Types.computePassTimestampWrites queries)
+            }
+            λ_ → Ok ⊤
+    [ "buffer to texture: " ++ GpuShow.checked toTexture λ_ → "commands"
+    , "indirect dispatch: " ++ GpuShow.checked dispatched λ_ → "commands"
+    , "timestamp writes to a destroyed query set: " ++ GpuShow.checked timestamps λ_ → "commands"
+    ]
+
+
+-- Encode a clear of `b`, and a pass that binds `group`.
+uses : Buffer, ComputePipeline, BindGroup, Gpu.Handle.CommandEncoder → Result Error.InputError ⊤
+uses b pipeline group encoder =
+    CommandEncoder.clearBuffer encoder b 0 Nothing?
+    ComputePass.with encoder Types.computePassDescriptor (binding pipeline group _)
+
+
+binding : ComputePipeline, BindGroup, Gpu.Handle.ComputePass → Result Error.InputError ⊤
+binding pipeline group pass =
+    ComputePass.setPipeline pass pipeline?
+    ComputePass.setBindGroup pass (u32 0) (Just group) []
+
+
+submits : ⊤ → List String
+submits ⊤ = GpuKit.with "none" λd →
+    queue = Gpu.Device.queue d
+    cleared = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst, MapRead ]))
+    bound = must (Gpu.Device.createBuffer d (buffer 16 [ Storage ]))
+    k = kernel d bound
+    destroyedDirect =
+        must (Encode.run d Types.commandEncoderDescriptor (uses cleared k.pipeline k.group _))
+    mappedLater =
+        must (Encode.run d Types.commandEncoderDescriptor (uses cleared k.pipeline k.group _))
+    throughGroup =
+        must (Encode.run d Types.commandEncoderDescriptor (uses cleared k.pipeline k.group _))
+    before = GpuHost.calls "submit"
+    _ = Gpu.Buffer.map cleared Gpu.Buffer.mapRead
+    mapped = Gpu.Queue.submit queue [ mappedLater.commands ]
+    Gpu.Buffer.unmap cleared
+    Gpu.Buffer.destroy bound
+    group = Gpu.Queue.submit queue [ throughGroup.commands ]
+    Gpu.Buffer.destroy cleared
+    direct = Gpu.Queue.submit queue [ destroyedDirect.commands ]
+    calls = GpuHost.calls "submit" - before
+    [ "a buffer mapped since: " ++ GpuShow.checked mapped λ_ → "receipt"
+    , "a buffer destroyed since, bound by a group: " ++ GpuShow.checked group λ_ → "receipt"
+    , "a buffer destroyed since: " ++ GpuShow.checked direct λ_ → "receipt"
+    , "native submits: " ++ String.fromInt calls
+    ]
+
+
+writes : ⊤ → List String
+writes ⊤ = GpuKit.with "none" λd →
+    GpuKit.with "none" λother →
+        queue = Gpu.Device.queue d
+        texture = rgba d [ Flags.TextureCopyDst ]
+        theirs = rgba other [ Flags.TextureCopyDst ]
+        gone = rgba d [ Flags.TextureCopyDst ]
+        Gpu.Texture.destroy gone
+        layout = Types.texelCopyBufferLayout
+        data = Binary.WholeBuffer (zeros 16)
+        write =
+            λt source →
+                GpuShow.checked
+                    (Gpu.Queue.writeTexture
+                        queue
+                        (Types.texelCopyTextureInfo t)
+                        source
+                        layout
+                        extent
+                    )
+                    λ_ → "written"
+        [ "a destroyed texture: " ++ write gone data
+        , "another device's texture: " ++ write theirs data
+        , "resizable data: " ++ write texture (Binary.WholeBuffer (GpuHost.resizable 16))
+        , "fixed data: " ++ write texture data
+        ]
+
+
+immediates : ⊤ → List String
+immediates ⊤ = GpuKit.with "immediates-missing" λd →
+    run = Encode.run d Types.commandEncoderDescriptor λencoder →
+        ComputePass.with encoder Types.computePassDescriptor λpass →
+            ComputePass.setImmediates pass 0 (Binary.WholeBuffer (zeros 4)) 0 Nothing
+    [ "a host without setImmediates: " ++ GpuShow.checked run (λ_ → "commands") ++ missing run ]
+
+
+missing : Result Error.Error a → String
+missing r =
+    case r of
+        Err (Error.UnsupportedCapability (Error.MissingHostMember name)) →
+            " " ++ name
+
+        _ →
+            ""
+
+
+internalPipeline : ⊤ → List String
+internalPipeline ⊤ = GpuKit.with "pipeline-internal" λd →
+    shader = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+    stage = { module = shader, entryPoint = Types.Value "main", constants = Types.Default }
+    case
+        Gpu.Device.createComputePipelineAsync d (Types.computePipelineDescriptor Types.Auto stage)
+    of
+        Err (Error.PipelineInternal failure) →
+            [ "internal: PipelineInternal, entry points ["
+                ++ String.join failure.entryPoints ", "
+                ++ "]"
+            ]
+
+        other →
+            [ "internal: " ++ GpuShow.checked other λ_ → "pipeline" ]
+
+
+formats : ⊤ → List String
+formats ⊤ =
+    GpuHost.inject "adapter-bc,texture-type-error"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            base = Types.deviceDescriptor
+            descriptor =
+                { base | requiredFeatures = Types.Value [ Types.FeatureTextureCompressionBc ] }
+            case Gpu.Adapter.requestDevice adapter descriptor of
+                Err problem →
+                    [ "device with BC: " ++ GpuShow.initError problem ]
+
+                Ok d →
+                    made =
+                        Gpu.Device.createTexture
+                            d
+                            (Types.textureDescriptor
+                                extent
+                                Types.Bc1RgbaUnorm
+                                (Flags.texture [ Flags.TextureCopyDst ])
+                            )
+                    [ "a BC texture the host's check refuses: "
+                        ++ GpuShow.checked made λ_ → "texture"
+                    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "commands", commands )
+        , ( "submits", submits )
+        , ( "writes", writes )
+        , ( "immediates", immediates )
+        , ( "internal", internalPipeline )
+        , ( "formats", formats )
+        ]

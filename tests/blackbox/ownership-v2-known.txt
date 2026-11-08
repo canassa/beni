@@ -4569,6 +4569,7 @@ tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 7
 #
 # A known limit (#1774): v2 stops at its summary-size limit; the default is not raised.
 tests/corpus/ownership/WideModelArms.beni WideModelArms limit update  #1774: 256 record-update arms in one declaration; master's v2 does not check it
+tests/corpus/browser/gpu/MapLifecycle Main limit remappedBody  #1774: a withMapped whose callback maps again reaches the summary-size limit once the compute engine is in the platform; the page is about mapping, not limits
 #
 # SubscriptionTapFold, refused at 15:18 as before #1772 (the fold accumulator's other slots; #1713).
 #

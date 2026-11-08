@@ -1,0 +1,197 @@
+--! Encoding sessions (`docs/design/webgpu.md` §6.2, §6.3): the shared state
+--! of one `Gpu.Encode.run` or `Gpu.Batch.encode` — its command encoder, the
+--! passes of it, and the session's first failure. An application never
+--! needs it, and its signatures name `Js.Value`.
+--!
+--! Every command checks first that its session is live (`SessionState
+--! SessionEnded` after the run) and has latched no failure
+--! (`SessionStopped` after one). A local refusal is latched and returned; a
+--! failure the ledger documents for one native encoding call is latched as
+--! its precise `Error`, and the command returns `SessionStopped`. The run
+--! returns the latched failure, so an inner `Err` the callback ignores is
+--! never lost.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Native as Native
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+--| Latch the session's first failure.
+pub latch : V, Error.Error → ⊤
+latch s problem = if Js.isNull (Js.get s "failure") then Js.set s "failure" (Js.from problem) else ⊤
+
+
+--| Refuse a command with a local input error, latched.
+pub refuse : V, InputError → Result InputError a
+refuse s problem =
+    latch s (Error.InvalidInput problem)
+    Err problem
+
+
+--| A local check of a command: its `Err` is latched.
+pub check : V, Result InputError ⊤ → Result InputError ⊤
+check s verdict =
+    case verdict of
+        Ok _ →
+            Ok ⊤
+
+        Err problem →
+            refuse s problem
+
+
+--| A documented failure of the native call: latched as it is, and the
+--| command gives `SessionStopped`.
+pub stopped : V, Error.Error → Result InputError a
+stopped s problem =
+    latch s problem
+    Err Error.SessionStopped
+
+
+-- The session may go on: live, and no failure latched.
+open : V → Result InputError ⊤
+open s =
+    if not (Js.to (Js.get s "live")) then
+        Err (Error.SessionState Error.SessionEnded)
+    else if not (Js.isNull (Js.get s "failure")) then
+        Err Error.SessionStopped
+    else
+        Ok ⊤
+
+
+--| The session and record of an encoder a command is given, when the
+--| command may go on: the session is open, and the encoder is not
+--| finished nor locked by an open pass.
+pub encoder : V, String → Result InputError { session : V, record : V }
+encoder native path =
+    enc = Engine.recordOf native
+    s = Js.get enc "session"
+    open s?
+    state = Js.get enc "state"
+    if Js.same state (Js.from "finished") then
+        refuse s (Error.EncoderFinished { path = path })
+    else if Js.same state (Js.from "locked") then
+        refuse s (Error.EncoderLocked { path = path })
+    else
+        Ok { session = s, record = enc }
+
+
+--| The session and record of a pass a command is given, when the command
+--| may go on: the session is open and the pass not ended.
+pub pass : V, String → Result InputError { session : V, record : V }
+pass native path =
+    p = Engine.recordOf native
+    s = Js.get p "session"
+    open s?
+    if Js.to (Js.get p "ended") then
+        refuse s (Error.PassEnded { path = path })
+    else
+        Ok { session = s, record = p }
+
+
+--| A resource a command names, at `path`: usable on the session's device,
+--| or provisional in its batch.
+pub usable : V, V, String → Result InputError ⊤
+usable s native path =
+    check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)?
+    uses = Js.get s "uses"
+    Js.call uses "add" [ native ] ▷ ignore
+    -- What a bind group binds is used through it.
+    bound = Js.get (Engine.recordOf native) "uses"
+    if Js.isNullish bound then ⊤ else Js.each bound λx → Js.call uses "add" [ x ] ▷ ignore
+    Ok ⊤
+
+
+-- What every command buffer an encoding finished uses: the resources its
+-- commands named, for `submit`'s checks (ledger §5).
+usesTable : V
+usesTable = Js.pure λ⊤ → Js.construct (Js.global "WeakMap") []
+
+
+--| The resources a command buffer's commands use, as a native `Set`.
+pub usesOf : V → V
+usesOf commands =
+    u = Js.call usesTable "get" [ commands ]
+    if Js.isUndefined u then Js.construct (Js.global "Set") [] else u
+
+
+--| One debug group more, or one fewer — refused when none is open.
+pub debug : V, V, Int, String → Result InputError ⊤
+debug s r delta path =
+    depth : Int
+    depth = Js.to (Js.get r "debug")
+    if depth + delta < 0 then
+        refuse s (Error.DebugStackEmpty { path = path })
+    else
+        Js.set r "debug" (Js.from (depth + delta))
+        Ok ⊤
+
+
+--| Run `body` with a new command encoder of `device` (a native device, in
+--| `batch` or null), as one session, and give the command buffer it
+--| encoded; `value` receives `body`'s value. The encoder is finished here
+--| unless `body` finished it. The session ends when `body` returns or
+--| throws; a throw goes on, a defect. A latched failure is the result, and
+--| nothing is finished then.
+pub encode :
+      V
+    , V
+    , Types.CommandEncoderDescriptor
+    , sync (V → Result InputError a)
+    , Js.Ref (Maybe a)
+    → Result Error.Error V
+encode device batch descriptor body value =
+    r = Engine.recordOf device
+
+    s =
+        Js.object
+            [ ( "device", r )
+            , ( "native", device )
+            , ( "batch", batch )
+            , ( "live", Js.from True )
+            , ( "failure", Js.null )
+            , ( "uses", Js.construct (Js.global "Set") [] )
+            ]
+    native = Js.call device "createCommandEncoder" [ Native.commandEncoderDescriptor descriptor ]
+    Engine.adoptInBatch native r batch
+    enc = Engine.recordOf native
+    Js.set enc "session" s
+    Js.set enc "state" (Js.from "open")
+    Js.set enc "debug" (Js.from 0)
+    Js.set enc "finished" Js.null
+    outcome = Js.finally (λ⊤ → body native) λ⊤ → Js.set s "live" (Js.from False)
+    case outcome of
+        Ok v →
+            Js.write value (Just v)
+
+        Err problem →
+            latch s (Error.InvalidInput problem)
+    failure = Js.get s "failure"
+    if not (Js.isNull failure) then
+        Err (Js.to failure)
+    else if Js.same (Js.get enc "state") (Js.from "locked") then
+        Err (Error.InvalidInput (Error.EncoderLocked { path = "encoder" }))
+    else
+        commands =
+            if Js.same (Js.get enc "state") (Js.from "finished") then
+                Js.get enc "finished"
+            else
+                Js.call native "finish" []
+        Js.call usesTable "set" [ commands, Js.get s "uses" ] ▷ ignore
+        Ok commands
+
+
+--| Record a command buffer an encoder finished.
+pub finished : V, V → ⊤
+finished enc commands =
+    Js.set enc "state" (Js.from "finished")
+    Js.set enc "finished" commands

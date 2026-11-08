@@ -1,0 +1,292 @@
+--! The commands of a command encoder (`docs/design/webgpu.md` §6.2): an
+--! encoder exists only inside `Gpu.Encode.run` or `Gpu.Batch.encode`, and
+--! each command here is issued at once, without suspending.
+--!
+--! An `Ok` means the command passed the local checks and was issued, not
+--! that the device accepted it: the run's error scopes, which include
+--! `finish`, say that. The first local refusal stops the session: later
+--! commands give `SessionStopped` and the run returns that first failure.
+--! While a pass of the encoder is open, its commands give `EncoderLocked`;
+--! after `finish`, `EncoderFinished`; after the run, `SessionState
+--! SessionEnded`.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Memory as Memory
+import Gpu.Native as Native
+import Gpu.Scalar as Scalar
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+-- An optional native argument: `undefined`, which Web IDL reads as omitted.
+optional : Maybe Int → V
+optional value =
+    case value of
+        Just n →
+            Js.from n
+
+        Nothing →
+            Js.undefined
+
+
+-- A size or an offset, as a `GPUSize64` accepts it, latched when refused.
+size64 : V, Int, String → Result InputError ⊤
+size64 s value path = Session.check s (Result.map (Memory.size64 value path) λ_ → ⊤)
+
+
+optionalSize : V, Maybe Int, String → Result InputError ⊤
+optionalSize s value path =
+    case value of
+        Just n →
+            size64 s n path
+
+        Nothing →
+            Ok ⊤
+
+
+--| The encoder's label.
+pub label : Handle.CommandEncoder → String
+label encoder = Js.to (Js.get (Js.from encoder) "label")
+
+
+--| Set the encoder's label.
+pub setLabel : Handle.CommandEncoder, String → ⊤
+setLabel encoder text = Js.set (Js.from encoder) "label" (Js.from text)
+
+
+--| Begin a compute pass. The encoder is locked until the pass ends; prefer
+--| `Gpu.ComputePass.with`, which ends it.
+pub beginComputePass :
+      Handle.CommandEncoder
+    , Types.ComputePassDescriptor
+    → Result InputError Handle.ComputePass
+beginComputePass encoder descriptor =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    case descriptor.timestampWrites of
+        Types.Value writes →
+            Session.usable s (Js.from writes.querySet) "timestampWrites.querySet"?
+
+        Types.Default →
+            ⊤
+    pass = Js.call native "beginComputePass" [ Native.computePassDescriptor descriptor ]
+    Engine.adoptInBatch pass (Js.get s "device") (Js.get s "batch")
+    p = Engine.recordOf pass
+    Js.set p "session" s
+    Js.set p "encoder" at.record
+    Js.set p "ended" (Js.from False)
+    Js.set p "debug" (Js.from 0)
+    Js.set at.record "state" (Js.from "locked")
+    Ok (Js.to pass)
+
+
+--| Copy `size` bytes from `source` at `sourceOffset` to `destination` at
+--| `destinationOffset`; `Nothing` copies the rest of the source.
+pub copyBufferToBuffer :
+      Handle.CommandEncoder
+    , Handle.Buffer
+    , Int
+    , Handle.Buffer
+    , Int
+    , Maybe Int
+    → Result InputError ⊤
+copyBufferToBuffer encoder source sourceOffset destination destinationOffset size =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from source) "source"?
+    Session.usable s (Js.from destination) "destination"?
+    size64 s sourceOffset "sourceOffset"?
+    size64 s destinationOffset "destinationOffset"?
+    optionalSize s size "size"?
+    Js.call native "copyBufferToBuffer"
+        [ Js.from source
+        , Js.from sourceOffset
+        , Js.from destination
+        , Js.from destinationOffset
+        , optional size
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| The overload of `copyBufferToBuffer` with no offsets: from the start of
+--| `source` to the start of `destination`, `size` bytes or the rest.
+pub copyBuffer :
+      Handle.CommandEncoder
+    , Handle.Buffer
+    , Handle.Buffer
+    , Maybe Int
+    → Result InputError ⊤
+copyBuffer encoder source destination size =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from source) "source"?
+    Session.usable s (Js.from destination) "destination"?
+    optionalSize s size "size"?
+    Js.call native "copyBufferToBuffer" [ Js.from source, Js.from destination, optional size ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Copy from a buffer into a texture.
+pub copyBufferToTexture :
+      Handle.CommandEncoder
+    , Types.TexelCopyBufferInfo
+    , Types.TexelCopyTextureInfo
+    , Types.Extent3D
+    → Result InputError ⊤
+copyBufferToTexture encoder source destination extent =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from source.buffer) "source.buffer"?
+    Session.usable s (Js.from destination.texture) "destination.texture"?
+    Js.call native "copyBufferToTexture"
+        [ Native.texelCopyBufferInfo source
+        , Native.texelCopyTextureInfo destination
+        , Native.extent3D extent
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Copy from a texture into a buffer.
+pub copyTextureToBuffer :
+      Handle.CommandEncoder
+    , Types.TexelCopyTextureInfo
+    , Types.TexelCopyBufferInfo
+    , Types.Extent3D
+    → Result InputError ⊤
+copyTextureToBuffer encoder source destination extent =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from source.texture) "source.texture"?
+    Session.usable s (Js.from destination.buffer) "destination.buffer"?
+    Js.call native "copyTextureToBuffer"
+        [ Native.texelCopyTextureInfo source
+        , Native.texelCopyBufferInfo destination
+        , Native.extent3D extent
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Copy from a texture into a texture.
+pub copyTextureToTexture :
+      Handle.CommandEncoder
+    , Types.TexelCopyTextureInfo
+    , Types.TexelCopyTextureInfo
+    , Types.Extent3D
+    → Result InputError ⊤
+copyTextureToTexture encoder source destination extent =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from source.texture) "source.texture"?
+    Session.usable s (Js.from destination.texture) "destination.texture"?
+    Js.call native "copyTextureToTexture"
+        [ Native.texelCopyTextureInfo source
+        , Native.texelCopyTextureInfo destination
+        , Native.extent3D extent
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Fill `size` bytes of `buffer` at `offset` with zeros; `Nothing` clears
+--| the rest of it.
+pub clearBuffer : Handle.CommandEncoder, Handle.Buffer, Int, Maybe Int → Result InputError ⊤
+clearBuffer encoder buffer offset size =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from buffer) "buffer"?
+    size64 s offset "offset"?
+    optionalSize s size "size"?
+    Js.call native "clearBuffer" [ Js.from buffer, Js.from offset, optional size ] ▷ ignore
+    Ok ⊤
+
+
+--| Write the results of `queryCount` queries of `querySet`, from
+--| `firstQuery`, into `destination` at `destinationOffset`, each an exact
+--| 64-bit word (read it with `Gpu.MappedRange.readWord64`).
+pub resolveQuerySet :
+      Handle.CommandEncoder
+    , Handle.QuerySet
+    , Scalar.U32
+    , Scalar.U32
+    , Handle.Buffer
+    , Int
+    → Result InputError ⊤
+resolveQuerySet encoder querySet firstQuery queryCount destination destinationOffset =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    s = at.session
+    Session.usable s (Js.from querySet) "querySet"?
+    Session.usable s (Js.from destination) "destination"?
+    size64 s destinationOffset "destinationOffset"?
+    Js.call native "resolveQuerySet"
+        [ Js.from querySet
+        , Js.from (Scalar.u32ToInt firstQuery)
+        , Js.from (Scalar.u32ToInt queryCount)
+        , Js.from destination
+        , Js.from destinationOffset
+        ]
+        ▷ ignore
+    Ok ⊤
+
+
+--| Open a debug group.
+pub pushDebugGroup : Handle.CommandEncoder, String → Result InputError ⊤
+pushDebugGroup encoder groupLabel =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    Session.debug at.session at.record 1 "encoder"?
+    Js.call native "pushDebugGroup" [ Js.from groupLabel ] ▷ ignore
+    Ok ⊤
+
+
+--| Close the latest debug group; `DebugStackEmpty` when none is open.
+pub popDebugGroup : Handle.CommandEncoder → Result InputError ⊤
+popDebugGroup encoder =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    Session.debug at.session at.record (-1) "encoder"?
+    Js.call native "popDebugGroup" [] ▷ ignore
+    Ok ⊤
+
+
+--| Insert a debug marker.
+pub insertDebugMarker : Handle.CommandEncoder, String → Result InputError ⊤
+insertDebugMarker encoder markerLabel =
+    native = Js.from encoder
+    _ = Session.encoder native "encoder"?
+    Js.call native "insertDebugMarker" [ Js.from markerLabel ] ▷ ignore
+    Ok ⊤
+
+
+--| Finish the encoder now, with `descriptor`'s label; its run gives this
+--| command buffer, and finishes nothing again. Later commands give
+--| `EncoderFinished`.
+pub finish : Handle.CommandEncoder, Types.CommandBufferDescriptor → Result InputError ⊤
+finish encoder descriptor =
+    native = Js.from encoder
+    at = Session.encoder native "encoder"?
+    commands = Js.call native "finish" [ Native.commandBufferDescriptor descriptor ]
+    Session.finished at.record commands
+    Ok ⊤
