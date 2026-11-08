@@ -665,6 +665,20 @@ promise reaction must not become a detached unhandled rejection that continues
 the application. Unknown error data preserves the original cause/stack and
 operation context for the existing defect display/log/stop contract.
 
+*As built — S1 (2026-11-08).* `Gpu.Engine.checked` is this order for one native call: it
+refuses a latched loss (`destroy` latches one at once) and a held lease first, opens a
+per-device section whose reentry is a defect, pushes the three scopes inside `Js.finally`,
+and in its finaliser invokes every pop that was pushed, in reverse, with both reactions
+attached. The fiber then waits for the pops or for the loss, whichever is first; a pop that
+settles after the operation went on is drained, and an unexpected one goes to the device's
+sentinel, a detached fiber of the program that requested the device. The made object is
+recorded `provisional`, then `accepted` or `rejected`, and only an accepted one is
+returned. The lease of §6.4 is the record's flag and generation, taken with `tryLease`
+(no session API yet). The first operation over it is `Gpu.Device.createSampler`; the
+`browser/gpu/Checked*` fixtures cover §10's interleaved fibers, pops out of order, an
+unexpected pop beside a validation error, a spoofed error, a throwing call, and a loss
+before, during and after publication.
+
 ### 6.2 Synchronous encoding with checked completion
 
 Awaiting each draw is unusable and can expire presentation resources. Provide
