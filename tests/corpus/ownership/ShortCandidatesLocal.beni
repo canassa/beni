@@ -1,0 +1,8 @@
+-- ownership: a recursive LOCAL group inside a declaration that is not
+-- recursive is a group too (ownership-v2.md §2.12). Its `.v2-short` runs the
+-- dump with every recursive group validated from ⊥
+-- (`--ownership-short-candidates`), so the round must find `go`'s defect.
+outer : List Int, Int → List Int
+outer xs n =
+    go ys k = if k == 0 then ys else go (List.push ys k) (k - 1)
+    go xs n

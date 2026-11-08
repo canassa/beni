@@ -1,0 +1,7 @@
+module ShortCandidatesLocal
+  7:38 call <lambda> <call List.push>: accepted callback-param (<lambda> writes π1)
+  7:42 List.push ys: accepted callback-param (decided at its calls)
+  8:5 call <lambda> xs: accepted param (<lambda> writes π1)
+  summary outer: π1 RAW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*], π1
+  demands 3: accepted 3 (fresh 0, call 0, param 1, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 0, call 0, param 1, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0

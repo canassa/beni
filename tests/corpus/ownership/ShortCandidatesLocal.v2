@@ -1,0 +1,1 @@
+v2 judges a recursive local function as a group of its own (a call to `go`), where v1 reads it as a callback lambda; the fixture is about its `.v2-short` (the group validated from ⊥ under `--ownership-short-candidates`), and the differences are the known ones.
