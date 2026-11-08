@@ -2,5 +2,5 @@
   "platform": true,
   "name": "gpu-test",
   "platforms": ["browser-tea"],
-  "reexports": ["Html", "Cmd", "Sub", "Tea", "Gpu", "Gpu.Adapter", "Gpu.Device", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.Scalar", "Gpu.Types", "Gpu.WgslFeature"]
+  "reexports": ["Html", "Cmd", "Sub", "Tea", "Gpu", "Gpu.Adapter", "Gpu.Buffer", "Gpu.Device", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.MappedRange", "Gpu.Queue", "Gpu.Scalar", "Gpu.Submission", "Gpu.Types", "Gpu.WgslFeature"]
 }
