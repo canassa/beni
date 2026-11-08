@@ -33,6 +33,16 @@ pub adapterInfo : Handle.Device → Types.AdapterInfo
 adapterInfo device = Native.readAdapterInfo (Engine.member (Js.from device) "adapterInfo")
 
 
+--| The device's label.
+pub label : Handle.Device → String
+label device = Js.to (Js.get (Js.from device) "label")
+
+
+--| Set the device's label.
+pub setLabel : Handle.Device, String → ⊤
+setLabel device text = Js.set (Js.from device) "label" (Js.from text)
+
+
 --| The device's queue.
 pub queue : Handle.Device → Handle.Queue
 queue device = Js.to (Engine.member (Js.from device) "queue")

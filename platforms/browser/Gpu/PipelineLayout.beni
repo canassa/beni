@@ -1,0 +1,16 @@
+--! Pipeline layouts (`docs/design/webgpu.md` §4): made by
+--! `Gpu.Device.createPipelineLayout` or `Gpu.Batch.createPipelineLayout`. Their
+--! one member is the label.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The pipeline layout's label.
+pub label : Handle.PipelineLayout → String
+label layout = Js.to (Js.get (Js.from layout) "label")
+
+
+--| Set the pipeline layout's label.
+pub setLabel : Handle.PipelineLayout, String → ⊤
+setLabel layout text = Js.set (Js.from layout) "label" (Js.from text)

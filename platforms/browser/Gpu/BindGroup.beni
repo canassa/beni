@@ -1,0 +1,15 @@
+--! Bind groups (`docs/design/webgpu.md` §4): made by `Gpu.Device.createBindGroup`
+--! or `Gpu.Batch.createBindGroup`. Their one member is the label.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The bind group's label.
+pub label : Handle.BindGroup → String
+label group = Js.to (Js.get (Js.from group) "label")
+
+
+--| Set the bind group's label.
+pub setLabel : Handle.BindGroup, String → ⊤
+setLabel group text = Js.set (Js.from group) "label" (Js.from text)

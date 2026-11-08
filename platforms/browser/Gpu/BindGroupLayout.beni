@@ -1,0 +1,16 @@
+--! Bind group layouts (`docs/design/webgpu.md` §4): made by
+--! `Gpu.Device.createBindGroupLayout`, `Gpu.Batch.createBindGroupLayout` or a
+--! pipeline's `getBindGroupLayout`. Their one member is the label.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The layout's label.
+pub label : Handle.BindGroupLayout → String
+label layout = Js.to (Js.get (Js.from layout) "label")
+
+
+--| Set the layout's label.
+pub setLabel : Handle.BindGroupLayout, String → ⊤
+setLabel layout text = Js.set (Js.from layout) "label" (Js.from text)
