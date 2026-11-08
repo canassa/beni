@@ -18,3 +18,7 @@ differ = M.T 1 ≠ M.T 2
 
 atLeast : Bool
 atLeast = M.T 1 ≥ M.T 2
+
+
+asciiDiffer : Bool
+asciiDiffer = M.T 1 /= M.T 2
