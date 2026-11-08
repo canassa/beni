@@ -302,8 +302,6 @@ pub const Name = enum {
     deep_at_closure_off,
     /// H5: `LaterFunctions.ask` off.
     later_functions_off,
-    /// O3 G5: `instAt` memoises what it read under a cycle's cut.
-    inst_memo_under_cut,
     /// O3 G5 G12: `Pairs.Queries.enter` answers `may` to a pair in progress: refusals only.
     overlap_cycle_may,
     /// O3 G5: `Pairs.Queries.leave` stops at one pass: a component's values are not its fixed point.
