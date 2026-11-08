@@ -6,5 +6,5 @@
   </main>
 </body>
 -- throws click #run
-(threw: TypeError: injected feature refusal)
+(threw: Error: webgpu: requestDevice: TypeError: injected feature refusal)
 (the DOM did not change)

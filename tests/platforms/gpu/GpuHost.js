@@ -168,6 +168,18 @@ const faults = {
   "requests-held": () => {
     holdRequests = true;
   },
+  // An adapter whose `maxBindGroups` is NaN: a snapshot read refuses it.
+  "limits-nan": (gpu) =>
+    wrap(gpu, "requestAdapter", function (original, ...args) {
+      return original.apply(this, args).then((adapter) => {
+        if (adapter === null) return adapter;
+        const limits = {};
+        for (const name in adapter.limits) limits[name] = adapter.limits[name];
+        limits.maxBindGroups = globalThis.Number.NaN;
+        globalThis.Object.defineProperty(adapter, "limits", { configurable: true, value: limits });
+        return adapter;
+      });
+    }),
 };
 
 let host = null;

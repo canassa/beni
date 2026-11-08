@@ -6,5 +6,5 @@
   </main>
 </body>
 -- throws click #run
-(threw: TypeError: Cannot read properties of null (reading 'reason'))
+(threw: Error: webgpu: device 1, lost: TypeError: Cannot read properties of null (reading 'reason'))
 (the DOM did not change)

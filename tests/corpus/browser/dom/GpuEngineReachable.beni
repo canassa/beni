@@ -5,7 +5,7 @@
 -- signatures name `Js.Value`, which such a program cannot make, so it
 -- reaches only what needs none: here the engine's count of open channels.
 -- On `browser-tea`, which re-exports the public modules only, the import
--- is `unknown_module` (`build/bad/GpuEngineHiddenByTea`).
+-- is `unknown_module` (`build/bad/tea/GpuEngineHidden`).
 import Browser
 import Gpu.Engine
 import Html exposing (Html)
