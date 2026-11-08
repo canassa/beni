@@ -1,0 +1,26 @@
+-- The native-vs-beni differential harness (docs/design/webgpu.md §10;
+-- `GpuDiff`): for each seed, a deterministic sequence of buffer operations
+-- whose offsets and sizes sit on their edges runs through beni's wrappers
+-- and on raw WebGPU, each on a device of its own, and every operation's
+-- outcome — accepted, refused, or the bytes a read gave — must be equal.
+-- Under the gates both halves run on the fake host; under `test-webgpu`, on
+-- Chrome's WebGPU. A difference prints the seed, the sequence and both
+-- outcome lists, and fails the page against this golden.
+import GpuDiff
+import GpuHost
+import GpuPage
+import Tea
+
+
+seeds : Int, Int → List String
+seeds first last =
+    GpuHost.inject "none"
+    List.map (List.range first last) λseed → GpuDiff.compare seed 24
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "seeds-1-8", λ⊤ → seeds 1 8 )
+        , ( "seeds-9-16", λ⊤ → seeds 9 16 )
+        ]

@@ -1,0 +1,155 @@
+-- The values beni makes of the standard's error objects (docs/design/
+-- webgpu.md §5, §6.4, §8; coverage.md, `GPUError`, its three classes and
+-- `GPUDeviceLostInfo`). In a diagnostic session a scope of each filter is
+-- popped as its own value: a validation error the device reported for an
+-- invalid sampler, and an out-of-memory and an internal error the host is
+-- made to report (the engine's own outer scope of that filter then
+-- reports one too, so the session fails with it). A destroyed device is lost with `Destroyed`; a device the host
+-- loses with reason "unknown" is lost with `UnknownLoss`. A render bundle
+-- is made and executed in a render pass.
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Diagnostics as Diagnostics
+import Gpu.Diagnostics.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (CommandEncoder, Device, DiagnosticSession, RenderBundle, TextureView)
+import Gpu.RenderBundleEncoder as RenderBundleEncoder
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+kind : Error.GpuError → String
+kind found =
+    case found of
+        Error.ValidationError _ →
+            "ValidationError"
+
+        Error.OutOfMemoryError _ →
+            "OutOfMemoryError"
+
+        Error.InternalError _ →
+            "InternalError"
+
+
+popped : DiagnosticSession → String
+popped session =
+    case Diagnostics.popErrorScope session of
+        Ok (Just found) →
+            kind found
+
+        Ok Nothing →
+            "none"
+
+        Err _ →
+            "refused"
+
+
+-- `lodMinClamp` above `lodMaxClamp`: refused by the device.
+invalid : Types.SamplerDescriptor
+invalid =
+    { (Types.samplerDescriptor)
+        | lodMinClamp = Types.Value (must (Scalar.finiteF32 10.0))
+        , lodMaxClamp = Types.Value (must (Scalar.finiteF32 1.0))
+    }
+
+
+-- A session that pushes a scope of `filter`, makes an invalid sampler when
+-- `refused`, and pops the scope: what the pop gave, and the session's result.
+scoped : Device, Types.ErrorFilter, Bool → List String
+scoped d filter refused =
+    _ = GpuHost.notes ⊤
+    r = Diagnostics.run d λsession →
+        _ = Diagnostics.pushErrorScope session filter
+        if refused then
+            _ = Gpu.Diagnostics.Device.createSampler session d invalid
+            ⊤
+        GpuHost.note (Types.errorFilterToString filter ++ " scope popped: " ++ popped session)
+        ⊤
+    [ …(GpuHost.notes ⊤), "session: " ++ GpuShow.sessionReport r λ_ → "done" ]
+
+
+scopes : ⊤ → List String
+scopes ⊤ =
+    List.concat
+        [ GpuKit.with "none" λd → scoped d Types.FilterValidation True
+        , GpuKit.with "pop-oom" λd → scoped d Types.FilterOutOfMemory False
+        , GpuKit.with "pop-internal" λd → scoped d Types.FilterInternal False
+        ]
+
+
+reason : Error.DeviceLoss → String
+reason loss =
+    case loss.reason of
+        Error.Destroyed →
+            "Destroyed"
+
+        Error.UnknownLoss →
+            "UnknownLoss"
+
+
+losses : ⊤ → List String
+losses ⊤ =
+    List.concat
+        [ GpuKit.with "none" λd →
+            Gpu.Device.destroy d
+            [ "destroyed: " ++ reason (Gpu.Device.awaitLost d) ]
+        , GpuKit.with "lost-controlled" λd →
+            GpuHost.lose "unknown"
+            [ "lost by the host: " ++ reason (Gpu.Device.awaitLost d) ]
+        ]
+
+
+execute : TextureView, RenderBundle, CommandEncoder → Result Error.InputError ⊤
+execute view bundle encoder =
+    attachment =
+        Types.renderPassColorAttachment (Types.AttachmentTextureView view) Types.Clear Types.Store
+    pass = CommandEncoder.beginRenderPass encoder (Types.renderPassDescriptor [ Just attachment ])?
+    RenderPass.executeBundles pass [ bundle ]?
+    RenderPass.end pass
+
+
+bundles : ⊤ → List String
+bundles ⊤ = GpuKit.with "none" λd →
+    made =
+        Encode.bundle d (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) λencoder →
+            RenderBundleEncoder.finish encoder Types.renderBundleDescriptor
+    case made of
+        Err problem →
+            [ "bundle: Err " ++ GpuShow.error problem ]
+
+        Ok b →
+            bundle : RenderBundle
+            bundle = b.bundle
+            texture =
+                must
+                    (Gpu.Device.createTexture
+                        d
+                        (Types.textureDescriptor
+                            (Types.Extent3DFields
+                                { (Types.extent3DDict (u32 4)) | height = Types.Value (u32 4) }
+                            )
+                            Types.Rgba8unorm
+                            (Flags.texture [ Flags.RenderAttachment ])
+                        )
+                    )
+            view = must (Gpu.Texture.createView texture Types.textureViewDescriptor)
+            ran = Encode.run d Types.commandEncoderDescriptor (execute view bundle _)
+            [ "bundle: made", "executed in a pass: " ++ GpuShow.checked ran λ_ → "encoded" ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "scopes", scopes )
+        , ( "losses", losses )
+        , ( "bundles", bundles )
+        ]

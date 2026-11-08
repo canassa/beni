@@ -1,0 +1,15 @@
+--! Samplers (`docs/design/webgpu.md` §4): made by `Gpu.Device.createSampler`
+--! or `Gpu.Batch.createSampler`. Their one member is the label.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The sampler's label.
+pub label : Handle.Sampler → String
+label sampler = Js.to (Js.get (Js.from sampler) "label")
+
+
+--| Set the sampler's label.
+pub setLabel : Handle.Sampler, String → ⊤
+setLabel sampler text = Js.set (Js.from sampler) "label" (Js.from text)

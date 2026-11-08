@@ -1333,7 +1333,8 @@ pub fn build(b: *std.Build) void {
     // gpu-bindings` writes them from the pinned archive, and their staleness
     // check, the uniform-exposure assertion (§2.3) and the census of every
     // IDL declaration run in `test-blackbox`, a gate: the check reads the
-    // committed files.
+    // committed files. So does the coverage gate (`tests/gpu_coverage.zig`,
+    // §10.1), which `tests/gpu_bindings.zig` imports.
     {
         const gpu_tool_module = b.createModule(.{
             .root_source_file = b.path("tests/gpu_bindings.zig"),

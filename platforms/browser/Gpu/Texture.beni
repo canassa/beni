@@ -51,6 +51,39 @@ format texture =
             Engine.defect "a texture of a format outside the pin"
 
 
+--| The texture's dimension. A dimension outside the pin is a defect.
+pub dimension : Handle.Texture → Types.TextureDimension
+dimension texture =
+    case Types.textureDimensionFromString (Js.to (Js.get (Js.from texture) "dimension")) of
+        Just d →
+            d
+
+        Nothing →
+            Engine.defect "a texture of a dimension outside the pin"
+
+
+--| The view dimension every binding of the texture must use: `Nothing`
+--| on a device with `core-features-and-limits`, which has no such
+--| restriction. On a device without it (compatibility mode) it is the
+--| descriptor's `textureBindingViewDimension` when given, and otherwise the
+--| one the specification derives: "1d", "2d" for one layer, "2d-array" for
+--| more, "3d". One outside the pin is a defect.
+pub textureBindingViewDimension : Handle.Texture → Maybe Types.TextureViewDimension
+textureBindingViewDimension texture =
+    value = Js.get (Js.from texture) "textureBindingViewDimension"
+    if Js.isUndefined value then
+        Nothing
+    else if not (Js.typeIs value "string") then
+        Engine.defect "a texture binding view dimension that is not a string"
+    else
+        case Types.textureViewDimensionFromString (Js.to value) of
+            Just d →
+                Just d
+
+            Nothing →
+                Engine.defect "a texture binding view dimension outside the pin"
+
+
 --| The texture's usages.
 pub usage : Handle.Texture → Flags.TextureUsages
 usage texture =

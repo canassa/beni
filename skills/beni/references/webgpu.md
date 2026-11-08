@@ -7,9 +7,9 @@ browser's WebGPU API with types. Only the main thread has them now.
 
 - `Gpu`: `available`, `requestAdapter`, `preferredCanvasFormat`, `wgslLanguageFeatures`.
 - `Gpu.Adapter`: `features`, `limits`, `info`, `requestDevice`.
-- `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`, and the
-  checked operations `createSampler`, `createBuffer`, `createMappedBuffer`, `createTexture`,
-  `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createShaderModule`,
+- `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `label`, `setLabel`, `destroy`, `loss`,
+  `awaitLost`, and the checked operations `createSampler`, `createBuffer`, `createMappedBuffer`,
+  `createTexture`, `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createShaderModule`,
   `createComputePipeline`, `createComputePipelineAsync`, `createRenderPipeline`,
   `createRenderPipelineAsync` and `createQuerySet`.
 - `Gpu.Buffer`: `size`, `usage`, `mapState`, `label`, `setLabel`, `map`, `currentMapping`,
@@ -19,8 +19,10 @@ browser's WebGPU API with types. Only the main thread has them now.
   `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`.
 - `Gpu.Queue`: `writeBuffer`, `writeTexture`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
 - `Gpu.Shader`: `getCompilationInfo`, `compile`, `source`. `Gpu.ComputePipeline`:
-  `getBindGroupLayout`. `Gpu.Texture`: snapshots, `createView` and `destroy`. `Gpu.QuerySet`:
-  snapshots and `destroy`. `Gpu.TextureView`, `Gpu.RenderBundle`: `label`, `setLabel`.
+  `getBindGroupLayout`. `Gpu.Texture`: snapshots (`dimension` and `textureBindingViewDimension`
+  too), `createView` and `destroy`. `Gpu.QuerySet`: snapshots and `destroy`.
+- `Gpu.TextureView`, `Gpu.RenderBundle`, `Gpu.Sampler`, `Gpu.BindGroupLayout`, `Gpu.BindGroup`,
+  `Gpu.PipelineLayout`, `Gpu.CommandBuffer`: `label`, `setLabel`. Each pass has them too.
 - `Gpu.RenderPipeline`: `label`, `setLabel`, `getBindGroupLayout`.
 - `Gpu.RenderPass`: the commands of a render pass: `with`, `end`, `setPipeline`,
   `setBindGroup`, `setVertexBuffer`, `setIndexBuffer`, `draw`, `drawIndexed`, `drawIndirect`,

@@ -443,6 +443,12 @@ module Gpu.Batch
   value submit : Batch, Queue, List CommandBuffer → Result Error Submission  -- impure
   value writeBuffer : Batch, Queue, Buffer, WriteBufferSource → Result Error ⊤  -- impure
   value writeTexture : Batch, Queue, TexelCopyTextureInfo, Source, TexelCopyBufferLayout, Extent3D → Result Error ⊤  -- impure
+module Gpu.BindGroup
+  value label : BindGroup → String  -- impure
+  value setLabel : BindGroup, String → ⊤  -- impure
+module Gpu.BindGroupLayout
+  value label : BindGroupLayout → String  -- impure
+  value setLabel : BindGroupLayout, String → ⊤  -- impure
 module Gpu.Buffer
   alias MapRequest
   type MappingMode
@@ -469,6 +475,9 @@ module Gpu.Buffer
   value usage : Buffer → BufferUsages  -- impure
   value whole : Range
   value withMapped : Buffer, MapRequest, (Mapping → Result Error a) → Result Error a  -- suspends
+module Gpu.CommandBuffer
+  value label : CommandBuffer → String  -- impure
+  value setLabel : CommandBuffer, String → ⊤  -- impure
 module Gpu.CommandEncoder
   value beginComputePass : CommandEncoder, ComputePassDescriptor → Result InputError ComputePass  -- impure
   value beginRenderPass : CommandEncoder, RenderPassDescriptor → Result InputError RenderPass  -- impure
@@ -514,6 +523,7 @@ module Gpu.ComputePass
   value setBindGroup : ComputePass, U32, Maybe BindGroup, List U32 → Result InputError ⊤  -- impure
   value setBindGroupSlice : ComputePass, U32, Maybe BindGroup, View, Int, Int → Result InputError ⊤  -- impure
   value setImmediates : ComputePass, Int, Source, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setLabel : ComputePass, String → ⊤  -- impure
   value setPipeline : ComputePass, ComputePipeline → Result InputError ⊤  -- impure
   value with : CommandEncoder, ComputePassDescriptor, (ComputePass → Result InputError a) → Result InputError a  -- impure
 module Gpu.ComputePipeline
@@ -540,10 +550,12 @@ module Gpu.Device
   value destroy : Device → ⊤  -- impure
   value eachEvent : Device, (DeviceEvent → ⊤) → ⊤  -- suspends
   value features : Device → Features  -- impure
+  value label : Device → String  -- impure
   value limits : Device → Limits  -- impure
   value loss : Device → Maybe DeviceLoss  -- impure
   value onEvent : Device, (DeviceEvent → msg) → Sub msg  -- impure
   value queue : Device → Queue  -- impure
+  value setLabel : Device, String → ⊤  -- impure
 module Gpu.Diagnostics
   alias DiagnosticReport a
     DiagnosticReport
@@ -1173,6 +1185,9 @@ module Gpu.Native
   value vertexAttribute : VertexAttribute → Value  -- impure
   value vertexBufferLayout : VertexBufferLayout → Value  -- impure
   value vertexState : VertexState → Value  -- impure
+module Gpu.PipelineLayout
+  value label : PipelineLayout → String  -- impure
+  value setLabel : PipelineLayout, String → ⊤  -- impure
 module Gpu.QuerySet
   value count : QuerySet → Int  -- impure
   value destroy : QuerySet → ⊤  -- impure
@@ -1232,6 +1247,7 @@ module Gpu.RenderPass
   value setBlendConstant : RenderPass, Color → Result InputError ⊤  -- impure
   value setImmediates : RenderPass, Int, Source, Int, Maybe Int → Result InputError ⊤  -- impure
   value setIndexBuffer : RenderPass, Buffer, IndexFormat, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setLabel : RenderPass, String → ⊤  -- impure
   value setPipeline : RenderPass, RenderPipeline → Result InputError ⊤  -- impure
   value setScissorRect : RenderPass, U32, U32, U32, U32 → Result InputError ⊤  -- impure
   value setStencilReference : RenderPass, U32 → Result InputError ⊤  -- impure
@@ -1243,6 +1259,9 @@ module Gpu.RenderPipeline
   value getBindGroupLayout : RenderPipeline, U32 → Result Error BindGroupLayout  -- suspends
   value label : RenderPipeline → String  -- impure
   value setLabel : RenderPipeline, String → ⊤  -- impure
+module Gpu.Sampler
+  value label : Sampler → String  -- impure
+  value setLabel : Sampler, String → ⊤  -- impure
 module Gpu.Scalar
   type Domain
     U32Domain
@@ -1316,12 +1335,14 @@ module Gpu.Texture
   value createView : Texture, TextureViewDescriptor → Result Error TextureView  -- suspends
   value depthOrArrayLayers : Texture → Int  -- impure
   value destroy : Texture → ⊤  -- impure
+  value dimension : Texture → TextureDimension  -- impure
   value format : Texture → TextureFormat  -- impure
   value height : Texture → Int  -- impure
   value label : Texture → String  -- impure
   value mipLevelCount : Texture → Int  -- impure
   value sampleCount : Texture → Int  -- impure
   value setLabel : Texture, String → ⊤  -- impure
+  value textureBindingViewDimension : Texture → Maybe TextureViewDimension  -- impure
   value usage : Texture → TextureUsages  -- impure
   value width : Texture → Int  -- impure
 module Gpu.TextureView

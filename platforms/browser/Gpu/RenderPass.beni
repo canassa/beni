@@ -357,3 +357,9 @@ insertDebugMarker pass markerLabel =
 --| The pass's label.
 pub label : Handle.RenderPass → String
 label pass = Js.to (Js.get (Js.from pass) "label")
+
+
+--| Set the pass's label. It names the pass in the host's diagnostics; an
+--| ended pass keeps it.
+pub setLabel : Handle.RenderPass, String → ⊤
+setLabel pass text = Js.set (Js.from pass) "label" (Js.from text)

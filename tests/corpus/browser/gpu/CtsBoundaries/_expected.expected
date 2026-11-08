@@ -1,0 +1,580 @@
+-- load
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #map-alignment
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+    </ol>
+  </main>
+</body>
+-- click #map-bounds
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+    </ol>
+  </main>
+</body>
+-- click #range-alignment
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+    </ol>
+  </main>
+</body>
+-- click #range-bounds
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+      <li>"mapped 24+40, range 24+40: accepted"</li>
+      <li>"mapped 24+40, range 16+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 32+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 24+44: refused (OutOfRange)"</li>
+      <li>"mapped 24+unspecified, range 24+unspecified: accepted"</li>
+      <li>"mapped 24+unspecified, range 80+unspecified: accepted"</li>
+      <li>"mapped 24+40, range 24+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+64: accepted"</li>
+      <li>"mapped 0+80, range 40+44: refused (OutOfRange)"</li>
+    </ol>
+  </main>
+</body>
+-- click #creation
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+      <li>"mapped 24+40, range 24+40: accepted"</li>
+      <li>"mapped 24+40, range 16+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 32+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 24+44: refused (OutOfRange)"</li>
+      <li>"mapped 24+unspecified, range 24+unspecified: accepted"</li>
+      <li>"mapped 24+unspecified, range 80+unspecified: accepted"</li>
+      <li>"mapped 24+40, range 24+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+64: accepted"</li>
+      <li>"mapped 0+80, range 40+44: refused (OutOfRange)"</li>
+      <li>"size 0: accepted"</li>
+      <li>"size 2: refused (MappedSizeUnaligned)"</li>
+      <li>"size 4: accepted"</li>
+      <li>"size 6: refused (MappedSizeUnaligned)"</li>
+      <li>"size 8: accepted"</li>
+    </ol>
+  </main>
+</body>
+-- click #writes
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+      <li>"mapped 24+40, range 24+40: accepted"</li>
+      <li>"mapped 24+40, range 16+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 32+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 24+44: refused (OutOfRange)"</li>
+      <li>"mapped 24+unspecified, range 24+unspecified: accepted"</li>
+      <li>"mapped 24+unspecified, range 80+unspecified: accepted"</li>
+      <li>"mapped 24+40, range 24+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+64: accepted"</li>
+      <li>"mapped 0+80, range 40+44: refused (OutOfRange)"</li>
+      <li>"size 0: accepted"</li>
+      <li>"size 2: refused (MappedSizeUnaligned)"</li>
+      <li>"size 4: accepted"</li>
+      <li>"size 6: refused (MappedSizeUnaligned)"</li>
+      <li>"size 8: accepted"</li>
+      <li>"15 bytes, data offset 0, size unspecified: refused (Misaligned)"</li>
+      <li>"15 bytes, data offset 3, size unspecified: accepted"</li>
+      <li>"16 bytes, data offset 3, size unspecified: refused (Misaligned)"</li>
+      <li>"8 bytes, data offset 0, size 7: refused (Misaligned)"</li>
+      <li>"8 words, data offset 0, size 16: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 8: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size 0: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size unspecified: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 8, size 0: accepted"</li>
+      <li>"8 words, data offset 0, size 8: accepted"</li>
+      <li>"8 words, data offset 0, size 12: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 4: accepted"</li>
+    </ol>
+  </main>
+</body>
+-- click #immediates
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+      <li>"mapped 24+40, range 24+40: accepted"</li>
+      <li>"mapped 24+40, range 16+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 32+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 24+44: refused (OutOfRange)"</li>
+      <li>"mapped 24+unspecified, range 24+unspecified: accepted"</li>
+      <li>"mapped 24+unspecified, range 80+unspecified: accepted"</li>
+      <li>"mapped 24+40, range 24+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+64: accepted"</li>
+      <li>"mapped 0+80, range 40+44: refused (OutOfRange)"</li>
+      <li>"size 0: accepted"</li>
+      <li>"size 2: refused (MappedSizeUnaligned)"</li>
+      <li>"size 4: accepted"</li>
+      <li>"size 6: refused (MappedSizeUnaligned)"</li>
+      <li>"size 8: accepted"</li>
+      <li>"15 bytes, data offset 0, size unspecified: refused (Misaligned)"</li>
+      <li>"15 bytes, data offset 3, size unspecified: accepted"</li>
+      <li>"16 bytes, data offset 3, size unspecified: refused (Misaligned)"</li>
+      <li>"8 bytes, data offset 0, size 7: refused (Misaligned)"</li>
+      <li>"8 words, data offset 0, size 16: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 8: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size 0: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size unspecified: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 8, size 0: accepted"</li>
+      <li>"8 words, data offset 0, size 8: accepted"</li>
+      <li>"8 words, data offset 0, size 12: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 4: accepted"</li>
+      <li>"range offset 4, 8 bytes: accepted"</li>
+      <li>"range offset 6, 8 bytes: refused (Misaligned)"</li>
+      <li>"range offset 4, 10 bytes: refused (Misaligned)"</li>
+      <li>"2 words, size 3: refused (OutOfRange)"</li>
+    </ol>
+  </main>
+</body>
+-- click #layouts
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+      <li>"mapped 24+40, range 24+40: accepted"</li>
+      <li>"mapped 24+40, range 16+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 32+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 24+44: refused (OutOfRange)"</li>
+      <li>"mapped 24+unspecified, range 24+unspecified: accepted"</li>
+      <li>"mapped 24+unspecified, range 80+unspecified: accepted"</li>
+      <li>"mapped 24+40, range 24+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+64: accepted"</li>
+      <li>"mapped 0+80, range 40+44: refused (OutOfRange)"</li>
+      <li>"size 0: accepted"</li>
+      <li>"size 2: refused (MappedSizeUnaligned)"</li>
+      <li>"size 4: accepted"</li>
+      <li>"size 6: refused (MappedSizeUnaligned)"</li>
+      <li>"size 8: accepted"</li>
+      <li>"15 bytes, data offset 0, size unspecified: refused (Misaligned)"</li>
+      <li>"15 bytes, data offset 3, size unspecified: accepted"</li>
+      <li>"16 bytes, data offset 3, size unspecified: refused (Misaligned)"</li>
+      <li>"8 bytes, data offset 0, size 7: refused (Misaligned)"</li>
+      <li>"8 words, data offset 0, size 16: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 8: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size 0: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size unspecified: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 8, size 0: accepted"</li>
+      <li>"8 words, data offset 0, size 8: accepted"</li>
+      <li>"8 words, data offset 0, size 12: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 4: accepted"</li>
+      <li>"range offset 4, 8 bytes: accepted"</li>
+      <li>"range offset 6, 8 bytes: refused (Misaligned)"</li>
+      <li>"range offset 4, 10 bytes: refused (Misaligned)"</li>
+      <li>"2 words, size 3: refused (OutOfRange)"</li>
+      <li>"index 0: accepted"</li>
+      <li>"index 1: accepted"</li>
+      <li>"index 3: accepted"</li>
+      <li>"index maxBindGroups + 0: refused (OutOfRange)"</li>
+      <li>"index maxBindGroups + 1: refused (OutOfRange)"</li>
+    </ol>
+  </main>
+</body>
+-- click #queries
+<body>
+  <main>
+    <button id="map-alignment">"map-alignment"</button>
+    <button id="map-bounds">"map-bounds"</button>
+    <button id="range-alignment">"range-alignment"</button>
+    <button id="range-bounds">"range-bounds"</button>
+    <button id="creation">"creation"</button>
+    <button id="writes">"writes"</button>
+    <button id="immediates">"immediates"</button>
+    <button id="layouts">"layouts"</button>
+    <button id="queries">"queries"</button>
+    <ol>
+      <li>"buffer 16, offset 0, size 0: accepted"</li>
+      <li>"buffer 16, offset 0, size 4: accepted"</li>
+      <li>"buffer 16, offset 0, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 8, size 0: accepted"</li>
+      <li>"buffer 16, offset 8, size 4: accepted"</li>
+      <li>"buffer 16, offset 8, size 2: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 0: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 4: refused (Misaligned)"</li>
+      <li>"buffer 16, offset 4, size 2: refused (Misaligned)"</li>
+      <li>"buffer 0, offset 0, size 0: accepted"</li>
+      <li>"buffer 0, offset 0, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 8, size 0: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 0, size 16: accepted"</li>
+      <li>"buffer 16, offset 8, size 16: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size 0: accepted"</li>
+      <li>"buffer 16, offset 16, size 4: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 8, size 8: accepted"</li>
+      <li>"buffer 16, offset 8, size 12: refused (OutOfRange)"</li>
+      <li>"buffer 1024, offset 512, size 512: accepted"</li>
+      <li>"buffer 1024, offset 512, size 516: refused (OutOfRange)"</li>
+      <li>"buffer 0, offset 0, size unspecified: accepted"</li>
+      <li>"buffer 0, offset 8, size unspecified: refused (OutOfRange)"</li>
+      <li>"buffer 16, offset 16, size unspecified: accepted"</li>
+      <li>"buffer 16, offset 24, size unspecified: refused (OutOfRange)"</li>
+      <li>"offset 0, size 0: accepted"</li>
+      <li>"offset 0, size 4: accepted"</li>
+      <li>"offset 0, size 2: refused (Misaligned)"</li>
+      <li>"offset 8, size 0: accepted"</li>
+      <li>"offset 8, size 4: accepted"</li>
+      <li>"offset 8, size 2: refused (Misaligned)"</li>
+      <li>"offset 4, size 0: refused (Misaligned)"</li>
+      <li>"offset 4, size 4: refused (Misaligned)"</li>
+      <li>"offset 4, size 2: refused (Misaligned)"</li>
+      <li>"mapped 24+40, range 24+40: accepted"</li>
+      <li>"mapped 24+40, range 16+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 32+40: refused (OutOfRange)"</li>
+      <li>"mapped 24+40, range 24+44: refused (OutOfRange)"</li>
+      <li>"mapped 24+unspecified, range 24+unspecified: accepted"</li>
+      <li>"mapped 24+unspecified, range 80+unspecified: accepted"</li>
+      <li>"mapped 24+40, range 24+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+unspecified: refused (OutOfRange)"</li>
+      <li>"mapped 0+64, range 0+64: accepted"</li>
+      <li>"mapped 0+80, range 40+44: refused (OutOfRange)"</li>
+      <li>"size 0: accepted"</li>
+      <li>"size 2: refused (MappedSizeUnaligned)"</li>
+      <li>"size 4: accepted"</li>
+      <li>"size 6: refused (MappedSizeUnaligned)"</li>
+      <li>"size 8: accepted"</li>
+      <li>"15 bytes, data offset 0, size unspecified: refused (Misaligned)"</li>
+      <li>"15 bytes, data offset 3, size unspecified: accepted"</li>
+      <li>"16 bytes, data offset 3, size unspecified: refused (Misaligned)"</li>
+      <li>"8 bytes, data offset 0, size 7: refused (Misaligned)"</li>
+      <li>"8 words, data offset 0, size 16: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 8: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size 0: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 9, size unspecified: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 8, size 0: accepted"</li>
+      <li>"8 words, data offset 0, size 8: accepted"</li>
+      <li>"8 words, data offset 0, size 12: refused (OutOfRange)"</li>
+      <li>"8 words, data offset 4, size 4: accepted"</li>
+      <li>"range offset 4, 8 bytes: accepted"</li>
+      <li>"range offset 6, 8 bytes: refused (Misaligned)"</li>
+      <li>"range offset 4, 10 bytes: refused (Misaligned)"</li>
+      <li>"2 words, size 3: refused (OutOfRange)"</li>
+      <li>"index 0: accepted"</li>
+      <li>"index 1: accepted"</li>
+      <li>"index 3: accepted"</li>
+      <li>"index maxBindGroups + 0: refused (OutOfRange)"</li>
+      <li>"index maxBindGroups + 1: refused (OutOfRange)"</li>
+      <li>"index 0: accepted"</li>
+      <li>"index 2: refused (OutOfRange)"</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,16 @@
+--! Command buffers (`docs/design/webgpu.md` §4, §6.2): made by
+--! `Gpu.CommandEncoder.finish` inside `Gpu.Encode.run`. Their one member is the
+--! label.
+
+import Gpu.Handle as Handle
+import Js
+
+
+--| The command buffer's label.
+pub label : Handle.CommandBuffer → String
+label buffer = Js.to (Js.get (Js.from buffer) "label")
+
+
+--| Set the command buffer's label.
+pub setLabel : Handle.CommandBuffer, String → ⊤
+setLabel buffer text = Js.set (Js.from buffer) "label" (Js.from text)

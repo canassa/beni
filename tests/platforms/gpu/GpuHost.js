@@ -114,12 +114,13 @@ const renderEncoder = (label, invalid) => {
 };
 
 const fakeDevice = (adapter, descriptor) => {
+  const compatibility = adapter.compatibility === true && !(descriptor?.requiredFeatures ?? []).includes("core-features-and-limits");
   let resolveLost = null;
   const device = {
     features: new globalThis.Set(descriptor?.requiredFeatures ?? []),
     limits: globalThis.Object.freeze({ ...limitDefaults }),
     adapterInfo: adapter.info,
-    queue: { label: "" },
+    queue: { label: descriptor?.defaultQueue?.label ?? "" },
     label: descriptor?.label ?? "",
     lost: new globalThis.Promise((done) => (resolveLost = done)),
   };
@@ -184,7 +185,7 @@ const fakeDevice = (adapter, descriptor) => {
     if ((usage & MAP_READ) !== 0 && (usage & ~(MAP_READ | COPY_DST)) !== 0) valid = false;
     if ((usage & MAP_WRITE) !== 0 && (usage & ~(MAP_WRITE | COPY_SRC)) !== 0) valid = false;
     if (!valid) report("validation", new globalThis.GPUValidationError("invalid buffer descriptor"));
-    const s = { valid, size, usage, storage: new globalThis.Uint8Array(valid || atCreation ? size : 0), mapState: "unmapped", pending: null, mode: 0, offset: 0, length: 0, ranges: [], destroyed: false };
+    const s = { valid, size, usage, storage: new globalThis.Uint8Array(valid || atCreation ? size : 0), mapState: "unmapped", pending: null, mode: 0, offset: 0, length: 0, ranges: [], destroyed: false, device };
     const buffer = {
       label: descriptor.label ?? "",
       size,
@@ -335,6 +336,13 @@ const fakeDevice = (adapter, descriptor) => {
     t.dimension = descriptor.dimension ?? "2d";
     t.format = descriptor.format;
     t.usage = descriptor.usage;
+    // The specification's createTexture: on a device without
+    // "core-features-and-limits", the given binding view dimension, or one
+    // derived from the dimension and the array layer count.
+    if (compatibility) {
+      const derived = t.dimension === "1d" ? "1d" : t.dimension === "3d" ? "3d" : t.depthOrArrayLayers === 1 ? "2d" : "2d-array";
+      t.textureBindingViewDimension = descriptor.textureBindingViewDimension ?? derived;
+    }
     t.destroy = () => {};
     t.createView = (viewDescriptor) => {
       const d = viewDescriptor ?? {};
@@ -347,19 +355,31 @@ const fakeDevice = (adapter, descriptor) => {
   };
   device.createCommandEncoder = (descriptor) => {
     const commands = [];
+    // The buffers the commands use, checked again at submit.
+    const used = [];
     let invalid = false;
     const encoder = plainObject(descriptor?.label);
     encoder.copyBufferToBuffer = (...args) => {
       const [source, sourceOffset, destination, destinationOffset, size] = args.length >= 4 ? args : [args[0], 0, args[1], 0, args[2]];
       const from = fakeBuffers.get(source);
       const length = size === undefined ? from.size - sourceOffset : size;
+      const to = fakeBuffers.get(destination);
       if (length % 4 !== 0 || sourceOffset % 4 !== 0 || destinationOffset % 4 !== 0) invalid = true;
+      // The specification's other copy rules at encoding: both buffers valid
+      // to use with the device, distinct, with COPY_SRC and COPY_DST, and the
+      // copy inside each. A destroyed buffer is refused at submit.
+      if (!from.valid || !to.valid || from.device !== device || to.device !== device || source === destination) invalid = true;
+      used.push(from, to);
+      if ((from.usage & COPY_SRC) === 0 || (to.usage & COPY_DST) === 0) invalid = true;
+      if (sourceOffset + length > from.size || destinationOffset + length > to.size) invalid = true;
       commands.push(() => fakeBuffers.get(destination).storage.set(from.storage.subarray(sourceOffset, sourceOffset + length), destinationOffset));
     };
     encoder.clearBuffer = (buffer, offset = 0, size = undefined) => {
       const s = fakeBuffers.get(buffer);
       const length = size === undefined ? s.size - offset : size;
       if (length % 4 !== 0 || offset % 4 !== 0) invalid = true;
+      if (!s.valid || s.device !== device || (s.usage & COPY_DST) === 0 || offset + length > s.size) invalid = true;
+      used.push(s);
       commands.push(() => s.storage.fill(0, offset, offset + length));
     };
     encoder.resolveQuerySet = (querySet, first, count, destination, offset) => {
@@ -403,7 +423,7 @@ const fakeDevice = (adapter, descriptor) => {
     encoder.finish = (finishDescriptor) => {
       if (invalid) report("validation", new globalThis.GPUValidationError("invalid encoder"));
       const buffer = plainObject(finishDescriptor?.label);
-      fakeCommands.set(buffer, commands);
+      fakeCommands.set(buffer, { invalid, commands, used, submitted: false });
       return buffer;
     };
     return encoder;
@@ -435,8 +455,19 @@ const fakeDevice = (adapter, descriptor) => {
     };
     return encoder;
   };
+  // The specification's submit validation: every command buffer valid and
+  // not submitted before, and every buffer it uses alive; otherwise a
+  // validation error, and nothing runs.
   device.queue.submit = (commandBuffers) => {
-    for (const b of commandBuffers) for (const run of fakeCommands.get(b) ?? []) run();
+    const recorded = commandBuffers.map((b) => fakeCommands.get(b)).filter((r) => r !== undefined);
+    if (recorded.some((r) => r.invalid || r.submitted || r.used.some((s) => s.destroyed))) {
+      report("validation", new globalThis.GPUValidationError("invalid submit"));
+      return;
+    }
+    for (const r of recorded) {
+      r.submitted = true;
+      for (const run of r.commands) run();
+    }
   };
   device.queue.writeTexture = () => {};
   // External images (docs/design/webgpu.md §8; ledger §6): the content-timeline
@@ -629,8 +660,11 @@ FakePipelineError.prototype.toString = function () {
   return `GPUPipelineError: ${this.message}`;
 };
 
-const fakeAdapter = () => {
+const fakeAdapter = (options) => {
   const adapter = {
+    // An adapter asked for at the compatibility feature level makes
+    // compatibility-mode devices unless one asks for core features.
+    compatibility: options?.featureLevel === "compatibility",
     features: new globalThis.Set(moreFeatures ? [...adapterFeatures, "depth32float-stencil8"] : adapterFeatures),
     limits: globalThis.Object.freeze({ ...limitDefaults }),
     info: globalThis.Object.freeze({ vendor: "beni", architecture: "fake", device: "", description: "", subgroupMinSize: 4, subgroupMaxSize: 128, isFallbackAdapter: false }),
@@ -640,7 +674,7 @@ const fakeAdapter = () => {
 };
 
 const fakeGpu = () => ({
-  requestAdapter: (_options) => globalThis.Promise.resolve(fakeAdapter()),
+  requestAdapter: (options) => globalThis.Promise.resolve(fakeAdapter(options)),
   getPreferredCanvasFormat: () => "bgra8unorm",
   wgslLanguageFeatures: new globalThis.Set(["readonly_and_readwrite_storage_textures", "packed_4x8_integer_dot_product"]),
 });

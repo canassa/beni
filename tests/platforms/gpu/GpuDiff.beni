@@ -1,0 +1,429 @@
+--! The WebGPU differential harness (`docs/design/webgpu.md` §10): a seeded,
+--! deterministic sequence of buffer operations — create (some mapped at
+--! creation), write, copy, clear, read back, map a range, destroy — with
+--! offsets and sizes drawn from each operation's edges, run once through
+--! beni's wrappers and once on raw WebGPU (`GpuDiff.js`), each on a device
+--! of its own on the same host. Each operation's outcome is `ok`, `error`
+--! or the bytes a read gave; the two lists must be equal. A difference is
+--! reported with the seed, the sequence and both lists, so it can be
+--! replayed.
+
+import Binary
+import Gpu
+import Gpu.Adapter
+import Gpu.Buffer
+import Gpu.CommandEncoder
+import Gpu.Device
+import Gpu.Encode
+import Gpu.Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Buffer, CommandEncoder, Device)
+import Gpu.MappedRange
+import Gpu.Queue
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import Int
+import Task
+
+
+--| Run `ops` on raw WebGPU and call back with the outcomes.
+pub foreign impure runNative : String, sync (String → ⊤) → ⊤
+
+
+-- The Park–Miller generator: every product stays below 2⁵³.
+next : Int → Int
+next s = Int.mod (s * 48271) 2147483647
+
+
+type alias Gen =
+    seed : Int
+    ops : List String
+    created : Int
+
+
+-- A number below `n`, and the generator after it.
+draw : Gen, Int → Int × Gen
+draw g n =
+    s = next g.seed
+    ( Int.mod s n, { g | seed = s } )
+
+
+pick : Gen, List Int → Int × Gen
+pick g options =
+    ( i, after ) = draw g (List.length options)
+    ( Maybe.withDefault (List.head (List.drop options i)) 0, after )
+
+
+--| The sequence of `count` operations of `seed`, as text: operations
+--| separated by `;`, each its name and its numbers. The last four read
+--| every slot back, so each sequence compares bytes.
+pub sequence : Int, Int → String
+sequence seed count =
+    start = { seed = Int.mod (seed * 7919 + 1) 2147483647, ops = [], created = 0 }
+    reads = [ "read 0", "read 1", "read 2", "read 3" ]
+    String.join (List.append (generate start (count - 4)).ops reads) ";"
+
+
+generate : Gen, Int → Gen
+generate g count =
+    if count ≤ 0 then
+        g
+    else
+        ( op, after ) = operation g
+        generate { after | ops = [ …after.ops, op ] } (count - 1)
+
+
+-- Most choices are on the accepted side of an edge, and some just past it
+-- (a misaligned offset, a range past the end, a missing usage), so each
+-- sequence both moves bytes and gets refused.
+operation : Gen → String × Gen
+operation g =
+    if g.created == 0 then
+        create g
+    else
+        ( kind, g1 ) = draw g 16
+        ( k, g2 ) = draw g1 g.created
+        slot = String.fromInt k
+        if kind < 3 then
+            if g.created < 4 then create g1 else write g2 slot
+        else if kind < 6 then
+            write g2 slot
+        else if kind == 15 && k > 0 then
+            ( b, g3 ) = draw g2 g.created
+            ( words [ "late", slot, String.fromInt b, "0", "0", "4" ], g3 )
+        else if kind < 8 then
+            ( b, g3 ) = draw g2 g.created
+            ( from, g4 ) = pick g3 [ 0, 4, 8, 0 ]
+            ( to, g5 ) = pick g4 [ 0, 4, 8, 6 ]
+            ( length, g6 ) = pick g5 [ 4, 8, 4, 6 ]
+            ( words
+                [ "copy"
+                , slot
+                , String.fromInt b
+                , String.fromInt from
+                , String.fromInt to
+                , String.fromInt length
+                ]
+            , g6
+            )
+        else if kind == 8 then
+            ( offset, g3 ) = pick g2 [ 0, 4, 8, 2 ]
+            ( length, g4 ) = pick g3 [ 4, 8, 4, 6 ]
+            ( words [ "clear", slot, String.fromInt offset, String.fromInt length ], g4 )
+        else if kind < 12 then
+            ( words [ "read", slot ], g2 )
+        else if kind < 14 then
+            ( offset, g3 ) = pick g2 [ 0, 8, 4, 16 ]
+            ( size, g4 ) = pick g3 [ 0, 4, 8, 2 ]
+            ( words [ "map", slot, String.fromInt offset, String.fromInt size ], g4 )
+        else if k > 0 then
+            ( words [ "destroy", slot ], g2 )
+        else
+            write g2 slot
+
+
+words : List String → String
+words parts = String.join parts " "
+
+
+-- Slot 0 is always a readable buffer (MAP_READ | COPY_DST, a valid size)
+-- that is never destroyed, so the closing reads compare bytes on every seed.
+create : Gen → String × Gen
+create g =
+    first = g.created == 0
+    ( size, g1 ) = pick g (if first then [ 32, 64 ] else [ 16, 32, 64, 32, 18 ])
+    -- MAP_READ | COPY_DST, COPY_SRC | COPY_DST, MAP_WRITE | COPY_SRC.
+    ( usage, g2 ) = pick g1 (if first then [ 9 ] else [ 9, 12, 6, 9, 9 ])
+    ( atCreation, g3 ) = draw g2 2
+    slot = if g.created < 4 then g.created else 3
+    ( words
+        [ "create"
+        , String.fromInt slot
+        , String.fromInt size
+        , String.fromInt usage
+        , String.fromInt atCreation
+        ]
+    , { g3 | created = min 4 (g.created + 1) }
+    )
+
+
+write : Gen, String → String × Gen
+write g slot =
+    ( offset, g1 ) = pick g [ 0, 4, 8, 0, 6, 16 ]
+    ( length, g2 ) = pick g1 [ 4, 8, 16, 4, 6 ]
+    ( words [ "write", slot, String.fromInt offset, String.fromInt length ], g2 )
+
+
+-- ---- The beni half ----------------------------------------------------------
+
+must : Result e a → a
+must r =
+    case r of
+        Ok a →
+            a
+
+        Err _ →
+            Debug.todo "GpuDiff: a harness value failed"
+
+
+-- The bytes an operation writes: the same as `GpuDiff.js`'s `pattern`.
+pattern : Int, Int → Binary.Buffer
+pattern op length =
+    storage = must (Binary.allocate length)
+    view = must (Binary.dataView (Binary.Local storage))
+    List.foldl (List.range 0 (length - 1)) ⊤ λi _ →
+        must (Binary.writeU8 view i (Int.mod (op * 37 + i * 11 + 5) 256))
+    storage
+
+
+hexOf : List Int → String
+hexOf bytes =
+    digits = "0123456789abcdef"
+    String.concat
+        (List.map bytes λb →
+            String.slice digits (b // 16) (b // 16 + 1)
+                ++ String.slice digits (Int.mod b 16) (Int.mod b 16 + 1)
+        )
+
+
+token : Result Gpu.Error.Error a → String
+token r =
+    case r of
+        Ok _ →
+            "ok"
+
+        Err _ →
+            "error"
+
+
+usages : Int → Flags.BufferUsages
+usages bits =
+    Flags.buffer
+        (List.filter Flags.allBufferUsages λu → Int.mod (bits // (Flags.bufferUsageBits u)) 2 == 1)
+
+
+descriptor : Int, Int → Types.BufferDescriptor
+descriptor size bits = Types.bufferDescriptor (must (Scalar.size64 size)) (usages bits)
+
+
+type alias Run =
+    slots : List (Maybe Buffer)
+    out : List String
+
+
+at : Run, Int → Maybe Buffer
+at run k = Maybe.withDefault (List.head (List.drop run.slots k)) Nothing
+
+
+put : Run, Int, Maybe Buffer → Run
+put run k b = { run | slots = List.indexedMap run.slots λi s → if i == k then b else s }
+
+
+number : List String, Int → Int
+number fields i = Maybe.withDefault (Maybe.andThen (List.head (List.drop fields i)) String.toInt) 0
+
+
+step : Device, Run, Int, String → Run
+step d run i text =
+    fields = String.split text " "
+    n = number fields _
+    case fields of
+        [ "create", …_ ] →
+            k = n 1
+            if n 4 == 1 then
+                case Gpu.Device.createMappedBuffer d (descriptor (n 2) (n 3)) of
+                    Ok made →
+                        range = must (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole)
+                        _ =
+                            must
+                                (Gpu.MappedRange.writeBytes
+                                    range
+                                    0
+                                    (Binary.WholeBuffer (pattern i (n 2)))
+                                )
+                        Gpu.Buffer.unmap made.buffer
+                        emit (put run k (Just made.buffer)) "ok"
+
+                    Err _ →
+                        emit (put run k Nothing) "error"
+            else
+                case Gpu.Device.createBuffer d (descriptor (n 2) (n 3)) of
+                    Ok b →
+                        emit (put run k (Just b)) "ok"
+
+                    Err _ →
+                        emit (put run k Nothing) "error"
+
+        [ "destroy", …_ ] →
+            case at run (n 1) of
+                Just b →
+                    Gpu.Buffer.destroy b
+                    emit run "ok"
+
+                Nothing →
+                    emit run "ok"
+
+        [ "write", …_ ] →
+            withSlot run (n 1) λb →
+                token
+                    (Gpu.Queue.writeBuffer
+                        (Gpu.Device.queue d)
+                        b
+                        (Gpu.Queue.bufferWrite (n 2) (Binary.WholeBuffer (pattern i (n 3))))
+                    )
+
+        [ "copy", …_ ] →
+            case ( at run (n 1), at run (n 2) ) of
+                ( Just a, Just b ) →
+                    emit
+                        run
+                        (encoded d λencoder →
+                            Gpu.CommandEncoder.copyBufferToBuffer
+                                encoder
+                                a
+                                (n 3)
+                                b
+                                (n 4)
+                                (Just (n 5))
+                        )
+
+                _ →
+                    emit run "error"
+
+        [ "late", …_ ] →
+            -- A copy encoded while both buffers live, its source destroyed
+            -- before the submit.
+            case ( at run (n 1), at run (n 2) ) of
+                ( Just a, Just b ) →
+                    case
+                        Gpu.Encode.run d Types.commandEncoderDescriptor λencoder →
+                            Gpu.CommandEncoder.copyBufferToBuffer
+                                encoder
+                                a
+                                (n 3)
+                                b
+                                (n 4)
+                                (Just (n 5))
+                    of
+                        Ok ran →
+                            Gpu.Buffer.destroy a
+                            emit
+                                run
+                                (token (Gpu.Queue.submit (Gpu.Device.queue d) [ ran.commands ]))
+
+                        Err _ →
+                            Gpu.Buffer.destroy a
+                            emit run "error"
+
+                _ →
+                    emit run "error"
+
+        [ "clear", …_ ] →
+            withSlot run (n 1) λb →
+                encoded d λencoder → Gpu.CommandEncoder.clearBuffer encoder b (n 2) (Just (n 3))
+
+        [ "read", …_ ] →
+            withSlot run (n 1) λb →
+                case Gpu.Buffer.withMapped b Gpu.Buffer.mapRead readAll of
+                    Ok bytes →
+                        "bytes:" ++ hexOf bytes
+
+                    Err _ →
+                        "error"
+
+        [ "map", …_ ] →
+            withSlot run (n 1) λb →
+                mapped =
+                    Gpu.Buffer.map b
+                        { mode = Flags.mapModes [ Flags.Read ], offset = n 2, size = Just (n 3) }
+                Gpu.Buffer.unmap b
+                token mapped
+
+        _ →
+            Debug.todo ("GpuDiff: no operation " ++ text)
+
+
+emit : Run, String → Run
+emit run t = { run | out = [ …run.out, t ] }
+
+
+withSlot : Run, Int, (Buffer → String) → Run
+withSlot run k f =
+    case at run k of
+        Just b →
+            emit run (f b)
+
+        Nothing →
+            emit run "error"
+
+
+encoded : Device, sync (CommandEncoder → Result Gpu.Error.InputError ⊤) → String
+encoded d body =
+    case Gpu.Encode.run d Types.commandEncoderDescriptor body of
+        Ok ran →
+            token (Gpu.Queue.submit (Gpu.Device.queue d) [ ran.commands ])
+
+        Err _ →
+            "error"
+
+
+readAll : Gpu.Handle.Mapping → Result Gpu.Error.Error (List Int)
+readAll mapping =
+    range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+    size = Gpu.MappedRange.size range
+    Ok (List.map (List.range 0 (size - 1)) λj → must (Gpu.MappedRange.readU8 range j))
+
+
+--| The outcomes of `ops` through beni's wrappers, on a device of its own.
+pub runBeni : String → String
+runBeni ops =
+    adapter = must (Gpu.requestAdapter Types.adapterOptions)
+    d = must (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor)
+    texts = if ops == "" then [] else String.split ops ";"
+    run =
+        List.foldl
+            (List.indexedMap texts λi t → ( i, t ))
+            { slots = [ Nothing, Nothing, Nothing, Nothing ], out = [] }
+            λ( i, t ) acc → step d acc i t
+    Gpu.Device.destroy d
+    String.join run.out " "
+
+
+--| The outcomes of `ops` on raw WebGPU, waited for in the calling fiber.
+pub native : String → String
+native ops = Task.callback λresume →
+    runNative ops λout → Task.resume resume out
+    λ⊤ → ⊤
+
+
+--| Run `count` operations of `seed` both ways: one line, `agree` when the
+--| outcome lists are equal, with how many were refused and read back, and
+--| otherwise the seed, the sequence and both
+--| lists.
+pub compare : Int, Int → String
+compare seed count =
+    ops = sequence seed count
+    mine = runBeni ops
+    theirs = native ops
+    if mine == theirs then
+        tokens = String.split mine " "
+        refused = List.length (List.filter tokens λt → t == "error")
+        reads = List.length (List.filter tokens λt → String.startsWith t "bytes:")
+        "seed "
+            ++ String.fromInt seed
+            ++ ", "
+            ++ String.fromInt count
+            ++ " operations: agree, "
+            ++ String.fromInt refused
+            ++ " refused, "
+            ++ String.fromInt reads
+            ++ " read back"
+    else
+        "seed "
+            ++ String.fromInt seed
+            ++ ": DISAGREE\n  sequence: "
+            ++ ops
+            ++ "\n  beni:     "
+            ++ mine
+            ++ "\n  native:   "
+            ++ theirs
