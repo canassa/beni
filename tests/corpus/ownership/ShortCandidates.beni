@@ -1,0 +1,72 @@
+-- ownership: §2.12's validation round checks a group's candidates and does
+-- not trust them (ownership-v2.md §2.12 step 3, §8 S4). Its `.v2-short` runs
+-- the dump again with every candidate short on purpose (the hidden
+-- `--ownership-short-candidates`: no inference round, each group validated
+-- from ⊥), so the round must find each defect, join it and validate again,
+-- and the verdicts must be these. A validation that published a contract it
+-- read off under a short candidate would accept the refused callers here:
+-- `pushAll` writes its list only through its own recursive call, the ring's
+-- write is two calls away from `ring1`, and `pushOdd` writes only through
+-- `pushEven`.
+pushAll : List Int, Int → List Int
+pushAll acc n =
+    if n == 0 then
+        acc
+    else
+        pushAll (List.push acc n) (n - 1)
+
+
+pushAllRefused : List Int → Int
+pushAllRefused xs = List.length (pushAll xs 3) + List.length xs
+
+
+pushAllAccepted : List Int → Int
+pushAllAccepted xs = List.length (pushAll xs 3)
+
+
+ring1 : List Int, Int → Int
+ring1 acc n =
+    if n == 0 then
+        List.length acc
+    else
+        ring2 acc (n - 1)
+
+
+ring2 : List Int, Int → Int
+ring2 acc n = ring3 acc n
+
+
+ring3 : List Int, Int → Int
+ring3 acc n = ring1 (List.push acc n) n
+
+
+ringRefused : List Int → Int
+ringRefused xs = ring1 xs 2 + List.length xs
+
+
+ringAccepted : List Int → Int
+ringAccepted xs = ring1 xs 2
+
+
+pushOdd : List Int, Int → List Int
+pushOdd acc n =
+    if n == 0 then
+        acc
+    else
+        pushEven acc (n - 1)
+
+
+pushEven : List Int, Int → List Int
+pushEven acc n =
+    if n == 0 then
+        acc
+    else
+        pushOdd (List.push acc n) (n - 1)
+
+
+pairRefused : List Int → Int
+pairRefused xs = List.length (pushOdd xs 4) + List.length xs
+
+
+pairAccepted : List Int → Int
+pairAccepted xs = List.length (pushOdd xs 4)

@@ -1,0 +1,30 @@
+module BottomCycle
+  13:30 List.push <call BottomCycle.forever>: accepted fresh
+  25:27 List.push <call BottomCycle.spinA>: accepted fresh
+  29:18 BottomCycle.foreverPush <call List.push>: accepted param
+  29:31 List.push xs: accepted param
+  33:34 BottomCycle.foreverPush xs: rejected later-use: xs is read again at 33:52
+  45:34 List.push <call BottomCycle.returnsOnce>: rejected alias: xs holds it and is read at 45:68
+  account forever: source 11, baseline 98, growth 0 of 65536, total 98, continuation 96 of 11264, demands 0, walks 1, rounds 3, liveness_index lanes 1, transfer_settlement lanes 1
+  summary forever: res; nondup yes
+  account useForever: source 19, baseline 135, growth 0 of 65536, total 135, continuation 130 of 19456, demands 31, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary useForever: res crossing; nondup yes; reads π1ε
+  account spinA: source 11, baseline 99, growth 0 of 65536, total 99, continuation 97 of 11264, demands 0, walks 1, rounds 3, liveness_index lanes 1, transfer_settlement lanes 1
+  summary spinA: res; nondup yes
+  account spinB: source 11, baseline 97, growth 0 of 65536, total 97, continuation 95 of 11264, demands 0, walks 1, rounds 3, liveness_index lanes 1, transfer_settlement lanes 1
+  summary spinB: res; nondup yes
+  account useSpin: source 19, baseline 135, growth 0 of 65536, total 135, continuation 130 of 19456, demands 31, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary useSpin: res crossing; nondup yes; reads π1ε
+  account foreverPush: source 14, baseline 347, growth 0 of 65536, total 347, continuation 345 of 14336, demands 87, walks 1, rounds 3, liveness_index lanes 1, transfer_settlement lanes 1
+  summary foreverPush: res; nondup yes; reads π1ε*; writes π1ε; req yes
+  account useForeverPush: source 16, baseline 147, growth 0 of 65536, total 147, continuation 142 of 16384, demands 67, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary useForeverPush: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  account returnsOnce: source 25, baseline 351, growth 0 of 65536, total 351, continuation 336 of 25600, demands 0, walks 1, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary returnsOnce: res ε π1ε; nondup ⇐ sel π1{ε}; reads π1ε*
+  account useReturnsOnce: source 20, baseline 194, growth 0 of 65536, total 194, continuation 189 of 20480, demands 72, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary useReturnsOnce: res crossing; nondup yes; reads π1ε*; writes π1ε; req yes
+  block: 20 bytes, hash 8f07960fda0af7a5
+  demands 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 1
+cause alias 1
