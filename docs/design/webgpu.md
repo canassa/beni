@@ -113,7 +113,9 @@ a GPU operation, and it calls the host through private code (non-`pub`
 can import. *As built — S1 (2026-11-08):* `browser-tea` re-exports the public `Gpu`
 modules only, so a TEA program cannot import `Gpu.Engine` or `Gpu.Native`; a direct
 `browser` program can, since a platform cannot keep a module from the program it is the
-top of (#2256). Their signatures name `Js.Value`, which such a program cannot make.
+top of (#2256). Their signatures name `Js.Value`, which such a program cannot make. The
+private `Gpu.Memory` (S2a), `Gpu.Make` and `Gpu.Session` (S2b) are in the same position,
+accepted as debt under #2256.
 
 **`Gpu.Handle`** imports only core, including those generated modules, and no
 `Gpu` module. It declares:
@@ -841,6 +843,27 @@ Fixtures: `browser/gpu/ComputeDoubles` (a shader's answer read back, compared wi
 written by hand, under `test-webgpu`), `TextureCopies`, `EncodeSession`, `EncodeValidation`,
 `ShadersAndPipelines`, `Batches`, and the defects `PipelineAsyncUnlisted` and
 `CompilationInfoRejected`.
+
+*Amended after review, 2026-11-08, by the manager, under the owner's delegation of names.* A
+batch operation returns `Result Error a` and the batch's callback `Result Error a`, so a
+local failure that is not an input error (a feature a format or a query type needs) surfaces
+as itself; `Batch.run`'s failure is `BatchFailed { batch, failure, issued, unissued }`, the
+issued and refused operations by name (this section's failure report). `Gpu.Batch.segment`
+starts a named scope segment (three scopes each), whose name a scope's failure carries;
+`Gpu.Batch.awaitReady` waits until the batch settles. A cancelled run rejects what it made.
+In a batch, a pipeline or a queue of another device is `WrongDevice` before any native call.
+A prepared operation is a record with a tagged `Action` that a `sync` `perform` switches on,
+so the checker proves nothing in the scope section suspends; a record field cannot have a
+`sync` function type (#2271). Invalid WGSL is `ShaderRejected { failure, messages }`, the
+compiler's messages read before the failure is returned; `CompilationInfo` and
+`CompilationMessage` live in `Gpu.Error` (aliased by `Gpu.Shader`), since `Gpu.Error` must
+name them and `Gpu.Shader` imports `Gpu.Device`. A rejected asynchronous pipeline's
+`PipelineFailure` keeps the entry points asked for. A failure set may hold a refusal
+(`ObservedRefusal`) or a missing capability (`ObservedUnsupported`), so an operation's own
+refusal and the scopes' observations are both kept. `Queue.submit` refuses a command buffer
+using, directly or through a bind group, a resource destroyed (`ResourceDestroyed`) or
+mapped (`MappingState`) since it was encoded. `getBindGroupLayout` refuses an index at or
+above `maxBindGroups` (`OutOfRange`).
 
 ### 6.4 Explicit error-scope diagnostics without an unsafe escape hatch
 
