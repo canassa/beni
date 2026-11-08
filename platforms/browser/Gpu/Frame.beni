@@ -27,6 +27,7 @@ import Gpu.Batch as Batch
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
 import Gpu.Handle as Handle
+import Gpu.Make as Make
 import Gpu.Session as Session
 import Gpu.Types as Types
 import Js
@@ -52,25 +53,7 @@ pub submit :
     , String
     , sync (Handle.Frame → Result Error.Error a)
     → Result Error.Error { value : a, submissions : List Handle.Submission }
-submit surface name body =
-    native = Js.from surface
-    s = Engine.recordOf native
-    device = Js.get s "device"
-    if Js.isNull device then
-        Err (Error.CanvasFailed Error.CanvasUnconfigured)
-    else
-        receipts = Js.array []
-        result = Batch.run (Js.to device) ("frame " ++ name) (inFrame native receipts body _)
-        Result.map result λv → { value = v, submissions = Js.to receipts }
-
-
--- The batch is the frame: it knows its surface, and keeps its receipts.
-inFrame : V, V, sync (Handle.Frame → Result Error.Error a), Handle.Batch → Result Error.Error a
-inFrame surface receipts body b =
-    frame = Js.from b
-    Js.set frame "surface" surface
-    Js.set frame "submissions" receipts
-    body (Js.to frame)
+submit surface name body = Make.frameIn Js.null (Js.from surface) name body
 
 
 --| The frame's batch: every `Gpu.Batch` operation runs in the frame with

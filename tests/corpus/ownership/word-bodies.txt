@@ -335,3 +335,4 @@ platforms/browser/Browser/Worker.beni Browser.Worker.installFatal c3b108ee115718
 platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition b95f3e5501c78096d7f8a63c77c30143add183977c64c7438c0da36d9fc2a07d
 core/Js.beni                    Js.entryWindow      08f81b7e42b0d7af28376e83e95549f17491d5fbb371fed98aaad2adeba2900b
 src/js/Lower.zig                Js.entryWindow      a706f857621de12a7bf8c9485e34a314c7533d3ddc404c494b5e7f87d07dc209
+platforms/browser/Gpu/Engine.beni Gpu.Engine.watchUncaptured d72686cccd1ae9c195ba873e5847380f985004b272d073913f4dc49bd72f7df7

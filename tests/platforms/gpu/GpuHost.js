@@ -141,12 +141,24 @@ const fakeDevice = (adapter, descriptor) => {
     if (scope === undefined) return globalThis.Promise.reject(new globalThis.DOMException("the error scope stack is empty", "OperationError"));
     return globalThis.Promise.resolve(scope.error);
   };
+  // The device is an event target of `uncapturederror` only: an error no
+  // scope of its filter takes is dispatched there, on a microtask (a
+  // browser dispatches it on a task).
+  const eventListeners = [];
+  device.addEventListener = (type, listener) => {
+    if (type === "uncapturederror") eventListeners.push(listener);
+  };
+  device.dispatchEvent = (event) => {
+    if (event.type === "uncapturederror") for (const listener of eventListeners.slice()) listener.call(device, event);
+    return true;
+  };
   const report = (filter, error) => {
     for (let i = scopes.length - 1; i >= 0; i -= 1) {
       if (scopes[i].filter !== filter) continue;
       if (scopes[i].error === null) scopes[i].error = error;
       return;
     }
+    globalThis.queueMicrotask(() => device.dispatchEvent({ type: "uncapturederror", error }));
   };
   deviceReports.set(device, report);
   // Two of the specification's sampler rules, enough for the fixtures.
@@ -983,6 +995,7 @@ faults["render-pipeline-range"] = () => {
 // to throw.
 const instrument = (device) => {
   const stack = [];
+  scopeStacks.set(device, stack);
   const count = (name) => {
     callCounts[name] = (callCounts[name] ?? 0) + 1;
   };
@@ -1335,3 +1348,43 @@ export const keepBatch = (batch) => {
 };
 export const keptBatch = (_unit) => keptBatchValue;
 
+
+// A native call the engine never makes: a sampler the device refuses, made
+// outside every error scope, so its validation error is uncaptured.
+export const escape = (device) => {
+  device.createSampler({ lodMinClamp: 10, lodMaxClamp: 1 });
+  return null;
+};
+
+// An `uncapturederror` event whose error is a plain object named like a GPU
+// error, dispatched on the device.
+export const escapeSpoofed = (device) => {
+  const event = new globalThis.Event("uncapturederror");
+  globalThis.Object.defineProperty(event, "error", { value: { name: "GPUValidationError", message: "a plain object, not a GPUValidationError" } });
+  device.dispatchEvent(event);
+  return null;
+};
+
+// A native pop the engine never makes: the device's innermost scope, which
+// is the engine's, popped behind its back.
+export const popBehind = (device) => {
+  device.popErrorScope().then(null, () => null);
+  return null;
+};
+
+// Every instrumented device's error scope stack, as the page pushed it.
+const scopeStacks = new globalThis.WeakMap();
+
+// Log how many error scopes of the device are open three tasks later:
+// after a throw, once the runtime's teardown (a task after the throw) ran
+// the finalisers of every fiber.
+export const logScopesLater = (device) => {
+  const log = () => globalThis.console.log(`error scopes open: ${(scopeStacks.get(device) ?? []).length}`);
+  globalThis.setTimeout(() => globalThis.setTimeout(() => globalThis.setTimeout(log, 0), 0), 0);
+  return null;
+};
+
+// Throw a native `TypeError`, as application code might.
+export const fail = (message) => {
+  throw new globalThis.TypeError(message);
+};

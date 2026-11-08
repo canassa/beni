@@ -1,0 +1,165 @@
+--! The forwarding forms of `Gpu.Device`'s checked operations
+--! (`docs/design/webgpu.md` §6.4): each takes a diagnostic session first,
+--! then `Gpu.Device`'s arguments, and runs on the session's leased device
+--! under the session's error scopes, with none of its own. Each refuses
+--! before any native call as its ordinary form does, and also: a device
+--! that is not the session's (`WrongDevice` at `session`), a session whose
+--! lease ended (`SessionState SessionEnded`) or whose nested session is
+--! open (`SessionState DeviceLeased`), and a device whose loss was observed
+--! (`DeviceLost`). An error the device reports goes to the session's
+--! scopes, not to the result; what the call makes is provisional, usable by
+--! the session's calls, and accepted only when the session ends with no
+--! error reported.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Memory as Memory
+import Gpu.Types as Types
+import Js
+
+
+forward : Handle.DiagnosticSession, Result Error.Error Make.Op → Result Error.Error a
+forward session prepared = Result.map (Make.checkedIn (Js.from session) prepared) Js.to
+
+
+--| `Gpu.Device.createSampler` under the session.
+pub createSampler :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.SamplerDescriptor
+    → Result Error.Error Handle.Sampler
+createSampler session device descriptor = forward session (Make.sampler (Js.from device) descriptor)
+
+
+--| `Gpu.Device.createBuffer` under the session; a buffer created mapped
+--| has its mapping at once.
+pub createBuffer :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.BufferDescriptor
+    → Result Error.Error Handle.Buffer
+createBuffer session device descriptor = forward session (Make.buffer (Js.from device) descriptor)
+
+
+--| `Gpu.Device.createMappedBuffer` under the session.
+pub createMappedBuffer :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.BufferDescriptor
+    → Result Error.Error { buffer : Handle.Buffer, mapping : Handle.Mapping }
+createMappedBuffer session device descriptor =
+    buffer = createBuffer session device { descriptor | mappedAtCreation = Types.Value True }?
+    case Memory.currentMapping (Js.from buffer) of
+        Just m →
+            Ok { buffer = buffer, mapping = Js.to m }
+
+        Nothing →
+            Engine.defect "a buffer created mapped has no mapping"
+
+
+--| `Gpu.Device.createTexture` under the session.
+pub createTexture :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.TextureDescriptor
+    → Result Error.Error Handle.Texture
+createTexture session device descriptor = forward session (Make.texture (Js.from device) descriptor)
+
+
+--| `Gpu.Device.createBindGroupLayout` under the session.
+pub createBindGroupLayout :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.BindGroupLayoutDescriptor
+    → Result Error.Error Handle.BindGroupLayout
+createBindGroupLayout session device descriptor =
+    forward session (Make.bindGroupLayout (Js.from device) descriptor)
+
+
+--| `Gpu.Device.createBindGroup` under the session; it may bind what the
+--| session made.
+pub createBindGroup :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.BindGroupDescriptor
+    → Result Error.Error Handle.BindGroup
+createBindGroup session device descriptor =
+    forward session (Make.bindGroup (Js.from device) Js.null descriptor)
+
+
+--| `Gpu.Device.createPipelineLayout` under the session.
+pub createPipelineLayout :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.PipelineLayoutDescriptor
+    → Result Error.Error Handle.PipelineLayout
+createPipelineLayout session device descriptor =
+    forward session (Make.pipelineLayout (Js.from device) Js.null descriptor)
+
+
+--| `Gpu.Device.createShaderModule` under the session: invalid WGSL is an
+--| error of the session's validation scope, and the module is returned,
+--| provisional; `Gpu.Shader.getCompilationInfo` reads its messages.
+pub createShaderModule :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.ShaderModuleDescriptor
+    → Result Error.Error Handle.Shader
+createShaderModule session device descriptor =
+    Result.map (Make.shaderModuleIn (Js.from session) (Js.from device) descriptor) Js.to
+
+
+--| `Gpu.Device.createComputePipeline` under the session.
+pub createComputePipeline :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.ComputePipelineDescriptor
+    → Result Error.Error Handle.ComputePipeline
+createComputePipeline session device descriptor =
+    forward session (Make.computePipeline (Js.from device) Js.null descriptor)
+
+
+--| `Gpu.Device.createComputePipelineAsync` under the session: it waits for
+--| the host's promise, whose `GPUPipelineError` is the result, as in the
+--| ordinary form. A session that ended while it waited is `SessionState
+--| SessionEnded`, and the pipeline is rejected. May suspend.
+pub createComputePipelineAsync :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.ComputePipelineDescriptor
+    → Result Error.Error Handle.ComputePipeline
+createComputePipelineAsync session device descriptor =
+    Result.map (Make.computePipelineAsyncIn (Js.from session) (Js.from device) descriptor) Js.to
+
+
+--| `Gpu.Device.createQuerySet` under the session.
+pub createQuerySet :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.QuerySetDescriptor
+    → Result Error.Error Handle.QuerySet
+createQuerySet session device descriptor =
+    forward session (Make.querySet (Js.from device) descriptor)
+
+
+--| `Gpu.Device.createRenderPipeline` under the session.
+pub createRenderPipeline :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.RenderPipelineDescriptor
+    → Result Error.Error Handle.RenderPipeline
+createRenderPipeline session device descriptor =
+    forward session (Make.renderPipeline (Js.from device) Js.null descriptor)
+
+
+--| `Gpu.Device.createRenderPipelineAsync` under the session, as
+--| `createComputePipelineAsync` is. May suspend.
+pub createRenderPipelineAsync :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , Types.RenderPipelineDescriptor
+    → Result Error.Error Handle.RenderPipeline
+createRenderPipelineAsync session device descriptor =
+    Result.map (Make.renderPipelineAsyncIn (Js.from session) (Js.from device) descriptor) Js.to

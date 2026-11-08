@@ -8,7 +8,6 @@
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Feature as Feature
-import Gpu.Formats as Formats
 import Gpu.Handle as Handle
 import Gpu.Limits as Limits
 import Gpu.Make as Make
@@ -16,6 +15,7 @@ import Gpu.Memory as Memory
 import Gpu.Native as Native
 import Gpu.Types as Types
 import Js
+import Sub exposing (Sub)
 
 
 --| The features the device was made with, dependencies included.
@@ -50,9 +50,70 @@ pub loss : Handle.Device → Maybe Error.DeviceLoss
 loss device = Engine.loss (Js.from device)
 
 
---| Wait until the device is lost; at once if it is already.
+--| Wait until the device is lost; at once if it is already. Runs under a
+--| diagnostic session's lease (§6.4).
 pub awaitLost : Handle.Device → Error.DeviceLoss
 awaitLost device = Engine.awaitLost (Js.from device)
+
+
+--| What a device reports beside its operations' results: an error that
+--| escaped every error scope, `Uncaptured`, and the device's loss, `Lost`
+--| (`Gpu.Error.DeviceEvent`).
+pub type alias DeviceEvent =
+    Error.DeviceEvent
+
+
+--| Call `handler` with each event of the device, in order, in the calling
+--| fiber, until the device is lost: its `Lost` event is the last, and
+--| `eachEvent` then returns. A device lost already gives `Lost` at once,
+--| so no listener misses the loss by starting late. An event that arrives
+--| while `handler` runs waits for it. Cancel the fiber to stop listening.
+--|
+--| An `Uncaptured` error is a defect of the engine, which runs every call
+--| under an error scope: the program that made the device stops just after
+--| its listeners are handed it. Events are telemetry, never the way to
+--| detect a failure: each checked operation returns its own, and a browser
+--| may report fewer errors than happened (§1). May suspend; runs under a
+--| diagnostic session's lease (§6.4).
+pub eachEvent : Handle.Device, (DeviceEvent → ⊤) → ⊤
+eachEvent device handler = Engine.eachEvent (Js.from device) handler
+
+
+type EventKey
+    = Events Int
+
+
+--| `eachEvent` as a subscription: each event of the device, as a message
+--| through `tag`, while the subscription is live. One device's
+--| declarations share one listener.
+pub onEvent : Handle.Device, (DeviceEvent → msg) → Sub msg
+onEvent device tag =
+    Sub.listen (Events (Engine.deviceId (Js.from device))) (sendEvents device _) tag
+
+
+-- Each event, sent as a value of its own: what the engine queued is its.
+sendEvents : Handle.Device, (DeviceEvent → ⊤) → ⊤
+sendEvents device send = eachEvent device λevent → send (fresh event)
+
+
+fresh : DeviceEvent → DeviceEvent
+fresh event =
+    case event of
+        Error.Uncaptured found →
+            Error.Uncaptured
+                (case found of
+                    Error.ValidationError m →
+                        Error.ValidationError { message = m.message }
+
+                    Error.OutOfMemoryError m →
+                        Error.OutOfMemoryError { message = m.message }
+
+                    Error.InternalError m →
+                        Error.InternalError { message = m.message }
+                )
+
+        Error.Lost l →
+            Error.Lost { reason = l.reason, message = l.message }
 
 
 --| A sampler, checked (§6.1): the call runs between the device's error
@@ -143,33 +204,7 @@ pub createShaderModule :
     , Types.ShaderModuleDescriptor
     → Result Error.Error Handle.Shader
 createShaderModule device descriptor =
-    op = Make.shaderModule (Js.from device) descriptor?
-    shader = Js.ref Js.null
-
-    result =
-        Engine.checkedMaking
-            op.device
-            op.name
-            op.labels
-            (λ⊤ → Make.perform op)
-            (λm →
-                Js.write shader m
-                Make.adopt op m
-            )
-            λm → Make.discard op m
-    case result of
-        Ok m →
-            Ok (Js.to m)
-
-        Err (Error.Validation detail) →
-            if Js.isNull (Js.read shader) then
-                Err (Error.Validation detail)
-            else
-                info = Make.compilationInfo (Js.read shader)?
-                Err (Error.ShaderRejected { failure = detail, messages = info.messages })
-
-        Err problem →
-            Err problem
+    Result.map (Make.shaderModuleIn Js.null (Js.from device) descriptor) Js.to
 
 
 --| A compute pipeline, made by the native synchronous call and checked
@@ -191,58 +226,7 @@ pub createComputePipelineAsync :
     , Types.ComputePipelineDescriptor
     → Result Error.Error Handle.ComputePipeline
 createComputePipelineAsync device descriptor =
-    native = Js.from device
-    Make.computeHandles native Js.null descriptor?
-    converted = Native.computePipelineDescriptor descriptor
-    r = Engine.recordOf native
-
-    result =
-        Engine.checkedAwait
-            native
-            "createComputePipelineAsync"
-            (Make.labelsOf descriptor.label)
-            (λ⊤ → Ok (Js.call native "createComputePipelineAsync" [ converted ]))
-            λfulfilled value →
-                if fulfilled then
-                    Engine.adoptInBatch value r Js.null
-                    Engine.Expected (Ok value)
-                else
-                    pipelineFailure "createComputePipelineAsync" (entryPoints descriptor) value
-    case result of
-        Ok pipeline →
-            Engine.setStatus pipeline "accepted"
-            Ok (Js.to pipeline)
-
-        Err problem →
-            Err problem
-
-
--- A rejected asynchronous pipeline: a native `GPUPipelineError` of a reason
--- in the pin, or unexpected.
-pipelineFailure : String, List String, Js.Value → Engine.Outcome (Result Error.Error Js.Value)
-pipelineFailure operation entries error =
-    if not (Engine.isInstanceOf error "GPUPipelineError") then
-        Engine.Unexpected error
-    else
-        reason = Js.get error "reason"
-        failure = { operation = operation, message = Engine.messageOf error, entryPoints = entries }
-        if Js.same reason (Js.from "validation") then
-            Engine.Expected (Err (Error.PipelineValidation failure))
-        else if Js.same reason (Js.from "internal") then
-            Engine.Expected (Err (Error.PipelineInternal failure))
-        else
-            Engine.Unexpected error
-
-
--- The entry points a pipeline descriptor asks for.
-entryPoints : Types.ComputePipelineDescriptor → List String
-entryPoints descriptor =
-    case descriptor.compute.entryPoint of
-        Types.Value name →
-            [ name ]
-
-        Types.Default →
-            []
+    Result.map (Make.computePipelineAsyncIn Js.null (Js.from device) descriptor) Js.to
 
 
 --| A query set, checked. A timestamp query set needs the `timestamp-query`
@@ -277,62 +261,4 @@ pub createRenderPipelineAsync :
     , Types.RenderPipelineDescriptor
     → Result Error.Error Handle.RenderPipeline
 createRenderPipelineAsync device descriptor =
-    native = Js.from device
-    Make.renderHandles native Js.null descriptor?
-    formats = Make.renderFormats descriptor
-    converted = Native.renderPipelineDescriptor descriptor
-    r = Engine.recordOf native
-
-    result =
-        Engine.checkedAwait
-            native
-            "createRenderPipelineAsync"
-            (Make.labelsOf descriptor.label)
-            (λ⊤ → Ok (Js.call native "createRenderPipelineAsync" [ converted ]))
-            λfulfilled value →
-                if fulfilled then
-                    Engine.adoptInBatch value r Js.null
-                    Engine.Expected (Ok value)
-                else
-                    candidates = Formats.gated formats
-                    if candidates ≠ [] && Engine.isTypeError value then
-                        Engine.Expected (Err (Formats.formatFailure candidates value))
-                    else
-                        pipelineFailure
-                            "createRenderPipelineAsync"
-                            (renderEntryPoints descriptor)
-                            value
-    case result of
-        Ok pipeline →
-            Engine.setStatus pipeline "accepted"
-            Ok (Js.to pipeline)
-
-        Err problem →
-            Err problem
-
-
--- The entry points a render pipeline descriptor asks for: its vertex
--- stage's, then its fragment stage's.
-renderEntryPoints : Types.RenderPipelineDescriptor → List String
-renderEntryPoints descriptor =
-    vertex =
-        case descriptor.vertex.entryPoint of
-            Types.Value name →
-                [ name ]
-
-            Types.Default →
-                []
-
-    fragment =
-        case descriptor.fragment of
-            Types.Value f →
-                case f.entryPoint of
-                    Types.Value name →
-                        [ name ]
-
-                    Types.Default →
-                        []
-
-            Types.Default →
-                []
-    [ …vertex, …fragment ]
+    Result.map (Make.renderPipelineAsyncIn Js.null (Js.from device) descriptor) Js.to

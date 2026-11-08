@@ -136,9 +136,39 @@ pub type InputError
 
 
 --| Why a device refuses a call for its diagnostic session (§6.4).
+--| `DeviceLeased`: a diagnostic session holds the device's lease, and the
+--| call does not present it — an ordinary call, `Gpu.Diagnostics.run` on
+--| a leased device, or a session whose nested session is open.
+--| `SessionEnded`: the session's lease ended.
 pub type SessionState
     = DeviceLeased
     | SessionEnded
+
+
+--| An error a native error scope or the device's uncaptured-error event
+--| reported: its class, and the host's message, for diagnostics only.
+pub type GpuError
+    = ValidationError HostMessage
+    | OutOfMemoryError HostMessage
+    | InternalError HostMessage
+
+
+--| Why `Gpu.Diagnostics.popErrorScope` popped nothing: the session pushed
+--| no scope that is still open (`ScopeUnderflow`), or the session cannot
+--| be used (`SessionRefused`).
+pub type DiagnosticError
+    = ScopeUnderflow
+    | SessionRefused InputError
+
+
+--| What a device reports beside its operations' results (§8): an error
+--| that escaped every error scope (`Uncaptured`), which is a defect of
+--| the engine and stops the program that made the device once listeners
+--| saw it, and the device's loss (`Lost`), sent once, and to a listener
+--| that starts after the loss at once.
+pub type DeviceEvent
+    = Uncaptured GpuError
+    | Lost DeviceLoss
 
 
 --| A capability the device or the host does not have.

@@ -1,0 +1,29 @@
+-- A throw inside a diagnostic session's callback (docs/design/webgpu.md
+-- §6.4, §8.1; ledger §7, *Any failure in an application callback*): a
+-- defect of the program, a `TypeError` that the engine does not relabel.
+-- The session ends however its callback ends, so its finaliser pops the
+-- scope the callback left open and the session's own three: the host logs
+-- none left open after the throw, and the page stops.
+import Gpu.Diagnostics
+import Gpu.Types as Types
+import GpuHost
+import GpuKit
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    report = Gpu.Diagnostics.run d λsession →
+        pushed = Gpu.Diagnostics.pushErrorScope session Types.FilterValidation
+        Task.yieldNow ⊤
+        GpuHost.logScopesLater d
+        GpuHost.fail "the callback fails"
+        pushed
+    [ "unreachable: " ++ GpuShow.sessionReport report λ_ → "⊤" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

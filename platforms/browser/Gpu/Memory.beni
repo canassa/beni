@@ -18,6 +18,7 @@ import Gpu.Handle as Handle
 import Gpu.Scalar as Scalar
 import Gpu.Types as Types
 import Js
+import Task
 
 
 type alias V =
@@ -413,3 +414,143 @@ rawBytes source =
 
         _ →
             Js.construct (Js.global "Uint8Array") [ native ]
+
+
+-- ---- Map requests (§7), ordinary or forwarded by a session (§6.4) --------------
+
+--| What `Gpu.Buffer.map` maps (`Gpu.Buffer.MapRequest`).
+pub type alias MapRequest =
+    mode : Flags.MapModes
+    offset : Int
+    size : Maybe Int
+
+
+--| Map a buffer (`Gpu.Buffer.map`), as a checked operation of its own, or,
+--| when `session` is not null, as a forwarding call of that diagnostic
+--| session: then `mapAsync` runs under the session's scopes, and only its
+--| promise is waited for. A cancelled wait unmaps this request, and only
+--| it. May suspend.
+pub mapIn : V, Handle.Buffer, MapRequest → Result Error.Error V
+mapIn session buffer request =
+    native = Js.from buffer
+    b = record buffer
+    Result.mapError (preflight b request) Error.InvalidInput?
+    bufferSize = sizeOf b
+    rangeSize = Maybe.withDefault request.size (max 0 (bufferSize - request.offset))
+    mode = if Flags.mapModesHas request.mode Flags.Read then "read" else "write"
+    generation = Js.ref (-1)
+    finished = Js.ref False
+
+    -- An `undefined` argument is an omitted one (Web IDL): the native default.
+    sizeArg = optionalArg request.size
+
+    result =
+        Task.onExit
+            (λ⊤ →
+                r =
+                    Engine.checkedAwaitIn
+                        session
+                        (deviceOf b)
+                        "mapAsync"
+                        [ Js.to (Js.get native "label") ]
+                        (λ⊤ →
+                            Js.write generation (startMap native)
+                            Ok
+                                (Js.call native "mapAsync"
+                                    [ Js.from (Flags.mapModesBits request.mode)
+                                    , Js.from request.offset
+                                    , sizeArg
+                                    ]
+                                )
+                        )
+                        λfulfilled value →
+                            mapSettled
+                                native
+                                (Js.read generation)
+                                mode
+                                request.offset
+                                rangeSize
+                                fulfilled
+                                value
+                Js.write finished True
+                r
+            )
+            λ_ →
+                if Js.read finished || Js.read generation < 0 then
+                    ⊤
+                else
+                    release native (Js.read generation)
+    case result of
+        Ok mapping →
+            Ok mapping
+
+        Err problem →
+            -- A mapping the operation does not publish is not left live.
+            if Js.read generation ≥ 0 then release native (Js.read generation)
+            Err problem
+
+
+-- The checks of `map` before any native call.
+preflight : V, MapRequest → Result Error.InputError ⊤
+preflight b request =
+    bits = Flags.mapModesBits request.mode
+    if bits ≠ Flags.mapModeBits Flags.Read && bits ≠ Flags.mapModeBits Flags.Write then
+        Err (Error.InvalidMapMode { path = "mode", bits = bits })
+    else
+        usable b Js.null "buffer"?
+        state = stateOf b
+        if state ≠ Types.Unmapped then
+            Err (Error.MappingState { path = "buffer", state = state })
+        else
+            needed = mapUsage (if bits == Flags.mapModeBits Flags.Read then Flags.Read else Flags.Write)
+            if Js.bitAnd (usageOf b) (Flags.bufferUsageBits needed) == 0 then
+                Err (Error.MissingBufferUsage { path = "buffer", usage = needed })
+            else
+                bufferSize = sizeOf b
+                offset = size64 request.offset "offset"?
+                aligned offset 8 "offset"?
+                rangeSize =
+                    case request.size of
+                        Just s →
+                            size64 s "size"?
+
+                        Nothing →
+                            max 0 (bufferSize - offset)
+                aligned rangeSize 4 "size"?
+                if offset > bufferSize || rangeSize > bufferSize - offset then
+                    Err
+                        (Error.OutOfRange
+                            { path = "size"
+                            , offset = offset
+                            , size = rangeSize
+                            , available = bufferSize
+                            }
+                        )
+                else
+                    Ok ⊤
+
+
+--| Map, run `body` with the mapping, and unmap however `body` ends
+--| (`Gpu.Buffer.withMapped`), the map ordinary or forwarded by `session`.
+pub withMappedIn :
+      V
+    , Handle.Buffer
+    , MapRequest
+    , (Handle.Mapping → Result Error.Error a)
+    → Result Error.Error a
+withMappedIn session buffer request body =
+    mapping = mapIn session buffer request?
+    generation : Int
+    generation = Js.to (Js.get mapping "generation")
+    Task.onExit (λ⊤ → body (Js.to mapping)) λ_ → release (Js.from buffer) generation
+
+
+-- An optional native argument: `undefined`, which Web IDL reads as omitted.
+optionalArg : Maybe Int → V
+optionalArg value =
+    case value of
+        Just n →
+            Js.from n
+
+        Nothing →
+            Js.undefined

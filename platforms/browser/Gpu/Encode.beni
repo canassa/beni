@@ -18,12 +18,9 @@
 --!         Gpu.ComputePass.setBindGroup pass zero (Just group) []?
 --!         Gpu.ComputePass.dispatchWorkgroups pass four one one
 
-import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
-import Gpu.Formats as Formats
 import Gpu.Handle as Handle
 import Gpu.Make as Make
-import Gpu.Session as Session
 import Gpu.Types as Types
 import Js
 
@@ -41,27 +38,7 @@ pub run :
     , Types.CommandEncoderDescriptor
     , sync (Handle.CommandEncoder → Result InputError a)
     → Result Error.Error { value : a, commands : Handle.CommandBuffer }
-run device descriptor body =
-    native = Js.from device
-    value = Js.ref Nothing
-
-    made =
-        Engine.checkedMaking
-            native
-            "encode"
-            (Make.labelsOf descriptor.label)
-            (λ⊤ → Session.encode native Js.null descriptor (λenc → body (Js.to enc)) value)
-            (λ_ → ⊤)
-            λ_ → ⊤
-    case ( made, Js.read value ) of
-        ( Ok commands, Just v ) →
-            Ok { value = v, commands = Js.to commands }
-
-        ( Ok _, Nothing ) →
-            Engine.defect "an encoding run published commands without a value"
-
-        ( Err problem, _ ) →
-            Err problem
+run device descriptor body = Make.encodeIn Js.null (Js.from device) descriptor body
 
 
 --| Run `body` with a new render bundle encoder of `device`, checked (§6.1),
@@ -76,25 +53,4 @@ pub bundle :
     , Types.RenderBundleEncoderDescriptor
     , sync (Handle.RenderBundleEncoder → Result InputError a)
     → Result Error.Error { value : a, bundle : Handle.RenderBundle }
-bundle device descriptor body =
-    native = Js.from device
-    Formats.formatsAvailable native (Formats.bundleFormats descriptor)?
-    value = Js.ref Nothing
-
-    made =
-        Engine.checkedMaking
-            native
-            "encodeBundle"
-            (Make.labelsOf descriptor.label)
-            (λ⊤ → Session.bundle native Js.null descriptor (λenc → body (Js.to enc)) value)
-            (λ_ → ⊤)
-            λ_ → ⊤
-    case ( made, Js.read value ) of
-        ( Ok rendered, Just v ) →
-            Ok { value = v, bundle = Js.to rendered }
-
-        ( Ok _, Nothing ) →
-            Engine.defect "a bundle run published a bundle without a value"
-
-        ( Err problem, _ ) →
-            Err problem
+bundle device descriptor body = Make.bundleIn Js.null (Js.from device) descriptor body

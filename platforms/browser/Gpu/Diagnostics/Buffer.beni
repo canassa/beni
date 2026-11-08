@@ -1,0 +1,32 @@
+--! The forwarding forms of `Gpu.Buffer.map` and `withMapped`
+--! (`docs/design/webgpu.md` §6.4), under a diagnostic session: `mapAsync`
+--! runs under the session's scopes, and the call waits for its promise
+--! only. What the ordinary forms refuse, these refuse, and a failure the
+--! host's promise reports is the result as there. The mapping's memory is
+--! reached with `Gpu.Buffer.getMappedRange`, which runs under a lease.
+
+import Gpu.Buffer as Buffer
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Memory as Memory
+import Js
+
+
+--| `Gpu.Buffer.map` under the session. May suspend.
+pub map :
+      Handle.DiagnosticSession
+    , Handle.Buffer
+    , Buffer.MapRequest
+    → Result Error.Error Handle.Mapping
+map session buffer request = Result.map (Memory.mapIn (Js.from session) buffer request) Js.to
+
+
+--| `Gpu.Buffer.withMapped` under the session: the map is forwarded, and
+--| the buffer unmapped however `body` ends. May suspend, and `body` may too.
+pub withMapped :
+      Handle.DiagnosticSession
+    , Handle.Buffer
+    , Buffer.MapRequest
+    , (Handle.Mapping → Result Error.Error a)
+    → Result Error.Error a
+withMapped session buffer request body = Memory.withMappedIn (Js.from session) buffer request body

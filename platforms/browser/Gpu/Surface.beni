@@ -13,9 +13,8 @@ import Browser.Canvas as Canvas
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Flags as Flags
-import Gpu.Formats as Formats
 import Gpu.Handle as Handle
-import Gpu.Native as Native
+import Gpu.Make as Make
 import Gpu.Types as Types
 import Js
 
@@ -87,47 +86,7 @@ contextOf target =
 --| unconfigured for frames, whatever the host kept of it: configure it
 --| again. May suspend.
 pub configure : Handle.Surface, Types.CanvasConfiguration → Result Error.Error ⊤
-configure surface configuration =
-    native = Js.from surface
-    s = Engine.recordOf native
-    device = Js.from configuration.device
-
-    views =
-        case configuration.viewFormats of
-            Types.Value formats →
-                formats
-
-            Types.Default →
-                []
-    -- A refusal before the native call changes nothing of the surface.
-    Engine.admit device "configure"?
-    Formats.formatsAvailable device [ configuration.format, …views ]?
-    converted = Native.canvasConfiguration configuration
-    Engine.nextGeneration s
-    Js.set s "device" Js.null
-    generation = Js.get s "generation"
-
-    result = Engine.checked device "configure" [] λ⊤ →
-        Js.catchIf
-            (λ⊤ →
-                Js.call native "configure" [ converted ] ▷ ignore
-                Ok (Js.object [])
-            )
-            Engine.isTypeError
-            λerror →
-                Err
-                    (Error.CanvasFailed
-                        (Error.CanvasConfigurationRejected { message = Engine.messageOf error })
-                    )
-    case result of
-        Ok _ →
-            -- Unless the surface was configured or unconfigured again while
-            -- this configuration was checked.
-            if Js.same (Js.get s "generation") generation then Js.set s "device" device else ⊤
-            Ok ⊤
-
-        Err problem →
-            Err problem
+configure surface configuration = Make.configureIn Js.null (Js.from surface) configuration
 
 
 --| Remove the surface's configuration. Every texture it gave expires, and a

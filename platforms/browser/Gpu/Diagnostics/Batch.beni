@@ -1,0 +1,23 @@
+--! The forwarding form of `Gpu.Batch.run` (`docs/design/webgpu.md` §6.4):
+--! the batch's callback runs in one host turn, as in the ordinary form,
+--! under the session's scopes, with none of its own, so `Gpu.Batch.segment`
+--! only names. Every `Gpu.Batch` operation works in the callback as usual.
+
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Js
+
+
+--| `Gpu.Batch.run` under the session. A refusal or a documented host
+--| failure in the batch is `BatchFailed` at once, and what it made is
+--| rejected. Otherwise the result is the callback's value, and what the
+--| batch made is the session's: provisional, and settled with it, when
+--| `Gpu.Batch.awaitReady` wakes too.
+pub run :
+      Handle.DiagnosticSession
+    , Handle.Device
+    , String
+    , sync (Handle.Batch → Result Error.Error a)
+    → Result Error.Error a
+run session device name body = Make.batchIn (Js.from session) device name body

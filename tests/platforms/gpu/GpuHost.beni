@@ -8,7 +8,7 @@
 import Binary
 import Browser.Host.Uint32Array exposing (Uint32Array)
 import Browser.Host.Uint8Array exposing (Uint8Array)
-import Gpu.Handle exposing (Batch, Buffer)
+import Gpu.Handle exposing (Batch, Buffer, Device)
 import Task
 
 
@@ -125,3 +125,26 @@ pub foreign impure keepBatch : Batch → ⊤
 
 --| The batch `keepBatch` kept last.
 pub foreign impure keptBatch : ⊤ → Batch
+
+
+--| Make a call the engine never makes: a sampler the device refuses, made
+--| outside every error scope, so the device reports its error as
+--| uncaptured.
+pub foreign impure escape : Device → ⊤
+
+
+--| Dispatch an `uncapturederror` event on the device whose error is a
+--| plain object named like a GPU error.
+pub foreign impure escapeSpoofed : Device → ⊤
+
+
+--| Pop the device's innermost error scope behind the engine's back.
+pub foreign impure popBehind : Device → ⊤
+
+
+--| Log how many error scopes of the device are open three tasks later.
+pub foreign impure logScopesLater : Device → ⊤
+
+
+--| Throw a native `TypeError` with `message`.
+pub foreign impure fail : String → ⊤

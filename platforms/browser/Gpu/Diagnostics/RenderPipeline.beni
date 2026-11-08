@@ -1,0 +1,20 @@
+--! The forwarding form of `Gpu.RenderPipeline.getBindGroupLayout`
+--! (`docs/design/webgpu.md` §6.4), under a diagnostic session.
+
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Scalar as Scalar
+import Js
+
+
+--| `Gpu.RenderPipeline.getBindGroupLayout` under the session.
+pub getBindGroupLayout :
+      Handle.DiagnosticSession
+    , Handle.RenderPipeline
+    , Scalar.U32
+    → Result Error.Error Handle.BindGroupLayout
+getBindGroupLayout session pipeline index =
+    Result.map
+        (Make.checkedIn (Js.from session) (Make.getBindGroupLayout (Js.from pipeline) Js.null index))
+        Js.to
