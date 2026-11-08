@@ -7,6 +7,16 @@
 // whichever host is there.
 //
 // The fake is not WebGPU: it validates nothing a fixture does not ask it to.
+// Where it departs from the specification on purpose:
+// - no texel is ever stored: a copy or a render reads back zeros, so a
+//   pixel fixture compares in `test-webgpu` only (`.webgpu-expected`);
+// - no shader runs, and a pipeline is valid when its entry points exist;
+// - a canvas presents its current texture on the next task (`setTimeout`),
+//   not at the browser's rendering update, and a presented texture is
+//   treated as destroyed by later encodings;
+// - every promise settles on a microtask, so frames and batches run in one
+//   task unless a fixture waits on a timer;
+// - only the validation rules a fixture reaches are modelled.
 
 const native = () => globalThis.__beniWebGpuNative === true;
 
@@ -292,7 +302,9 @@ const fakeDevice = (adapter, descriptor) => {
     t.createView = (viewDescriptor) => {
       const d = viewDescriptor ?? {};
       if ((d.baseMipLevel ?? 0) + (d.mipLevelCount ?? 1) > t.mipLevelCount) report("validation", new globalThis.GPUValidationError("invalid texture view"));
-      return plainObject(d.label);
+      const view = plainObject(d.label);
+      fakeViewTexture.set(view, t);
+      return view;
     };
     return t;
   };
@@ -317,9 +329,15 @@ const fakeDevice = (adapter, descriptor) => {
       if (offset % 256 !== 0) invalid = true;
       commands.push(() => fakeBuffers.get(destination).storage.fill(0, offset, offset + count * 8));
     };
-    encoder.copyBufferToTexture = () => {};
-    encoder.copyTextureToBuffer = () => {};
-    encoder.copyTextureToTexture = () => {};
+    encoder.copyBufferToTexture = (_source, destination) => {
+      if (fakeStale(destination.texture)) invalid = true;
+    };
+    encoder.copyTextureToBuffer = (source) => {
+      if (fakeStale(source.texture)) invalid = true;
+    };
+    encoder.copyTextureToTexture = (source, destination) => {
+      if (fakeStale(source.texture) || fakeStale(destination.texture)) invalid = true;
+    };
     encoder.pushDebugGroup = () => {};
     encoder.popDebugGroup = () => {};
     encoder.insertDebugMarker = () => {};
@@ -336,6 +354,7 @@ const fakeDevice = (adapter, descriptor) => {
       return pass;
     };
     encoder.beginRenderPass = (passDescriptor) => {
+      for (const a of passDescriptor.colorAttachments ?? []) if (a !== null && (fakeStale(a.view) || fakeStale(a.resolveTarget))) invalid = true;
       const pass = renderEncoder(passDescriptor?.label, () => {
         invalid = true;
       });
@@ -397,10 +416,41 @@ const fakeDevice = (adapter, descriptor) => {
 // page has no `OffscreenCanvas`, a fake one with the same context.
 const canvasFormats = ["bgra8unorm", "rgba8unorm", "rgba16float"];
 const fakeContexts = new globalThis.WeakMap();
+// Canvas textures the fake has presented, and the texture each fake view
+// views: an encoding that names one is invalid at `finish`, as a destroyed
+// texture is on a GPU.
+const fakeExpired = new globalThis.WeakSet();
+const fakeViewTexture = new globalThis.WeakMap();
+const fakeStale = (object) => object !== undefined && object !== null && (fakeExpired.has(object) || fakeExpired.has(fakeViewTexture.get(object)));
+// Every write of a canvas's width or height, by canvas: a write that
+// changes nothing counts too, as the specification replaces the drawing
+// buffer on every set.
+const sizeWrites = new globalThis.WeakMap();
+const countSizeWrites = (canvas) => {
+  if (sizeWrites.has(canvas)) return;
+  sizeWrites.set(canvas, 0);
+  for (const name of ["width", "height"]) {
+    let owner = canvas;
+    let descriptor;
+    while (owner !== null && (descriptor = globalThis.Object.getOwnPropertyDescriptor(owner, name)) === undefined) owner = globalThis.Object.getPrototypeOf(owner);
+    let value = canvas[name];
+    const get = descriptor?.get ? () => descriptor.get.call(canvas) : () => value;
+    const set = descriptor?.set ? (v) => descriptor.set.call(canvas, v) : (v) => (value = v);
+    globalThis.Object.defineProperty(canvas, name, {
+      configurable: true,
+      get,
+      set: (v) => {
+        sizeWrites.set(canvas, sizeWrites.get(canvas) + 1);
+        set(v);
+      },
+    });
+  }
+};
 const fakeContext = (canvas) => {
   let config = null;
   let current = null;
-  let currentSize = "";
+  let currentSize = -1;
+  countSizeWrites(canvas);
   const context = { canvas };
   context.configure = (c) => {
     if (!canvasFormats.includes(c.format)) throw new globalThis.TypeError(`${c.format} is not a canvas format`);
@@ -417,17 +467,38 @@ const fakeContext = (canvas) => {
   context.getConfiguration = () => (config === null ? null : { ...config, viewFormats: [...config.viewFormats], toneMapping: { ...config.toneMapping } });
   context.getCurrentTexture = () => {
     if (config === null) throw new globalThis.DOMException("the context is not configured", "InvalidStateError");
-    const size = `${canvas.width}x${canvas.height}`;
+    const size = sizeWrites.get(canvas);
     if (current === null || currentSize !== size) {
+      if (current !== null) fakeExpired.add(current);
       current = config.device.createTexture({ size: [canvas.width, canvas.height], format: config.format, usage: config.usage });
       currentSize = size;
       const presented = current;
       globalThis.setTimeout(() => {
+        fakeExpired.add(presented);
         if (current === presented) current = null;
       }, 0);
     }
     return current;
   };
+  return context;
+};
+// The kind of context each canvas has: a canvas keeps the first kind it
+// gave, and a request for another kind is null, as HTML specifies.
+const contextKinds = new globalThis.WeakMap();
+const contextOfKind = (canvas, kind, make) => {
+  const had = contextKinds.get(canvas);
+  if (had !== undefined && had !== kind) return null;
+  const context = make();
+  if (context !== null && context !== undefined) contextKinds.set(canvas, kind);
+  return context ?? null;
+};
+const bitmapContexts = new globalThis.WeakMap();
+const bitmapContext = (canvas) => {
+  let context = bitmapContexts.get(canvas);
+  if (context === undefined) {
+    context = { canvas, transferFromImageBitmap: () => undefined };
+    bitmapContexts.set(canvas, context);
+  }
   return context;
 };
 const webgpuContext = (canvas) => {
@@ -446,8 +517,9 @@ const fakeCanvases = () => {
   if (element !== undefined) {
     const getContext = element.prototype.getContext;
     element.prototype.getContext = function (kind, ...rest) {
-      if (kind === "webgpu") return webgpuContext(this);
-      return getContext === undefined ? null : getContext.call(this, kind, ...rest);
+      if (kind === "webgpu") return contextOfKind(this, kind, () => webgpuContext(this));
+      if (kind === "bitmaprenderer") return contextOfKind(this, kind, () => bitmapContext(this));
+      return contextOfKind(this, kind, () => (getContext === undefined ? null : getContext.call(this, kind, ...rest)));
     };
   }
   // happy-dom's own OffscreenCanvas, where it has one, gives no `webgpu` context.
@@ -458,7 +530,9 @@ function FakeOffscreenCanvas(width, height) {
   this.height = height;
 }
 FakeOffscreenCanvas.prototype.getContext = function (kind) {
-  return kind === "webgpu" ? webgpuContext(this) : null;
+  if (kind === "webgpu") return contextOfKind(this, kind, () => webgpuContext(this));
+  if (kind === "bitmaprenderer") return contextOfKind(this, kind, () => bitmapContext(this));
+  return null;
 };
 // A validation error a fake device reports into its innermost scope.
 const deviceReports = new globalThis.WeakMap();
@@ -619,6 +693,21 @@ const faults = {
   // texture refused with what the ledger does not list.
   "context-null": () => {
     contextNull = true;
+  },
+  "configure-range": () => {
+    bufferFaults.configure = () => {
+      throw new globalThis.RangeError("injected unlisted configuration failure");
+    };
+  },
+  "configure-spoofed": () => {
+    bufferFaults.configure = () => {
+      throw { name: "TypeError", message: "a plain object named TypeError" };
+    };
+  },
+  "current-spoofed": () => {
+    bufferFaults.current = () => {
+      throw { name: "InvalidStateError", message: "a plain object named InvalidStateError" };
+    };
   },
   "configure-type-error": () => {
     bufferFaults.configure = () => {
@@ -1137,35 +1226,3 @@ export const kept = (_unit) => keptBuffer;
 // The render commands issued since the last call, oldest first.
 export const commands = (_unit) => renderLog.splice(0);
 
-// TEMPORARY probe of a native canvas's onSubmittedWorkDone.
-export const rawProbe = (_unit) => {
-  const out = globalThis.document.createElement("pre");
-  globalThis.document.body.appendChild(out);
-  const say = (line) => {
-    out.textContent += line + ";";
-  };
-  const run = (name, attach, use, delay) =>
-    globalThis.navigator.gpu.requestAdapter().then((adapter) => adapter.requestDevice()).then((device) => {
-      const canvas = globalThis.document.createElement("canvas");
-      canvas.width = 4;
-      canvas.height = 4;
-      if (attach) globalThis.document.body.appendChild(canvas);
-      const ctx = canvas.getContext("webgpu");
-      ctx.configure({ device, format: "rgba8unorm" });
-      const tex = ctx.getCurrentTexture();
-      const enc = device.createCommandEncoder();
-      if (use) {
-        const p = enc.beginRenderPass({ colorAttachments: [{ view: tex.createView(), loadOp: "clear", storeOp: "store" }] });
-        p.end();
-      }
-      device.queue.submit([enc.finish()]);
-      const wait = () => device.queue.onSubmittedWorkDone();
-      const done = delay ? new globalThis.Promise((r) => globalThis.setTimeout(r, 50)).then(wait) : wait();
-      return done.then(() => say(`${name}: ok`), (e) => say(`${name}: ${e.name} ${e.message}`));
-    }).then(null, (e) => say(`${name} threw: ${e.name} ${e.message}`));
-  asked(run("detached-used-now", false, true, false));
-  asked(run("detached-unused-now", false, false, false));
-  asked(run("detached-used-later", false, true, true));
-  asked(run("attached-used-now", true, true, false));
-  return null;
-};

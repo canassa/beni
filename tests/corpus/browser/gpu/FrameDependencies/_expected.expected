@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"submit the frame's commands after it: Err InvalidInput ResourceExpired commands"</li>
+      <li>"bind the frame's bind group after it: Err InvalidInput ResourceExpired bindGroup"</li>
+    </ol>
+  </main>
+</body>

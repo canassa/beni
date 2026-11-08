@@ -117,7 +117,3 @@ pub foreign impure armMicrotask : ⊤ → ⊤
 
 --| Whether the microtask `armMicrotask` queued last has run.
 pub foreign impure microtaskHasRun : ⊤ → Bool
-
-
---| TEMPORARY.
-pub foreign impure rawProbe : ⊤ → ⊤

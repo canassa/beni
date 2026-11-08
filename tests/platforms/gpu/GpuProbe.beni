@@ -101,6 +101,7 @@ remember surface =
     Js.write remembered (Just (Js.from surface))
     Maybe.map before λb → Js.same b (Js.from surface)
 
+
 -- The render bundle `keepBundle` was given last.
 keptBundles : Js.Ref (Maybe Js.Value)
 keptBundles = Js.ref Nothing
@@ -115,3 +116,18 @@ keepBundle b = Js.write keptBundles (Just (Js.from b))
 --| The render bundle kept last.
 pub keptBundle : ⊤ → Maybe Handle.RenderBundle
 keptBundle ⊤ = Maybe.map (Js.read keptBundles) Js.to
+
+
+-- The texture view `keepView` was given last.
+keptViews : Js.Ref (Maybe Js.Value)
+keptViews = Js.ref Nothing
+
+
+--| Keep a texture view, as a program that stores a frame's view might.
+pub keepView : Handle.TextureView → ⊤
+keepView v = Js.write keptViews (Just (Js.from v))
+
+
+--| The texture view kept last.
+pub keptView : ⊤ → Maybe Handle.TextureView
+keptView ⊤ = Maybe.map (Js.read keptViews) Js.to

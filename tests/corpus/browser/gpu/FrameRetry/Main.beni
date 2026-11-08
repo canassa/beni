@@ -1,0 +1,77 @@
+-- A frame after a failed one (docs/design/webgpu.md §8, §8.2): the host
+-- gives the same current texture until it presents, so a second frame in
+-- the same task meets the texture the first, failed frame rejected. The
+-- second frame takes it as its own, and makes a view of it; a view the
+-- first frame made stays expired with that frame (`ResourceExpired`), as a
+-- frame's view always does. Before the fix the second frame's view was
+-- refused (`ResourceRejected texture`).
+import Browser.Canvas as Canvas
+import Gpu.Batch as Batch
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Frame, RenderPass)
+import Gpu.RenderPass as RenderPass
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+-- Acquire, view, keep the view, and fail.
+failing : Frame → Result InputError ⊤
+failing frame =
+    t = Frame.getCurrentTexture frame?
+    v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
+    GpuProbe.keepView v
+    Err Error.SessionStopped
+
+
+-- Acquire and view.
+retry : Frame → Result InputError String
+retry frame =
+    t = Frame.getCurrentTexture frame?
+    fresh = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor
+    Ok (GpuShow.inputResult fresh λ_ → "view")
+
+
+nothing : RenderPass → Result InputError ⊤
+nothing _ = Ok ⊤
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+
+    configuration =
+        { (Types.canvasConfiguration d Types.Rgba8unorm)
+            | usage = Types.Value (Flags.texture [ Flags.RenderAttachment ])
+        }
+    must (Surface.configure surface configuration)
+    first = Frame.submit surface "first" failing
+    case GpuProbe.keptView ⊤ of
+        Nothing →
+            [ "no view was kept" ]
+
+        Just old →
+            second = Frame.submit surface "second" retry
+            attachment =
+                Types.renderPassColorAttachment
+                    (Types.AttachmentTextureView old)
+                    Types.Clear
+                    Types.Store
+            stale = Encode.run d Types.commandEncoderDescriptor λenc →
+                RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) nothing
+            [ "first frame: " ++ GpuShow.checked first λ_ → "drawn"
+            , "second frame's view: " ++ GpuShow.checked second λr → r.value
+            , "the first frame's view: " ++ GpuShow.checked stale λ_ → "pass"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

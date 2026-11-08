@@ -7,6 +7,11 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol></ol>
   </main>
 </body>
@@ -19,6 +24,11 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol>
       <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
     </ol>
@@ -33,11 +43,16 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol>
       <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"before: none"</li>
+      <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
       <li>"canvas: element"</li>
       <li>"same surface again: yes"</li>
     </ol>
@@ -52,11 +67,16 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol>
       <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"before: none"</li>
+      <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
       <li>"canvas: element"</li>
       <li>"same surface again: yes"</li>
       <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
@@ -75,11 +95,16 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol>
       <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"before: none"</li>
+      <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
       <li>"canvas: element"</li>
       <li>"same surface again: yes"</li>
       <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
@@ -99,11 +124,16 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol>
       <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"before: none"</li>
+      <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
       <li>"canvas: element"</li>
       <li>"same surface again: yes"</li>
       <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
@@ -124,11 +154,16 @@
     <button id="injected">"injected"</button>
     <button id="noContext">"noContext"</button>
     <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
     <ol>
       <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"before: none"</li>
+      <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
-      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
       <li>"canvas: element"</li>
       <li>"same surface again: yes"</li>
       <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
@@ -138,6 +173,200 @@
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
       <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+    </ol>
+  </main>
+</body>
+-- click #checkpoint
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: Ok none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"receipts: Ok 1 receipts"</li>
+    </ol>
+  </main>
+</body>
+-- click #conflict
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: Ok none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"receipts: Ok 1 receipts"</li>
+      <li>"bitmap renderer first: a bitmap renderer"</li>
+      <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"WebGPU first: Ok surface"</li>
+      <li>"then a bitmap renderer: ContextUnavailable"</li>
+    </ol>
+  </main>
+</body>
+-- click #lost
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: Ok none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"receipts: Ok 1 receipts"</li>
+      <li>"bitmap renderer first: a bitmap renderer"</li>
+      <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"WebGPU first: Ok surface"</li>
+      <li>"then a bitmap renderer: ContextUnavailable"</li>
+      <li>"a frame on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #refusalsKeep
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: Ok none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"receipts: Ok 1 receipts"</li>
+      <li>"bitmap renderer first: a bitmap renderer"</li>
+      <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"WebGPU first: Ok surface"</li>
+      <li>"then a bitmap renderer: ContextUnavailable"</li>
+      <li>"a frame on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+      <li>"a format the device lacks: Err UnsupportedCapability"</li>
+      <li>"a leased device: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a frame after both: Ok 0 receipts"</li>
+      <li>"the configuration after both: Ok rgba8unorm, usage 17"</li>
+    </ol>
+  </main>
+</body>
+-- click #concurrent
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="conflict">"conflict"</button>
+    <button id="lost">"lost"</button>
+    <button id="refusalsKeep">"refusalsKeep"</button>
+    <button id="concurrent">"concurrent"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: Ok none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: Ok rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"receipts: Ok 1 receipts"</li>
+      <li>"bitmap renderer first: a bitmap renderer"</li>
+      <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"WebGPU first: Ok surface"</li>
+      <li>"then a bitmap renderer: ContextUnavailable"</li>
+      <li>"a frame on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+      <li>"a format the device lacks: Err UnsupportedCapability"</li>
+      <li>"a leased device: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"a frame after both: Ok 0 receipts"</li>
+      <li>"the configuration after both: Ok rgba8unorm, usage 17"</li>
+      <li>"configure: Ok done"</li>
+      <li>"a frame after: Err CanvasFailed CanvasUnconfigured"</li>
     </ol>
   </main>
 </body>

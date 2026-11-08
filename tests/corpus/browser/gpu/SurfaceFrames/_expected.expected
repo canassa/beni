@@ -8,6 +8,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol></ol>
   </main>
 </body>
@@ -21,6 +23,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -38,6 +42,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -58,6 +64,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -80,6 +88,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -104,6 +114,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -132,6 +144,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -164,6 +178,8 @@
     <button id="reconfigure">"reconfigure"</button>
     <button id="offscreen">"offscreen"</button>
     <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
     <ol>
       <li>"frame: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>
@@ -184,6 +200,85 @@
       <li>"wait: Ok done"</li>
       <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
+    </ol>
+  </main>
+</body>
+-- click #sameSize
+<body>
+  <main>
+    <button id="draw">"draw"</button>
+    <button id="receipts">"receipts"</button>
+    <button id="expiry">"expiry"</button>
+    <button id="resize">"resize"</button>
+    <button id="reconfigure">"reconfigure"</button>
+    <button id="offscreen">"offscreen"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
+    <ol>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
+      <li>"empty: Ok 0 receipts"</li>
+      <li>"two: Ok 2 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
+      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"next frame: Ok width 8"</li>
+      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"configure again: Ok done"</li>
+      <li>"frame after: Ok 1 receipts"</li>
+      <li>"canvas: offscreen"</li>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"resized to its own size: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized and back: Err InvalidInput ResourceExpired texture"</li>
+    </ol>
+  </main>
+</body>
+-- click #deviceSwap
+<body>
+  <main>
+    <button id="draw">"draw"</button>
+    <button id="receipts">"receipts"</button>
+    <button id="expiry">"expiry"</button>
+    <button id="resize">"resize"</button>
+    <button id="reconfigure">"reconfigure"</button>
+    <button id="offscreen">"offscreen"</button>
+    <button id="checkpoint">"checkpoint"</button>
+    <button id="sameSize">"sameSize"</button>
+    <button id="deviceSwap">"deviceSwap"</button>
+    <ol>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
+      <li>"empty: Ok 0 receipts"</li>
+      <li>"two: Ok 2 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
+      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"next frame: Ok width 8"</li>
+      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"configure again: Ok done"</li>
+      <li>"frame after: Ok 1 receipts"</li>
+      <li>"canvas: offscreen"</li>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
+      <li>"a microtask ran inside the frame: Ok no"</li>
+      <li>"resized to its own size: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized and back: Err InvalidInput ResourceExpired texture"</li>
+      <li>"first device: Ok 1 receipts"</li>
+      <li>"second device: Ok 1 receipts"</li>
+      <li>"wait: Ok done"</li>
+      <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
+      <li>"the first device's texture: Err InvalidInput ResourceExpired texture"</li>
     </ol>
   </main>
 </body>

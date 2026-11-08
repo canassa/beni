@@ -1,0 +1,24 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §6): the native
+-- `configure` throws a plain object named `TypeError`: only a native `TypeError` is
+-- the documented refusal of a configuration. The page stops.
+import Browser.Canvas as Canvas
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "configure-spoofed" λd →
+    surface = must (Surface.fromCanvas (must (Canvas.create 4 4)))
+    [ "configure: "
+        ++ GpuShow.checked
+            (Surface.configure surface (Types.canvasConfiguration d Types.Rgba8unorm))
+            λ_ → "done"
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]
