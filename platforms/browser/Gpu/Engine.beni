@@ -1278,7 +1278,9 @@ without list item =
 --| A resource argument at `path` (§6.3, §7): an object the engine made on
 --| the device of record `onDevice`, accepted — or provisional in `batch`,
 --| the live batch the call runs in (null outside one) — and not destroyed,
---| nor, for a texture view, its texture.
+--| nor, for a texture view, its texture; a surface's texture, or a view of
+--| one, expires (`ResourceExpired`) with its frame, at a reconfiguration
+--| and when its canvas changes size (§8).
 --| A provisional object is usable while the batch that made it runs: the
 --| batch is synchronous, so whatever code runs then is that batch's.
 --| An object the engine did not make is a defect.
@@ -1286,7 +1288,9 @@ pub usable : V, V, V, String → Result Error.InputError ⊤
 usable native onDevice batch path =
     o = recordOf native
     status = Js.get o "status"
-    if Js.same status (Js.from "rejected") then
+    if expired o then
+        Err (Error.ResourceExpired { path = path })
+    else if Js.same status (Js.from "rejected") then
         Err (Error.ResourceRejected { path = path })
     else if Js.same status (Js.from "provisional") && not (inLiveBatch o batch) then
         Err (Error.ResourcePending { path = path })
@@ -1344,3 +1348,67 @@ viewOfDestroyed o =
         False
     else
         Js.same (Js.get (recordOf texture) "destroyed") (Js.from True)
+
+
+-- ---- Surfaces and frame textures (§8, §8.2) ------------------------------------
+
+--| Record a canvas context the first time the engine meets it: a surface of
+--| `canvas`, unconfigured, at generation 0. Every alias of the context
+--| shares the record.
+pub adoptSurface : V, V → ⊤
+adoptSurface context canvas =
+    if known context then
+        ⊤
+    else
+        Js.call table "set"
+            [ context
+            , Js.object
+                [ ( "status", Js.from "accepted" )
+                , ( "canvas", canvas )
+                , ( "device", Js.null )
+                , ( "generation", Js.from 0 )
+                ]
+            ]
+            ▷ ignore
+
+
+--| A surface's configuration changed: every texture it gave before expires.
+pub nextGeneration : V → ⊤
+nextGeneration surface =
+    Js.set surface "generation" (Js.from (int (Js.get surface "generation") + 1))
+
+
+--| Mark `texture`, the current texture of the surface of record `surface`,
+--| as one that expires when `frame` ends, the surface's generation moves on
+--| or its canvas changes size.
+pub expiresWith : V, V, V → ⊤
+expiresWith texture frame surface =
+    canvas = Js.get surface "canvas"
+    Js.set
+        (recordOf texture)
+        "expires"
+        (Js.object
+            [ ( "frame", frame )
+            , ( "surface", surface )
+            , ( "generation", Js.get surface "generation" )
+            , ( "width", Js.get canvas "width" )
+            , ( "height", Js.get canvas "height" )
+            ]
+        )
+
+
+-- An object whose frame ended, or whose surface or canvas changed since,
+-- or a view of one.
+expired : V → Bool
+expired o =
+    marks = Js.get o "expires"
+    if Js.isNullish marks then
+        texture = Js.get o "texture"
+        if Js.isNullish texture then False else expired (recordOf texture)
+    else
+        surface = Js.get marks "surface"
+        canvas = Js.get surface "canvas"
+        not (Js.to (Js.get (Js.get marks "frame") "live"))
+            || not (Js.same (Js.get surface "generation") (Js.get marks "generation"))
+            || not (Js.same (Js.get canvas "width") (Js.get marks "width"))
+            || not (Js.same (Js.get canvas "height") (Js.get marks "height"))

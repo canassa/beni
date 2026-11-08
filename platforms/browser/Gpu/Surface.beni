@@ -1,0 +1,206 @@
+--! Canvas surfaces (`docs/design/webgpu.md` §8): the WebGPU context of an
+--! HTML canvas or of a main-thread `OffscreenCanvas`, its configuration,
+--! and the canvas it draws to. A surface draws in frames (`Gpu.Frame`).
+--!
+--! The canvas's backing size is its `width` and `height`, which
+--! `Browser.Canvas.resize` sets, apart from its CSS size. A
+--! reconfiguration, `unconfigure`, a new canvas size and the end of a
+--! frame each make the textures the surface gave before expire
+--! (`ResourceExpired`): a texture kept after its frame is never a lasting
+--! swap-chain texture.
+
+import Browser.Canvas as Canvas
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Native as Native
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+--| The canvas a surface draws to.
+pub type CanvasSource
+    = Element Canvas.Canvas
+    | Offscreen Canvas.OffscreenCanvas
+
+
+--| The surface of the canvas element whose `id` is given: `CanvasNotFound`
+--| when there is none, `WrongElementKind` when it is not a canvas, and
+--| `fromCanvas`'s failures. Window only.
+pub fromElement : String → Result Error.Error Handle.Surface
+fromElement id =
+    case Canvas.byId id of
+        Ok element →
+            fromCanvas element
+
+        Err (Canvas.WrongElement _) →
+            Err (Error.CanvasFailed (Error.WrongElementKind id))
+
+        Err _ →
+            Err (Error.CanvasFailed (Error.CanvasNotFound id))
+
+
+--| The surface of a canvas element: its `webgpu` context, the same one every
+--| time. A canvas that has a context of another kind, or a host with no
+--| WebGPU canvas, gives `CanvasContextUnavailable` (ledger §6). Window only.
+pub fromCanvas : Canvas.Canvas → Result Error.Error Handle.Surface
+fromCanvas element = contextOf (Js.from element)
+
+
+--| The surface of a main-thread `OffscreenCanvas` (`Browser.Canvas.offscreen`),
+--| as `fromCanvas` gives one.
+pub fromOffscreen : Canvas.OffscreenCanvas → Result Error.Error Handle.Surface
+fromOffscreen offscreen = contextOf (Js.from offscreen)
+
+
+contextOf : V → Result Error.Error Handle.Surface
+contextOf target =
+    context = Js.call target "getContext" [ Js.from "webgpu" ]
+    if Js.isNullish context then
+        Err (Error.CanvasFailed Error.CanvasContextUnavailable)
+    else
+        Engine.adoptSurface context target
+        Ok (Js.to context)
+
+
+--| Configure the surface, checked on the configuration's device (§6.1): a
+--| format or view format whose feature the device lacks is
+--| `UnsupportedCapability` before the native call; the host's `TypeError`
+--| for the configuration — a format a canvas cannot have, a forbidden usage
+--| — is `CanvasFailed (CanvasConfigurationRejected …)`; what the device
+--| refuses is `Validation`. Every texture the surface gave before expires,
+--| whatever the outcome. A configuration that failed leaves the surface
+--| unconfigured for frames, whatever the host kept of it: configure it
+--| again. May suspend.
+pub configure : Handle.Surface, Types.CanvasConfiguration → Result Error.Error ⊤
+configure surface configuration =
+    native = Js.from surface
+    s = Engine.recordOf native
+    device = Js.from configuration.device
+
+    views =
+        case configuration.viewFormats of
+            Types.Value formats →
+                formats
+
+            Types.Default →
+                []
+    Make.formatsAvailable device [ configuration.format, …views ]?
+    converted = Native.canvasConfiguration configuration
+    Engine.nextGeneration s
+    Js.set s "device" Js.null
+
+    result = Engine.checked device "configure" [] λ⊤ →
+        Js.catchIf
+            (λ⊤ →
+                Js.call native "configure" [ converted ] ▷ ignore
+                Ok (Js.object [])
+            )
+            Engine.isTypeError
+            λerror →
+                Err
+                    (Error.CanvasFailed
+                        (Error.CanvasConfigurationRejected { message = Engine.messageOf error })
+                    )
+    case result of
+        Ok _ →
+            Js.set s "device" device
+            Ok ⊤
+
+        Err problem →
+            Err problem
+
+
+--| Remove the surface's configuration. Every texture it gave expires, and a
+--| frame needs a new `configure`. Never fails; runs under a diagnostic
+--| session's lease (§6.4).
+pub unconfigure : Handle.Surface → ⊤
+unconfigure surface =
+    native = Js.from surface
+    s = Engine.recordOf native
+    Engine.nextGeneration s
+    Js.set s "device" Js.null
+    Js.call native "unconfigure" [] ▷ ignore
+
+
+--| The configuration the host keeps, read back from it, or `Nothing` when
+--| the surface is not configured: a member the host does not report is
+--| `Default`, so a program can see what this browser supports. A value
+--| outside the pin is a defect.
+pub getConfiguration : Handle.Surface → Maybe Types.CanvasConfiguration
+getConfiguration surface =
+    c = Js.call (Js.from surface) "getConfiguration" []
+    if Js.isNull c then
+        Nothing
+    else
+        Just
+            { device = Js.to (Engine.member c "device")
+            , format = enum (Js.get c "format") Types.textureFormatFromString "format"
+            , usage = optional c "usage" λbits → usages (Js.to bits)
+            , viewFormats =
+                optional c "viewFormats" λlist →
+                    List.map (Js.to (Js.call (Js.global "Array") "from" [ list ])) λf →
+                        enum f Types.textureFormatFromString "viewFormats"
+            , colorSpace =
+                optional c "colorSpace" λv →
+                    enum v Types.predefinedColorSpaceFromString "colorSpace"
+            , toneMapping =
+                optional c "toneMapping" λt →
+                    { mode =
+                        optional t "mode" λv →
+                            enum v Types.canvasToneMappingModeFromString "toneMapping.mode"
+                    }
+            , alphaMode =
+                optional c "alphaMode" λv → enum v Types.canvasAlphaModeFromString "alphaMode"
+            }
+
+
+-- A member the host may leave out.
+optional : V, String, (V → a) → Types.Option a
+optional c name read =
+    value = Js.get c name
+    if Js.isUndefined value then Types.Default else Types.Value (read value)
+
+
+-- A spelling the host reported, in the pin.
+enum : V, (String → Maybe a), String → a
+enum value parse name =
+    if not (Js.typeIs value "string") then
+        Engine.defect ("the host's configuration has a `" ++ name ++ "` that is not a string")
+    else
+        case parse (Js.to value) of
+            Just v →
+                v
+
+            Nothing →
+                Engine.defect ("the host's configuration has a `" ++ name ++ "` outside the pin")
+
+
+usages : Int → Flags.TextureUsages
+usages bits =
+    Flags.texture
+        (List.filter Flags.allTextureUsages λu →
+            Js.bitAnd bits (Flags.textureUsageBits u) == Flags.textureUsageBits u
+        )
+
+
+--| The canvas the surface draws to.
+pub canvas : Handle.Surface → CanvasSource
+canvas surface =
+    c = Engine.member (Js.from surface) "canvas"
+    if Engine.isInstanceOf c "HTMLCanvasElement" then
+        Element (Js.to c)
+    else if Engine.isInstanceOf c "OffscreenCanvas" then
+        Offscreen (Js.to c)
+    else
+        Engine.defect "a surface whose canvas is neither a canvas element nor an OffscreenCanvas"

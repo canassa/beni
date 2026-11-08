@@ -237,7 +237,11 @@ pub submit :
     → Result InputError Handle.Submission
 submit b queue commands =
     batch = Js.from b
-    Result.map (inBatch batch λ⊤ → Make.submit (Js.from queue) batch commands) λm → Js.to m
+    Result.map (inBatch batch λ⊤ → Make.submit (Js.from queue) batch commands) λm →
+        -- A frame keeps its receipts, in issue order (§8.3).
+        receipts = Js.get batch "submissions"
+        if Js.isUndefined receipts then ⊤ else Js.call receipts "push" [ m ] ▷ ignore
+        Js.to m
 
 
 --| Encode in the batch: `Gpu.Encode.run` without scopes of its own, under

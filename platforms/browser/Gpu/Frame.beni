@@ -1,0 +1,150 @@
+--! Frames of a surface (`docs/design/webgpu.md` §8, §8.2, §8.3): one
+--! synchronous callback acquires the surface's current texture, makes what
+--! it needs, encodes and submits, all in one host turn, between one set of
+--! the device's error scopes; then the frame waits for them.
+--!
+--! A frame runs in a batch (`Gpu.Batch`), which `batch` hands out, so every
+--! batch operation works inside it without suspending. Nothing in the
+--! callback can yield to another fiber: the callback is `sync`, and the
+--! frame runs it inside the device's scope section, one JavaScript call
+--! with no await in it, so no microtask and no other fiber runs between
+--! acquiring the texture and submitting. The current texture, its views,
+--! and the frame's batch expire when the frame ends.
+--!
+--!     draw : Gpu.Handle.Surface, Gpu.Handle.RenderPipeline
+--!         → Result Gpu.Error.Error { value : ⊤, submissions : List Gpu.Handle.Submission }
+--!     draw surface pipeline = Gpu.Frame.submit surface "draw" (drawFrame pipeline _)
+--!
+--!     drawFrame : Gpu.Handle.RenderPipeline, Gpu.Handle.Frame → Result Gpu.Error.InputError ⊤
+--!     drawFrame pipeline frame =
+--!         target = Gpu.Frame.getCurrentTexture frame?
+--!         view = Gpu.Batch.createView (Gpu.Frame.batch frame) target Gpu.Types.textureViewDescriptor?
+--!         encoded = Gpu.Frame.encode frame Gpu.Types.commandEncoderDescriptor (scene view pipeline _)?
+--!         _ = Gpu.Frame.submitCommands frame [ encoded.commands ]?
+--!         Ok ⊤
+
+import Gpu.Batch as Batch
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+--| Run `body` as one frame of `surface`, checked (§6.1) on the device the
+--| surface is configured with: an unconfigured surface is `CanvasFailed
+--| CanvasUnconfigured`, and a device whose diagnostic lease is held
+--| `InvalidInput (SessionState DeviceLeased)`, both before `body` runs.
+--| The result is `body`'s value and the receipt of every native submit
+--| the frame made, in issue order — none for a frame that submitted
+--| nothing — published when no scope reported a failure, no operation was
+--| refused and no loss was observed; otherwise the frame's failure, as a
+--| batch's (`Gpu.Batch.run`), and no receipt, though what it submitted may
+--| have run. `name` labels the frame in a failure. A throw in `body` is a
+--| defect. May suspend; `body` never does.
+pub submit :
+      Handle.Surface
+    , String
+    , sync (Handle.Frame → Result InputError a)
+    → Result Error.Error { value : a, submissions : List Handle.Submission }
+submit surface name body =
+    native = Js.from surface
+    s = Engine.recordOf native
+    device = Js.get s "device"
+    if Js.isNull device then
+        Err (Error.CanvasFailed Error.CanvasUnconfigured)
+    else
+        receipts = Js.array []
+        result = Batch.run (Js.to device) ("frame " ++ name) (inFrame native receipts body _)
+        Result.map result λv → { value = v, submissions = Js.to receipts }
+
+
+-- The batch is the frame: it knows its surface, and keeps its receipts.
+inFrame : V, V, sync (Handle.Frame → Result InputError a), Handle.Batch → Result InputError a
+inFrame surface receipts body b =
+    frame = Js.from b
+    Js.set frame "surface" surface
+    Js.set frame "submissions" receipts
+    body (Js.to frame)
+
+
+--| The frame's batch: every `Gpu.Batch` operation runs in the frame with
+--| it, and what it makes is accepted or rejected with the frame (§8.2).
+pub batch : Handle.Frame → Handle.Batch
+batch frame = Js.to (Js.from frame)
+
+
+-- The frame may go on: live, and no failure latched.
+open : V → Result InputError ⊤
+open frame =
+    if not (Js.to (Js.get frame "live")) then
+        Err (Error.SessionState Error.SessionEnded)
+    else if not (Js.isNull (Js.get frame "failure")) then
+        Err Error.SessionStopped
+    else
+        Ok ⊤
+
+
+--| The surface's current texture, for this frame only: it expires when the
+--| frame ends, when the surface is configured again or unconfigured, and
+--| when its canvas changes size (`ResourceExpired`), as every view of it
+--| does. The host's refusal of an unconfigured surface (ledger §6) is
+--| latched as `CanvasFailed CanvasUnconfigured`, and the call gives
+--| `SessionStopped`.
+pub getCurrentTexture : Handle.Frame → Result InputError Handle.Texture
+getCurrentTexture frame =
+    b = Js.from frame
+    open b?
+    surface = Js.get b "surface"
+    s = Engine.recordOf surface
+
+    current =
+        Js.catchIf
+            (λ⊤ → Ok (Js.call surface "getCurrentTexture" []))
+            (λerror → Engine.isDomException error "InvalidStateError")
+            λ_ → Err ⊤
+    case current of
+        Err _ →
+            Session.stopped b (Error.CanvasFailed Error.CanvasUnconfigured)
+
+        Ok texture →
+            if Engine.known texture then
+                -- The host gives one texture a task: a later frame of the
+                -- same task has it again, now its own.
+                ⊤
+            else
+                Engine.adoptInBatch texture (Js.get b "device") b
+                Js.set (Engine.recordOf texture) "destroyed" (Js.from False)
+                -- Accepted or rejected with the frame, never destroyed: the
+                -- canvas owns it.
+                Js.call (Js.get b "made") "push"
+                    [ Js.object [ ( "made", texture ), ( "discard", Js.from λ_ → ⊤ ) ] ]
+                    ▷ ignore
+            Engine.expiresWith texture b s
+            Ok (Js.to texture)
+
+
+--| Encode in the frame: `Gpu.Batch.encode` on the frame's batch.
+pub encode :
+      Handle.Frame
+    , Types.CommandEncoderDescriptor
+    , sync (Handle.CommandEncoder → Result InputError a)
+    → Result InputError { value : a, commands : Handle.CommandBuffer }
+encode frame descriptor body = Batch.encode (batch frame) descriptor body
+
+
+--| Submit in the frame, on its device's queue: one native submit, whose
+--| receipt the frame's result lists (§8.3).
+pub submitCommands : Handle.Frame, List Handle.CommandBuffer → Result InputError Handle.Submission
+submitCommands frame commands =
+    queue = Js.get (Js.get (Js.from frame) "native") "queue"
+    Batch.submit (batch frame) (Js.to queue) commands
+
+
+ignore : V → ⊤
+ignore _ = ⊤
