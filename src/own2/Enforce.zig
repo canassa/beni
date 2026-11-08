@@ -409,6 +409,7 @@ const DumpRun = struct {
             return null;
         };
         mi.imports = r.reader.imports();
+        if (r.session.options.ownership_v2_dump) |k| mi.short_candidates = k.short_candidates;
         try r.mods.append(r.gpa, mi);
         const token = r.session.profile.begin();
         defer r.session.profile.end(0, token, .ownership2_module, @backingInt(r.session.graph.moduleFile(@fromBackingInt(m))), 0);
@@ -441,8 +442,9 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var nc: NameCtx = .{ .session = session, .ins = ctx.ins, .types = d.types, .arena = arena };
-    const one = [_]Groups.Input{mi};
     const kept = session.options.ownership_v2_dump;
+    if (kept) |k| mi.short_candidates = k.short_candidates;
+    const one = [_]Groups.Input{mi};
     // §3.7's lowering channel, the module's slot. Core and the platforms
     // authorise no write (§7.3); their clean bit says whether a caller
     // there was checked.

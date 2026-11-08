@@ -1010,6 +1010,7 @@ module Gpu.Make
   alias Op
     Op
   value adopt : Op, V → ⊤  -- impure
+  value adoptInBatch : Op, V, V, V → Bool  -- impure
   value batchIn : V, Device, String, (Batch → Result Error a) → Result Error a  -- suspends
   value bindGroup : V, V, BindGroupDescriptor → Result Error Op  -- impure
   value bindGroupLayout : V, BindGroupLayoutDescriptor → Result Error Op  -- impure

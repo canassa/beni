@@ -466,11 +466,18 @@ const fakeDevice = (adapter, descriptor) => {
     const usage = destination.texture.usage;
     if ((usage & TEXTURE_RENDER_ATTACHMENT) === 0 || (usage & TEXTURE_COPY_DST) === 0) report("validation", new globalThis.GPUValidationError("the destination needs RENDER_ATTACHMENT and COPY_DST"));
   };
+  // An import of the same source with the same colour space as the latest
+  // one gives that texture again, as the specification lets a browser do.
+  let lastImport = null;
   device.importExternalTexture = (descriptor) => {
     const source = descriptor.source;
     if (taintedMedia.has(source)) throw new globalThis.DOMException("the source is not origin-clean", "SecurityError");
     if (closedMedia(source)) throw new globalThis.DOMException("the frame is closed", "InvalidStateError");
-    return plainObject(descriptor.label);
+    const colorSpace = descriptor.colorSpace ?? "srgb";
+    if (lastImport !== null && lastImport.source === source && lastImport.colorSpace === colorSpace) return lastImport.texture;
+    const texture = plainObject(descriptor.label);
+    lastImport = { source, colorSpace, texture };
+    return texture;
   };
   device.queue.onSubmittedWorkDone = () => globalThis.Promise.resolve(undefined);
   return device;
@@ -1526,18 +1533,23 @@ const mediaSize = (image) => {
 };
 const closedMedia = (image) => image.codedWidth === 0 || (image.close !== undefined && image.width === 0);
 
-// A load in real time, which the driver's settle of a step waits for as
-// it waits for a native WebGPU promise (its count of pending ones): the
-// release that ends the wait.
+// A load in real time holds the driver's settle of a step, as a pending
+// native WebGPU promise does (its count of them), from the moment the load
+// starts until `releaseMedia`, which `GpuPage` calls once the scenario that
+// asked for the element has returned its lines: so the step's transcript
+// is taken after the scenario's output, never between the load and it.
+const mediaHolds = [];
 const awaited = () => {
   const record = globalThis.__beniHarness?.gpu;
-  if (record === undefined) return () => {};
+  if (record === undefined) return;
   record.pending += 1;
-  let released = false;
-  return () => {
-    if (!released) record.pending -= 1;
-    released = true;
-  };
+  mediaHolds.push(() => {
+    record.pending -= 1;
+  });
+};
+export const releaseMedia = (_unit) => {
+  for (const release of mediaHolds.splice(0)) release();
+  return null;
 };
 
 let mediaCount = 0;
@@ -1558,6 +1570,7 @@ export const image = (kind, pixels, width, done) => {
       cross: { complete: true, currentSrc: "fake:cross", naturalWidth: width, naturalHeight: height },
       broken: { complete: true, currentSrc: "fake:broken", naturalWidth: 0, naturalHeight: 0 },
       loading: { complete: false, currentSrc: "fake:loading", naturalWidth: 0, naturalHeight: 0 },
+      reloading: { complete: false, currentSrc: "fake:image", naturalWidth: width, naturalHeight: height },
     };
     const state = states[kind];
     if (state === undefined) throw new globalThis.Error(`GpuHost.image: no kind "${kind}"`);
@@ -1570,20 +1583,25 @@ export const image = (kind, pixels, width, done) => {
   if (kind === "same") element.src = mediaUrl(here, pixels, width);
   else if (kind === "cross") element.src = mediaUrl(there, pixels, width);
   else if (kind === "broken") element.src = `${here}/_media/missing.bmp?n=${(mediaCount += 1)}`;
-  else if (kind === "loading") {
+  else if (kind === "reloading") {
+    // Loaded, then given a new source the driver holds back: its current
+    // request is the loaded image while the new one is pending.
+    awaited();
+    element.onload = () => {
+      element.onload = null;
+      element.src = `${mediaUrl(here, pixels, width)}&delay=5000`;
+      globalThis.queueMicrotask(() => done(element));
+    };
+    element.src = mediaUrl(here, pixels, width);
+    return;
+  } else if (kind === "loading") {
     // The driver holds this one back, so it is still loading when used.
     element.src = `${mediaUrl(here, pixels, width)}&delay=5000`;
     return void globalThis.queueMicrotask(() => done(element));
   } else throw new globalThis.Error(`GpuHost.image: no kind "${kind}"`);
-  const release = awaited();
-  element.onload = () => {
-    release();
-    done(element);
-  };
-  element.onerror = () => {
-    release();
-    done(element);
-  };
+  awaited();
+  element.onload = () => done(element);
+  element.onerror = () => done(element);
 };
 
 export const video = (kind, pixels, width, done) => {
@@ -1602,18 +1620,23 @@ export const video = (kind, pixels, width, done) => {
   const context = canvas.getContext("2d");
   const paint = () => context.putImageData(new globalThis.ImageData(new globalThis.Uint8ClampedArray(pixels.slice(0)), width, height), 0, 0);
   paint();
-  // A captured canvas sends a frame when it is painted: paint it on a timer
-  // until the element has shown one.
-  const timer = globalThis.setInterval(paint, 20);
+  // A captured canvas sends a frame when it is painted. The page's timers
+  // run on the driver's virtual clock, so each frame the element presents
+  // paints the next one.
   element.muted = true;
   element.srcObject = canvas.captureStream();
-  const release = awaited();
+  paint();
+  awaited();
+  // Ready once three frames of the image's size were presented: a decoded
+  // frame of the stream, not the element's first, which can still be blank.
+  let presented = 0;
   const shown = () => {
-    if (element.readyState >= 2 && element.videoWidth === width) {
-      globalThis.clearInterval(timer);
-      release();
-      done(element);
-    } else element.requestVideoFrameCallback(shown);
+    if (element.readyState >= 2 && element.videoWidth === width && element.videoHeight === height) presented += 1;
+    if (presented >= 3) done(element);
+    else {
+      paint();
+      element.requestVideoFrameCallback(shown);
+    }
   };
   element.requestVideoFrameCallback(shown);
   element.play();
@@ -1682,3 +1705,6 @@ export const logLater = (label, probe) => {
   globalThis.setTimeout(() => globalThis.setTimeout(() => globalThis.setTimeout(log, 0), 0), 0);
   return null;
 };
+
+// Whether two handles are the same native object.
+export const sameObject = (first, second) => first === second;

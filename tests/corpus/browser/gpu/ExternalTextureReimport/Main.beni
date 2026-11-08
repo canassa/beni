@@ -1,0 +1,91 @@
+-- A reimport the host answers with the texture it gave before
+-- (docs/design/webgpu.md §8, *As built — S5*): the specification lets a
+-- browser give the same `GPUExternalTexture` for the same frame and
+-- descriptor, and the fake host always does. A video frame of the test
+-- image is imported by batch `first`, which is accepted, with a bind group
+-- of it. Batch `second` imports the frame again — the same object on the
+-- fake host — and then fails (a closed bitmap's copy, `SourceClosed`). A
+-- failed batch rejects what it made, but the texture was the first batch's
+-- and stays accepted: a new bind group of it is made, and the first bind
+-- group reads the image's texels in a third batch (`GpuMedia.colour`,
+-- written out by hand; zeros on the fake host, which runs no shader).
+import Browser.Image
+import Browser.Video
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Handle exposing (BindGroup, Batch, ExternalTexture)
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuMedia exposing (Reader)
+import GpuPage
+import GpuShow
+import Tea
+
+
+descriptor : Browser.Video.Frame → Types.ExternalTextureDescriptor
+descriptor frame = Types.externalTextureDescriptor (Types.ExternalVideoFrame frame)
+
+
+first : Reader, Browser.Video.Frame, Batch → Result Error.Error (ExternalTexture × BindGroup)
+first r frame b =
+    texture = Batch.importExternalTexture b (descriptor frame)?
+    bound = GpuMedia.group b r texture?
+    Ok ( texture, bound )
+
+
+second :
+      Gpu.Handle.Queue
+    , ExternalTexture
+    , Browser.Video.Frame
+    , Types.CopyExternalImageSourceInfo
+    , Gpu.Handle.Texture
+    , Batch
+    → Result Error.Error ⊤
+second queue earlier frame closed target b =
+    again = Batch.importExternalTexture b (descriptor frame)?
+    GpuHost.note ("the same texture again: " ++ GpuKit.yesNo (GpuHost.sameObject earlier again))
+    Batch.copyExternalImageToTexture
+        b
+        queue
+        closed
+        (Types.copyExternalImageDestInfo target)
+        GpuMedia.extent
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    r = must (GpuMedia.reader d)
+    frame = GpuMedia.frame ⊤
+    queue = Gpu.Device.queue d
+    bitmap = GpuMedia.bitmap ⊤
+    Browser.Image.close bitmap
+    closed = Types.copyExternalImageSourceInfo (Types.Bitmap bitmap)
+    target = GpuMedia.target d
+    case Batch.run d "first" (first r frame _) of
+        Err problem →
+            [ "first: Err " ++ GpuShow.error problem ]
+
+        Ok ( texture, bound ) →
+            failed = Batch.run d "second" (second queue texture frame closed target _)
+            regrouped =
+                Gpu.Device.createBindGroup
+                    d
+                    (Types.bindGroupDescriptor r.layout
+                        [ Types.bindGroupEntry (u32 0) (Types.ExternalTextureBinding texture)
+                        , Types.bindGroupEntry (u32 1) (Types.WholeBufferBinding r.texels)
+                        ]
+                    )
+            sampled = Batch.run d "third" (GpuMedia.sample _ queue r bound)
+            [ "first: Ok"
+            , …(GpuHost.notes ⊤)
+            , "second: " ++ GpuShow.checked failed λ_ → "done"
+            , "a new group of the first texture: " ++ GpuShow.checked regrouped λ_ → "made"
+            , "the first group in a third batch: " ++ GpuShow.checked sampled λ_ → "done"
+            , "texels: " ++ GpuMedia.check (GpuMedia.sampled r) GpuMedia.colour 2
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

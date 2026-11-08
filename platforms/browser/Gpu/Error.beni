@@ -295,7 +295,7 @@ pub type MapError
 --| were detached, `SourceEmpty` a canvas with no pixels (a width or a height
 --| of 0) or an image element with no source, `SourceBroken` an image element
 --| whose image failed to load or decode, and `SourceNotReady` an image
---| element still loading or a video element with no current frame.
+--| element with no image yet or a video element with no current frame.
 pub type SourceError
     = SourceNotOriginClean
     | SourceUnusable HostMessage

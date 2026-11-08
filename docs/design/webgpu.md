@@ -619,6 +619,11 @@ SourceError
     = SourceNotOriginClean
     | SourceUnusable HostMessage
     | ExternalImageCopyRangeRejected HostMessage
+    | SourceClosed
+    | SourceDetached
+    | SourceEmpty
+    | SourceBroken
+    | SourceNotReady
 
 CanvasError
     = CanvasNotFound String
@@ -1496,22 +1501,32 @@ reads state a page can read in the same host turn, so the engine refuses what it
 native call, with arms added to `SourceError`: `SourceClosed` (a closed bitmap or video frame),
 `SourceDetached` (image data whose pixels were detached), `SourceEmpty` (a canvas with a width or a
 height of 0, an image element with no source), `SourceBroken` (an image element whose request failed,
-or with no natural size) and `SourceNotReady` (an image element still loading, a video element whose
-`readyState` is below `HAVE_CURRENT_DATA`). The last two are the cases the host would answer with
+or with no natural size) and `SourceNotReady` (an image element with no image yet, a video element
+whose `readyState` is below `HAVE_CURRENT_DATA`). An image element is judged by its current request:
+one of a natural size is the host's, even while a new source loads and `complete` is false (HTML keeps
+the current image then; Chrome 153 clears it at once, so there it is `SourceNotReady`;
+`ExternalCopyImage`'s *reloading*). The last two are the cases the host would answer with
 the device's validation error instead of a throw (the usability result *bad*); refusing them first gives
 the precise cause. Origin-clean state is the host's and is never guessed. **External textures.**
 `Gpu.Batch.importExternalTexture : Batch, ExternalTextureDescriptor → Result Error ExternalTexture`
 and `Gpu.Frame.importExternalTexture` (the same on the frame's batch) return `Result Error`, as every
 batch operation does since the batch review. There is no standalone checked import: a video
 element's texture expires with the task that imported it, and a checked operation's result is
-published after that task (the reason `getCurrentTexture` has none, §8). The import refuses a closed
+published after that task (the reason `getCurrentTexture` has none, §8). A video frame's texture would
+outlive a checked import, but a standalone import for one source arm only is omitted by choice: both
+arms import the same way, in a batch or a frame. *Departure from §8.2:* §8.2 keeps the import "on
+`Frame`"; it is on `Gpu.Batch` too, as §6.3's list has it, because a batch run is one host task as a
+frame is, and a compute-only program that samples a video has no surface to make a frame of. The import refuses a closed
 frame (`SourceClosed`) and a video with no current frame (`SourceNotReady`) first; its classifier
 takes `SecurityError` (`SourceNotOriginClean`) and `InvalidStateError` (`SourceUnusable`) only.
 Expiry is the specification's `[[expired]]`, kept in the engine's record (`Engine.expiresExternal`):
 a video element's texture expires when its batch's run ends, a video frame's when the frame is closed,
 and what holds one — a bind group, a command buffer, a bundle — is `ResourceExpired` with it, by the
 same holding rule as a frame's texture. A reimport the host answers with the same object marks it
-again, so what held it is usable again, as the specification allows. `Gpu.ExternalTexture` has
+again, so what held it is usable again, as the specification allows. *Amended after review:* such an
+object keeps its record when an earlier batch accepted it (or this batch made it): the reimporting
+batch does not settle it, so a later batch that fails cannot reject it (`Make.adoptInBatch`,
+`ExternalTextureReimport`). `Gpu.ExternalTexture` has
 `label` and `setLabel`. The commands inside a batch need no forwarding form (§6.4), so an import
 under a session is `Gpu.Diagnostics.Batch.run`'s. Fixtures (`browser/gpu/`), every pixel compared under
 `test-webgpu` with an 8×8 image whose bytes are written out by hand: `ExternalCopyBitmap` (whole,
@@ -1521,7 +1536,8 @@ under a session is `Gpu.Diagnostics.Batch.run`'s. Fixtures (`browser/gpu/`), eve
 per byte, for its YUV conversion. The refusals: `ExternalSourceClosed`, `ExternalSourceDetached`,
 `ExternalSourceEmpty`, `ExternalSourceNotReady`, `ExternalSourceBroken`, `ExternalSourceTainted` (in
 Chrome a real cross-origin image, from the driver's `/_media/image.bmp` on `localhost`),
-`ExternalCopyRange`, `ExternalCopyRefusals`, `ExternalUnusable` (injected), `ExternalDiagnostics`, and
+`ExternalCopyRange`, `ExternalCopyRefusals`, `ExternalCopyAlpha` (`premultipliedAlpha` both ways, by
+hand), `ExternalTextureReimport`, `ExternalUnusable` (injected), `ExternalDiagnostics`, and
 the defects `ExternalCopyUnlisted`, `ExternalCopySpoofed`, `ExternalImportUnlisted` and
 `ExternalImportSpoofed`.
 

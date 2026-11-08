@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"first: Ok"</li>
+      <li>"the same texture again: yes"</li>
+      <li>"second: Err BatchFailed second: SourceFailed SourceClosed; issued [importExternalTexture], refused [copyExternalImageToTexture]"</li>
+      <li>"a new group of the first texture: Ok made"</li>
+      <li>"the first group in a third batch: Ok done"</li>
+      <li>"texels: 0 of 64 pixels match; first miss at 0,0: 0 0 0 0"</li>
+    </ol>
+  </main>
+</body>

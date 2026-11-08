@@ -6,4 +6,12 @@
   </main>
 </body>
 -- click #run
-(the DOM did not change)
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+    </ol>
+  </main>
+</body>

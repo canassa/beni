@@ -1,0 +1,20 @@
+module BottomCycle
+  13:30 List.push <call BottomCycle.forever>: accepted fresh
+  25:27 List.push <call BottomCycle.spinA>: accepted fresh
+  29:18 call BottomCycle.foreverPush <call List.push>: accepted param (BottomCycle.foreverPush writes π1)
+  29:31 List.push xs: accepted param
+  33:34 call BottomCycle.foreverPush xs: rejected later-use: xs is read again at 33:52 (BottomCycle.foreverPush writes π1)
+  45:34 List.push <call BottomCycle.returnsOnce>: rejected alias: xs holds it and is read at 45:68
+  summary forever: unused
+  summary useForever: π1 R
+  summary spinA: unused
+  summary spinB: unused
+  summary useSpin: π1 R
+  summary foreverPush: π1 RW[storage]
+  summary useForeverPush: π1 RW[storage]
+  summary returnsOnce: π1 RA; res π1
+  summary useReturnsOnce: π1 RW[storage]
+  demands 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 1
+cause alias 1

@@ -2,6 +2,7 @@
 <body>
   <main>
     <button id="run">"run"</button>
+    <button id="reloading">"reloading"</button>
     <ol></ol>
   </main>
 </body>
@@ -9,7 +10,21 @@
 <body>
   <main>
     <button id="run">"run"</button>
+    <button id="reloading">"reloading"</button>
     <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 0 of 64 pixels match; first miss at 0,0: 0 0 0 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #reloading
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <button id="reloading">"reloading"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 0 of 64 pixels match; first miss at 0,0: 0 0 0 0"</li>
       <li>"copy: Ok done"</li>
       <li>"pixels: 0 of 64 pixels match; first miss at 0,0: 0 0 0 0"</li>
     </ol>
