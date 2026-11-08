@@ -51,3 +51,30 @@ loss device = Engine.loss (Js.from device)
 --| Wait until the device is lost; at once if it is already.
 pub awaitLost : Handle.Device → Error.DeviceLoss
 awaitLost device = Engine.awaitLost (Js.from device)
+
+
+--| A sampler, checked (§6.1): the call runs between the device's error
+--| scopes, and the sampler is returned only when none reported a failure
+--| and the device was not lost. `Validation` for a descriptor the device
+--| refuses; `OutOfMemory` or `Internal` when those scopes report;
+--| `RelatedFailures` when several do; `DeviceLost` when the device is
+--| lost before or while it is checked, with what was observed; and
+--| `InvalidInput (SessionState DeviceLeased)` at once, without waiting,
+--| while a diagnostic session holds the device. May suspend.
+pub createSampler : Handle.Device, Types.SamplerDescriptor → Result Error.Error Handle.Sampler
+createSampler device descriptor =
+    native = Js.from device
+    converted = Native.samplerDescriptor descriptor
+
+    labels =
+        case descriptor.label of
+            Types.Value label →
+                [ label ]
+
+            Types.Default →
+                []
+    Result.map
+        (Engine.checked native "createSampler" labels λ⊤ →
+            Js.call native "createSampler" [ converted ]
+        )
+        λsampler → Js.to sampler
