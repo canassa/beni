@@ -524,6 +524,19 @@ fn supplyingArg(e: *Evaluation, q: u32, lab: Contract.Label, k: u32, words: []co
     return null;
 }
 
+/// Whether no place below `p` (itself included) is on a cycle, kept per place in the sink.
+pub fn acyclicBelow(s: *Sink, p: PlaceId) Error!bool {
+    if (s.acyclic.get(.{p.int()})) |x| return x == 1;
+    const places = s.e.fr().places;
+    var ok = !places.cyclic(p);
+    if (ok) for (places.steps(p).children) |c| if (!try acyclicBelow(s, c)) {
+        ok = false;
+        break;
+    };
+    try s.acyclic.put(s.e.gpa(), .{p.int()}, if (ok) 1 else 2);
+    return ok;
+}
+
 /// The path `words` replays to below place `at`, for a demand's text.
 pub fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
     if (words.len == 0) return .none;
