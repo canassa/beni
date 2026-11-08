@@ -64,6 +64,7 @@ mapped_ buffer generation mode offset size =
             ]
     Js.set b "state" (Js.from "mapped")
     Js.set b "mapping" mapping
+    Engine.trackMapped (Js.get b "device") buffer True
 
 
 --| The record of a buffer.
@@ -151,6 +152,7 @@ startMap buffer =
     generation = int (Js.get b "generation") + 1
     Js.set b "generation" (Js.from generation)
     Js.set b "state" (Js.from "pending")
+    Engine.trackMapped (Js.get b "device") buffer True
     generation
 
 
@@ -187,7 +189,11 @@ mapSettled buffer generation mode offset size fulfilled value =
                 Engine.Unexpected value
 
             Just problem →
-                if current then Js.set b "state" (Js.from "unmapped")
+                if current then
+                    Js.set b "state" (Js.from "unmapped")
+                    Engine.trackMapped (Js.get b "device") buffer False
+                else
+                    ⊤
                 Engine.Expected (Err (Error.MapFailed problem))
 
 
@@ -202,6 +208,7 @@ unmap buffer =
         Js.set b "generation" (Js.from (int (Js.get b "generation") + 1))
         Js.set b "state" (Js.from "unmapped")
         Js.set b "mapping" Js.null
+        Engine.trackMapped (Js.get b "device") buffer False
         Js.call buffer "unmap" [] ▷ ignore
 
 
@@ -226,6 +233,7 @@ destroy buffer =
         Js.set b "generation" (Js.from (int (Js.get b "generation") + 1))
         Js.set b "state" (Js.from "unmapped")
         Js.set b "mapping" Js.null
+        Engine.trackMapped (Js.get b "device") buffer False
         Js.call buffer "destroy" [] ▷ ignore
 
 

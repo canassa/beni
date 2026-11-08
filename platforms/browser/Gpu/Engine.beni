@@ -435,6 +435,7 @@ adoptDevice device ch =
             , ( "generation", Js.from 0 )
             , ( "section", Js.from False )
             , ( "ops", Js.array [] )
+            , ( "mapped", Js.construct (Js.global "Set") [] )
             ]
     _ = Js.call table "set" [ device, r ]
     hold ch
@@ -495,8 +496,31 @@ destroy device =
         ⊤
     else
         Js.set r "destroyed" (Js.from True)
+        expireMappings r
         if Js.isNull (Js.get r "loss") then latch r { reason = Destroyed, message = "" }
         Js.to (Js.call device "destroy" [])
+
+
+-- Destroying a device unmaps every buffer of it (the specification's
+-- device destruction): each mapped or pending buffer's mapping expires
+-- first, for every alias, as `unmap` makes it expire.
+expireMappings : V → ⊤
+expireMappings r =
+    buffers = Js.call (Js.global "Array") "from" [ Js.get r "mapped" ]
+    Js.call (Js.get r "mapped") "clear" [] ▷ ignore
+    Js.each buffers λbuffer →
+        b = recordOf buffer
+        Js.set b "generation" (Js.from (int (Js.get b "generation") + 1))
+        Js.set b "state" (Js.from "unmapped")
+        Js.set b "mapping" Js.null
+
+
+--| Track a buffer of the device of record `r` while it is mapped or its map
+--| is pending (`True`), or no longer (`False`): what `destroy` expires.
+pub trackMapped : V, V, Bool → ⊤
+trackMapped r buffer mapped =
+    set = Js.get r "mapped"
+    if mapped then Js.call set "add" [ buffer ] ▷ ignore else Js.call set "delete" [ buffer ] ▷ ignore
 
 
 --| Whether `destroy` was called on the device.
