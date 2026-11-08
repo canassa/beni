@@ -1,0 +1,82 @@
+-- Three eta wrappers over a 12-field record (#2222): v2 accepts the push, since y.a is the record's own list. The entry at each wrapper's callback is open yet written whole by the record's structure, so ReadOff.factsOff leaves its key closed; marked open it would also open every plain arrival there and the summary would reach ownership_summary_size.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+type alias R =
+    a : L
+    b : L
+    c : L
+    d : L
+    e : L
+    f : L
+    g : L
+    h : L
+    i : L
+    j : L
+    k : L
+    n :
+        x : L
+        z : L
+
+
+unj : Maybe q → q
+unj m =
+    case m of
+        Just x →
+            x
+
+        Nothing →
+            unj m
+
+
+run2 : (a → b), a → b
+run2 h x = h x
+
+
+f0 : R, Maybe (R × R → y) → y
+f0 rec o = run2 (unj o) ( rec, rec )
+
+
+f1 : R, Maybe (R × R → y) → y
+f1 rec o = f0 rec (Just λq → (unj o) q)
+
+
+f2 : R, Maybe (R × R → y) → y
+f2 rec o = f1 rec (Just λq → (unj o) q)
+
+
+f3 : R, Maybe (R × R → y) → y
+f3 rec o = f2 rec (Just λq → (unj o) q)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y =
+        f3
+            { a = [ 2 ]
+            , b = [ 3 ]
+            , c = [ 4 ]
+            , d = [ 5 ]
+            , e = [ 6 ]
+            , f = [ 7 ]
+            , g = [ 8 ]
+            , h = [ 9 ]
+            , i = [ 10 ]
+            , j = [ 11 ]
+            , k = [ 12 ]
+            , n = { x = [ 4 ], z = [ 5 ] }
+            }
+            (Just λs → s.0)
+    u = show (List.push y.a 1)
+    Node.print (u ++ show k)

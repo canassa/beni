@@ -1,0 +1,1 @@
+An open callee entry whose every arrival the record's structure writes leaves its key closed (ownership-v2.md §2.1, An arrival's level; #2222): built again under --ownership=v2 and the list stale-read sanitiser.
