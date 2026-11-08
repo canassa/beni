@@ -23,6 +23,7 @@
 --! a throw in a reaction would be an unhandled rejection that the program
 --! survives.
 
+import Browser.Canvas as Canvas
 import Gpu.Error as Error exposing (DeviceLoss, LossReason, UnknownLoss, Destroyed, Observation)
 import Js
 import Task
@@ -1288,7 +1289,7 @@ pub usable : V, V, V, String → Result Error.InputError ⊤
 usable native onDevice batch path =
     o = recordOf native
     status = Js.get o "status"
-    if expired o then
+    if expired o || holdsExpired native then
         Err (Error.ResourceExpired { path = path })
     else if Js.same status (Js.from "rejected") then
         Err (Error.ResourceRejected { path = path })
@@ -1380,7 +1381,7 @@ nextGeneration surface =
 
 --| Mark `texture`, the current texture of the surface of record `surface`,
 --| as one that expires when `frame` ends, the surface's generation moves on
---| or its canvas changes size.
+--| or its canvas is resized.
 pub expiresWith : V, V, V → ⊤
 expiresWith texture frame surface =
     canvas = Js.get surface "canvas"
@@ -1391,24 +1392,92 @@ expiresWith texture frame surface =
             [ ( "frame", frame )
             , ( "surface", surface )
             , ( "generation", Js.get surface "generation" )
+            , ( "resizes", Js.from (resizesOf canvas) )
             , ( "width", Js.get canvas "width" )
             , ( "height", Js.get canvas "height" )
             ]
         )
 
 
--- An object whose frame ended, or whose surface or canvas changed since,
--- or a view of one.
+--| Give `view` the frame mark of `texture` as it is now, if it has one: a
+--| view made in one frame expires with that frame, even when a later frame
+--| has the same texture again.
+pub markView : V, V → ⊤
+markView view texture =
+    marks = Js.get (recordOf texture) "expires"
+    if Js.isNullish marks then
+        ⊤
+    else
+        Js.set
+            (recordOf view)
+            "expires"
+            (Js.call (Js.global "Object") "assign" [ Js.object [], marks ])
+
+
+-- How often `Browser.Canvas` has set the canvas's size: every write counts,
+-- one that changes nothing or undoes an earlier one too.
+resizesOf : V → Int
+resizesOf canvas =
+    if isInstance canvas "HTMLCanvasElement" then
+        Canvas.resizeCount (Js.to canvas)
+    else
+        Canvas.offscreenResizeCount (Js.to canvas)
+
+
+-- What each object holds that can expire, by native object: kept apart
+-- from the records, since a command buffer's record is made after its
+-- session recorded what it holds.
+heldBy : V
+heldBy = Js.pure λ⊤ → Js.construct (Js.global "WeakMap") []
+
+
+--| Record that `made` holds the objects `on` (natives): it expires when one
+--| of them does (§8.2: a command buffer, a bundle or a bind group of a frame
+--| texture).
+pub dependsOn : V, V → ⊤
+dependsOn made on =
+    if Js.to (Js.get on "length") == 0 then
+        ⊤
+    else
+        before = Js.call heldBy "get" [ made ]
+        all = if Js.isUndefined before then on else Js.call before "concat" [ on ]
+        Js.call heldBy "set" [ made, all ] ▷ ignore
+
+
+--| Whether an object can expire: a frame's texture, a view of one, or what
+--| holds one.
+pub frameBound : V → Bool
+frameBound native =
+    o = recordOf native
+    not (Js.isNullish (Js.get o "expires"))
+        || not (Js.isUndefined (Js.call heldBy "get" [ native ]))
+        || (not (Js.isNullish (Js.get o "texture")) && frameBound (Js.get o "texture"))
+
+
+-- An object that holds an expired one.
+holdsExpired : V → Bool
+holdsExpired native =
+    on = Js.call heldBy "get" [ native ]
+    not (Js.isUndefined on)
+        && Js.to (Js.call on "some" [ Js.from λd → expired (recordOf d) || holdsExpired d ])
+
+
+-- An object whose frame ended, or whose surface or canvas changed since, a
+-- view of one, or an object that holds one.
 expired : V → Bool
 expired o =
     marks = Js.get o "expires"
-    if Js.isNullish marks then
-        texture = Js.get o "texture"
-        if Js.isNullish texture then False else expired (recordOf texture)
-    else
-        surface = Js.get marks "surface"
-        canvas = Js.get surface "canvas"
-        not (Js.to (Js.get (Js.get marks "frame") "live"))
-            || not (Js.same (Js.get surface "generation") (Js.get marks "generation"))
-            || not (Js.same (Js.get canvas "width") (Js.get marks "width"))
-            || not (Js.same (Js.get canvas "height") (Js.get marks "height"))
+    texture = Js.get o "texture"
+
+    own =
+        if Js.isNullish marks then
+            False
+        else
+            surface = Js.get marks "surface"
+            canvas = Js.get surface "canvas"
+            not (Js.to (Js.get (Js.get marks "frame") "live"))
+                || not (Js.same (Js.get surface "generation") (Js.get marks "generation"))
+                || resizesOf canvas ≠ Js.to (Js.get marks "resizes")
+                || not (Js.same (Js.get canvas "width") (Js.get marks "width"))
+                || not (Js.same (Js.get canvas "height") (Js.get marks "height"))
+    own || (not (Js.isNullish texture) && expired (recordOf texture))

@@ -102,7 +102,11 @@ pass native path =
 --| A resource a command names, at `path`: usable on the session's device,
 --| or provisional in its batch.
 pub usable : V, V, String → Result InputError ⊤
-usable s native path = check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)
+usable s native path =
+    check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)?
+    -- What the session encodes holds what can expire (§8.2).
+    if Engine.frameBound native then Js.call (Js.get s "holds") "push" [ native ] ▷ ignore else ⊤
+    Ok ⊤
 
 
 --| One debug group more, or one fewer — refused when none is open.
@@ -126,6 +130,7 @@ newSession device r batch =
         , ( "batch", batch )
         , ( "live", Js.from True )
         , ( "failure", Js.null )
+        , ( "holds", Js.array [] )
         ]
 
 
@@ -197,9 +202,16 @@ runSession s native body value =
     else if Js.same (Js.get enc "state") (Js.from "locked") then
         Err (Error.InvalidInput (Error.EncoderLocked { path = "encoder" }))
     else if Js.same (Js.get enc "state") (Js.from "finished") then
-        Ok (Js.get enc "finished")
+        Ok (held s (Js.get enc "finished"))
     else
-        Ok (Js.call native "finish" [])
+        Ok (held s (Js.call native "finish" []))
+
+
+-- What a session finished holds what its commands named that can expire.
+held : V, V → V
+held s made =
+    Engine.dependsOn made (Js.get s "holds")
+    made
 
 
 --| Record what an encoder's `finish` gave.

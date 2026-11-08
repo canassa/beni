@@ -115,16 +115,20 @@ getCurrentTexture frame =
         Ok texture →
             if Engine.known texture then
                 -- The host gives one texture a task: a later frame of the
-                -- same task has it again, now its own.
-                ⊤
+                -- same task has it again, now its own, whatever an earlier
+                -- frame settled it as. Destroyed stays destroyed.
+                r = Engine.recordOf texture
+                Js.set r "status" (Js.from "provisional")
+                Js.set r "batch" b
+                Js.set r "device" (Js.get b "device")
             else
                 Engine.adoptInBatch texture (Js.get b "device") b
                 Js.set (Engine.recordOf texture) "destroyed" (Js.from False)
-                -- Accepted or rejected with the frame, never destroyed: the
-                -- canvas owns it.
-                Js.call (Js.get b "made") "push"
-                    [ Js.object [ ( "made", texture ), ( "discard", Js.from λ_ → ⊤ ) ] ]
-                    ▷ ignore
+            -- Accepted or rejected with the frame, never destroyed: the
+            -- canvas owns it.
+            Js.call (Js.get b "made") "push"
+                [ Js.object [ ( "made", texture ), ( "discard", Js.from λ_ → ⊤ ) ] ]
+                ▷ ignore
             Engine.expiresWith texture b s
             Ok (Js.to texture)
 

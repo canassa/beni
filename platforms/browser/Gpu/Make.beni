@@ -211,10 +211,21 @@ bindGroup device batch descriptor =
         descriptor.entries
         (λentry → handle (resourceObject entry.resource) r batch "entries.resource")?
     converted = Native.bindGroupDescriptor descriptor
+    -- A bind group of a frame's texture expires with it (§8.2).
+    bound =
+        Native.array
+            (List.filter
+                (List.map descriptor.entries λentry → resourceObject entry.resource)
+                Engine.frameBound
+            )
+            λx → x
     Ok
-        (plain "createBindGroup" descriptor.label λ⊤ →
-            Ok (Js.call device "createBindGroup" [ converted ])
-        )
+        { name = "createBindGroup"
+        , labels = labelsOf descriptor.label
+        , call = Js.from λ⊤ → Ok (Js.call device "createBindGroup" [ converted ])
+        , adopt = Js.from λmade → Engine.dependsOn made bound
+        , discard = Js.from ignore
+        }
 
 
 -- The native object a binding names.
@@ -606,7 +617,10 @@ textureView device batch target descriptor =
         { name = "createView"
         , labels = labelsOf descriptor.label
         , call = Js.from λ⊤ → formatChecked formats λ⊤ → Js.call target "createView" [ converted ]
-        , adopt = Js.from λmade → Js.set (Engine.recordOf made) "texture" target
+        , adopt =
+            Js.from λmade →
+                Js.set (Engine.recordOf made) "texture" target
+                Engine.markView made target
         , discard = Js.from ignore
         }
 
