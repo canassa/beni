@@ -4,7 +4,9 @@
 -- `done` waits for its own work. The queue's faithful
 -- `onSubmittedWorkDone` waits too. Under a diagnostic lease `submit`
 -- refuses with no native call while a receipt's `done` runs; on a
--- destroyed device both refuse with the loss.
+-- destroyed device both refuse with the loss, and a receipt whose work
+-- was done before the destroy gives the loss too: observed loss wins
+-- (§8.3).
 import Gpu.Device
 import Gpu.Queue
 import Gpu.Submission
@@ -48,11 +50,15 @@ refusals ⊤ =
 
     destroyed = GpuKit.with "none" λd2 →
         queue = Gpu.Device.queue d2
+        earlier = must (Gpu.Queue.submit queue [])
+        _ = Gpu.Submission.done earlier
         Gpu.Device.destroy d2
         [ "submit on a destroyed device: "
             ++ GpuShow.checked (Gpu.Queue.submit queue []) λ_ → "receipt"
         , "queue work done on it: "
             ++ GpuShow.checked (Gpu.Queue.onSubmittedWorkDone queue) λ_ → "done"
+        , "a receipt done before the destroy, asked after: "
+            ++ GpuShow.checked (Gpu.Submission.done earlier) λ_ → "done"
         ]
     List.concat [ leased, destroyed ]
 
