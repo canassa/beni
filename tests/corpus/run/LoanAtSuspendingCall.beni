@@ -1,6 +1,9 @@
 -- LoanAtSuspendingCall (Appendix B, S4 and S8; R-5.12.3): `slowShow` sleeps
 -- before it reads its argument, a loan of the cell's contents, while the other
 -- fiber of `Task.par` edits those contents in place. The edit is refused.
+-- It repeats S8-ref's pins (SanitiserFiberReader, SanitiserFiberBranch,
+-- SanitiserFiberReplace): v2 refuses it as `Task.par <lambda>` escaping, not
+-- because of the suspension, and its greens are #2294.
 import Io
 import List
 import Node exposing (Program)

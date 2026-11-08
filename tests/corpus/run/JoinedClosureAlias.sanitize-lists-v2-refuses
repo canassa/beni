@@ -1,0 +1,5 @@
+# v2 refuses both calls of the joined closure, `f` and its alias `g`: the once token is counted across the alias; the edit would change what the program prints.
+22:9 list_still_used f
+22:9 list_still_used f
+23:9 list_still_used g
+23:9 list_still_used g
