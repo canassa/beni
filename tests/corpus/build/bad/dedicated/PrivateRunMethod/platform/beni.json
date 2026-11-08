@@ -1,0 +1,1 @@
+{ "platform": true, "name": "worker-privaterunmethod", "platforms": ["browser"], "reexports": ["Browser", "Browser.Worker"] }

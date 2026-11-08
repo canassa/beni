@@ -371,8 +371,8 @@ pub fn methodSignatureAtDeclaration(r: *Report, region: Bir.Inst.Index, token: u
     try r.flush();
 }
 
-pub fn privateMethod(r: *Report, region: Bir.Inst.Index, module: Graph.Index, method: Symbol) Error!void {
-    try r.texts.privateMethod(region, module, method);
+pub fn privateMethod(r: *Report, region: Bir.Inst.Index, module: Graph.Index, type_name: Symbol, method: Symbol) Error!void {
+    try r.texts.privateMethod(region, module, type_name, method);
     try r.flush();
 }
 

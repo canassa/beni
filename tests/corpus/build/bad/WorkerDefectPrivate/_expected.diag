@@ -1,1 +1,1 @@
-[{"code":"private_name","severity":"error","span":{"file":"Main.beni","start":{"line":8,"col":5},"end":{"line":8,"col":21}},"title":"PRIVATE NAME","message":"This name is private to the platform’s worker entry machinery."}]
+[{"code":"private_name","severity":"error","span":{"file":"Main.beni","start":{"line":8,"col":5},"end":{"line":8,"col":21}},"title":"PRIVATE NAME","message":"`Task.chainDefect` is private to the platform’s worker entry modules,\n`Browser.Worker` and `Browser.WorkerRuntime`.\n\n`Task` declares it `pub`, but only those modules may use it."}]

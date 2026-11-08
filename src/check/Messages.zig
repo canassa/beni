@@ -460,7 +460,7 @@ pub fn privateMethod(r: *Report, region: Bir.Inst.Index, shown: Var, culprit: Ty
     const entry = env.types.entry(culprit);
     switch (env.store.resolvedContent(shown)) {
         .structure => |flat| switch (flat) {
-            .app => |a| if (a.type == culprit) return r.privateMethod(region, entry.module, method),
+            .app => |a| if (a.type == culprit) return r.privateMethod(region, entry.module, entry.name, method),
             else => {},
         },
         else => {},

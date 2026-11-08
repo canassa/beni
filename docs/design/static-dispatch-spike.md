@@ -2849,6 +2849,28 @@ Fixture: `tests/corpus/check/bad/WhereNonWellKnownAtLiteral.beni`.
 Fixture: a two-module project under `tests/corpus/check/bad/PrivateMethod/`, a type `Token` in
 `Token.beni` with a private `bump`, used as `t.bump 1` in `Main.beni`.
 
+*Amended 2026-11-08* (#1755): the text names the use as the program wrote it. A use written as an
+operator (`==`, `<` and the others of §10.3) never says `x.eq`; the **Region** is the operator token,
+and the second paragraph names the operator and the type:
+
+> `<op>` needs the `<m>` of `<Type>`, and `<Module>` declares `<m>` without `pub`, so it is
+> private to that module and cannot be used from here.
+
+A method that is `pub` but fenced to some callers (`src/resolve/CorePrivate.zig`; today only the
+worker entry names of `workers.md`) gets the fence's text instead, from the same function as
+`private_name`'s fenced text, so the two codes never word one fence two ways:
+
+> **PRIVATE METHOD** — `<Module>.<m>` is private to `<owner>`.
+>
+> `<use>` needs the `<m>` of `<Type>`, declared in `<Module>`. `<Module>` declares it `pub`, but
+> only those modules may use it.
+
+`<use>` is `x.<m>` or the operator; `<owner>` names the callers the fence admits, for the worker
+fence "the platform's worker entry modules, `Browser.Worker` and `Browser.WorkerRuntime`".
+`private_name` for a fenced name is the same text without the `<use>` sentence. Fixtures:
+`tests/corpus/check/bad/PrivateEqOperator/`, `tests/corpus/build/bad/dedicated/PrivateRunMethod/`
+and `PrivateRunName/`, `tests/corpus/build/bad/WorkerDefectPrivate/`.
+
 ### 10.3 `no_methods_on_shape`
 
 **Severity** error. **Region** the `.m` token for a dot-call; the operator token for `<` and
