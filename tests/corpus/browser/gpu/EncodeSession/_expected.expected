@@ -93,6 +93,10 @@
       <li>"run: Err InvalidInput OutOfRange dynamicOffsetsData 1+2 of 2"</li>
       <li>"offsets on resizable storage: Err ResizableBacking dynamicOffsetsData"</li>
       <li>"run: Err InvalidInput ResizableBacking dynamicOffsetsData"</li>
+      <li>"start -1: Err NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"length -1: Err NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataLength"</li>
       <li>"elements 1+1 of 2, unbound: Ok Ok"</li>
       <li>"run: Err InvalidInput EncoderLocked encoder"</li>
     </ol>
@@ -130,10 +134,16 @@
       <li>"run: Err InvalidInput OutOfRange dynamicOffsetsData 1+2 of 2"</li>
       <li>"offsets on resizable storage: Err ResizableBacking dynamicOffsetsData"</li>
       <li>"run: Err InvalidInput ResizableBacking dynamicOffsetsData"</li>
+      <li>"start -1: Err NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"length -1: Err NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataLength"</li>
       <li>"elements 1+1 of 2, unbound: Ok Ok"</li>
       <li>"run: Err InvalidInput EncoderLocked encoder"</li>
       <li>"range offset 2: Err Misaligned rangeOffset 2 by 4"</li>
       <li>"run: Err InvalidInput Misaligned rangeOffset 2 by 4"</li>
+      <li>"range offset 2³²: Err NumericDomain rangeOffset"</li>
+      <li>"run: Err InvalidInput NumericDomain rangeOffset"</li>
       <li>"6 bytes: Err Misaligned size 6 by 4"</li>
       <li>"run: Err InvalidInput Misaligned size 6 by 4"</li>
       <li>"bytes 4+8 of 8: Err OutOfRange size 4+8 of 8"</li>
@@ -175,10 +185,16 @@
       <li>"run: Err InvalidInput OutOfRange dynamicOffsetsData 1+2 of 2"</li>
       <li>"offsets on resizable storage: Err ResizableBacking dynamicOffsetsData"</li>
       <li>"run: Err InvalidInput ResizableBacking dynamicOffsetsData"</li>
+      <li>"start -1: Err NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataStart"</li>
+      <li>"length -1: Err NumericDomain dynamicOffsetsDataLength"</li>
+      <li>"run: Err InvalidInput NumericDomain dynamicOffsetsDataLength"</li>
       <li>"elements 1+1 of 2, unbound: Ok Ok"</li>
       <li>"run: Err InvalidInput EncoderLocked encoder"</li>
       <li>"range offset 2: Err Misaligned rangeOffset 2 by 4"</li>
       <li>"run: Err InvalidInput Misaligned rangeOffset 2 by 4"</li>
+      <li>"range offset 2³²: Err NumericDomain rangeOffset"</li>
+      <li>"run: Err InvalidInput NumericDomain rangeOffset"</li>
       <li>"6 bytes: Err Misaligned size 6 by 4"</li>
       <li>"run: Err InvalidInput Misaligned size 6 by 4"</li>
       <li>"bytes 4+8 of 8: Err OutOfRange size 4+8 of 8"</li>
