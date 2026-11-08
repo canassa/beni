@@ -43,13 +43,7 @@ jobs:
           ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
       # ci.yml's Zig caches, read only: this workflow saves nothing.
       - name: restore the Zig caches
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .zig-cache
-            ~/.cache/zig
-          key: zig-azathoth-${{ hashFiles('flake.lock') }}-${{ github.sha }}
-          restore-keys: zig-azathoth-${{ hashFiles('flake.lock') }}-
+        run: .github/ci-cache.sh restore "zig-azathoth-${{ hashFiles('flake.lock') }}"
 
       - name: zig build
         run: nix develop --command zig build
