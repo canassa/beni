@@ -44,7 +44,7 @@ run2 h x = h x
 
 
 f0 : R, Maybe (R × R → y) → y
-f0 rec o = run2 (unj o) ( rec, rec )
+f0 rec o = run2 (λq → (unj o) q) ( rec, rec )
 
 
 f1 : R, Maybe (R × R → y) → y
