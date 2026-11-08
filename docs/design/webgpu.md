@@ -1336,8 +1336,12 @@ encoders (S2b).
 Browser.Canvas.OffscreenCanvas`. `configure` is a checked operation on the configuration's device: a
 feature-gated format is `UnsupportedCapability` first, the host's `TypeError` is
 `CanvasConfigurationRejected`, and a configuration that failed leaves the surface unconfigured for
-frames. `getConfiguration` reads the host's configuration back, a member the host leaves out as
-`Default`. `Gpu.Frame` has `submit`, `batch`, `getCurrentTexture`, `encode` and `submitCommands`; a
+frames; a refusal before the native call (a missing feature, a lease, a loss) changes nothing of the
+surface, and a configuration that an `unconfigure` or another `configure` overtook while it was
+checked does not configure it. `getConfiguration : Surface → Result Error (Maybe
+CanvasConfiguration)` reads the host's configuration back, a member the host leaves out as `Default`;
+a host without the method is `UnsupportedCapability`, and a usage that is not a set of the pin's bits
+is a defect. `Gpu.Frame` has `submit`, `batch`, `getCurrentTexture`, `encode` and `submitCommands`; a
 frame is a `Gpu.Batch.run` on the surface's device whose batch is the `Frame`, so §8.2's batch bridge
 is the batch itself, and `Frame.submit` refuses an unconfigured surface (`CanvasUnconfigured`) and a
 leased device before the callback runs. Every native submit of the frame, through
@@ -1347,11 +1351,19 @@ issue order. **The non-yielding host-turn section is the scope section itself**:
 the device's scope section, one synchronous call; `browser/gpu/SurfaceFrames`' *checkpoint* shows
 that a microtask queued at the start of the callback has not run when it has submitted. A current
 texture and every view of it expire (`ResourceExpired`, the engine's `usable`) when its frame ends,
-when the surface is configured again or unconfigured, and when its canvas's `width` or `height`
-changes. `importExternalTexture` waits for S5 with the other media sources. Fixtures:
+when the surface is configured again or unconfigured, and when its canvas is resized: every
+`Browser.Canvas.resize` counts (`resizeCount`), one to the same size or undone at once too, and a
+size changed any other way is caught by comparing `width` and `height`. A view keeps the frame mark
+of the frame that made it, so a later frame that gets the same native texture (the host gives one a
+task) takes the texture as its own but never revives an earlier frame's view. What a frame's texture
+is in expires with it: an encoder session records every frame-bound object a command names, and the
+command buffer or bundle it finishes holds them, as a bind group holds the frame views it binds; a
+held object expired is `ResourceExpired` (`browser/gpu/FrameRetry`, `FrameDependencies`). `importExternalTexture` waits for S5 with the other media sources. Fixtures:
 `SurfaceFrames` (receipts, expiry, resize, reconfiguration, an `OffscreenCanvas`, the checkpoint),
 `SurfaceConfiguration` (configuration, its refusals and readback, a lease), `CanvasPage` (a TEA page
-with a stable `<canvas>`), and the defect `CurrentTextureUnlisted`. All three run in `test-webgpu`'s
+with a stable `<canvas>`), and the defects `CurrentTextureUnlisted`, `CurrentTextureSpoofed`, `ConfigureUnlisted` and
+`ConfigureSpoofed`. `SurfaceConfiguration`'s *checkpoint* repeats the microtask probe in a frame that
+acquires no texture, and its *conflict* shows a canvas keeping its first context kind. All of them run in `test-webgpu`'s
 Chrome, which runs Skia and ANGLE on SwiftShader's Vulkan (`--enable-features=Vulkan
 --use-vulkan=swiftshader --use-angle=vulkan`): on ANGLE's SwiftShader GL, Chrome composites in
 software and has no shared-image backing for a canvas texture, so `getCurrentTexture` lost the

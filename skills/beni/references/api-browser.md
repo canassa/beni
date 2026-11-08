@@ -41,9 +41,11 @@ module Browser.Canvas
   value create : Int, Int → Result Error Canvas  -- impure
   value offscreen : Int, Int → Result Error OffscreenCanvas  -- impure
   value offscreenBitmapRenderer : OffscreenCanvas → Result Error BitmapRenderer  -- impure
+  value offscreenResizeCount : OffscreenCanvas → Int  -- impure
   value offscreenSize : OffscreenCanvas → { height : Int, width : Int }  -- impure
   value present : BitmapRenderer, ImageBitmap → Result Error ⊤  -- impure
   value resize : Canvas, Int, Int → Result Error ⊤  -- impure
+  value resizeCount : Canvas → Int  -- impure
   value resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤  -- impure
   value size : Canvas → { height : Int, width : Int }  -- impure
   value snapshot : OffscreenCanvas → Result Error ImageBitmap  -- impure
@@ -563,12 +565,14 @@ module Gpu.Engine
   value consumeAdapter : V → ⊤  -- impure
   value contextual : String, V → V  -- impure
   value defect : String → a  -- impure
+  value dependsOn : V, V → ⊤  -- impure
   value destroy : V → ⊤  -- impure
   value destroyed : V → Bool  -- impure
   value deviceContext : V, String → String  -- impure
   value deviceId : V → Int  -- impure
   value entry : ⊤ → Result Missing V  -- impure
   value expiresWith : V, V, V → ⊤  -- impure
+  value frameBound : V → Bool  -- impure
   value guard : V, String, (⊤ → ⊤) → ⊤  -- impure
   value hold : V → ⊤  -- impure
   value isDomException : V, String → Bool  -- impure
@@ -577,6 +581,7 @@ module Gpu.Engine
   value isTypeError : V → Bool  -- impure
   value known : V → Bool  -- impure
   value loss : V → Maybe DeviceLoss  -- impure
+  value markView : V, V → ⊤  -- impure
   value member : V, String → V  -- impure
   value messageOf : V → String  -- impure
   value nextGeneration : V → ⊤  -- impure
@@ -1172,7 +1177,7 @@ module Gpu.Surface
   value fromCanvas : Canvas → Result Error Surface  -- impure
   value fromElement : String → Result Error Surface  -- impure
   value fromOffscreen : OffscreenCanvas → Result Error Surface  -- impure
-  value getConfiguration : Surface → Maybe CanvasConfiguration  -- impure
+  value getConfiguration : Surface → Result Error (Maybe CanvasConfiguration)  -- impure
   value unconfigure : Surface → ⊤  -- impure
 module Gpu.Texture
   value createView : Texture, TextureViewDescriptor → Result Error TextureView  -- suspends

@@ -201,12 +201,15 @@ draw device target =
 3. **A frame gives one receipt for each submit.** A frame that submits nothing gives no
    receipt. A frame that fails gives no receipt.
 4. **The current texture is for one frame only.** After the frame, after `configure` or
-   `unconfigure`, and after the canvas changes size, the texture and its views give
+   `unconfigure`, and after each `Browser.Canvas.resize` (also to the same size), the texture,
+   its views, and command buffers, bundles and bind groups that use them give
    `ResourceExpired`. Do not keep them.
 5. **Set the backing size with `Browser.Canvas.resize`.** It is separate from the CSS size.
 6. **Keep the canvas node in the view.** In `browser-tea`, put the `<canvas>` in `view` and draw
    from a command (`Cmd.task`). A render keeps the node, so `fromElement` gives the same
    surface again.
+7. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
+   `UnsupportedCapability`. A field the browser does not report is `Default`.
 
 ## Example
 
