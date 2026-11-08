@@ -3,6 +3,10 @@
 -- mint, and a composed update keeps one copy of elements that write the
 -- same, so §4.3's rounds meet: `bump`, `touch`, `inc` and `deep` (a map
 -- inside a map) settle as `kept` with their element writes, not a cap.
+-- `addAll` (#1004): its map callback folds into the element, and a fold's
+-- `Fresh` holds the closure's whole environment, `xs` too. Composed, the
+-- callee's element then also reads the argument element's root. Two `Fresh`
+-- elements at `[*]` are one element, so the recursion settles too.
 import Browser
 import Dict exposing (Dict)
 import Html exposing (Html)
@@ -13,6 +17,7 @@ type alias Model =
     rows : Dict Int Int
     xs : List Int
     grid : List (List Int)
+    ys : List Int
 
 
 type Msg
@@ -20,6 +25,7 @@ type Msg
     | Touch Int
     | Inc Int
     | Deep Int
+    | AddAll Int
 
 
 bump : Dict Int Int, Int → Dict Int Int
@@ -38,6 +44,11 @@ deep : List (List Int), Int → List (List Int)
 deep grid n = if n ≤ 0 then grid else deep (List.map grid λr → List.map r λc → c + 1) (n - 1)
 
 
+addAll : List Int, List Int, Int → List Int
+addAll xs ys n =
+    if n ≤ 0 then xs else addAll (List.map xs λv → List.foldl ys v λy a → a + y) ys (n - 1)
+
+
 update : Msg, Model → Model
 update msg model =
     case msg of
@@ -53,6 +64,9 @@ update msg model =
         Deep n →
             { model | grid = deep model.grid n }
 
+        AddAll n →
+            { model | xs = addAll model.xs model.ys n }
+
 
 view : Model → Html Msg
 view model = <p>{Dict.size model.rows} {List.length model.xs}</p>
@@ -61,4 +75,7 @@ view model = <p>{Dict.size model.rows} {List.length model.xs}</p>
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = λ⊤ → { rows = Dict.empty, xs = [], grid = [] }, update = update, view = view }
+        { init = λ⊤ → { rows = Dict.empty, xs = [], grid = [], ys = [] }
+        , update = update
+        , view = view
+        }

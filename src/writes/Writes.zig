@@ -3742,10 +3742,13 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
                     // update then reaches its fixpoint (§4.3).
                     var all: std.ArrayList(Elem) = .empty;
                     defer all.deinit(a.gpa);
-                    for (0..a.lstElems(bv)) |i| try all.append(a.gpa, a.lstElem(bv, @intCast(i)));
+                    const n_arg = a.lstElems(bv);
+                    for (0..n_arg) |i| try all.append(a.gpa, a.lstElem(bv, @intCast(i)));
                     for (elems) |el| {
-                        for (all.items) |x| {
-                            if (try a.sameElem(x, el)) break;
+                        for (all.items, 0..) |*x, k| {
+                            if (try a.sameElem(x.*, el)) break;
+                            // Over one of the argument's own (#1004).
+                            if (k < n_arg and try a.foldFreshElem(bv, x, el)) break;
                         } else try all.append(a.gpa, el);
                     }
                     return a.mkLst(a.termWord(bv, 1), .kept, none, none, all.items);
@@ -4017,6 +4020,33 @@ fn sameElem(a: *Writes, x: Elem, y: Elem) Allocator.Error!bool {
     defer al.deinit(a.gpa);
     if (!try a.alphaRoot(&al, r1, r2)) return false;
     return try a.alphaSym(&al, x.index, y.index) and try a.alphaPath(&al, x.eps, y.eps) and try a.alphaTerm(&al, x.term, y.term);
+}
+
+/// A callee's element over an argument's element, both at `*` and both
+/// `Fresh`, in a composed `kept` update (#1004): one element, `x`. The
+/// callee's element root stands for an element of the argument list `bv`,
+/// so its paths are replaced by what `bv`'s elements depend on.
+fn foldFreshElem(a: *Writes, bv: u32, x: *Elem, el: Elem) Error!bool {
+    if (x.index != sym_star or el.index != sym_star) return false;
+    if (x.eps == none or el.eps == none) return false;
+    if (a.termTag(x.term) != .fresh or a.termTag(el.term) != .fresh) return false;
+    const r = a.rootOf(el.eps);
+    var d = a.termWord(x.term, 1);
+    var replaced = false;
+    const de = a.termWord(el.term, 1);
+    for (0..a.deps_t.len(de)) |i| {
+        const q = a.deps_t.word(de, i);
+        if (a.rootOf(q) == r) {
+            replaced = true;
+            continue;
+        }
+        d = try a.depsUnion(d, try a.depsOfPath(q));
+    }
+    if (replaced) for (0..a.lstElems(bv)) |i| {
+        d = try a.depsUnion(d, try a.deps(a.lstElem(bv, @intCast(i)).term));
+    };
+    x.term = try a.mkFresh(d);
+    return true;
 }
 
 /// Whether every alternative of `r` is the element itself.

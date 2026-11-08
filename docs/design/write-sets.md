@@ -2491,3 +2491,29 @@ whose callback folds into the element still reaches the cap (#1004). No cap move
 at the indices or keys it names, and `?` where a later round computes them
 (`writes/UpdateRecursion`). `writes/NestedFoldValue` and `browser/inline/NestedFoldValue` pin the
 fold the review found.
+
+### *Amended 2026-11-06 (#1004):* a callee's `Fresh` element over the argument's
+
+The amendment above names one case that still reached the cap, a map whose callback folds into the
+element, and gives the order of a deps set as its cause. That is not the cause. A fold's result is
+`Fresh` of its arguments, and `deps(Fun)` is the closure's whole environment (§3.6), so the
+element of `ff xs ys n = if n ≤ 0 then xs else ff (List.map xs λv → List.foldl ys v λy a → a + y)
+ys (n - 1)` depends on `xs`. In a composed `kept` update the callee's element is substituted with
+`xs ↦ List.map xs f`, and that adds the argument element's own root to it:
+- the argument's element is `[ε₂: Fresh{xs, ys, n, ε₂}]`;
+- the callee's element becomes `[ε₁: Fresh{xs, ys, n, ε₁, ε₂}]`.
+
+They are not one element under any renaming, so each round added one more element, and one more
+alternative, and the rounds never met.
+
+Now **a callee's element and an argument's element, both at `[*]` and both `Fresh`, are one
+element**: the argument's, `Fresh` of the union of the two deps sets, with every path of the callee
+element's own root replaced by the deps of the argument's elements. The callee's root stands for an
+element of the argument list, and that element's value depends on nothing outside those deps, so
+the union holds everything the composed value reads. Both elements write `value p[*]`, so the write
+set does not change; deps are never used to decide a write (§3.6). No cap moved. `addAll` in
+`writes/UpdateRecursion` (the issue's recursion) is now `kept` with `value ρ.xs[*]`.
+
+The order of a deps set is a defect of its own, hidden by another: an `Alt` keeps alternatives that
+are equal up to the renaming of their roots, so a recursion whose base case maps its list also
+reaches the cap. Both are #2102.
