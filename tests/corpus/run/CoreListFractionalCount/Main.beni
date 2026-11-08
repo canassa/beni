@@ -1,12 +1,15 @@
--- An `Int` is a double, so `2 ^ (0 - 1)` is `0.5` and `2 ^ 1024 - 2 ^ 1024`
--- is NaN. A count is not a position (`CoreListFractionalIndex`): `repeat`,
--- `range`, `initialize` and `String.repeat` cut a fractional count toward
--- zero, and read NaN and a count below 1 as 0 (`language.md` §6.8, *An index
--- or a count that is not a whole number*). They reached `new Array(1.5)`,
--- which throws `RangeError`. The count of `range lo hi` is `hi - lo + 1`, so
--- every element stays at most `hi`. The length that `pad`, `padLeft` and
+-- An `Int` is a double, so it can hold `0.5`, which this project's test
+-- platform hands over (`platform/Fraction.beni`), and NaN, which
+-- `2 ^^ 1024 - 2 ^^ 1024` is. A count is not a position
+-- (`CoreListFractionalIndex`): `repeat`, `range`, `initialize` and
+-- `String.repeat` cut a fractional count toward zero, and read NaN and a
+-- count below 1 as 0 (`language.md` §6.8, *An index or a count that is not
+-- a whole number*). They reached `new Array(1.5)`, which throws
+-- `RangeError`. The count of `range lo hi` is `hi - lo + 1`, so every
+-- element stays at most `hi`. The length that `pad`, `padLeft` and
 -- `padRight` pad to is a count too. Whole numbers keep their old answers:
 -- the last block.
+import Fraction exposing (half)
 import List
 import Node exposing (Program)
 import String
@@ -16,12 +19,8 @@ ints : List Int → String
 ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
-half : Int
-half = 2 ^ (0 - 1)
-
-
 nan : Int
-nan = 2 ^ 1024 - 2 ^ 1024
+nan = 2 ^^ 1024 - 2 ^^ 1024
 
 
 main : Program

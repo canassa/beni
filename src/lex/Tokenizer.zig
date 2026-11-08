@@ -351,7 +351,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 break :state t.take(1, .invalid);
             },
             '*' => break :state t.take(1, .op_star),
-            '^' => break :state t.take(1, .op_caret),
+            '^' => break :state if (src[t.index + 1] == '^') t.take(2, .op_caret_caret) else t.take(1, .op_caret),
             0x80...0xff => {
                 // `λ` (U+03BB, `CE BB`) is the lambda token, the one
                 // non-ASCII character code may hold (language.md §12.1).
@@ -1755,6 +1755,21 @@ test "every symbol" {
         .{ .tag = .underscore, .start = 25, .text = "_" },
         .{ .tag = .question, .start = 27, .text = "?" },
         .{ .tag = .eof, .start = 28, .text = "" },
+    } });
+}
+
+test "`^^` is one token, and `^ ^` two (language.md §6.5, amended 2026-11-05)" {
+    try expectLex("a ^^ b ^ ^ c^^^d", .{ .tokens = &.{
+        .{ .tag = .lower_ident, .start = 0, .text = "a" },
+        .{ .tag = .op_caret_caret, .start = 2, .text = "^^" },
+        .{ .tag = .lower_ident, .start = 5, .text = "b" },
+        .{ .tag = .op_caret, .start = 7, .text = "^" },
+        .{ .tag = .op_caret, .start = 9, .text = "^" },
+        .{ .tag = .lower_ident, .start = 11, .text = "c" },
+        .{ .tag = .op_caret_caret, .start = 12, .text = "^^" },
+        .{ .tag = .op_caret, .start = 14, .text = "^" },
+        .{ .tag = .lower_ident, .start = 15, .text = "d" },
+        .{ .tag = .eof, .start = 16, .text = "" },
     } });
 }
 

@@ -137,7 +137,9 @@ pub const magic = "BENIFE\x00\x00";
 /// has two new readings, which shifted the later ones.
 /// 28 (2026-11-04): ASCII synonyms no longer produce spelling diagnostics.
 /// 29 (2026-11-04): remove the unreachable star_in_type parse construct.
-pub const format_version: u32 = 29;
+/// 30 (2026-11-05): `^^` (language.md §6.5) — `Token.Tag` gained
+/// `op_caret_caret` and `Ast.Node.Tag` `int_pow`, which shifted later tags.
+pub const format_version: u32 = 30;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

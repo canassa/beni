@@ -384,6 +384,8 @@ pub const Node = struct {
         int_div,
         /// `^`
         pow,
+        /// `^^`
+        int_pow,
         /// `++`
         append,
         /// `::`
@@ -615,6 +617,7 @@ pub const Node = struct {
                 .op_slash => .div,
                 .op_slash_slash => .int_div,
                 .op_caret => .pow,
+                .op_caret_caret => .int_pow,
                 .op_plus_plus => .append,
                 .op_colon_colon => .cons,
                 .op_eq_eq => .eq,

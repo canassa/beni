@@ -188,6 +188,8 @@ pub const Tag = enum(u8) {
     op_slash,
     op_slash_slash,
     op_caret,
+    /// `^^`, the integer power (language.md §6.5, amended 2026-11-05).
+    op_caret_caret,
     op_plus_plus,
     op_colon_colon,
     op_eq_eq,
@@ -367,6 +369,7 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .op_slash => "/",
         .op_slash_slash => "//",
         .op_caret => "^",
+        .op_caret_caret => "^^",
         .op_plus_plus => "++",
         .op_colon_colon => "::",
         .op_eq_eq => "==",

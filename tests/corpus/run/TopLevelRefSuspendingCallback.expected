@@ -1,0 +1,4 @@
+direct: replaced
+through a setter: replaced
+inside a λ: replaced, wrapped
+through a reader: replaced!
