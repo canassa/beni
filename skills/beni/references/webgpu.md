@@ -7,7 +7,8 @@ browser's WebGPU API with types. Only the main thread has them now.
 
 - `Gpu`: `available`, `requestAdapter`, `preferredCanvasFormat`, `wgslLanguageFeatures`.
 - `Gpu.Adapter`: `features`, `limits`, `info`, `requestDevice`.
-- `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`.
+- `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`, and the
+  first checked operation, `createSampler`.
 - `Gpu.Types`: one record for each IDL dictionary, one type for each IDL enum, one sum for each
   IDL union. These are generated from the pinned IDL.
 - `Gpu.Flags`: the five flag domains. A buffer usage set is not a texture usage set.
@@ -41,10 +42,15 @@ Buffers, textures, shaders, pipelines, passes and canvases come in later release
    the browser is asked. A limit is never clamped.
 5. **A failure that the standard does not document stops the program.** An unknown exception, a
    value outside the pin, or a spoofed error is a defect, not an `Err`.
-6. **A device can be lost.** `Gpu.Device.loss` gives the latched loss. `Gpu.Device.awaitLost`
+6. **A checked operation returns only what the device accepted.** `createSampler` returns
+   `Result Gpu.Error.Error`: `Validation`, `OutOfMemory` or `Internal` when an error scope reports
+   one, `RelatedFailures` when several do, and `DeviceLost` when the device is lost before or
+   during the check. While a diagnostic session holds the device, it returns
+   `InvalidInput (SessionState DeviceLeased)` at once and does not wait.
+7. **A device can be lost.** `Gpu.Device.loss` gives the latched loss. `Gpu.Device.awaitLost`
    waits for it. `Gpu.Device.destroy` latches `Destroyed` immediately. To recover, request a new
    adapter and a new device.
-7. **These functions can suspend.** Call them in a fiber: in `browser-tea`, in `Cmd.task`.
+8. **These functions can suspend.** Call them in a fiber: in `browser-tea`, in `Cmd.task`.
 
 ## Example
 

@@ -23,7 +23,7 @@
 --! a throw in a reaction would be an unhandled rejection that the program
 --! survives.
 
-import Gpu.Error as Error exposing (DeviceLoss, LossReason, UnknownLoss, Destroyed)
+import Gpu.Error as Error exposing (DeviceLoss, LossReason, UnknownLoss, Destroyed, Observation)
 import Js
 import Task
 
@@ -406,7 +406,11 @@ consumeAdapter adapter =
 
 --| Record a device the host gave on channel `ch`, with its loss watched
 --| before anyone sees it (ledger §2: `device.lost` is observed from
---| creation). The device holds the channel until its loss is latched.
+--| creation). The device holds the channel until its loss is reported. Its
+--| record also keeps its lease (§6.4): whether it is held and its
+--| generation; whether a scope section is open on it; the checked
+--| operations waiting on it, each woken by a loss; and how many of its
+--| error-scope pops are still to settle.
 pub adoptDevice : V, V → ⊤
 adoptDevice device ch =
     id = Js.read lastDevice + 1
@@ -422,6 +426,10 @@ adoptDevice device ch =
             , ( "channel", ch )
             , ( "released", Js.from False )
             , ( "pops", Js.from 0 )
+            , ( "leased", Js.from False )
+            , ( "generation", Js.from 0 )
+            , ( "section", Js.from False )
+            , ( "ops", Js.array [] )
             ]
     _ = Js.call table "set" [ device, r ]
     hold ch
@@ -514,6 +522,9 @@ latch r value =
     waiters = Js.get r "waiters"
     Js.set r "waiters" (Js.array [])
     Js.each waiters λw → Task.resume (Js.to w) value
+    ops = Js.get r "ops"
+    Js.set r "ops" (Js.array [])
+    Js.each ops λop → Js.to (Js.apply op [ Js.from value ])
 
 
 --| The device's hold on its channel ends once the host has reported its
@@ -538,3 +549,451 @@ deviceContext r what = "device " ++ String.fromInt (int (Js.get r "id")) ++ ", "
 --| Hand an unexpected outcome of the device to its program.
 pub reportDefect : V, V → ⊤
 reportDefect r error = channelDefect (Js.get r "channel") error
+
+
+-- ---- The lease (§6.4) ---------------------------------------------------------
+
+--| Take the device's diagnostic lease if it is free, never waiting: `True`
+--| when it was taken, and then the lease's generation is a new one. While
+--| it is held every checked operation on the device refuses at once.
+--| What a diagnostic session takes first; the session itself comes later.
+pub tryLease : V → Bool
+tryLease device =
+    r = recordOf device
+    if Js.to (Js.get r "leased") then
+        False
+    else
+        Js.set r "leased" (Js.from True)
+        Js.set r "generation" (Js.from (int (Js.get r "generation") + 1))
+        True
+
+
+--| Give the device's lease back.
+pub releaseLease : V → ⊤
+releaseLease device = Js.set (recordOf device) "leased" (Js.from False)
+
+
+-- ---- One checked host operation (§6.1) ------------------------------------------
+
+--| Whether a checked operation may start on the device, never waiting: a
+--| latched loss — `destroy`'s included — is `DeviceLost`, and a held lease
+--| `SessionState DeviceLeased`.
+pub admit : V, String → Result Error.Error ⊤
+admit device operation =
+    r = recordOf device
+    l = Js.get r "loss"
+    if not (Js.isNull l) then
+        Err
+            (Error.DeviceLost
+                { loss = Js.to l, operation = { operation = operation, observed = [] } }
+            )
+    else if Js.to (Js.get r "leased") then
+        Err (Error.InvalidInput (Error.SessionState Error.DeviceLeased))
+    else
+        Ok ⊤
+
+
+-- The three filters, pushed in this order and popped in the reverse.
+filterName : Int → V
+filterName i =
+    if i == 0 then
+        Js.from "validation"
+    else if i == 1 then
+        Js.from "out-of-memory"
+    else
+        Js.from "internal"
+
+
+-- What one operation's scopes have given so far: per filter the
+-- observation (null for none, until it settles), how many pops are owed
+-- and settled, the first unexpected outcome, and the fiber's `Resume`
+-- once it waits; `done` once the fiber has gone on, `taken` once it took
+-- what its wait gave.
+newScopes : ⊤ → V
+newScopes ⊤ =
+    Js.object
+        [ ( "results", Js.array [ Js.null, Js.null, Js.null ] )
+        , ( "owed", Js.from 0 )
+        , ( "settled", Js.from 0 )
+        , ( "unexpected", Js.null )
+        , ( "resume", Js.null )
+        , ( "done", Js.from False )
+        , ( "taken", Js.from False )
+        , ( "onLoss", Js.null )
+        , ( "made", Js.null )
+        ]
+
+
+--| How a checked operation's wait ended: its scopes all settled, or its
+--| device was lost first.
+type Waited
+    = Scoped
+    | LostWhile DeviceLoss
+
+
+--| One checked host operation (§6.1): `call` makes the one native call,
+--| with its own synchronous classifier — `Ok` for what the call made, or
+--| the precise `Error` of a host failure the ledger documents for it at
+--| that call — between the device's three error scopes, in a section no
+--| fiber can interleave; every pop is invoked before anything can suspend,
+--| however the call ends; then the operation waits for the pops, or for
+--| the device's loss, whichever comes first. A host object the call made
+--| is recorded provisional and published only when no scope reported a
+--| failure and no loss was observed; otherwise it is recorded rejected and
+--| never returned. An unexpected outcome — a pop that rejects, an error of
+--| a class its filter does not report — is a defect, even beside an
+--| expected failure; one that arrives after the operation went on, or that
+--| a cancelled operation leaves, goes to the device's program. `labels`
+--| name the resources, for diagnostics.
+pub checked : V, String, List String, sync (⊤ → Result Error.Error V) → Result Error.Error V
+checked device operation labels call =
+    case admit device operation of
+        Err problem →
+            Err problem
+
+        Ok _ →
+            r = recordOf device
+            scopes = newScopes ⊤
+            outcome = section device r scopes operation labels call
+            case outcome of
+                Ok made →
+                    Js.call table "set"
+                        [ made, Js.object [ ( "device", r ), ( "status", Js.from "provisional" ) ] ]
+                        ▷ ignore
+                    Js.set scopes "made" made
+
+                Err _ →
+                    ⊤
+            waited = waitScopes r scopes
+            unexpected = Js.get scopes "unexpected"
+            if not (Js.isNull unexpected) then
+                Js.throw unexpected
+            else
+                observed = observations scopes
+
+                observedLoss =
+                    case waited of
+                        LostWhile l →
+                            Just l
+
+                        Scoped →
+                            l = Js.get r "loss"
+                            if Js.isNull l then Nothing else Just (Js.to l)
+                case observedLoss of
+                    Just l →
+                        mark outcome "rejected"
+                        Err
+                            (Error.DeviceLost
+                                { loss = l
+                                , operation = { operation = operation, observed = observed }
+                                }
+                            )
+
+                    Nothing →
+                        combined outcome observed
+
+
+-- Step 6 without a loss: the call's own failure and the scopes'
+-- observations together, or the accepted object.
+combined : Result Error.Error V, List Observation → Result Error.Error V
+combined outcome observed =
+    case outcome of
+        Err failed →
+            case ( observationOf failed, observed ) of
+                ( _, [] ) →
+                    Err failed
+
+                ( Just first, _ ) →
+                    Err (Error.RelatedFailures { first = first, rest = observed })
+
+                ( Nothing, _ ) →
+                    Err failed
+
+        Ok made →
+            case observed of
+                [] →
+                    mark outcome "accepted"
+                    Ok made
+
+                [ one ] →
+                    mark outcome "rejected"
+                    Err (failure one)
+
+                [ first, …rest ] →
+                    mark outcome "rejected"
+                    Err (Error.RelatedFailures { first = first, rest = rest })
+
+
+ignore : V → ⊤
+ignore _ = ⊤
+
+
+mark : Result Error.Error V, String → ⊤
+mark outcome status =
+    case outcome of
+        Ok made →
+            Js.set (recordOf made) "status" (Js.from status)
+
+        Err _ →
+            ⊤
+
+
+-- Steps 2–4: enter the section, push the three scopes, make the call, and
+-- in a finaliser pop every scope that was pushed, in reverse, with both
+-- reactions attached at once, then leave the section. A push or a call
+-- that throws goes on after the pops: a defect.
+section : V, V, V, String, List String, sync (⊤ → Result Error.Error V) → Result Error.Error V
+section device r scopes operation labels call =
+    if Js.to (Js.get r "section") then
+        defect "a GPU call entered a device's scope section from inside it"
+    else
+        Js.set r "section" (Js.from True)
+        pushed = Js.ref 0
+        Js.finally
+            (λ⊤ →
+                pushScope device 0
+                Js.write pushed 1
+                pushScope device 1
+                Js.write pushed 2
+                pushScope device 2
+                Js.write pushed 3
+                call ⊤
+            )
+            λ⊤ →
+                Js.set scopes "owed" (Js.from (Js.read pushed))
+                popScopes device r scopes operation labels (Js.read pushed - 1)
+                Js.set r "section" (Js.from False)
+
+
+pushScope : V, Int → ⊤
+pushScope device i = Js.to (Js.call device "pushErrorScope" [ filterName i ])
+
+
+-- Each pop counts as pending on the device until its reaction ran, so the
+-- device keeps its channel to the program while one is pending; what a
+-- reaction throws goes to that program as a defect.
+popScopes : V, V, V, String, List String, Int → ⊤
+popScopes device r scopes operation labels i =
+    if i < 0 then
+        ⊤
+    else
+        Js.set r "pops" (Js.from (int (Js.get r "pops") + 1))
+        ch = Js.get r "channel"
+        context = deviceContext r operation
+        Js.call (Js.call device "popErrorScope" []) "then"
+            [ Js.from λerror →
+                guard ch context λ⊤ → scoped r scopes operation labels i error
+                popped r
+            , Js.from λerror →
+                guard ch context λ⊤ → unexpectedScope r scopes (contextual context error)
+                popped r
+            ]
+            ▷ ignore
+        popScopes device r scopes operation labels (i - 1)
+
+
+popped : V → ⊤
+popped r =
+    Js.set r "pops" (Js.from (int (Js.get r "pops") - 1))
+    settleDevice r
+
+
+-- The class each filter reports, by its global's name.
+filterClass : Int → String
+filterClass i =
+    if i == 0 then
+        "GPUValidationError"
+    else if i == 1 then
+        "GPUOutOfMemoryError"
+    else
+        "GPUInternalError"
+
+
+isInstance : V, String → Bool
+isInstance value name =
+    constructor = Js.global name
+    not (Js.isUndefined constructor) && Js.instanceOf value constructor
+
+
+-- A pop settled with `error`: `null` is no error; an error of the class
+-- the filter reports is an observation; anything else is unexpected.
+scoped : V, V, String, List String, Int, V → ⊤
+scoped r scopes operation labels i error =
+    if Js.isNull error then
+        counted r scopes
+    else if not (isInstance error (filterClass i)) then
+        unexpectedScope
+            r
+            scopes
+            (contextual
+                (deviceContext
+                    r
+                    (operation ++ ", an error scope reporting what its filter does not")
+                )
+                error
+            )
+    else
+        detail =
+            { device = Js.to (Js.get r "id")
+            , operation = operation
+            , stage = Error.DeviceValidation
+            , labels = labels
+            , message = messageOf error
+            }
+
+        observation =
+            if i == 0 then
+                Error.ObservedValidation detail
+            else if i == 1 then
+                Error.ObservedOutOfMemory detail
+            else
+                Error.ObservedInternal detail
+        Js.setAt (Js.get scopes "results") i (Js.from observation)
+        counted r scopes
+
+
+-- A pop rejected, or reported the wrong class: the first one is kept for
+-- the operation, or handed to the program once the operation went on.
+unexpectedScope : V, V, V → ⊤
+unexpectedScope r scopes error =
+    if Js.to (Js.get scopes "done") then
+        reportDefect r error
+    else
+        if Js.isNull (Js.get scopes "unexpected") then Js.set scopes "unexpected" error
+        counted r scopes
+
+
+-- One more pop settled; the fiber waiting goes on when the last one does.
+counted : V, V → ⊤
+counted r scopes =
+    settled = int (Js.get scopes "settled") + 1
+    Js.set scopes "settled" (Js.from settled)
+    resume = Js.get scopes "resume"
+    if
+        settled == int (Js.get scopes "owed")
+            && not (Js.isNull resume)
+            && not (Js.to (Js.get scopes "done"))
+    then
+        Js.set scopes "done" (Js.from True)
+        Task.resume (Js.to resume) Scoped
+    else
+        ⊤
+
+
+-- Step 5: wait for the pops, or for the device's loss. However the fiber
+-- leaves the wait — taking its outcome, cancelled, or interrupted before
+-- it waited — the operation is done: later pops are drained, and an
+-- unexpected outcome nobody took goes to the device's program.
+waitScopes : V, V → Waited
+waitScopes r scopes =
+    if int (Js.get scopes "settled") == int (Js.get scopes "owed") then
+        Js.set scopes "done" (Js.from True)
+        Js.set scopes "taken" (Js.from True)
+        Scoped
+    else
+        Task.onExit
+            (λ⊤ →
+                waited = Task.callback λresume →
+                    Js.set scopes "resume" (Js.from resume)
+
+                    onLoss = Js.from λlatched →
+                        if Js.to (Js.get scopes "done") then
+                            ⊤
+                        else
+                            Js.set scopes "done" (Js.from True)
+                            Task.resume resume (LostWhile latched)
+                    Js.set scopes "onLoss" onLoss
+                    Js.call (Js.get r "ops") "push" [ onLoss ] ▷ ignore
+                    λ⊤ → ⊤
+                Js.set scopes "taken" (Js.from True)
+                waited
+            )
+            λ_ → leaveScopes r scopes
+
+
+leaveScopes : V, V → ⊤
+leaveScopes r scopes =
+    Js.set scopes "done" (Js.from True)
+    unwatch r scopes
+    -- A cancelled operation publishes nothing: what its call made is rejected.
+    made = Js.get scopes "made"
+    if not (Js.to (Js.get scopes "taken")) && not (Js.isNull made) then
+        Js.set (recordOf made) "status" (Js.from "rejected")
+    unexpected = Js.get scopes "unexpected"
+    if not (Js.to (Js.get scopes "taken")) && not (Js.isNull unexpected) then
+        Js.set scopes "unexpected" Js.null
+        reportDefect r unexpected
+    else
+        ⊤
+
+
+-- The operation no longer waits for the device's loss.
+unwatch : V, V → ⊤
+unwatch r scopes =
+    ops = Js.get r "ops"
+    at = Js.call ops "indexOf" [ Js.get scopes "onLoss" ]
+    if Js.to (Js.ge at (Js.from 0)) then Js.call ops "splice" [ at, Js.from 1 ] ▷ ignore
+
+
+-- Every observation, in the order of the filters.
+observations : V → List Observation
+observations scopes =
+    results = Js.get scopes "results"
+    List.filterMap [ 0, 1, 2 ] λi →
+        o = Js.at results i
+        if Js.isNull o then Nothing else Just (Js.to o)
+
+
+failure : Observation → Error.Error
+failure observation =
+    case observation of
+        Error.ObservedValidation d →
+            Error.Validation d
+
+        Error.ObservedOutOfMemory d →
+            Error.OutOfMemory d
+
+        Error.ObservedInternal d →
+            Error.Internal d
+
+        Error.ObservedPipelineValidation p →
+            Error.PipelineValidation p
+
+        Error.ObservedPipelineInternal p →
+            Error.PipelineInternal p
+
+        Error.ObservedMapFailed m →
+            Error.MapFailed m
+
+        Error.ObservedHostRejection o →
+            Error.HostOperationRejected o
+
+
+-- The observation a call's own failure is, when it is a leaf a failure
+-- set can hold.
+observationOf : Error.Error → Maybe Observation
+observationOf problem =
+    case problem of
+        Error.Validation d →
+            Just (Error.ObservedValidation d)
+
+        Error.OutOfMemory d →
+            Just (Error.ObservedOutOfMemory d)
+
+        Error.Internal d →
+            Just (Error.ObservedInternal d)
+
+        Error.PipelineValidation p →
+            Just (Error.ObservedPipelineValidation p)
+
+        Error.PipelineInternal p →
+            Just (Error.ObservedPipelineInternal p)
+
+        Error.MapFailed m →
+            Just (Error.ObservedMapFailed m)
+
+        Error.HostOperationRejected o →
+            Just (Error.ObservedHostRejection o)
+
+        _ →
+            Nothing

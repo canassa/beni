@@ -1,0 +1,11 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+console.log: error scopes left open after the throw: 0
+(threw: RangeError: injected createSampler failure)
+(the DOM did not change)

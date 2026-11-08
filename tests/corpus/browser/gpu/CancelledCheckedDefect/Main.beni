@@ -1,0 +1,42 @@
+-- A defect a cancelled operation leaves (docs/design/webgpu.md §6.1,
+-- §8.1; CLAUDE.md rule 9): the operation's internal scope is popped and
+-- rejects while its other pops are held, so the operation keeps the
+-- unexpected outcome to throw when it goes on; it is cancelled instead.
+-- The outcome is not lost: it reaches the device's program, and the page
+-- stops with its crash screen; the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "pops-held,pop-rejected"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok device →
+                    op = Task.spawn λ⊤ →
+                        GpuShow.checked (Gpu.Device.createSampler device Types.samplerDescriptor) λ_ →
+                            "sampler"
+                    Task.yieldNow ⊤
+                    GpuHost.releasePop "internal"
+                    GpuHost.drain ⊤
+                    Task.cancel op
+                    [ "the operation was cancelled" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

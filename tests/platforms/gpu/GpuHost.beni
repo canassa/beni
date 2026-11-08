@@ -21,6 +21,14 @@ pub foreign impure inject : String → ⊤
 pub foreign impure lose : String → ⊤
 
 
+--| Release every pop held since `inject "pops-held"`, the latest first.
+pub foreign impure releasePops : ⊤ → ⊤
+
+
+--| How many times the page called the native method `name` of a device.
+pub foreign impure calls : String → Int
+
+
 --| Settle the latest request held since `inject "requests-held"`:
 --| `"host"` as the host answered it, `"reject-operation"` with an
 --| `OperationError`, `"reject-unlisted"` with a `DOMException` the ledger
@@ -38,3 +46,8 @@ pub drain : ⊤ → ⊤
 drain ⊤ = Task.callback λresume →
     later λ⊤ → Task.resume resume ⊤
     λ⊤ → ⊤
+
+
+--| Release only the latest pop of `filter` (`"validation"`,
+--| `"out-of-memory"`, `"internal"`) held since `inject "pops-held"`.
+pub foreign impure releasePop : String → ⊤

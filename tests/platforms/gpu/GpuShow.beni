@@ -104,3 +104,105 @@ result r f =
 
         Err problem →
             "Err " ++ initError problem
+
+
+--| A GPU operation's failure: its constructor, and for a loss its reason
+--| and how many failures were observed with it.
+pub error : Error.Error → String
+error problem =
+    case problem of
+        Error.InvalidInput input →
+            "InvalidInput " ++ inputError input
+
+        Error.UnsupportedCapability _ →
+            "UnsupportedCapability"
+
+        Error.Validation _ →
+            "Validation"
+
+        Error.OutOfMemory _ →
+            "OutOfMemory"
+
+        Error.Internal _ →
+            "Internal"
+
+        Error.PipelineValidation _ →
+            "PipelineValidation"
+
+        Error.PipelineInternal _ →
+            "PipelineInternal"
+
+        Error.DeviceLost report →
+            "DeviceLost "
+                ++ loss report.loss
+                ++ " observed "
+                ++ String.fromInt (List.length report.operation.observed)
+
+        Error.MapFailed _ →
+            "MapFailed"
+
+        Error.SourceFailed _ →
+            "SourceFailed"
+
+        Error.CanvasFailed _ →
+            "CanvasFailed"
+
+        Error.FormatFeatureRejected _ →
+            "FormatFeatureRejected"
+
+        Error.HostOperationRejected _ →
+            "HostOperationRejected"
+
+        Error.RelatedFailures set →
+            "RelatedFailures ["
+                ++ String.join (List.map [ set.first, …set.rest ] observation) ", "
+                ++ "]"
+
+
+inputError : Error.InputError → String
+inputError input =
+    case input of
+        Error.SessionState Error.DeviceLeased →
+            "SessionState DeviceLeased"
+
+        Error.SessionState Error.SessionEnded →
+            "SessionState SessionEnded"
+
+        _ →
+            "another input error"
+
+
+observation : Error.Observation → String
+observation o =
+    case o of
+        Error.ObservedValidation _ →
+            "Validation"
+
+        Error.ObservedOutOfMemory _ →
+            "OutOfMemory"
+
+        Error.ObservedInternal _ →
+            "Internal"
+
+        Error.ObservedPipelineValidation _ →
+            "PipelineValidation"
+
+        Error.ObservedPipelineInternal _ →
+            "PipelineInternal"
+
+        Error.ObservedMapFailed _ →
+            "MapFailed"
+
+        Error.ObservedHostRejection _ →
+            "HostRejection"
+
+
+--| A checked result's constructor, with `f` for an `Ok` value.
+pub checked : Result Error.Error a, (a → String) → String
+checked r f =
+    case r of
+        Ok a →
+            "Ok " ++ f a
+
+        Err problem →
+            "Err " ++ error problem

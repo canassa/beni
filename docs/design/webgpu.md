@@ -704,6 +704,30 @@ promise reaction must not become a detached unhandled rejection that continues
 the application. Unknown error data preserves the original cause/stack and
 operation context for the existing defect display/log/stop contract.
 
+*As built — S1 (2026-11-08).* `Gpu.Engine.checked` is this order for one native call: it
+refuses a latched loss (`destroy` latches one at once) and a held lease first, opens a
+per-device section whose reentry is a defect, pushes the three scopes inside `Js.finally`,
+and in its finaliser invokes every pop that was pushed, in reverse, with both reactions
+attached. The fiber then waits for the pops or for the loss, whichever is first; a pop that
+settles after the operation went on is drained, and an unexpected one goes to the device's
+sentinel, a detached fiber of the program that requested the device. The made object is
+recorded `provisional`, then `accepted` or `rejected`, and only an accepted one is
+returned. The lease of §6.4 is the record's flag and generation, taken with `tryLease`
+(no session API yet). The first operation over it is `Gpu.Device.createSampler`; the
+`browser/gpu/Checked*` fixtures cover §10's interleaved fibers, pops out of order, an
+unexpected pop beside a validation error, a spoofed error, a throwing call, and a loss
+before, during and after publication. *Amended 2026-11-08 (review of S1):* the call is `sync (⊤ → Result
+Error V)`, so step 3's classifier is the operation's own: it gives `Ok` with what the call
+made, or the precise `Error` of a failure the ledger documents at that call (S2's
+`MappedAllocationFailed`, `FormatFeatureRejected`), which joins the scopes' observations.
+However the fiber leaves the wait — cancelled, or interrupted before it waited — the
+operation is done; an unexpected outcome it kept goes to the device's program then, and
+one that settles later goes there too. Each pending pop holds the device's channel to
+that program (a detached fiber the request made), which ends once the loss is reported
+and no pop is pending (`browser/gpu/Cancelled*`). A pop's defect names its device and operation
+(`device 1, createSampler: …`, the original as `cause`), and a cancelled operation's object
+is recorded rejected, never left provisional (second review, 2026-11-08).
+
 ### 6.2 Synchronous encoding with checked completion
 
 Awaiting each draw is unusable and can expire presentation resources. Provide

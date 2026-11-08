@@ -1,0 +1,101 @@
+-- load
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="fibers">"fibers"</button>
+    <button id="refusals">"refusals"</button>
+    <button id="losses">"losses"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #scopes
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="fibers">"fibers"</button>
+    <button id="refusals">"refusals"</button>
+    <button id="losses">"losses"</button>
+    <ol>
+      <li>"valid: Ok sampler"</li>
+      <li>"labelled: Ok sampler"</li>
+      <li>"lodMinClamp above lodMaxClamp: Err Validation"</li>
+      <li>"anisotropy with nearest filters: Err Validation"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"invalid and out of memory: Err RelatedFailures [Validation, OutOfMemory]"</li>
+    </ol>
+  </main>
+</body>
+-- click #fibers
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="fibers">"fibers"</button>
+    <button id="refusals">"refusals"</button>
+    <button id="losses">"losses"</button>
+    <ol>
+      <li>"valid: Ok sampler"</li>
+      <li>"labelled: Ok sampler"</li>
+      <li>"lodMinClamp above lodMaxClamp: Err Validation"</li>
+      <li>"anisotropy with nearest filters: Err Validation"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"invalid and out of memory: Err RelatedFailures [Validation, OutOfMemory]"</li>
+      <li>"two fibers, one device: Err Validation / Ok sampler"</li>
+      <li>"pops released in reverse: Err Validation / Ok sampler"</li>
+    </ol>
+  </main>
+</body>
+-- click #refusals
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="fibers">"fibers"</button>
+    <button id="refusals">"refusals"</button>
+    <button id="losses">"losses"</button>
+    <ol>
+      <li>"valid: Ok sampler"</li>
+      <li>"labelled: Ok sampler"</li>
+      <li>"lodMinClamp above lodMaxClamp: Err Validation"</li>
+      <li>"anisotropy with nearest filters: Err Validation"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"invalid and out of memory: Err RelatedFailures [Validation, OutOfMemory]"</li>
+      <li>"two fibers, one device: Err Validation / Ok sampler"</li>
+      <li>"pops released in reverse: Err Validation / Ok sampler"</li>
+      <li>"destroyed: Err DeviceLost Destroyed observed 0, native calls 0"</li>
+      <li>"lease taken: yes, taken again: no"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased, native calls 0"</li>
+      <li>"loss under the lease: none"</li>
+      <li>"after the lease: Ok sampler"</li>
+    </ol>
+  </main>
+</body>
+-- click #losses
+<body>
+  <main>
+    <button id="scopes">"scopes"</button>
+    <button id="fibers">"fibers"</button>
+    <button id="refusals">"refusals"</button>
+    <button id="losses">"losses"</button>
+    <ol>
+      <li>"valid: Ok sampler"</li>
+      <li>"labelled: Ok sampler"</li>
+      <li>"lodMinClamp above lodMaxClamp: Err Validation"</li>
+      <li>"anisotropy with nearest filters: Err Validation"</li>
+      <li>"out of memory: Err OutOfMemory"</li>
+      <li>"internal: Err Internal"</li>
+      <li>"invalid and out of memory: Err RelatedFailures [Validation, OutOfMemory]"</li>
+      <li>"two fibers, one device: Err Validation / Ok sampler"</li>
+      <li>"pops released in reverse: Err Validation / Ok sampler"</li>
+      <li>"destroyed: Err DeviceLost Destroyed observed 0, native calls 0"</li>
+      <li>"lease taken: yes, taken again: no"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased, native calls 0"</li>
+      <li>"loss under the lease: none"</li>
+      <li>"after the lease: Ok sampler"</li>
+      <li>"lost while checked: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"accepted, then lost: Ok sampler, loss UnknownLoss"</li>
+      <li>"after the loss: Err DeviceLost UnknownLoss observed 0"</li>
+    </ol>
+  </main>
+</body>

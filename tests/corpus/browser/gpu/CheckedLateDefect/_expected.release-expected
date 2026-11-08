@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: Error: webgpu: device 1, createSampler: OperationError: injected pop failure)
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"lost while checked: Err DeviceLost UnknownLoss observed 0"</li>
+    </ol>
+  </main>
+</body>
