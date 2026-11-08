@@ -209,7 +209,7 @@ draw device target =
    `SourceFailed` with `SourceClosed` (a closed bitmap or video frame), `SourceDetached` (image
    data whose storage was transferred), `SourceEmpty` (a canvas of width or height 0, an image
    with no source), `SourceBroken` (an image that failed to load) or `SourceNotReady` (an image
-   that still loads, a video with no frame yet).
+   with no picture yet, a video with no frame yet).
 4. **The browser decides the other source failures.** `SourceNotOriginClean`: the source comes
    from another origin without CORS. `ExternalImageCopyRangeRejected`: the copy goes outside the
    source. `SourceUnusable`: the browser refused the source for another reason.
@@ -218,8 +218,8 @@ draw device target =
    `Gpu.Types.ExternalTextureBinding` and read it with a WGSL `texture_external`.
 6. **An external texture expires.** A texture of a video element expires when its batch or frame
    ends. A texture of a video frame expires when you close the frame. After that, the texture
-   and the bind groups and command buffers that use it give `ResourceExpired`. Import the video
-   again in each frame.
+   and the bind groups, command buffers and bundles that use it give `ResourceExpired`. Import
+   the video again in each frame.
 
 ```beni platform=browser-tea
 import Browser.Image
