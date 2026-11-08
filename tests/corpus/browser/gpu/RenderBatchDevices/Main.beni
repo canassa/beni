@@ -32,7 +32,8 @@ describe module =
     base = Types.renderPipelineDescriptor Types.Auto (Types.vertexState module)
     { base
         | fragment =
-            Types.Value (Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ])
+            Types.Value
+                (Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ])
     }
 
 
@@ -42,7 +43,9 @@ texture d =
         (Gpu.Device.createTexture
             d
             (Types.textureDescriptor
-                (Types.Extent3DFields { width = u32 4, height = Types.Default, depthOrArrayLayers = Types.Default })
+                (Types.Extent3DFields
+                    { width = u32 4, height = Types.Default, depthOrArrayLayers = Types.Default }
+                )
                 Types.Rgba8unorm
                 (Flags.texture [ Flags.RenderAttachment ])
             )
@@ -60,7 +63,11 @@ setOther p b = BundleEncoder.setPipeline b p
 
 bundleOf : RenderPipeline, Batch → Result InputError ⊤
 bundleOf p b =
-    _ = Batch.encodeBundle b (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) (setOther p _)?
+    _ =
+        Batch.encodeBundle
+            b
+            (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+            (setOther p _)?
     Ok ⊤
 
 
