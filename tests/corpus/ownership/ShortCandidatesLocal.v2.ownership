@@ -1,0 +1,8 @@
+module ShortCandidatesLocal
+  7:38 go <call List.push>: rejected held-operand: the value at 7:38, evaluated before it, holds it until its consumer runs
+  7:42 List.push ys: rejected held-operand: the value at 7:38, evaluated before it, holds it until its consumer runs
+  8:5 go xs: accepted param
+  block: 20 bytes, hash 8f07960fda0af7a5
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause held-operand 2

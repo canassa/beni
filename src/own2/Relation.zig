@@ -619,8 +619,9 @@ pub const Eval = struct {
             const run = e.inst_runs.items[r];
             return e.inst_leaves.items[run[0]..][0..run[1]];
         }
-        // Outside a group an instantiation re-enters only a strictly earlier
-        // key (prepend arguments), never its own: reaching it would keep a
+        // Outside a group's inference rounds (a validation round too) an
+        // instantiation re-enters only a strictly earlier key (prepend
+        // arguments), never its own, per frame: reaching it would keep a
         // value that read nothing of itself. Without safety checks the key
         // answers `top`, a sound over-approximation any caller may keep.
         for (e.inst_stack.items) |x| if (std.mem.eql(u32, &x, &key)) {

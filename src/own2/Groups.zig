@@ -1408,6 +1408,79 @@ fn walkCode(mod: *Module, id: u32) Error!Walk.Code {
     return .{ .decl = d, .decl_index = c.decl, .inst = c.inst, .params = params, .param_places = places, .captures = mod.code_caps.items[c.captures.start..][0..c.captures.len], .body = body, .result_place = c.result };
 }
 
+/// Whether some local function of the group's declarations calls itself or
+/// another through a cycle of local functions (§2.12: a block's local
+/// functions that call each other are a group). The prepass's `recursive`
+/// bit is per top-level declaration and misses these. A reference to a local
+/// function inside a code, or inside a lambda nested in it, is an edge.
+fn localCycle(mod: *Module, rs: []DeclResult, codes: []const u32) Error!bool {
+    const gpa = mod.gpa;
+    const bir = mod.in.bir;
+    const fr = mod.prepass.enclosing_frame;
+    var locals: std.ArrayList(u32) = .empty;
+    defer locals.deinit(gpa);
+    for (codes) |id| if (mod.codes.items[id].kind == .local) try locals.append(gpa, id);
+    if (locals.items.len == 0) return false;
+    const n = locals.items.len;
+    const adj = try gpa.alloc(std.ArrayList(u32), n);
+    defer {
+        for (adj) |*a| a.deinit(gpa);
+        gpa.free(adj);
+    }
+    for (adj) |*a| a.* = .empty;
+    for (rs) |r| {
+        const d = bir.decls[r.decl];
+        var i = d.inst_start.int();
+        while (i < d.inst_end.int()) : (i += 1) {
+            if (bir.instTag(@fromBackingInt(i)) != .local) continue;
+            const l = bir.instData(@fromBackingInt(i)).lhs;
+            if (l >= d.locals_end - d.locals_start) continue;
+            const binding = bir.locals[d.locals_start + l].inst.int();
+            const target = for (locals.items, 0..) |id, k| {
+                if (mod.codes.items[id].decl == r.decl and mod.codes.items[id].inst == binding) break k;
+            } else continue;
+            var f = fr[i];
+            var hops: u32 = 0;
+            while (f != none and hops < 100_000) : ({
+                f = fr[f];
+                hops += 1;
+            }) {
+                for (locals.items, 0..) |id, k| {
+                    if (mod.codes.items[id].decl == r.decl and mod.codes.items[id].inst == f) try adj[k].append(gpa, @intCast(target));
+                }
+            }
+        }
+    }
+    // Depth-first search for a cycle: 0 unseen, 1 on the stack, 2 done.
+    const color = try gpa.alloc(u8, n);
+    defer gpa.free(color);
+    @memset(color, 0);
+    const Frame = struct { node: u32, next: u32 };
+    var stack: std.ArrayList(Frame) = .empty;
+    defer stack.deinit(gpa);
+    for (0..n) |root| {
+        if (color[root] != 0) continue;
+        color[root] = 1;
+        try stack.append(gpa, .{ .node = @intCast(root), .next = 0 });
+        while (stack.items.len > 0) {
+            const top = &stack.items[stack.items.len - 1];
+            if (top.next == adj[top.node].items.len) {
+                color[top.node] = 2;
+                _ = stack.pop();
+                continue;
+            }
+            const to = adj[top.node].items[top.next];
+            top.next += 1;
+            if (color[to] == 1) return true;
+            if (color[to] == 0) {
+                color[to] = 1;
+                try stack.append(gpa, .{ .node = to, .next = 0 });
+            }
+        }
+    }
+    return false;
+}
+
 /// Solve one group (§2.12): walk every code of its members once, evaluate
 /// them until no evaluation read a candidate that moved after it, and keep
 /// the last round's verdicts.
@@ -1476,7 +1549,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
     // under the candidates, and its verdicts are the lines (step 3).
     // Short on purpose, the test's switch: the candidates stay ⊥ and the
     // validation round alone must reach the fixed point (§8 S4).
-    var validating = in.short_candidates and mod.prepass.recursive[mod.prepass.group_of[rs[0].decl]];
+    var validating = in.short_candidates and (mod.prepass.recursive[mod.prepass.group_of[rs[0].decl]] or try localCycle(mod, rs, codes.items));
     var kg = try Kept.Group.init(gpa, order.items.len);
     defer kg.deinit(gpa);
     while (true) : (round += 1) {
