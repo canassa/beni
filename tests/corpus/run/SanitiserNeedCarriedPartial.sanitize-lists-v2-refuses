@@ -1,0 +1,2 @@
+# The partial application carries its argument's need, which no caller reads: refused where the writer is made (§2.11.3, A value that carries a need).
+34:10 list_still_used value

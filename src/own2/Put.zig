@@ -9,6 +9,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const SupplyKey = @import("SupplyKey.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
@@ -22,7 +23,8 @@ const none = std.math.maxInt(u32);
 /// Where the read-off puts arrivals: the result's, or label `label`'s
 /// supply `k` (an index into the draft's labels, never a pointer: the
 /// lists grow while the facts are delivered).
-pub const ResList = struct { label: u32 = none, k: u32 = 0 };
+/// The frame's result (`label` none) or a label's supply `k`, written below `key` (`SupplyKey`).
+pub const ResList = struct { label: u32 = none, k: u32 = 0, key: Slots.Rel = SupplyKey.none };
 /// Where a parameter effect goes.
 pub const EffList = enum(u8) { reads, writes, escapes };
 
@@ -57,7 +59,7 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
         _ = try Contract.Draft.addWide(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), a);
         return;
     }
-    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const r = try SupplyKey.relAt(s, q, out.key);
     const list = try resList(s, out);
     try f.charge(.edge, 1);
     if (try Contract.Draft.addWide(list, s.arena, r, a)) {
@@ -76,7 +78,7 @@ pub fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void
         _ = try Contract.Draft.addArrival(res, s.arena, r, a);
         return;
     }
-    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const r = try SupplyKey.relAt(s, q, out.key);
     const list = try resList(s, out);
     if (open) try Contract.Draft.markOpen(list, s.arena, r);
     try f.charge(.edge, 1);
@@ -112,9 +114,9 @@ pub fn begin(s: *Sink, q: PathId) Error!void {
 /// What `described` keys a leaf at slot `q` of list `out` by: inside a
 /// subtree being described, that subtree.s own (a subtree kept for its
 /// place must hold everything said in it, whatever was said before).
-pub fn describedKey(s: *Sink, x: u32, q: PathId, out: ResList) Error![4]u32 {
-    if (s.building.items.len == 0) return .{ x, q.int(), out.label, out.k };
-    return .{ x, q.int(), s.building.items[s.building.items.len - 1].depth, Relation.open_bit };
+pub fn describedKey(s: *Sink, x: u32, q: PathId, out: ResList) Error![5]u32 {
+    if (s.building.items.len == 0) return [2]u32{ x, q.int() } ++ SupplyKey.ofList(out.label, out.k, out.key);
+    return .{ x, q.int(), s.building.items[s.building.items.len - 1].depth, Relation.open_bit, SupplyKey.none };
 }
 
 /// The innermost subtree, made: its arrivals and subtrees in one node,
@@ -142,7 +144,7 @@ pub fn emitPart(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!void 
         _ = try Contract.Draft.addNode(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), n);
         return;
     }
-    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const r = try SupplyKey.relAt(s, q, out.key);
     if (try Contract.Draft.addNode(try resList(s, out), s.arena, r, n)) {
         if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, false, .{ .kind = .top }, n);
     }

@@ -600,9 +600,14 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     if (Taken.side(e.f, e.contracts, x, t)) |w| return Taken.apartFromOthers(Ov, e, xi, ti, w, target, apartIn, pair);
     // An unknown label's answer, written: anything; holding the target,
     // what it was supplied or its label's function slot holds.
-    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return if (e.keeping) AnswerKeep.kept(Ov, e, xi, ti, pair, answerHolds) else .may;
-    if (@import("Mutate.zig").on(.answer_holds_no) and (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb))) return .no;
-    if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
+    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) {
+        if (e.keeping) return AnswerKeep.kept(Ov, e, xi, ti, pair, answerHolds);
+        // The rest of what it may be is the need's, judged at each caller (§2.11.3).
+        if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return if (x.root == t.root and x.atom == t.atom) .may else answerHolds(e, x, ti, target);
+        if (!xr or !e.expandable(x)) return .no;
+    } else if (@import("Mutate.zig").on(.answer_holds_no) and (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb))) {
+        return .no;
+    } else if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
     if (xr and tr and x.root == t.root) return positional(e, xi, ti, target);
     if (xr or tr) {
         // An object made after a call is none of the call's result (§2.9.2

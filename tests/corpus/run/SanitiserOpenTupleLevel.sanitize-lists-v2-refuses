@@ -1,0 +1,4 @@
+# v2 refuses what each callback reaches, read at the level of its entry (§2.1, An arrival's level).
+65:10 list_still_used SanitiserOpenTupleLevel.tup3
+67:10 list_still_used SanitiserOpenTupleLevel.ctor3
+69:10 list_still_used SanitiserOpenTupleLevel.closedV

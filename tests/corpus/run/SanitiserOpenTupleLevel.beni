@@ -1,0 +1,70 @@
+-- A tuple and a constructor have no object at their slot, so what an open entry held of one sat a level too low: `.t… π1.t.0 π1.t.1`
+-- read a caller's `.t.0` as `π1.t.0.0`. Each part now has its own key (§2.1, An arrival's level). `closedV` has no row at all.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+un : Maybe L → L
+un m =
+    case m of
+        Just x →
+            x
+
+        Nothing →
+            []
+
+
+tup2 : { r | a : L, t : L × L }, { g : { r | a : L, t : L × L } → y } → y
+tup2 rec o = app rec o
+
+
+tup3 : { r | a : L, t : L × L }, { g : { r | a : L, t : L × L } → y } → y
+tup3 rec o = tup2 rec o
+
+
+ctor2 : { r | a : L, m : Maybe L }, { g : { r | a : L, m : Maybe L } → y } → y
+ctor2 rec o = app rec o
+
+
+ctor3 : { r | a : L, m : Maybe L }, { g : { r | a : L, m : Maybe L } → y } → y
+ctor3 rec o = ctor2 rec o
+
+
+appV : a, { g : a → y } → y
+appV x o =
+    g = o.g
+    g x
+
+
+closedV : L × L, { g : L × L → y } → y
+closedV p o = appV p o
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 = tup3 { a = [], t = ( k1, [ 7 ] ) } { g = λs → List.push s.t.0 1 }
+    k2 = [ 2 ]
+    y2 = ctor3 { a = [], m = Just k2 } { g = λs → List.push (un s.m) 1 }
+    k3 = [ 3 ]
+    y3 = closedV ( k3, [ 7 ] ) { g = λs → List.push s.0 1 }
+    Node.print (show y1 ++ show k1 ++ show y2 ++ show k2 ++ show y3 ++ show k3)

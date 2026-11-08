@@ -1,0 +1,62 @@
+-- The twin of `SanitiserAnswerWhole` (`ownership-v2.md` §2.1, §2.11.3): each
+-- answer holds a list of its own, so the writes are accepted and edited in place.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+type U a
+    = UL a
+    | UC (U a)
+    | UW (U (List a))
+
+
+fu : U a, (a → List Int) → List Int
+fu t f =
+    case t of
+        UL x →
+            f x
+
+        UC y →
+            fu y f
+
+        UW r →
+            fu r λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+mid : U (List Int) → List Int
+mid t = fu t λl → l
+
+
+apply : (⊤ → a) → a
+apply f = f ⊤
+
+
+applyA : (List Int → a), List Int → a
+applyA f a = f a
+
+
+pick : (⊤ → U (List Int)) → List Int
+pick h = mid (apply h)
+
+
+whole : (List Int → U (List Int)), List Int → List Int
+whole h a = List.push (mid (applyA h a)) 2
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (pick λ⊤ → UC (UW (UL [ [ 3 ] ]))) 2
+    m = whole (λl → UC (UW (UL [ l ]))) [ 4 ]
+    Node.print (show n ++ "|" ++ show m ++ "|" ++ show k)

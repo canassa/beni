@@ -1,0 +1,41 @@
+-- A closure with a need handed to a call under no label (`ownership-v2.md`
+-- §2.11.3, *A closure that leaves*): `Dict.singleton` stores the writer, and
+-- `app` runs what it reads from the `Dict` as unknown code, which reads no need.
+-- Handed `k`'s list, it would edit `k` in place: refused where it is stored.
+-- `first` runs one from a list under a label, and `main` hands it `k`: refused.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+first : List ((⊤ → List Int) → List Int), List Int → List Int
+first fs k =
+    case fs of
+        [ g, …_ ] →
+            g λ⊤ → k
+
+        _ →
+            []
+
+
+app : Dict Int ((⊤ → List Int) → List Int), List Int → List Int
+app o k =
+    case Dict.get o 1 of
+        Just g →
+            g λ⊤ → k
+
+        Nothing →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y = app (Dict.singleton 1 λs → List.push (s ⊤) 2) k
+    z = first [ λs → List.push (s ⊤) 3 ] k
+    Node.print (show y ++ "|" ++ show z ++ "|" ++ show k)

@@ -15,6 +15,8 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Trees = @import("Trees.zig");
+const Slots = @import("Slots.zig");
+const SlotWords = @import("SlotWords.zig");
 
 pub const Node = Trees.Node;
 pub const Hit = Trees.Hit;
@@ -25,7 +27,7 @@ pub const Arrival = Trees.Arrival;
 /// depth), then the slot's own node's plain and open arrivals, in the
 /// canonical entries' order (an ancestor first, a plain run before an open
 /// one). Returns the nodes visited.
-pub fn atSlot(t: *const Trees.Table, places: *const Place.Table, gpa: Allocator, root: Node, words: []const u32, out: *std.ArrayList(Hit)) Allocator.Error!u32 {
+pub fn atSlot(t: *const Trees.Table, places: *const Place.Table, slots: *const Slots.Table, gpa: Allocator, root: Node, words: []const u32, out: *std.ArrayList(Hit)) Allocator.Error!u32 {
     var n = root;
     var d: usize = 0;
     while (true) : (d += 1) {
@@ -35,15 +37,39 @@ pub fn atSlot(t: *const Trees.Table, places: *const Place.Table, gpa: Allocator,
             return @intCast(d + 1);
         }
         if (t.open(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(n) });
+        // A row read here also reads the named kids it holds, its own or another's (§2.1).
+        const st = Place.Step.fromWord(words[d]);
+        if (st.isRow()) for (t.kids(n)) |k| {
+            const ks = Place.Step.fromWord(k[0]);
+            if (!ks.isRow() and places.rowHolds(st, ks)) try allBelow(t, gpa, k[1], d + 1, out);
+        };
         n = t.kidAt(n, words[d]) orelse {
             // A step the node names no kid for, read from its row: the words go on from here.
-            if (t.rowKid(places, n, words[d])) |r| {
-                if (t.here(r).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.here(r) });
-                if (t.open(r).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(r) });
-            }
+            if (t.rowKid(places, n, words[d])) |r| for ([_][]const Arrival{ t.here(r), t.open(r) }) |run| try rowRun(slots, gpa, run, d, words.len, out);
             return @intCast(d + 1);
         };
     }
+}
+
+/// Whether arrival `a` of a row's kid is read whole at a caller's slot: its slot ends in no row,
+/// so it names a field or a value of the row's, and the caller's steps are no steps of it (§2.1).
+pub fn wholeAtRow(slots: *const Slots.Table, a: Arrival) bool {
+    return (a.kind == .param or a.kind == .cb or a.kind == .lent) and !SlotWords.endsInRow(slots.relWords(a.slot));
+}
+
+/// Arrivals `run` of a row's kid at depth `d` of a read of `len` words: each with the words on
+/// from `d`, or, read whole, as an entry at the slot read.
+fn rowRun(slots: *const Slots.Table, gpa: Allocator, run: []const Arrival, d: usize, len: usize, out: *std.ArrayList(Hit)) Allocator.Error!void {
+    for (run, 0..) |a, i| {
+        const whole = wholeAtRow(slots, a);
+        try out.append(gpa, .{ .depth = @intCast(if (whole) len else d), .open = !whole, .arrivals = run[i..][0..1] });
+    }
+}
+
+/// Every arrival at `n` and below it, at depth `d`.
+fn allBelow(t: *const Trees.Table, gpa: Allocator, n: Node, d: usize, out: *std.ArrayList(Hit)) Allocator.Error!void {
+    for ([_][]const Arrival{ t.here(n), t.open(n) }) |run| if (run.len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = run });
+    for (t.kids(n)) |k| try allBelow(t, gpa, k[1], d, out);
 }
 
 /// The node at slot `words` of tree `root`; null when nothing is at or
@@ -369,9 +395,11 @@ test "a slot reader walks only its steps, and the entries come in order" {
     const pair = try t.node(gpa, &.{}, &.{}, &k1);
     var k2 = [_][2]u32{ .{ w1, pair }, .{ w2, pair } };
     const top = try t.node(gpa, &.{.{ .kind = .fresh }}, &.{}, &k2);
+    var slots: Slots.Table = .{};
+    defer slots.deinit(gpa);
     var hits: std.ArrayList(Hit) = .empty;
     defer hits.deinit(gpa);
-    try testing.expectEqual(@as(u32, 3), try atSlot(&t, &places, gpa, top, &.{ w2, w1 }, &hits));
+    try testing.expectEqual(@as(u32, 3), try atSlot(&t, &places, &slots, gpa, top, &.{ w2, w1 }, &hits));
     try testing.expectEqual(@as(usize, 1), hits.items.len);
     try testing.expect(hits.items[0].open and hits.items[0].depth == 2 and hits.items[0].arrivals[0].eql(p));
     try testing.expect(at(&t, top, &.{ w1, 99 }) == null);

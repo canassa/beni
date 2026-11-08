@@ -1,0 +1,54 @@
+-- A value that is no plain parameter. Its row read deep gave `π1.n…` at the row's kid, one level too low, with the same
+-- words as `app rec.n o`'s `π1.n…`, which is at that level. Only the read-off knows, so it writes the value by its structure (§2.1, An arrival's level).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+viaUpdate : { r | a : L, n : { s | x : L } }, { g : { r | a : L, n : { s | x : L } } → y } → y
+viaUpdate rec o = app { rec | a = [] } o
+
+
+viaCall : { r | a : L, n : { s | x : L } }, { g : { r | a : L, n : { s | x : L } } → y } → y
+viaCall rec o = app (idr rec) o
+
+
+viaChoice : { r | a : L, n : { s | x : L } }, { g : { r | a : L, n : { s | x : L } } → y } → y
+viaChoice rec o = app (if List.length rec.a > 5 then rec else rec) o
+
+
+nested : { r | n : { s | a : L, x : L } }, { g : { s | a : L, x : L } → y } → y
+nested rec o = app rec.n o
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 = viaUpdate { a = [], n = { x = [ 4 ], z = k1 } } { g = λs → s.n.z }
+    n1 = List.push y1 1
+    k2 = [ 2 ]
+    y2 = viaCall { a = [], n = { x = [ 4 ], z = k2 } } { g = λs → List.push s.n.z 1 }
+    k3 = [ 3 ]
+    y3 = viaChoice { a = [], n = { x = [ 4 ], z = k3 } } { g = λs → List.push s.n.z 1 }
+    k4 = [ 5 ]
+    y4 = nested { n = { a = [], x = [], z = k4, w = [ 6 ] } } { g = λs → List.push s.z 1 }
+    Node.print
+        (show n1 ++ show k1 ++ show y2 ++ show k2 ++ show y3 ++ show k3 ++ show y4 ++ show k4)

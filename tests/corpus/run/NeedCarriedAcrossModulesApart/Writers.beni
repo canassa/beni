@@ -1,0 +1,6 @@
+-- A writer of its function's answer, read by `Main` from this module's block.
+import List
+
+
+pub writer : (⊤ → List Int) → List Int
+writer s = List.push (s ⊤) 2

@@ -1,0 +1,52 @@
+-- The twins of SanitiserRowNestedLevel: each write is on a field next to the shared one, so a whole read of the row would refuse it.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+viaUpdate : { r | a : L, n : { s | x : L } }, { g : { r | a : L, n : { s | x : L } } → y } → y
+viaUpdate rec o = app { rec | a = [] } o
+
+
+viaCall : { r | a : L, n : { s | x : L } }, { g : { r | a : L, n : { s | x : L } } → y } → y
+viaCall rec o = app (idr rec) o
+
+
+viaChoice : { r | a : L, n : { s | x : L } }, { g : { r | a : L, n : { s | x : L } } → y } → y
+viaChoice rec o = app (if List.length rec.a > 5 then rec else rec) o
+
+
+nested : { r | n : { s | a : L, x : L } }, { g : { s | a : L, x : L } → y } → y
+nested rec o = app rec.n o
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 = viaUpdate { a = [], n = { x = k1, z = [] } } { g = λs → List.push s.n.z 1 }
+    k2 = [ 2 ]
+    y2 = viaCall { a = [], n = { x = k2, z = [] } } { g = λs → List.push s.n.z 1 }
+    k3 = [ 3 ]
+    y3 = viaChoice { a = [], n = { x = k3, z = [] } } { g = λs → List.push s.n.z 1 }
+    k4 = [ 5 ]
+    y4 = nested { n = { a = [], x = [], z = [], w = k4 } } { g = λs → List.push s.z 1 }
+    Node.print
+        (show y1 ++ show k1 ++ show y2 ++ show k2 ++ show y3 ++ show k3 ++ show y4 ++ show k4)

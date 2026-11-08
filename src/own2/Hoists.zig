@@ -30,9 +30,9 @@ pub const format_version: u32 = 2;
 
 /// One accepted list write: the demand's instruction, its kind (a writer
 /// call, a construction's spread, a `++`), and whether its verdict is a
-/// condition on the declaration's callers (`param` and the other grounds
-/// that are not `fresh` or `call`): then it is sound only where every
-/// caller was checked.
+/// condition on the declaration's callers (every ground but `fresh`; `call`
+/// is a write of a label's answer, which each caller discharges as a need,
+/// §2.11.3): then it is sound only where every caller was checked.
 pub const Write = struct {
     inst: u32,
     kind: Facts.DemandKind,
@@ -41,7 +41,7 @@ pub const Write = struct {
 
 /// Whether a verdict accepted on ground `a` rests on the callers.
 pub fn reliesOnCallers(a: Facts.Verdict.Accepted) bool {
-    return a != .fresh and a != .call;
+    return a != .fresh;
 }
 
 pub const Table = struct {

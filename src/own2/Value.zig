@@ -45,9 +45,13 @@ pub const Leaf = ValueTypes.Leaf;
 
 /// Which kids a step of a built record reads (§2.1), one rule for every reader of them.
 pub const RecordKid = struct {
-    /// Whether step `st` reads the kid of word `r`: its own, or one a row step's names leave.
+    /// Whether step `st` reads the kid of word `r`: its own, one a row step's names leave, or the
+    /// row that holds a field no kid names.
     pub fn holds(f: *Frame, st: Step, r: u32) Error!bool {
-        return st.inRow() and (r == st.kidWord() or (st.isRow() and f.places.rowHolds(st, try Step.ofRank(f.account, r))));
+        if (!st.inRow()) return false;
+        if (r == st.kidWord()) return true;
+        const k = try Step.ofRank(f.account, r);
+        return if (st.isRow()) f.places.rowHolds(st, k) else k.isRow() and f.places.rowHolds(k, st);
     }
 };
 
@@ -364,7 +368,7 @@ pub const Frame = struct {
 
     pub fn leaf(f: *Frame, l: Leaf) Error!u32 {
         try f.charge(.cell, 1);
-        const key: [8]u32 = .{ @backingInt(l.kind) | (@as(u32, @intFromBool(l.at_pos)) << 8), l.atom, l.extra, l.root, l.pos, l.slots, l.tags, l.routes };
+        const key: [8]u32 = .{ @backingInt(l.kind) | (@as(u32, @intFromBool(l.at_pos)) << 8) | (@as(u32, @intFromBool(l.whole)) << 9), l.atom, l.extra, l.root, l.pos, l.slots, l.tags, l.routes };
         if (f.leaf_index.get(key)) |hit| return hit;
         const id: u32 = @intCast(f.leaves.items.len);
         try f.leaves.append(f.gpa, l);

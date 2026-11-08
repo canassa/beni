@@ -1,0 +1,15 @@
+module NeedOuterOnly
+  10:15 List.push <call>: accepted call
+  27:11 value <lambda>: rejected need: NeedOuterOnly.pushOuter edits what it returns, which may be a list it does not own
+  account pushOuter: source 21, baseline 246, growth 0 of 65536, total 246, continuation 244 of 21504, demands 19, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary pushOuter: res ε cb(π1ε@17), [*] fresh cb(π1ε@17); nondup no; answers ⇐ sel π1{ε!!}; reads π1ε*; label π1ε@17 once need ε [1: sep yes below yes]
+  account shared: source 27, baseline 735, growth 0 of 65536, total 735, continuation 719 of 27648, demands 63, walks 2, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary shared: res .0 fresh, .0[*] fresh, .1 fresh; nondup no
+  account fresh: source 17, baseline 420, growth 0 of 65536, total 420, continuation 418 of 17408, demands 18, walks 2, rounds 3, transfer_settlement lanes 2
+  summary fresh: res ε fresh, [*] fresh; nondup no; answers yes
+  account outer: source 28, baseline 703, growth 0 of 65536, total 703, continuation 690 of 28672, demands 3, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary outer: res .0 fresh, .0[*] fresh, .1 = .0; nondup no
+  block: 516 bytes, hash c1f8f3e9d640ef24
+  demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause need 1

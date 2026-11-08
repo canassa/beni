@@ -1,0 +1,42 @@
+-- A lambda that calls a writer of its function's answer carries the writer's
+-- need through its capture (`ownership-v2.md` §2.11.3, *A value that carries a
+-- need*): `λt → wr t`'s own labels have none, since inside it `wr` is unknown
+-- code. `Dict.singleton` stores it, and `app` runs it as unknown code with
+-- `k`'s list: refused where the writer is made. Without the rule, `k` is
+-- edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+app : Dict Int ((⊤ → List Int) → List Int), List Int → List Int
+app o k =
+    case Dict.get o 1 of
+        Just g →
+            g λ⊤ → k
+
+        Nothing →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = λs → List.push (s ⊤) 2
+    y = app (Dict.singleton 1 λt → wr t) k
+    Node.print (show y ++ "|" ++ show k)

@@ -9308,6 +9308,75 @@ test "the checker v2's rule 3 atoms cross a block unchanged" {
     try testing.expectEqualStrings(a, b);
 }
 
+test "the checker v2's need crosses a block unchanged" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.3, *a need*: `via` forwards its function to a
+    // writer of its answer, so its own label carries the need. It reads the
+    // writer's contract from the block when `pushOf` is imported, and from
+    // the module's tables when it is not: it says the need both ways.
+    const writer =
+        \\pub pushOf : (⊤ → List (List Int)) → List (List Int)
+        \\pushOf f = List.push (f ⊤) []
+        \\
+    ;
+    var one = try World.init(testing.allocator, testing.io);
+    defer one.deinit();
+    try one.write("Main.beni", writer ++ "\n\npub via : (⊤ → List (List Int)) → List (List Int)\nvia f = pushOf f\n");
+    var two = try World.init(testing.allocator, testing.io);
+    defer two.deinit();
+    try two.write("Walk.beni", writer);
+    try two.write("Main.beni", "import Walk\n\n\npub via : (⊤ → List (List Int)) → List (List Int)\nvia f = Walk.pushOf f\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const same = try one.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const imported = try two.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, try summaryLine(same.stdout, "via"), " need ε") != null);
+    try testing.expect(std.mem.indexOf(u8, try summaryLine(imported.stdout, "via"), " need ε") != null);
+}
+
+test "a sanitised write of a label's answer rests on its callers" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.3, *a need*: the ground `call` is a write of an
+    // answer each caller discharges, so a trap there may be a caller's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\push1 : (⊤ → List Int) → List Int
+        \\push1 f = List.push (f ⊤) 1
+        \\
+        \\
+        \\main : Program
+        \\main = Node.print (String.fromInt (List.length (push1 λ⊤ → [ 1 ])))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--ownership=v2", "--ownership-everywhere", "--sanitize-lists", "--platform=node", "--out=o", "Main.beni" });
+    const emitted = try w.read("o/Main.mjs");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expect(std.mem.indexOf(u8, emitted, "a caller may be unchecked") != null);
+    try testing.expect(std.mem.indexOf(u8, emitted, "whatever its callers") == null);
+}
+
 /// The `req` of `via`'s summary line.
 fn viaXreq(dump: []const u8) ![]const u8 {
     var lines = std.mem.splitScalar(u8, dump, '\n');

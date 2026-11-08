@@ -1,0 +1,54 @@
+-- `SanitiserRowBelowRoot`'s accepted twin: each callback writes a field the type leaves in the row, and
+-- `k` is at another field of it. The code's own type names both, so one is told from the other (§2.1).
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+viaField : { r | a : L }, { g : { r | a : L } → y } → y
+viaField rec o =
+    g = o.g
+    g rec
+
+
+viaTuple : { r | a : L }, ({ r | a : L } → y) × Int → y
+viaTuple rec o =
+    ( g, _ ) = o
+    g rec
+
+
+viaJust : { r | a : L }, Maybe ({ r | a : L } → L) → L
+viaJust rec o =
+    case o of
+        Just g →
+            g rec
+
+        Nothing →
+            rec.a
+
+
+viaPass : { r | a : L }, { g : { r | a : L } → y } → y
+viaPass rec o = direct rec o.g
+
+
+direct : { r | a : L }, ({ r | a : L } → y) → y
+direct rec f = f rec
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y1 = viaField { a = [], b = [ 2 ], c = k } { g = λs → List.push s.b 1 }
+    y2 = viaTuple { a = [], b = [ 2 ], c = k } ( λs → List.push s.b 1, 0 )
+    y3 = viaJust { a = [], b = [ 2 ], c = k } (Just λs → List.push s.b 1)
+    y4 = viaPass { a = [], b = [ 2 ], c = k } { g = λs → List.push s.b 1 }
+    Node.print (show k ++ show y1 ++ show y2 ++ show y3 ++ show y4)

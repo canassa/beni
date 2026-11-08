@@ -1,0 +1,1 @@
+A fold's initial value that holds a closure capturing a writer (ownership-v2.md §2.11.3): built again under --ownership=v2 and the sanitiser; each write is refused.

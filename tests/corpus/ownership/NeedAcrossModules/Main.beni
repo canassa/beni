@@ -1,0 +1,53 @@
+-- ownership (v2, §2.11.3, *Blocks*): a need read from an imported block, once
+-- with the module rebuilt and once installed from the cache, must give the
+-- same verdicts as the callers in `Writers` would. `capture`, `live`,
+-- `forward` and `recursive` hand an answer the caller reads again and are
+-- refused; `fresh`, `argument`, `forwardFresh` and `outerOnly` are accepted.
+import Writers
+
+
+pub capture : ⊤ → List Int × List Int
+capture ⊤ =
+    y = [ 1 ]
+    z = Writers.push1 λ⊤ → y
+    ( y, z )
+
+
+pub live : ⊤ → List Int × List Int
+live ⊤ =
+    x = [ 2 ]
+    z = Writers.pushOf (λl → l) x
+    ( x, z )
+
+
+pub forward : ⊤ → List Int × List Int
+forward ⊤ =
+    y = [ 3 ]
+    z = Writers.fwd (λ⊤ → y) ⊤
+    ( y, z )
+
+
+pub recursive : ⊤ → List Int × List (List Int)
+recursive ⊤ =
+    y = [ 4 ]
+    zs = Writers.go [ 1, 2 ] (λ_ → y) []
+    ( y, zs )
+
+
+pub fresh : ⊤ → List Int
+fresh ⊤ = Writers.push1 λ⊤ → [ 5 ]
+
+
+pub argument : ⊤ → List Int
+argument ⊤ = Writers.pushOf (λl → l) [ 6 ]
+
+
+pub forwardFresh : ⊤ → List Int
+forwardFresh ⊤ = Writers.fwd (λ⊤ → [ 7 ]) ⊤
+
+
+pub outerOnly : ⊤ → List (List Int) × List Int
+outerOnly ⊤ =
+    xs = [ 8 ]
+    out = Writers.pushOuter λ⊤ → [ xs, xs ]
+    ( out, xs )

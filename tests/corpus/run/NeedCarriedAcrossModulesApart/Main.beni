@@ -1,0 +1,32 @@
+-- The twin of `NeedCarriedAcrossModules` (`ownership-v2.md` §2.11.3): the
+-- imported writer is run directly on a fresh answer, and the stored closure
+-- captures a reader: accepted, and edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+import Writers
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = Writers.writer
+    rd = λs → s ⊤
+    y = appE (Dict.singleton 1 λ⊤ → rd) k
+    z = wr λ⊤ → [ 7 ]
+    Node.print (show y ++ "|" ++ show z ++ "|" ++ show k)
