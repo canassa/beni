@@ -299,6 +299,38 @@ const onAdapters = (gpu, fault, once = true) =>
 
 const faults = {
   none: () => {},
+  // Spoofed failures (ledger §1, §7): a plain object named like the error
+  // each buffer classifier documents is not that error, and an
+  // unexpected class at mapped creation is not the allocation failure.
+  "map-spoofed-abort": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "AbortError", message: "a plain object, not a DOMException" });
+  },
+  "map-spoofed-operation": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "OperationError", message: "a plain object, not a DOMException" });
+  },
+  "map-spoofed-range": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "RangeError", message: "a plain object, not a RangeError" });
+  },
+  "range-spoofed": () => {
+    bufferFaults.range = () => {
+      throw { name: "OperationError", message: "a plain object, not a DOMException" };
+    };
+  },
+  "write-spoofed": () => {
+    bufferFaults.write = () => {
+      throw { name: "OperationError", message: "a plain object, not a DOMException" };
+    };
+  },
+  "buffer-allocation-spoofed": () => {
+    bufferFaults.createMapped = () => {
+      throw { name: "RangeError", message: "a plain object, not a RangeError" };
+    };
+  },
+  "buffer-allocation-unlisted": () => {
+    bufferFaults.createMapped = () => {
+      throw new globalThis.TypeError("injected unlisted creation failure");
+    };
+  },
   // Buffers and the queue (docs/design/webgpu.md §7, §8.3; ledger §3–§5).
   // The CPU memory of a buffer mapped at creation runs out.
   "buffer-allocation-fails": () => {

@@ -1,0 +1,23 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §4, §7):
+-- the native map rejects with a plain object named `OperationError`, not a DOMException. The page stops.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (CopyDst, CopySrc, MapRead)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuKit exposing (buffer, must, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuKit.with "map-spoofed-operation" λd →
+        b = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+        [ "map: " ++ GpuShow.checked (Gpu.Buffer.map b Gpu.Buffer.mapRead) (λ_ → "mapping") ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]
