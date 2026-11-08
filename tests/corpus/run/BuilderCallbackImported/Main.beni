@@ -1,0 +1,21 @@
+-- BuilderCallbackImported (Appendix B, S4; R-5.2.9, R-4.6.3): BuilderCallbackFresh
+-- across a module boundary. `Lib.mapFresh` maps a callback that answers a fresh
+-- list, and its block says so: the inner write of its result is accepted.
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main = Node.print (show (List.update (Lib.mapFresh [ 1, 2 ]) 0 λl → List.push l 9))

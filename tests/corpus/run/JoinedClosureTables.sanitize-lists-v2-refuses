@@ -1,0 +1,7 @@
+# v2 refuses each closure's write of a capture read after the call; the edit would change what the program prints.
+22:19 list_still_used once
+22:50 list_still_used once
+23:16 list_still_used f
+23:16 list_still_used f
+34:13 list_still_used once
+37:9 list_still_used f

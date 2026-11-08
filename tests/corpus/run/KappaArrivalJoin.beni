@@ -1,0 +1,31 @@
+-- KappaArrivalJoin (Appendix B, S4; R-4.6.3, R-5.5.5): `ys`'s elements are
+-- single fresh arrivals and their write is accepted; `zs` joins a shared
+-- top-level alternative, and only its write is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+shared : List Int
+shared = [ 9 ]
+
+
+joined : Bool → String
+joined c =
+    ys = List.map [ 1, 2 ] λn → [ n ]
+    zs = List.map [ 1, 2 ] λn → if c then shared else [ n ]
+    "${show (List.map ys λl → List.push l 0)} ${show (List.map zs λl → List.push l 0)} ${ints shared}"
+
+
+main : Program
+main = Node.print (joined True)

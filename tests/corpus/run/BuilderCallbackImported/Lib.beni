@@ -1,0 +1,5 @@
+import List
+
+
+pub mapFresh : List Int → List (List Int)
+mapFresh xs = List.map xs λx → [ x ]

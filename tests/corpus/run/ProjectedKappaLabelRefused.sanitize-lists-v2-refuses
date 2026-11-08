@@ -1,0 +1,5 @@
+# v2 refuses the write(s) below; the edit would change what the program prints.
+29:10 list_may_be_shared List.map
+36:10 list_may_be_shared List.map
+48:10 list_may_be_shared List.map
+48:10 list_may_be_shared List.map

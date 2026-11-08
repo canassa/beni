@@ -1,0 +1,2 @@
+# v2 refuses the write of an answer that is Lib's top-level list, read from Lib's block; the edit would change what the program prints.
+23:10 top_level_list_changed List.update

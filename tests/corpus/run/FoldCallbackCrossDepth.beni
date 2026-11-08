@@ -1,0 +1,26 @@
+-- FoldCallbackCrossDepth (Appendix B, S4 F×G; R-5.2.2, R-5.3.2): the fold's
+-- accumulator keeps `cur` at `.0` and stores it in `hist` at `.1[*]`, an alias
+-- across depths, so the next push onto `cur` is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List Int → List Int × List (List Int)
+build xs = List.foldl xs ( [], [] ) λx ( cur, hist ) → ( List.push cur x, List.push hist cur )
+
+
+main : Program
+main =
+    ( cur, hist ) = build [ 1, 2, 3 ]
+    Node.print "${ints cur} ${show hist}"
