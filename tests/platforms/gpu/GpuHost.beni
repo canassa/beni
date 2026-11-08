@@ -10,7 +10,7 @@ import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
 import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
 import Browser.Host.Uint32Array exposing (Uint32Array)
 import Browser.Host.Uint8Array exposing (Uint8Array)
-import Gpu.Handle exposing (Batch, Buffer, Device)
+import Gpu.Handle exposing (ExternalTexture, Batch, Buffer, Device)
 import Task
 
 
@@ -179,6 +179,17 @@ pub foreign impure image : String, Binary.Buffer, Int, sync (HTMLImageElement �
 --| state.
 pub foreign impure video : String, Binary.Buffer, Int, sync (HTMLVideoElement → ⊤) → ⊤
 
+
 --| Log `label` and what `probe` answers three tasks later: after a throw,
 --| once the runtime's teardown ran.
 pub foreign impure logLater : String, sync (⊤ → String) → ⊤
+
+
+--| End the hold that every image or video load since the last call put on
+--| the driver's settle of a step (`image`, `video`). `GpuPage` calls it once
+--| a scenario returned its lines.
+pub foreign impure releaseMedia : ⊤ → ⊤
+
+
+--| Whether two external textures are the same native object.
+pub foreign impure sameObject : ExternalTexture, ExternalTexture → Bool
