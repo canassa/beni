@@ -50,6 +50,10 @@ browser's WebGPU API with types. Only the main thread has them now.
   `.RenderPipeline`, `.Queue`, `.Buffer`, `.Surface`, `.Encode`, `.Batch` and `.Frame`: the
   forwarding form of each checked operation, with the session as the first argument.
 - `Gpu.Device.eachEvent` and `Gpu.Device.onEvent`: the device's events, `Gpu.Error.DeviceEvent`.
+- `Gpu.Queue.copyExternalImageToTexture`, `Gpu.Batch.copyExternalImageToTexture`: copy an image,
+  a bitmap, image data, a video, a video frame or a canvas into a texture.
+- `Gpu.Batch.importExternalTexture`, `Gpu.Frame.importExternalTexture`: a video element or a video
+  frame as an external texture. `Gpu.ExternalTexture`: `label`, `setLabel`.
 
 ## Rules
 
@@ -138,6 +142,60 @@ Encoding, batches, compute and render passes are in `references/webgpu-render.md
    surface again.
 7. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
    `UnsupportedCapability`. A field the browser does not report is `Default`.
+
+## Images, videos and canvases
+
+1. **Copy a source into a texture with `Gpu.Queue.copyExternalImageToTexture`.** The source is a
+   `Gpu.Types.CopyExternalImageSource`: `Bitmap`, `ImageData`, `ImageElement`, `VideoElement`,
+   `VideoFrame`, `CanvasElement` or `OffscreenCanvas`. Get it from `Browser.Image`,
+   `Browser.Video` or `Browser.Canvas`. The texture needs the usages `RenderAttachment` and
+   `TextureCopyDst`. A video copies its current frame.
+2. **Colours change only as you ask.** `flipY`, `origin`, `colorSpace` and `premultipliedAlpha`
+   are fields of the two info records. Nothing is flipped for you.
+3. **A source that the browser cannot use is refused before the call.** The error is
+   `SourceFailed` with `SourceClosed` (a closed bitmap or video frame), `SourceDetached` (image
+   data whose storage was transferred), `SourceEmpty` (a canvas of width or height 0, an image
+   with no source), `SourceBroken` (an image that failed to load) or `SourceNotReady` (an image
+   that still loads, a video with no frame yet).
+4. **The browser decides the other source failures.** `SourceNotOriginClean`: the source comes
+   from another origin without CORS. `ExternalImageCopyRangeRejected`: the copy goes outside the
+   source. `SourceUnusable`: the browser refused the source for another reason.
+5. **Import an external texture in a batch or a frame.** `Gpu.Batch.importExternalTexture` or
+   `Gpu.Frame.importExternalTexture` takes a `VideoElement` or `VideoFrame` source. Bind it with
+   `Gpu.Types.ExternalTextureBinding` and read it with a WGSL `texture_external`.
+6. **An external texture expires.** A texture of a video element expires when its batch or frame
+   ends. A texture of a video frame expires when you close the frame. After that, the texture
+   and the bind groups and command buffers that use it give `ResourceExpired`. Import the video
+   again in each frame.
+
+```beni platform=browser-tea
+import Browser.Image
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, Texture)
+import Gpu.Queue
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+
+
+-- Copy `bitmap`, `width` by `height` pixels, into a new texture.
+copy : Device, Browser.Image.Bitmap, Int, Int → Result Error.Error Texture
+copy device bitmap width height =
+    w = Result.mapError (Scalar.u32 width) (λd → Error.InvalidInput (Error.atPath "width" d))?
+    h = Result.mapError (Scalar.u32 height) (λd → Error.InvalidInput (Error.atPath "height" d))?
+    size =
+        Types.Extent3DFields
+            { width = w, height = Types.Value h, depthOrArrayLayers = Types.Default }
+    usage = Flags.texture [ Flags.RenderAttachment, Flags.TextureCopyDst, Flags.TextureBinding ]
+    texture = Gpu.Device.createTexture device (Types.textureDescriptor size Types.Rgba8unorm usage)?
+    Gpu.Queue.copyExternalImageToTexture
+        (Gpu.Device.queue device)
+        (Types.copyExternalImageSourceInfo (Types.Bitmap bitmap))
+        (Types.copyExternalImageDestInfo texture)
+        size?
+    Ok texture
+```
 
 ## Diagnostic sessions
 
@@ -275,5 +333,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §6.2, §6.4, §7, §7.1, §8, §8.1, §8.2, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/webgpu.md` §2–§5, §6.2, §6.4, §7, §7.1, §8, §8.1, §8.2, §8.3, §10 (S5); `docs/design/research/webgpu-errors.md` §6; the
 modules' doc comments.

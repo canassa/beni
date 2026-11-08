@@ -144,6 +144,12 @@ Sources: [external texture import](https://gpuweb.github.io/gpuweb/#dom-gpudevic
 [HTML image sources](https://html.spec.whatwg.org/multipage/canvas.html#image-sources-for-2d-rendering-contexts),
 and [OffscreenCanvas](https://html.spec.whatwg.org/multipage/canvas.html#the-offscreencanvas-interface).
 
+*Amended 2026-11-08 (S5, #2243).* The usability state that HTML's check reads is readable in the
+same host turn, so the engine reads it before both calls and refuses what the host would refuse or
+find *bad*: `SourceClosed`, `SourceDetached`, `SourceEmpty`, `SourceBroken`, `SourceNotReady`
+(`webgpu.md` §8, *As built — S5*). A *bad* source therefore never reaches the device's validation
+through these calls; the native classifiers above are unchanged for what remains.
+
 ## 7. Scopes, lifecycle and deliberately unexpected paths
 
 | Native API / observation | Policy |

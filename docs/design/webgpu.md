@@ -1059,7 +1059,7 @@ InternalError HostMessage` (what a scope or an `uncapturederror` reports) and `D
 ScopeUnderflow | SessionRefused InputError` (a session that cannot act). The forwarding modules are
 `Gpu.Diagnostics.Device` (every checked creation, `createMappedBuffer` included),
 `.Texture.createView`, `.ComputePipeline` and `.RenderPipeline` `getBindGroupLayout`,
-`.Queue` (`writeBuffer`, `writeTexture`, `submit`), `.Buffer` (`map`, `withMapped`),
+`.Queue` (`writeBuffer`, `writeTexture`, `submit`, and since S5 `copyExternalImageToTexture`), `.Buffer` (`map`, `withMapped`),
 `.Surface.configure`, `.Encode` (`run`, `bundle`), `.Batch.run` and `.Frame.submit`; each takes
 the session, then the ordinary form's arguments, and the public operations and their forwarding
 forms share one body that takes the session or null (`Gpu.Make.checkedIn`, `shaderModuleIn`, …,
@@ -1464,7 +1464,7 @@ of the frame that made it, so a later frame that gets the same native texture (t
 task) takes the texture as its own but never revives an earlier frame's view. What a frame's texture
 is in expires with it: an encoder session records every frame-bound object a command names, and the
 command buffer or bundle it finishes holds them, as a bind group holds the frame views it binds; a
-held object expired is `ResourceExpired` (`browser/gpu/FrameRetry`, `FrameDependencies`). `importExternalTexture` waits for S5 with the other media sources. Since the batch review a
+held object expired is `ResourceExpired` (`browser/gpu/FrameRetry`, `FrameDependencies`). `importExternalTexture` is S5's (below). Since the batch review a
 frame's callback and its operations return `Result Error`, as a batch's do, a failed frame is
 `BatchFailed` with the operations it issued and refused, and a cancelled frame rejects what it made
 and publishes no receipt (`FrameCancelled`); a submit on another device's queue is `WrongDevice`
@@ -1479,6 +1479,51 @@ Chrome, which runs Skia and ANGLE on SwiftShader's Vulkan (`--enable-features=Vu
 software and has no shared-image backing for a canvas texture, so `getCurrentTexture` lost the
 device and the next `popErrorScope` and `onSubmittedWorkDone` rejected with an `OperationError`
 (#2267, a host configuration failure, not a ledger row). A direct `Browser.hosted` page is #2268.
+
+
+*As built — S5 (2026-11-08, #2243), names chosen under the owner's delegation.* **Copies.**
+`Gpu.Queue.copyExternalImageToTexture : Queue, CopyExternalImageSourceInfo, CopyExternalImageDestInfo,
+Extent3D → Result Error ⊤` is a checked operation, prepared once in `Gpu.Make` (`CopyExternalImage`)
+and run three ways: alone, as `Gpu.Batch.copyExternalImageToTexture` (and so in a frame, whose batch
+is the frame) and as `Gpu.Diagnostics.Queue.copyExternalImageToTexture`. Before the native call it
+checks the destination as every texture argument (`ResourceDestroyed`, `WrongDevice`, a batch on
+another device's queue `WrongDevice`) and the source's state. Its classifier takes the ledger's three
+native `DOMException`s only (§6): `SecurityError` is `SourceNotOriginClean`, `OperationError`
+`ExternalImageCopyRangeRejected`, `InvalidStateError` `SourceUnusable`; anything else, a same-named
+plain object included, is a defect. The destination's usage, format and dimension stay the device's
+`Validation`. **The source's state is read first.** HTML's *check the usability of the image argument*
+reads state a page can read in the same host turn, so the engine refuses what it refuses, before the
+native call, with arms added to `SourceError`: `SourceClosed` (a closed bitmap or video frame),
+`SourceDetached` (image data whose pixels were detached), `SourceEmpty` (a canvas with a width or a
+height of 0, an image element with no source), `SourceBroken` (an image element whose request failed,
+or with no natural size) and `SourceNotReady` (an image element still loading, a video element whose
+`readyState` is below `HAVE_CURRENT_DATA`). The last two are the cases the host would answer with
+the device's validation error instead of a throw (the usability result *bad*); refusing them first gives
+the precise cause. Origin-clean state is the host's and is never guessed. **External textures.**
+`Gpu.Batch.importExternalTexture : Batch, ExternalTextureDescriptor → Result Error ExternalTexture`
+and `Gpu.Frame.importExternalTexture` (the same on the frame's batch) return `Result Error`, as every
+batch operation does since the batch review. There is no standalone checked import: a video
+element's texture expires with the task that imported it, and a checked operation's result is
+published after that task (the reason `getCurrentTexture` has none, §8). The import refuses a closed
+frame (`SourceClosed`) and a video with no current frame (`SourceNotReady`) first; its classifier
+takes `SecurityError` (`SourceNotOriginClean`) and `InvalidStateError` (`SourceUnusable`) only.
+Expiry is the specification's `[[expired]]`, kept in the engine's record (`Engine.expiresExternal`):
+a video element's texture expires when its batch's run ends, a video frame's when the frame is closed,
+and what holds one — a bind group, a command buffer, a bundle — is `ResourceExpired` with it, by the
+same holding rule as a frame's texture. A reimport the host answers with the same object marks it
+again, so what held it is usable again, as the specification allows. `Gpu.ExternalTexture` has
+`label` and `setLabel`. The commands inside a batch need no forwarding form (§6.4), so an import
+under a session is `Gpu.Diagnostics.Batch.run`'s. Fixtures (`browser/gpu/`), every pixel compared under
+`test-webgpu` with an 8×8 image whose bytes are written out by hand: `ExternalCopyBitmap` (whole,
+`flipY`, a source origin), `ExternalCopyImageData`, `ExternalCopyImage`, `ExternalCopyVideo`,
+`ExternalCopyVideoFrame`, `ExternalCopyCanvas`, `ExternalCopyOffscreen`, `ExternalTextureFrame`,
+`ExternalTextureVideo` (a batch and a frame); a video is read at the centre of 8×8 blocks within 12
+per byte, for its YUV conversion. The refusals: `ExternalSourceClosed`, `ExternalSourceDetached`,
+`ExternalSourceEmpty`, `ExternalSourceNotReady`, `ExternalSourceBroken`, `ExternalSourceTainted` (in
+Chrome a real cross-origin image, from the driver's `/_media/image.bmp` on `localhost`),
+`ExternalCopyRange`, `ExternalCopyRefusals`, `ExternalUnusable` (injected), `ExternalDiagnostics`, and
+the defects `ExternalCopyUnlisted`, `ExternalCopySpoofed`, `ExternalImportUnlisted` and
+`ExternalImportSpoofed`.
 
 
 ## 9. Reserved
