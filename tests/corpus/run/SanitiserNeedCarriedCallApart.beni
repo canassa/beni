@@ -1,0 +1,41 @@
+-- The twin of `SanitiserNeedCarriedCall` (`ownership-v2.md` §2.11.3): the
+-- stored lambda calls a reader, which carries no need, and the writer is run
+-- directly on a fresh answer: accepted, and edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+app : Dict Int ((⊤ → List Int) → List Int), List Int → List Int
+app o k =
+    case Dict.get o 1 of
+        Just g →
+            g λ⊤ → k
+
+        Nothing →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = λs → List.push (s ⊤) 2
+    rd = λs → s ⊤
+    y = app (Dict.singleton 1 λt → rd t) k
+    z = wr λ⊤ → [ 7 ]
+    Node.print (show y ++ "|" ++ show z ++ "|" ++ show k)

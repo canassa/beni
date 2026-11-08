@@ -15,6 +15,7 @@ const Contract = @import("Contract.zig");
 const Distinct = @import("Distinct.zig");
 const LabelChain = @import("LabelChain.zig");
 const NeedArrivals = @import("NeedArrivals.zig");
+const NeedCarry = @import("NeedCarry.zig");
 const Graft = @import("Graft.zig");
 const Value = @import("Value.zig");
 const Eval = @import("Eval.zig");
@@ -90,7 +91,9 @@ fn atLabel(st: *State, e: *Evaluation, x: u32, q: u32, li: u32, n: Effect) Error
     if (e.ev.known.get(.{ q, li })) |v| return discharge(st, e, x, q, l, v, n);
     if (e.ev.label_map.get(.{ q, li })) |c| return publish(&e.sink, c, n.slot, n.deep);
     const v = f.val(try e.ev.valueAt(call.args[l.j], f.slots.relWords(l.slot)));
-    if (v.kind == .built and v.form == .closure and try allFresh(e, v.head & ~W.fixed_bit)) return false;
+    // A fixed contract, read as `wants` reads one. A code's closure is applied
+    // (`known`) and a fixed one is never an argument, so no walk reaches this today.
+    if (v.kind == .built and v.form == .closure) if (NeedCarry.contractOf(e.ctx, v.head)) |c| if (try allFresh(e, c)) return false;
     try refuseOnce(st, e, x, q, l);
     return true;
 }
