@@ -8,13 +8,21 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu`: `available`, `requestAdapter`, `preferredCanvasFormat`, `wgslLanguageFeatures`.
 - `Gpu.Adapter`: `features`, `limits`, `info`, `requestDevice`.
 - `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`, and the
-  checked operations `createSampler`, `createBuffer` and `createMappedBuffer`.
+  checked operations `createSampler`, `createBuffer`, `createMappedBuffer`, `createTexture`,
+  `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createShaderModule`,
+  `createComputePipeline`, `createComputePipelineAsync` and `createQuerySet`.
 - `Gpu.Buffer`: `size`, `usage`, `mapState`, `label`, `setLabel`, `map`, `currentMapping`,
   `getMappedRange`, `withMapped`, `unmap`, `destroy`, and the mapping's `mappingMode`,
   `mappingRange`, `mappingBuffer` and `mappingLive`.
 - `Gpu.MappedRange`: reads and writes of mapped memory: `readU8` to `readF64`, `readF16`,
   `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`.
-- `Gpu.Queue`: `writeBuffer`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
+- `Gpu.Queue`: `writeBuffer`, `writeTexture`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
+- `Gpu.Shader`: `getCompilationInfo`, `compile`, `source`. `Gpu.ComputePipeline`:
+  `getBindGroupLayout`. `Gpu.Texture` and `Gpu.QuerySet`: snapshots and `destroy`.
+- `Gpu.Encode.run`: encode commands. `Gpu.CommandEncoder` and `Gpu.ComputePass` have the
+  commands: copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
+  `setBindGroup`, `dispatchWorkgroups`, `setImmediates` and the others.
+- `Gpu.Batch`: many synchronous operations, checked together.
 - `Gpu.Submission`: `done`, which waits for the work of one submit.
 - `Gpu.Types`: one record for each IDL dictionary, one type for each IDL enum, one sum for each
   IDL union. These are generated from the pinned IDL.
@@ -25,7 +33,7 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Error`: `InitError`, `Error` and their parts.
 - `Gpu.Handle`: the handle types, for example `Adapter` and `Device`.
 
-Textures, shaders, pipelines, command encoders, passes and canvases come in later releases.
+Texture views, render pipelines, render passes and canvases come in later releases.
 
 ## Rules
 
@@ -85,6 +93,21 @@ Textures, shaders, pipelines, command encoders, passes and canvases come in late
 9. **Some calls run while a diagnostic session holds the device**: `unmap`, `destroy`,
    `currentMapping`, the mapped range reads and writes, and `Gpu.Submission.done`. A checked
    operation (`map`, `createBuffer`, `writeBuffer`, `submit`) returns `DeviceLeased`.
+
+## Compute
+
+1. **Encode in one callback.** `Gpu.Encode.run device descriptor λencoder → …` gives the
+   callback a `CommandEncoder`. The callback cannot suspend. Use `Gpu.ComputePass.with` for a
+   pass. The result has your value and the `CommandBuffer`. Submit it with `Gpu.Queue.submit`.
+2. **An `Ok` from a command means it was issued, not that the device accepted it.** The
+   `Result` of `Encode.run` tells you that.
+3. **The first refusal stops the session.** Later commands give `SessionStopped`. `Encode.run`
+   returns the first refusal, also when your callback ignored it.
+4. **A command buffer is used once.** A second submit gives `CommandBufferSubmitted`.
+5. **`Gpu.Batch.run` checks many synchronous operations together.** What the batch makes is
+   provisional: the batch can use it at once; other code gets it after the batch is accepted.
+   A failed batch rejects all that it made. A batch is not a transaction: a write it did stays.
+6. **The GPU memory is little-endian.** Read a query result with `readWord64`.
 
 ## Example
 
