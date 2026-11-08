@@ -1,0 +1,38 @@
+-- A row passed to the function itself. A row's split arrival and a read-off arrival at one slot differ only in `path`,
+-- and each round added both again until the size limit refused this program (§2.1, An arrival's level).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+ev : Int, { r | a : L }, ({ r | a : L } → y) → y
+ev n rec o =
+    if n ≤ 0 then
+        List.foldl [ 1 ] (o rec) λi acc → o rec
+    else
+        ev (n - 1) rec o
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y = ev 2 { a = k, b = [ 2 ] } λs → s.a
+    Node.print (show y ++ show k)

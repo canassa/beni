@@ -1,9 +1,10 @@
 //! L2: the one comparison of two slots' words (`docs/design/ownership-v2.md` §2.1,
 //! *The row of a record*), split from `Replay`. A slot is relative steps, and a callee's
 //! slot is read at a caller whose record may name more, so `…` and `.b` are unequal
-//! words and may be one object. `rules_test` refuses a plain compare of `u32` runs
-//! anywhere else in `src/own2/`, so a new reader of two slots cannot fall past a row:
-//! it takes `under` or `overlaps`, or says why words will do (`same`, `startsAt`).
+//! words and may be one object. `rules_test` refuses the spellings it knows of a plain
+//! compare of `u32` runs elsewhere in `src/own2/`, so a new reader of two slots that
+//! writes one takes `under` or `overlaps`, or says why words will do (`same`, `startsAt`,
+//! `endsAt`). A loop written by hand passes that rule, and is decided by reading it (§2.1).
 //!
 //! Obligations kept here: none of §2.14's directly; the row's reading is what
 //! §2.1's argument for a row rests on.

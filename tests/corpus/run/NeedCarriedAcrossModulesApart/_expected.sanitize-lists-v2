@@ -1,0 +1,1 @@
+A twin of a stored imported writer's refusal (ownership-v2.md §2.11.3): built again under --ownership=v2 and the sanitiser; every write is accepted and edited in place.

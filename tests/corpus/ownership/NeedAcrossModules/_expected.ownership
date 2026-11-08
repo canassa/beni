@@ -1,0 +1,33 @@
+module Main
+  12:9 value <lambda>: rejected need: Writers.push1 edits what it returns, which may be a list it does not own
+  19:9 call Writers.pushOf x: rejected later-use: x is read again at 20:5 (Writers.pushOf writes what its callback returns, and the callback returns this argument)
+  33:10 call Writers.go <literal>: accepted fresh (Writers.go writes π3)
+  33:10 value <lambda>: rejected need: Writers.go edits what it returns, which may be a list it does not own
+  42:14 call Writers.pushOf <literal>: accepted fresh (Writers.pushOf writes what its callback returns, and the callback returns this argument)
+  52:11 value <lambda>: rejected need: Writers.pushOuter edits what it returns, which may be a list it does not own
+  summary capture: res .0 condition(fresh3) fresh1, .1 condition(fresh4) fresh1, condition(fresh2){shared}r{shared}
+  summary live: res .0 condition(fresh3) fresh1, .1 condition(fresh4) fresh1, condition(fresh2){shared}r{shared}
+  summary forward: res .0 condition(fresh3) fresh1, .1 condition(fresh4) fresh1, condition(fresh2){shared}r{shared}
+  summary recursive: res .0 fresh1 ~condition(fresh6), .1 fresh2{lost}, .1[*] ~condition(fresh3) ~fresh1, .1[*][*] ~condition(fresh4), condition(fresh5){lost}r{lost}
+  summary fresh: res [*] ~fresh2, fresh1
+  summary argument: res fresh1
+  summary forwardFresh: res [*] ~fresh2, fresh1
+  summary outerOnly: res .0 fresh3{shared}, .0[*] condition(fresh4) fresh1 ~fresh2{shared}, .1 fresh1 ~condition(fresh6), condition(fresh5){shared}r{shared}
+  demands 6: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+module Writers
+  4:14 List.push <call>: accepted call
+  8:11 List.push <call>: accepted call
+  12:11 value <lambda>: rejected need: Writers.pushOf edits what it returns, which may be a list it does not own (approx)
+  16:15 List.push <call>: accepted call
+  23:13 call Writers.go <call List.push>: accepted param (Writers.go writes π3)
+  23:24 List.push acc: accepted param
+  23:39 List.push <call>: accepted call
+  summary pushOf: π1 R, π2 R; res [*] ~cb1[*]{excl cb1[*]}r{excl cb1[*]}, cb1{excl cb1}; π1 calls ≤1, need owned, supply 1 π2 owned{excl π2}r{excl π2}
+  summary push1: π1 R; res [*] ~cb1[*]{excl cb1[*]}r{excl cb1[*]}, cb1{excl cb1}; π1 calls ≤1, need owned
+  summary fwd: π1 R, π2 R; res [*] ~cb1[*]{excl cb1[*]}r{excl cb1[*]}, cb1{excl cb1}r{excl cb1}; π1 calls ≤1, supply 1 π2 owned{excl π2}r{excl π2}
+  summary pushOuter: π1 R; res [*] ~cb1[*]{excl cb1[*]}r{excl cb1[*]} ~fresh1, cb1{excl cb1}; π1 calls ≤1, need owned
+  summary go: π1 R, π1[*] R, π2 R, π3 RAW[storage], π3[*] A; res [*] ~cb2{excl cb2}r{excl cb2} ~condition(fresh1) ~π3[*], [*][*] ~cb2[*]{excl cb2[*]}r{excl cb2[*]} ~condition(fresh2), π3{lost}; π2 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}
+  demands 7: accepted 6 (fresh 0, call 4, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 13: accepted 8 (fresh 2, call 4, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause later-use 1
+cause need 4

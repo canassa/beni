@@ -1,0 +1,38 @@
+-- The twin of SanitiserRowOwnWord: the field that the row holds is written, and the shared one is `.a`, which it does not hold.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+f1 : { r | a : L, t : L }, { g : { r | a : L, t : L } → y } → y
+f1 rec o = app rec o
+
+
+f2 : { r | a : L, t : L }, { g : { r | a : L, t : L } → y } → y
+f2 rec o = f1 rec { g = λq → o.g q }
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y = f2 { a = k, t = [] } { g = λs → s }
+    u = show (List.push y.t 1)
+    Node.print (u ++ show k)

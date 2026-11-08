@@ -1,5 +1,5 @@
--- `SanitiserRowPassedOn`'s refused twin: `b` and `c` are one list and the callback
--- writes `.b`, so pairing a row with the argument's own steps must still see `.c` (§2.1).
+-- `SanitiserRowPassedOn`'s refused twin: `b` and `c` are one list and the callback writes `.b`. The call refuses
+-- it as `disjoint`, whether or not a row's steps are paired, so this pins the verdict and not the pairing (§2.1).
 import List
 import Node exposing (Program)
 import String

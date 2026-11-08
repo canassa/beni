@@ -1,0 +1,35 @@
+-- ownership (v2, §2.11.3): a function with a need handed to an entry has no
+-- caller to discharge it until S7. `update` writes what `model.get` answers,
+-- and `shared` makes `get` answer a list it holds: run in a page, the
+-- sanitiser traps at the second message, and an edit in place would make `get`
+-- answer the grown list. Refused at the entry, whatever `get` answers.
+import Html exposing (Html)
+import List
+import Tea
+
+
+type alias Model =
+    get : ⊤ → List Int
+    out : List Int
+
+
+type Msg
+    = Go
+
+
+update : Msg, Model → Model
+update msg model = { model | out = List.push (model.get ⊤) 1 }
+
+
+view : Model → Html Msg
+view model = <p>{Html.text "x"}</p>
+
+
+shared : ⊤ → Model
+shared ⊤ =
+    k = [ 1 ]
+    { get = λ⊤ → k, out = [] }
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → shared ⊤, update = update, view = view }

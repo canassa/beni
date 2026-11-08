@@ -400,7 +400,8 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         try e.ev.project(arg, words, false, 0, 0, &ps);
         for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
     }
-    // A write of nothing (a crossing value consumed) is no demand.
+    // A write of nothing is no demand: a crossing value consumed, an arm that cannot run, a
+    // field a row excludes. A step no place answers is read inside it (`Replay.inside`, §2.14.3).
     if (e.w.leaf_runs.items.len == t_start) return;
     const base = Graft.argInst(call, x.j);
     // The path below the base, and the other routes a grouped demand covers,
@@ -553,10 +554,10 @@ pub const Sink = struct {
     arena: Allocator,
     /// Per frame label (`cbs`): its index in the draft's labels.
     label_at: std.ArrayList(u32) = .empty,
-    /// `(leaf, slot, list label, list k)`: a call's leaf already described
+    /// `(leaf, slot, list label, list k, list key)`: a call's leaf already described
     /// there. Describing it again adds nothing, and a fold's answer that
     /// feeds itself would describe it without end.
-    described: Ids.FixedDict(4) = .{},
+    described: Ids.FixedDict(5) = .{},
     /// `(leaf, deep, list)`: a leaf whose parameter effects are said already (effects only grow).
     effected: Ids.FixedDict(3) = .{},
     /// The subtrees described once per place (§2.10): arrivals go to the innermost, relative to it.

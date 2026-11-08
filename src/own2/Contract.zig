@@ -63,13 +63,11 @@ pub const StoredCond = struct {
     run: Range = .{},
 };
 
-/// A store a caller judges (§2.13.7, *The contents relation*): a value is
-/// stored in the `◆` at parameter `j`'s `slot`, and what that cell holds
-/// escapes at the call unless `cond` holds there.
+/// A store a caller judges (§2.13.7, *The contents relation*): a value is stored in the `◆` at
+/// parameter `j`'s `slot`, and what that cell holds escapes at the call unless `cond` holds there.
 pub const Store = struct { j: u32, slot: Rel, cond: StoredCond };
 
-/// A callback label (§2.11.3): the function slot it calls, its origin
-/// `(module, declaration, offset)`, how often, and its supplies.
+/// A callback label (§2.11.3): the function slot it calls, its origin `(module, declaration, offset)`, how often, its supplies.
 pub const Label = struct {
     j: u32,
     slot: Rel,
@@ -78,6 +76,8 @@ pub const Label = struct {
     /// The callee lets its answer go: a value that holds it escapes (§2.11.3).
     answer_left: bool = false,
     supplies: Range = .{},
+    /// The slots of its answer the callee writes (§2.11.3, *a need*); each `j` 0.
+    need: Range = .{},
 };
 
 pub const Calls = enum(u8) { none, once, many };
@@ -110,12 +110,10 @@ pub const Supply = struct {
     res_root: Node = 0,
     kept: Range,
     cond: StoredCond,
-    /// What a write below the supply's root relies on: the callee's own
-    /// claim about what it hands, derived from it (§2.11.3).
+    /// What a write below the supply's root relies on: the callee's own claim about what it hands, derived from it (§2.11.3).
     below: StoredCond = .{},
-    /// A traversal's (§2.11.3, *a traversal's supply*): each run is handed
-    /// one element of one family, each position at most once, and the
-    /// callee holds none of it after the run.
+    /// A traversal's (§2.11.3, *a traversal's supply*): each run is handed one element of one
+    /// family, each position at most once, and the callee holds none of it after the run.
     each: bool = false,
     /// `each`, and the callee reads the family only to hand it over: every
     /// source is a `taken` row's, by the index obligation (§2.13.6).
@@ -207,6 +205,7 @@ pub const Draft = struct {
         calls: Calls = .none,
         answer_left: bool = false,
         supplies: std.ArrayList(DraftSupply) = .empty,
+        need: std.ArrayList(Effect) = .empty,
 
         pub fn supplyOf(l: *DraftLabel, arena: Allocator, k: u32) Allocator.Error!*DraftSupply {
             for (l.supplies.items) |*s| if (s.k == k) return s;
@@ -639,7 +638,7 @@ pub const Table = struct {
                 try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond), .below = try t.putCond(gpa, slots, s.below), .each = s.each, .walk = s.walk });
             }
             try t.supplies.appendSlice(gpa, made.items);
-            try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .answer_left = l.answer_left, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
+            try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .answer_left = l.answer_left, .need = try t.putEffects(gpa, slots, l.need.items), .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
         }
         h.labels = .{ .start = lstart, .len = @intCast(d.labels.items.len) };
         try t.heads.append(gpa, h);
@@ -660,6 +659,7 @@ pub const Table = struct {
         for (t.storesOf(h.stores)) |s| try d.stores.append(arena, .{ .j = s.j, .slot = s.slot, .cond = try t.cond(arena, s.cond) });
         for (t.labelsOf(h.labels)) |l| {
             var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .answer_left = l.answer_left };
+            try dl.need.appendSlice(arena, t.effectsOf(l.need));
             for (t.suppliesOf(l.supplies)) |s| {
                 var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond), .below = try t.cond(arena, s.below), .each = s.each, .walk = s.walk };
                 ds.res.base = s.res_root;
@@ -705,6 +705,7 @@ pub const Table = struct {
             const dl = &d.labels.items[at];
             dl.calls = if (@import("Mutate.zig").on(.join_calls_second)) l.calls else @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(l.calls))));
             dl.answer_left = dl.answer_left or l.answer_left;
+            for (t.effectsOf(l.need)) |e| _ = try Draft.addEffect(&dl.need, arena, e);
             for (t.suppliesOf(l.supplies)) |s| {
                 const had = for (dl.supplies.items) |x| {
                     if (x.k == s.k) break true;
@@ -746,7 +747,7 @@ pub const Table = struct {
         if (x.stores.len != y.stores.len or x.labels.len != y.labels.len) return false;
         for (t.storesOf(x.stores), t.storesOf(y.stores)) |p, q| if (p.j != q.j or p.slot != q.slot or !t.condEql(p.cond, q.cond)) return false;
         for (t.labelsOf(x.labels), t.labelsOf(y.labels)) |p, q| {
-            if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls or p.answer_left != q.answer_left) return false;
+            if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls or p.answer_left != q.answer_left or !t.effectsEql(p.need, q.need)) return false;
             if (p.supplies.len != q.supplies.len) return false;
             for (t.suppliesOf(p.supplies), t.suppliesOf(q.supplies)) |s, u| {
                 if (s.each != u.each or s.walk != u.walk or !t.condEql(s.below, u.below)) return false;
@@ -789,8 +790,8 @@ fn arrivalLess(slots: *const Slots.Table, a: Arrival, b: Arrival) bool {
     if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
     if (a.j != b.j) return a.j < b.j;
     if (a.deep != b.deep) return !a.deep;
-    if (a.kind == .param or a.kind == .cb) return slots.relLess(a.slot, b.slot);
-    return a.slot < b.slot;
+    if (a.slot != b.slot) return if ((a.kind == .param or a.kind == .cb) and slots.relOrder(a.slot, b.slot) != .eq) slots.relLess(a.slot, b.slot) else a.slot < b.slot; // a row's names are not in its key (`Slots.internRel`)
+    return a.path < b.path; // total over `eql`: `Forest.merge` would add such a pair each round (§2.1)
 }
 
 fn effectLess(slots: *const Slots.Table, a: Effect, b: Effect) bool {
@@ -799,3 +800,24 @@ fn effectLess(slots: *const Slots.Table, a: Effect, b: Effect) bool {
 }
 
 const testing = std.testing;
+
+test "two rows that differ only in their names are ordered" {
+    const gpa = testing.allocator;
+    var slots: Slots.Table = .{};
+    defer slots.deinit(gpa);
+    var places: Place.Table = .{};
+    defer places.deinit(gpa);
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    const t = (Place.Step{ .kind = .index, .payload = 0 }).word();
+    const ra = try slots.relOfWords(gpa, &account, &places, &.{ t, (Place.Step{ .kind = .row, .payload = 1 }).word() });
+    const rb = try slots.relOfWords(gpa, &account, &places, &.{ t, (Place.Step{ .kind = .row, .payload = 2 }).word() });
+    try testing.expect(ra != rb and slots.relOrder(ra, rb) == .eq);
+    for ([_]ArrivalKind{ .param, .cb }) |k| {
+        const a: Arrival = .{ .kind = k, .slot = ra };
+        const b: Arrival = .{ .kind = k, .slot = rb };
+        try testing.expect(!a.eql(b));
+        try testing.expect(arrivalLess(&slots, a, b) != arrivalLess(&slots, b, a));
+        try testing.expect(!arrivalLess(&slots, a, a));
+    }
+}

@@ -1,0 +1,5 @@
+# v2 refuses what each callback reaches, read at the level of its entry (§2.1, An arrival's level).
+46:10 list_still_used List.push
+48:10 list_still_used SanitiserRowNestedLevel.viaCall
+50:10 list_still_used SanitiserRowNestedLevel.viaChoice
+52:10 list_still_used SanitiserRowNestedLevel.nested

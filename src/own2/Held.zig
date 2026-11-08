@@ -12,6 +12,7 @@ const Ids = @import("Ids.zig");
 const SlotWords = @import("SlotWords.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
+const Slots = @import("Slots.zig");
 
 const Error = Value.Error;
 
@@ -32,9 +33,9 @@ pub const Atoms = struct {
 /// holds. One lookup in the draft, one record, as an arrival's is. A
 /// committed tree joined in (`res.base`) is not read: what it holds is
 /// described again, which says nothing less.
-pub fn atoms(f: *Value.Frame, res: *const Contract.Draft.Res, q: Ids.PathId) Error!Atoms {
+pub fn atoms(f: *Value.Frame, res: *const Contract.Draft.Res, q: Slots.Rel) Error!Atoms {
     try f.charge(.inspection, 1);
-    const qw = f.slots.relWords(try f.slots.relOf(f.gpa, f.account, f.places, q));
+    const qw = f.slots.relWords(q);
     var held: Atoms = .{};
     for (res.items.items) |rs| {
         if (!rs.wide or rs.node != 0 or SlotWords.under(f.places, f.slots.relWords(rs.slot), qw) == null) continue;

@@ -1,0 +1,42 @@
+-- The twin of `SanitiserNeedCarriedRunner` (`ownership-v2.md` §2.11.3): the
+-- runner's closures capture a reader, which carries no need, and the writer is
+-- run directly on a fresh answer: accepted, and edited in place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+runAll : List (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+runAll fs k =
+    case fs of
+        [ h, …rest ] →
+            x = (h ⊤) λ⊤ → k
+            if List.isEmpty rest then x else runAll rest k
+
+        _ →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = λs → List.push (s ⊤) 2
+    rd = λs → s ⊤
+    y = runAll [ λ⊤ → rd, λ⊤ → rd ] [ 7 ]
+    z = wr λ⊤ → [ 3 ]
+    Node.print (show y ++ "|" ++ show z ++ "|" ++ show k)

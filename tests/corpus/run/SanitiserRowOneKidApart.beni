@@ -1,0 +1,53 @@
+-- The twins of SanitiserRowOneKid: a field the write does not reach is the shared one (§2.1, An arrival's level).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+f2 : { r | a : L, n : L }, { g : { r | a : L, n : L } → y } → y
+f2 rec o = app (idr rec) o
+
+
+f3 : { r | a : L, n : L }, { g : { r | a : L, n : L } → y } → y
+f3 rec o = f2 rec o
+
+
+w1 : { r | a : L, c : L }, { g : { r | a : L, c : L } → y } → y
+w1 rec o =
+    q = rec.a
+    if List.length q > 5 then
+        app rec o
+    else
+        app rec o
+
+
+w2 : { r | a : L, c : L }, { g : { r | a : L, c : L } → y } → y
+w2 rec o = w1 rec o
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 = f3 { a = k1, n = [] } { g = λs → List.push s.n 1 }
+    k2 = [ 2 ]
+    y2 = w2 { a = k2, c = [] } { g = λs → ( s.c, 0 ) }
+    n2 = List.push y2.0 1
+    Node.print (show y1 ++ show k1 ++ show n2 ++ show k2)

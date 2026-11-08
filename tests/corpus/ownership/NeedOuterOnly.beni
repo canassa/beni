@@ -4,9 +4,8 @@
 -- which the caller reads after: `pushOuter` never writes an item, so it is
 -- accepted and makes no line. `fresh` is the control, accepted; `outer`,
 -- whose callback answers the caller's own outer list, stays refused `need`.
--- Red: v1's `need` records no path, so the call-site demand is deep, and
--- `shared`'s lambda is refused `need`. The golden claims the verdict lines
--- and the totals; its summary lines are master's.
+-- v1's `need` records no path, so its call-site demand is deep and `shared`'s
+-- lambda is refused: the `.ownership` golden is v1's, `.v2.ownership` the claim.
 pushOuter : (⊤ → List (List Int)) → List (List Int)
 pushOuter f = List.push (f ⊤) [ 0 ]
 

@@ -1,0 +1,33 @@
+-- A closure that captures an imported writer of its function's answer
+-- carries the need the writer's block says it has (`ownership-v2.md` §2.11.3,
+-- *A value that carries a need*; the block, *Blocks*): `Dict.singleton` stores
+-- `λ⊤ → wr`, and `appE` runs the writer it answers as unknown code with `k`'s
+-- list. Refused where the writer is named. Without the rule, `k` is edited in
+-- place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+import Writers
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = Writers.writer
+    y = appE (Dict.singleton 1 λ⊤ → wr) k
+    Node.print (show y ++ "|" ++ show k)

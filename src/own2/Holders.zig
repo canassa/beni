@@ -37,6 +37,8 @@ pub const Key = [3]u32;
 /// holds no target, and a target that may be one is refused `escaped`.
 pub const Facts = struct {
     unknown: bool = false,
+    /// `unknown`, and not by a label's answer alone: a need cannot say it (§2.11.3).
+    top: bool = false,
     param: bool = false,
     host: bool = false,
     /// The first call that lent an object here (§2.13.7), else `none`.
@@ -44,7 +46,7 @@ pub const Facts = struct {
     shared: [2]u32 = .{ none, none },
 
     pub fn join(a: *Facts, b: Facts) void {
-        a.* = .{ .unknown = a.unknown or b.unknown, .param = a.param or b.param, .host = a.host or b.host, .loan = @min(a.loan, b.loan), .shared = leastShared(a.shared, b.shared) };
+        a.* = .{ .unknown = a.unknown or b.unknown, .top = a.top or b.top, .param = a.param or b.param, .host = a.host or b.host, .loan = @min(a.loan, b.loan), .shared = leastShared(a.shared, b.shared) };
     }
 };
 
@@ -214,7 +216,10 @@ pub const Keys = struct {
                     // A slot behind a `◆` where the frame names nothing: with
                     // no slot state, what a store put there (§2.13.7, #1977).
                     .call, .supply => if (w.span.items[at][0] == w.span.items[at][1] and !l.at_pos) for (f.slots.elems(l.slots)) |s| {
-                        if (!Slots.isNot(s) and Cells.behindCell(f.places, Slots.pathOf(s))) fx.unknown = true;
+                        if (!Slots.isNot(s) and Cells.behindCell(f.places, Slots.pathOf(s))) {
+                            fx.unknown = true;
+                            fx.top = true;
+                        }
                     },
                 },
                 .site => if (mode == .runs) try acc.append(g, .{ 1, l.atom, 0 }),
@@ -223,8 +228,12 @@ pub const Keys = struct {
                     fx.shared = leastShared(fx.shared, .{ l.atom, l.extra });
                     if (mode == .runs) try acc.append(g, .{ 3, l.atom, l.extra });
                 },
-                .answer, .top => fx.unknown = true,
-                .loan => fx = .{ .unknown = true, .param = fx.param, .host = fx.host, .loan = @min(fx.loan, l.extra), .shared = fx.shared },
+                .answer => fx.unknown = true,
+                .top => {
+                    fx.unknown = true;
+                    fx.top = true;
+                },
+                .loan => fx = .{ .unknown = true, .top = true, .param = fx.param, .host = fx.host, .loan = @min(fx.loan, l.extra), .shared = fx.shared },
                 .host => fx.host = true,
                 .recons => unreachable,
             }
