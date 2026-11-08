@@ -236,8 +236,7 @@ suspendedBody : ⊤ → List String
 suspendedBody ⊤ = GpuKit.with "none" λd →
     b = readable d
     f = Task.spawn λ⊤ → Gpu.Buffer.withMapped b Gpu.Buffer.mapRead λ_ → Task.never ⊤
-    GpuHost.drain ⊤
-    during = state b
+    during = untilMapped b 100
     Task.cancel f
     after = state b
     again = mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
@@ -245,3 +244,12 @@ suspendedBody ⊤ = GpuKit.with "none" λd →
     [ "withMapped body waiting: " ++ during ++ ", cancelled: " ++ after
     , "a later map: " ++ again ++ ", still " ++ state b
     ]
+
+
+-- Let the host answer, until the buffer is mapped or `tries` run out: a
+-- browser's map settles after GPU work, in real time.
+untilMapped : Buffer, Int → String
+untilMapped b tries =
+    Task.yieldNow ⊤
+    GpuHost.drain ⊤
+    if state b == "mapped" || tries ≤ 0 then state b else untilMapped b (tries - 1)
