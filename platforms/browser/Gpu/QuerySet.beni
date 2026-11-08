@@ -1,0 +1,48 @@
+--! Query sets (`docs/design/webgpu.md` §4, §7): made by
+--! `Gpu.Device.createQuerySet`; their results are written into a buffer by
+--! `Gpu.CommandEncoder.resolveQuerySet`, as exact 64-bit words.
+
+import Gpu.Engine as Engine
+import Gpu.Handle as Handle
+import Gpu.Types as Types
+import Js
+
+
+--| The kind of queries the set holds. A kind outside the pin is a defect.
+pub type_ : Handle.QuerySet → Types.QueryType
+type_ querySet =
+    case Types.queryTypeFromString (Js.to (Js.get (Js.from querySet) "type")) of
+        Just t →
+            t
+
+        Nothing →
+            Engine.defect "a query set of a type outside the pin"
+
+
+--| How many queries the set holds.
+pub count : Handle.QuerySet → Int
+count querySet = Js.to (Js.get (Js.from querySet) "count")
+
+
+--| The set's label.
+pub label : Handle.QuerySet → String
+label querySet = Js.to (Js.get (Js.from querySet) "label")
+
+
+--| Set the set's label.
+pub setLabel : Handle.QuerySet, String → ⊤
+setLabel querySet text = Js.set (Js.from querySet) "label" (Js.from text)
+
+
+--| Destroy the set: latched first, so later work with it is refused
+--| (`ResourceDestroyed`); destroying it again does nothing. Runs under a
+--| diagnostic session's lease (§6.4).
+pub destroy : Handle.QuerySet → ⊤
+destroy querySet =
+    native = Js.from querySet
+    r = Engine.recordOf native
+    if Js.same (Js.get r "destroyed") (Js.from True) then
+        ⊤
+    else
+        Js.set r "destroyed" (Js.from True)
+        Js.to (Js.call native "destroy" [])

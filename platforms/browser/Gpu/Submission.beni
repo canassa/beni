@@ -11,6 +11,14 @@ import Js
 
 --| Wait until the submission's work is done; at once when it is already.
 --| `DeviceLost` when the device is lost first. Work done is not display
---| done. May suspend; runs under a diagnostic session's lease (§6.4).
+--| done. The receipt of a batch is usable once its batch was accepted
+--| (`ResourcePending` before, `ResourceRejected` after a failed batch). May
+--| suspend; runs under a diagnostic session's lease (§6.4).
 pub done : Handle.Submission → Result Error.Error ⊤
-done submission = Engine.awaitPending (Js.from submission)
+done submission =
+    native = Js.from submission
+    r = Engine.recordOf native
+    Result.mapError
+        (Engine.usable native (Js.get r "device") Js.null "submission")
+        Error.InvalidInput?
+    Engine.awaitPending native

@@ -11,6 +11,7 @@
 --! checks an operation awaited reported no failure, not that the device
 --! stays healthy or that the work has run.
 
+import Binary
 import Gpu.Flags as Flags
 import Gpu.Limits as Limits
 import Gpu.Scalar as Scalar
@@ -88,7 +89,12 @@ pub type Error
 --| pending or live, a range of an unmapped buffer); `RangeOverlap` a mapped
 --| range that overlaps one taken before; `ReadOnlyMapping` a write to a
 --| mapping made for reading; `ResourceExpired` a mapping or a range of an
---| earlier mapping generation.
+--| earlier mapping generation. `EncoderLocked` is an encoder command while a
+--| pass of it is open; `EncoderFinished` and `PassEnded` a command after
+--| `finish` or `end`; `DebugStackEmpty` a pop with no debug group pushed;
+--| `CommandBufferSubmitted` and `DuplicateCommandBuffer` a command buffer
+--| submitted before or twice in one submit; `ViewKindRequired` a binary view
+--| of another kind than the one the call takes.
 pub type InputError
     = NumericDomain { path : String, domain : Scalar.DomainError }
     | WrongDevice { path : String }
@@ -107,6 +113,13 @@ pub type InputError
     | MappingState { path : String, state : Types.BufferMapState }
     | RangeOverlap { path : String, offset : Int, size : Int }
     | ReadOnlyMapping { path : String }
+    | EncoderLocked { path : String }
+    | EncoderFinished { path : String }
+    | PassEnded { path : String }
+    | DebugStackEmpty { path : String }
+    | CommandBufferSubmitted { path : String }
+    | DuplicateCommandBuffer { path : String }
+    | ViewKindRequired { path : String, kind : Binary.ViewKind }
     | SessionState SessionState
     | SessionStopped
 

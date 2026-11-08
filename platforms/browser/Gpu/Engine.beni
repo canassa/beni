@@ -424,6 +424,7 @@ adoptDevice device ch =
     r =
         Js.object
             [ ( "id", Js.from id )
+            , ( "self", device )
             , ( "loss", Js.null )
             , ( "final", Js.from False )
             , ( "destroyed", Js.from False )
@@ -684,7 +685,13 @@ checkedMaking device operation labels call adopt discard =
             case outcome of
                 Ok made →
                     Js.call table "set"
-                        [ made, Js.object [ ( "device", r ), ( "status", Js.from "provisional" ) ] ]
+                        [ made
+                        , Js.object
+                            [ ( "device", r )
+                            , ( "native", device )
+                            , ( "status", Js.from "provisional" )
+                            ]
+                        ]
                         ▷ ignore
                     adopt made
                     Js.set scopes "made" made
@@ -1264,3 +1271,64 @@ without : V, V → ⊤
 without list item =
     at = Js.call list "indexOf" [ item ]
     if Js.to (Js.ge at (Js.from 0)) then Js.call list "splice" [ at, Js.from 1 ] ▷ ignore
+
+
+-- ---- Resource arguments ------------------------------------------------------------
+
+--| A resource argument at `path` (§6.3, §7): an object the engine made on
+--| the device of record `onDevice`, accepted — or provisional in `batch`,
+--| the live batch the call runs in (null outside one) — and not destroyed.
+--| A provisional object is usable while the batch that made it runs: the
+--| batch is synchronous, so whatever code runs then is that batch's.
+--| An object the engine did not make is a defect.
+pub usable : V, V, V, String → Result Error.InputError ⊤
+usable native onDevice batch path =
+    o = recordOf native
+    status = Js.get o "status"
+    if Js.same status (Js.from "rejected") then
+        Err (Error.ResourceRejected { path = path })
+    else if Js.same status (Js.from "provisional") && not (inLiveBatch o batch) then
+        Err (Error.ResourcePending { path = path })
+    else if Js.same (Js.get o "destroyed") (Js.from True) then
+        Err (Error.ResourceDestroyed { path = path })
+    else if not (Js.same (Js.get o "device") onDevice) then
+        Err (Error.WrongDevice { path = path })
+    else
+        Ok ⊤
+
+
+--| Record an object made inside `batch` on the device of record `r`:
+--| provisional until the batch settles.
+pub adoptInBatch : V, V, V → ⊤
+adoptInBatch made r batch =
+    Js.call table "set"
+        [ made
+        , Js.object
+            [ ( "device", r )
+            , ( "native", Js.get r "self" )
+            , ( "status", Js.from "provisional" )
+            , ( "batch", batch )
+            ]
+        ]
+        ▷ ignore
+
+
+--| Set the status of an object the engine made.
+pub setStatus : V, String → ⊤
+setStatus native status = Js.set (recordOf native) "status" (Js.from status)
+
+
+--| Whether `value` is an instance of the realm's global `name`, when the
+--| realm has one.
+pub isInstanceOf : V, String → Bool
+isInstanceOf value name = isInstance value name
+
+
+-- A provisional object of a batch that still runs, or of `batch`.
+inLiveBatch : V, V → Bool
+inLiveBatch o batch =
+    made = Js.get o "batch"
+    if Js.isNullish made then
+        False
+    else
+        Js.same made batch || Js.same (Js.get made "live") (Js.from True)

@@ -8,12 +8,11 @@
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Feature as Feature
-import Gpu.Flags as Flags
 import Gpu.Handle as Handle
 import Gpu.Limits as Limits
+import Gpu.Make as Make
 import Gpu.Memory as Memory
 import Gpu.Native as Native
-import Gpu.Scalar as Scalar
 import Gpu.Types as Types
 import Js
 
@@ -62,26 +61,15 @@ awaitLost device = Engine.awaitLost (Js.from device)
 --| `RelatedFailures` when several do; `DeviceLost` when the device is
 --| lost before or while it is checked, with what was observed; and
 --| `InvalidInput (SessionState DeviceLeased)` at once, without waiting,
---| while a diagnostic session holds the device. May suspend.
+--| while a diagnostic session holds the device. Every checked creation
+--| below fails in these ways too. May suspend.
 pub createSampler : Handle.Device, Types.SamplerDescriptor → Result Error.Error Handle.Sampler
-createSampler device descriptor =
-    native = Js.from device
-    converted = Native.samplerDescriptor descriptor
+createSampler device descriptor = made device (Make.sampler (Js.from device) descriptor)
 
-    labels =
-        case descriptor.label of
-            Types.Value label →
-                [ label ]
 
-            Types.Default →
-                []
-    Result.map
-        -- The ledger documents no synchronous failure of `createSampler`
-        -- (§3): its classifier only hands on what the call made.
-        (Engine.checked native "createSampler" labels λ⊤ →
-            Ok (Js.call native "createSampler" [ converted ])
-        )
-        λsampler → Js.to sampler
+-- Run a prepared creation as a checked operation, and give what it made.
+made : Handle.Device, Result Error.Error Make.Op → Result Error.Error a
+made device prepared = Result.map (Make.checked (Js.from device) prepared) λm → Js.to m
 
 
 --| A buffer, checked (§6.1, §7.1). With `mappedAtCreation = Value True` it
@@ -90,51 +78,9 @@ createSampler device descriptor =
 --| (`InvalidInput MappedSizeUnaligned`, before any native call), and a host
 --| with no memory for the mapping gives `MapFailed
 --| MappedAllocationFailed`. A buffer the device refuses is `Validation`
---| and is destroyed, never returned; the other failures are those of
---| `createSampler`. May suspend.
+--| and is destroyed, never returned. May suspend.
 pub createBuffer : Handle.Device, Types.BufferDescriptor → Result Error.Error Handle.Buffer
-createBuffer device descriptor =
-    native = Js.from device
-    bytes = Scalar.size64ToInt descriptor.size
-
-    mapped =
-        case descriptor.mappedAtCreation of
-            Types.Value True →
-                True
-
-            _ →
-                False
-    if mapped && Int.rem bytes 4 ≠ 0 then
-        Err (Error.InvalidInput (Error.MappedSizeUnaligned { path = "size", size = bytes }))
-    else
-        converted = Native.bufferDescriptor descriptor
-        usage = Flags.bufferUsagesBits descriptor.usage
-        Result.map
-            (Engine.checkedMaking
-                native
-                "createBuffer"
-                (labelsOf descriptor.label)
-                (λ⊤ →
-                    if mapped then
-                        -- The ledger's one synchronous failure (§3): the
-                        -- CPU memory of the mapping, once the size passed.
-                        Js.catchIf
-                            (λ⊤ → Ok (Js.call native "createBuffer" [ converted ]))
-                            Engine.isRangeError
-                            λerror →
-                                Err
-                                    (Error.MapFailed
-                                        (Error.MappedAllocationFailed
-                                            { bytes = bytes, message = Engine.messageOf error }
-                                        )
-                                    )
-                    else
-                        Ok (Js.call native "createBuffer" [ converted ])
-                )
-                (λmade → Memory.adoptBuffer native made bytes usage mapped)
-                λmade → Memory.destroy made
-            )
-            λbuffer → Js.to buffer
+createBuffer device descriptor = made device (Make.buffer (Js.from device) descriptor)
 
 
 --| `createBuffer` with `mappedAtCreation = Value True`, and the buffer's
@@ -153,11 +99,114 @@ createMappedBuffer device descriptor =
             Engine.defect "a buffer created mapped has no mapping"
 
 
-labelsOf : Types.Option String → List String
-labelsOf l =
-    case l of
-        Types.Value text →
-            [ text ]
+--| A texture, checked. A format whose feature the device was not made with
+--| is `UnsupportedCapability (MissingFeature …)` before any native call;
+--| the host's refusal of a feature-gated format anyway is
+--| `FormatFeatureRejected`. May suspend.
+pub createTexture : Handle.Device, Types.TextureDescriptor → Result Error.Error Handle.Texture
+createTexture device descriptor = made device (Make.texture (Js.from device) descriptor)
 
-        Types.Default →
-            []
+
+--| A bind group layout, checked. May suspend.
+pub createBindGroupLayout :
+      Handle.Device
+    , Types.BindGroupLayoutDescriptor
+    → Result Error.Error Handle.BindGroupLayout
+createBindGroupLayout device descriptor =
+    made device (Make.bindGroupLayout (Js.from device) descriptor)
+
+
+--| A bind group, checked. Its layout and every resource it binds must be
+--| accepted, alive and of this device (`InvalidInput` before any native
+--| call). May suspend.
+pub createBindGroup : Handle.Device, Types.BindGroupDescriptor → Result Error.Error Handle.BindGroup
+createBindGroup device descriptor = made device (Make.bindGroup (Js.from device) Js.null descriptor)
+
+
+--| A pipeline layout, checked; a `Nothing` slot is an empty group. May
+--| suspend.
+pub createPipelineLayout :
+      Handle.Device
+    , Types.PipelineLayoutDescriptor
+    → Result Error.Error Handle.PipelineLayout
+createPipelineLayout device descriptor =
+    made device (Make.pipelineLayout (Js.from device) Js.null descriptor)
+
+
+--| A shader module, checked: invalid WGSL is `Validation`, with the host's
+--| message. `Gpu.Shader.getCompilationInfo` gives every message. May
+--| suspend.
+pub createShaderModule :
+      Handle.Device
+    , Types.ShaderModuleDescriptor
+    → Result Error.Error Handle.Shader
+createShaderModule device descriptor = made device (Make.shaderModule (Js.from device) descriptor)
+
+
+--| A compute pipeline, made by the native synchronous call and checked
+--| (§6.1): a pipeline the device refuses is `Validation`. May suspend.
+pub createComputePipeline :
+      Handle.Device
+    , Types.ComputePipelineDescriptor
+    → Result Error.Error Handle.ComputePipeline
+createComputePipeline device descriptor =
+    made device (Make.computePipeline (Js.from device) Js.null descriptor)
+
+
+--| A compute pipeline, made by the native asynchronous call (ledger §3): a
+--| `GPUPipelineError` of reason `validation` is `PipelineValidation`, of
+--| reason `internal` `PipelineInternal`; any other rejection or reason is a
+--| defect. A cancelled wait leaves the pipeline unpublished. May suspend.
+pub createComputePipelineAsync :
+      Handle.Device
+    , Types.ComputePipelineDescriptor
+    → Result Error.Error Handle.ComputePipeline
+createComputePipelineAsync device descriptor =
+    native = Js.from device
+    Make.computeHandles native Js.null descriptor?
+    converted = Native.computePipelineDescriptor descriptor
+    r = Engine.recordOf native
+
+    result =
+        Engine.checkedAwait
+            native
+            "createComputePipelineAsync"
+            (Make.labelsOf descriptor.label)
+            (λ⊤ → Ok (Js.call native "createComputePipelineAsync" [ converted ]))
+            λfulfilled value →
+                if fulfilled then
+                    Engine.adoptInBatch value r Js.null
+                    Engine.Expected (Ok value)
+                else
+                    pipelineFailure "createComputePipelineAsync" value
+    case result of
+        Ok pipeline →
+            Engine.setStatus pipeline "accepted"
+            Ok (Js.to pipeline)
+
+        Err problem →
+            Err problem
+
+
+-- A rejected asynchronous pipeline: a native `GPUPipelineError` of a reason
+-- in the pin, or unexpected.
+pipelineFailure : String, Js.Value → Engine.Outcome (Result Error.Error Js.Value)
+pipelineFailure operation error =
+    if not (Engine.isInstanceOf error "GPUPipelineError") then
+        Engine.Unexpected error
+    else
+        reason = Js.get error "reason"
+        failure = { operation = operation, message = Engine.messageOf error }
+        if Js.same reason (Js.from "validation") then
+            Engine.Expected (Err (Error.PipelineValidation failure))
+        else if Js.same reason (Js.from "internal") then
+            Engine.Expected (Err (Error.PipelineInternal failure))
+        else
+            Engine.Unexpected error
+
+
+--| A query set, checked. A timestamp query set needs the `timestamp-query`
+--| feature: `UnsupportedCapability` before any native call without it. May
+--| suspend.
+pub createQuerySet : Handle.Device, Types.QuerySetDescriptor → Result Error.Error Handle.QuerySet
+createQuerySet device descriptor = made device (Make.querySet (Js.from device) descriptor)

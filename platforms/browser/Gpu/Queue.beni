@@ -9,17 +9,14 @@ import Binary
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Handle as Handle
+import Gpu.Make as Make
 import Gpu.Memory as Memory
-import Gpu.Native as Native
+import Gpu.Types as Types
 import Js
 
 
 type alias V =
     Js.Value
-
-
-ignore : V → ⊤
-ignore _ = ⊤
 
 
 --| One `writeBuffer`: the destination offset in bytes, the data, and the
@@ -28,10 +25,7 @@ ignore _ = ⊤
 --| `DataView`, elements for a typed array — and `Nothing` as the size
 --| writes the rest of the data. The bytes written are a multiple of 4.
 pub type alias WriteBufferSource =
-    bufferOffset : Int
-    data : Binary.Source
-    dataOffset : Int
-    size : Maybe Int
+    Memory.WriteBufferSource
 
 
 --| All of `data`, at `bufferOffset`.
@@ -50,9 +44,9 @@ pub setLabel : Handle.Queue, String → ⊤
 setLabel queue text = Js.set (Js.from queue) "label" (Js.from text)
 
 
--- The queue's record: its device's record and the native device.
-recordOf : Handle.Queue → V
-recordOf queue = Engine.recordOf (Js.from queue)
+-- The native device of a queue.
+deviceOf : Handle.Queue → V
+deviceOf queue = Js.get (Engine.recordOf (Js.from queue)) "native"
 
 
 --| Write `source` into `buffer`, checked (§6.1; ledger §5). Refused before
@@ -66,82 +60,9 @@ recordOf queue = Engine.recordOf (Js.from queue)
 --| the host refuses anyway. May suspend.
 pub writeBuffer : Handle.Queue, Handle.Buffer, WriteBufferSource → Result Error.Error ⊤
 writeBuffer queue buffer write =
-    q = recordOf queue
-    b = Memory.record buffer
-    Result.mapError (writePreflight q b write) Error.InvalidInput?
-    native = Js.from queue
-
-    -- An `undefined` argument is an omitted one (Web IDL): the native default.
-    sizeArg =
-        case write.size of
-            Just s →
-                Js.from s
-
-            Nothing →
-                Js.undefined
     Result.map
-        (Engine.checked
-            (Js.get q "native")
-            "writeBuffer"
-            [ Js.to (Js.get (Js.from buffer) "label") ]
-            λ⊤ →
-                Js.catchIf
-                    (λ⊤ →
-                        _ =
-                            Js.call native "writeBuffer"
-                                [ Js.from buffer
-                                , Js.from write.bufferOffset
-                                , Memory.sourceObject write.data
-                                , Js.from write.dataOffset
-                                , sizeArg
-                                ]
-                        -- What the call made: nothing but its outcome.
-                        Ok (Js.object [])
-                    )
-                    (λerror → Engine.isDomException error "OperationError")
-                    λerror →
-                        Err
-                            (Error.HostOperationRejected
-                                (Error.BufferWriteSourceRejected
-                                    { message = Engine.messageOf error }
-                                )
-                            )
-        )
+        (Make.checked (deviceOf queue) (Make.writeBuffer (Js.from queue) Js.null buffer write))
         λ_ → ⊤
-
-
-writePreflight : V, V, WriteBufferSource → Result Error.InputError ⊤
-writePreflight q b write =
-    Memory.usable b (Js.get q "device") "buffer"?
-    _ = Memory.size64 write.bufferOffset "bufferOffset"?
-    info = Memory.sourceInfo write.data "data"?
-    -- The content timeline's checks of `writeBuffer`, in the data's units.
-    dataSize = info.elementLength
-    dataOffset = Memory.size64 write.dataOffset "dataOffset"?
-    if dataOffset > dataSize then
-        Err
-            (Error.OutOfRange
-                { path = "dataOffset", offset = dataOffset, size = 0, available = dataSize }
-            )
-    else
-        contents =
-            case write.size of
-                Just s →
-                    Memory.size64 s "size"?
-
-                Nothing →
-                    dataSize - dataOffset
-        if contents > dataSize - dataOffset then
-            Err
-                (Error.OutOfRange
-                    { path = "size"
-                    , offset = dataOffset * info.bytesPerElement
-                    , size = contents * info.bytesPerElement
-                    , available = info.byteLength
-                    }
-                )
-        else
-            Memory.aligned (contents * info.bytesPerElement) 4 "size"
 
 
 --| Submit `commands`, checked (§6.1, §8.3): one native submit, whose
@@ -149,44 +70,14 @@ writePreflight q b write =
 --| submit, in the same host turn, the receipt captures the queue's
 --| completion promise, so it covers this submission and the work before
 --| it, never a later one. An empty list is a native submit too, with its
---| receipt. A command buffer from another device is refused before any
---| native call. May suspend.
+--| receipt. Refused before any native call: a command buffer of another
+--| device, one not accepted, one submitted before
+--| (`CommandBufferSubmitted`) or one named twice
+--| (`DuplicateCommandBuffer`). May suspend.
 pub submit : Handle.Queue, List Handle.CommandBuffer → Result Error.Error Handle.Submission
 submit queue commands =
-    q = recordOf queue
-    Result.mapError (submitPreflight q commands) Error.InvalidInput?
-    native = Js.from queue
-    Result.map
-        (Engine.checked (Js.get q "native") "submit" [] λ⊤ →
-            _ = Js.call native "submit" [ Native.array commands λc → Js.from c ]
-            Ok
-                (Engine.pendingOutcome
-                    (Js.get q "native")
-                    "onSubmittedWorkDone"
-                    (Js.call native "onSubmittedWorkDone" [])
-                    workDone
-                )
-        )
-        λreceipt → Js.to receipt
-
-
-submitPreflight : V, List Handle.CommandBuffer → Result Error.InputError ⊤
-submitPreflight q commands = List.foldl commands (Ok ⊤) λcommand verdict →
-    case verdict of
-        Err _ →
-            verdict
-
-        Ok _ →
-            c = Engine.recordOf (Js.from command)
-            if Js.same (Js.get c "device") (Js.get q "device") then
-                Ok ⊤
-            else
-                Err (Error.WrongDevice { path = "commands" })
-
-
--- `onSubmittedWorkDone` documents no rejection (ledger §5).
-workDone : Bool, V → Engine.Outcome ⊤
-workDone fulfilled value = if fulfilled then Engine.Expected ⊤ else Engine.Unexpected value
+    Result.map (Make.checked (deviceOf queue) (Make.submit (Js.from queue) Js.null commands)) λreceipt →
+        Js.to receipt
 
 
 --| Wait until every piece of work submitted to the queue so far is done:
@@ -196,8 +87,7 @@ workDone fulfilled value = if fulfilled then Engine.Expected ⊤ else Engine.Une
 --| first. May suspend.
 pub onSubmittedWorkDone : Handle.Queue → Result Error.Error ⊤
 onSubmittedWorkDone queue =
-    q = recordOf queue
-    device = Js.get q "native"
+    device = deviceOf queue
     case Engine.loss device of
         Just l →
             Err
@@ -211,5 +101,20 @@ onSubmittedWorkDone queue =
                     device
                     "onSubmittedWorkDone"
                     (Js.call (Js.from queue) "onSubmittedWorkDone" [])
-                    workDone
+                    λfulfilled value →
+                        if fulfilled then Engine.Expected ⊤ else Engine.Unexpected value
                 )
+
+
+--| Write `data` into a texture, checked (§6.1; ledger §5): the texture
+--| must be accepted, alive and of this device, and the data's storage
+--| fixed and attached (`ResizableBacking`, `DetachedSource`); the layout,
+--| extent and texel blocks are the device's to check (`Validation`). Queue
+--| writes need no 256-byte row alignment. May suspend.
+pub writeTexture :
+    Handle.Queue, Types.TexelCopyTextureInfo, Binary.Source, Types.TexelCopyBufferLayout, Types.Extent3D
+    → Result Error.Error ⊤
+writeTexture queue destination data layout extent =
+    Result.map
+        (Make.checked (deviceOf queue) (Make.writeTexture (Js.from queue) Js.null destination data layout extent))
+        λ_ → ⊤

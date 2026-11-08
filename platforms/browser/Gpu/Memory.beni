@@ -39,6 +39,7 @@ pub adoptBuffer : V, V, Int, Int, Bool → ⊤
 adoptBuffer device buffer size usage mapped =
     b = Engine.recordOf buffer
     Js.set b "native" device
+    Js.set b "self" buffer
     Js.set b "size" (Js.from size)
     Js.set b "usage" (Js.from usage)
     Js.set b "destroyed" (Js.from False)
@@ -108,17 +109,15 @@ isDestroyed b = Js.to (Js.get b "destroyed")
 --| and made on that device.
 pub usable : V, V, String → Result Error.InputError ⊤
 usable b onDevice path =
-    status = Js.get b "status"
-    if Js.same status (Js.from "rejected") then
-        Err (Error.ResourceRejected { path = path })
-    else if Js.same status (Js.from "provisional") then
-        Err (Error.ResourcePending { path = path })
-    else if isDestroyed b then
-        Err (Error.ResourceDestroyed { path = path })
-    else if not (Js.isNull onDevice) && not (Js.same (Js.get b "device") onDevice) then
-        Err (Error.WrongDevice { path = path })
+    if Js.isNull onDevice then
+        usableAnywhere b path
     else
-        Ok ⊤
+        Engine.usable (Js.get b "self") onDevice Js.null path
+
+
+-- `usable` on whichever device the buffer belongs to.
+usableAnywhere : V, String → Result Error.InputError ⊤
+usableAnywhere b path = Engine.usable (Js.get b "self") (Js.get b "device") Js.null path
 
 
 --| A size or an offset at `path`, as a `GPUSize64` accepts it.
@@ -384,3 +383,11 @@ mapUsage mode =
 
         Flags.Write →
             Flags.MapWrite
+
+
+--| One `writeBuffer` (`Gpu.Queue.WriteBufferSource`).
+pub type alias WriteBufferSource =
+    bufferOffset : Int
+    data : Binary.Source
+    dataOffset : Int
+    size : Maybe Int

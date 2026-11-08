@@ -1,0 +1,56 @@
+--! Command encoding with checked completion (`docs/design/webgpu.md` §6.2):
+--! a callback encodes commands without suspending, and the run checks them
+--! as one operation, `finish` included.
+--!
+--!     doubled : Gpu.Handle.Device, Gpu.Handle.ComputePipeline, Gpu.Handle.BindGroup
+--!         → Result Gpu.Error.Error { value : ⊤, commands : Gpu.Handle.CommandBuffer }
+--!     doubled device pipeline group =
+--!         Gpu.Encode.run device Gpu.Types.commandEncoderDescriptor λencoder →
+--!             Gpu.ComputePass.with encoder Gpu.Types.computePassDescriptor λpass →
+--!                 Gpu.ComputePass.setPipeline pass pipeline?
+--!                 Gpu.ComputePass.setBindGroup pass zero (Just group) []?
+--!                 Gpu.ComputePass.dispatchWorkgroups pass four one one
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Handle as Handle
+import Gpu.Make as Make
+import Gpu.Session as Session
+import Gpu.Types as Types
+import Js
+
+
+--| Run `body` with a new command encoder of `device`, checked (§6.1): the
+--| encoder is made, `body` encodes, and the encoder is finished, all
+--| between the device's error scopes, in one host turn. The result is
+--| `body`'s value and the command buffer, published only when no scope
+--| reported a failure. The first local refusal of a command, or `body`'s
+--| own `Err`, is the result as `InvalidInput`, and a documented host
+--| failure of one command its precise `Error`; nothing is submitted. A
+--| throw in `body` is a defect. May suspend; `body` never does.
+pub run :
+      Handle.Device
+    , Types.CommandEncoderDescriptor
+    , sync (Handle.CommandEncoder → Result InputError a)
+    → Result Error.Error { value : a, commands : Handle.CommandBuffer }
+run device descriptor body =
+    native = Js.from device
+    value = Js.ref Nothing
+
+    made =
+        Engine.checkedMaking
+            native
+            "encode"
+            (Make.labelsOf descriptor.label)
+            (λ⊤ → Session.encode native Js.null descriptor (λenc → body (Js.to enc)) value)
+            (λ_ → ⊤)
+            λ_ → ⊤
+    case ( made, Js.read value ) of
+        ( Ok commands, Just v ) →
+            Ok { value = v, commands = Js.to commands }
+
+        ( Ok _, Nothing ) →
+            Engine.defect "an encoding run published commands without a value"
+
+        ( Err problem, _ ) →
+            Err problem
