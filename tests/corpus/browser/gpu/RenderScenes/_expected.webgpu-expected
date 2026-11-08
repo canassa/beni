@@ -1,0 +1,252 @@
+-- load
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #multipass
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #indirect
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #depth
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #stencil
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"stencil row 0: 0 0 0 255, 0 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"stencil row 1: 0 0 0 255, 0 0 255 255, 0 0 255 255, 0 0 0 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #msaa
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"stencil row 0: 0 0 0 255, 0 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"stencil row 1: 0 0 0 255, 0 0 255 255, 0 0 255 255, 0 0 0 255"</li>
+      <li>"msaa row 0: 255 0 0 255, 255 0 0 255, half, 0 0 0 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #mrt
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"stencil row 0: 0 0 0 255, 0 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"stencil row 1: 0 0 0 255, 0 0 255 255, 0 0 255 255, 0 0 0 255"</li>
+      <li>"msaa row 0: 255 0 0 255, 255 0 0 255, half, 0 0 0 255"</li>
+      <li>"mrt row 0: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 0: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #bundle
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"stencil row 0: 0 0 0 255, 0 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"stencil row 1: 0 0 0 255, 0 0 255 255, 0 0 255 255, 0 0 0 255"</li>
+      <li>"msaa row 0: 255 0 0 255, 255 0 0 255, half, 0 0 0 255"</li>
+      <li>"mrt row 0: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 0: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"bundle row 0: 0 0 0 255, 0 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"bundle row 1: 0 0 0 255, 0 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #batch
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"stencil row 0: 0 0 0 255, 0 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"stencil row 1: 0 0 0 255, 0 0 255 255, 0 0 255 255, 0 0 0 255"</li>
+      <li>"msaa row 0: 255 0 0 255, 255 0 0 255, half, 0 0 0 255"</li>
+      <li>"mrt row 0: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 0: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"bundle row 0: 0 0 0 255, 0 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"bundle row 1: 0 0 0 255, 0 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"batch row 0: 0 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"batch row 1: 0 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+    </ol>
+  </main>
+</body>
+-- click #occlusion
+<body>
+  <main>
+    <button id="multipass">"multipass"</button>
+    <button id="indirect">"indirect"</button>
+    <button id="depth">"depth"</button>
+    <button id="stencil">"stencil"</button>
+    <button id="msaa">"msaa"</button>
+    <button id="mrt">"mrt"</button>
+    <button id="bundle">"bundle"</button>
+    <button id="batch">"batch"</button>
+    <button id="occlusion">"occlusion"</button>
+    <ol>
+      <li>"multipass row 0: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"multipass row 1: 255 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"indirect row 0: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"indirect row 1: 255 0 0 255, 255 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"depth row 0: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"depth row 1: 255 0 0 255, 255 0 0 255, 0 255 0 255, 0 255 0 255"</li>
+      <li>"stencil row 0: 0 0 0 255, 0 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"stencil row 1: 0 0 0 255, 0 0 255 255, 0 0 255 255, 0 0 0 255"</li>
+      <li>"msaa row 0: 255 0 0 255, 255 0 0 255, half, 0 0 0 255"</li>
+      <li>"mrt row 0: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 255 0 0 255, 255 0 0 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 0: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"mrt row 1: 0 255 255 255, 0 255 255 255, 0 0 0 255, 0 0 0 255"</li>
+      <li>"bundle row 0: 0 0 0 255, 0 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"bundle row 1: 0 0 0 255, 0 0 0 255, 0 0 255 255, 0 0 255 255"</li>
+      <li>"batch row 0: 0 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"batch row 1: 0 0 0 255, 0 255 0 255, 0 255 0 255, 0 0 0 255"</li>
+      <li>"occlusion query 0: nonzero"</li>
+      <li>"occlusion query 1: zero"</li>
+    </ol>
+  </main>
+</body>

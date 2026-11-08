@@ -49,6 +49,44 @@ const fakeBuffers = new globalThis.WeakMap();
 const fakeModules = new globalThis.WeakMap();
 const fakeCommands = new globalThis.WeakMap();
 
+// Every render command the page issued, as text, for a fixture to read with
+// `GpuHost.commands`: a handle shows its label, a list its length.
+const renderLog = [];
+const shown = (arg) => {
+  if (arg === null) return "null";
+  if (arg === undefined) return "undefined";
+  if (globalThis.Array.isArray(arg)) return `[${arg.map(shown).join(",")}]`;
+  if (typeof arg === "object") return arg.label !== undefined ? `<${arg.label}>` : globalThis.JSON.stringify(arg);
+  return globalThis.String(arg);
+};
+const logged = (name, args) => {
+  renderLog.push(`${name}(${args.map(shown).join(", ")})`);
+};
+// The commands a render pass and a render bundle encoder share; `invalid`
+// marks the encoding invalid, as a draw with no pipeline does.
+const renderEncoder = (label, invalid) => {
+  const e = { label: label ?? "" };
+  let pipelineSet = false;
+  e.setPipeline = (p) => {
+    pipelineSet = true;
+    logged("setPipeline", [p]);
+  };
+  for (const name of ["setBindGroup", "setVertexBuffer", "setIndexBuffer", "pushDebugGroup", "popDebugGroup", "insertDebugMarker"]) e[name] = (...args) => logged(name, args);
+  for (const name of ["draw", "drawIndexed", "drawIndirect", "drawIndexedIndirect"])
+    e[name] = (...args) => {
+      if (!pipelineSet) invalid();
+      logged(name, args);
+    };
+  e.setImmediates = (rangeOffset, data, dataOffset = 0, size = undefined) => {
+    const per = data instanceof globalThis.ArrayBuffer || data instanceof globalThis.DataView ? 1 : data.BYTES_PER_ELEMENT;
+    const available = data.byteLength / per;
+    const contents = size === undefined ? available - dataOffset : size;
+    if (dataOffset + contents > available || (contents * per) % 4 !== 0) throw operationError("the immediate data is outside its source");
+    logged("setImmediates", [rangeOffset, contents * per]);
+  };
+  return e;
+};
+
 const fakeDevice = (adapter, descriptor) => {
   let resolveLost = null;
   const device = {
@@ -250,6 +288,11 @@ const fakeDevice = (adapter, descriptor) => {
     t.format = descriptor.format;
     t.usage = descriptor.usage;
     t.destroy = () => {};
+    t.createView = (viewDescriptor) => {
+      const d = viewDescriptor ?? {};
+      if ((d.baseMipLevel ?? 0) + (d.mipLevelCount ?? 1) > t.mipLevelCount) report("validation", new globalThis.GPUValidationError("invalid texture view"));
+      return plainObject(d.label);
+    };
     return t;
   };
   device.createCommandEncoder = (descriptor) => {
@@ -291,11 +334,47 @@ const fakeDevice = (adapter, descriptor) => {
       };
       return pass;
     };
+    encoder.beginRenderPass = (passDescriptor) => {
+      const pass = renderEncoder(passDescriptor?.label, () => {
+        invalid = true;
+      });
+      pass.end = () => logged("end", []);
+      for (const name of ["setViewport", "setScissorRect", "setBlendConstant", "setStencilReference", "beginOcclusionQuery", "endOcclusionQuery"]) pass[name] = (...args) => logged(name, args);
+      pass.executeBundles = (bundles) => logged("executeBundles", [bundles.length]);
+      return pass;
+    };
     encoder.finish = (finishDescriptor) => {
       if (invalid) report("validation", new globalThis.GPUValidationError("invalid encoder"));
       const buffer = plainObject(finishDescriptor?.label);
       fakeCommands.set(buffer, commands);
       return buffer;
+    };
+    return encoder;
+  };
+  // Render pipelines and render bundles (docs/design/webgpu.md §6.2):
+  // their shapes, and a draw with no pipeline set, which the device
+  // reports at `finish`. The fake rasterises nothing.
+  const stageValid = (stage) => {
+    const code = fakeModules.get(stage.module);
+    return code !== undefined && wgslValid(code) && hasEntry(code, stage.entryPoint);
+  };
+  const renderValid = (descriptor) => stageValid(descriptor.vertex) && (descriptor.fragment === undefined || stageValid(descriptor.fragment));
+  device.createRenderPipeline = (descriptor) => {
+    if (!renderValid(descriptor)) report("validation", new globalThis.GPUValidationError("invalid render pipeline"));
+    return pipeline(descriptor);
+  };
+  device.createRenderPipelineAsync = (descriptor) =>
+    renderValid(descriptor)
+      ? globalThis.Promise.resolve(pipeline(descriptor))
+      : globalThis.Promise.reject(new globalThis.GPUPipelineError("invalid render pipeline", { reason: "validation" }));
+  device.createRenderBundleEncoder = (descriptor) => {
+    let invalid = false;
+    const encoder = renderEncoder(descriptor.label, () => {
+      invalid = true;
+    });
+    encoder.finish = (finishDescriptor) => {
+      if (invalid) report("validation", new globalThis.GPUValidationError("invalid render bundle"));
+      return plainObject(finishDescriptor?.label);
     };
     return encoder;
   };
@@ -324,7 +403,7 @@ function FakePipelineError(message, options) {
 
 const fakeAdapter = () => {
   const adapter = {
-    features: new globalThis.Set(adapterFeatures),
+    features: new globalThis.Set(moreFeatures ? [...adapterFeatures, "depth32float-stencil8"] : adapterFeatures),
     limits: globalThis.Object.freeze({ ...limitDefaults }),
     info: globalThis.Object.freeze({ vendor: "beni", architecture: "fake", device: "", description: "", subgroupMinSize: 4, subgroupMaxSize: 128, isFallbackAdapter: false }),
   };
@@ -375,6 +454,7 @@ let controlLoss = false;
 let popFaults = {};
 let holdPops = false;
 let createThrows = false;
+let moreFeatures = false;
 // The buffer and queue faults of the scenario, by the native call they
 // replace; whether map outcomes are held until `releaseMaps`.
 let bufferFaults = {};
@@ -419,6 +499,42 @@ const faults = {
   },
   "compilation-rejected": () => {
     bufferFaults.compilation = () => globalThis.Promise.reject(new globalThis.DOMException("injected compilation failure", "AbortError"));
+  },
+  // Rendering (ledger §3, §5): the content timeline's `TypeError` of a format check
+  // after the engine's own passed, an asynchronous render pipeline refused
+  // as `internal` or with what is not a `GPUPipelineError`, and passes and
+  // bundle encoders without `setImmediates`.
+  "view-type-error": () => {
+    bufferFaults.view = () => {
+      throw new globalThis.TypeError("injected view format refusal");
+    };
+  },
+  "render-type-error": () => {
+    bufferFaults.render = () => {
+      throw new globalThis.TypeError("injected render format refusal");
+    };
+  },
+  "bundle-type-error": () => {
+    bufferFaults.bundle = () => {
+      throw new globalThis.TypeError("injected bundle format refusal");
+    };
+  },
+  "render-pipeline-internal": () => {
+    bufferFaults.renderAsync = () => globalThis.Promise.reject(new globalThis.GPUPipelineError("injected internal failure", { reason: "internal" }));
+  },
+  "render-pipeline-unlisted": () => {
+    bufferFaults.renderAsync = () => globalThis.Promise.reject(new globalThis.DOMException("injected unlisted render pipeline failure", "AbortError"));
+  },
+  "render-pipeline-type-error": () => {
+    bufferFaults.renderAsync = () => globalThis.Promise.reject(new globalThis.TypeError("injected render format refusal"));
+  },
+  "no-immediates": () => {
+    bufferFaults.noImmediates = true;
+  },
+  // The adapter also offers `depth32float-stencil8` (the fake's only; a
+  // native adapter offers what it has).
+  "more-features": () => {
+    moreFeatures = true;
   },
   "immediates-rejected": () => {
     bufferFaults.immediates = () => {
@@ -599,9 +715,44 @@ const instrument = (device) => {
     });
     return module;
   });
+  wrap(device, "createTexture", function (original, ...args) {
+    const texture = original.apply(this, args);
+    wrap(texture, "createView", function (view, ...rest) {
+      if (bufferFaults.view !== undefined) return bufferFaults.view();
+      return view.apply(this, rest);
+    });
+    return texture;
+  });
+  wrap(device, "createRenderPipeline", function (original, ...args) {
+    if (bufferFaults.render !== undefined) return bufferFaults.render();
+    return original.apply(this, args);
+  });
+  wrap(device, "createRenderPipelineAsync", function (original, ...args) {
+    if (bufferFaults.renderAsync !== undefined) return asked(bufferFaults.renderAsync());
+    return asked(original.apply(this, args));
+  });
+  // Immediates on a render pass or a bundle encoder: refused, or missing.
+  const immediates = (encoder) => {
+    if (bufferFaults.noImmediates === true) {
+      globalThis.Object.defineProperty(encoder, "setImmediates", { configurable: true, value: undefined });
+    } else if (typeof encoder.setImmediates === "function") {
+      wrap(encoder, "setImmediates", function (set, ...data) {
+        if (bufferFaults.immediates !== undefined) return bufferFaults.immediates();
+        return set.apply(this, data);
+      });
+    }
+    return encoder;
+  };
+  wrap(device, "createRenderBundleEncoder", function (original, ...args) {
+    if (bufferFaults.bundle !== undefined) return bufferFaults.bundle();
+    return immediates(original.apply(this, args));
+  });
   wrap(device, "createCommandEncoder", function (original, ...args) {
     count("createCommandEncoder");
     const encoder = original.apply(this, args);
+    wrap(encoder, "beginRenderPass", function (begin, ...rest) {
+      return immediates(begin.apply(this, rest));
+    });
     wrap(encoder, "beginComputePass", function (begin, ...rest) {
       const pass = begin.apply(this, rest);
       if (typeof pass.setImmediates === "function") {
@@ -660,10 +811,12 @@ let secureContext = null;
 // page has; and every device's `lost` replaced while "lost-controlled"
 // holds. Each `inject` starts from it, so faults never pile up.
 function prepare() {
+  renderLog.length = 0;
   controlLoss = false;
   popFaults = {};
   holdPops = false;
   createThrows = false;
+  moreFeatures = false;
   holdRequests = false;
   bufferFaults = {};
   holdMaps = false;
@@ -815,3 +968,6 @@ export const keep = (buffer) => {
   return null;
 };
 export const kept = (_unit) => keptBuffer;
+
+// The render commands issued since the last call, oldest first.
+export const commands = (_unit) => renderLog.splice(0);

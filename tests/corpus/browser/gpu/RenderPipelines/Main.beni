@@ -1,0 +1,141 @@
+-- Render pipelines and texture views, checked (docs/design/webgpu.md §4,
+-- §6.1; ledger §3): a pipeline whose vertex entry point does not exist is
+-- `Validation` made synchronously and `PipelineValidation` made
+-- asynchronously; an asynchronous pipeline the host refuses as `internal`
+-- is `PipelineInternal`; a depth format whose feature the device lacks is
+-- `UnsupportedCapability` before any native call, for a pipeline and for a
+-- view; a bind group layout past the pipeline's groups is `Validation`; a
+-- view of mip levels the texture does not have is `Validation`; a label
+-- set is read back. Each pipeline is never published when refused.
+import Gpu.Device
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, Shader)
+import Gpu.RenderPipeline as RenderPipeline
+import Gpu.Texture
+import Gpu.TextureView as TextureView
+import Gpu.Types as Types
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+wgsl : String
+wgsl =
+    "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+
+
+shader : Device → Shader
+shader d = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+
+
+-- A pipeline of vertex entry point `entry` into one `rgba8unorm` target.
+describe : Shader, String → Types.RenderPipelineDescriptor
+describe module entry =
+    base =
+        Types.renderPipelineDescriptor Types.Auto
+            { (Types.vertexState module) | entryPoint = Types.Value entry }
+    fragment = Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ]
+    { base | fragment = Types.Value fragment }
+
+
+missingEntry : ⊤ → List String
+missingEntry ⊤ = GpuKit.with "none" λd →
+    module = shader d
+    [ "sync: "
+        ++ GpuShow.checked (Gpu.Device.createRenderPipeline d (describe module "nope")) λ_ → "made"
+    , "async: "
+        ++ GpuShow.checked (Gpu.Device.createRenderPipelineAsync d (describe module "nope")) λ_ →
+            "made"
+    , "valid: "
+        ++ GpuShow.checked (Gpu.Device.createRenderPipeline d (describe module "vs")) λ_ → "made"
+    ]
+
+
+internal : ⊤ → List String
+internal ⊤ = GpuKit.with "render-pipeline-internal" λd →
+    [ "async: "
+        ++ GpuShow.checked (Gpu.Device.createRenderPipelineAsync d (describe (shader d) "vs")) λ_ →
+            "made"
+    ]
+
+
+feature : ⊤ → List String
+feature ⊤ = GpuKit.with "none" λd →
+    descriptor =
+        { (describe (shader d) "vs")
+            | depthStencil = Types.Value (Types.depthStencilState Types.Depth32floatStencil8)
+        }
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    (Types.Extent3DFields
+                        { width = u32 4
+                        , height = Types.Default
+                        , depthOrArrayLayers = Types.Default
+                        }
+                    )
+                    Types.Depth24plusStencil8
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    view =
+        Gpu.Texture.createView texture
+            { (Types.textureViewDescriptor) | format = Types.Value Types.Depth32floatStencil8 }
+    [ "pipeline: " ++ GpuShow.checked (Gpu.Device.createRenderPipeline d descriptor) λ_ → "made"
+    , "async: " ++ GpuShow.checked (Gpu.Device.createRenderPipelineAsync d descriptor) λ_ → "made"
+    , "view: " ++ GpuShow.checked view λ_ → "made"
+    ]
+
+
+layouts : ⊤ → List String
+layouts ⊤ = GpuKit.with "none" λd →
+    pipeline = must (Gpu.Device.createRenderPipeline d (describe (shader d) "vs"))
+    RenderPipeline.setLabel pipeline "scene"
+    [ "label: " ++ RenderPipeline.label pipeline
+    , "group 5: "
+        ++ GpuShow.checked (RenderPipeline.getBindGroupLayout pipeline (u32 5)) λ_ → "made"
+    ]
+
+
+views : ⊤ → List String
+views ⊤ = GpuKit.with "none" λd →
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    (Types.Extent3DFields
+                        { width = u32 4
+                        , height = Types.Default
+                        , depthOrArrayLayers = Types.Default
+                        }
+                    )
+                    Types.Rgba8unorm
+                    (Flags.texture [ Flags.TextureBinding ])
+                )
+            )
+    whole = must (Gpu.Texture.createView texture Types.textureViewDescriptor)
+    TextureView.setLabel whole "whole"
+    [ "label: " ++ TextureView.label whole
+    , "two mips: "
+        ++ GpuShow.checked
+            (Gpu.Texture.createView texture
+                { (Types.textureViewDescriptor) | mipLevelCount = Types.Value (u32 2) }
+            )
+            λ_ → "made"
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "missingEntry", missingEntry )
+        , ( "internal", internal )
+        , ( "feature", feature )
+        , ( "layouts", layouts )
+        , ( "views", views )
+        ]

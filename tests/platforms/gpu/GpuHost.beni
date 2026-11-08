@@ -102,3 +102,9 @@ pub foreign impure keep : Buffer → ⊤
 
 --| The buffer `keep` kept last.
 pub foreign impure kept : ⊤ → Buffer
+
+
+--| The render commands the page issued since the last call, oldest first,
+--| as the fake host saw them: a handle shown by its label. Empty on a
+--| native host.
+pub foreign impure commands : ⊤ → List String

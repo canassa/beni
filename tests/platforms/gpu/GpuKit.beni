@@ -111,3 +111,15 @@ collect results = List.foldl results (Ok []) λr acc →
 
         ( _, Err problem ) →
             Err problem
+
+
+--| `check` on every element, stopping at the first `Err`.
+pub each : List a, (a → Result e ⊤) → Result e ⊤
+each xs check =
+    case xs of
+        [] →
+            Ok ⊤
+
+        [ x, …rest ] →
+            check x?
+            each rest check

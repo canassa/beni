@@ -1,0 +1,567 @@
+-- Render scenes read back by pixel (docs/design/webgpu.md §6.2, §10's
+-- acceptance for #2241): each scene renders into 4×4 `rgba8unorm`
+-- textures, copies them into mappable buffers and prints rows 0 and 1, one
+-- pixel as `r g b a`. One shader draws axis-aligned rectangles that it
+-- picks by `vertex_index / 6 + instance_index`, each with its color and
+-- depth. The expected pixels are worked out by hand from the rectangles,
+-- never computed by the code under test:
+--
+--   rect 0  columns 0–1  red    z 0.5     rect 4  columns 0–1  red    z 0.2
+--   rect 1  columns 1–2  green  z 0.5     rect 5  columns 0–3  blue   z 0.5
+--   rect 2  columns 2–3  blue   z 0.5     rect 6  the center   white  z 0.5
+--   rect 3  columns 0–3  green  z 0.8     rect 7  x 0 … 2.5    red    z 0.5
+--
+-- multipass: rect 0 then, in a second pass that loads, rect 1 — red,
+-- green, green, black. indirect: `drawIndirect` of rect 0 and
+-- `drawIndexedIndirect` with base vertex 12 (rect 2) — red, red, blue,
+-- blue. depth: near rect 4, then far rect 3 under `less` — red, red,
+-- green, green. stencil: rect 6 writes stencil 1 and no color, then rect 5
+-- draws where the stencil equals 1 — row 0 black, row 1 black, blue, blue,
+-- black. msaa: rect 7 into 4 samples, resolved; column 2 has two of its
+-- four standard sample positions (x 2.375 and 2.125) inside x < 2.5, so it
+-- resolves to half red: 127 or 128, the rounding the specification leaves
+-- to the device, printed `half`. mrt: rect 0 into two targets, the second
+-- one `1 − rgb` — red, red, black, black and cyan, cyan, black, black.
+-- bundle: a render bundle of rect 2 — black, black, blue, blue. batch: a
+-- batch makes the texture, its view and the pipeline, and draws rect 1 —
+-- black, green, green, black. occlusion: rect 3 behind nothing passes on
+-- its right half (nonzero), rect 0 behind the near rect 4 passes nowhere
+-- (zero).
+--
+-- The gates' fake host rasterises nothing, so its transcript shows zeros;
+-- `test-webgpu`'s shows the GPU's pixels (`_expected.webgpu-expected`).
+import Binary
+import Gpu.Batch as Batch
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst, CopySrc, MapRead, Index, Indirect, QueryResolve)
+import Gpu.Handle exposing (Device, Buffer, CommandEncoder, Texture, TextureView, RenderPass, RenderPipeline, Shader)
+import Gpu.Queue
+import Gpu.RenderBundleEncoder as BundleEncoder
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Submission
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+wgsl : String
+wgsl =
+    String.join
+        [ "struct Out { @builtin(position) pos : vec4f, @location(0) color : vec4f }"
+        , "@vertex"
+        , "fn vs(@builtin(vertex_index) v : u32, @builtin(instance_index) i : u32) -> Out {"
+        , "    var rects = array<vec4f, 8>("
+        , "        vec4f(0.0, 0.0, 2.0, 4.0), vec4f(1.0, 0.0, 3.0, 4.0), vec4f(2.0, 0.0, 4.0, 4.0), vec4f(0.0, 0.0, 4.0, 4.0),"
+        , "        vec4f(0.0, 0.0, 2.0, 4.0), vec4f(0.0, 0.0, 4.0, 4.0), vec4f(1.0, 1.0, 3.0, 3.0), vec4f(0.0, 0.0, 2.5, 4.0));"
+        , "    var colors = array<vec4f, 8>("
+        , "        vec4f(1.0, 0.0, 0.0, 1.0), vec4f(0.0, 1.0, 0.0, 1.0), vec4f(0.0, 0.0, 1.0, 1.0), vec4f(0.0, 1.0, 0.0, 1.0),"
+        , "        vec4f(1.0, 0.0, 0.0, 1.0), vec4f(0.0, 0.0, 1.0, 1.0), vec4f(1.0, 1.0, 1.0, 1.0), vec4f(1.0, 0.0, 0.0, 1.0));"
+        , "    var depths = array<f32, 8>(0.5, 0.5, 0.5, 0.8, 0.2, 0.5, 0.5, 0.5);"
+        , "    var corners = array<vec2f, 6>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0));"
+        , "    let k = v / 6u + i;"
+        , "    let r = rects[k];"
+        , "    let p = mix(r.xy, r.zw, corners[v % 6u]);"
+        , "    var out : Out;"
+        , "    out.pos = vec4f(p.x / 2.0 - 1.0, 1.0 - p.y / 2.0, depths[k], 1.0);"
+        , "    out.color = colors[k];"
+        , "    return out;"
+        , "}"
+        , "@fragment"
+        , "fn fs(input : Out) -> @location(0) vec4f { return input.color; }"
+        , "struct Two { @location(0) a : vec4f, @location(1) b : vec4f }"
+        , "@fragment"
+        , "fn mrt(input : Out) -> Two {"
+        , "    var t : Two;"
+        , "    t.a = input.color;"
+        , "    t.b = vec4f(1.0 - input.color.rgb, 1.0);"
+        , "    return t;"
+        , "}"
+        ]
+        "\n"
+
+
+side : Types.Extent3D
+side =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 4), depthOrArrayLayers = Types.Default }
+
+
+-- ---- Building blocks ----------------------------------------------------------
+
+texture : Device, Types.TextureFormat, Int, List Flags.TextureUsage → Texture
+texture d format samples usages =
+    desc = Types.textureDescriptor side format (Flags.texture usages)
+    must (Gpu.Device.createTexture d { desc | sampleCount = Types.Value (u32 samples) })
+
+
+colorTarget : Device → Texture
+colorTarget d = texture d Types.Rgba8unorm 1 [ Flags.RenderAttachment, Flags.TextureCopySrc ]
+
+
+view : Texture → TextureView
+view t = must (Gpu.Texture.createView t Types.textureViewDescriptor)
+
+
+shader : Device → Shader
+shader d = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+
+
+f32 : Float → Scalar.FiniteF32
+f32 x = must (Scalar.finiteF32 x)
+
+
+black : Types.Color
+black =
+    zero = must (Scalar.finiteF64 0.0)
+    Types.ColorFields (Types.colorDict zero zero zero (must (Scalar.finiteF64 1.0)))
+
+
+-- The descriptor of a pipeline of the shader: fragment entry `entry` into
+-- `targets`, `samples` samples, and `depth`.
+describe :
+      Shader
+    , String
+    , List Types.ColorTargetState
+    , Types.Option Types.DepthStencilState
+    , Int
+    → Types.RenderPipelineDescriptor
+describe module entry targets depthState samples =
+    vertex = { (Types.vertexState module) | entryPoint = Types.Value "vs" }
+    fragment =
+        { (Types.fragmentState module (List.map targets Just)) | entryPoint = Types.Value entry }
+    base = Types.renderPipelineDescriptor Types.Auto vertex
+    { base
+        | fragment = Types.Value fragment
+        , depthStencil = depthState
+        , multisample = Types.Value { (Types.multisampleState) | count = Types.Value (u32 samples) }
+    }
+
+
+rgba : Types.ColorTargetState
+rgba = Types.colorTargetState Types.Rgba8unorm
+
+
+pipeline : Device, Types.RenderPipelineDescriptor → RenderPipeline
+pipeline d descriptor = must (Gpu.Device.createRenderPipeline d descriptor)
+
+
+cleared : TextureView → Types.RenderPassColorAttachment
+cleared v =
+    { (Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store)
+        | clearValue = Types.Value black
+    }
+
+
+instance : Int → RenderPass.DrawArguments
+instance i = { (RenderPass.vertices (u32 6)) | firstInstance = u32 i }
+
+
+depthTest : Types.TextureFormat → Types.DepthStencilState
+depthTest format =
+    { (Types.depthStencilState format)
+        | depthWriteEnabled = Types.Value True
+        , depthCompare = Types.Value Types.Less
+    }
+
+
+depthAttachment : TextureView → Types.RenderPassDepthStencilAttachment
+depthAttachment v =
+    { (Types.renderPassDepthStencilAttachment (Types.AttachmentTextureView v))
+        | depthClearValue = Types.Value (f32 1.0)
+        , depthLoadOp = Types.Value Types.Clear
+        , depthStoreOp = Types.Value Types.Discard
+    }
+
+
+-- Bytes of little-endian 32-bit words, each below 256.
+words : List Int → Binary.Source
+words ws = Binary.WholeBuffer (must (Binary.fromList (List.concatMap ws λw → [ w, 0, 0, 0 ])))
+
+
+-- Encode `body`, copy every target into a mappable buffer, submit, wait,
+-- and give rows 0 and 1 of each target.
+render :
+      Device
+    , List Texture
+    , (CommandEncoder → Result InputError ⊤)
+    → Result Error.Error (List (List Int))
+render d targets body =
+    outs = List.map targets λ_ → must (Gpu.Device.createBuffer d (buffer 1024 [ MapRead, CopyDst ]))
+    encoded = (Encode.run d Types.commandEncoderDescriptor (encodeAndCopy targets outs body _))?
+    receipt = (Gpu.Queue.submit (Gpu.Device.queue d) [ encoded.commands ])?
+    Gpu.Submission.done receipt?
+    GpuKit.collect
+        (List.map outs λo →
+            Result.map (GpuKit.readU32s o 68) λws → [ …List.take ws 4, …List.drop ws 64 ]
+        )
+
+
+encodeAndCopy :
+      List Texture
+    , List Buffer
+    , (CommandEncoder → Result InputError ⊤)
+    , CommandEncoder
+    → Result InputError ⊤
+encodeAndCopy targets outs body enc =
+    body enc?
+    GpuKit.each (List.map2 targets outs λt o → ( t, o )) λ( t, o ) →
+        CommandEncoder.copyTextureToBuffer
+            enc
+            (Types.texelCopyTextureInfo t)
+            { (Types.texelCopyBufferInfo o) | bytesPerRow = Types.Value (u32 256) }
+            side
+
+
+pixel : Int → String
+pixel w =
+    String.join
+        [ String.fromInt (Int.rem w 256)
+        , String.fromInt (Int.rem (w // 256) 256)
+        , String.fromInt (Int.rem (w // 65536) 256)
+        , String.fromInt (w // 16777216)
+        ]
+        " "
+
+
+-- Rows 0 and 1 of each target, a line each.
+show : String, Result Error.Error (List (List Int)) → List String
+show name result =
+    case result of
+        Err problem →
+            [ name ++ ": " ++ GpuShow.error problem ]
+
+        Ok targets →
+            List.concatMap targets λws →
+                [ name ++ " row 0: " ++ String.join (List.map (List.take ws 4) pixel) ", "
+                , name ++ " row 1: " ++ String.join (List.map (List.drop ws 4) pixel) ", "
+                ]
+
+
+-- ---- Pass bodies --------------------------------------------------------------
+
+-- Draw the rectangles `rects` with `p`.
+draws : RenderPipeline, List Int, RenderPass → Result InputError ⊤
+draws p rects rp =
+    RenderPass.setPipeline rp p?
+    GpuKit.each rects λi → RenderPass.draw rp (instance i)
+
+
+-- One pass that clears `v` and draws `rects` with `p`.
+clearAndDraw : TextureView, RenderPipeline, List Int, CommandEncoder → Result InputError ⊤
+clearAndDraw v p rects enc =
+    RenderPass.with enc (Types.renderPassDescriptor [ Just (cleared v) ]) (draws p rects _)
+
+
+-- ---- The scenes -----------------------------------------------------------------
+
+multipass : ⊤ → List String
+multipass ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    v = view t
+    p = pipeline d (describe (shader d) "fs" [ rgba ] Types.Default 1)
+    show "multipass" (render d [ t ] (twoPasses v p _))
+
+
+twoPasses : TextureView, RenderPipeline, CommandEncoder → Result InputError ⊤
+twoPasses v p enc =
+    clearAndDraw v p [ 0 ] enc?
+    loaded = Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Load Types.Store
+    RenderPass.with enc (Types.renderPassDescriptor [ Just loaded ]) (draws p [ 1 ] _)
+
+
+indirect : ⊤ → List String
+indirect ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    v = view t
+    p =
+        must
+            (Gpu.Device.createRenderPipelineAsync
+                d
+                (describe (shader d) "fs" [ rgba ] Types.Default 1)
+            )
+    args = must (Gpu.Device.createBuffer d (buffer 36 [ Indirect, CopyDst ]))
+    indices = must (Gpu.Device.createBuffer d (buffer 12 [ Index, CopyDst ]))
+    queue = Gpu.Device.queue d
+    must
+        (Gpu.Queue.writeBuffer
+            queue
+            args
+            (Gpu.Queue.bufferWrite 0 (words [ 6, 1, 0, 0, 6, 1, 0, 12, 0 ]))
+        )
+    bytes = Binary.WholeBuffer (must (Binary.fromList [ 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0 ]))
+    must (Gpu.Queue.writeBuffer queue indices (Gpu.Queue.bufferWrite 0 bytes))
+    pass = Types.renderPassDescriptor [ Just (cleared v) ]
+    show
+        "indirect"
+        (render d [ t ] λenc → RenderPass.with enc pass (indirectDraws p args indices _))
+
+
+indirectDraws : RenderPipeline, Buffer, Buffer, RenderPass → Result InputError ⊤
+indirectDraws p args indices rp =
+    RenderPass.setPipeline rp p?
+    RenderPass.drawIndirect rp args 0?
+    RenderPass.setIndexBuffer rp indices Types.IndexUint16 0 Nothing?
+    RenderPass.drawIndexedIndirect rp args 16
+
+
+depth : ⊤ → List String
+depth ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    v = view t
+    dv = view (texture d Types.Depth24plus 1 [ Flags.RenderAttachment ])
+    p = pipeline d (describe (shader d) "fs" [ rgba ] (Types.Value (depthTest Types.Depth24plus)) 1)
+    pass =
+        { (Types.renderPassDescriptor [ Just (cleared v) ])
+            | depthStencilAttachment = Types.Value (depthAttachment dv)
+        }
+    show "depth" (render d [ t ] λenc → RenderPass.with enc pass (draws p [ 4, 3 ] _))
+
+
+stencilFace : Types.CompareFunction, Types.StencilOperation → Types.StencilFaceState
+stencilFace test op =
+    { (Types.stencilFaceState) | compare = Types.Value test, passOp = Types.Value op }
+
+
+stencilState : Types.CompareFunction, Types.StencilOperation → Types.DepthStencilState
+stencilState test op =
+    { (Types.depthStencilState Types.Depth24plusStencil8)
+        | depthWriteEnabled = Types.Value False
+        , depthCompare = Types.Value Types.Always
+        , stencilFront = Types.Value (stencilFace test op)
+        , stencilBack = Types.Value (stencilFace test op)
+    }
+
+
+stencil : ⊤ → List String
+stencil ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    v = view t
+    dv = view (texture d Types.Depth24plusStencil8 1 [ Flags.RenderAttachment ])
+    module = shader d
+    silent = { rgba | writeMask = Types.Value (Flags.colorWrites []) }
+    mark =
+        pipeline
+            d
+            (describe
+                module
+                "fs"
+                [ silent ]
+                (Types.Value (stencilState Types.Always Types.StencilReplace))
+                1
+            )
+    fill =
+        pipeline
+            d
+            (describe
+                module
+                "fs"
+                [ rgba ]
+                (Types.Value (stencilState Types.Equal Types.StencilKeep))
+                1
+            )
+
+    attachment =
+        { (depthAttachment dv)
+            | stencilClearValue = Types.Value (u32 0)
+            , stencilLoadOp = Types.Value Types.Clear
+            , stencilStoreOp = Types.Value Types.Discard
+        }
+    pass =
+        { (Types.renderPassDescriptor [ Just (cleared v) ])
+            | depthStencilAttachment = Types.Value attachment
+        }
+    show "stencil" (render d [ t ] λenc → RenderPass.with enc pass (stencilDraws mark fill _))
+
+
+stencilDraws : RenderPipeline, RenderPipeline, RenderPass → Result InputError ⊤
+stencilDraws mark fill rp =
+    RenderPass.setStencilReference rp (u32 1)?
+    draws mark [ 6 ] rp?
+    draws fill [ 5 ] rp
+
+
+msaa : ⊤ → List String
+msaa ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    ms = view (texture d Types.Rgba8unorm 4 [ Flags.RenderAttachment ])
+    p = pipeline d (describe (shader d) "fs" [ rgba ] Types.Default 4)
+
+    attachment =
+        { (Types.renderPassColorAttachment
+              (Types.AttachmentTextureView ms)
+              Types.Clear
+              Types.Discard
+          )
+            | clearValue = Types.Value black
+            , resolveTarget = Types.Value (Types.AttachmentTextureView (view t))
+        }
+    pass = Types.renderPassDescriptor [ Just attachment ]
+    case render d [ t ] λenc → RenderPass.with enc pass (draws p [ 7 ] _) of
+        Err problem →
+            [ "msaa: " ++ GpuShow.error problem ]
+
+        Ok [ ws ] →
+            [ "msaa row 0: " ++ String.join (List.map (List.take ws 4) edge) ", " ]
+
+        Ok _ →
+            [ "msaa: no target" ]
+
+
+-- A pixel, or `half` for half red: 127 or 128, opaque.
+edge : Int → String
+edge w = if w == 4278190207 || w == 4278190208 then "half" else pixel w
+
+
+mrt : ⊤ → List String
+mrt ⊤ = GpuKit.with "none" λd →
+    first = colorTarget d
+    second = colorTarget d
+    p = pipeline d (describe (shader d) "mrt" [ rgba, rgba ] Types.Default 1)
+    pass = Types.renderPassDescriptor [ Just (cleared (view first)), Just (cleared (view second)) ]
+    show "mrt" (render d [ first, second ] λenc → RenderPass.with enc pass (draws p [ 0 ] _))
+
+
+bundle : ⊤ → List String
+bundle ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    v = view t
+    p = pipeline d (describe (shader d) "fs" [ rgba ] Types.Default 1)
+
+    made =
+        must
+            (Encode.bundle
+                d
+                (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+                (bundleDraws p _)
+            )
+    pass = Types.renderPassDescriptor [ Just (cleared v) ]
+    show
+        "bundle"
+        (render d [ t ] λenc →
+            RenderPass.with enc pass λrp → RenderPass.executeBundles rp [ made.bundle ]
+        )
+
+
+bundleDraws : RenderPipeline, Gpu.Handle.RenderBundleEncoder → Result InputError ⊤
+bundleDraws p b =
+    BundleEncoder.setPipeline b p?
+    BundleEncoder.draw b (instance 2)
+
+
+batch : ⊤ → List String
+batch ⊤ = GpuKit.with "none" λd →
+    module = shader d
+    out = must (Gpu.Device.createBuffer d (buffer 1024 [ MapRead, CopyDst ]))
+    case Batch.run d "scene" (inBatch d module out _) of
+        Err problem →
+            [ "batch: " ++ GpuShow.error problem ]
+
+        Ok receipt →
+            _ = Gpu.Submission.done receipt
+            show
+                "batch"
+                (Result.map (GpuKit.readU32s out 68) λws → [ [ …List.take ws 4, …List.drop ws 64 ] ]
+                )
+
+
+inBatch : Device, Shader, Buffer, Gpu.Handle.Batch → Result InputError Gpu.Handle.Submission
+inBatch d module out b =
+    usages = Flags.texture [ Flags.RenderAttachment, Flags.TextureCopySrc ]
+    t = Batch.createTexture b (Types.textureDescriptor side Types.Rgba8unorm usages)?
+    v = Batch.createView b t Types.textureViewDescriptor?
+    p = Batch.createRenderPipeline b (describe module "fs" [ rgba ] Types.Default 1)?
+    encoded = Batch.encode b Types.commandEncoderDescriptor (drawAndCopy t v p out _)?
+    Batch.submit b (Gpu.Device.queue d) [ encoded.commands ]
+
+
+drawAndCopy : Texture, TextureView, RenderPipeline, Buffer, CommandEncoder → Result InputError ⊤
+drawAndCopy t v p out enc =
+    clearAndDraw v p [ 1 ] enc?
+    CommandEncoder.copyTextureToBuffer
+        enc
+        (Types.texelCopyTextureInfo t)
+        { (Types.texelCopyBufferInfo out) | bytesPerRow = Types.Value (u32 256) }
+        side
+
+
+occlusion : ⊤ → List String
+occlusion ⊤ = GpuKit.with "none" λd →
+    t = colorTarget d
+    v = view t
+    dv = view (texture d Types.Depth24plus 1 [ Flags.RenderAttachment ])
+    p = pipeline d (describe (shader d) "fs" [ rgba ] (Types.Value (depthTest Types.Depth24plus)) 1)
+    queries = must (Gpu.Device.createQuerySet d (Types.querySetDescriptor Types.Occlusion (u32 2)))
+    resolved = must (Gpu.Device.createBuffer d (buffer 256 [ QueryResolve, CopySrc ]))
+    readback = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+
+    pass =
+        { (Types.renderPassDescriptor [ Just (cleared v) ])
+            | depthStencilAttachment = Types.Value (depthAttachment dv)
+            , occlusionQuerySet = Types.Value queries
+        }
+    rendered = render d [ t ] (occluded pass p queries resolved readback _)
+    case ( rendered, GpuKit.readU32s readback 4 ) of
+        ( Ok _, Ok [ w0, w1, w2, w3 ] ) →
+            [ "occlusion query 0: " ++ zeroOrNot (w0 + w1)
+            , "occlusion query 1: " ++ zeroOrNot (w2 + w3)
+            ]
+
+        ( Err problem, _ ) →
+            [ "occlusion: " ++ GpuShow.error problem ]
+
+        ( _, Err problem ) →
+            [ "occlusion read: " ++ GpuShow.error problem ]
+
+        _ →
+            [ "occlusion: no words" ]
+
+
+occluded :
+      Types.RenderPassDescriptor
+    , RenderPipeline
+    , Gpu.Handle.QuerySet
+    , Buffer
+    , Buffer
+    , CommandEncoder
+    → Result InputError ⊤
+occluded pass p queries resolved readback enc =
+    RenderPass.with enc pass (queried p _)?
+    CommandEncoder.resolveQuerySet enc queries (u32 0) (u32 2) resolved 0?
+    CommandEncoder.copyBuffer enc resolved readback (Just 16)
+
+
+queried : RenderPipeline, RenderPass → Result InputError ⊤
+queried p rp =
+    draws p [ 4 ] rp?
+    RenderPass.beginOcclusionQuery rp (u32 0)?
+    RenderPass.draw rp (instance 3)?
+    RenderPass.endOcclusionQuery rp?
+    RenderPass.beginOcclusionQuery rp (u32 1)?
+    RenderPass.draw rp (instance 0)?
+    RenderPass.endOcclusionQuery rp
+
+
+zeroOrNot : Int → String
+zeroOrNot n = if n == 0 then "zero" else "nonzero"
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "multipass", multipass )
+        , ( "indirect", indirect )
+        , ( "depth", depth )
+        , ( "stencil", stencil )
+        , ( "msaa", msaa )
+        , ( "mrt", mrt )
+        , ( "bundle", bundle )
+        , ( "batch", batch )
+        , ( "occlusion", occlusion )
+        ]

@@ -1,0 +1,111 @@
+-- The host's `TypeError` for a feature-gated format after the engine's own
+-- check passed (ledger §3, §5): `FormatFeatureRejected`, never a defect,
+-- for a texture view, a render pipeline made synchronously and
+-- asynchronously, and a render bundle encoder, each naming
+-- `depth32float-stencil8` on a device made with that feature. Each fault
+-- wraps the native call, so a native host gives the same answers.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device, Shader)
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- A device with `depth32float-stencil8`, after `fault`.
+withFeature : String, (Device → List String) → List String
+withFeature fault run =
+    GpuHost.inject ("more-features," ++ fault)
+    adapter = must (Gpu.requestAdapter Types.adapterOptions)
+
+    descriptor =
+        { (Types.deviceDescriptor)
+            | requiredFeatures = Types.Value [ Types.FeatureDepth32floatStencil8 ]
+        }
+    case Gpu.Adapter.requestDevice adapter descriptor of
+        Err problem →
+            [ "device: " ++ GpuShow.initError problem ]
+
+        Ok d →
+            run d
+
+
+shader : Device → Shader
+shader d =
+    must
+        (Gpu.Device.createShaderModule
+            d
+            (Types.shaderModuleDescriptor
+                "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }"
+            )
+        )
+
+
+pipeline : Device → Types.RenderPipelineDescriptor
+pipeline d =
+    { (Types.renderPipelineDescriptor Types.Auto (Types.vertexState (shader d)))
+        | depthStencil =
+            Types.Value
+                { (Types.depthStencilState Types.Depth32floatStencil8)
+                    | depthWriteEnabled = Types.Value False
+                    , depthCompare = Types.Value Types.Always
+                }
+    }
+
+
+view : ⊤ → List String
+view ⊤ = withFeature "view-type-error" λd →
+    texture =
+        must
+            (Gpu.Device.createTexture
+                d
+                (Types.textureDescriptor
+                    (Types.Extent3DFields
+                        { width = u32 4
+                        , height = Types.Default
+                        , depthOrArrayLayers = Types.Default
+                        }
+                    )
+                    Types.Depth32floatStencil8
+                    (Flags.texture [ Flags.RenderAttachment ])
+                )
+            )
+    descriptor = { (Types.textureViewDescriptor) | format = Types.Value Types.Depth32floatStencil8 }
+    [ "view: " ++ GpuShow.checked (Gpu.Texture.createView texture descriptor) λ_ → "made" ]
+
+
+render : ⊤ → List String
+render ⊤ = withFeature "render-type-error" λd →
+    [ "pipeline: " ++ GpuShow.checked (Gpu.Device.createRenderPipeline d (pipeline d)) λ_ → "made" ]
+
+
+renderAsync : ⊤ → List String
+renderAsync ⊤ = withFeature "render-pipeline-type-error" λd →
+    [ "async: " ++ GpuShow.checked (Gpu.Device.createRenderPipelineAsync d (pipeline d)) λ_ → "made"
+    ]
+
+
+bundle : ⊤ → List String
+bundle ⊤ = withFeature "bundle-type-error" λd →
+    descriptor =
+        { (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ])
+            | depthStencilFormat = Types.Value Types.Depth32floatStencil8
+        }
+    [ "bundle: " ++ GpuShow.checked (Encode.bundle d descriptor λ_ → Ok ⊤) λ_ → "made" ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "view", view )
+        , ( "render", render )
+        , ( "renderAsync", renderAsync )
+        , ( "bundle", bundle )
+        ]
