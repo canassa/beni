@@ -708,7 +708,9 @@ However the fiber leaves the wait — cancelled, or interrupted before it waited
 operation is done; an unexpected outcome it kept goes to the device's program then, and
 one that settles later goes there too. Each pending pop holds the device's channel to
 that program (a detached fiber the request made), which ends once the loss is reported
-and no pop is pending (`browser/gpu/Cancelled*`).
+and no pop is pending (`browser/gpu/Cancelled*`). A pop's defect names its device and operation
+(`device 1, createSampler: …`, the original as `cause`), and a cancelled operation's object
+is recorded rejected, never left provisional (second review, 2026-11-08).
 
 ### 6.2 Synchronous encoding with checked completion
 
