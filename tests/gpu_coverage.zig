@@ -294,30 +294,94 @@ fn names(source: []const u8, reference: []const u8, word: []const u8) bool {
     return false;
 }
 
-/// `source` with every `--` comment removed.
-fn withoutComments(a: std.mem.Allocator, source: []const u8) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    var lines = std.mem.splitScalar(u8, source, '\n');
-    while (lines.next()) |line| {
-        // A `--` inside a string literal is rare enough in fixtures to ignore.
-        const end = std.mem.find(u8, line, "--") orelse line.len;
-        try out.appendSlice(a, line[0..end]);
-        try out.append(a, '\n');
+/// A beni source as the mention check reads it: its code with every
+/// comment (`--` and nested `{- -}`), string literal and character literal
+/// blanked, and its import lines kept apart, so neither a comment, a
+/// string nor an import is a use.
+pub const Source = struct { code: []const u8, imports: []const []const u8 };
+
+pub fn readSource(a: std.mem.Allocator, bytes: []const u8) !Source {
+    var code: std.ArrayList(u8) = try .initCapacity(a, bytes.len);
+    var i: usize = 0;
+    var depth: usize = 0;
+    while (i < bytes.len) {
+        const c = bytes[i];
+        if (depth > 0) {
+            if (std.mem.startsWith(u8, bytes[i..], "{-")) {
+                depth += 1;
+                i += 2;
+            } else if (std.mem.startsWith(u8, bytes[i..], "-}")) {
+                depth -= 1;
+                i += 2;
+            } else {
+                if (c == '\n') try code.append(a, '\n');
+                i += 1;
+            }
+            continue;
+        }
+        if (std.mem.startsWith(u8, bytes[i..], "{-")) {
+            depth = 1;
+            i += 2;
+        } else if (std.mem.startsWith(u8, bytes[i..], "--")) {
+            while (i < bytes.len and bytes[i] != '\n') i += 1;
+        } else if (std.mem.startsWith(u8, bytes[i..], "\"\"\"")) {
+            i += 3;
+            while (i < bytes.len and !std.mem.startsWith(u8, bytes[i..], "\"\"\"")) : (i += 1) {
+                if (bytes[i] == '\n') try code.append(a, '\n');
+            }
+            i = @min(i + 3, bytes.len);
+            try code.appendSlice(a, "\"\"");
+        } else if (c == '"' or c == '\'') {
+            i += 1;
+            while (i < bytes.len and bytes[i] != c and bytes[i] != '\n') : (i += 1) {
+                if (bytes[i] == '\\') i += 1;
+            }
+            i += 1;
+            try code.appendSlice(a, "\"\"");
+        } else {
+            try code.append(a, c);
+            i += 1;
+        }
     }
-    return out.toOwnedSlice(a);
+    // Import lines apart from the code.
+    var kept: std.ArrayList(u8) = .empty;
+    var imports: std.ArrayList([]const u8) = .empty;
+    var lines = std.mem.splitScalar(u8, code.items, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "import ")) {
+            try imports.append(a, line);
+            try kept.append(a, '\n');
+        } else {
+            try kept.appendSlice(a, line);
+            try kept.append(a, '\n');
+        }
+    }
+    return .{ .code = try kept.toOwnedSlice(a), .imports = try imports.toOwnedSlice(a) };
 }
 
-/// Whether `source` names the declaration `module.name`: through the
-/// module's full name, an alias it is imported as, or an exposing list; a
-/// type also through its record constructor (`lowerFirst`), its spelling
-/// conversions and its constructors.
-fn mentions(a: std.mem.Allocator, source: []const u8, module: []const u8, name: []const u8, ctors: []const []const u8) !bool {
+/// Whether `code` holds `word` as a whole, unqualified word.
+fn bare(code: []const u8, word: []const u8) bool {
+    var from: usize = 0;
+    while (std.mem.findPos(u8, code, from, word)) |at| {
+        from = at + 1;
+        if (at > 0 and (isIdent(code[at - 1]) or code[at - 1] == '.')) continue;
+        const end = at + word.len;
+        if (end < code.len and isIdent(code[end])) continue;
+        return true;
+    }
+    return false;
+}
+
+/// Whether `source` uses the declaration `module.name` in its code: through
+/// the module's full name or an alias it is imported as, or unqualified
+/// when an import exposes it; a type also through its record constructor
+/// (`lowerFirst`), its spelling conversions and its constructors.
+pub fn mentions(a: std.mem.Allocator, source: Source, module: []const u8, name: []const u8, ctors: []const []const u8) !bool {
     var refs: std.ArrayList([]const u8) = .empty;
     try refs.append(a, module);
     var exposed = false;
-    var lines = std.mem.splitScalar(u8, source, '\n');
     const prefix = try std.fmt.allocPrint(a, "import {s}", .{module});
-    while (lines.next()) |line| {
+    for (source.imports) |line| {
         if (!std.mem.startsWith(u8, line, prefix)) continue;
         const rest = line[prefix.len..];
         if (rest.len > 0 and rest[0] != ' ') continue;
@@ -332,7 +396,8 @@ fn mentions(a: std.mem.Allocator, source: []const u8, module: []const u8, name: 
             while (items.next()) |item| exposed = exposed or std.mem.eql(u8, trim(item), name);
         }
     }
-    if (exposed) return true;
+    // An exposed name counts only where the code uses it.
+    if (exposed and bare(source.code, name)) return true;
     var words: std.ArrayList([]const u8) = .empty;
     try words.append(a, name);
     if (std.ascii.isUpper(name[0])) {
@@ -343,48 +408,82 @@ fn mentions(a: std.mem.Allocator, source: []const u8, module: []const u8, name: 
         try words.append(a, try std.fmt.allocPrint(a, "{s}FromString", .{lower}));
         try words.appendSlice(a, ctors);
     }
-    for (refs.items) |r| for (words.items) |w| if (names(source, r, w)) return true;
+    for (refs.items) |r| for (words.items) |w| if (names(source.code, r, w)) return true;
     return false;
 }
 
-const Fixture = struct { own: []const []const u8, platform: []const []const u8 };
+/// A fixture: its own sources, those of the test-platform modules it
+/// imports, and the text of its goldens.
+pub const Fixture = struct { own: []const Source, platform: []const Source, golden: []const u8 };
 
-/// A fixture's own sources and those of the test-platform modules it
-/// imports, comments removed; null when it is not a fixture.
+/// Whether the fixture uses `module.name`: its own code does, or — for a
+/// type or constructor — a test-platform module it imports names it AND
+/// its golden shows the name or one of its constructors, so the page
+/// really produced the value.
+pub fn uses(a: std.mem.Allocator, f: Fixture, module: []const u8, name: []const u8, ctors: []const []const u8) !bool {
+    for (f.own) |s| if (try mentions(a, s, module, name, ctors)) return true;
+    if (!std.ascii.isUpper(name[0])) return false;
+    var shown = bare(f.golden, name);
+    for (ctors) |ctor| shown = shown or bare(f.golden, ctor);
+    if (!shown) return false;
+    for (f.platform) |s| if (try mentions(a, s, module, name, ctors)) return true;
+    return false;
+}
+
+/// A fixture's sources, the test-platform modules it imports and its
+/// goldens; null when it is not a fixture.
 fn fixture(a: std.mem.Allocator, files: *Files, path: []const u8) !?Fixture {
     const dir_path = try std.fmt.allocPrint(a, "tests/corpus/{s}", .{path});
-    const golden = try std.fmt.allocPrint(a, "{s}/_expected.expected", .{dir_path});
-    if (try files.read(golden) == null) return null;
+    const expected = try std.fmt.allocPrint(a, "{s}/_expected.expected", .{dir_path});
+    if (try files.read(expected) == null) return null;
     var dir = std.Io.Dir.cwd().openDir(files.io, dir_path, .{ .iterate = true }) catch return null;
     defer dir.close(files.io);
-    var own: std.ArrayList([]const u8) = .empty;
-    var platform: std.ArrayList([]const u8) = .empty;
+    var own: std.ArrayList(Source) = .empty;
+    var platform: std.ArrayList(Source) = .empty;
+    var golden: std.ArrayList(u8) = .empty;
     var it = dir.iterate();
-    var sources: std.ArrayList([]const u8) = .empty;
-    while (try it.next(files.io)) |entry| {
-        if (std.mem.endsWith(u8, entry.name, ".beni")) try sources.append(a, try std.fmt.allocPrint(a, "{s}/{s}", .{ dir_path, entry.name }));
-    }
-    std.mem.sort([]const u8, sources.items, {}, struct {
+    var names_found: std.ArrayList([]const u8) = .empty;
+    while (try it.next(files.io)) |entry| try names_found.append(a, try a.dupe(u8, entry.name));
+    std.mem.sort([]const u8, names_found.items, {}, struct {
         fn lt(_: void, x: []const u8, y: []const u8) bool {
             return std.mem.lessThan(u8, x, y);
         }
     }.lt);
-    for (sources.items) |source_path| {
-        const bytes = (try files.read(source_path)).?;
-        try own.append(a, try withoutComments(a, bytes));
-        var lines = std.mem.splitScalar(u8, bytes, '\n');
-        while (lines.next()) |line| {
-            if (!std.mem.startsWith(u8, line, "import ")) continue;
+    for (names_found.items) |entry| {
+        const file_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ dir_path, entry });
+        if (std.mem.startsWith(u8, entry, "_expected.") and !std.mem.endsWith(u8, entry, ".steps")) {
+            try golden.appendSlice(a, (try files.read(file_path)) orelse "");
+            continue;
+        }
+        if (!std.mem.endsWith(u8, entry, ".beni")) continue;
+        const source = try readSource(a, (try files.read(file_path)).?);
+        try own.append(a, source);
+        for (source.imports) |line| {
             const rest = line["import ".len..];
             const end = std.mem.findAny(u8, rest, " \r") orelse rest.len;
             const module = rest[0..end];
             if (std.mem.findScalar(u8, module, '.') != null) continue;
             const lib = try std.fmt.allocPrint(a, "{s}/{s}.beni", .{ test_platform_dir, module });
-            if (try files.read(lib)) |lib_bytes| try platform.append(a, try withoutComments(a, lib_bytes));
+            if (try files.read(lib)) |lib_bytes| try platform.append(a, try readSource(a, lib_bytes));
         }
     }
     if (own.items.len == 0) return null;
-    return .{ .own = try own.toOwnedSlice(a), .platform = try platform.toOwnedSlice(a) };
+    return .{ .own = try own.toOwnedSlice(a), .platform = try platform.toOwnedSlice(a), .golden = try golden.toOwnedSlice(a) };
+}
+
+/// The `browser/gpu/` fixtures that use `module.name`, printed to help
+/// rebind a row.
+fn suggest(a: std.mem.Allocator, files: *Files, module: []const u8, name: []const u8, ctors: []const []const u8) !void {
+    var dir = try std.Io.Dir.cwd().openDir(files.io, "tests/corpus/browser/gpu", .{ .iterate = true });
+    defer dir.close(files.io);
+    var it = dir.iterate();
+    var found: std.ArrayList(u8) = .empty;
+    while (try it.next(files.io)) |entry| {
+        const path = try std.fmt.allocPrint(a, "browser/gpu/{s}", .{entry.name});
+        const f = (try fixture(a, files, path)) orelse continue;
+        if (try uses(a, f, module, name, ctors)) try found.print(a, " {s}", .{entry.name});
+    }
+    std.debug.print("    fixtures that use it:{s}\n", .{if (found.items.len == 0) " none" else found.items});
 }
 
 fn problem(quiet: bool, count: *usize, row: anytype, comptime what: []const u8, args: anytype) void {
@@ -480,13 +579,11 @@ pub fn check(a: std.mem.Allocator, io: std.Io, c: Native.Catalogue, text: []cons
             }
             const ctors = if (std.ascii.isUpper(name[0])) try constructors(a, source, name) else &.{};
             var seen = false;
-            for (fixtures.items) |f| {
-                for (f.own) |s| seen = seen or try mentions(a, s, module, name, ctors);
-                if (std.ascii.isUpper(name[0])) for (f.platform) |s| {
-                    seen = seen or try mentions(a, s, module, name, ctors);
-                };
+            for (fixtures.items) |f| seen = seen or try uses(a, f, module, name, ctors);
+            if (!seen and fixtures.items.len > 0) {
+                problem(quiet, &count, row, "no fixture of the row uses `{s}`", .{declaration});
+                if (!quiet) try suggest(a, &files, module, name, ctors);
             }
-            if (!seen and fixtures.items.len > 0) problem(quiet, &count, row, "no fixture of the row names `{s}`", .{declaration});
         }
     }
     return count;
@@ -561,4 +658,48 @@ test "member keys name each overload by its parameters" {
     try std.testing.expectEqualStrings("setBindGroup(index, bindGroup, dynamicOffsets)", try memberKey(a, "undefined setBindGroup(GPUIndex32 index, GPUBindGroup? bindGroup,\n optional sequence<GPUBufferDynamicOffset> dynamicOffsets = []);"));
     try std.testing.expectEqualStrings("constructor(message, options)", try memberKey(a, "constructor(optional DOMString message = \"\", GPUPipelineErrorInit options);"));
     try std.testing.expectEqualStrings("popDebugGroup()", try memberKey(a, "undefined popDebugGroup();"));
+}
+
+fn fixtureOf(a: std.mem.Allocator, source: []const u8, golden: []const u8) !Fixture {
+    const sources = try a.alloc(Source, 1);
+    sources[0] = try readSource(a, source);
+    return .{ .own = sources, .platform = &.{}, .golden = golden };
+}
+
+test "an import, a comment or a string is not a use" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const cheats = [_][]const u8{
+        // Exposed and never called.
+        "import Gpu.Buffer exposing (usage, size)\nmain = 1\n",
+        // In a block comment, nested or not.
+        "{- Gpu.Buffer.usage -}\nmain = 1\n",
+        "{- outer {- inner -} Gpu.Buffer.usage -}\nmain = 1\n",
+        // In a line comment.
+        "main = 1 -- Gpu.Buffer.usage\n",
+        // In a string literal, and a multi-line one.
+        "main = \"Gpu.Buffer.usage\"\n",
+        "main = \"\"\"\nGpu.Buffer.usage\n\"\"\"\n",
+        // An import line alone.
+        "import Gpu.Buffer as Gpu.Buffer.usage\nmain = 1\n",
+    };
+    for (cheats) |source| try std.testing.expect(!try uses(a, try fixtureOf(a, source, ""), "Gpu.Buffer", "usage", &.{}));
+    const real = [_][]const u8{
+        "main = Gpu.Buffer.usage b\n",
+        "import Gpu.Buffer as B\nmain = B.usage b\n",
+        "import Gpu.Buffer exposing (usage)\nmain = usage b\n",
+        "main = \"a {- string\" ++ Gpu.Buffer.usage b\n",
+    };
+    for (real) |source| try std.testing.expect(try uses(a, try fixtureOf(a, source, ""), "Gpu.Buffer", "usage", &.{}));
+    // A constructor a test-platform module names counts only when the
+    // golden shows it.
+    const platform = try a.alloc(Source, 1);
+    platform[0] = try readSource(a, "show e = case e of\n    Error.OutOfMemoryError _ -> \"OutOfMemoryError\"\n");
+    const page = try readSource(a, "import GpuShow\nmain = 1\n");
+    const own = try a.alloc(Source, 1);
+    own[0] = page;
+    const ctors = [_][]const u8{};
+    try std.testing.expect(!try uses(a, .{ .own = own, .platform = platform, .golden = "<li>\"Ok none\"</li>" }, "Error", "OutOfMemoryError", &ctors));
+    try std.testing.expect(try uses(a, .{ .own = own, .platform = platform, .golden = "<li>\"Ok OutOfMemoryError\"</li>" }, "Error", "OutOfMemoryError", &ctors));
 }

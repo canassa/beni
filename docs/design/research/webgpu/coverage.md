@@ -62,7 +62,7 @@ USVString label = "";
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUObjectDescriptorBase` | `Gpu.Types.ObjectDescriptorBase` | `browser/gpu/Batches` |
+| `GPUObjectDescriptorBase` | `Gpu.Types.ObjectDescriptorBase` | `browser/gpu/CoverageDescriptors` |
 
 ## enum `GPUFeatureName`
 
@@ -310,7 +310,7 @@ GPUQuerySet createQuerySet(GPUQuerySetDescriptor descriptor);
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUDevice` | `Gpu.Handle.Device` | `browser/gpu/AdapterAndDevice` |
+| `GPUDevice` | `Gpu.Handle.Device` | `browser/gpu/CoverageLabels` |
 | `features` | `Gpu.Device.features` | `browser/gpu/CoverageAttributes` |
 | `limits` | `Gpu.Device.limits` | `browser/gpu/CoverageAttributes` |
 | `adapterInfo` | `Gpu.Device.adapterInfo` | `browser/gpu/CoverageAttributes` |
@@ -352,7 +352,7 @@ undefined destroy();
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUBuffer` | `Gpu.Handle.Buffer` | `browser/gpu/AdapterAndDevice` |
+| `GPUBuffer` | `Gpu.Handle.Buffer` | `browser/gpu/BufferRoundTrip` |
 | `size` | `Gpu.Buffer.size` | `browser/gpu/BufferRoundTrip` |
 | `usage` | `Gpu.Buffer.usage` | `browser/gpu/CoverageAttributes` |
 | `mapState` | `Gpu.Buffer.mapState` | `browser/gpu/BufferRoundTrip` |
@@ -373,7 +373,7 @@ undefined destroy();
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUBufferMapState` | `Gpu.Types.BufferMapState` | `browser/gpu/AdapterAndDevice` |
+| `GPUBufferMapState` | `Gpu.Types.BufferMapState` | `browser/gpu/BufferRoundTrip` |
 
 ## dictionary `GPUBufferDescriptor` `: GPUObjectDescriptorBase`
 
@@ -385,7 +385,7 @@ boolean mappedAtCreation = false;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUBufferDescriptor` | `Gpu.Types.BufferDescriptor` | `browser/gpu/Batches` |
+| `GPUBufferDescriptor` | `Gpu.Types.BufferDescriptor` | `browser/gpu/BufferRoundTrip` |
 
 ## typedef `GPUBufferUsageFlags`
 
@@ -414,7 +414,7 @@ const GPUFlagsConstant QUERY_RESOLVE = 0x0200;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUBufferUsage` | `Gpu.Flags.BufferUsage` | `browser/gpu/Batches` |
+| `GPUBufferUsage` | `Gpu.Flags.BufferUsage` | `browser/gpu/BufferRoundTrip` |
 
 ## typedef `GPUMapModeFlags`
 
@@ -530,7 +530,7 @@ No own members; includes/inheritance still apply.
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUTextureView` | `Gpu.Handle.TextureView` | `browser/gpu/Batches` |
+| `GPUTextureView` | `Gpu.Handle.TextureView` | `browser/gpu/CoverageLabels` |
 
 ## includes `GPUTextureView includes GPUObjectBase;`
 
@@ -586,7 +586,7 @@ No own members; includes/inheritance still apply.
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUExternalTexture` | `Gpu.Handle.ExternalTexture` | `browser/gpu/CoverageDescriptors` |
+| `GPUExternalTexture` | `Gpu.Handle.ExternalTexture` | `browser/gpu/ExternalTextureFrame` |
 
 ## includes `GPUExternalTexture includes GPUObjectBase;`
 
@@ -603,7 +603,7 @@ PredefinedColorSpace colorSpace = "srgb";
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUExternalTextureDescriptor` | `Gpu.Types.ExternalTextureDescriptor` | `browser/gpu/CoverageDescriptors` |
+| `GPUExternalTextureDescriptor` | `Gpu.Types.ExternalTextureDescriptor` | `browser/gpu/ExternalTextureFrame` |
 
 ## interface `GPUSampler`
 
@@ -676,7 +676,7 @@ No own members; includes/inheritance still apply.
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUBindGroupLayout` | `Gpu.Handle.BindGroupLayout` | `browser/gpu/CoverageDescriptors` |
+| `GPUBindGroupLayout` | `Gpu.Handle.BindGroupLayout` | `browser/gpu/FrameDependencies` |
 
 ## includes `GPUBindGroupLayout includes GPUObjectBase;`
 
@@ -946,7 +946,7 @@ required USVString entryPoint;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUCompilationMessageType` | `Gpu.Types.CompilationMessageType` | `browser/gpu/AdapterAndDevice` |
+| `GPUCompilationMessageType` | `Gpu.Types.CompilationMessageType` | `browser/gpu/CoverageDescriptors` |
 
 ## interface `GPUCompilationMessage`
 
@@ -990,8 +990,8 @@ readonly attribute GPUPipelineErrorReason reason;
 | IDL | Declarations | Fixtures |
 |---|---|---|
 | `GPUPipelineError` | `Gpu.Error.PipelineFailure` | `browser/gpu/CoverageDescriptors` |
-| `constructor(message, options)` | `Gpu.Error.PipelineValidation` | `browser/gpu/AdapterAndDevice` |
-| `reason` | `Gpu.Error.PipelineValidation`, `Gpu.Error.PipelineInternal` | `browser/gpu/AdapterAndDevice` |
+| `constructor(message, options)` | `Gpu.Error.PipelineValidation` | `browser/gpu/CoverageDescriptors` |
+| `reason` | `Gpu.Error.PipelineValidation`, `Gpu.Error.PipelineInternal` | `browser/gpu/RenderPipelines` |
 
 ## dictionary `GPUPipelineErrorInit`
 
@@ -1027,7 +1027,7 @@ required (GPUPipelineLayout or GPUAutoLayoutMode) layout;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUPipelineDescriptorBase` | `Gpu.Types.PipelineDescriptorBase` | `browser/gpu/Batches` |
+| `GPUPipelineDescriptorBase` | `Gpu.Types.PipelineDescriptorBase` | `browser/gpu/CoverageDescriptors` |
 
 ## interface mixin `GPUPipelineBase`
 
@@ -1193,7 +1193,7 @@ GPUColorWriteFlags writeMask = 0xF;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUColorTargetState` | `Gpu.Types.ColorTargetState` | `browser/gpu/Batches` |
+| `GPUColorTargetState` | `Gpu.Types.ColorTargetState` | `browser/gpu/CoverageDescriptors` |
 
 ## dictionary `GPUBlendState`
 
@@ -1275,7 +1275,7 @@ float depthBiasClamp = 0;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUDepthStencilState` | `Gpu.Types.DepthStencilState` | `browser/gpu/Batches` |
+| `GPUDepthStencilState` | `Gpu.Types.DepthStencilState` | `browser/gpu/RenderPipelines` |
 
 ## dictionary `GPUStencilFaceState`
 
@@ -1740,7 +1740,7 @@ GPUSize32 sampleCount = 1;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPURenderPassLayout` | `Gpu.Types.RenderPassLayout` | `browser/gpu/Batches` |
+| `GPURenderPassLayout` | `Gpu.Types.RenderPassLayout` | `browser/gpu/Conversions` |
 
 ## interface mixin `GPURenderCommandsMixin`
 
@@ -1762,7 +1762,7 @@ No own members; includes/inheritance still apply.
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPURenderBundle` | `Gpu.Handle.RenderBundle` | `browser/gpu/Batches` |
+| `GPURenderBundle` | `Gpu.Handle.RenderBundle` | `browser/gpu/CoverageErrors` |
 
 ## includes `GPURenderBundle includes GPUObjectBase;`
 
@@ -1858,7 +1858,7 @@ undefined copyExternalImageToTexture( GPUCopyExternalImageSourceInfo source, GPU
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUQueue` | `Gpu.Handle.Queue` | `browser/gpu/CoverageDescriptors` |
+| `GPUQueue` | `Gpu.Handle.Queue` | `browser/gpu/FrameOtherQueue` |
 | `submit(commandBuffers)` | `Gpu.Queue.submit` | `browser/gpu/ComputeCoverage` |
 | `onSubmittedWorkDone()` | `Gpu.Queue.onSubmittedWorkDone` | `browser/gpu/DiagnosticsExemptions` |
 | `writeBuffer(buffer, bufferOffset, data, dataOffset, size)` | `Gpu.Queue.writeBuffer` | `browser/gpu/BufferRefusals` |
@@ -1923,7 +1923,7 @@ GPUTexture getCurrentTexture();
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUCanvasContext` | `Gpu.Handle.Surface` | `browser/gpu/Batches` |
+| `GPUCanvasContext` | `Gpu.Handle.Surface` | `browser/gpu/SurfaceConfiguration` |
 | `canvas` | `Gpu.Surface.canvas` | `browser/gpu/SurfaceConfiguration` |
 | `configure(configuration)` | `Gpu.Surface.configure` | `browser/gpu/CanvasPage` |
 | `unconfigure()` | `Gpu.Surface.unconfigure` | `browser/gpu/DiagnosticsExemptions` |
@@ -1989,8 +1989,8 @@ readonly attribute DOMString message;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUDeviceLostInfo` | `Gpu.Error.DeviceLoss` | `browser/gpu/AdapterAndDevice` |
-| `reason` | `Gpu.Error.UnknownLoss`, `Gpu.Error.Destroyed` | `browser/gpu/AdapterAndDevice` |
+| `GPUDeviceLostInfo` | `Gpu.Error.DeviceLoss` | `browser/gpu/CoverageErrors` |
+| `reason` | `Gpu.Error.UnknownLoss`, `Gpu.Error.Destroyed` | `browser/gpu/CoverageErrors`, `browser/gpu/DeviceLoss` |
 | `message` | `Gpu.Device.awaitLost` | `browser/gpu/CancelledRequests` |
 
 ## partial interface `GPUDevice`
@@ -2011,7 +2011,7 @@ readonly attribute DOMString message;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUError` | `Gpu.Error.GpuError` | `browser/gpu/AdapterAndDevice` |
+| `GPUError` | `Gpu.Error.GpuError` | `browser/gpu/CoverageErrors` |
 | `message` | `Gpu.Diagnostics.popErrorScope` | `browser/gpu/DiagnosticsCancelled` |
 
 ## interface `GPUValidationError` `: GPUError`
@@ -2022,8 +2022,8 @@ constructor(DOMString message);
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUValidationError` | `Gpu.Error.ValidationError` | `browser/gpu/AdapterAndDevice` |
-| `constructor(message)` | `Gpu.Error.ValidationError` | `browser/gpu/AdapterAndDevice` |
+| `GPUValidationError` | `Gpu.Error.ValidationError` | `browser/gpu/CoverageErrors`, `browser/gpu/DeviceEventsUncaptured` |
+| `constructor(message)` | `Gpu.Error.ValidationError` | `browser/gpu/CoverageErrors` |
 
 ## interface `GPUOutOfMemoryError` `: GPUError`
 
@@ -2033,8 +2033,8 @@ constructor(DOMString message);
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUOutOfMemoryError` | `Gpu.Error.OutOfMemoryError` | `browser/gpu/AdapterAndDevice` |
-| `constructor(message)` | `Gpu.Error.OutOfMemoryError` | `browser/gpu/AdapterAndDevice` |
+| `GPUOutOfMemoryError` | `Gpu.Error.OutOfMemoryError` | `browser/gpu/CoverageErrors` |
+| `constructor(message)` | `Gpu.Error.OutOfMemoryError` | `browser/gpu/CoverageErrors` |
 
 ## interface `GPUInternalError` `: GPUError`
 
@@ -2044,8 +2044,8 @@ constructor(DOMString message);
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUInternalError` | `Gpu.Error.InternalError` | `browser/gpu/AdapterAndDevice` |
-| `constructor(message)` | `Gpu.Error.InternalError` | `browser/gpu/AdapterAndDevice` |
+| `GPUInternalError` | `Gpu.Error.InternalError` | `browser/gpu/CoverageErrors` |
+| `constructor(message)` | `Gpu.Error.InternalError` | `browser/gpu/CoverageErrors` |
 
 ## enum `GPUErrorFilter`
 
@@ -2076,8 +2076,8 @@ constructor( DOMString type, GPUUncapturedErrorEventInit gpuUncapturedErrorEvent
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUUncapturedErrorEvent` | `Gpu.Error.Uncaptured` | `browser/gpu/AdapterAndDevice` |
-| `constructor(type, gpuUncapturedErrorEventInitDict)` | `Gpu.Error.Uncaptured` | `browser/gpu/AdapterAndDevice` |
+| `GPUUncapturedErrorEvent` | `Gpu.Error.Uncaptured` | `browser/gpu/DeviceEventsUncaptured` |
+| `constructor(type, gpuUncapturedErrorEventInitDict)` | `Gpu.Error.Uncaptured` | `browser/gpu/DeviceEventsUncaptured` |
 | `error` | `Gpu.Device.eachEvent` | `browser/gpu/DeviceEvents` |
 
 ## dictionary `GPUUncapturedErrorEventInit` `: EventInit`
@@ -2088,7 +2088,7 @@ required GPUError error;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUUncapturedErrorEventInit` | `Gpu.Error.Uncaptured` | `browser/gpu/AdapterAndDevice` |
+| `GPUUncapturedErrorEventInit` | `Gpu.Error.Uncaptured` | `browser/gpu/DeviceEventsUncaptured` |
 
 ## partial interface `GPUDevice`
 
@@ -2108,7 +2108,7 @@ typedef [EnforceRange] unsigned long GPUBufferDynamicOffset;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUBufferDynamicOffset` | `Gpu.Scalar.U32` | `browser/gpu/Batches` |
+| `GPUBufferDynamicOffset` | `Gpu.Scalar.U32` | `browser/gpu/Conversions` |
 
 ## typedef `GPUStencilValue`
 
@@ -2118,7 +2118,7 @@ typedef [EnforceRange] unsigned long GPUStencilValue;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUStencilValue` | `Gpu.Scalar.U32` | `browser/gpu/Batches` |
+| `GPUStencilValue` | `Gpu.Scalar.U32` | `browser/gpu/Conversions` |
 
 ## typedef `GPUSampleMask`
 
@@ -2128,7 +2128,7 @@ typedef [EnforceRange] unsigned long GPUSampleMask;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUSampleMask` | `Gpu.Scalar.U32` | `browser/gpu/Batches` |
+| `GPUSampleMask` | `Gpu.Scalar.U32` | `browser/gpu/Conversions` |
 
 ## typedef `GPUDepthBias`
 
@@ -2158,7 +2158,7 @@ typedef [EnforceRange] unsigned long GPUIntegerCoordinate;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUIntegerCoordinate` | `Gpu.Scalar.U32` | `browser/gpu/Batches` |
+| `GPUIntegerCoordinate` | `Gpu.Scalar.U32` | `browser/gpu/Conversions` |
 
 ## typedef `GPUIndex32`
 
@@ -2168,7 +2168,7 @@ typedef [EnforceRange] unsigned long GPUIndex32;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUIndex32` | `Gpu.Scalar.U32` | `browser/gpu/Batches` |
+| `GPUIndex32` | `Gpu.Scalar.U32` | `browser/gpu/Conversions` |
 
 ## typedef `GPUSize32`
 
@@ -2178,7 +2178,7 @@ typedef [EnforceRange] unsigned long GPUSize32;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUSize32` | `Gpu.Scalar.U32` | `browser/gpu/Batches` |
+| `GPUSize32` | `Gpu.Scalar.U32` | `browser/gpu/Conversions` |
 
 ## typedef `GPUSignedOffset32`
 
@@ -2251,7 +2251,7 @@ typedef (sequence<double> or GPUColorDict) GPUColor;
 
 | IDL | Declarations | Fixtures |
 |---|---|---|
-| `GPUColor` | `Gpu.Types.Color` | `browser/gpu/Batches` |
+| `GPUColor` | `Gpu.Types.Color` | `browser/gpu/RenderCoverage` |
 
 ## dictionary `GPUOrigin2DDict`
 
