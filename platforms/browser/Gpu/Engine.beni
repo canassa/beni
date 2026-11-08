@@ -545,7 +545,10 @@ admit device operation =
     r = recordOf device
     l = Js.get r "loss"
     if not (Js.isNull l) then
-        Err (Error.DeviceLost { loss = Js.to l, operation = { operation = operation, observed = [] } })
+        Err
+            (Error.DeviceLost
+                { loss = Js.to l, operation = { operation = operation, observed = [] } }
+            )
     else if Js.to (Js.get r "leased") then
         Err (Error.InvalidInput (Error.SessionState Error.DeviceLeased))
     else
@@ -639,7 +642,12 @@ checked device operation labels call =
                 case observedLoss of
                     Just l →
                         mark outcome "rejected"
-                        Err (Error.DeviceLost { loss = l, operation = { operation = operation, observed = observed } })
+                        Err
+                            (Error.DeviceLost
+                                { loss = l
+                                , operation = { operation = operation, observed = observed }
+                                }
+                            )
 
                     Nothing →
                         combined outcome observed
@@ -777,7 +785,8 @@ scoped r scopes operation labels i error =
             r
             scopes
             (Js.construct (Js.global "Error")
-                [ Js.from ("webgpu: an error scope reported what its filter does not: " ++ operation)
+                [ Js.from
+                    ("webgpu: an error scope reported what its filter does not: " ++ operation)
                 , Js.object [ ( "cause", error ) ]
                 ]
             )
@@ -818,7 +827,11 @@ counted r scopes =
     settled = int (Js.get scopes "settled") + 1
     Js.set scopes "settled" (Js.from settled)
     resume = Js.get scopes "resume"
-    if settled == int (Js.get scopes "owed") && not (Js.isNull resume) && not (Js.to (Js.get scopes "done")) then
+    if
+        settled == int (Js.get scopes "owed")
+            && not (Js.isNull resume)
+            && not (Js.to (Js.get scopes "done"))
+    then
         Js.set scopes "done" (Js.from True)
         Task.resume (Js.to resume) Scoped
     else
@@ -838,20 +851,18 @@ waitScopes r scopes =
     else
         Task.onExit
             (λ⊤ →
-                waited =
-                    Task.callback λresume →
-                        Js.set scopes "resume" (Js.from resume)
+                waited = Task.callback λresume →
+                    Js.set scopes "resume" (Js.from resume)
 
-                        onLoss =
-                            Js.from λlatched →
-                                if Js.to (Js.get scopes "done") then
-                                    ⊤
-                                else
-                                    Js.set scopes "done" (Js.from True)
-                                    Task.resume resume (LostWhile latched)
-                        Js.set scopes "onLoss" onLoss
-                        Js.call (Js.get r "ops") "push" [ onLoss ] ▷ ignore
-                        λ⊤ → ⊤
+                    onLoss = Js.from λlatched →
+                        if Js.to (Js.get scopes "done") then
+                            ⊤
+                        else
+                            Js.set scopes "done" (Js.from True)
+                            Task.resume resume (LostWhile latched)
+                    Js.set scopes "onLoss" onLoss
+                    Js.call (Js.get r "ops") "push" [ onLoss ] ▷ ignore
+                    λ⊤ → ⊤
                 Js.set scopes "taken" (Js.from True)
                 waited
             )
