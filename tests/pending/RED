@@ -236,14 +236,6 @@ tests/pending/ownership/RecordVariantMove.beni exit=0 browser-inline.ownership-d
 # R-4.10.8.
 tests/pending/ownership/SchemaIssuesExclusive.beni exit=0 ownership-differs
 
-# CK-294 (#188): a callee that only pushes onto the list its callback
-# returns is refused `need` when the items are shared; `need` has no path;
-# R-5.2.8.
-
-# CK-295 (#868): the list twin of RecordContentsAnswered; `freshAcross`
-# loses the condition of a function parameter answered through a lambda;
-# R-5.2.9.
-
 # CK-296 (#955): a fold whose accumulator has an unnamed cyclic type never
 # settles (`limit … fixpoint, unsettled after 32`); blocks O4a; R-5.3.7.
 tests/pending/ownership/CyclicFold.beni exit=0 ownership-differs
@@ -331,15 +323,6 @@ scenario/CK-316 exit=1 codes=ownership_limit×1
 
 # CK-319 (#2030): List.copy of the answer of a returned closure still reads as
 # holding its source.
-
-# CK-320 (#2031): an element edit of a list that stores a callback's answers is
-# refused over a fresh lambda.
-
-# CK-321 (#2032): a fold that pushes its elements into its accumulator is
-# refused `disjoint`.
-
-# CK-322 (#1978): the answers of a many label are one per invocation; an
-# element edit of a map's fresh answers is refused `disjoint`.
 
 # CK-323 (#1238): v1 summarises the 2^depth paths of an annotated doubling
 # record, `w{i} = { a = w{i-1}, b = w{i-1} }`, and `check` grows ×4 a level:
