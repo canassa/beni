@@ -7,6 +7,21 @@
 // whichever host is there.
 //
 // The fake is not WebGPU: it validates nothing a fixture does not ask it to.
+// Where it differs from Chrome's, on purpose:
+// - every promise settles on a microtask, never after GPU work:
+//   `onSubmittedWorkDone` resolves at once, a map one microtask after it is
+//   asked for (or, under "maps-held", when `releaseMaps` says);
+// - a device's loss changes no outcome of its own: a pending map is not
+//   rejected by a loss, and work submitted on a lost device still "runs";
+// - it runs no shader and keeps no texels, so a dispatch writes nothing
+//   and a texture reads back as zeros (those pages have a
+//   `.webgpu-expected` for Chrome's answer);
+// - its validation is the handful of rules the fixtures reach (buffer
+//   usages and sizes, map ranges, writeBuffer bounds, sampler clamps), and
+//   its error messages are its own;
+// - its error classes (`GPUValidationError` and the rest) are plain
+//   functions installed on the page, and `SharedArrayBuffer` exists where
+//   a Chrome page without cross-origin isolation has none.
 
 const native = () => globalThis.__beniWebGpuNative === true;
 
@@ -59,7 +74,11 @@ const fakeDevice = (adapter, descriptor) => {
     label: descriptor?.label ?? "",
     lost: new globalThis.Promise((done) => (resolveLost = done)),
   };
+  // Every buffer the device made: `destroy` unmaps each, as the
+  // specification's device destruction does.
+  const buffers = [];
   device.destroy = () => {
+    for (const b of buffers) b.unmap();
     resolveLost(lostInfo("destroyed", "the device was destroyed"));
   };
   // The error scopes: a stack of `{ filter, error }`, each keeping the first
@@ -111,6 +130,7 @@ const fakeDevice = (adapter, descriptor) => {
     };
     globalThis.Object.defineProperty(buffer, "mapState", { get: () => s.mapState });
     fakeBuffers.set(buffer, s);
+    buffers.push(buffer);
     if (atCreation) {
       s.mapState = "mapped";
       s.mode = MAP_WRITE;
@@ -136,7 +156,7 @@ const fakeDevice = (adapter, descriptor) => {
       return new globalThis.Promise((resolve, reject) => {
         const pending = { reject };
         s.pending = pending;
-        globalThis.queueMicrotask(() => {
+        const settle = () => {
           if (s.pending !== pending) return;
           s.pending = null;
           s.mapState = "mapped";
@@ -144,7 +164,11 @@ const fakeDevice = (adapter, descriptor) => {
           s.offset = offset;
           s.length = length;
           resolve(undefined);
-        });
+        };
+        // Under "maps-held" the map stays pending until `releaseMaps`, so an
+        // unmap or a destroy meanwhile rejects it with `AbortError`.
+        if (holdMaps) heldFakeMaps.push(settle);
+        else globalThis.queueMicrotask(settle);
       });
     };
     buffer.getMappedRange = (offset = 0, rangeSize = undefined) => {
@@ -380,6 +404,8 @@ let createThrows = false;
 let bufferFaults = {};
 let holdMaps = false;
 const heldMaps = [];
+// The fake host's own pending maps, held under "maps-held".
+const heldFakeMaps = [];
 const held = [];
 const callCounts = {};
 
@@ -423,6 +449,38 @@ const faults = {
   "immediates-rejected": () => {
     bufferFaults.immediates = () => {
       throw new globalThis.DOMException("injected immediate refusal", "OperationError");
+    };
+  },
+  // Spoofed failures (ledger §1, §7): a plain object named like the error
+  // each buffer classifier documents is not that error, and an
+  // unexpected class at mapped creation is not the allocation failure.
+  "map-spoofed-abort": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "AbortError", message: "a plain object, not a DOMException" });
+  },
+  "map-spoofed-operation": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "OperationError", message: "a plain object, not a DOMException" });
+  },
+  "map-spoofed-range": () => {
+    bufferFaults.map = () => globalThis.Promise.reject({ name: "RangeError", message: "a plain object, not a RangeError" });
+  },
+  "range-spoofed": () => {
+    bufferFaults.range = () => {
+      throw { name: "OperationError", message: "a plain object, not a DOMException" };
+    };
+  },
+  "write-spoofed": () => {
+    bufferFaults.write = () => {
+      throw { name: "OperationError", message: "a plain object, not a DOMException" };
+    };
+  },
+  "buffer-allocation-spoofed": () => {
+    bufferFaults.createMapped = () => {
+      throw { name: "RangeError", message: "a plain object, not a RangeError" };
+    };
+  },
+  "buffer-allocation-unlisted": () => {
+    bufferFaults.createMapped = () => {
+      throw new globalThis.TypeError("injected unlisted creation failure");
     };
   },
   // Buffers and the queue (docs/design/webgpu.md §7, §8.3; ledger §3–§5).
@@ -788,6 +846,7 @@ export const releasePop = (filter) => {
 // Every held map, in the order they were asked, each settled as its
 // host map did.
 export const releaseMaps = (_unit) => {
+  for (const settle of heldFakeMaps.splice(0)) settle();
   for (const entry of heldMaps.splice(0)) entry.outcome.then(entry.resolve, entry.reject);
   return null;
 };

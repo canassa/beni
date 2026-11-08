@@ -60,8 +60,7 @@ pub type LimitProblem
     | NotPowerOfTwo
 
 
---| A failed GPU operation. `AllocationFailed` is a copy out of mapped
---| memory (`Gpu.MappedRange.readBytes`) for which the host had no memory.
+--| A failed GPU operation.
 pub type Error
     = InvalidInput InputError
     | UnsupportedCapability Capability
@@ -77,7 +76,6 @@ pub type Error
     | FormatFeatureRejected FormatFailure
     | HostOperationRejected OperationFailure
     | RelatedFailures FailureSet
-    | AllocationFailed { bytes : Int }
 
 
 --| An input refused before any native call: each names the descriptor

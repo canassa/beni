@@ -1,0 +1,22 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §4, §7):
+-- creating a buffer mapped at creation throws a TypeError, which the ledger does not list for that call. The page stops.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (CopyDst, CopySrc, MapRead)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuKit exposing (buffer, must, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "buffer-allocation-unlisted" λd →
+    made = Gpu.Device.createBuffer d { buffer 16 [ CopySrc ] | mappedAtCreation = Types.Value True }
+    [ "buffer: " ++ GpuShow.checked made λ_ → "buffer" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

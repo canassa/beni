@@ -436,6 +436,7 @@ adoptDevice device ch =
             , ( "generation", Js.from 0 )
             , ( "section", Js.from False )
             , ( "ops", Js.array [] )
+            , ( "mapped", Js.construct (Js.global "Set") [] )
             ]
     _ = Js.call table "set" [ device, r ]
     hold ch
@@ -496,8 +497,34 @@ destroy device =
         ⊤
     else
         Js.set r "destroyed" (Js.from True)
+        expireMappings r
         if Js.isNull (Js.get r "loss") then latch r { reason = Destroyed, message = "" }
         Js.to (Js.call device "destroy" [])
+
+
+-- Destroying a device unmaps every buffer of it (the specification's
+-- device destruction): each mapped or pending buffer's mapping expires
+-- first, for every alias, as `unmap` makes it expire.
+expireMappings : V → ⊤
+expireMappings r =
+    buffers = Js.call (Js.global "Array") "from" [ Js.get r "mapped" ]
+    Js.call (Js.get r "mapped") "clear" [] ▷ ignore
+    Js.each buffers λbuffer →
+        b = recordOf buffer
+        Js.set b "generation" (Js.from (int (Js.get b "generation") + 1))
+        Js.set b "state" (Js.from "unmapped")
+        Js.set b "mapping" Js.null
+
+
+--| Track a buffer of the device of record `r` while it is mapped or its map
+--| is pending (`True`), or no longer (`False`): what `destroy` expires.
+pub trackMapped : V, V, Bool → ⊤
+trackMapped r buffer mapped =
+    set = Js.get r "mapped"
+    if mapped then
+        Js.call set "add" [ buffer ] ▷ ignore
+    else
+        Js.call set "delete" [ buffer ] ▷ ignore
 
 
 --| Whether `destroy` was called on the device.
@@ -1208,62 +1235,68 @@ arrived c outcome =
     Js.each waiters λw → Js.to (Js.apply w [ Js.from outcome ])
 
 
---| Wait for a pending outcome. One that arrived already is answered at
---| once; otherwise a loss the device latched first, or latches while this
---| waits, wins: `DeviceLost`. An unexpected outcome is a defect. A
+--| Wait for a pending outcome. A loss the device has latched wins, before
+--| or while this waits: `DeviceLost`, even for work already done (§8.3);
+--| otherwise an outcome that arrived already is answered at once. An unexpected outcome is a defect. A
 --| cancelled wait leaves the outcome pending, still drained.
 pub awaitPending : V → Result Error.Error ⊤
 awaitPending c =
     r = Js.get c "device"
     operation = Js.to (Js.get c "operation")
     state = Js.get c "state"
-    if Js.same state (Js.from "done") then
-        Ok ⊤
-    else if Js.same state (Js.from "failed") then
+    l = Js.get r "loss"
+    if Js.same state (Js.from "failed") then
         Js.throw (contextual (deviceContext r operation) (Js.get c "error"))
+    else if not (Js.isNull l) then
+        -- Observed loss wins (§8.3), whether or not the work was done.
+        Err
+            (Error.DeviceLost
+                { loss = Js.to l, operation = { operation = operation, observed = [] } }
+            )
+    else if Js.same state (Js.from "done") then
+        Ok ⊤
     else
-        l = Js.get r "loss"
-        if not (Js.isNull l) then
+        waitPending c r operation
+
+
+-- Wait for the outcome, or for the device's loss.
+waitPending : V, V, String → Result Error.Error ⊤
+waitPending c r operation =
+    fired = Js.ref False
+
+    got = Task.callback λresume →
+        onOutcome = Js.from λo →
+            if Js.read fired then
+                ⊤
+            else
+                Js.write fired True
+                Task.resume resume (Ok o)
+        onLoss = Js.from λlatched →
+            if Js.read fired then
+                ⊤
+            else
+                Js.write fired True
+                Task.resume resume (Err latched)
+        Js.call (Js.get c "waiters") "push" [ onOutcome ] ▷ ignore
+        Js.call (Js.get r "ops") "push" [ onLoss ] ▷ ignore
+        λ⊤ →
+            Js.write fired True
+            without (Js.get c "waiters") onOutcome
+            without (Js.get r "ops") onLoss
+    case got of
+        Ok outcome →
+            case outcome of
+                Expected _ →
+                    Ok ⊤
+
+                Unexpected error →
+                    Js.throw (contextual (deviceContext r operation) error)
+
+        Err latched →
             Err
                 (Error.DeviceLost
-                    { loss = Js.to l, operation = { operation = operation, observed = [] } }
+                    { loss = latched, operation = { operation = operation, observed = [] } }
                 )
-        else
-            fired = Js.ref False
-
-            got = Task.callback λresume →
-                onOutcome = Js.from λo →
-                    if Js.read fired then
-                        ⊤
-                    else
-                        Js.write fired True
-                        Task.resume resume (Ok o)
-                onLoss = Js.from λlatched →
-                    if Js.read fired then
-                        ⊤
-                    else
-                        Js.write fired True
-                        Task.resume resume (Err latched)
-                Js.call (Js.get c "waiters") "push" [ onOutcome ] ▷ ignore
-                Js.call (Js.get r "ops") "push" [ onLoss ] ▷ ignore
-                λ⊤ →
-                    Js.write fired True
-                    without (Js.get c "waiters") onOutcome
-                    without (Js.get r "ops") onLoss
-            case got of
-                Ok outcome →
-                    case outcome of
-                        Expected _ →
-                            Ok ⊤
-
-                        Unexpected error →
-                            Js.throw (contextual (deviceContext r operation) error)
-
-                Err latched →
-                    Err
-                        (Error.DeviceLost
-                            { loss = latched, operation = { operation = operation, observed = [] } }
-                        )
 
 
 -- Drop `item` from the array `list`, if it is there.
