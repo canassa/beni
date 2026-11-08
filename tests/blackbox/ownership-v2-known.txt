@@ -6823,3 +6823,4 @@ tests/corpus/run/SanitiserFamilyDepthRunApart.beni SanitiserFamilyDepthRunApart 
 tests/corpus/run/SanitiserFamilyDepthRunApart.beni SanitiserFamilyDepthRunApart 51:34 #0 :: SanitiserFamilyDepthRunApart.rRec w :: accepted :: absent  a family's one place graph (#2214): the demand's path text
 tests/corpus/ownership/FamilyFunctionRun.beni [node+everywhere] FamilyFunctionRun 27:33 #0 :: List.push v :: pending :: accepted  a family's one place graph (#2214): the demand's path text
 tests/corpus/ownership/FamilyFunctionRun.beni [node+everywhere] FamilyFunctionRun 27:9 #0 :: FamilyFunctionRun.run <lambda> :: absent :: rejected  a family's one place graph (ownership-v2.md §2.1, A family, #2214): v2 names the write at the caller
+tests/corpus/browser/gpu/CanvasPage Main 126:5 #0 :: entry <update> model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

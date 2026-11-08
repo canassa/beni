@@ -80,3 +80,23 @@ releaseLease device = Engine.releaseLease (Js.from device)
 --| reported and nothing of it is pending.
 pub openChannels : ⊤ → Int
 openChannels ⊤ = Engine.openChannelCount ⊤
+
+
+--| Whether two surfaces are one canvas context: a page that renders again
+--| keeps its canvas node, and so its surface.
+pub sameSurface : Handle.Surface, Handle.Surface → Bool
+sameSurface a b = Js.same (Js.from a) (Js.from b)
+
+
+-- The surface `remember` was given last.
+remembered : Js.Ref (Maybe Js.Value)
+remembered = Js.ref Nothing
+
+
+--| Remember `surface`, and say whether it is the context remembered
+--| before, `Nothing` the first time.
+pub remember : Handle.Surface → Maybe Bool
+remember surface =
+    before = Js.read remembered
+    Js.write remembered (Just (Js.from surface))
+    Maybe.map before λb → Js.same b (Js.from surface)

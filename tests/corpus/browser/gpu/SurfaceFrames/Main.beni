@@ -1,0 +1,290 @@
+-- Canvas surfaces and frames (docs/design/webgpu.md §8, §8.2, §8.3; ledger
+-- §6). A frame clears the surface's current texture to a color and copies
+-- it into a mappable buffer; row 0 is read back. The expected pixels are
+-- the clear colors, written out by hand: green `0 255 0 255`, red
+-- `255 0 0 255`.
+--
+-- draw: one frame, one receipt, green. receipts: an empty frame has no
+-- receipt, a frame with two submits has two, and both complete. expiry:
+-- the texture and the view a frame returns expire with it, in the same
+-- task (`ResourceExpired`). resize: a texture used after its canvas
+-- changed size, inside the frame, is `ResourceExpired`, and the next frame
+-- has a texture of the new size. reconfigure: the same after `unconfigure`
+-- inside the frame; a frame of an unconfigured surface is
+-- `CanvasUnconfigured`, and one after `configure` again draws. offscreen: a
+-- main-thread `OffscreenCanvas` draws red. checkpoint: a microtask queued
+-- at the start of the callback has not run when the frame has submitted —
+-- no microtask, so no other fiber, ran between acquiring the texture and
+-- submitting. The frames that submit nothing after acquiring are
+-- `SurfaceConfiguration`'s.
+--
+-- The gates' fake host keeps no texels, so its transcript shows zeros.
+-- `test-webgpu` skips the page: its Chrome rejects the receipt of a submit
+-- after a canvas texture (#2267, `_expected.webgpu-skip`).
+import Browser.Canvas as Canvas
+import Gpu.Batch as Batch
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst, MapRead)
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Device, Buffer, CommandEncoder, Frame, Surface, Texture, TextureView)
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Submission
+import Gpu.Surface as Surface
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+color : Float, Float, Float → Types.Color
+color r g b =
+    f = λx → must (Scalar.finiteF64 x)
+    Types.ColorFields (Types.colorDict (f r) (f g) (f b) (f 1.0))
+
+
+green : Types.Color
+green = color 0.0 1.0 0.0
+
+
+red : Types.Color
+red = color 1.0 0.0 0.0
+
+
+configuration : Device → Types.CanvasConfiguration
+configuration d =
+    { (Types.canvasConfiguration d Types.Rgba8unorm)
+        | usage = Types.Value (Flags.texture [ Flags.RenderAttachment, Flags.TextureCopySrc ])
+    }
+
+
+-- A 4×4 canvas element and its surface, configured on `d`.
+configured : Device → Canvas.Canvas × Surface
+configured d =
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+    must (Surface.configure surface (configuration d))
+    ( canvas, surface )
+
+
+readback : Device → Buffer
+readback d = must (Gpu.Device.createBuffer d (buffer 2048 [ MapRead, CopyDst ]))
+
+
+-- Clear the current texture to `fill`, copy it into `out`, submit; give
+-- the texture.
+paint : Buffer, Types.Color, Frame → Result InputError Texture
+paint out fill frame =
+    t = Frame.getCurrentTexture frame?
+    v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
+    encoded = Frame.encode frame Types.commandEncoderDescriptor (clearAndCopy t v out fill _)?
+    _ = Frame.submitCommands frame [ encoded.commands ]?
+    Ok t
+
+
+clearAndCopy : Texture, TextureView, Buffer, Types.Color, CommandEncoder → Result InputError ⊤
+clearAndCopy t v out fill enc =
+    attachment =
+        { (Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store)
+            | clearValue = Types.Value fill
+        }
+    RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) (λ_ → Ok ⊤)?
+    CommandEncoder.copyTextureToBuffer
+        enc
+        (Types.texelCopyTextureInfo t)
+        { (Types.texelCopyBufferInfo out) | bytesPerRow = Types.Value (u32 256) }
+        (Types.Extent3DFields
+            { width = u32 (Gpu.Texture.width t)
+            , height = Types.Value (u32 (Gpu.Texture.height t))
+            , depthOrArrayLayers = Types.Default
+            }
+        )
+
+
+pixel : Int → String
+pixel w =
+    String.join
+        [ String.fromInt (Int.rem w 256)
+        , String.fromInt (Int.rem (w // 256) 256)
+        , String.fromInt (Int.rem (w // 65536) 256)
+        , String.fromInt (w // 16777216)
+        ]
+        " "
+
+
+row : Buffer → String
+row out = GpuShow.checked (GpuKit.readU32s out 4) λws → String.join (List.map ws pixel) ", "
+
+
+receipts : Result Error.Error { value : a, submissions : List Gpu.Handle.Submission } → String
+receipts result = GpuShow.checked result λr →
+    String.fromInt (List.length r.submissions) ++ " receipts"
+
+
+-- Wait for every receipt of a frame.
+waited : Result Error.Error { value : a, submissions : List Gpu.Handle.Submission } → String
+waited result =
+    case result of
+        Ok r →
+            GpuShow.checked (GpuKit.collect (List.map r.submissions Gpu.Submission.done)) λ_ →
+                "done"
+
+        Err problem →
+            GpuShow.error problem
+
+
+draw : ⊤ → List String
+draw ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    out = readback d
+    result = Frame.submit surface "draw" (paint out green _)
+    [ "frame: " ++ receipts result, "wait: " ++ waited result, "row 0: " ++ row out ]
+
+
+twice : Buffer, Frame → Result InputError ⊤
+twice out frame =
+    _ = paint out green frame?
+    _ = paint out red frame?
+    Ok ⊤
+
+
+manyReceipts : ⊤ → List String
+manyReceipts ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    out = readback d
+    empty = Frame.submit surface "empty" λ_ → Ok ⊤
+    two = Frame.submit surface "two" (twice out _)
+    [ "empty: " ++ receipts empty, "two: " ++ receipts two, "wait: " ++ waited two ]
+
+
+-- Paint, and give the texture and a view of it.
+keep : Buffer, Frame → Result InputError (Texture × TextureView)
+keep out frame =
+    t = paint out green frame?
+    v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
+    Ok ( t, v )
+
+
+expiry : ⊤ → List String
+expiry ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    out = readback d
+    case Frame.submit surface "keep" (keep out _) of
+        Err problem →
+            [ "frame: " ++ GpuShow.error problem ]
+
+        Ok kept →
+            ( t, v ) = kept.value
+            later = Gpu.Texture.createView t Types.textureViewDescriptor
+            attachment =
+                Types.renderPassColorAttachment
+                    (Types.AttachmentTextureView v)
+                    Types.Clear
+                    Types.Store
+            pass = Encode.run d Types.commandEncoderDescriptor λenc →
+                RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) λ_ → Ok ⊤
+            [ "texture after its frame: " ++ GpuShow.checked later λ_ → "view"
+            , "view after its frame: " ++ GpuShow.checked pass λ_ → "pass"
+            ]
+
+
+-- Acquire, then `change`, then use the texture.
+changed : (⊤ → ⊤), Frame → Result InputError ⊤
+changed change frame =
+    t = Frame.getCurrentTexture frame?
+    change ⊤
+    _ = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
+    Ok ⊤
+
+
+resize : ⊤ → List String
+resize ⊤ = GpuKit.with "none" λd →
+    ( canvas, surface ) = configured d
+    out = readback d
+    grown =
+        Frame.submit
+            surface
+            "resize"
+            (changed (λ⊤ → Result.withDefault (Canvas.resize canvas 8 8) ⊤) _)
+    next = Frame.submit surface "next" (paint out green _)
+    [ "resized in the frame: " ++ receipts grown
+    , "next frame: "
+        ++ GpuShow.checked next λr → "width " ++ String.fromInt (Gpu.Texture.width r.value)
+    ]
+
+
+reconfigure : ⊤ → List String
+reconfigure ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    out = readback d
+    dropped = Frame.submit surface "unconfigure" (changed (λ⊤ → Surface.unconfigure surface) _)
+    unconfigured = Frame.submit surface "unconfigured" λ_ → Ok ⊤
+    again = Surface.configure surface (configuration d)
+    after = Frame.submit surface "again" (paint out green _)
+    [ "unconfigured in the frame: " ++ receipts dropped
+    , "frame unconfigured: " ++ receipts unconfigured
+    , "configure again: " ++ GpuShow.checked again λ_ → "done"
+    , "frame after: " ++ receipts after
+    ]
+
+
+canvasKind : Surface → String
+canvasKind surface =
+    case Surface.canvas surface of
+        Surface.Element _ →
+            "element"
+
+        Surface.Offscreen _ →
+            "offscreen"
+
+
+offscreen : ⊤ → List String
+offscreen ⊤ = GpuKit.with "none" λd →
+    case Canvas.offscreen 4 4 of
+        Err _ →
+            [ "no OffscreenCanvas" ]
+
+        Ok canvas →
+            surface = must (Surface.fromOffscreen canvas)
+            must (Surface.configure surface (configuration d))
+            out = readback d
+            result = Frame.submit surface "offscreen" (paint out red _)
+            [ "canvas: " ++ canvasKind surface
+            , "frame: " ++ receipts result
+            , "wait: " ++ waited result
+            , "row 0: " ++ row out
+            ]
+
+
+probe : Buffer, Frame → Result InputError Bool
+probe out frame =
+    GpuHost.armMicrotask ⊤
+    _ = paint out green frame?
+    Ok (GpuHost.microtaskHasRun ⊤)
+
+
+checkpoint : ⊤ → List String
+checkpoint ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    out = readback d
+    result = Frame.submit surface "probe" (probe out _)
+    [ "a microtask ran inside the frame: " ++ GpuShow.checked result λr → GpuKit.yesNo r.value ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "draw", draw )
+        , ( "receipts", manyReceipts )
+        , ( "expiry", expiry )
+        , ( "resize", resize )
+        , ( "reconfigure", reconfigure )
+        , ( "offscreen", offscreen )
+        , ( "checkpoint", checkpoint )
+        ]

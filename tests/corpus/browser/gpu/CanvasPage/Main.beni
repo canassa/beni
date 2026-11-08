@@ -1,0 +1,131 @@
+-- A TEA page that draws into its own canvas (docs/design/webgpu.md §8,
+-- *page integration*): the view keeps one `<canvas>` node, and each click
+-- runs a command whose fiber finds the canvas's surface, configures it and
+-- draws one frame. `init`, `update` and `view` stay synchronous; the GPU
+-- work is the command's. The second click finds the same surface, because
+-- a render keeps the canvas node. The fake host keeps no texels, so the
+-- pixel reads zero; `test-webgpu` skips the page with the other frames
+-- (#2267, `_expected.webgpu-skip`).
+import Cmd exposing (Cmd)
+import Gpu.Batch as Batch
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst, MapRead)
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Buffer, CommandEncoder, Device, Frame, Surface, Texture, TextureView)
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuKit exposing (must, buffer, u32)
+import GpuProbe
+import GpuShow
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Draw
+    | Drawn (List String)
+
+
+blue : Types.Color
+blue =
+    f = λx → must (Scalar.finiteF64 x)
+    Types.ColorFields (Types.colorDict (f 0.0) (f 0.0) (f 1.0) (f 1.0))
+
+
+clearAndCopy : Texture, TextureView, Buffer, CommandEncoder → Result InputError ⊤
+clearAndCopy t v out enc =
+    attachment =
+        { (Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store)
+            | clearValue = Types.Value blue
+        }
+    RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) (λ_ → Ok ⊤)?
+    CommandEncoder.copyTextureToBuffer
+        enc
+        (Types.texelCopyTextureInfo t)
+        { (Types.texelCopyBufferInfo out) | bytesPerRow = Types.Value (u32 256) }
+        (Types.Extent3DFields
+            { width = u32 1, height = Types.Default, depthOrArrayLayers = Types.Default }
+        )
+
+
+paint : Buffer, Frame → Result InputError ⊤
+paint out frame =
+    t = Frame.getCurrentTexture frame?
+    v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
+    encoded = Frame.encode frame Types.commandEncoderDescriptor (clearAndCopy t v out _)?
+    _ = Frame.submitCommands frame [ encoded.commands ]?
+    Ok ⊤
+
+
+-- The command: find the canvas, configure it, draw one frame.
+draw : ⊤ → List String
+draw ⊤ =
+    case GpuKit.device "none" of
+        Err why →
+            [ why ]
+
+        Ok d →
+            case Surface.fromElement "gpu" of
+                Err problem →
+                    [ "surface: " ++ GpuShow.error problem ]
+
+                Ok surface →
+                    same =
+                        case GpuProbe.remember surface of
+                            Just yes →
+                                [ "same surface: " ++ GpuKit.yesNo yes ]
+
+                            Nothing →
+                                []
+                    [ …drawOn d surface, …same ]
+
+
+drawOn : Device, Surface → List String
+drawOn d surface =
+    configuration =
+        { (Types.canvasConfiguration d Types.Rgba8unorm)
+            | usage = Types.Value (Flags.texture [ Flags.RenderAttachment, Flags.TextureCopySrc ])
+        }
+    out = must (Gpu.Device.createBuffer d (buffer 256 [ MapRead, CopyDst ]))
+    configured = Surface.configure surface configuration
+    frame = Frame.submit surface "page" (paint out _)
+    [ "configure: " ++ GpuShow.checked configured λ_ → "done"
+    , "frame: "
+        ++ GpuShow.checked frame λr → String.fromInt (List.length r.submissions) ++ " receipts"
+    , "pixel: "
+        ++ GpuShow.checked (GpuKit.readU32s out 1) λws → String.join (List.map ws String.fromInt) ""
+    ]
+
+
+step : Msg, List String → List String × Cmd Msg
+step msg lines =
+    case msg of
+        Draw →
+            ( lines, Cmd.task draw Drawn )
+
+        Drawn more →
+            ( lines ++ more, Cmd.none )
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <canvas id="gpu" width={4} height={4} />
+        <button id="draw" onClick={Draw}>draw</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = λmsg lines → step msg lines
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

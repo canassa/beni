@@ -1,0 +1,143 @@
+-- load
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #inside
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+    </ol>
+  </main>
+</body>
+-- click #configuration
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+    </ol>
+  </main>
+</body>
+-- click #refused
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+    </ol>
+  </main>
+</body>
+-- click #injected
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+    </ol>
+  </main>
+</body>
+-- click #noContext
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+    </ol>
+  </main>
+</body>
+-- click #leased
+<body>
+  <main>
+    <button id="inside">"inside"</button>
+    <button id="configuration">"configuration"</button>
+    <button id="refused">"refused"</button>
+    <button id="injected">"injected"</button>
+    <button id="noContext">"noContext"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"before: none"</li>
+      <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"after: rgba8unorm, usage 17"</li>
+      <li>"canvas: element"</li>
+      <li>"same surface again: yes"</li>
+      <li>"integer format: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"view format family: Err Validation"</li>
+      <li>"missing: Err CanvasFailed CanvasNotFound nope"</li>
+      <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
+      <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
+      <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
+      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+    </ol>
+  </main>
+</body>

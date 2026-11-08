@@ -1,0 +1,164 @@
+-- Canvas surfaces and their configuration, with no frame that acquires a
+-- texture (docs/design/webgpu.md §8; ledger §6), so that they also run in
+-- `test-webgpu`'s Chrome, whose WebGPU instance a canvas texture breaks
+-- (#2267). The frames that acquire one are `SurfaceFrames`'.
+--
+-- inside: `getCurrentTexture` of a surface unconfigured inside the frame is
+-- `CanvasUnconfigured`. configuration: no configuration before
+-- `configure` and a frame then is `CanvasUnconfigured`; the format and
+-- usages are read back after, the canvas is an element, and the same
+-- canvas gives the same surface. refused: a format a canvas cannot have is
+-- `CanvasConfigurationRejected`, a view format of another family
+-- `Validation`, a missing element `CanvasNotFound` and one that is not a
+-- canvas `WrongElementKind`. injected: the host's `TypeError` for a
+-- configuration is `CanvasConfigurationRejected`. noContext: no context is
+-- `CanvasContextUnavailable`. leased: a frame of a leased device is
+-- `DeviceLeased` at once, and its callback never ran.
+import Browser.Canvas as Canvas
+import Gpu.Device
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Device, Frame, Surface)
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+configuration : Device → Types.CanvasConfiguration
+configuration d =
+    { (Types.canvasConfiguration d Types.Rgba8unorm)
+        | usage = Types.Value (Flags.texture [ Flags.RenderAttachment, Flags.TextureCopySrc ])
+    }
+
+
+-- A 4×4 canvas element and its surface, configured on `d`.
+configured : Device → Canvas.Canvas × Surface
+configured d =
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+    must (Surface.configure surface (configuration d))
+    ( canvas, surface )
+
+
+receipts : Result Error.Error { value : a, submissions : List Gpu.Handle.Submission } → String
+receipts result = GpuShow.checked result λr →
+    String.fromInt (List.length r.submissions) ++ " receipts"
+
+
+acquireAfter : Surface, Frame → Result InputError ⊤
+acquireAfter surface frame =
+    Surface.unconfigure surface
+    _ = Frame.getCurrentTexture frame?
+    Ok ⊤
+
+
+inside : ⊤ → List String
+inside ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    [ "acquired unconfigured: " ++ receipts (Frame.submit surface "inside" (acquireAfter surface _))
+    ]
+
+
+showConfiguration : Maybe Types.CanvasConfiguration → String
+showConfiguration c =
+    case c of
+        Nothing →
+            "none"
+
+        Just found →
+            usage =
+                case found.usage of
+                    Types.Value u →
+                        String.fromInt (Flags.textureUsagesBits u)
+
+                    Types.Default →
+                        "default"
+            Types.textureFormatToString found.format ++ ", usage " ++ usage
+
+
+canvasKind : Surface → String
+canvasKind surface =
+    case Surface.canvas surface of
+        Surface.Element _ →
+            "element"
+
+        Surface.Offscreen _ →
+            "offscreen"
+
+
+configurationRead : ⊤ → List String
+configurationRead ⊤ = GpuKit.with "none" λd →
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+    before = Surface.getConfiguration surface
+    frame = Frame.submit surface "before" λ_ → Ok ⊤
+    must (Surface.configure surface (configuration d))
+    again = must (Surface.fromCanvas canvas)
+    [ "before: " ++ showConfiguration before
+    , "frame before: " ++ receipts frame
+    , "after: " ++ showConfiguration (Surface.getConfiguration surface)
+    , "canvas: " ++ canvasKind surface
+    , "same surface again: " ++ GpuKit.yesNo (GpuProbe.sameSurface surface again)
+    ]
+
+
+refused : ⊤ → List String
+refused ⊤ = GpuKit.with "none" λd →
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+    integer = Surface.configure surface (Types.canvasConfiguration d Types.Rgba8uint)
+
+    family =
+        Surface.configure surface
+            { (configuration d) | viewFormats = Types.Value [ Types.Bgra8unorm ] }
+    [ "integer format: " ++ GpuShow.checked integer λ_ → "done"
+    , "view format family: " ++ GpuShow.checked family λ_ → "done"
+    , "missing: " ++ GpuShow.checked (Surface.fromElement "nope") λ_ → "surface"
+    , "not a canvas: " ++ GpuShow.checked (Surface.fromElement "refused") λ_ → "surface"
+    ]
+
+
+injectedConfigure : ⊤ → List String
+injectedConfigure ⊤ = GpuKit.with "configure-type-error" λd →
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+    [ "configure: " ++ GpuShow.checked (Surface.configure surface (configuration d)) λ_ → "done" ]
+
+
+noContext : ⊤ → List String
+noContext ⊤ = GpuKit.with "context-null" λ_ →
+    canvas = must (Canvas.create 4 4)
+    [ "context: " ++ GpuShow.checked (Surface.fromCanvas canvas) λ_ → "surface" ]
+
+
+noted : Frame → Result InputError ⊤
+noted _ =
+    GpuHost.note "the callback ran"
+    Ok ⊤
+
+
+leased : ⊤ → List String
+leased ⊤ = GpuKit.with "none" λd →
+    ( _, surface ) = configured d
+    _ = GpuProbe.lease d
+    result = Frame.submit surface "leased" noted
+    GpuProbe.releaseLease d
+    [ "leased: " ++ receipts result, …GpuHost.notes ⊤ ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "inside", inside )
+        , ( "configuration", configurationRead )
+        , ( "refused", refused )
+        , ( "injected", injectedConfigure )
+        , ( "noContext", noContext )
+        , ( "leased", leased )
+        ]

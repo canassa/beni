@@ -1,0 +1,1 @@
+Its frames acquire a canvas texture, which breaks the WebGPU instance of test-webgpu's Chrome (#2267).
