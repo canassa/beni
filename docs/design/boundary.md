@@ -1053,7 +1053,9 @@ and `browser-direct`'s manifest drops it. What a platform does owe instead:
 - **ownership words** on every `foreign` that takes or returns a list or a function (§4,
   amended the same day);
 - **the word `entry`** on the record parameter of each program constructor whose functions the
-  runtime calls (`ownership-checker.md` §30.3);
+  runtime calls (`ownership-checker.md` §30.3). The effect checker reads it too: the record is
+  erased as a `foreign`'s parameter is (`transparent-effects-proposal.md` §14.3 rule 6, amended
+  2026-11-08);
 - **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
   `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
 
