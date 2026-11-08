@@ -9,6 +9,7 @@ const Ids = @import("Ids.zig");
 const BelowSize = @import("BelowSize.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
+const Called = @import("Called.zig");
 const WalkContext = @import("WalkContext.zig");
 
 const Error = Ids.ChargeError;
@@ -39,28 +40,31 @@ pub fn make(f: *Value.Frame, ctx: WalkContext.Context, q: u32, l: Contract.Label
         at_site = site_result != null and site.items.len == sig.own;
         wild = !at_site;
     }
-    // A type variable's place names nothing below it, so a supply there was written as leaves at no level a
-    // reader sees (#2222). Off the call site, a supply sits where the frame names its structure: at the type
-    // the frame makes the closure at, else at the code's own (§2.1, *A callback*).
+    // A type variable's place names nothing below it (#2222): off the call site, a supply and the answer sit at the type the
+    // frame makes the closure at or has it from a call at, else at the code's own, where that names one (§2.1, *A callback*, #2283).
     var made: std.ArrayList(PlaceId) = .empty;
     defer made.deinit(gpa);
-    const fx = f.val(fv);
-    const made_at = !at_call and fx.kind == .built and fx.form == .closure and fx.site != none and
-        (try ctx.siteSig(ctx.ctx, fx.site, &made)) != null and made.items.len == sig.own;
+    const made_inst = if (at_call) none else Called.typedAt(f, f.val(fv));
+    const made_result = if (made_inst != none) try ctx.siteSig(ctx.ctx, made_inst, &made) else null;
+    const made_at = made_result != null and made.items.len == sig.own;
     const vi: u32 = @intCast(f.calls.items.len);
     var args: std.ArrayList(u32) = .empty;
     defer args.deinit(gpa);
     for (0..sig.own) |k| {
         const si: u32 = @intCast(f.supplies.items.len);
         const own: PlaceId = if (k < sig.params.len) sig.params[k] else .none;
-        const old: PlaceId = if (at_site) site.items[k] else own;
-        const at = if (at_call or !try BelowSize.wildBelow(gpa, f.places, old)) old else if (made_at and !try BelowSize.wildBelow(gpa, f.places, made.items[k])) made.items[k] else if (own != .none and !try BelowSize.wildBelow(gpa, f.places, own)) own else old;
-        const root = try f.addRoot(.supply, si, at);
+        const root = try f.addRoot(.supply, si, try named(f, at_call, if (at_site) site.items[k] else own, if (made_at) made.items[k] else .none, own));
         try f.supplies.append(gpa, .{ .call = q, .virtual = vi, .k = @intCast(k), .root = root });
         try args.append(gpa, try f.refRoot(root));
     }
     try args.appendSlice(gpa, f.kidsOf(f.val(fv)));
-    const root = try f.addRoot(.call, vi, if (at_site) site_result.? else sig.result);
+    const root = try f.addRoot(.call, vi, try named(f, at_call, if (at_site) site_result.? else sig.result, if (made_at) made_result.? else .none, sig.result));
     try f.calls.append(gpa, .{ .inst = call.inst, .point = call.point, .args = try f.mkKids(args.items), .arg_insts = &.{}, .root = root, .code = if (wild) none else code, .virtual = true, .callee_val = fv });
     return vi;
+}
+
+/// `old` at the call site or where no type variable is below it, else the first of `made` and `own` so (§2.1, *A callback*).
+fn named(f: *Value.Frame, at_call: bool, old: PlaceId, made: PlaceId, own: PlaceId) Error!PlaceId {
+    if (at_call or !try BelowSize.wildBelow(f.gpa, f.places, old)) return old;
+    return if (made != .none and !try BelowSize.wildBelow(f.gpa, f.places, made)) made else if (own != .none and !try BelowSize.wildBelow(f.gpa, f.places, own)) own else old;
 }

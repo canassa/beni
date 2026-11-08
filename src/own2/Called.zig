@@ -54,3 +54,15 @@ pub fn value(f: *Value.Frame, ctx: anytype, contracts: *const Contract.Table, fv
     ks[c.args.len] = fv;
     return try f.mk(.{ .kind = .built, .form = .closure, .head = head, .place = x.place, .kids = ks });
 }
+
+/// The instruction whose type is closure `x`'s in this frame: its creation's, else the non-virtual call whose
+/// whole result `value` read it from (a virtual call's instruction is its outer call's), else `none` (§2.1).
+pub fn typedAt(f: *Value.Frame, x: Value.Val) u32 {
+    if (x.kind != .built or x.form != .closure) return none;
+    if (x.site != none) return x.site;
+    const ks = f.kidsOf(x);
+    const r = if (ks.len != 0 and f.val(ks[ks.len - 1]).kind == .ref) f.roots.items[f.val(ks[ks.len - 1]).root] else return none;
+    const y = f.val(ks[ks.len - 1]);
+    if (y.family != Slots.empty or r.kind != .call or f.pos.items[y.pos].slot != r.path or f.calls.items[r.a].virtual) return none;
+    return f.calls.items[r.a].inst;
+}
