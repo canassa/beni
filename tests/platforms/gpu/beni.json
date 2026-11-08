@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "gpu-test",
+  "platforms": ["browser-tea"],
+  "reexports": ["Html", "Cmd", "Sub", "Tea", "Gpu", "Gpu.Adapter", "Gpu.Device", "Gpu.Error", "Gpu.Feature", "Gpu.Flags", "Gpu.Handle", "Gpu.Limits", "Gpu.Scalar", "Gpu.Types", "Gpu.WgslFeature"]
+}

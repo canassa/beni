@@ -1,0 +1,106 @@
+--! Text for the values a WebGPU fixture prints: every constructor of the
+--! failures it can meet, by name, and never a host message, which differs
+--! between the fake and a browser.
+
+import Gpu
+import Gpu.Error as Error
+import Gpu.Limits as Limits
+import Gpu.Types as Types
+
+
+--| An availability.
+pub availability : Gpu.Availability → String
+availability a =
+    case a of
+        Gpu.Available →
+            "Available"
+
+        Gpu.Unavailable problem →
+            "Unavailable " ++ initError problem
+
+
+--| An initialisation failure.
+pub initError : Error.InitError → String
+initError problem =
+    case problem of
+        Error.InsecureContext →
+            "InsecureContext"
+
+        Error.ApiUnavailable →
+            "ApiUnavailable"
+
+        Error.AdapterUnavailable →
+            "AdapterUnavailable"
+
+        Error.AdapterConsumed →
+            "AdapterConsumed"
+
+        Error.UnsupportedFeatures names →
+            "UnsupportedFeatures ["
+                ++ String.join (List.map names Types.featureNameToString) ", "
+                ++ "]"
+
+        Error.UnsupportedLimits mismatches →
+            "UnsupportedLimits [" ++ String.join (List.map mismatches limitMismatch) ", " ++ "]"
+
+        Error.FeatureRequestRejected detail →
+            "FeatureRequestRejected ["
+                ++ String.join (List.map detail.requested Types.featureNameToString) ", "
+                ++ "]"
+
+        Error.DeviceRequestRejected _ →
+            "DeviceRequestRejected"
+
+        Error.InitializationInput _ →
+            "InitializationInput"
+
+        Error.InitializationLost l →
+            "InitializationLost " ++ loss l
+
+
+limitMismatch : Error.LimitMismatch → String
+limitMismatch m =
+    problem =
+        case m.problem of
+            Error.AboveMaximum →
+                "AboveMaximum"
+
+            Error.BelowAlignment →
+                "BelowAlignment"
+
+            Error.NotPowerOfTwo →
+                "NotPowerOfTwo"
+    Limits.limitNameToString m.limit ++ " " ++ problem
+
+
+--| A device loss, without its message.
+pub loss : Error.DeviceLoss → String
+loss l =
+    case l.reason of
+        Error.UnknownLoss →
+            "UnknownLoss"
+
+        Error.Destroyed →
+            "Destroyed"
+
+
+--| A device's latched loss, or `none`.
+pub latched : Maybe Error.DeviceLoss → String
+latched l =
+    case l of
+        Nothing →
+            "none"
+
+        Just l1 →
+            loss l1
+
+
+--| A result's constructor, with `f` for an `Ok` value.
+pub result : Result Error.InitError a, (a → String) → String
+result r f =
+    case r of
+        Ok a →
+            "Ok " ++ f a
+
+        Err problem →
+            "Err " ++ initError problem

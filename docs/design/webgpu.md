@@ -110,7 +110,10 @@ and sends its validation error to the uncaptured-error event, which would
 publish an unchecked handle (§5). The checked engine of §6 is the only route to
 a GPU operation, and it calls the host through private code (non-`pub`
 `foreign` declarations or `Js`), never through a `pub` value an application
-can import.
+can import. *As built — S1 (2026-11-08):* `browser-tea` re-exports the public `Gpu`
+modules only, so a TEA program cannot import `Gpu.Engine` or `Gpu.Native`; a direct
+`browser` program can, since a platform cannot keep a module from the program it is the
+top of (#2256). Their signatures name `Js.Value`, which such a program cannot make.
 
 **`Gpu.Handle`** imports only core, including those generated modules, and no
 `Gpu` module. It declares:
@@ -233,7 +236,31 @@ no Python and no network access at generation time.
 when a committed file differs, as `skill-api`'s check does. (The existing check
 for the shipped `Browser.Host` modules runs in `test-native-bindings`, outside
 the gates; the GPU files need the gated check.) The step that writes them is
-named by slice S1.
+`zig build gpu-bindings` (*As built — S1*, 2026-11-08: `tests/gpu_bindings.zig` holds
+the staleness check, the census of every declaration and the exposure assertion, and
+runs in `test-blackbox`; `src/native/Gpu.zig` holds the name maps, version 1). The
+generated `Gpu.Types`, `Gpu.Flags`, `Gpu.Limits` and `Gpu.Native` are held to the
+generator, not to `beni fmt` (`tests/fmt-exempt.txt`). Two `Gpu.Types` dictionaries are
+not descriptors and are not emitted: `GPUPipelineErrorInit` and
+`GPUUncapturedErrorEventInit`, the constructor inits that §3 replaces with pure values.
+A snapshot is read member by member: a member missing or of another type — a count that
+is not a non-negative integer included (NaN, an infinity, a fraction) — is a defect that
+names it, except the members `optional_members` lists, newer than the rest of their
+interface or tied to a feature (`maxImmediateSize`, the four per-stage storage limits,
+`subgroupMinSize`, `subgroupMaxSize`), which are `Maybe Int`; `Gpu.Limits.limit` is
+therefore `Maybe Int`. The sequence arm of `GPUColor`, `GPUOrigin2D`, `GPUOrigin3D` and
+`GPUExtent3D` carries an opaque list (`ColorList`, …) that only a constructor checking the
+length the host accepts makes, `Nothing` otherwise, so no value of the union throws at
+conversion (§3's table).
+
+*As built — S1 (2026-11-08), the engine's waits (§6.4, §8.1):* each request first opens
+a channel to its program, a detached fiber of the requester, and classifies its outcome in
+the promise's reaction whether or not anyone still waits; an adapter is reserved only when
+its request really starts, so a cancel delivered before the wait leaves it free. A defect
+carries its context, an `Error` naming the operation and the device with the original as
+`cause`. A channel keeps the caller's clock and log context for the one path that must
+start a new fiber (core gives no way to keep its scheduler, #2257), and drops a second
+defect, whose program the first one stopped.
 
 ### 2.3 Realms
 
@@ -354,7 +381,12 @@ No arbitrary event dispatch into a native device is needed to render or compute.
 
 Do not treat an unbounded beni `Int` as a validated GPUSize32. Provide opaque
 `U32`, `I32`, `Size64`, `FiniteF32` and `FiniteF64` scalar constructors with
-`Result InputError` and conversion helpers. Their accepted domains cover every
+`Result InputError` and conversion helpers. *Departure, 2026-11-08, pending owner
+confirmation:* the constructors return `Result Gpu.Scalar.DomainError`, and
+`Gpu.Error.InputError` carries it as `NumericDomain { path, domain : DomainError }`;
+`Gpu.Error.atPath : String, DomainError → InputError` makes one. `Gpu.Error` names
+`Gpu.Types` (a feature or a format in a failure) and `Gpu.Types` names `Gpu.Scalar`, so
+`Gpu.Scalar` cannot name `Gpu.Error` without a module cycle. Their accepted domains cover every
 value the corresponding Web IDL type accepts after conversion. Integer
 constructors require integral values; callers can request the standard's
 truncating conversion explicitly. Preserve signed baseVertex/depthBias, not
@@ -362,15 +394,17 @@ just unsigned offsets. Finite f32 conversion must check overflow after f32
 rounding. Raw buffer bytes may contain NaN or infinities where WGSL permits
 those patterns; descriptor numeric checks do not restrict binary payloads.
 
-`Size64` covers Number-representable nonnegative integral values below 2⁶⁴,
-including exactly representable values above 2⁵³. The maximum representable
-valid Number is 2⁶⁴ − 2048. A convenience constructor from a safe beni integer
-is not the only route. Exact u64 query results use `Binary.Word64`, an opaque
-pair of exact unsigned 32-bit words (`Binary.word64 high low`,
-`Binary.words`; amended 2026-11-08, it replaces the proposed `Binary.U64`);
-conversion to Number (`Binary.word64ToInt`) returns `PrecisionLost` when it
-loses bits. Do not pass that pair to a native GPUSize64
-parameter without proving exact representability. Arithmetic helpers detect
+*Corrected 2026-11-08* (the earlier text here gave `Size64` integers above 2⁵³, which the
+host refuses): `Size64` covers the integers 0 … 2⁵³ − 1. `GPUSize64` is
+`[EnforceRange] unsigned long long`, and Web IDL's ConvertToInt with bitLength 64 sets
+its upper bound to 2⁵³ − 1 and throws a `TypeError` above it under `[EnforceRange]`
+([Web IDL, *ConvertToInt*](https://webidl.spec.whatwg.org/#abstract-opdef-converttoint)).
+No GPU parameter or descriptor member takes a larger number: an exact 64-bit value
+(a query result) is binary data, `Binary.Word64` (#1284), an opaque pair of exact unsigned
+32-bit words (`Binary.word64 high low`, `Binary.words`; amended 2026-11-08, it replaces the
+proposed `Binary.U64`), never a `Size64`. Its conversion to Number (`Binary.word64ToInt`)
+returns `PrecisionLost` when it loses bits, and converting one to a `Size64` is an error when
+it exceeds 2⁵³ − 1. Arithmetic helpers detect
 overflow; range checks use subtraction or exact arithmetic, not rounded sums.
 
 The supporting `Binary` module offers ArrayBuffer, DataView and every standard

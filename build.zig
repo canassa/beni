@@ -8,6 +8,7 @@
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!   zig build beni-fmt-check  `beni fmt --check` over the .beni files, minus tests/fmt-exempt.txt
 //!   zig build skill-api       write skills/beni/references/api-*.md from `beni dump --stage=interface`
+//!   zig build gpu-bindings    write the generated WebGPU modules from the pinned IDL (docs/design/webgpu.md §2.2)
 //!   zig build gates           the gates above, in one build graph
 //!
 //! The black-box suites spawn a ReleaseSafe `beni` built by Zig's
@@ -745,6 +746,16 @@ pub fn build(b: *std.Build) void {
     const browser_step = b.step("test-browser", "Run the browser/ corpus in a headless Chrome instead of happy-dom");
     browser_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "chrome" }).step);
 
+    // `browser/gpu/`, the WebGPU pages, in a headless Chrome with a real
+    // WebGPU adapter (docs/design/webgpu.md §10): SwiftShader, Chrome's own
+    // software implementation, where the host has no GPU. Each page gets the
+    // native host instead of the gates' fake, its faults wrap native methods,
+    // and the summary keeps passed, unsupported (no adapter) and skipped
+    // (`.webgpu-skip`) apart and names the adapter. A heavy job: run it under
+    // the shared lock, as `test-browser`. Takes `-Dcorpus`; not a gate.
+    const webgpu_step = b.step("test-webgpu", "Run the browser/gpu/ corpus in a headless Chrome with a real WebGPU adapter (nix develop .#browser)");
+    webgpu_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "webgpu" }).step);
+
     // `workers/`: the `cloudflare` platform's fixtures, each build run under
     // Miniflare (docs/design/boundary.md §9.12 (k); tests/blackbox/workers.zig).
     // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
@@ -1316,6 +1327,34 @@ pub fn build(b: *std.Build) void {
         run.step.dependOn(&skills_install.step);
         step.dependOn(&run.step);
         blackbox_step.dependOn(step);
+    }
+
+    // The generated WebGPU modules (docs/design/webgpu.md §2.2): `zig build
+    // gpu-bindings` writes them from the pinned archive, and their staleness
+    // check, the uniform-exposure assertion (§2.3) and the census of every
+    // IDL declaration run in `test-blackbox`, a gate: the check reads the
+    // committed files.
+    {
+        const gpu_tool_module = b.createModule(.{
+            .root_source_file = b.path("tests/gpu_bindings.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        gpu_tool_module.addImport("native_bindings", native_module);
+        gpu_tool_module.addAnonymousImport("webref_idl", .{
+            .root_source_file = b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"),
+        });
+        const gpu_tool = b.addExecutable(.{ .name = "beni-gpu-bindings", .root_module = gpu_tool_module });
+        const gpu_step = b.step("gpu-bindings", "Write the generated WebGPU modules from the pinned IDL (docs/design/webgpu.md §2.2)");
+        const gpu_run = b.addRunArtifact(gpu_tool);
+        gpu_run.addArgs(&.{ "docs/design/research/workers/webref-idl-3.86.0.tgz", "." });
+        gpu_run.setCwd(b.path("."));
+        gpu_run.has_side_effects = true;
+        gpu_step.dependOn(&gpu_run.step);
+        const gpu_tests = b.addTest(.{ .name = "gpu_bindings_test", .root_module = gpu_tool_module, .test_runner = testRunner(b), .filters = test_filters });
+        const gpu_test_run = runTests(b, gpu_tests);
+        gpu_test_run.setCwd(b.path("."));
+        blackbox_step.dependOn(&gpu_test_run.step);
     }
 
     // ---- The three gates as one step. ----

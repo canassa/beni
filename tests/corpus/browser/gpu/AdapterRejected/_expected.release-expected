@@ -1,0 +1,10 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: Error: webgpu: requestAdapter: AbortError: injected adapter refusal)
+(the DOM did not change)

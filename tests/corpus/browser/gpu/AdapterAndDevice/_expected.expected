@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"available: Available"</li>
+      <li>"maxBindGroups at least 4: yes"</li>
+      <li>"minUniformBufferOffsetAlignment: 256"</li>
+      <li>"fallback adapter is a Bool: yes"</li>
+      <li>"an unlisted feature name stays a name: yes"</li>
+      <li>"has an unlisted name: no"</li>
+      <li>"device: granted, loss none"</li>
+      <li>"again on the same adapter: Err AdapterConsumed"</li>
+      <li>"preferred canvas format: Ok a format of the pin"</li>
+      <li>"wgsl features: Ok read"</li>
+      <li>"shader-f16: Err UnsupportedFeatures [shader-f16]"</li>
+      <li>"maxBindGroups 1000000: Err UnsupportedLimits [maxBindGroups AboveMaximum]"</li>
+      <li>"minUniformBufferOffsetAlignment 3: Err UnsupportedLimits [minUniformBufferOffsetAlignment NotPowerOfTwo]"</li>
+      <li>"minUniformBufferOffsetAlignment 128: Err UnsupportedLimits [minUniformBufferOffsetAlignment BelowAlignment]"</li>
+      <li>"maxBindGroups 4: Ok device"</li>
+      <li>"two fibers, one adapter: Ok device / Err AdapterConsumed"</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,35 @@
+-- load
+<body>
+  <main>
+    <button id="device-type-error">"device-type-error"</button>
+    <button id="device-operation-error">"device-operation-error"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #device-type-error
+<body>
+  <main>
+    <button id="device-type-error">"device-type-error"</button>
+    <button id="device-operation-error">"device-operation-error"</button>
+    <ol>
+      <li>"device-type-error: first Err FeatureRequestRejected [depth-clip-control]"</li>
+      <li>"device-type-error: second Ok device"</li>
+      <li>"device-type-error: third Err AdapterConsumed"</li>
+    </ol>
+  </main>
+</body>
+-- click #device-operation-error
+<body>
+  <main>
+    <button id="device-type-error">"device-type-error"</button>
+    <button id="device-operation-error">"device-operation-error"</button>
+    <ol>
+      <li>"device-type-error: first Err FeatureRequestRejected [depth-clip-control]"</li>
+      <li>"device-type-error: second Ok device"</li>
+      <li>"device-type-error: third Err AdapterConsumed"</li>
+      <li>"device-operation-error: first Err DeviceRequestRejected"</li>
+      <li>"device-operation-error: second Ok device"</li>
+      <li>"device-operation-error: third Err AdapterConsumed"</li>
+    </ol>
+  </main>
+</body>

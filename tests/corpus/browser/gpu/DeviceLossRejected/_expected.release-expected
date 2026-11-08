@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: Error: webgpu: device 1, lost: AbortError: injected rejection of lost)
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"the device was granted"</li>
+    </ol>
+  </main>
+</body>

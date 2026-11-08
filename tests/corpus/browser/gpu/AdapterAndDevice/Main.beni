@@ -1,0 +1,133 @@
+-- An adapter and its one device (docs/design/webgpu.md §4, ledger §2): the
+-- API is available, an adapter's snapshots read, a device is granted and
+-- consumes its adapter, so a second request is `AdapterConsumed` before the
+-- host is asked. An unsupported feature or limit is refused by preflight,
+-- each limit with its class's problem, and never clamped; a supported
+-- limit is granted. Two fibers asking one adapter at once get one device
+-- and one `AdapterConsumed`. A host may report feature names the pin does
+-- not list: they stay names.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Feature
+import Gpu.Handle exposing (Adapter)
+import Gpu.Limits as Limits
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+adapter : ⊤ → Result String Adapter
+adapter ⊤ =
+    case Gpu.requestAdapter Types.adapterOptions of
+        Ok a →
+            Ok a
+
+        Err problem →
+            Err (GpuShow.initError problem)
+
+
+withLimit : Limits.LimitName, Int → Types.DeviceDescriptor
+withLimit name value =
+    base = Types.deviceDescriptor
+    case Scalar.size64 value of
+        Ok s →
+            { base | requiredLimits = Types.Value [ ( name, s ) ] }
+
+        Err _ →
+            base
+
+
+device : Adapter, Types.DeviceDescriptor → String
+device a d = GpuShow.result (Gpu.Adapter.requestDevice a d) λ_ → "device"
+
+
+unlisted : Gpu.Feature.Feature → Bool
+unlisted f =
+    case f of
+        Gpu.Feature.Known _ →
+            False
+
+        Gpu.Feature.Unlisted _ →
+            True
+
+
+scenario : ⊤ → List String
+scenario ⊤ =
+    GpuHost.inject "none"
+    case adapter ⊤ of
+        Err problem →
+            [ "adapter: " ++ problem ]
+
+        Ok a →
+            limits = Gpu.Adapter.limits a
+            info = Gpu.Adapter.info a
+            features = Gpu.Adapter.features a
+            granted = Gpu.Adapter.requestDevice a Types.deviceDescriptor
+
+            first =
+                case granted of
+                    Ok d →
+                        _ = Gpu.Device.queue d
+                        "device: granted, loss " ++ GpuShow.latched (Gpu.Device.loss d)
+
+                    Err problem →
+                        "device: " ++ GpuShow.initError problem
+
+            [ "available: " ++ GpuShow.availability (Gpu.available ⊤)
+            , "maxBindGroups at least 4: " ++ (if limits.maxBindGroups ≥ 4 then "yes" else "no")
+            , "minUniformBufferOffsetAlignment: "
+                ++ String.fromInt limits.minUniformBufferOffsetAlignment
+            , "fallback adapter is a Bool: "
+                ++ (if info.isFallbackAdapter || not info.isFallbackAdapter then "yes" else "no")
+            , "an unlisted feature name stays a name: "
+                ++ (if List.any (Gpu.Feature.values features) unlisted then "yes" else "no")
+            , "has an unlisted name: "
+                ++ (if Gpu.Feature.hasName features "x-not-a-feature" then "yes" else "no")
+            , first
+            , "again on the same adapter: " ++ device a Types.deviceDescriptor
+            , "preferred canvas format: "
+                ++ GpuShow.result (Gpu.preferredCanvasFormat ⊤) λ_ → "a format of the pin"
+            , "wgsl features: " ++ GpuShow.result (Gpu.wgslLanguageFeatures ⊤) λ_ → "read"
+            ]
+                ++ refusals ⊤
+
+
+refusals : ⊤ → List String
+refusals ⊤ =
+    case adapter ⊤ of
+        Err problem →
+            [ "adapter: " ++ problem ]
+
+        Ok a →
+            base = Types.deviceDescriptor
+            [ "shader-f16: "
+                ++ device a { base | requiredFeatures = Types.Value [ Types.FeatureShaderF16 ] }
+            , "maxBindGroups 1000000: " ++ device a (withLimit Limits.MaxBindGroups 1000000)
+            , "minUniformBufferOffsetAlignment 3: "
+                ++ device a (withLimit Limits.MinUniformBufferOffsetAlignment 3)
+            , "minUniformBufferOffsetAlignment 128: "
+                ++ device a (withLimit Limits.MinUniformBufferOffsetAlignment 128)
+            , "maxBindGroups 4: " ++ device a (withLimit Limits.MaxBindGroups 4)
+            ]
+                ++ race ⊤
+
+
+race : ⊤ → List String
+race ⊤ =
+    case adapter ⊤ of
+        Err problem →
+            [ "adapter: " ++ problem ]
+
+        Ok a →
+            ( one, two ) = Task.par (λ⊤ → device a Types.deviceDescriptor) λ⊤ →
+                device a Types.deviceDescriptor
+            [ "two fibers, one adapter: " ++ one ++ " / " ++ two ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", scenario ) ]

@@ -1,0 +1,37 @@
+-- A device that arrives after its request was cancelled is still watched
+-- (docs/design/webgpu.md §8, §8.1): it is destroyed, and its `lost`, which
+-- this host rejects, is a defect of the program that asked for it. The
+-- page stops with its crash screen; the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "none"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            GpuHost.inject "lost-controlled,requests-held"
+            pending = Task.spawn λ⊤ →
+                GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            Task.yieldNow ⊤
+            Task.cancel pending
+            GpuHost.releaseRequest "host"
+            GpuHost.drain ⊤
+            GpuHost.lose "reject"
+            GpuHost.drain ⊤
+            [ "the request was cancelled" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

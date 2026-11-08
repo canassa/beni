@@ -1,0 +1,39 @@
+-- The device refusals the ledger documents (§2): a native `TypeError` is
+-- `FeatureRequestRejected` with the features requested, and a native
+-- `OperationError` `DeviceRequestRejected`. A failed request releases the
+-- adapter's reservation, so the next request on it is the host's and is
+-- granted; a granted one consumes it.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+twice : String → List String
+twice scenario =
+    GpuHost.inject scenario
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            base = Types.deviceDescriptor
+            descriptor = { base | requiredFeatures = Types.Value [ Types.FeatureDepthClipControl ] }
+            first = GpuShow.result (Gpu.Adapter.requestDevice adapter descriptor) λ_ → "device"
+            second = GpuShow.result (Gpu.Adapter.requestDevice adapter descriptor) λ_ → "device"
+            third = GpuShow.result (Gpu.Adapter.requestDevice adapter descriptor) λ_ → "device"
+            [ scenario ++ ": first " ++ first
+            , scenario ++ ": second " ++ second
+            , scenario ++ ": third " ++ third
+            ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "device-type-error", λ⊤ → twice "device-type-error" )
+        , ( "device-operation-error", λ⊤ → twice "device-operation-error" )
+        ]

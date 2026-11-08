@@ -76,6 +76,40 @@ pub const parser_sha256 = "82dee751f7e23d98b279c78ec7b882d67dfb67ebb7bfca91d4f30
 /// The platform a fixture without a `platform/` directory is built for.
 pub const platform_path = "tests/platforms/page";
 
+/// The platform the `browser/gpu/` pages are built for: a fake WebGPU host,
+/// or Chrome's own under `test-webgpu` (docs/design/webgpu.md §10).
+pub const gpu_platform_path = "tests/platforms/gpu";
+
+/// `zig build test-webgpu`: Chrome starts with a real WebGPU adapter
+/// (SwiftShader, Chrome's own software implementation, where there is no
+/// GPU), and the driver gives each page the native host (`--webgpu`). Set
+/// once by the walk before any page runs.
+pub var webgpu: bool = false;
+
+/// How a `--webgpu` page whose host has no adapter begins its transcript:
+/// the driver ran none of its steps, and the case is counted `unsupported`.
+pub const webgpu_unsupported = "(webgpu unsupported:";
+
+/// What a `test-webgpu` walk counts, and the adapter its pages had, as the
+/// first page's report described it.
+pub var webgpu_tally: struct {
+    passed: std.atomic.Value(usize) = .init(0),
+    unsupported: std.atomic.Value(usize) = .init(0),
+    skipped: std.atomic.Value(usize) = .init(0),
+} = .{};
+var webgpu_adapter: ?[]const u8 = null;
+var webgpu_mutex: Io.Mutex = .init;
+
+/// The `test-webgpu` summary: the three counts kept apart, and the adapter.
+pub fn reportWebGpu() void {
+    std.debug.print("test-webgpu: {d} passed, {d} unsupported, {d} skipped\nadapter: {s}\n", .{
+        webgpu_tally.passed.load(.monotonic),
+        webgpu_tally.unsupported.load(.monotonic),
+        webgpu_tally.skipped.load(.monotonic),
+        webgpu_adapter orelse "(no page reported one)",
+    });
+}
+
 /// Where a fixture's project holds its copy of `platform_path`'s files.
 ///
 /// **Copied, never named by its path in the repository.** A development
@@ -247,6 +281,7 @@ pub fn driveAll(
         try std.fmt.allocPrint(arena, "--chrome={s}", .{endpoint})
     else
         try std.fmt.allocPrint(arena, "--dom={s}", .{h.dom}));
+    if (chrome != null and webgpu) try argv.append(arena, "--webgpu");
     if (chrome == null) try argv.append(arena, try std.fmt.allocPrint(arena, "--parser={s}", .{h.parser}));
     if (steps) |s| try argv.append(arena, try std.fmt.allocPrint(arena, "--steps={s}", .{s}));
     const reports = try arena.alloc([]const u8, entries.len);
@@ -268,9 +303,14 @@ pub fn driveAll(
             error.FileNotFound => continue,
             else => return err,
         };
-        const Report = struct { code: u8, stdout: []const u8, stderr: []const u8 };
+        const Report = struct { code: u8, stdout: []const u8, stderr: []const u8, webgpu: ?[]const u8 = null };
         // A report cut short: the run stopped while writing it.
         const r = std.json.parseFromSliceLeaky(Report, arena, bytes, .{}) catch continue;
+        if (r.webgpu) |adapter| {
+            webgpu_mutex.lockUncancelable(w.io);
+            defer webgpu_mutex.unlock(w.io);
+            if (webgpu_adapter == null) webgpu_adapter = try std.heap.page_allocator.dupe(u8, adapter);
+        }
         slot.* = .{
             .exit_code = r.code,
             .term = .{ .exited = r.code },
@@ -417,7 +457,7 @@ pub const Chrome = struct {
     /// How long Chrome may take to start listening.
     const start_timeout_ms = 30_000;
 
-    pub fn launch(gpa: Allocator, io: Io, exe: []const u8) !Chrome {
+    pub fn launch(gpa: Allocator, io: Io, exe: []const u8, with_webgpu: bool) !Chrome {
         var profile = try World.init(gpa, io);
         errdefer profile.deinit();
         const arena = profile.arena.allocator();
@@ -436,7 +476,10 @@ pub const Chrome = struct {
                 try std.fmt.allocPrint(arena, "--user-data-dir={s}/profile", .{dir}),
                 "--no-first-run",
                 "--no-default-browser-check",
-                "--disable-gpu",
+                // `test-webgpu`: Chrome's WebGPU on its software adapter,
+                // SwiftShader, which needs no GPU; the gates' pages need none.
+                if (with_webgpu) "--enable-unsafe-webgpu" else "--disable-gpu",
+                if (with_webgpu) "--use-webgpu-adapter=swiftshader" else "--disable-gpu",
                 // A page loads the program's modules from the file system.
                 "--allow-file-access-from-files",
                 "--disable-extensions",

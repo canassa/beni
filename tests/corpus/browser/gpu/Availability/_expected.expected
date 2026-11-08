@@ -1,0 +1,125 @@
+-- load
+<body>
+  <main>
+    <button id="none">"none"</button>
+    <button id="adapter-null">"adapter-null"</button>
+    <button id="no-api">"no-api"</button>
+    <button id="insecure">"insecure"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #none
+<body>
+  <main>
+    <button id="none">"none"</button>
+    <button id="adapter-null">"adapter-null"</button>
+    <button id="no-api">"no-api"</button>
+    <button id="insecure">"insecure"</button>
+    <ol>
+      <li>"none: available Available"</li>
+      <li>"none: requestAdapter Ok adapter"</li>
+      <li>"none: preferredCanvasFormat Ok format"</li>
+      <li>"none: wgslLanguageFeatures Ok features"</li>
+    </ol>
+  </main>
+</body>
+-- click #adapter-null
+<body>
+  <main>
+    <button id="none">"none"</button>
+    <button id="adapter-null">"adapter-null"</button>
+    <button id="no-api">"no-api"</button>
+    <button id="insecure">"insecure"</button>
+    <ol>
+      <li>"none: available Available"</li>
+      <li>"none: requestAdapter Ok adapter"</li>
+      <li>"none: preferredCanvasFormat Ok format"</li>
+      <li>"none: wgslLanguageFeatures Ok features"</li>
+      <li>"adapter-null: available Available"</li>
+      <li>"adapter-null: requestAdapter Err AdapterUnavailable"</li>
+      <li>"adapter-null: preferredCanvasFormat Ok format"</li>
+      <li>"adapter-null: wgslLanguageFeatures Ok features"</li>
+    </ol>
+  </main>
+</body>
+-- click #no-api
+<body>
+  <main>
+    <button id="none">"none"</button>
+    <button id="adapter-null">"adapter-null"</button>
+    <button id="no-api">"no-api"</button>
+    <button id="insecure">"insecure"</button>
+    <ol>
+      <li>"none: available Available"</li>
+      <li>"none: requestAdapter Ok adapter"</li>
+      <li>"none: preferredCanvasFormat Ok format"</li>
+      <li>"none: wgslLanguageFeatures Ok features"</li>
+      <li>"adapter-null: available Available"</li>
+      <li>"adapter-null: requestAdapter Err AdapterUnavailable"</li>
+      <li>"adapter-null: preferredCanvasFormat Ok format"</li>
+      <li>"adapter-null: wgslLanguageFeatures Ok features"</li>
+      <li>"no-api: available Unavailable ApiUnavailable"</li>
+      <li>"no-api: requestAdapter Err ApiUnavailable"</li>
+      <li>"no-api: preferredCanvasFormat Err ApiUnavailable"</li>
+      <li>"no-api: wgslLanguageFeatures Err ApiUnavailable"</li>
+    </ol>
+  </main>
+</body>
+-- click #insecure
+<body>
+  <main>
+    <button id="none">"none"</button>
+    <button id="adapter-null">"adapter-null"</button>
+    <button id="no-api">"no-api"</button>
+    <button id="insecure">"insecure"</button>
+    <ol>
+      <li>"none: available Available"</li>
+      <li>"none: requestAdapter Ok adapter"</li>
+      <li>"none: preferredCanvasFormat Ok format"</li>
+      <li>"none: wgslLanguageFeatures Ok features"</li>
+      <li>"adapter-null: available Available"</li>
+      <li>"adapter-null: requestAdapter Err AdapterUnavailable"</li>
+      <li>"adapter-null: preferredCanvasFormat Ok format"</li>
+      <li>"adapter-null: wgslLanguageFeatures Ok features"</li>
+      <li>"no-api: available Unavailable ApiUnavailable"</li>
+      <li>"no-api: requestAdapter Err ApiUnavailable"</li>
+      <li>"no-api: preferredCanvasFormat Err ApiUnavailable"</li>
+      <li>"no-api: wgslLanguageFeatures Err ApiUnavailable"</li>
+      <li>"insecure: available Unavailable InsecureContext"</li>
+      <li>"insecure: requestAdapter Err InsecureContext"</li>
+      <li>"insecure: preferredCanvasFormat Err InsecureContext"</li>
+      <li>"insecure: wgslLanguageFeatures Err InsecureContext"</li>
+    </ol>
+  </main>
+</body>
+-- click #none
+<body>
+  <main>
+    <button id="none">"none"</button>
+    <button id="adapter-null">"adapter-null"</button>
+    <button id="no-api">"no-api"</button>
+    <button id="insecure">"insecure"</button>
+    <ol>
+      <li>"none: available Available"</li>
+      <li>"none: requestAdapter Ok adapter"</li>
+      <li>"none: preferredCanvasFormat Ok format"</li>
+      <li>"none: wgslLanguageFeatures Ok features"</li>
+      <li>"adapter-null: available Available"</li>
+      <li>"adapter-null: requestAdapter Err AdapterUnavailable"</li>
+      <li>"adapter-null: preferredCanvasFormat Ok format"</li>
+      <li>"adapter-null: wgslLanguageFeatures Ok features"</li>
+      <li>"no-api: available Unavailable ApiUnavailable"</li>
+      <li>"no-api: requestAdapter Err ApiUnavailable"</li>
+      <li>"no-api: preferredCanvasFormat Err ApiUnavailable"</li>
+      <li>"no-api: wgslLanguageFeatures Err ApiUnavailable"</li>
+      <li>"insecure: available Unavailable InsecureContext"</li>
+      <li>"insecure: requestAdapter Err InsecureContext"</li>
+      <li>"insecure: preferredCanvasFormat Err InsecureContext"</li>
+      <li>"insecure: wgslLanguageFeatures Err InsecureContext"</li>
+      <li>"none: available Available"</li>
+      <li>"none: requestAdapter Ok adapter"</li>
+      <li>"none: preferredCanvasFormat Ok format"</li>
+      <li>"none: wgslLanguageFeatures Ok features"</li>
+    </ol>
+  </main>
+</body>

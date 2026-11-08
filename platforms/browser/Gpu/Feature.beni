@@ -1,0 +1,57 @@
+--! The optional features of an adapter or a device (`GPUSupportedFeatures`,
+--! `docs/design/webgpu.md` §2.1, §3 item 3): a snapshot read once. A host
+--! may report a name the pin does not know; it stays a name, and asking
+--! for any name is total.
+
+import Gpu.Types as Types
+
+
+--| One reported feature: a name of the pin, or one it does not list.
+pub type Feature
+    = Known Types.FeatureName
+    | Unlisted String
+
+
+--| A snapshot of a set of features, in the order of their names.
+pub opaque type Features
+    = Features (List String)
+
+
+--| A snapshot of these names. What the engine reads a native set into.
+pub fromNames : List String → Features
+fromNames names = Features (List.sort names)
+
+
+--| Whether the set has the feature.
+pub has : Features, Types.FeatureName → Bool
+has features name = hasName features (Types.featureNameToString name)
+
+
+--| Whether the set has a feature of this native name.
+pub hasName : Features, String → Bool
+hasName features name =
+    case features of
+        Features names →
+            List.member names name
+
+
+--| Every feature of the set, in the order of their names.
+pub values : Features → List Feature
+values features =
+    case features of
+        Features names →
+            List.map names λname →
+                case Types.featureNameFromString name of
+                    Just known →
+                        Known known
+
+                    Nothing →
+                        Unlisted name
+
+
+--| How many features the set has.
+pub size : Features → Int
+size features =
+    case features of
+        Features names →
+            List.length names

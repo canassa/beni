@@ -403,6 +403,1050 @@ module Dom
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
   value select : String, Selection → Result SelectError ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure
+module Gpu
+  type Availability
+    Available
+    Unavailable
+  value available : ⊤ → Availability  -- impure
+  value preferredCanvasFormat : ⊤ → Result InitError TextureFormat  -- impure
+  value requestAdapter : AdapterOptions → Result InitError Adapter  -- suspends
+  value wgslLanguageFeatures : ⊤ → Result InitError WgslFeatures  -- impure
+module Gpu.Adapter
+  value features : Adapter → Features  -- impure
+  value info : Adapter → AdapterInfo  -- impure
+  value limits : Adapter → Limits  -- impure
+  value requestDevice : Adapter, DeviceDescriptor → Result InitError Device  -- suspends
+module Gpu.Device
+  value adapterInfo : Device → AdapterInfo  -- impure
+  value awaitLost : Device → DeviceLoss  -- suspends
+  value destroy : Device → ⊤  -- impure
+  value features : Device → Features  -- impure
+  value limits : Device → Limits  -- impure
+  value loss : Device → Maybe DeviceLoss  -- impure
+  value queue : Device → Queue  -- impure
+module Gpu.Engine
+  type Missing
+    NotSecure
+    NoApi
+  type Outcome a
+    Expected
+    Unexpected
+  value adapterFree : V → Bool  -- impure
+  value adoptAdapter : V → ⊤  -- impure
+  value adoptDevice : V, V → ⊤  -- impure
+  value awaitHost : V, String, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
+  value awaitLost : V → DeviceLoss  -- suspends
+  value channel : ⊤ → V  -- impure
+  value channelDefect : V, V → ⊤  -- impure
+  value consumeAdapter : V → ⊤  -- impure
+  value contextual : String, V → V  -- impure
+  value defect : String → a  -- impure
+  value destroy : V → ⊤  -- impure
+  value destroyed : V → Bool  -- impure
+  value deviceContext : V, String → String  -- impure
+  value deviceId : V → Int  -- impure
+  value entry : ⊤ → Result Missing V  -- impure
+  value guard : V, String, (⊤ → ⊤) → ⊤  -- impure
+  value hold : V → ⊤  -- impure
+  value isDomException : V, String → Bool  -- impure
+  value isTypeError : V → Bool  -- impure
+  value known : V → Bool  -- impure
+  value loss : V → Maybe DeviceLoss  -- impure
+  value member : V, String → V  -- impure
+  value messageOf : V → String  -- impure
+  value openChannelCount : ⊤ → Int  -- impure
+  value readNames : V, String → List String  -- impure
+  value recordOf : V → V  -- impure
+  value release : V → ⊤  -- impure
+  value reportDefect : V, V → ⊤  -- impure
+  value reserveAdapter : V, Bool → ⊤  -- impure
+  value settleDevice : V → ⊤  -- impure
+module Gpu.Error
+  type CanvasError
+    CanvasNotFound
+    WrongElementKind
+    CanvasContextUnavailable
+    CanvasUnconfigured
+    CanvasConfigurationRejected
+  type Capability
+    MissingFeature
+    MissingHostMember
+  alias DeviceLoss
+    DeviceLoss
+  alias DeviceLossReport
+    DeviceLossReport
+  type Error
+    InvalidInput
+    UnsupportedCapability
+    Validation
+    OutOfMemory
+    Internal
+    PipelineValidation
+    PipelineInternal
+    DeviceLost
+    MapFailed
+    SourceFailed
+    CanvasFailed
+    FormatFeatureRejected
+    HostOperationRejected
+    RelatedFailures
+  alias FailureDetail
+    FailureDetail
+  alias FailureSet
+    FailureSet
+  alias FormatFailure
+    FormatFailure
+  alias HostMessage
+    HostMessage
+  type InitError
+    InsecureContext
+    ApiUnavailable
+    AdapterUnavailable
+    AdapterConsumed
+    UnsupportedFeatures
+    UnsupportedLimits
+    FeatureRequestRejected
+    DeviceRequestRejected
+    InitializationInput
+    InitializationLost
+  type InputError
+    NumericDomain
+    WrongDevice
+    ResourceDestroyed
+    ResourceExpired
+    ResourceRejected
+    ResourcePending
+    MappedSizeUnaligned
+    ResizableBacking
+    SessionState
+    SessionStopped
+  alias LimitMismatch
+    LimitMismatch
+  type LimitProblem
+    AboveMaximum
+    BelowAlignment
+    NotPowerOfTwo
+  type LossReason
+    UnknownLoss
+    Destroyed
+  type MapError
+    MapRejected
+    MapAborted
+    MappedAllocationFailed
+    MappedRangeRejected
+  type Observation
+    ObservedValidation
+    ObservedOutOfMemory
+    ObservedInternal
+    ObservedPipelineValidation
+    ObservedPipelineInternal
+    ObservedMapFailed
+    ObservedHostRejection
+  type OperationFailure
+    BufferWriteSourceRejected
+    ImmediateWriteRejected
+  alias OperationReport
+    OperationReport
+  alias PipelineFailure
+    PipelineFailure
+  alias RequestDetail
+    RequestDetail
+  type SessionState
+    DeviceLeased
+    SessionEnded
+  type SourceError
+    SourceNotOriginClean
+    SourceUnusable
+    ExternalImageCopyRangeRejected
+  type Stage
+    Content
+    DeviceValidation
+    Submission
+    Mapping
+    PipelineCreation
+  value atPath : String, DomainError → InputError
+module Gpu.Feature
+  type Feature
+    Known
+    Unlisted
+  opaque type Features
+  value fromNames : List String → Features
+  value has : Features, FeatureName → Bool
+  value hasName : Features, String → Bool
+  value size : Features → Int
+  value values : Features → List Feature
+module Gpu.Flags
+  type BufferUsage
+    MapRead
+    MapWrite
+    CopySrc
+    CopyDst
+    Index
+    Vertex
+    Uniform
+    Storage
+    Indirect
+    QueryResolve
+  opaque type BufferUsages
+  type ColorWrite
+    Red
+    Green
+    Blue
+    Alpha
+    All
+  opaque type ColorWrites
+  type MapMode
+    Read
+    Write
+  opaque type MapModes
+  type ShaderStage
+    VertexStage
+    FragmentStage
+    ComputeStage
+  opaque type ShaderStages
+  type TextureUsage
+    TextureCopySrc
+    TextureCopyDst
+    TextureBinding
+    StorageBinding
+    RenderAttachment
+    TransientAttachment
+  opaque type TextureUsages
+  value allBufferUsages : List BufferUsage
+  value allColorWrites : List ColorWrite
+  value allMapModes : List MapMode
+  value allShaderStages : List ShaderStage
+  value allTextureUsages : List TextureUsage
+  value buffer : List BufferUsage → BufferUsages
+  value bufferUsageBits : BufferUsage → Int
+  value bufferUsagesBits : BufferUsages → Int
+  value bufferUsagesHas : BufferUsages, BufferUsage → Bool
+  value colorWriteBits : ColorWrite → Int
+  value colorWrites : List ColorWrite → ColorWrites
+  value colorWritesBits : ColorWrites → Int
+  value colorWritesHas : ColorWrites, ColorWrite → Bool
+  value mapModeBits : MapMode → Int
+  value mapModes : List MapMode → MapModes
+  value mapModesBits : MapModes → Int
+  value mapModesHas : MapModes, MapMode → Bool
+  value shaderStageBits : ShaderStage → Int
+  value shaderStages : List ShaderStage → ShaderStages
+  value shaderStagesBits : ShaderStages → Int
+  value shaderStagesHas : ShaderStages, ShaderStage → Bool
+  value texture : List TextureUsage → TextureUsages
+  value textureUsageBits : TextureUsage → Int
+  value textureUsagesBits : TextureUsages → Int
+  value textureUsagesHas : TextureUsages, TextureUsage → Bool
+module Gpu.Handle
+  alias Adapter
+  type Batch
+  alias BindGroup
+  alias BindGroupLayout
+  alias Buffer
+  alias CommandBuffer
+  alias CommandEncoder
+  alias ComputePass
+  alias ComputePipeline
+  alias Device
+  type DiagnosticSession
+  alias ExternalTexture
+  type Frame
+  type MappedRange
+  type Mapping
+  alias PipelineLayout
+  alias QuerySet
+  alias Queue
+  alias RenderBundle
+  alias RenderBundleEncoder
+  alias RenderPass
+  alias RenderPipeline
+  alias Sampler
+  alias Shader
+  type Submission
+  alias Surface
+  alias Texture
+  alias TextureView
+module Gpu.Limits
+  type LimitClass
+    Maximum
+    Alignment
+  type LimitName
+    MaxTextureDimension1D
+    MaxTextureDimension2D
+    MaxTextureDimension3D
+    MaxTextureArrayLayers
+    MaxBindGroups
+    MaxBindGroupsPlusVertexBuffers
+    MaxImmediateSize
+    MaxBindingsPerBindGroup
+    MaxDynamicUniformBuffersPerPipelineLayout
+    MaxDynamicStorageBuffersPerPipelineLayout
+    MaxSampledTexturesPerShaderStage
+    MaxSamplersPerShaderStage
+    MaxStorageBuffersPerShaderStage
+    MaxStorageBuffersInVertexStage
+    MaxStorageBuffersInFragmentStage
+    MaxStorageTexturesPerShaderStage
+    MaxStorageTexturesInVertexStage
+    MaxStorageTexturesInFragmentStage
+    MaxUniformBuffersPerShaderStage
+    MaxUniformBufferBindingSize
+    MaxStorageBufferBindingSize
+    MinUniformBufferOffsetAlignment
+    MinStorageBufferOffsetAlignment
+    MaxVertexBuffers
+    MaxBufferSize
+    MaxVertexAttributes
+    MaxVertexBufferArrayStride
+    MaxInterStageShaderVariables
+    MaxColorAttachments
+    MaxColorAttachmentBytesPerSample
+    MaxComputeWorkgroupStorageSize
+    MaxComputeInvocationsPerWorkgroup
+    MaxComputeWorkgroupSizeX
+    MaxComputeWorkgroupSizeY
+    MaxComputeWorkgroupSizeZ
+    MaxComputeWorkgroupsPerDimension
+  alias Limits
+    Limits
+  value allLimitNames : List LimitName
+  value limit : Limits, LimitName → Maybe Int
+  value limitClass : LimitName → LimitClass
+  value limitNameFromString : String → Maybe LimitName
+  value limitNameToString : LimitName → String
+module Gpu.Native
+  value adapterOptions : AdapterOptions → Value  -- impure
+  value array : List a, (a → Value) → Value  -- impure
+  value attachmentView : AttachmentView → Value
+  value bindGroupDescriptor : BindGroupDescriptor → Value  -- impure
+  value bindGroupEntry : BindGroupEntry → Value  -- impure
+  value bindGroupLayoutDescriptor : BindGroupLayoutDescriptor → Value  -- impure
+  value bindGroupLayoutEntry : BindGroupLayoutEntry → Value  -- impure
+  value bindingResource : BindingResource → Value  -- impure
+  value blendComponent : BlendComponent → Value  -- impure
+  value blendState : BlendState → Value  -- impure
+  value bufferBinding : BufferBinding → Value  -- impure
+  value bufferBindingLayout : BufferBindingLayout → Value  -- impure
+  value bufferDescriptor : BufferDescriptor → Value  -- impure
+  value canvasConfiguration : CanvasConfiguration → Value  -- impure
+  value canvasToneMapping : CanvasToneMapping → Value  -- impure
+  value color : Color → Value  -- impure
+  value colorDict : ColorDict → Value  -- impure
+  value colorTargetState : ColorTargetState → Value  -- impure
+  value commandBufferDescriptor : CommandBufferDescriptor → Value  -- impure
+  value commandEncoderDescriptor : CommandEncoderDescriptor → Value  -- impure
+  value computePassDescriptor : ComputePassDescriptor → Value  -- impure
+  value computePassTimestampWrites : ComputePassTimestampWrites → Value  -- impure
+  value computePipelineDescriptor : ComputePipelineDescriptor → Value  -- impure
+  value copyExternalImageDestInfo : CopyExternalImageDestInfo → Value  -- impure
+  value copyExternalImageSource : CopyExternalImageSource → Value
+  value copyExternalImageSourceInfo : CopyExternalImageSourceInfo → Value  -- impure
+  value depthStencilState : DepthStencilState → Value  -- impure
+  value deviceDescriptor : DeviceDescriptor → Value  -- impure
+  value dict : Dict String a, (a → Value) → Value  -- impure
+  value extent3D : Extent3D → Value  -- impure
+  value extent3DDict : Extent3DDict → Value  -- impure
+  value externalTextureBindingLayout : ExternalTextureBindingLayout → Value
+  value externalTextureDescriptor : ExternalTextureDescriptor → Value  -- impure
+  value externalTextureSource : ExternalTextureSource → Value
+  value fragmentState : FragmentState → Value  -- impure
+  value member : Value, String, Option a, (a → Value) → ⊤  -- impure
+  value multisampleState : MultisampleState → Value  -- impure
+  value nullable : Maybe a, (a → Value) → Value
+  value objectDescriptorBase : ObjectDescriptorBase → Value  -- impure
+  value origin2D : Origin2D → Value  -- impure
+  value origin2DDict : Origin2DDict → Value  -- impure
+  value origin3D : Origin3D → Value  -- impure
+  value origin3DDict : Origin3DDict → Value  -- impure
+  value pipelineDescriptorBase : PipelineDescriptorBase → Value  -- impure
+  value pipelineLayoutDescriptor : PipelineLayoutDescriptor → Value  -- impure
+  value pipelineLayoutMode : PipelineLayoutMode → Value
+  value primitiveState : PrimitiveState → Value  -- impure
+  value programmableStage : ProgrammableStage → Value  -- impure
+  value querySetDescriptor : QuerySetDescriptor → Value  -- impure
+  value queueDescriptor : QueueDescriptor → Value  -- impure
+  value readAdapterInfo : Value → AdapterInfo  -- impure
+  value readLimits : Value → Limits  -- impure
+  value renderBundleDescriptor : RenderBundleDescriptor → Value  -- impure
+  value renderBundleEncoderDescriptor : RenderBundleEncoderDescriptor → Value  -- impure
+  value renderPassColorAttachment : RenderPassColorAttachment → Value  -- impure
+  value renderPassDepthStencilAttachment : RenderPassDepthStencilAttachment → Value  -- impure
+  value renderPassDescriptor : RenderPassDescriptor → Value  -- impure
+  value renderPassLayout : RenderPassLayout → Value  -- impure
+  value renderPassTimestampWrites : RenderPassTimestampWrites → Value  -- impure
+  value renderPipelineDescriptor : RenderPipelineDescriptor → Value  -- impure
+  value requiredLimits : List (LimitName × Size64) → Value  -- impure
+  value samplerBindingLayout : SamplerBindingLayout → Value  -- impure
+  value samplerDescriptor : SamplerDescriptor → Value  -- impure
+  value shaderModuleCompilationHint : ShaderModuleCompilationHint → Value  -- impure
+  value shaderModuleDescriptor : ShaderModuleDescriptor → Value  -- impure
+  value stencilFaceState : StencilFaceState → Value  -- impure
+  value storageTextureBindingLayout : StorageTextureBindingLayout → Value  -- impure
+  value texelCopyBufferInfo : TexelCopyBufferInfo → Value  -- impure
+  value texelCopyBufferLayout : TexelCopyBufferLayout → Value  -- impure
+  value texelCopyTextureInfo : TexelCopyTextureInfo → Value  -- impure
+  value textureBindingLayout : TextureBindingLayout → Value  -- impure
+  value textureDescriptor : TextureDescriptor → Value  -- impure
+  value textureViewDescriptor : TextureViewDescriptor → Value  -- impure
+  value vertexAttribute : VertexAttribute → Value  -- impure
+  value vertexBufferLayout : VertexBufferLayout → Value  -- impure
+  value vertexState : VertexState → Value  -- impure
+module Gpu.Scalar
+  type Domain
+    U32Domain
+    I32Domain
+    Size64Domain
+    FiniteF32Domain
+    FiniteF64Domain
+  alias DomainError
+    DomainError
+  opaque type FiniteF32
+  opaque type FiniteF64
+  opaque type I32
+  opaque type Size64
+  opaque type U32
+  value finiteF32 : Float → Result DomainError FiniteF32
+  value finiteF32ToFloat : FiniteF32 → Float
+  value finiteF64 : Float → Result DomainError FiniteF64
+  value finiteF64ToFloat : FiniteF64 → Float
+  value i32 : Int → Result DomainError I32
+  value i32ToInt : I32 → Int
+  value i32Truncating : Float → Result DomainError I32
+  value size64 : Int → Result DomainError Size64
+  value size64FromFloat : Float → Result DomainError Size64
+  value size64ToInt : Size64 → Int
+  value size64Truncating : Float → Result DomainError Size64
+  value u32 : Int → Result DomainError U32
+  value u32ToInt : U32 → Int
+  value u32Truncating : Float → Result DomainError U32
+module Gpu.Types
+  alias AdapterInfo
+    AdapterInfo
+  alias AdapterOptions
+    AdapterOptions
+  type AddressMode
+    ClampToEdge
+    Repeat
+    MirrorRepeat
+  type AttachmentView
+    AttachmentTexture
+    AttachmentTextureView
+  type AutoLayoutMode
+    AutoLayout
+  alias BindGroupDescriptor
+    BindGroupDescriptor
+  alias BindGroupEntry
+    BindGroupEntry
+  alias BindGroupLayoutDescriptor
+    BindGroupLayoutDescriptor
+  alias BindGroupLayoutEntry
+    BindGroupLayoutEntry
+  type BindingResource
+    SamplerBinding
+    TextureBinding
+    TextureViewBinding
+    WholeBufferBinding
+    BufferRangeBinding
+    ExternalTextureBinding
+  alias BlendComponent
+    BlendComponent
+  type BlendFactor
+    Zero
+    One
+    Src
+    OneMinusSrc
+    SrcAlpha
+    OneMinusSrcAlpha
+    Dst
+    OneMinusDst
+    DstAlpha
+    OneMinusDstAlpha
+    SrcAlphaSaturated
+    Constant
+    OneMinusConstant
+    Src1
+    OneMinusSrc1
+    Src1Alpha
+    OneMinusSrc1Alpha
+  type BlendOperation
+    Add
+    Subtract
+    ReverseSubtract
+    Min
+    Max
+  alias BlendState
+    BlendState
+  alias BufferBinding
+    BufferBinding
+  alias BufferBindingLayout
+    BufferBindingLayout
+  type BufferBindingType
+    Uniform
+    Storage
+    ReadOnlyStorage
+  alias BufferDescriptor
+    BufferDescriptor
+  type BufferMapState
+    Unmapped
+    Pending
+    Mapped
+  type CanvasAlphaMode
+    Opaque
+    Premultiplied
+  alias CanvasConfiguration
+    CanvasConfiguration
+  alias CanvasToneMapping
+    CanvasToneMapping
+  type CanvasToneMappingMode
+    Standard
+    Extended
+  type Color
+    ColorSequence
+    ColorFields
+  alias ColorDict
+    ColorDict
+  opaque type ColorList
+  alias ColorTargetState
+    ColorTargetState
+  alias CommandBufferDescriptor
+    CommandBufferDescriptor
+  alias CommandEncoderDescriptor
+    CommandEncoderDescriptor
+  type CompareFunction
+    ⊥
+    Less
+    Equal
+    LessEqual
+    Greater
+    NotEqual
+    GreaterEqual
+    Always
+  type CompilationMessageType
+    Error
+    Warning
+    Info
+  alias ComputePassDescriptor
+    ComputePassDescriptor
+  alias ComputePassTimestampWrites
+    ComputePassTimestampWrites
+  alias ComputePipelineDescriptor
+    ComputePipelineDescriptor
+  alias CopyExternalImageDestInfo
+    CopyExternalImageDestInfo
+  type CopyExternalImageSource
+    Bitmap
+    ImageData
+    ImageElement
+    VideoElement
+    VideoFrame
+    CanvasElement
+    OffscreenCanvas
+  alias CopyExternalImageSourceInfo
+    CopyExternalImageSourceInfo
+  type CullMode
+    None
+    Front
+    Back
+  alias DepthStencilState
+    DepthStencilState
+  alias DeviceDescriptor
+    DeviceDescriptor
+  type DeviceLostReason
+    Unknown
+    Destroyed
+  type ErrorFilter
+    FilterValidation
+    FilterOutOfMemory
+    FilterInternal
+  type Extent3D
+    Extent3DSequence
+    Extent3DFields
+  alias Extent3DDict
+    Extent3DDict
+  opaque type Extent3DList
+  alias ExternalTextureBindingLayout
+    ExternalTextureBindingLayout
+  alias ExternalTextureDescriptor
+    ExternalTextureDescriptor
+  type ExternalTextureSource
+    ExternalVideoElement
+    ExternalVideoFrame
+  type FeatureName
+    FeatureCoreFeaturesAndLimits
+    FeatureDepthClipControl
+    FeatureDepth32floatStencil8
+    FeatureTextureCompressionBc
+    FeatureTextureCompressionBcSliced3d
+    FeatureTextureCompressionEtc2
+    FeatureTextureCompressionAstc
+    FeatureTextureCompressionAstcSliced3d
+    FeatureTimestampQuery
+    FeatureIndirectFirstInstance
+    FeatureShaderF16
+    FeatureRg11b10ufloatRenderable
+    FeatureBgra8unormStorage
+    FeatureFloat32Filterable
+    FeatureFloat32Blendable
+    FeatureClipDistances
+    FeatureDualSourceBlending
+    FeatureSubgroups
+    FeatureTextureFormatsTier1
+    FeatureTextureFormatsTier2
+    FeaturePrimitiveIndex
+    FeatureTextureComponentSwizzle
+    FeatureSubgroupSizeControl
+    FeatureTextureCompressionUnaligned
+    FeatureAtomicVec2uMinMax
+  type FilterMode
+    Nearest
+    Linear
+  alias FragmentState
+    FragmentState
+  type FrontFace
+    Ccw
+    Cw
+  type IndexFormat
+    IndexUint16
+    IndexUint32
+  type LoadOp
+    Load
+    Clear
+  type MipmapFilterMode
+    MipmapNearest
+    MipmapLinear
+  alias MultisampleState
+    MultisampleState
+  alias ObjectDescriptorBase
+    ObjectDescriptorBase
+  type Option a
+    Default
+    Value
+  type Origin2D
+    Origin2DSequence
+    Origin2DFields
+  alias Origin2DDict
+    Origin2DDict
+  opaque type Origin2DList
+  type Origin3D
+    Origin3DSequence
+    Origin3DFields
+  alias Origin3DDict
+    Origin3DDict
+  opaque type Origin3DList
+  alias PipelineDescriptorBase
+    PipelineDescriptorBase
+  type PipelineErrorReason
+    ReasonValidation
+    ReasonInternal
+  alias PipelineLayoutDescriptor
+    PipelineLayoutDescriptor
+  type PipelineLayoutMode
+    Explicit
+    Auto
+  type PowerPreference
+    LowPower
+    HighPerformance
+  type PredefinedColorSpace
+    Srgb
+    SrgbLinear
+    DisplayP3
+    DisplayP3Linear
+  alias PrimitiveState
+    PrimitiveState
+  type PrimitiveTopology
+    PointList
+    LineList
+    LineStrip
+    TriangleList
+    TriangleStrip
+  alias ProgrammableStage
+    ProgrammableStage
+  alias QuerySetDescriptor
+    QuerySetDescriptor
+  type QueryType
+    Occlusion
+    Timestamp
+  alias QueueDescriptor
+    QueueDescriptor
+  alias RenderBundleDescriptor
+    RenderBundleDescriptor
+  alias RenderBundleEncoderDescriptor
+    RenderBundleEncoderDescriptor
+  alias RenderPassColorAttachment
+    RenderPassColorAttachment
+  alias RenderPassDepthStencilAttachment
+    RenderPassDepthStencilAttachment
+  alias RenderPassDescriptor
+    RenderPassDescriptor
+  alias RenderPassLayout
+    RenderPassLayout
+  alias RenderPassTimestampWrites
+    RenderPassTimestampWrites
+  alias RenderPipelineDescriptor
+    RenderPipelineDescriptor
+  alias SamplerBindingLayout
+    SamplerBindingLayout
+  type SamplerBindingType
+    Filtering
+    NonFiltering
+    Comparison
+  alias SamplerDescriptor
+    SamplerDescriptor
+  alias ShaderModuleCompilationHint
+    ShaderModuleCompilationHint
+  alias ShaderModuleDescriptor
+    ShaderModuleDescriptor
+  alias StencilFaceState
+    StencilFaceState
+  type StencilOperation
+    StencilKeep
+    StencilZero
+    StencilReplace
+    StencilInvert
+    StencilIncrementClamp
+    StencilDecrementClamp
+    StencilIncrementWrap
+    StencilDecrementWrap
+  type StorageTextureAccess
+    WriteOnly
+    ReadOnly
+    ReadWrite
+  alias StorageTextureBindingLayout
+    StorageTextureBindingLayout
+  type StoreOp
+    Store
+    Discard
+  alias TexelCopyBufferInfo
+    TexelCopyBufferInfo
+  alias TexelCopyBufferLayout
+    TexelCopyBufferLayout
+  alias TexelCopyTextureInfo
+    TexelCopyTextureInfo
+  type TextureAspect
+    All
+    StencilOnly
+    DepthOnly
+  alias TextureBindingLayout
+    TextureBindingLayout
+  alias TextureDescriptor
+    TextureDescriptor
+  type TextureDimension
+    Dimension1D
+    Dimension2D
+    Dimension3D
+  type TextureFormat
+    R8unorm
+    R8snorm
+    R8uint
+    R8sint
+    R16unorm
+    R16snorm
+    R16uint
+    R16sint
+    R16float
+    Rg8unorm
+    Rg8snorm
+    Rg8uint
+    Rg8sint
+    R32uint
+    R32sint
+    R32float
+    Rg16unorm
+    Rg16snorm
+    Rg16uint
+    Rg16sint
+    Rg16float
+    Rgba8unorm
+    Rgba8unormSrgb
+    Rgba8snorm
+    Rgba8uint
+    Rgba8sint
+    Bgra8unorm
+    Bgra8unormSrgb
+    Rgb9e5ufloat
+    Rgb10a2uint
+    Rgb10a2unorm
+    Rg11b10ufloat
+    Rg32uint
+    Rg32sint
+    Rg32float
+    Rgba16unorm
+    Rgba16snorm
+    Rgba16uint
+    Rgba16sint
+    Rgba16float
+    Rgba32uint
+    Rgba32sint
+    Rgba32float
+    Stencil8
+    Depth16unorm
+    Depth24plus
+    Depth24plusStencil8
+    Depth32float
+    Depth32floatStencil8
+    Bc1RgbaUnorm
+    Bc1RgbaUnormSrgb
+    Bc2RgbaUnorm
+    Bc2RgbaUnormSrgb
+    Bc3RgbaUnorm
+    Bc3RgbaUnormSrgb
+    Bc4RUnorm
+    Bc4RSnorm
+    Bc5RgUnorm
+    Bc5RgSnorm
+    Bc6hRgbUfloat
+    Bc6hRgbFloat
+    Bc7RgbaUnorm
+    Bc7RgbaUnormSrgb
+    Etc2Rgb8unorm
+    Etc2Rgb8unormSrgb
+    Etc2Rgb8a1unorm
+    Etc2Rgb8a1unormSrgb
+    Etc2Rgba8unorm
+    Etc2Rgba8unormSrgb
+    EacR11unorm
+    EacR11snorm
+    EacRg11unorm
+    EacRg11snorm
+    Astc4x4Unorm
+    Astc4x4UnormSrgb
+    Astc5x4Unorm
+    Astc5x4UnormSrgb
+    Astc5x5Unorm
+    Astc5x5UnormSrgb
+    Astc6x5Unorm
+    Astc6x5UnormSrgb
+    Astc6x6Unorm
+    Astc6x6UnormSrgb
+    Astc8x5Unorm
+    Astc8x5UnormSrgb
+    Astc8x6Unorm
+    Astc8x6UnormSrgb
+    Astc8x8Unorm
+    Astc8x8UnormSrgb
+    Astc10x5Unorm
+    Astc10x5UnormSrgb
+    Astc10x6Unorm
+    Astc10x6UnormSrgb
+    Astc10x8Unorm
+    Astc10x8UnormSrgb
+    Astc10x10Unorm
+    Astc10x10UnormSrgb
+    Astc12x10Unorm
+    Astc12x10UnormSrgb
+    Astc12x12Unorm
+    Astc12x12UnormSrgb
+  type TextureSampleType
+    Float
+    UnfilterableFloat
+    Depth
+    Sint
+    Uint
+  alias TextureViewDescriptor
+    TextureViewDescriptor
+  type TextureViewDimension
+    View1D
+    View2D
+    View2DArray
+    ViewCube
+    ViewCubeArray
+    View3D
+  alias VertexAttribute
+    VertexAttribute
+  alias VertexBufferLayout
+    VertexBufferLayout
+  type VertexFormat
+    Uint8
+    Uint8x2
+    Uint8x4
+    Sint8
+    Sint8x2
+    Sint8x4
+    Unorm8
+    Unorm8x2
+    Unorm8x4
+    Snorm8
+    Snorm8x2
+    Snorm8x4
+    Uint16
+    Uint16x2
+    Uint16x4
+    Sint16
+    Sint16x2
+    Sint16x4
+    Unorm16
+    Unorm16x2
+    Unorm16x4
+    Snorm16
+    Snorm16x2
+    Snorm16x4
+    Float16
+    Float16x2
+    Float16x4
+    Float32
+    Float32x2
+    Float32x3
+    Float32x4
+    Uint32
+    Uint32x2
+    Uint32x3
+    Uint32x4
+    Sint32
+    Sint32x2
+    Sint32x3
+    Sint32x4
+    Unorm1010102
+    Unorm8x4Bgra
+    Snorm1010102
+  alias VertexState
+    VertexState
+  type VertexStepMode
+    Vertex
+    Instance
+  value adapterOptions : AdapterOptions
+  value addressModeFromString : String → Maybe AddressMode
+  value addressModeToString : AddressMode → String
+  value autoLayoutModeFromString : String → Maybe AutoLayoutMode
+  value autoLayoutModeToString : AutoLayoutMode → String
+  value bindGroupDescriptor : BindGroupLayout, List BindGroupEntry → BindGroupDescriptor
+  value bindGroupEntry : U32, BindingResource → BindGroupEntry
+  value bindGroupLayoutDescriptor : List BindGroupLayoutEntry → BindGroupLayoutDescriptor
+  value bindGroupLayoutEntry : U32, ShaderStages → BindGroupLayoutEntry
+  value blendComponent : BlendComponent
+  value blendFactorFromString : String → Maybe BlendFactor
+  value blendFactorToString : BlendFactor → String
+  value blendOperationFromString : String → Maybe BlendOperation
+  value blendOperationToString : BlendOperation → String
+  value blendState : BlendComponent, BlendComponent → BlendState
+  value bufferBinding : Buffer → BufferBinding
+  value bufferBindingLayout : BufferBindingLayout
+  value bufferBindingTypeFromString : String → Maybe BufferBindingType
+  value bufferBindingTypeToString : BufferBindingType → String
+  value bufferDescriptor : Size64, BufferUsages → BufferDescriptor
+  value bufferMapStateFromString : String → Maybe BufferMapState
+  value bufferMapStateToString : BufferMapState → String
+  value canvasAlphaModeFromString : String → Maybe CanvasAlphaMode
+  value canvasAlphaModeToString : CanvasAlphaMode → String
+  value canvasConfiguration : Device, TextureFormat → CanvasConfiguration
+  value canvasToneMapping : CanvasToneMapping
+  value canvasToneMappingModeFromString : String → Maybe CanvasToneMappingMode
+  value canvasToneMappingModeToString : CanvasToneMappingMode → String
+  value colorDict : FiniteF64, FiniteF64, FiniteF64, FiniteF64 → ColorDict
+  value colorList : List FiniteF64 → Maybe ColorList
+  value colorListValues : ColorList → List FiniteF64
+  value colorTargetState : TextureFormat → ColorTargetState
+  value commandBufferDescriptor : CommandBufferDescriptor
+  value commandEncoderDescriptor : CommandEncoderDescriptor
+  value compareFunctionFromString : String → Maybe CompareFunction
+  value compareFunctionToString : CompareFunction → String
+  value compilationMessageTypeFromString : String → Maybe CompilationMessageType
+  value compilationMessageTypeToString : CompilationMessageType → String
+  value computePassDescriptor : ComputePassDescriptor
+  value computePassTimestampWrites : QuerySet → ComputePassTimestampWrites
+  value computePipelineDescriptor : PipelineLayoutMode, ProgrammableStage → ComputePipelineDescriptor
+  value copyExternalImageDestInfo : Texture → CopyExternalImageDestInfo
+  value copyExternalImageSourceInfo : CopyExternalImageSource → CopyExternalImageSourceInfo
+  value cullModeFromString : String → Maybe CullMode
+  value cullModeToString : CullMode → String
+  value depthStencilState : TextureFormat → DepthStencilState
+  value deviceDescriptor : DeviceDescriptor
+  value deviceLostReasonFromString : String → Maybe DeviceLostReason
+  value deviceLostReasonToString : DeviceLostReason → String
+  value errorFilterFromString : String → Maybe ErrorFilter
+  value errorFilterToString : ErrorFilter → String
+  value extent3DDict : U32 → Extent3DDict
+  value extent3DList : List U32 → Maybe Extent3DList
+  value extent3DListValues : Extent3DList → List U32
+  value externalTextureBindingLayout : ExternalTextureBindingLayout
+  value externalTextureDescriptor : ExternalTextureSource → ExternalTextureDescriptor
+  value featureNameFromString : String → Maybe FeatureName
+  value featureNameToString : FeatureName → String
+  value filterModeFromString : String → Maybe FilterMode
+  value filterModeToString : FilterMode → String
+  value fragmentState : Shader, List (Maybe ColorTargetState) → FragmentState
+  value frontFaceFromString : String → Maybe FrontFace
+  value frontFaceToString : FrontFace → String
+  value indexFormatFromString : String → Maybe IndexFormat
+  value indexFormatToString : IndexFormat → String
+  value loadOpFromString : String → Maybe LoadOp
+  value loadOpToString : LoadOp → String
+  value mipmapFilterModeFromString : String → Maybe MipmapFilterMode
+  value mipmapFilterModeToString : MipmapFilterMode → String
+  value multisampleState : MultisampleState
+  value objectDescriptorBase : ObjectDescriptorBase
+  value origin2DDict : Origin2DDict
+  value origin2DList : List U32 → Maybe Origin2DList
+  value origin2DListValues : Origin2DList → List U32
+  value origin3DDict : Origin3DDict
+  value origin3DList : List U32 → Maybe Origin3DList
+  value origin3DListValues : Origin3DList → List U32
+  value pipelineDescriptorBase : PipelineLayoutMode → PipelineDescriptorBase
+  value pipelineErrorReasonFromString : String → Maybe PipelineErrorReason
+  value pipelineErrorReasonToString : PipelineErrorReason → String
+  value pipelineLayoutDescriptor : List (Maybe BindGroupLayout) → PipelineLayoutDescriptor
+  value powerPreferenceFromString : String → Maybe PowerPreference
+  value powerPreferenceToString : PowerPreference → String
+  value predefinedColorSpaceFromString : String → Maybe PredefinedColorSpace
+  value predefinedColorSpaceToString : PredefinedColorSpace → String
+  value primitiveState : PrimitiveState
+  value primitiveTopologyFromString : String → Maybe PrimitiveTopology
+  value primitiveTopologyToString : PrimitiveTopology → String
+  value programmableStage : Shader → ProgrammableStage
+  value querySetDescriptor : QueryType, U32 → QuerySetDescriptor
+  value queryTypeFromString : String → Maybe QueryType
+  value queryTypeToString : QueryType → String
+  value queueDescriptor : QueueDescriptor
+  value renderBundleDescriptor : RenderBundleDescriptor
+  value renderBundleEncoderDescriptor : List (Maybe TextureFormat) → RenderBundleEncoderDescriptor
+  value renderPassColorAttachment : AttachmentView, LoadOp, StoreOp → RenderPassColorAttachment
+  value renderPassDepthStencilAttachment : AttachmentView → RenderPassDepthStencilAttachment
+  value renderPassDescriptor : List (Maybe RenderPassColorAttachment) → RenderPassDescriptor
+  value renderPassLayout : List (Maybe TextureFormat) → RenderPassLayout
+  value renderPassTimestampWrites : QuerySet → RenderPassTimestampWrites
+  value renderPipelineDescriptor : PipelineLayoutMode, VertexState → RenderPipelineDescriptor
+  value samplerBindingLayout : SamplerBindingLayout
+  value samplerBindingTypeFromString : String → Maybe SamplerBindingType
+  value samplerBindingTypeToString : SamplerBindingType → String
+  value samplerDescriptor : SamplerDescriptor
+  value shaderModuleCompilationHint : String → ShaderModuleCompilationHint
+  value shaderModuleDescriptor : String → ShaderModuleDescriptor
+  value stencilFaceState : StencilFaceState
+  value stencilOperationFromString : String → Maybe StencilOperation
+  value stencilOperationToString : StencilOperation → String
+  value storageTextureAccessFromString : String → Maybe StorageTextureAccess
+  value storageTextureAccessToString : StorageTextureAccess → String
+  value storageTextureBindingLayout : TextureFormat → StorageTextureBindingLayout
+  value storeOpFromString : String → Maybe StoreOp
+  value storeOpToString : StoreOp → String
+  value texelCopyBufferInfo : Buffer → TexelCopyBufferInfo
+  value texelCopyBufferLayout : TexelCopyBufferLayout
+  value texelCopyTextureInfo : Texture → TexelCopyTextureInfo
+  value textureAspectFromString : String → Maybe TextureAspect
+  value textureAspectToString : TextureAspect → String
+  value textureBindingLayout : TextureBindingLayout
+  value textureDescriptor : Extent3D, TextureFormat, TextureUsages → TextureDescriptor
+  value textureDimensionFromString : String → Maybe TextureDimension
+  value textureDimensionToString : TextureDimension → String
+  value textureFormatFromString : String → Maybe TextureFormat
+  value textureFormatToString : TextureFormat → String
+  value textureSampleTypeFromString : String → Maybe TextureSampleType
+  value textureSampleTypeToString : TextureSampleType → String
+  value textureViewDescriptor : TextureViewDescriptor
+  value textureViewDimensionFromString : String → Maybe TextureViewDimension
+  value textureViewDimensionToString : TextureViewDimension → String
+  value vertexAttribute : VertexFormat, Size64, U32 → VertexAttribute
+  value vertexBufferLayout : Size64, List VertexAttribute → VertexBufferLayout
+  value vertexFormatFromString : String → Maybe VertexFormat
+  value vertexFormatToString : VertexFormat → String
+  value vertexState : Shader → VertexState
+  value vertexStepModeFromString : String → Maybe VertexStepMode
+  value vertexStepModeToString : VertexStepMode → String
+module Gpu.WgslFeature
+  opaque type WgslFeatures
+  value fromNames : List String → WgslFeatures
+  value has : WgslFeatures, String → Bool
+  value size : WgslFeatures → Int
+  value values : WgslFeatures → List String
 module Hosted
   type Job a
   type Key

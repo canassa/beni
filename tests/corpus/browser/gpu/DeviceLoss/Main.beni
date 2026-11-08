@@ -1,0 +1,87 @@
+-- A device's loss (docs/design/webgpu.md §8, ledger §2 and §7): watched
+-- from the moment the device is made, latched once, with every waiter
+-- woken and a late reader seeing it. The standard's reason "unknown" is
+-- `UnknownLoss`. `destroy` latches `Destroyed` at once, wakes waiters, and
+-- a second `destroy` changes nothing. A device the host gives already lost
+-- is `InitializationLost`, and its adapter is consumed all the same.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+later : ⊤ → List String
+later ⊤ =
+    GpuHost.inject "lost-controlled"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok device →
+                    waiter = Task.spawn λ⊤ → Gpu.Device.awaitLost device
+                    before = GpuShow.latched (Gpu.Device.loss device)
+                    Task.yieldNow ⊤
+                    GpuHost.lose "unknown"
+                    woken = GpuShow.loss (Task.join waiter)
+                    [ "before the loss: " ++ before
+                    , "the waiter woke with: " ++ woken
+                    , "latched: " ++ GpuShow.latched (Gpu.Device.loss device)
+                    , "a late waiter: " ++ GpuShow.loss (Gpu.Device.awaitLost device)
+                    ]
+
+
+destroyed : ⊤ → List String
+destroyed ⊤ =
+    GpuHost.inject "none"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok device →
+                    waiter = Task.spawn λ⊤ → Gpu.Device.awaitLost device
+                    Task.yieldNow ⊤
+                    before = GpuShow.latched (Gpu.Device.loss device)
+                    Gpu.Device.destroy device
+                    at = GpuShow.latched (Gpu.Device.loss device)
+                    Gpu.Device.destroy device
+                    [ "before destroy: " ++ before
+                    , "right after destroy: " ++ at
+                    , "the waiter woke with: " ++ GpuShow.loss (Task.join waiter)
+                    , "after a second destroy: " ++ GpuShow.latched (Gpu.Device.loss device)
+                    ]
+
+
+atBirth : ⊤ → List String
+atBirth ⊤ =
+    GpuHost.inject "device-lost-at-birth"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            [ "lost at birth: "
+                ++ GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            , "its adapter again: "
+                ++ GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "later", later ), ( "destroyed", destroyed ), ( "at-birth", atBirth ) ]

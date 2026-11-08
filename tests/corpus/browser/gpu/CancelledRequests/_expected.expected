@@ -1,0 +1,58 @@
+-- load
+<body>
+  <main>
+    <button id="requests">"requests"</button>
+    <button id="waits">"waits"</button>
+    <button id="masked">"masked"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #requests
+<body>
+  <main>
+    <button id="requests">"requests"</button>
+    <button id="waits">"waits"</button>
+    <button id="masked">"masked"</button>
+    <ol>
+      <li>"an adapter request, cancelled: open channels 1, then open channels 0"</li>
+      <li>"a refused device request, cancelled; the adapter again: Ok device"</li>
+      <li>"a granted device request, cancelled; the adapter again: Err AdapterConsumed"</li>
+      <li>"after all of it: open channels 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #waits
+<body>
+  <main>
+    <button id="requests">"requests"</button>
+    <button id="waits">"waits"</button>
+    <button id="masked">"masked"</button>
+    <ol>
+      <li>"an adapter request, cancelled: open channels 1, then open channels 0"</li>
+      <li>"a refused device request, cancelled; the adapter again: Ok device"</li>
+      <li>"a granted device request, cancelled; the adapter again: Err AdapterConsumed"</li>
+      <li>"after all of it: open channels 0"</li>
+      <li>"a live device: open channels 1"</li>
+      <li>"the waiter left woke with: UnknownLoss"</li>
+      <li>"its loss reported: open channels 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #masked
+<body>
+  <main>
+    <button id="requests">"requests"</button>
+    <button id="waits">"waits"</button>
+    <button id="masked">"masked"</button>
+    <ol>
+      <li>"an adapter request, cancelled: open channels 1, then open channels 0"</li>
+      <li>"a refused device request, cancelled; the adapter again: Ok device"</li>
+      <li>"a granted device request, cancelled; the adapter again: Err AdapterConsumed"</li>
+      <li>"after all of it: open channels 0"</li>
+      <li>"a live device: open channels 1"</li>
+      <li>"the waiter left woke with: UnknownLoss"</li>
+      <li>"its loss reported: open channels 0"</li>
+      <li>"a request whose cancel lands where it would suspend; the adapter again: Ok device"</li>
+    </ol>
+  </main>
+</body>

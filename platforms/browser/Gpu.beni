@@ -1,0 +1,115 @@
+--! WebGPU (`docs/design/webgpu.md`): the API itself, typed, with every
+--! failure the standard documents returned as a value of `Gpu.Error` and
+--! everything else a defect. This module is the entry point: whether the
+--! API is there, and an adapter. Operations live in a module per handle —
+--! `Gpu.Adapter`, `Gpu.Device` — and are called by their module or with
+--! `▷`, never as methods.
+--!
+--!     start : ⊤ → Result Gpu.Error.InitError Gpu.Handle.Device
+--!     start ⊤ =
+--!         adapter = (Gpu.requestAdapter Gpu.Types.adapterOptions)?
+--!         Gpu.Adapter.requestDevice adapter Gpu.Types.deviceDescriptor
+--!
+--! The browser's main thread only, for now (§2).
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error exposing (InitError, InsecureContext, ApiUnavailable, AdapterUnavailable)
+import Gpu.Handle as Handle
+import Gpu.Native as Native
+import Gpu.Types as Types
+import Gpu.WgslFeature as WgslFeature
+import Js
+
+
+--| Whether the API can be used here: `Available`, or why not —
+--| `InsecureContext` or `ApiUnavailable`.
+pub type Availability
+    = Available
+    | Unavailable InitError
+
+
+--| Whether this realm has WebGPU: a secure context with `navigator.gpu`.
+--| Whether an adapter can be had is `requestAdapter`'s to say.
+pub available : ⊤ → Availability
+available ⊤ =
+    case entry ⊤ of
+        Ok _ →
+            Available
+
+        Err problem →
+            Unavailable problem
+
+
+entry : ⊤ → Result InitError Js.Value
+entry ⊤ =
+    case Engine.entry ⊤ of
+        Ok gpu →
+            Ok gpu
+
+        Err Engine.NotSecure →
+            Err InsecureContext
+
+        Err Engine.NoApi →
+            Err ApiUnavailable
+
+
+--| An adapter for these options, or `AdapterUnavailable` when the host has
+--| none to give (ledger §2). The host documents no rejection: one is a
+--| defect.
+pub requestAdapter : Types.AdapterOptions → Result InitError Handle.Adapter
+requestAdapter options =
+    case entry ⊤ of
+        Err problem →
+            Err problem
+
+        Ok gpu →
+            native = Native.adapterOptions options
+            ch = Engine.channel ⊤
+            Engine.awaitHost
+                ch
+                "requestAdapter"
+                (λ⊤ → Js.call gpu "requestAdapter" [ native ])
+                adapterOutcome
+                λ_ → ⊤
+
+
+-- `requestAdapter`'s outcome: null is `AdapterUnavailable`, an adapter is
+-- recorded, and a rejection is unexpected.
+adapterOutcome : Bool, Js.Value → Engine.Outcome (Result InitError Handle.Adapter)
+adapterOutcome fulfilled value =
+    if not fulfilled then
+        Engine.Unexpected value
+    else if Js.isNull value then
+        Engine.Expected (Err AdapterUnavailable)
+    else
+        Engine.adoptAdapter value
+        Engine.Expected (Ok (Js.to value))
+
+
+--| The texture format the host prefers for a canvas. A format outside the
+--| pin is a defect.
+pub preferredCanvasFormat : ⊤ → Result InitError Types.TextureFormat
+preferredCanvasFormat ⊤ =
+    case entry ⊤ of
+        Err problem →
+            Err problem
+
+        Ok gpu →
+            spelling = Js.call gpu "getPreferredCanvasFormat" []
+            case Types.textureFormatFromString (Js.to spelling) of
+                Just format →
+                    Ok format
+
+                Nothing →
+                    Engine.defect "getPreferredCanvasFormat returned a format outside the pin"
+
+
+--| The WGSL language extensions the host supports.
+pub wgslLanguageFeatures : ⊤ → Result InitError WgslFeature.WgslFeatures
+wgslLanguageFeatures ⊤ =
+    case entry ⊤ of
+        Err problem →
+            Err problem
+
+        Ok gpu →
+            Ok (WgslFeature.fromNames (Engine.readNames gpu "wgslLanguageFeatures"))

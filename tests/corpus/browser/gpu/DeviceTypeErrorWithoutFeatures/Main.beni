@@ -1,0 +1,28 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §2, §7):
+-- a native `TypeError` from `requestDevice` when no feature was requested. The ledger gives it one cause, a refused feature; with none asked for it is not `FeatureRequestRejected`.
+-- The page stops with its crash screen; the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "device-type-error"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            [ "device: "
+                ++ GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]
