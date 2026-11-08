@@ -1,0 +1,38 @@
+-- A `Cmd.perform` body that sends keeps its send in release: the body is
+-- held in a `Cmd` value, and its effect must survive the trip
+-- (transparent-effects-proposal.md §14.3 rule 6).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Got String
+
+
+update : Msg, String → String × Cmd Msg
+update msg model =
+    case msg of
+        Got s →
+            ( model ++ s, Cmd.none )
+
+
+view : String → Html Msg
+view model = <p>{model}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                ( ""
+                , Cmd.perform λsend →
+                    send (Got "x")
+                    send (Got "y")
+                )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
