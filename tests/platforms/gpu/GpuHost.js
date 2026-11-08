@@ -1366,6 +1366,8 @@ export const keptBatch = (_unit) => keptBatchValue;
 // outside every error scope, so its validation error is uncaptured.
 export const escape = (device) => {
   device.createSampler({ lodMinClamp: 10, lodMaxClamp: 1 });
+  // An answer of the GPU process after the error, for the page to wait on.
+  device.queue.onSubmittedWorkDone();
   return null;
 };
 

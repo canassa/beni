@@ -1056,19 +1056,19 @@ uncaptured r event =
 
         Just found →
             emit r (Error.Uncaptured found)
+            -- The class alone names it: the host's message differs between
+            -- browsers, and stays with the original, the `cause`.
             reportDefect
                 r
-                (contextual
-                    (deviceContext
-                        r
-                        ("an error escaped every error scope ("
-                            ++ className found
-                            ++ ": "
-                            ++ messageOf error
-                            ++ ")"
+                (Js.construct (Js.global "Error")
+                    [ Js.from
+                        ("webgpu: "
+                            ++ deviceContext
+                                r
+                                ("an error escaped every error scope: " ++ className found)
                         )
-                    )
-                    error
+                    , Js.object [ ( "cause", error ) ]
+                    ]
                 )
 
 

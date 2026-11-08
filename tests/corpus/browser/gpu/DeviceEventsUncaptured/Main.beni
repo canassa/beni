@@ -15,12 +15,14 @@ import Tea
 
 run : ⊤ → List String
 run ⊤ = GpuKit.with "none" λd →
-    _ = Task.spawn λ⊤ →
+    listener = Task.spawn λ⊤ →
         Gpu.Device.eachEvent d λevent → GpuHost.log ("listener: " ++ GpuShow.deviceEvent event)
     Task.yieldNow ⊤
     GpuHost.escape d
-    GpuHost.drain ⊤
-    GpuHost.notes ⊤
+    -- The listener returns only after a loss: the page waits for the
+    -- defect that the event brings.
+    Task.join listener
+    [ "unreachable" ]
 
 
 main : Tea.Program

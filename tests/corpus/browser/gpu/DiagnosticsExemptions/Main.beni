@@ -34,6 +34,7 @@ import GpuHost
 import GpuKit exposing (must, u32)
 import GpuPage
 import GpuShow
+import Ref
 import Task
 import Tea
 
@@ -196,16 +197,28 @@ unrelated : ⊤ → List String
 unrelated ⊤ = GpuKit.with "none" λd →
     m = made d
     _ = GpuHost.notes ⊤
+    finished = Ref.make False
     fiber = Task.spawn λ⊤ →
         Task.yieldNow ⊤
         lines = reads d m.mapped m.surface ++ rest m
         noteAll [ …lines, "ordinary call: " ++ leased d ] "unrelated fiber, "
+        Ref.set finished True
+    -- The session waits for the fiber without joining it: it looks at a flag
+    -- the fiber sets, between yields.
     r = Diagnostics.run d λ_ →
-        Task.yieldNow ⊤
-        Task.yieldNow ⊤
+        waitFor finished
         "⊤"
     Task.join fiber
     [ …GpuHost.notes ⊤, "session: " ++ GpuShow.sessionReport r λv → v, …after d m ]
+
+
+waitFor : Ref.Ref Bool → ⊤
+waitFor flag =
+    if Ref.get flag then
+        ⊤
+    else
+        Task.yieldNow ⊤
+        waitFor flag
 
 
 destroyed : ⊤ → List String

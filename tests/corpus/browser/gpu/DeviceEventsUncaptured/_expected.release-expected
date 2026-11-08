@@ -7,5 +7,5 @@
 </body>
 -- throws click #run
 console.log: listener: Uncaptured ValidationError
-(threw: Error: webgpu: device 1, an error escaped every error scope (GPUValidationError: invalid sampler descriptor): [object Object])
+(threw: Error: webgpu: device 1, an error escaped every error scope: GPUValidationError)
 (the DOM did not change)
