@@ -789,7 +789,7 @@ fn arrivalLess(slots: *const Slots.Table, a: Arrival, b: Arrival) bool {
     if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
     if (a.j != b.j) return a.j < b.j;
     if (a.deep != b.deep) return !a.deep;
-    if (a.slot != b.slot) return if (a.kind == .param or a.kind == .cb) slots.relLess(a.slot, b.slot) else a.slot < b.slot;
+    if (a.slot != b.slot) return if ((a.kind == .param or a.kind == .cb) and slots.relOrder(a.slot, b.slot) != .eq) slots.relLess(a.slot, b.slot) else a.slot < b.slot; // a row's names are not in its key (`Slots.internRel`)
     return a.path < b.path; // total over `eql`: `Forest.merge` would add such a pair each round (§2.1)
 }
 
@@ -799,3 +799,24 @@ fn effectLess(slots: *const Slots.Table, a: Effect, b: Effect) bool {
 }
 
 const testing = std.testing;
+
+test "two rows that differ only in their names are ordered" {
+    const gpa = testing.allocator;
+    var slots: Slots.Table = .{};
+    defer slots.deinit(gpa);
+    var places: Place.Table = .{};
+    defer places.deinit(gpa);
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    const t = (Place.Step{ .kind = .index, .payload = 0 }).word();
+    const ra = try slots.relOfWords(gpa, &account, &places, &.{ t, (Place.Step{ .kind = .row, .payload = 1 }).word() });
+    const rb = try slots.relOfWords(gpa, &account, &places, &.{ t, (Place.Step{ .kind = .row, .payload = 2 }).word() });
+    try testing.expect(ra != rb and slots.relOrder(ra, rb) == .eq);
+    for ([_]ArrivalKind{ .param, .cb }) |k| {
+        const a: Arrival = .{ .kind = k, .slot = ra };
+        const b: Arrival = .{ .kind = k, .slot = rb };
+        try testing.expect(!a.eql(b));
+        try testing.expect(arrivalLess(&slots, a, b) != arrivalLess(&slots, b, a));
+        try testing.expect(!arrivalLess(&slots, a, a));
+    }
+}
