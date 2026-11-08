@@ -1012,7 +1012,8 @@ fn typesModule(m: *Model) (Error || Writer.Error)![]const u8 {
             const lower = try lowerFirst(m.arena, shape.list);
             const length = if (shape.min == shape.max) try std.fmt.allocPrint(m.arena, "exactly {d}", .{shape.min}) else if (shape.min == 0) try std.fmt.allocPrint(m.arena, "at most {d}", .{shape.max}) else try std.fmt.allocPrint(m.arena, "{d} to {d}", .{ shape.min, shape.max });
             try w.print("\n\n--| The sequence form of a `{s}`: {s} values, the length the host\n--| accepts. Made only by `{s}`.\npub opaque type {s}\n    = {s} (List {s})\n", .{ u.key, length, lower, shape.list, shape.list, element });
-            try w.print("\n\n--| A `{s}` of these values, or `Nothing` when there are not {s}.\npub {s} : List {s} → Maybe {s}\n{s} values =\n    n = List.length values\n    if n >= {d} && n <= {d} then Just ({s} values) else Nothing\n", .{ shape.list, length, lower, element, shape.list, lower, shape.min, shape.max, shape.list });
+            const fits = if (shape.min == shape.max) try std.fmt.allocPrint(m.arena, "List.length values == {d}", .{shape.max}) else if (shape.min == 0) try std.fmt.allocPrint(m.arena, "List.length values ≤ {d}", .{shape.max}) else try std.fmt.allocPrint(m.arena, "List.length values ≥ {d} && List.length values ≤ {d}", .{ shape.min, shape.max });
+            try w.print("\n\n--| A `{s}` of these values, or `Nothing` when there are not {s}.\npub {s} : List {s} → Maybe {s}\n{s} values =\n    if {s} then Just ({s} values) else Nothing\n", .{ shape.list, length, lower, element, shape.list, lower, fits, shape.list });
             try w.print("\n\n--| The values of a `{s}`.\npub {s}Values : {s} → List {s}\n{s}Values list =\n    case list of\n        {s} values →\n            values\n", .{ shape.list, lower, shape.list, element, lower, shape.list });
         };
         try w.print("\n\n--| `{s}`: one arm per alternative of the union.\npub type {s}\n", .{ u.key, u.name });
@@ -1169,7 +1170,7 @@ fn nativeModule(m: *Model) (Error || Writer.Error)![]const u8 {
         \\readInt : Js.Value, String → Int
         \\readInt native name =
         \\    value = Js.get native name
-        \\    if Js.typeIs value "number" then Js.to value else missing name "number"
+        \\    if count value then Js.to value else missing name "non-negative integer"
         \\
         \\
         \\readString : Js.Value, String → String
@@ -1191,10 +1192,19 @@ fn nativeModule(m: *Model) (Error || Writer.Error)![]const u8 {
         \\    value = Js.get native name
         \\    if Js.isUndefined value then
         \\        Nothing
-        \\    else if Js.typeIs value "number" then
+        \\    else if count value then
         \\        Just (Js.to value)
         \\    else
-        \\        missing name "number"
+        \\        missing name "non-negative integer"
+        \\
+        \\
+        \\-- A count or a limit: an integer, not negative; NaN, an infinity and a
+        \\-- fraction are none.
+        \\count : Js.Value → Bool
+        \\count value =
+        \\    Js.typeIs value "number"
+        \\        && Js.to (Js.call (Js.global "Number") "isInteger" [ value ])
+        \\        && Js.to (Js.ge value (Js.from 0))
         \\
         \\
         \\missing : String, String → a

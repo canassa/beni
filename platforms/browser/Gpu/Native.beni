@@ -69,7 +69,7 @@ member out name option f =
 readInt : Js.Value, String → Int
 readInt native name =
     value = Js.get native name
-    if Js.typeIs value "number" then Js.to value else missing name "number"
+    if count value then Js.to value else missing name "non-negative integer"
 
 
 readString : Js.Value, String → String
@@ -91,10 +91,19 @@ readOptionalInt native name =
     value = Js.get native name
     if Js.isUndefined value then
         Nothing
-    else if Js.typeIs value "number" then
+    else if count value then
         Just (Js.to value)
     else
-        missing name "number"
+        missing name "non-negative integer"
+
+
+-- A count or a limit: an integer, not negative; NaN, an infinity and a
+-- fraction are none.
+count : Js.Value → Bool
+count value =
+    Js.typeIs value "number"
+        && Js.to (Js.call (Js.global "Number") "isInteger" [ value ])
+        && Js.to (Js.ge value (Js.from 0))
 
 
 missing : String, String → a

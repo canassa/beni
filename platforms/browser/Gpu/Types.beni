@@ -2615,8 +2615,7 @@ pub opaque type Extent3DList
 --| A `Extent3DList` of these values, or `Nothing` when there are not 1 to 3.
 pub extent3DList : List Scalar.U32 → Maybe Extent3DList
 extent3DList values =
-    n = List.length values
-    if n >= 1 && n <= 3 then Just (Extent3DList values) else Nothing
+    if List.length values ≥ 1 && List.length values ≤ 3 then Just (Extent3DList values) else Nothing
 
 
 --| The values of a `Extent3DList`.
@@ -2664,8 +2663,7 @@ pub opaque type Origin3DList
 --| A `Origin3DList` of these values, or `Nothing` when there are not at most 3.
 pub origin3DList : List Scalar.U32 → Maybe Origin3DList
 origin3DList values =
-    n = List.length values
-    if n >= 0 && n <= 3 then Just (Origin3DList values) else Nothing
+    if List.length values ≤ 3 then Just (Origin3DList values) else Nothing
 
 
 --| The values of a `Origin3DList`.
@@ -2702,8 +2700,7 @@ pub opaque type Origin2DList
 --| A `Origin2DList` of these values, or `Nothing` when there are not at most 2.
 pub origin2DList : List Scalar.U32 → Maybe Origin2DList
 origin2DList values =
-    n = List.length values
-    if n >= 0 && n <= 2 then Just (Origin2DList values) else Nothing
+    if List.length values ≤ 2 then Just (Origin2DList values) else Nothing
 
 
 --| The values of a `Origin2DList`.
@@ -2735,8 +2732,7 @@ pub opaque type ColorList
 --| A `ColorList` of these values, or `Nothing` when there are not exactly 4.
 pub colorList : List Scalar.FiniteF64 → Maybe ColorList
 colorList values =
-    n = List.length values
-    if n >= 4 && n <= 4 then Just (ColorList values) else Nothing
+    if List.length values == 4 then Just (ColorList values) else Nothing
 
 
 --| The values of a `ColorList`.
