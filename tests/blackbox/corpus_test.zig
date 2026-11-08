@@ -2757,7 +2757,10 @@ const Case = struct {
             // Its v2 twin (`.sanitize-lists-v2`, `BENI_IN_PLACE=lists-v2`)
             // builds under `--ownership=v2`, whose channel names the writes
             // to wrap (`own2/Hoists.zig`, §3.7).
-            for (lists_passes) |lp| if (c.cfg.in_place == lp.mode or c.goldenExists(lp.golden)) lists: {
+            // A red twin has no marker, only its `-refuses` golden; that
+            // golden alone puts the fixture in the pass, so every refusals
+            // golden is read by the gates and a twin that stops refusing fails.
+            for (lists_passes) |lp| if (c.cfg.in_place == lp.mode or c.goldenExists(lp.golden) or c.goldenExists(lp.refuses)) lists: {
                 // A fixture whose `.sanitize-lists-v2-refuses` says the checker
                 // must refuse it: a fixed soundness defect, whose program the
                 // sanitiser catches when the checker accepts it again. Refused,
