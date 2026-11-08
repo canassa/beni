@@ -1,0 +1,60 @@
+-- Alpha through a copy (docs/design/webgpu.md §8; the destination's
+-- `premultipliedAlpha`): the test image with its top-left quadrant made
+-- half transparent — (200, 40, 40, 128) — as `ImageData`, whose pixels are
+-- not premultiplied, copied whole into an `rgba8unorm` texture and read
+-- back. straight: `premultipliedAlpha = False` keeps the bytes. premultiplied:
+-- `premultipliedAlpha = True` multiplies each colour by its alpha: 200 ×
+-- 128 / 255 = 100.4 and 40 × 128 / 255 = 20.1, so (100, 20, 20, 128),
+-- worked out by hand; the opaque quadrants keep their bytes. Each byte may
+-- differ by 1, for the host's rounding of a conversion. The gates' fake
+-- host keeps no texels, so its transcript reads zeros; `test-webgpu`'s is
+-- the GPU's (`_expected.webgpu-expected`).
+import Binary
+import Gpu.Device
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuMedia
+import GpuPage
+import GpuShow
+import Tea
+
+
+-- The source: the test image, its top-left quadrant at alpha 128.
+source : Int, Int → List Int
+source x y = if x < 4 && y < 4 then [ 200, 40, 40, 128 ] else GpuMedia.colour x y
+
+
+-- The source premultiplied, worked out by hand.
+premultiplied : Int, Int → List Int
+premultiplied x y = if x < 4 && y < 4 then [ 100, 20, 20, 128 ] else GpuMedia.colour x y
+
+
+pixels : ⊤ → Binary.Buffer
+pixels ⊤ =
+    rows = List.range 0 (GpuMedia.side - 1)
+    must (Binary.fromList (List.concatMap rows λy → List.concatMap rows λx → source x y))
+
+
+copy : Bool, (Int, Int → List Int) → List String
+copy premultiply expected = GpuKit.with "none" λd →
+    t = GpuMedia.target d
+    destination =
+        { (Types.copyExternalImageDestInfo t) | premultipliedAlpha = Types.Value premultiply }
+    result =
+        Gpu.Queue.copyExternalImageToTexture
+            (Gpu.Device.queue d)
+            (Types.copyExternalImageSourceInfo (Types.ImageData (GpuMedia.dataOver (pixels ⊤))))
+            destination
+            GpuMedia.extent
+    [ "copy: " ++ GpuShow.checked result λ_ → "done"
+    , "pixels: " ++ GpuMedia.check (GpuMedia.read d t) expected 1
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "straight", λ⊤ → copy False source )
+        , ( "premultiplied", λ⊤ → copy True premultiplied )
+        ]

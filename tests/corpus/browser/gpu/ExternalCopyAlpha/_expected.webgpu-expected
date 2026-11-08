@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="straight">"straight"</button>
+    <button id="premultiplied">"premultiplied"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #straight
+<body>
+  <main>
+    <button id="straight">"straight"</button>
+    <button id="premultiplied">"premultiplied"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+    </ol>
+  </main>
+</body>
+-- click #premultiplied
+<body>
+  <main>
+    <button id="straight">"straight"</button>
+    <button id="premultiplied">"premultiplied"</button>
+    <ol>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+      <li>"copy: Ok done"</li>
+      <li>"pixels: 64 of 64 pixels match"</li>
+    </ol>
+  </main>
+</body>
