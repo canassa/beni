@@ -1665,6 +1665,7 @@ const fakeMedia = () => {
     const crop = rest.length >= 4 ? { width: globalThis.Math.abs(rest[2]), height: globalThis.Math.abs(rest[3]) } : size;
     return globalThis.Promise.resolve(new FakeImageBitmap(crop.width, crop.height));
   };
+};
 
 // Log what `probe` answers three tasks later, as `logScopesLater` does:
 // after a throw, what the runtime's teardown left.
