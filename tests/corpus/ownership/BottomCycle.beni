@@ -1,0 +1,45 @@
+-- ownership: a group that never returns stays ⊥ (ownership-v2.md §2.12,
+-- §8 S4). `forever` and the pair `spinA`/`spinB` answer nothing, so what
+-- their callers push onto is no list of theirs, and the pushes are
+-- accepted. ⊥ is the result only: `foreverPush` writes its list before it
+-- calls itself, so its caller that reads the list again is refused.
+-- `returnsOnce` has a returning arm, so its answer is its argument and the
+-- push onto it, with the argument read again, is refused.
+forever : List Int → List Int
+forever xs = forever xs
+
+
+useForever : List Int → Int
+useForever xs = List.length (List.push (forever xs) 1) + List.length xs
+
+
+spinA : List Int → List Int
+spinA xs = spinB xs
+
+
+spinB : List Int → List Int
+spinB xs = spinA xs
+
+
+useSpin : List Int → Int
+useSpin xs = List.length (List.push (spinA xs) 1) + List.length xs
+
+
+foreverPush : List Int → List Int
+foreverPush xs = foreverPush (List.push xs 1)
+
+
+useForeverPush : List Int → Int
+useForeverPush xs = List.length (foreverPush xs) + List.length xs
+
+
+returnsOnce : List Int, Int → List Int
+returnsOnce xs n =
+    if n == 0 then
+        xs
+    else
+        returnsOnce xs n
+
+
+useReturnsOnce : List Int → Int
+useReturnsOnce xs = List.length (List.push (returnsOnce xs 1) 1) + List.length xs

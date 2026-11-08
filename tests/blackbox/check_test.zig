@@ -2036,6 +2036,53 @@ test "full-type casts keep distinct nested nonrecursive constructor places" {
     try testing.expect(std.mem.indexOf(u8, r.stdout, "accepted param") != null);
 }
 
+/// Appendix C.2–C.5 of `ownership-v2.md` (§8 S4): the checker v2's walker
+/// derives the contracts of core's loops, `mapHelp`, `List.map`,
+/// `foldlFrom`, `List.foldl`, `foldrFrom` and `List.foldr`, from their
+/// bodies (no ownership words, so no row a test supplies), and this golden
+/// pins each `summary` line whole, a label's origin written `@n`. A change is read against Appendix C
+/// before the golden is changed: a mismatch is a finding.
+const core_loops = "tests/corpus/ownership/core-loops-v2.txt";
+
+test "the checker v2 derives core's loops from their bodies, as Appendix C.2–C.5 says" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "core/List.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    var got: std.ArrayList(u8) = .empty;
+    for ([_][]const u8{ "mapHelp", "map", "foldlFrom", "foldl", "foldrFrom", "foldr" }) |name| {
+        const head = try std.fmt.allocPrint(arena, "  summary {s}:", .{name});
+        var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+        const line = while (lines.next()) |l| {
+            if (std.mem.startsWith(u8, l, head)) break l;
+        } else {
+            std.debug.print("{s}: no summary line in the dump\n", .{name});
+            return error.SummaryMissing;
+        };
+        // Words would make it an asserted row, not a derived one.
+        try testing.expect(!std.mem.endsWith(u8, line, " (words)"));
+        // A label's origin is an instruction's number, which any edit of
+        // `core/List.beni` above it moves: written `@n`.
+        var i: usize = 2;
+        while (i < line.len) : (i += 1) {
+            try got.append(arena, line[i]);
+            if (line[i] != '@' or i + 1 >= line.len or !std.ascii.isDigit(line[i + 1])) continue;
+            try got.append(arena, 'n');
+            while (i + 1 < line.len and std.ascii.isDigit(line[i + 1])) i += 1;
+        }
+        try got.append(arena, '\n');
+    }
+    const text = try std.Io.Dir.cwd().readFileAlloc(testing.io, core_loops, arena, .limited(1 << 20));
+    var want: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |l| if (l.len != 0 and l[0] != '#') {
+        try want.appendSlice(arena, l);
+        try want.append(arena, '\n');
+    };
+    try testing.expectEqualStrings(want.items, got.items);
+}
+
 test "growing full cast types settle on the composed path" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

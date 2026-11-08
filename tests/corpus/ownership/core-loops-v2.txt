@@ -1,0 +1,14 @@
+# KNOWN MISMATCH (#2297): C.2 and C.4 say mapHelp and foldlFrom read π1's
+# elements ([*] R); the walker says reads π1ε, which is unsound for a direct
+# caller (latent: only base-wrapped callers exist). Fixing #2297 changes
+# the mapHelp, foldlFrom and foldrFrom lines below to read π1[*].
+# Appendix C.2–C.5 of docs/design/ownership-v2.md, as the checker v2 derives them
+# (`beni dump --stage=ownership --ownership=v2 --core core/List.beni`, its `summary`
+# lines, a label's origin written `@n`), read by tests/blackbox/check_test.zig. Read a change against Appendix C
+# before it is written here.
+summary mapHelp: res ε π6ε, [*]… π6[*]* cb(π5ε@n); nondup no; answers ⇐ sel π1{[*]*~} π6{ε,[*]*} π5{ε!!1}; reads π1ε π5ε* π6ε*; writes π6ε; req ⇐ sel π1{ε~,[*]*~} π5{ε*~} π6{ε}; label π5ε@n many [1 walk: ε… π1[*]* sep ⇐ sel π1{ε~,[*]*} π5{ε*~} π6{ε~,[*]*~} below ⇐ sel π1{[*]*}]
+summary map: res ε fresh, [*]… fresh cb(π2ε@n); nondup no; answers ⇐ sel π1{[*]*~} π2{ε!!1}; reads π1ε* π2ε*; label π2ε@n many [1 walk: ε… π1[*]* sep ⇐ sel π1{ε,[*]*} π2{ε*~} below ⇐ sel π1{ε,[*]*}]
+summary foldlFrom: res ε… π4ε* cb(π5ε@n); nondup no; reads π1ε π4ε* π5ε*; label π5ε@n many [1 walk: ε… π1[*]* sep ⇐ sel π1{ε~,[*]*} π4{ε*~} π5{ε*~,ε!2} below ⇐ sel π1{[*]*}] [2: ε… π4ε* cb(π5ε@n) sep ⇐ sel π1{ε~,[*]*~} π4{ε*} π5{ε*~,ε!2} below ⇐ sel π4{ε*} π5{ε!2}]
+summary foldl: res ε… π2ε* cb(π3ε@n); nondup no; reads π1ε* π2ε* π3ε*; label π3ε@n many [1 walk: ε… π1[*]* sep ⇐ sel π1{ε,[*]*} π2{ε*~} π3{ε*~,ε!2} below ⇐ sel π1{ε,[*]*}] [2: ε… π2ε* cb(π3ε@n) sep ⇐ sel π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2} below ⇐ sel π2{ε*} π3{ε!2}]
+summary foldrFrom: res ε… π4ε* cb(π5ε@n); nondup no; reads π1ε π4ε* π5ε*; label π5ε@n many [1 walk: ε… π1[*]* sep ⇐ sel π1{ε~,[*]*} π4{ε*~} π5{ε*~,ε!2} below ⇐ sel π1{[*]*}] [2: ε… π4ε* cb(π5ε@n) sep ⇐ sel π1{ε~,[*]*~} π4{ε*} π5{ε*~,ε!2} below ⇐ sel π4{ε*} π5{ε!2}]
+summary foldr: res ε… π2ε* cb(π3ε@n); nondup no; reads π1ε* π2ε* π3ε*; label π3ε@n many [1 walk: ε… π1[*]* sep ⇐ sel π1{ε,[*]*} π2{ε*~} π3{ε*~,ε!2} below ⇐ sel π1{ε,[*]*}] [2: ε… π2ε* cb(π3ε@n) sep ⇐ sel π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2} below ⇐ sel π2{ε*} π3{ε!2}]
