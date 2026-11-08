@@ -16,24 +16,22 @@ import Js
 
 --| The features the device was made with, dependencies included.
 pub features : Handle.Device → Feature.Features
-features device =
-    Feature.fromNames
-        (Js.to (Js.call (Js.global "Array") "from" [ Js.get (Js.from device) "features" ]))
+features device = Feature.fromNames (Engine.readNames (Js.from device) "features")
 
 
 --| The limits the device was made with.
 pub limits : Handle.Device → Limits.Limits
-limits device = Native.readLimits (Js.get (Js.from device) "limits")
+limits device = Native.readLimits (Engine.member (Js.from device) "limits")
 
 
 --| What the host says of the device's adapter.
 pub adapterInfo : Handle.Device → Types.AdapterInfo
-adapterInfo device = Native.readAdapterInfo (Js.get (Js.from device) "adapterInfo")
+adapterInfo device = Native.readAdapterInfo (Engine.member (Js.from device) "adapterInfo")
 
 
 --| The device's queue.
 pub queue : Handle.Device → Handle.Queue
-queue device = Js.to (Js.get (Js.from device) "queue")
+queue device = Js.to (Engine.member (Js.from device) "queue")
 
 
 --| Destroy the device. Later work on it fails, waiters for its loss wake

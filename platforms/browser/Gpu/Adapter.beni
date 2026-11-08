@@ -16,30 +16,29 @@ import Js
 
 --| The features the adapter supports.
 pub features : Handle.Adapter → Feature.Features
-features adapter = readFeatures (Js.get (Js.from adapter) "features")
+features adapter = Feature.fromNames (Engine.readNames (Js.from adapter) "features")
 
 
 --| The limits the adapter supports.
 pub limits : Handle.Adapter → Limits.Limits
-limits adapter = Native.readLimits (Js.get (Js.from adapter) "limits")
+limits adapter = Native.readLimits (Engine.member (Js.from adapter) "limits")
 
 
 --| What the host says of the adapter, as it says it: a privacy-reduced
 --| string is kept as given.
 pub info : Handle.Adapter → Types.AdapterInfo
-info adapter = Native.readAdapterInfo (Js.get (Js.from adapter) "info")
-
-
-readFeatures : Js.Value → Feature.Features
-readFeatures set = Feature.fromNames (Js.to (Js.call (Js.global "Array") "from" [ set ]))
+info adapter = Native.readAdapterInfo (Engine.member (Js.from adapter) "info")
 
 
 --| A device with the descriptor's features and limits, checked first
 --| against what the adapter supports: an unsupported feature or limit is
 --| refused before the host is asked, and never clamped. The host's own
---| refusals are `FeatureRequestRejected` (a `TypeError`) and
+--| refusals are `FeatureRequestRejected` (a `TypeError`, when features were
+--| requested: the one cause the ledger gives it) and
 --| `DeviceRequestRejected` (an `OperationError`); any other is a defect. A
---| device the host gave already lost is `InitializationLost`.
+--| device the host gave already lost is `InitializationLost`. A cancelled
+--| request still settles: a refusal frees the adapter, a device that
+--| arrives is destroyed, and an unexpected outcome stops the program.
 pub requestDevice : Handle.Adapter, Types.DeviceDescriptor → Result InitError Handle.Device
 requestDevice adapter descriptor =
     native = Js.from adapter
@@ -56,29 +55,63 @@ requestDevice adapter descriptor =
             if not (List.isEmpty mismatches) then
                 Err (UnsupportedLimits mismatches)
             else
+                converted = Native.deviceDescriptor descriptor
+                ch = Engine.channel ⊤
                 Engine.reserveAdapter native True
-                case Engine.requestDevice native (Native.deviceDescriptor descriptor) of
-                    Engine.Granted device →
-                        Engine.consumeAdapter native
+                granted =
+                    Engine.awaitHost
+                        ch
+                        (λ⊤ → Js.call native "requestDevice" [ converted ])
+                        (λfulfilled value → deviceOutcome native ch requested fulfilled value)
+                        λresult →
+                            case result of
+                                Ok device →
+                                    Js.to (Js.call device "destroy" [])
+
+                                Err _ →
+                                    ⊤
+                case granted of
+                    Err problem →
+                        Err problem
+
+                    Ok device →
                         case Engine.loss device of
                             Just loss →
                                 Err (InitializationLost loss)
 
                             Nothing →
-                                Engine.watchDefects device
                                 Ok (Js.to device)
 
-                    Engine.Refused error →
-                        Engine.reserveAdapter native False
-                        if Engine.isTypeError error then
-                            Err
-                                (FeatureRequestRejected
-                                    { requested = requested, message = Engine.messageOf error }
-                                )
-                        else if Engine.isDomException error "OperationError" then
-                            Err (DeviceRequestRejected { message = Engine.messageOf error })
-                        else
-                            Js.throw error
+
+-- `requestDevice`'s outcome, in its reaction: a device consumes the
+-- adapter and is recorded with its loss watched; a refusal frees the
+-- adapter and is typed when the ledger documents it (ledger §2); anything
+-- else is unexpected.
+deviceOutcome :
+      Js.Value
+    , Js.Value
+    , List Types.FeatureName
+    , Bool
+    , Js.Value
+    → Engine.Outcome (Result InitError Js.Value)
+deviceOutcome adapter ch requested fulfilled value =
+    if fulfilled then
+        Engine.consumeAdapter adapter
+        Engine.adoptDevice value ch
+        Engine.Expected (Ok value)
+    else
+        Engine.reserveAdapter adapter False
+        if Engine.isTypeError value && not (List.isEmpty requested) then
+            Engine.Expected
+                (Err
+                    (FeatureRequestRejected
+                        { requested = requested, message = Engine.messageOf value }
+                    )
+                )
+        else if Engine.isDomException value "OperationError" then
+            Engine.Expected (Err (DeviceRequestRejected { message = Engine.messageOf value }))
+        else
+            Engine.Unexpected value
 
 
 optionList : Types.Option (List a) → List a
@@ -93,30 +126,41 @@ optionList option =
 
 -- Every required limit the adapter does not support, in the order given
 -- (the WebGPU limit classes: a maximum may not be exceeded; an alignment
--- is a power of two no smaller than the supported one).
+-- is a power of two no smaller than the supported one). A limit the host
+-- does not report is left to the host, which refuses one it does not know.
 limitMismatches : Limits.Limits, List (Limits.LimitName × Scalar.Size64) → List Error.LimitMismatch
 limitMismatches supported required = List.filterMap required λ( name, value ) →
-    have = Limits.limit supported name
-    asked = Scalar.size64ToInt value
-    problem =
-        case Limits.limitClass name of
-            Limits.Maximum →
-                if asked > have then Just AboveMaximum else Nothing
+    case Limits.limit supported name of
+        Nothing →
+            Nothing
 
-            Limits.Alignment →
-                if not (powerOfTwo asked) then
-                    Just NotPowerOfTwo
-                else if asked < have then
-                    Just BelowAlignment
-                else
-                    Nothing
-    Maybe.map problem λp → { limit = name, requested = value, supported = have, problem = p }
+        Just have →
+            asked = Scalar.size64ToInt value
+
+            problem =
+                case Limits.limitClass name of
+                    Limits.Maximum →
+                        if asked > have then Just AboveMaximum else Nothing
+
+                    Limits.Alignment →
+                        if not (powerOfTwo asked) then
+                            Just NotPowerOfTwo
+                        else if asked < have then
+                            Just BelowAlignment
+                        else
+                            Nothing
+            Maybe.map problem λp →
+                { limit = name, requested = value, supported = have, problem = p }
 
 
+-- Exact for every `Size64`, which is at most 2⁵³ − 1: halve while even.
 powerOfTwo : Int → Bool
 powerOfTwo n =
-    n > 0
-        && Js.to
-            (Js.call (Js.global "Number") "isInteger"
-                [ Js.call (Js.global "Math") "log2" [ Js.from n ] ]
-            )
+    if n ≤ 0 then
+        False
+    else if n == 1 then
+        True
+    else if n ≠ (n // 2) * 2 then
+        False
+    else
+        powerOfTwo (n // 2)

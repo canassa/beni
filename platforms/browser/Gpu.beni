@@ -63,18 +63,22 @@ requestAdapter options =
             Err problem
 
         Ok gpu →
-            case
-                Engine.settle λ⊤ → Js.call gpu "requestAdapter" [ Native.adapterOptions options ]
-            of
-                Engine.Fulfilled adapter →
-                    if Js.isNull adapter then
-                        Err AdapterUnavailable
-                    else
-                        Engine.adoptAdapter adapter
-                        Ok (Js.to adapter)
+            native = Native.adapterOptions options
+            ch = Engine.channel ⊤
+            Engine.awaitHost ch (λ⊤ → Js.call gpu "requestAdapter" [ native ]) adapterOutcome λ_ → ⊤
 
-                Engine.Rejected error →
-                    Js.throw error
+
+-- `requestAdapter`'s outcome: null is `AdapterUnavailable`, an adapter is
+-- recorded, and a rejection is unexpected.
+adapterOutcome : Bool, Js.Value → Engine.Outcome (Result InitError Handle.Adapter)
+adapterOutcome fulfilled value =
+    if not fulfilled then
+        Engine.Unexpected value
+    else if Js.isNull value then
+        Engine.Expected (Err AdapterUnavailable)
+    else
+        Engine.adoptAdapter value
+        Engine.Expected (Ok (Js.to value))
 
 
 --| The texture format the host prefers for a canvas. A format outside the
@@ -103,5 +107,4 @@ wgslLanguageFeatures ⊤ =
             Err problem
 
         Ok gpu →
-            names = Js.call (Js.global "Array") "from" [ Js.get gpu "wgslLanguageFeatures" ]
-            Ok (WgslFeature.fromNames (Js.to names))
+            Ok (WgslFeature.fromNames (Engine.readNames gpu "wgslLanguageFeatures"))
