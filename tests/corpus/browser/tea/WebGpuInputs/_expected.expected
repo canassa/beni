@@ -5,7 +5,7 @@
     <canvas id="canvas" width="4" height="4"></canvas>
     <img id="image">
     <video id="video"></video>
-    <p>"ready"</p>
+    <pre>"ready"</pre>
   </main>
 </body>
 -- click #run
@@ -15,6 +15,6 @@
     <canvas id="canvas" width="4" height="4"></canvas>
     <img id="image">
     <video id="video"></video>
-    <p>"unsupported"</p>
+    <pre>"this DOM has no native image sources"</pre>
   </main>
 </body>

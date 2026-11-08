@@ -5,7 +5,7 @@
     <canvas id="canvas" width="4" height="4"></canvas>
     <img id="image">
     <video id="video"></video>
-    <p>"ready"</p>
+    <pre>"ready"</pre>
   </main>
 </body>
 -- click #run
@@ -15,6 +15,6 @@
     <canvas id="canvas" width="4" height="4"></canvas>
     <img id="image">
     <video id="video"></video>
-    <p>"native pass"</p>
+    <pre>"pixel alias: Ok (Ok 255)\ndata info: { height = 2, state = \"Ready\", width = 2 }\ndata zero: Err (InvalidDimension 0)\ndata from view: Ok { height = 4, state = \"Ready\", width = 2 }\nwrong view: Err WrongPixelView\ninconsistent: Err InconsistentPixels\nwrong height: Err InconsistentPixels\nshared: Err IsolationRequired\ncanvas: Ok { height = 4, width = 4 }\ncanvas missing: Err (NotFound \"nothing\")\ncanvas wrong: Err (WrongElement \"image\")\nimage: Ok { height = 0, state = \"Broken\", width = 0 }\nimage wrong: Err (WrongElement \"video\")\nvideo: Ok { height = 0, state = \"Loading\", width = 0 }\nvideo wrong: Err (WrongElement \"canvas\")\nbroken decode: Err DecodeFailed\nbitmap: Ok { height = 3, state = \"Ready\", width = 3 }\nbitmap closed: Ok { height = 0, state = \"Closed\", width = 0 }\ndensity decode: Ok\ndensity: { height = 2, state = \"Ready\", width = 2 }\ndensity bitmap: Ok { height = 2, state = \"Ready\", width = 2 }\nzero crop: Err InvalidCrop\nzero resize: Err (InvalidDimension 0)\nbroken image: Err InvalidSource\npng bytes: Ok { height = 4, state = \"Ready\", width = 4 }\nbad bytes: Err DecodeFailed\nframe lifetimes: Ok [\"(4,5,Just 2)\",\"(True,Ok True)\",\"Err Closed\"]\ndensity frame: Ok { a = 4, b = 4 }\nhidden crop: Err InvalidRectangle\nmissing timestamp: Err MissingTimestamp\ntiny crop: Err InvalidDimensions\npixels source: Err WrongSource\ncreated: Ok { height = 5, width = 3 }\nresized: Ok { height = 1, width = 7 }\nnegative: Err (InvalidDimension (-1))\noffscreen: { height = 2, state = \"ContextValidationRequired\", width = 2 }\nno context: Err NoContextOrDetached\npresent: { a = Ok, b = \"Closed\", c = Err ClosedBitmap }\nsnapshot: Ok { height = 2, state = \"Ready\", width = 2 }"</pre>
   </main>
 </body>

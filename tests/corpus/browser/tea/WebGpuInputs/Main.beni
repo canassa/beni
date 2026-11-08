@@ -1,5 +1,8 @@
--- Native intake and lifetime evidence. happy-dom lacks these native resources;
--- Chrome's separate golden requires actual pixel aliasing, frames and transfers.
+-- The GPU image sources on the main thread: acquisition from elements,
+-- ImageData over a native pixel view, bitmaps, decode, VideoFrame lifetimes,
+-- canvases, bitmaprenderer presentation and each typed failure. happy-dom has
+-- no native sources (Probe.nativeSources), so the gate's transcript stops at
+-- once; Chrome's golden (`_expected.chrome-expected`) holds the answers.
 import Binary
 import Browser.Canvas as Canvas
 import Browser.Image as Image
@@ -8,13 +11,14 @@ import Browser.Video as Video
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Probe
+import String
 import Sub
 import Tea
 
 
 type Msg
     = Run
-    | Result String
+    | Lines String
 
 
 main : Tea.Program
@@ -31,219 +35,287 @@ update : Msg, String → String × Cmd Msg
 update message model =
     case message of
         Run →
-            ( model, Cmd.perform λsend → send (Result (run ⊤)) )
-        Result text →
-            ( text, Cmd.none )
+            ( model, Cmd.perform λsend → send (Lines (String.join (run ⊤) "\n")) )
+        Lines lines →
+            ( lines, Cmd.none )
 
 
 view : String → Html Msg
 view model =
     <main>
-        <button id="run" onClick={Run}>run</button><canvas id="canvas" width={4} height={4} /><img id="image" /><video id="video" /><p>{model}</p>
+        <button id="run" onClick={Run}>run</button><canvas id="canvas" width={4} height={4} /><img id="image" /><video id="video" />
+        <pre>{model}</pre>
     </main>
 
 
-run : ⊤ → String
-run ⊤ =
-    case exercise ⊤ of
-        Ok True →
-            "native pass"
-        Ok False →
-            "FAIL"
-        Err text →
-            text
+show : String, a → String
+show label value = label ++ ": " ++ Debug.toString value
 
 
-exercise : ⊤ → Result String Bool
+run : ⊤ → List String
+run ⊤ = if Probe.nativeSources ⊤ then exercise ⊤ else [ "this DOM has no native image sources" ]
+
+
+exercise : ⊤ → List String
 exercise ⊤ =
-    data = require "unsupported" (Image.data 2 2 Image.settings)?
-    pixels = require "pixels error" (Image.pixels data)?
-    require "write error" (Binary.writeU8 pixels 0 255)?
-    second = require "alias error" (Image.pixels data)?
-    red = require "read error" (Binary.readU8 second 0)?
-    canvas = require "canvas error" (Canvas.byId "canvas")?
-    image = require "image error" (Image.byId "image")?
-    video = require "video error" (Video.byId "video")?
+    case Image.data 2 2 Image.settings of
+        Err error →
+            [ show "data" (Err error) ]
+        Ok data →
+            [ …pixels data, …elements ⊤, …bitmaps data, …frames data, …canvases data ]
+
+
+pixels : Image.Data → List String
+pixels data =
+    aliased =
+        case Image.pixels data of
+            Err error →
+                Err error
+            Ok storage →
+                _ = Binary.writeU8 storage 0 255
+                Result.andThen (Image.pixels data) λsecond → Ok (Binary.readU8 second 0)
+    clamped = pixelStorage Binary.U8Clamped
+    plain = pixelStorage Binary.U8
+    fromView =
+        case clamped of
+            Ok storage →
+                Image.dataFromView storage 2 Nothing Image.settings
+                    ▷ Result.map λmade → Source.info (Source.FromPixels made)
+            Err error →
+                Err error
+    [ show "pixel alias" aliased
+    , show "data info" (Source.info (Source.FromPixels data))
+    , show "data zero" (Image.data 0 2 Image.settings)
+    , show "data from view" fromView
+    , show
+        "wrong view"
+        (plain ▷ Result.andThen λstorage → Image.dataFromView storage 2 Nothing Image.settings)
+    , show
+        "inconsistent"
+        (clamped ▷ Result.andThen λstorage → Image.dataFromView storage 3 Nothing Image.settings)
+    , show
+        "wrong height"
+        (clamped ▷ Result.andThen λstorage → Image.dataFromView storage 2 (Just 3) Image.settings)
+    , show "shared" (Binary.shared 8 ▷ Result.map λ_ → "shared")
+    ]
+
+
+elements : ⊤ → List String
+elements ⊤ =
+    [ show "canvas" (Canvas.byId "canvas" ▷ Result.map Canvas.size)
+    , show "canvas missing" (Canvas.byId "nothing")
+    , show "canvas wrong" (Canvas.byId "image")
+    , show "image" (Image.byId "image" ▷ Result.map λimage → Source.info (Source.FromImage image))
+    , show "image wrong" (Image.byId "video")
+    , show "video" (Video.byId "video" ▷ Result.map λvideo → Source.info (Source.FromVideo video))
+    , show "video wrong" (Video.byId "canvas")
+    , show
+        "broken decode"
+        (Image.load "data:image/png;base64,AAAA" Image.SameOrigin ▷ Result.map λ_ → "decoded")
+    ]
+
+
+bitmaps : Image.Data → List String
+bitmaps data =
     options =
         { Image.bitmapOptions
             | resizeWidth = Just 3
             , resizeHeight = Just 3
             , orientation = Image.FlipY
         }
-    frame =
-        require
-            "unsupported"
-            (Video.frame (Source.FromCanvas canvas) { Video.frameOptions | timestamp = Just 0 })?
-    clone = require "clone error" (Video.clone frame)?
-    bitmap = require "bitmap error" (Image.bitmap (Source.FromPixels data) Nothing options)?
-    bitmapInfo = Source.info (Source.FromBitmap bitmap)
     density = Probe.densityImage ⊤
-    require "density decode error" (Image.decode density)?
-    densityFrame =
-        require
-            "density frame error"
-            (Video.frame (Source.FromImage density)
-                { Video.frameOptions
-                    | timestamp = Just 0
-                    , visibleRect = Just { x = 0, y = 0, width = 4, height = 4 }
-                    , displaySize = Just { width = 4, height = 4 }
-                }
-            )?
-    densityCorrect =
-        (Source.info (Source.FromImage density)).width == 2
-            && (Video.info densityFrame).codedWidth == 4
-    Video.close densityFrame
-    hiddenCrop =
-        case
-            Video.frame (Source.FromImage density)
-                { Video.frameOptions
-                    | timestamp = Just 0
-                    , visibleRect = Just { x = 0, y = 0, width = 5, height = 4 }
-                    , displaySize = Just { width = 5, height = 4 }
-                }
-        of
-            Err Video.InvalidRectangle →
-                True
-            Ok extra →
-                Video.close extra
-                False
-            Err _ →
-                False
-    tinyCrop =
-        case
-            Video.frame (Source.FromBitmap bitmap)
-                { Video.frameOptions
-                    | timestamp = Just 0
-                    , visibleRect = Just { x = 0, y = 0, width = 0.1, height = 1 }
-                }
-        of
-            Err Video.InvalidDimensions →
-                True
-            _ →
-                False
-    frameInfo = Video.info frame
-    Video.close frame
-    stillLive = not (Video.closed clone)
-    Video.close clone
-    Image.close bitmap
-    offscreen = require "offscreen error" (Canvas.offscreen 2 2)?
-    transferred = require "transfer error" (Canvas.transfer canvas)?
-    moved = transferRoundtrip ⊤?
-    Ok
-        (moved
-            && densityCorrect
-            && tinyCrop
-            && hiddenCrop
-            && red == 255
-            && bitmapInfo.width == 3
-            && bitmapInfo.height == 3
-            && bitmapInfo.state == Source.Ready
-            && frameInfo.codedWidth == 4
-            && Video.closed frame
-            && stillLive
-            && (Source.info (Source.FromBitmap bitmap)).state == Source.Closed
-            && (Source.info (Source.FromPixels data)).width == 2
-            && (Source.info (Source.FromImage image)).state == Source.Broken
-            && (Source.info (Source.FromVideo video)).state == Source.Loading
-            && (Source.info (Source.FromOffscreen offscreen)).width == 2
-            && (Canvas.offscreenSize transferred).width == 4
+    decoded = Image.decode density
+    bitmap = Image.bitmap (Source.FromPixels data) Nothing options
+    infoBefore = Result.map bitmap λmade → Source.info (Source.FromBitmap made)
+    closed = Result.map bitmap λmade →
+        Image.close made
+        Source.info (Source.FromBitmap made)
+    broken =
+        case Image.byId "image" of
+            Ok image →
+                Image.bitmap (Source.FromImage image) Nothing Image.bitmapOptions
+                    ▷ Result.map λ_ → "bitmap"
+            Err error →
+                Err error
+    [ show "bitmap" infoBefore
+    , show "bitmap closed" closed
+    , show "density decode" decoded
+    , show "density" (Source.info (Source.FromImage density))
+    , show
+        "density bitmap"
+        (Image.bitmap
+            (Source.FromImage density)
+            (Just { x = 0, y = 0, width = -2, height = 2 })
+            Image.bitmapOptions
+            ▷ Result.map λmade → Source.info (Source.FromBitmap made)
         )
+    , show
+        "zero crop"
+        (Image.bitmap
+            (Source.FromPixels data)
+            (Just { x = 0, y = 0, width = 0, height = 1 })
+            Image.bitmapOptions
+            ▷ Result.map λ_ → "bitmap"
+        )
+    , show
+        "zero resize"
+        (Image.bitmap (Source.FromPixels data) Nothing
+            { Image.bitmapOptions | resizeWidth = Just 0 }
+            ▷ Result.map λ_ → "bitmap"
+        )
+    , show "broken image" broken
+    , show
+        "png bytes"
+        (Image.bitmapFromBytes
+            (Binary.WholeBuffer (Probe.pngBytes ⊤))
+            "image/png"
+            Nothing
+            Image.bitmapOptions
+            ▷ Result.map λmade → Source.info (Source.FromBitmap made)
+        )
+    , show
+        "bad bytes"
+        (Binary.fromList [ 1, 2, 3 ]
+            ▷ Result.mapError Image.BinaryError
+            ▷ Result.andThen λbuffer →
+                Image.bitmapFromBytes
+                    (Binary.WholeBuffer buffer)
+                    "image/png"
+                    Nothing
+                    Image.bitmapOptions
+                    ▷ Result.map λ_ → "bitmap"
+        )
+    ]
 
 
-require : String, Result error a → Result String a
-require reason outcome = Result.mapError outcome λ_ → reason
-
-
-transferRoundtrip : ⊤ → Result String Bool
-transferRoundtrip ⊤ =
-    bytes = require "buffer error" (Binary.fromList [ 1, 2, 3, 4 ])?
-    data = require "pixels error" (Image.data 1 1 Image.settings)?
-    bitmap =
-        require "bitmap error" (Image.bitmap (Source.FromPixels data) Nothing Image.bitmapOptions)?
-    canvas = require "offscreen error" (Canvas.offscreen 2 2)?
+frames : Image.Data → List String
+frames data =
+    canvas = Canvas.byId "canvas"
     frame =
-        require
-            "frame error"
-            (Video.frame (Source.FromBitmap bitmap) { Video.frameOptions | timestamp = Just 7 })?
-    duplicate =
-        case
-            Source.clone
-                { body = "duplicate"
-                , attachments =
-                    [ Source.Move (Source.Bytes bytes), Source.Move (Source.Bytes bytes) ]
-                }
-        of
-            Err Source.DuplicateTransfer →
-                not (Binary.detached bytes)
-            _ →
-                False
-    result =
-        require
-            "clone error"
-            (Source.clone
-                { body = "native"
-                , attachments =
-                    [ Source.Move (Source.Bytes bytes)
-                    , Source.Move (Source.BitmapAttachment bitmap)
-                    , Source.Move (Source.CanvasAttachment canvas)
-                    , Source.Copy (Source.PixelsAttachment data)
-                    , Source.Move (Source.FrameAttachment frame)
-                    ]
-                }
-            )?
-    case result.attachments of
-        [ Source.Bytes receivedBytes, Source.BitmapAttachment receivedBitmap, Source.CanvasAttachment receivedCanvas, Source.PixelsAttachment receivedPixels, Source.FrameAttachment receivedFrame ] →
-            source = require "source error" (Binary.bufferSource receivedBytes)?
-            values = require "bytes error" (Binary.toList source)?
-            live =
-                (Source.info (Source.FromBitmap receivedBitmap)).width == 1
-                    && not (Video.closed receivedFrame)
-                    && (Canvas.offscreenSize receivedCanvas).width == 2
-                    && (Source.info (Source.FromPixels receivedPixels)).width == 1
-            detachedCanvas =
-                case
-                    Source.clone
-                        { body = "again"
-                        , attachments = [ Source.Move (Source.CanvasAttachment canvas) ]
+        case canvas of
+            Ok element →
+                Result.mapError
+                    (Video.frame (Source.FromCanvas element)
+                        { Video.frameOptions | timestamp = Just 5, duration = Just 2 }
+                    )
+                    λerror → Debug.toString error
+            Err error →
+                Err (Debug.toString error)
+    density = Probe.densityImage ⊤
+    _ = Image.decode density
+    densityFrame =
+        Video.frame (Source.FromImage density)
+            { Video.frameOptions
+                | timestamp = Just 0
+                , visibleRect = Just { x = 0, y = 0, width = 4, height = 4 }
+                , displaySize = Just { width = 4, height = 4 }
+            }
+    densityInfo = Result.map densityFrame λmade →
+        info = Video.info made
+        Video.close made
+        ( info.codedWidth, info.displayWidth )
+    hiddenCrop =
+        Video.frame (Source.FromImage density)
+            { Video.frameOptions
+                | timestamp = Just 0
+                , visibleRect = Just { x = 0, y = 0, width = 5, height = 4 }
+                , displaySize = Just { width = 5, height = 4 }
+            }
+            ▷ Result.map λmade →
+                Video.close made
+                "frame"
+    lifetimes = Result.andThen frame λmade →
+        info = Video.info made
+        clone = Result.mapError (Video.clone made) λerror → Debug.toString error
+        Video.close made
+        Video.close made
+        after = Video.clone made
+        live = Result.map clone λcopy → not (Video.closed copy)
+        _ = Result.map clone Video.close
+        Ok
+            [ Debug.toString ( info.codedWidth, info.timestamp, info.duration )
+            , Debug.toString ( Video.closed made, live )
+            , Debug.toString after
+            ]
+    bitmapFrame =
+        case Image.bitmap (Source.FromPixels data) Nothing Image.bitmapOptions of
+            Ok bitmap →
+                [ show
+                    "missing timestamp"
+                    (Video.frame (Source.FromBitmap bitmap) Video.frameOptions
+                        ▷ Result.map λ_ → "frame"
+                    )
+                , show
+                    "tiny crop"
+                    (Video.frame (Source.FromBitmap bitmap)
+                        { Video.frameOptions
+                            | timestamp = Just 0
+                            , visibleRect = Just { x = 0, y = 0, width = 0.1, height = 1 }
                         }
-                of
-                    Err Source.DataCloneRejected →
-                        True
-                    _ →
-                        False
-            noContext =
-                case Canvas.snapshot receivedCanvas of
-                    Err Canvas.NoContextOrDetached →
-                        True
-                    _ →
-                        False
-            renderer = require "renderer error" (Canvas.offscreenBitmapRenderer receivedCanvas)?
-            require "present error" (Canvas.present renderer receivedBitmap)?
-            consumed = (Source.info (Source.FromBitmap receivedBitmap)).state == Source.Closed
-            secondPresent =
-                case Canvas.present renderer receivedBitmap of
-                    Err Canvas.ClosedBitmap →
-                        True
-                    _ →
-                        False
-            snapshot = require "snapshot error" (Canvas.snapshot receivedCanvas)?
-            snapshotLive = (Source.info (Source.FromBitmap snapshot)).state == Source.Ready
-            Image.close snapshot
-            Image.close receivedBitmap
-            Video.close receivedFrame
-            Ok
-                (duplicate
-                    && result.body == "native"
-                    && values == [ 1, 2, 3, 4 ]
-                    && Binary.detached bytes
-                    && (Source.info (Source.FromBitmap bitmap)).state == Source.Closed
-                    && Video.closed frame
-                    && detachedCanvas
-                    && live
-                    && noContext
-                    && consumed
-                    && secondPresent
-                    && snapshotLive
-                )
-        _ →
-            Err "wrong packet"
+                        ▷ Result.map λ_ → "frame"
+                    )
+                , show
+                    "pixels source"
+                    (Video.frame (Source.FromPixels data)
+                        { Video.frameOptions | timestamp = Just 0 }
+                        ▷ Result.map λ_ → "frame"
+                    )
+                ]
+            Err error →
+                [ show "bitmap" (Err error) ]
+    [ show "frame lifetimes" lifetimes
+    , show "density frame" densityInfo
+    , show "hidden crop" hiddenCrop
+    , …bitmapFrame
+    ]
+
+
+canvases : Image.Data → List String
+canvases data =
+    created = Canvas.create 3 5
+    createdSize = Result.map created Canvas.size
+    resized = Result.andThen created λcanvas →
+        Result.map (Canvas.resize canvas 7 1) λ_ → Canvas.size canvas
+    presented =
+        case
+            ( Canvas.offscreen 2 2
+            , Image.bitmap (Source.FromPixels data) Nothing Image.bitmapOptions
+            )
+        of
+            ( Ok surface, Ok bitmap ) →
+                noContext = Canvas.snapshot surface ▷ Result.map λ_ → "snapshot"
+                info = Source.info (Source.FromOffscreen surface)
+                case Canvas.offscreenBitmapRenderer surface of
+                    Ok renderer →
+                        first = Canvas.present renderer bitmap
+                        consumed = (Source.info (Source.FromBitmap bitmap)).state
+                        second = Canvas.present renderer bitmap
+                        snapshot =
+                            Canvas.snapshot surface
+                                ▷ Result.map λmade → Source.info (Source.FromBitmap made)
+                        [ show "offscreen" info
+                        , show "no context" noContext
+                        , show "present" ( first, consumed, second )
+                        , show "snapshot" snapshot
+                        ]
+                    Err error →
+                        [ show "renderer" (Err error) ]
+            ( surface, bitmap ) →
+                [ show
+                    "offscreen"
+                    ( Result.map surface λ_ → "offscreen", Result.map bitmap λ_ → "bitmap" )
+                ]
+    [ show "created" createdSize
+    , show "resized" resized
+    , show "negative" (Canvas.create (-1) 2)
+    , …presented
+    ]
+
+
+pixelStorage : Binary.ViewKind → Result Image.Error Binary.View
+pixelStorage kind =
+    Result.mapError
+        (Binary.allocate 32
+            ▷ Result.andThen λbuffer → Binary.view (Binary.Local buffer) kind 0 Nothing
+        )
+        Image.BinaryError

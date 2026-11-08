@@ -1,12 +1,13 @@
---! Native host-value setup only: exercise a density-corrected HTML image whose
---! coded media pixels differ from its natural CSS-pixel dimensions. Production
---! decode and Frame construction remain entirely in the actual source modules.
+--! Native host-value setup only: a density-corrected HTML image whose coded
+--! media pixels differ from its natural CSS-pixel dimensions. Decode and frame
+--! construction stay in the platform's own source modules.
 
-import Browser.Source as Source
+import Binary
+import Browser.Image as Image
 import Js
 
 
-pub densityImage : ⊤ → Source.ImageElement
+pub densityImage : ⊤ → Image.Element
 densityImage ⊤ =
     image = Js.construct (Js.global "Image") []
     Js.set
@@ -16,3 +17,26 @@ densityImage ⊤ =
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGP4z8DwHxkzkC4AADxAH+HggXe0AAAAAElFTkSuQmCC 2x"
         )
     Js.to image
+
+
+--| Whether this DOM has the native sources at all. happy-dom has neither
+--| VideoFrame nor OffscreenCanvas, and its createImageBitmap refuses its own
+--| ImageData; the gate's transcript stops here and Chrome's goes on.
+pub nativeSources : ⊤ → Bool
+nativeSources ⊤ =
+    Js.typeIs (Js.global "VideoFrame") "function"
+        && Js.typeIs (Js.global "OffscreenCanvas") "function"
+
+
+--| The same 4×4 PNG as encoded bytes, for Image.bitmapFromBytes.
+pub pngBytes : ⊤ → Binary.Buffer
+pngBytes ⊤ =
+    text =
+        Js.apply (Js.global "atob")
+            [ Js.from
+                "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGP4z8DwHxkzkC4AADxAH+HggXe0AAAAAElFTkSuQmCC"
+            ]
+    bytes =
+        Js.call (Js.global "Uint8Array") "from"
+            [ text, Js.from λcharacter → Js.call character "charCodeAt" [ Js.from 0 ] ]
+    Js.to (Js.get bytes "buffer")

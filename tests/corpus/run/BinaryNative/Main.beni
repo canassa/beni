@@ -3,9 +3,4 @@ import Probe
 
 
 main : Program
-main =
-    Node.printLines
-        [ if Probe.detachedAlias ⊤ then "detached" else "FAIL"
-        , if Probe.fixedRequirement ⊤ then "fixed" else "FAIL"
-        , if Probe.unknownDefects ⊤ then "defect" else "FAIL"
-        ]
+main = Node.printLines [ …Probe.fixedRequirement ⊤, Probe.transferDenied ⊤, Probe.unknownDefects ⊤ ]
