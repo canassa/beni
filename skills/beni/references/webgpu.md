@@ -146,8 +146,14 @@ type Msg
 clearOnce : Device → Result Error.Error ⊤
 clearOnce device =
     size = (Result.mapError (Scalar.size64 16) λd → Error.InvalidInput (Error.atPath "size" d))?
-    buffer = Gpu.Device.createBuffer device (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
-    encoded = (Encode.run device Types.commandEncoderDescriptor λencoder → CommandEncoder.clearBuffer encoder buffer 0 Nothing)?
+    buffer =
+        Gpu.Device.createBuffer
+            device
+            (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
+    encoded =
+        (Encode.run device Types.commandEncoderDescriptor λencoder →
+            CommandEncoder.clearBuffer encoder buffer 0 Nothing
+        )?
     receipt = Gpu.Queue.submit (Gpu.Device.queue device) [ encoded.commands ]?
     Gpu.Submission.done receipt
 
@@ -157,7 +163,10 @@ clearInBatch : Device, Batch → Result Error.Error ⊤
 clearInBatch device b =
     size = (Result.mapError (Scalar.size64 16) λd → Error.InvalidInput (Error.atPath "size" d))?
     buffer = Batch.createBuffer b (Types.bufferDescriptor size (Flags.buffer [ Flags.CopyDst ]))?
-    encoded = (Batch.encode b Types.commandEncoderDescriptor λencoder → CommandEncoder.clearBuffer encoder buffer 0 Nothing)?
+    encoded =
+        (Batch.encode b Types.commandEncoderDescriptor λencoder →
+            CommandEncoder.clearBuffer encoder buffer 0 Nothing
+        )?
     _ = Batch.submit b (Gpu.Device.queue device) [ encoded.commands ]?
     Ok ⊤
 
