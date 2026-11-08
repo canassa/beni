@@ -10,8 +10,8 @@ fixtures of #2053, since a failed fixture stops its kind before the stale check.
 **Result, 172 mutations:** 121 killed (11 of them *blanket*: more than half the selection failed), 10
 crash, 3 v1 only, 6 stale, 32 survive. *Since #2276's pins:* `within_always` is killed by the `.v2-short` passes of
 `ownership/ShortCandidates` and `BottomCycle` (`--only=within_always`, 31 s), so 122 killed and 31 survive;
-`inst_memo_under_cut` is *dead*: no program reaches `instAt`'s cut (instrumented, 0 cuts over the corpus, the
-pending fixtures and core).
+`inst_memo_under_cut` is gone (#2299): no program reaches `instAt`'s cut (instrumented, 0 cuts over the corpus,
+the pending fixtures and core), so the cut is a panic under safety and the mutant has no meaning; 171 mutations.
 Measured on master `2f7bf74216`; the seven mutants of what `Pairs` changed on `fa2b611b38`; all 40
 candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#2214) on that branch.
 
@@ -178,7 +178,6 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `deep_at_off` | H5 O13 | `Distinct.deepAt` off: no occurrence is made deep | killed | | 9: SanitiserAnswersApart (BuildFailed), … | 4: EditAnsweredList (OwnershipV2Differs), … | 0 | |
 | `deep_at_closure_off` | H5 | a function slot is no deep occurrence | killed | | 2: SanitiserClosureSlotHolder (GoldenMismatch), … | 0 | 0 | |
 | `later_functions_off` | H5 | `LaterFunctions.ask` off | killed | | SanitiserLaterFunction (ProgramFailed) | 0 | 0 | |
-| `inst_memo_under_cut` | O3 G5 | `instAt` memoises what it read under a cycle's cut | SURVIVED | dead | 0 | 0 | 0 | 0 |
 | `overlap_cycle_may` | O3 G5 G12 | `Pairs.Queries.enter` answers `may` to a pair in progress: refusals only | killed | | 3: SanitiserAnswerFoldCycle (BuildFailed), … | FoldStoresElements (OwnershipV2Differs) | 3: own2.Pairs.test.a cross edge to a closed member is no head, … | |
 | `pairs_one_pass` | O3 G5 | `Pairs.Queries.leave` stops at one pass: a component's values are not its fixed point | killed | | 0 | 0 | 3: own2.Pairs.test.a cross edge to a closed member is no head, … | |
 | `comparison_gate_off` | R-5.13.1 | a comparison's walk may write what arrived | killed | | 0 | 17: CmpComponentsImported (OwnershipV2Differs), … | 0 | |

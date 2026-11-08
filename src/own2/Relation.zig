@@ -146,11 +146,9 @@ pub const Eval = struct {
     /// `Loans.lends`): an index of `lent_cells`, the cell's argument and the slot of its `◆`.
     lent: Ids.FixedDict(2) = .{},
     lent_cells: std.ArrayList([2]u32) = .empty,
-    /// `instAt`'s keys in progress, by depth; a key met again adds nothing
-    /// (its own value), and a result computed under a cut deeper than its
-    /// own key is not kept.
+    /// `instAt`'s keys in progress, by depth; a key met again is a defect
+    /// (a panic under safety; see there).
     inst_stack: std.ArrayList([3]u32) = .empty,
-    min_cut: usize = std.math.maxInt(usize),
     routes: Ids.FixedDict(2) = .{},
     route_count: u32 = 0,
     /// Expansions in progress (a fold's answer feeds itself): a leaf met
@@ -621,11 +619,16 @@ pub const Eval = struct {
             const run = e.inst_runs.items[r];
             return e.inst_leaves.items[run[0]..][0..run[1]];
         }
-        for (e.inst_stack.items, 0..) |x, d| if (std.mem.eql(u32, &x, &key)) {
-            e.min_cut = @min(e.min_cut, d);
-            return &.{};
+        // Outside a group an instantiation re-enters only a strictly earlier
+        // key (prepend arguments), never its own: reaching it would keep a
+        // value that read nothing of itself. Without safety checks the key
+        // answers `top`, a sound over-approximation any caller may keep.
+        for (e.inst_stack.items) |x| if (std.mem.eql(u32, &x, &key)) {
+            if (std.debug.runtime_safety) @panic("an instantiation met its own key");
+            const start: u32 = @intCast(e.inst_leaves.items.len);
+            try e.inst_leaves.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+            return e.inst_leaves.items[start..][0..1];
         };
-        const depth = e.inst_stack.items.len;
         try e.inst_stack.append(e.gpa(), key);
         defer _ = e.inst_stack.pop();
         var acc: std.ArrayList(u32) = .empty;
@@ -642,9 +645,7 @@ pub const Eval = struct {
         }
         const start: u32 = @intCast(e.inst_leaves.items.len);
         try e.inst_leaves.appendSlice(e.gpa(), acc.items);
-        const keep = e.min_cut >= depth or @import("Mutate.zig").on(.inst_memo_under_cut);
-        if (e.min_cut == depth) e.min_cut = std.math.maxInt(usize);
-        if (keep) try e.inst_memo.put(e.gpa(), key, @intCast(e.inst_runs.items.len));
+        try e.inst_memo.put(e.gpa(), key, @intCast(e.inst_runs.items.len));
         try e.inst_runs.append(e.gpa(), .{ start, @intCast(acc.items.len) });
         return e.inst_leaves.items[start..][0..acc.items.len];
     }
