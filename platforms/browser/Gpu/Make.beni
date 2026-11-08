@@ -161,50 +161,23 @@ formatFeature format =
         Nothing
 
 
---| A texture: a format whose feature the device lacks is refused before
---| the native call (`UnsupportedCapability`); a `TypeError` of the native
---| format check is `FormatFeatureRejected` only for a format that needs a
---| feature (ledger §3), and a defect otherwise. A rejected texture is
---| destroyed.
+--| A texture: a format or view format whose feature the device lacks is
+--| refused before the native call (`UnsupportedCapability`); a `TypeError`
+--| of the native format check is `FormatFeatureRejected` only when a format
+--| it names needs a feature (ledger §3), and a defect otherwise. A rejected
+--| texture is destroyed.
 pub texture : V, Types.TextureDescriptor → Result Error.Error Op
 texture device descriptor =
-    features = Feature.fromNames (Engine.readNames device "features")
-    missing =
-        List.filter (List.filterMap [ descriptor.format, …(viewFormats descriptor) ] formatFeature) λf →
-            not (Feature.has features f)
-    case missing of
-        [ f, …_ ] →
-            Err (Error.UnsupportedCapability (Error.MissingFeature f))
-
-        [] →
-            converted = Native.textureDescriptor descriptor
-            Ok
-                { name = "createTexture"
-                , labels = labelsOf descriptor.label
-                , call =
-                    Js.from λ⊤ →
-                        Js.catchIf
-                            (λ⊤ → Ok (Js.call device "createTexture" [ converted ]))
-                            (λerror →
-                                Engine.isTypeError error
-                                    && formatFeature descriptor.format ≠ Nothing
-                            )
-                            λerror →
-                                case formatFeature descriptor.format of
-                                    Just f →
-                                        Err
-                                            (Error.FormatFeatureRejected
-                                                { format = descriptor.format
-                                                , required = f
-                                                , message = Engine.messageOf error
-                                                }
-                                            )
-
-                                    Nothing →
-                                        Js.throw error
-                , adopt = Js.from λmade → Js.set (Engine.recordOf made) "destroyed" (Js.from False)
-                , discard = Js.from λmade → Js.call made "destroy" [] ▷ ignore
-                }
+    formats = [ descriptor.format, …(viewFormats descriptor) ]
+    formatsAvailable device formats?
+    converted = Native.textureDescriptor descriptor
+    Ok
+        { name = "createTexture"
+        , labels = labelsOf descriptor.label
+        , call = Js.from λ⊤ → formatChecked formats λ⊤ → Js.call device "createTexture" [ converted ]
+        , adopt = Js.from λmade → Js.set (Engine.recordOf made) "destroyed" (Js.from False)
+        , discard = Js.from λmade → Js.call made "destroy" [] ▷ ignore
+        }
 
 
 viewFormats : Types.TextureDescriptor → List Types.TextureFormat
@@ -349,11 +322,10 @@ querySet device descriptor =
 
 
 --| The bind group layout of a pipeline at `index`: the pipeline must be
---| usable.
-pub getBindGroupLayout : V, V, Scalar.U32 → Result Error.Error Op
-getBindGroupLayout pipeline batch index =
-    p = Engine.recordOf pipeline
-    handle pipeline (Js.get p "device") batch "pipeline"?
+--| usable on `device` (in `batch`, when it runs in one).
+pub getBindGroupLayout : V, V, V, Scalar.U32 → Result Error.Error Op
+getBindGroupLayout device pipeline batch index =
+    handle pipeline (Engine.recordOf device) batch "pipeline"?
     Ok
         { name = "getBindGroupLayout"
         , labels = [ Js.to (Js.get pipeline "label") ]
@@ -557,15 +529,33 @@ writeTexture queue batch destination data layout extent =
 
 -- ---- Formats, views and render pipelines (S3) -------------------------------
 
---| The first of `formats` that a feature gates, with the feature.
-pub gated : List Types.TextureFormat → Maybe (Types.TextureFormat × Types.FeatureName)
+--| Every format of `formats` that a feature gates, with the feature, in
+--| order and once each.
+pub gated : List Types.TextureFormat → List (Types.TextureFormat × Types.FeatureName)
 gated formats =
-    case List.filterMap formats λf → Maybe.map (formatFeature f) λn → ( f, n ) of
-        [ first, …_ ] →
-            Just first
+    List.foldl formats [] λf found →
+        case formatFeature f of
+            Just n →
+                if List.member found ( f, n ) then found else [ …found, ( f, n ) ]
+
+            Nothing →
+                found
+
+
+--| The failure of a host that refused one of `candidates` (not empty).
+pub formatFailure : List (Types.TextureFormat × Types.FeatureName), V → Error.Error
+formatFailure candidates error =
+    case candidates of
+        [ ( format, required ), …_ ] →
+            Error.FormatFeatureRejected
+                { format = format
+                , required = required
+                , candidates = candidates
+                , message = Engine.messageOf error
+                }
 
         [] →
-            Nothing
+            Engine.defect "a format failure with no feature-gated format"
 
 
 --| Every format of `formats` must have its feature on `device` (a native
@@ -590,16 +580,11 @@ formatsAvailable device formats =
 --| defect, otherwise.
 pub formatChecked : List Types.TextureFormat, sync (⊤ → V) → Result Error.Error V
 formatChecked formats call =
-    Js.catchIf (λ⊤ → Ok (call ⊤)) (λerror → Engine.isTypeError error && gated formats ≠ Nothing) λerror →
-        case gated formats of
-            Just ( format, required ) →
-                Err
-                    (Error.FormatFeatureRejected
-                        { format = format, required = required, message = Engine.messageOf error }
-                    )
-
-            Nothing →
-                Js.throw error
+    candidates = gated formats
+    Js.catchIf
+        (λ⊤ → Ok (call ⊤))
+        (λerror → Engine.isTypeError error && candidates ≠ [])
+        λerror → Err (formatFailure candidates error)
 
 
 --| A view of `texture` (a native texture of `device`, in `batch` or null):

@@ -211,8 +211,8 @@ pub getBindGroupLayout :
     , Handle.ComputePipeline
     , Scalar.U32
     → Result InputError Handle.BindGroupLayout
-getBindGroupLayout b pipeline index = make b λ_ batch →
-    Make.getBindGroupLayout (Js.from pipeline) batch index
+getBindGroupLayout b pipeline index = make b λd batch →
+    Make.getBindGroupLayout d (Js.from pipeline) batch index
 
 
 --| A queue write in the batch (`Gpu.Queue.writeBuffer`'s checks); it may
@@ -321,8 +321,8 @@ pub getRenderBindGroupLayout :
     , Handle.RenderPipeline
     , Scalar.U32
     → Result InputError Handle.BindGroupLayout
-getRenderBindGroupLayout b pipeline index = make b λ_ batch →
-    Make.getBindGroupLayout (Js.from pipeline) batch index
+getRenderBindGroupLayout b pipeline index = make b λd batch →
+    Make.getBindGroupLayout d (Js.from pipeline) batch index
 
 
 --| Encode a render bundle in the batch: `Gpu.Encode.bundle` without scopes

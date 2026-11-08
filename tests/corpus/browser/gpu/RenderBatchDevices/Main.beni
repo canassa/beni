@@ -1,0 +1,81 @@
+-- Render operations in a batch refuse what another device made
+-- (docs/design/webgpu.md §6.3, §7): a view of another device's texture, a
+-- render pipeline of another device's shader, the bind group layout of
+-- another device's render pipeline, and a bundle that sets another
+-- device's pipeline, each `WrongDevice` before any native call. Before the
+-- fix the layout was made from the other device and published (`Ok`).
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Batch, Device, RenderBundleEncoder, RenderPipeline, Shader, Texture)
+import Gpu.RenderBundleEncoder as BundleEncoder
+import Gpu.Types as Types
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+wgsl : String
+wgsl =
+    "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n"
+        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+
+
+shader : Device → Shader
+shader d = must (Gpu.Device.createShaderModule d (Types.shaderModuleDescriptor wgsl))
+
+
+describe : Shader → Types.RenderPipelineDescriptor
+describe module =
+    base = Types.renderPipelineDescriptor Types.Auto (Types.vertexState module)
+    { base
+        | fragment =
+            Types.Value (Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ])
+    }
+
+
+texture : Device → Texture
+texture d =
+    must
+        (Gpu.Device.createTexture
+            d
+            (Types.textureDescriptor
+                (Types.Extent3DFields { width = u32 4, height = Types.Default, depthOrArrayLayers = Types.Default })
+                Types.Rgba8unorm
+                (Flags.texture [ Flags.RenderAttachment ])
+            )
+        )
+
+
+-- A batch of `d` running `body`, shown.
+inBatch : String, Device, (Batch → Result InputError a) → String
+inBatch name d body = name ++ ": " ++ GpuShow.checked (Batch.run d name body) λ_ → "Ok made"
+
+
+setOther : RenderPipeline, RenderBundleEncoder → Result InputError ⊤
+setOther p b = BundleEncoder.setPipeline b p
+
+
+bundleOf : RenderPipeline, Batch → Result InputError ⊤
+bundleOf p b =
+    _ = Batch.encodeBundle b (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) (setOther p _)?
+    Ok ⊤
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    other = must (GpuKit.device "none")
+    alien = must (Gpu.Device.createRenderPipeline other (describe (shader other)))
+    otherShader = shader other
+    otherTexture = texture other
+    [ inBatch "view" d λb → Batch.createView b otherTexture Types.textureViewDescriptor
+    , inBatch "pipeline" d λb → Batch.createRenderPipeline b (describe otherShader)
+    , inBatch "layout" d λb → Batch.getRenderBindGroupLayout b alien (u32 5)
+    , inBatch "bundle" d (bundleOf alien _)
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

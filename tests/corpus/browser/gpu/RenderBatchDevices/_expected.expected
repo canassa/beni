@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"view: Err InvalidInput WrongDevice texture"</li>
+      <li>"pipeline: Err InvalidInput WrongDevice vertex.module"</li>
+      <li>"layout: Err InvalidInput WrongDevice pipeline"</li>
+      <li>"bundle: Err InvalidInput WrongDevice pipeline"</li>
+    </ol>
+  </main>
+</body>
