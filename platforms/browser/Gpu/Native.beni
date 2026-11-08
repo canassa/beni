@@ -63,12 +63,51 @@ member out name option f =
             Js.set out name (f x)
 
 
+
+-- A member a native snapshot must have, of its IDL type; a defect naming
+-- it when it is missing or of another type.
+readInt : Js.Value, String → Int
+readInt native name =
+    value = Js.get native name
+    if Js.typeIs value "number" then Js.to value else missing name "number"
+
+
+readString : Js.Value, String → String
+readString native name =
+    value = Js.get native name
+    if Js.typeIs value "string" then Js.to value else missing name "string"
+
+
+readBool : Js.Value, String → Bool
+readBool native name =
+    value = Js.get native name
+    if Js.typeIs value "boolean" then Js.to value else missing name "boolean"
+
+
+-- A member a host may lack (`optional_members` in src/native/Gpu.zig):
+-- `Nothing` when it is absent, a defect when it is of another type.
+readOptionalInt : Js.Value, String → Maybe Int
+readOptionalInt native name =
+    value = Js.get native name
+    if Js.isUndefined value then
+        Nothing
+    else if Js.typeIs value "number" then
+        Just (Js.to value)
+    else
+        missing name "number"
+
+
+missing : String, String → a
+missing name kind =
+    Js.throw (Js.construct (Js.global "TypeError") [ Js.from ("webgpu: the host's snapshot has no " ++ kind ++ " `" ++ name ++ "`") ])
+
+
 --| The native value of a `Extent3D`.
 pub extent3D : Types.Extent3D → Js.Value
 extent3D value =
     case value of
         Types.Extent3DSequence x0 →
-            array x0 (λx1 → Js.from (Scalar.u32ToInt x1))
+            array (Types.extent3DListValues x0) (λx1 → Js.from (Scalar.u32ToInt x1))
 
         Types.Extent3DFields x0 →
             extent3DDict x0
@@ -124,7 +163,7 @@ pub origin3D : Types.Origin3D → Js.Value
 origin3D value =
     case value of
         Types.Origin3DSequence x0 →
-            array x0 (λx1 → Js.from (Scalar.u32ToInt x1))
+            array (Types.origin3DListValues x0) (λx1 → Js.from (Scalar.u32ToInt x1))
 
         Types.Origin3DFields x0 →
             origin3DDict x0
@@ -161,7 +200,7 @@ pub origin2D : Types.Origin2D → Js.Value
 origin2D value =
     case value of
         Types.Origin2DSequence x0 →
-            array x0 (λx1 → Js.from (Scalar.u32ToInt x1))
+            array (Types.origin2DListValues x0) (λx1 → Js.from (Scalar.u32ToInt x1))
 
         Types.Origin2DFields x0 →
             origin2DDict x0
@@ -183,7 +222,7 @@ pub color : Types.Color → Js.Value
 color value =
     case value of
         Types.ColorSequence x0 →
-            array x0 (λx1 → Js.from (Scalar.finiteF64ToFloat x1))
+            array (Types.colorListValues x0) (λx1 → Js.from (Scalar.finiteF64ToFloat x1))
 
         Types.ColorFields x0 →
             colorDict x0
@@ -838,53 +877,53 @@ extent3DDict value =
 --| Read a native `GPUAdapterInfo` once.
 pub readAdapterInfo : Js.Value → Types.AdapterInfo
 readAdapterInfo native =
-    { vendor = Js.to (Js.get native "vendor")
-    , architecture = Js.to (Js.get native "architecture")
-    , device = Js.to (Js.get native "device")
-    , description = Js.to (Js.get native "description")
-    , subgroupMinSize = Js.to (Js.get native "subgroupMinSize")
-    , subgroupMaxSize = Js.to (Js.get native "subgroupMaxSize")
-    , isFallbackAdapter = Js.to (Js.get native "isFallbackAdapter")
+    { vendor = readString native "vendor"
+    , architecture = readString native "architecture"
+    , device = readString native "device"
+    , description = readString native "description"
+    , subgroupMinSize = readOptionalInt native "subgroupMinSize"
+    , subgroupMaxSize = readOptionalInt native "subgroupMaxSize"
+    , isFallbackAdapter = readBool native "isFallbackAdapter"
     }
 
 
 --| Read a native `GPUSupportedLimits` once.
 pub readLimits : Js.Value → Limits.Limits
 readLimits native =
-    { maxTextureDimension1D = Js.to (Js.get native "maxTextureDimension1D")
-    , maxTextureDimension2D = Js.to (Js.get native "maxTextureDimension2D")
-    , maxTextureDimension3D = Js.to (Js.get native "maxTextureDimension3D")
-    , maxTextureArrayLayers = Js.to (Js.get native "maxTextureArrayLayers")
-    , maxBindGroups = Js.to (Js.get native "maxBindGroups")
-    , maxBindGroupsPlusVertexBuffers = Js.to (Js.get native "maxBindGroupsPlusVertexBuffers")
-    , maxImmediateSize = Js.to (Js.get native "maxImmediateSize")
-    , maxBindingsPerBindGroup = Js.to (Js.get native "maxBindingsPerBindGroup")
-    , maxDynamicUniformBuffersPerPipelineLayout = Js.to (Js.get native "maxDynamicUniformBuffersPerPipelineLayout")
-    , maxDynamicStorageBuffersPerPipelineLayout = Js.to (Js.get native "maxDynamicStorageBuffersPerPipelineLayout")
-    , maxSampledTexturesPerShaderStage = Js.to (Js.get native "maxSampledTexturesPerShaderStage")
-    , maxSamplersPerShaderStage = Js.to (Js.get native "maxSamplersPerShaderStage")
-    , maxStorageBuffersPerShaderStage = Js.to (Js.get native "maxStorageBuffersPerShaderStage")
-    , maxStorageBuffersInVertexStage = Js.to (Js.get native "maxStorageBuffersInVertexStage")
-    , maxStorageBuffersInFragmentStage = Js.to (Js.get native "maxStorageBuffersInFragmentStage")
-    , maxStorageTexturesPerShaderStage = Js.to (Js.get native "maxStorageTexturesPerShaderStage")
-    , maxStorageTexturesInVertexStage = Js.to (Js.get native "maxStorageTexturesInVertexStage")
-    , maxStorageTexturesInFragmentStage = Js.to (Js.get native "maxStorageTexturesInFragmentStage")
-    , maxUniformBuffersPerShaderStage = Js.to (Js.get native "maxUniformBuffersPerShaderStage")
-    , maxUniformBufferBindingSize = Js.to (Js.get native "maxUniformBufferBindingSize")
-    , maxStorageBufferBindingSize = Js.to (Js.get native "maxStorageBufferBindingSize")
-    , minUniformBufferOffsetAlignment = Js.to (Js.get native "minUniformBufferOffsetAlignment")
-    , minStorageBufferOffsetAlignment = Js.to (Js.get native "minStorageBufferOffsetAlignment")
-    , maxVertexBuffers = Js.to (Js.get native "maxVertexBuffers")
-    , maxBufferSize = Js.to (Js.get native "maxBufferSize")
-    , maxVertexAttributes = Js.to (Js.get native "maxVertexAttributes")
-    , maxVertexBufferArrayStride = Js.to (Js.get native "maxVertexBufferArrayStride")
-    , maxInterStageShaderVariables = Js.to (Js.get native "maxInterStageShaderVariables")
-    , maxColorAttachments = Js.to (Js.get native "maxColorAttachments")
-    , maxColorAttachmentBytesPerSample = Js.to (Js.get native "maxColorAttachmentBytesPerSample")
-    , maxComputeWorkgroupStorageSize = Js.to (Js.get native "maxComputeWorkgroupStorageSize")
-    , maxComputeInvocationsPerWorkgroup = Js.to (Js.get native "maxComputeInvocationsPerWorkgroup")
-    , maxComputeWorkgroupSizeX = Js.to (Js.get native "maxComputeWorkgroupSizeX")
-    , maxComputeWorkgroupSizeY = Js.to (Js.get native "maxComputeWorkgroupSizeY")
-    , maxComputeWorkgroupSizeZ = Js.to (Js.get native "maxComputeWorkgroupSizeZ")
-    , maxComputeWorkgroupsPerDimension = Js.to (Js.get native "maxComputeWorkgroupsPerDimension")
+    { maxTextureDimension1D = readInt native "maxTextureDimension1D"
+    , maxTextureDimension2D = readInt native "maxTextureDimension2D"
+    , maxTextureDimension3D = readInt native "maxTextureDimension3D"
+    , maxTextureArrayLayers = readInt native "maxTextureArrayLayers"
+    , maxBindGroups = readInt native "maxBindGroups"
+    , maxBindGroupsPlusVertexBuffers = readInt native "maxBindGroupsPlusVertexBuffers"
+    , maxImmediateSize = readOptionalInt native "maxImmediateSize"
+    , maxBindingsPerBindGroup = readInt native "maxBindingsPerBindGroup"
+    , maxDynamicUniformBuffersPerPipelineLayout = readInt native "maxDynamicUniformBuffersPerPipelineLayout"
+    , maxDynamicStorageBuffersPerPipelineLayout = readInt native "maxDynamicStorageBuffersPerPipelineLayout"
+    , maxSampledTexturesPerShaderStage = readInt native "maxSampledTexturesPerShaderStage"
+    , maxSamplersPerShaderStage = readInt native "maxSamplersPerShaderStage"
+    , maxStorageBuffersPerShaderStage = readInt native "maxStorageBuffersPerShaderStage"
+    , maxStorageBuffersInVertexStage = readOptionalInt native "maxStorageBuffersInVertexStage"
+    , maxStorageBuffersInFragmentStage = readOptionalInt native "maxStorageBuffersInFragmentStage"
+    , maxStorageTexturesPerShaderStage = readInt native "maxStorageTexturesPerShaderStage"
+    , maxStorageTexturesInVertexStage = readOptionalInt native "maxStorageTexturesInVertexStage"
+    , maxStorageTexturesInFragmentStage = readOptionalInt native "maxStorageTexturesInFragmentStage"
+    , maxUniformBuffersPerShaderStage = readInt native "maxUniformBuffersPerShaderStage"
+    , maxUniformBufferBindingSize = readInt native "maxUniformBufferBindingSize"
+    , maxStorageBufferBindingSize = readInt native "maxStorageBufferBindingSize"
+    , minUniformBufferOffsetAlignment = readInt native "minUniformBufferOffsetAlignment"
+    , minStorageBufferOffsetAlignment = readInt native "minStorageBufferOffsetAlignment"
+    , maxVertexBuffers = readInt native "maxVertexBuffers"
+    , maxBufferSize = readInt native "maxBufferSize"
+    , maxVertexAttributes = readInt native "maxVertexAttributes"
+    , maxVertexBufferArrayStride = readInt native "maxVertexBufferArrayStride"
+    , maxInterStageShaderVariables = readInt native "maxInterStageShaderVariables"
+    , maxColorAttachments = readInt native "maxColorAttachments"
+    , maxColorAttachmentBytesPerSample = readInt native "maxColorAttachmentBytesPerSample"
+    , maxComputeWorkgroupStorageSize = readInt native "maxComputeWorkgroupStorageSize"
+    , maxComputeInvocationsPerWorkgroup = readInt native "maxComputeInvocationsPerWorkgroup"
+    , maxComputeWorkgroupSizeX = readInt native "maxComputeWorkgroupSizeX"
+    , maxComputeWorkgroupSizeY = readInt native "maxComputeWorkgroupSizeY"
+    , maxComputeWorkgroupSizeZ = readInt native "maxComputeWorkgroupSizeZ"
+    , maxComputeWorkgroupsPerDimension = readInt native "maxComputeWorkgroupsPerDimension"
     }

@@ -2606,9 +2606,30 @@ predefinedColorSpaceFromString text =
             Nothing
 
 
+--| The sequence form of a `GPUExtent3D`: 1 to 3 values, the length the host
+--| accepts. Made only by `extent3DList`.
+pub opaque type Extent3DList
+    = Extent3DList (List Scalar.U32)
+
+
+--| A `Extent3DList` of these values, or `Nothing` when there are not 1 to 3.
+pub extent3DList : List Scalar.U32 → Maybe Extent3DList
+extent3DList values =
+    n = List.length values
+    if n >= 1 && n <= 3 then Just (Extent3DList values) else Nothing
+
+
+--| The values of a `Extent3DList`.
+pub extent3DListValues : Extent3DList → List Scalar.U32
+extent3DListValues list =
+    case list of
+        Extent3DList values →
+            values
+
+
 --| `GPUExtent3D`: one arm per alternative of the union.
 pub type Extent3D
-    = Extent3DSequence (List Scalar.U32)
+    = Extent3DSequence Extent3DList
     | Extent3DFields Extent3DDict
 
 
@@ -2634,9 +2655,30 @@ pub type PipelineLayoutMode
     | Auto
 
 
+--| The sequence form of a `GPUOrigin3D`: at most 3 values, the length the host
+--| accepts. Made only by `origin3DList`.
+pub opaque type Origin3DList
+    = Origin3DList (List Scalar.U32)
+
+
+--| A `Origin3DList` of these values, or `Nothing` when there are not at most 3.
+pub origin3DList : List Scalar.U32 → Maybe Origin3DList
+origin3DList values =
+    n = List.length values
+    if n >= 0 && n <= 3 then Just (Origin3DList values) else Nothing
+
+
+--| The values of a `Origin3DList`.
+pub origin3DListValues : Origin3DList → List Scalar.U32
+origin3DListValues list =
+    case list of
+        Origin3DList values →
+            values
+
+
 --| `GPUOrigin3D`: one arm per alternative of the union.
 pub type Origin3D
-    = Origin3DSequence (List Scalar.U32)
+    = Origin3DSequence Origin3DList
     | Origin3DFields Origin3DDict
 
 
@@ -2651,9 +2693,30 @@ pub type CopyExternalImageSource
     | OffscreenCanvas OffscreenCanvas.OffscreenCanvas
 
 
+--| The sequence form of a `GPUOrigin2D`: at most 2 values, the length the host
+--| accepts. Made only by `origin2DList`.
+pub opaque type Origin2DList
+    = Origin2DList (List Scalar.U32)
+
+
+--| A `Origin2DList` of these values, or `Nothing` when there are not at most 2.
+pub origin2DList : List Scalar.U32 → Maybe Origin2DList
+origin2DList values =
+    n = List.length values
+    if n >= 0 && n <= 2 then Just (Origin2DList values) else Nothing
+
+
+--| The values of a `Origin2DList`.
+pub origin2DListValues : Origin2DList → List Scalar.U32
+origin2DListValues list =
+    case list of
+        Origin2DList values →
+            values
+
+
 --| `GPUOrigin2D`: one arm per alternative of the union.
 pub type Origin2D
-    = Origin2DSequence (List Scalar.U32)
+    = Origin2DSequence Origin2DList
     | Origin2DFields Origin2DDict
 
 
@@ -2663,9 +2726,30 @@ pub type AttachmentView
     | AttachmentTextureView Handle.TextureView
 
 
+--| The sequence form of a `GPUColor`: exactly 4 values, the length the host
+--| accepts. Made only by `colorList`.
+pub opaque type ColorList
+    = ColorList (List Scalar.FiniteF64)
+
+
+--| A `ColorList` of these values, or `Nothing` when there are not exactly 4.
+pub colorList : List Scalar.FiniteF64 → Maybe ColorList
+colorList values =
+    n = List.length values
+    if n >= 4 && n <= 4 then Just (ColorList values) else Nothing
+
+
+--| The values of a `ColorList`.
+pub colorListValues : ColorList → List Scalar.FiniteF64
+colorListValues list =
+    case list of
+        ColorList values →
+            values
+
+
 --| `GPUColor`: one arm per alternative of the union.
 pub type Color
-    = ColorSequence (List Scalar.FiniteF64)
+    = ColorSequence ColorList
     | ColorFields ColorDict
 
 
@@ -3788,6 +3872,6 @@ pub type alias AdapterInfo =
     architecture : String
     device : String
     description : String
-    subgroupMinSize : Int
-    subgroupMaxSize : Int
+    subgroupMinSize : Maybe Int
+    subgroupMaxSize : Maybe Int
     isFallbackAdapter : Bool
