@@ -101,7 +101,9 @@ pub const magic = "BENIIFC\x00";
 /// 20: Wire obligations and projected paths.
 /// 21: native realm classes and evaluated realm masks.
 /// 22: realm-only dependencies may name unresolved scheme variables.
-pub const format_version: u32 = 22;
+/// 23: an effect class word carries `erased` in bits 10-11
+/// (transparent-effects-proposal.md §14.3 rule 6, amended 2026-11-08).
+pub const format_version: u32 = 23;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

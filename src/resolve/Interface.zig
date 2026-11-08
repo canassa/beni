@@ -210,19 +210,26 @@ pub const Scheme = struct {
 pub const EffectBlock = struct {
     words: []const u32,
 
-    /// A class word is `rung | sync << 8 | sensitive << 9`
-    /// (transparent-effects-proposal.md §15.5, §16.2): the rung, whether a
-    /// use must not let the class suspend, and whether the declaration's body
-    /// reads it — so that the declaration has a second, suspendable body.
-    pub const Class = struct { rung: u32, realms: u8 = 0, sync: bool, sensitive: bool = false, deps: []const u32 };
+    /// A class word is `rung | sync << 8 | sensitive << 9 | erased << 10`
+    /// (transparent-effects-proposal.md §15.5, §16.2, §14.3 rule 6 as
+    /// amended 2026-11-08): the rung, whether a use must not let the class
+    /// suspend, whether the declaration's body reads it — so that the
+    /// declaration has a second, suspendable body — and, for a type variable
+    /// the host receives (bit 10) or makes (bit 11) with no type it tracks,
+    /// that a use raises each function type the host makes inside the
+    /// instantiation to `impure`.
+    pub const Class = struct { rung: u32, realms: u8 = 0, sync: bool, sensitive: bool = false, erased: u2 = 0, deps: []const u32 };
 
     /// A dependency with this bit carries realm availability only.
     pub const realm_only: u32 = 1 << 31;
     pub const sync_bit: u32 = 1 << 8;
     pub const sensitive_bit: u32 = 1 << 9;
+    /// `erased`'s two bits: the host receives the value, the host makes it.
+    pub const erased_shift: u5 = 10;
+    pub const erased_mask: u32 = 0b11 << 10;
 
     fn validWord(word: u32) bool {
-        return word & ~(sync_bit | sensitive_bit | 0x1f0000 | 0xff) == 0 and word & 0xff <= 2;
+        return word & ~(sync_bit | sensitive_bit | erased_mask | 0x1f0000 | 0xff) == 0 and word & 0xff <= 2;
     }
 
     /// Whether the declaration has a second, suspendable body (§16.2): some
@@ -248,7 +255,7 @@ pub const EffectBlock = struct {
         var k: u32 = 0;
         while (true) : (k += 1) {
             const deps = b.words[at + 1];
-            if (k == i) return .{ .rung = b.words[at] & 0xff, .realms = @intCast((b.words[at] >> 16) & 0x1f), .sync = b.words[at] & sync_bit != 0, .sensitive = b.words[at] & sensitive_bit != 0, .deps = b.words[at + 2 ..][0..deps] };
+            if (k == i) return .{ .rung = b.words[at] & 0xff, .realms = @intCast((b.words[at] >> 16) & 0x1f), .sync = b.words[at] & sync_bit != 0, .sensitive = b.words[at] & sensitive_bit != 0, .erased = @intCast((b.words[at] & erased_mask) >> erased_shift), .deps = b.words[at + 2 ..][0..deps] };
             at += 2 + deps;
         }
     }
@@ -266,7 +273,7 @@ pub const EffectBlock = struct {
             const at = it.at;
             const deps = it.words[at + 1];
             it.at += 2 + deps;
-            return .{ .rung = it.words[at] & 0xff, .realms = @intCast((it.words[at] >> 16) & 0x1f), .sync = it.words[at] & sync_bit != 0, .sensitive = it.words[at] & sensitive_bit != 0, .deps = it.words[at + 2 ..][0..deps] };
+            return .{ .rung = it.words[at] & 0xff, .realms = @intCast((it.words[at] >> 16) & 0x1f), .sync = it.words[at] & sync_bit != 0, .sensitive = it.words[at] & sensitive_bit != 0, .erased = @intCast((it.words[at] & erased_mask) >> erased_shift), .deps = it.words[at + 2 ..][0..deps] };
         }
     };
 

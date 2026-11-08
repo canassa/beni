@@ -39,6 +39,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
 const Scc = @import("Scc.zig");
+const Erasure = @import("Erasure.zig");
 
 const Effects = @This();
 
@@ -138,6 +139,7 @@ sites: std.ArrayList(Site) = .empty,
 demands: std.ArrayList(Demand) = .empty,
 /// The function types this module's `foreign`s mark `sync`.
 foreign_syncs: std.ArrayList(ForeignSync) = .empty,
+erasures: std.ArrayList(Erasure.Item) = .empty,
 /// The imported values a use read whose own class suspends.
 terminals: std.ArrayList(Terminal) = .empty,
 /// Every lambda's and `let` definition's own arrow (§16.2).
@@ -232,6 +234,7 @@ pub fn deinit(e: *Effects) void {
     e.sites.deinit(gpa);
     e.demands.deinit(gpa);
     e.foreign_syncs.deinit(gpa);
+    e.erasures.deinit(gpa);
     e.terminals.deinit(gpa);
     e.fns.deinit(gpa);
     e.uses.deinit(gpa);
@@ -398,6 +401,7 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
         const rung: Rung = @fromBackingInt(@intCast(@min(class.rung, 2)));
         try e.seed(rep, rung);
         if (class.realms != 0) try e.realm_seeds.append(e.gpa, .{ .v = rep, .forbidden = class.realms });
+        if (class.erased != 0) try e.erasures.append(e.gpa, .{ .v = rep, .bits = class.erased });
         // Where a `sync` chain ends (§15.4): this use suspends by itself.
         if (rung == .suspends) try e.terminals.append(e.gpa, .{ .v = rep, .site = site_inst });
         for (class.deps) |d| {
@@ -597,7 +601,7 @@ pub const Summary = struct { start: u32 = 0, len: u32 = 0 };
 /// `sync`: a use must not let its copy suspend (§15.3).
 /// `sensitive`: the declaration's body reads the class, so the declaration has
 /// a second, suspendable body (§16.2; `EffectPlan`).
-pub const Class = struct { node: u32, rung: Rung, realms: u8 = 0, deps_start: u32 = 0, deps_len: u32 = 0, sync: bool = false, sensitive: bool = false };
+pub const Class = struct { node: u32, rung: Rung, realms: u8 = 0, deps_start: u32 = 0, deps_len: u32 = 0, sync: bool = false, sensitive: bool = false, erased: u2 = 0 };
 
 /// What `run` leaves: the graph, every node's rung, and the summaries.
 ///
@@ -613,6 +617,7 @@ pub const Solved = struct {
     uf: std.ArrayList(u32) = .empty,
     level: std.ArrayList(Rung) = .empty,
     realms: std.ArrayList(u8) = .empty,
+    erased: std.ArrayList(u2) = .empty,
     head: std.ArrayList(u32) = .empty,
     next: std.ArrayList(u32) = .empty,
     to: std.ArrayList(u32) = .empty,
@@ -646,6 +651,7 @@ pub const Solved = struct {
         s.uf.deinit(gpa);
         s.level.deinit(gpa);
         s.realms.deinit(gpa);
+        s.erased.deinit(gpa);
         s.head.deinit(gpa);
         s.mask.deinit(gpa);
         s.stamp.deinit(gpa);
@@ -674,6 +680,7 @@ pub const Solved = struct {
         try s.uf.append(gpa, id);
         try s.level.append(gpa, .pure);
         if (s.realms.items.len != 0) try s.realms.append(gpa, 0);
+        if (s.erased.items.len != 0) try s.erased.append(gpa, 0);
         try s.head.append(gpa, none);
         try s.mask.append(gpa, 0);
         try s.stamp.append(gpa, 0);
@@ -821,6 +828,8 @@ pub fn run(e: *Effects, in: Input) Error!void {
     defer work.deinit(scratch);
     for (e.seeds.items) |sd| try e.raise(try e.nodeFor(sd.v), sd.rung, &work, scratch);
     for (e.realm_seeds.items) |sd| try e.raiseRealm(try e.nodeFor(sd.v), sd.forbidden, &work, scratch);
+    try Erasure.apply(e, &work, scratch);
+    try Erasure.entries(e, in.bir, in.decl_scheme, &work, scratch);
     try e.propagate(&work, scratch);
     // The demands recorded so far, on their nodes (§15.2). `main`'s and a
     // top-level value's are on its evaluation class, which is no type; every
@@ -844,7 +853,7 @@ pub fn run(e: *Effects, in: Input) Error!void {
     for (in.bir.decls, 0..) |d, i| {
         if (d.kind != .foreign_value and d.kind != .vocab_markup) continue;
         const v = in.decl_scheme[i].unwrap() orelse continue;
-        try e.foreignSummary(@intCast(i), v, d.rung, d.kind == .vocab_markup, scratch);
+        try @import("EffectsForeign.zig").summary(e, @intCast(i), v, d.rung, d.kind == .vocab_markup, scratch);
     }
 
     // 4. Every other declaration, dependencies first.
@@ -869,6 +878,7 @@ pub fn run(e: *Effects, in: Input) Error!void {
     for (s.classes.items) |*c| {
         c.rung = s.level.items[c.node];
         c.realms = e.realmOf(c.node);
+        c.erased |= Erasure.of(e, c.node);
         if (c.rung == .suspends) c.sync = false;
     }
     // Top-level values' demands (§15.2 item 7), only where one is broken:
@@ -962,7 +972,7 @@ pub fn edgeNodes(e: *Effects, x: u32, y: u32, origin: u32) Error!void {
     s.head.items[x] = @intCast(s.to.items.len - 1);
 }
 
-fn raise(e: *Effects, x: u32, rung: Rung, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
+pub fn raise(e: *Effects, x: u32, rung: Rung, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
     const s = &e.solved;
     if (@backingInt(rung) <= @backingInt(s.level.items[x])) return;
     s.level.items[x] = rung;
@@ -970,7 +980,7 @@ fn raise(e: *Effects, x: u32, rung: Rung, work: *std.ArrayList(u32), scratch: Al
 }
 
 /// The least rungs: each node at least every node with an edge into it.
-fn propagate(e: *Effects, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
+pub fn propagate(e: *Effects, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
     const s = &e.solved;
     while (work.pop()) |x| {
         var at = s.head.items[x];
@@ -1144,6 +1154,7 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
         if (rep == none) continue;
         try e.raise(rep, c.rung, work, scratch);
         try e.raiseRealm(rep, c.realms, work, scratch);
+        if (c.erased != 0) try Erasure.applyRecord(e, r, target, ci, c.erased, work, scratch);
         for (s.depsOf(c)) |d| {
             const from = reps[d & ~Interface.EffectBlock.realm_only];
             if (from == none) continue;
@@ -1215,10 +1226,10 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
             }
             const nd = nodes.items[0];
             const sync = demands and nd != root and s.level.items[nd] != .suspends and try e.reachesDemand(nd, scratch);
-            if (old.len == 1 and old[0].node == nd and old[0].rung == s.level.items[nd] and old[0].realms == e.realmOf(nd) and old[0].sync == sync) continue;
+            if (old.len == 1 and old[0].node == nd and old[0].rung == s.level.items[nd] and old[0].realms == e.realmOf(nd) and old[0].erased == Erasure.of(e, nd) and old[0].sync == sync) continue;
             changed = true;
             s.summaries[d] = .{ .start = @intCast(s.classes.items.len), .len = 1 };
-            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .realms = e.realmOf(nd), .sync = sync });
+            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .realms = e.realmOf(nd), .erased = Erasure.of(e, nd), .sync = sync });
             continue;
         }
         const reach = try scratch.alloc(bool, nodes.items.len);
@@ -1235,7 +1246,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
         var same = old.len == nodes.items.len;
         if (same) {
             for (old, nodes.items, deps, reach) |c, nd, ds, sync| {
-                if (c.node != nd or c.rung != s.level.items[nd] or c.realms != e.realmOf(nd) or c.sync != sync or !std.mem.eql(u32, s.depsOf(c), ds)) same = false;
+                if (c.node != nd or c.rung != s.level.items[nd] or c.realms != e.realmOf(nd) or c.erased != Erasure.of(e, nd) or c.sync != sync or !std.mem.eql(u32, s.depsOf(c), ds)) same = false;
             }
         }
         if (same) continue;
@@ -1244,7 +1255,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
         for (nodes.items, deps, reach) |nd, ds, sync| {
             const deps_start: u32 = @intCast(s.deps.items.len);
             try s.deps.appendSlice(e.gpa, ds);
-            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .realms = e.realmOf(nd), .deps_start = deps_start, .deps_len = @intCast(ds.len), .sync = sync });
+            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .realms = e.realmOf(nd), .erased = Erasure.of(e, nd), .deps_start = deps_start, .deps_len = @intCast(ds.len), .sync = sync });
         }
         s.summaries[d] = .{ .start = start, .len = @intCast(nodes.items.len) };
     }
@@ -1362,118 +1373,6 @@ fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32)) Error!void {
         var k: u32 = 0;
         while (Walk.stepped(store, r, k)) |c| : (k += 1) try stack.append(e.gpa, c.v);
     }
-}
-
-/// §14.3 rule 6: a `foreign`'s own arrow has its rung, and so does every
-/// function type in a positive position of its signature; its `where` types
-/// flow into its own arrow; everything else is independent.
-fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool, scratch: Allocator) Error!void {
-    const s = &e.solved;
-    const store = e.store;
-    const own_var, _ = store.resolved(scheme);
-    const is_function = switch (store.content(own_var)) {
-        .structure => |st| st == .func,
-        else => false,
-    };
-    var nodes: std.ArrayList(u32) = .empty;
-    defer nodes.deinit(scratch);
-    var positive: std.ArrayList(bool) = .empty;
-    defer positive.deinit(scratch);
-    var evidence: std.ArrayList(bool) = .empty;
-    defer evidence.deinit(scratch);
-    var sync: std.ArrayList(bool) = .empty;
-    defer sync.deinit(scratch);
-    // The function types P2 found marked `sync` in this declaration (§15.2 item 1).
-    var marked: std.ArrayList(u32) = .empty;
-    defer marked.deinit(scratch);
-    for (e.foreign_syncs.items) |f| if (f.decl == decl) try marked.append(scratch, try e.nodeFor(f.v));
-    var realm_calls: std.ArrayList(@import("Realms.zig").ForeignCall) = .empty;
-    defer realm_calls.deinit(scratch);
-    const Item = struct { v: Var, positive: bool, evidence: bool, where_root: bool = false, realm_caller: u32 = none };
-    var stack: std.ArrayList(Item) = .empty;
-    defer stack.deinit(scratch);
-    try stack.append(scratch, .{ .v = scheme, .positive = true, .evidence = false });
-    const mark = store.nextMark();
-    while (stack.pop()) |item| {
-        const r = store.find(item.v);
-        const unknown = @import("Realms.zig").unknown(store, r);
-        if (unknown and store.mark(r) == mark and !item.positive and !item.evidence and item.realm_caller != none)
-            try realm_calls.append(scratch, .{ .caller = item.realm_caller, .callback = try e.nodeFor(r) });
-        if (store.mark(r) == mark) continue;
-        store.setMark(r, mark);
-        switch (store.content(r)) {
-            .flex, .rigid => |flags| {
-                const set = Walk.constraints(flags);
-                for (0..set.count(store)) |i| try stack.append(scratch, .{ .v = set.at(store, @intCast(i)).fn_var, .positive = false, .evidence = true, .where_root = true });
-            },
-            else => {},
-        }
-        var realm_caller = item.realm_caller;
-        if (e.realmCarrier(r)) {
-            const nd = try e.nodeFor(r);
-            if (item.positive and switch (store.content(r)) {
-                .structure => |st| st == .func,
-                else => false,
-            }) {
-                realm_caller = nd;
-            } else if (!item.positive and !item.evidence and realm_caller != none) {
-                try realm_calls.append(scratch, .{ .caller = realm_caller, .callback = nd });
-            }
-            if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) {
-                try nodes.append(scratch, nd);
-                try positive.append(scratch, item.positive and !unknown);
-                try evidence.append(scratch, item.evidence);
-                // `sync` (§15.2): a function type the platform marked; the
-                // evidence the sibling calls from JavaScript (item 2); a
-                // markup primitive's function parameter, which the page
-                // calls (item 3).
-                const is_func = switch (store.content(r)) {
-                    .structure => |st| st == .func,
-                    else => false,
-                };
-                try sync.append(scratch, std.mem.indexOfScalar(u32, marked.items, nd) != null or item.where_root or (markup and is_func and !item.positive and !item.evidence));
-            }
-        }
-        var k: u32 = 0;
-        while (Walk.stepped(store, r, k)) |c| : (k += 1) {
-            // A parameter flips the position; everything else keeps it.
-            const flips = c.kind == .param;
-            try stack.append(scratch, .{ .v = c.v, .positive = if (flips) !item.positive else item.positive, .evidence = item.evidence, .realm_caller = realm_caller });
-        }
-    }
-    const own = if (is_function) try e.nodeFor(own_var) else none;
-    const start: u32 = @intCast(s.classes.items.len);
-    for (nodes.items, positive.items, evidence.items, sync.items) |nd, pos, _, is_sync| {
-        const deps_start: u32 = @intCast(s.deps.items.len);
-        if (nd == own) {
-            for (nodes.items, evidence.items, 0..) |other, ev, j| {
-                if (other == own) continue;
-                if (ev) {
-                    try s.deps.append(e.gpa, @intCast(j));
-                }
-            }
-        }
-        try @import("Realms.zig").foreignDependencies(e, nodes.items, realm_calls.items, nd);
-        const class_rung: Rung = if (pos and !isEvidence(nodes.items, evidence.items, nd)) rung else .pure;
-        try s.classes.append(e.gpa, .{
-            .node = nd,
-            .rung = class_rung,
-            .realms = e.realmOf(nd),
-            .deps_start = deps_start,
-            .deps_len = @intCast(s.deps.items.len - deps_start),
-            .sync = is_sync and nd != own,
-        });
-        var work: std.ArrayList(u32) = .empty;
-        defer work.deinit(scratch);
-        try e.raise(nd, class_rung, &work, scratch);
-        try e.propagate(&work, scratch);
-    }
-    s.summaries[decl] = .{ .start = start, .len = @intCast(nodes.items.len) };
-}
-
-fn isEvidence(nodes: []const u32, evidence: []const bool, nd: u32) bool {
-    for (nodes, evidence) |x, ev| if (x == nd) return ev;
-    return false;
 }
 
 /// What the writer needs of one declaration to write its block.
