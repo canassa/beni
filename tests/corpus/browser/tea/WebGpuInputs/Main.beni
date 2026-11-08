@@ -52,8 +52,14 @@ show : String, a → String
 show label value = label ++ ": " ++ Debug.toString value
 
 
+-- The acquisition and dimension checks run in every DOM, happy-dom included;
+-- the native sources only where the DOM has them.
 run : ⊤ → List String
-run ⊤ = if Probe.nativeSources ⊤ then exercise ⊤ else [ "this DOM has no native image sources" ]
+run ⊤ =
+    [ …elements ⊤
+    , …sizes ⊤
+    , …(if Probe.nativeSources ⊤ then exercise ⊤ else [ "this DOM has no native image sources" ])
+    ]
 
 
 exercise : ⊤ → List String
@@ -62,7 +68,7 @@ exercise ⊤ =
         Err error →
             [ show "data" (Err error) ]
         Ok data →
-            [ …pixels data, …elements ⊤, …bitmaps data, …frames data, …canvases data ]
+            [ …pixels data, …bitmaps data, …frames data, …canvases data ]
 
 
 pixels : Image.Data → List String
@@ -77,25 +83,24 @@ pixels data =
     clamped = pixelStorage Binary.U8Clamped
     plain = pixelStorage Binary.U8
     fromView =
-        case clamped of
-            Ok storage →
-                Image.dataFromView storage 2 Nothing Image.settings
-                    ▷ Result.map λmade → Source.info (Source.FromPixels made)
-            Err error →
-                Err error
+        Image.dataFromView clamped 2 Nothing Image.settings
+            ▷ Result.map λmade → Source.info (Source.FromPixels made)
     [ show "pixel alias" aliased
     , show "data info" (Source.info (Source.FromPixels data))
     , show "data zero" (Image.data 0 2 Image.settings)
     , show "data from view" fromView
     , show
         "wrong view"
-        (plain ▷ Result.andThen λstorage → Image.dataFromView storage 2 Nothing Image.settings)
+        (Image.dataFromView plain 2 Nothing Image.settings)
     , show
         "inconsistent"
-        (clamped ▷ Result.andThen λstorage → Image.dataFromView storage 3 Nothing Image.settings)
+        (Image.dataFromView clamped 3 Nothing Image.settings)
     , show
         "wrong height"
-        (clamped ▷ Result.andThen λstorage → Image.dataFromView storage 2 (Just 3) Image.settings)
+        (Image.dataFromView clamped 2 (Just 3) Image.settings)
+    , show
+        "video info"
+        (Video.byId "video" ▷ Result.map λvideo → Source.info (Source.FromVideo video))
     , show "shared" (Binary.shared 8 ▷ Result.map λ_ → "shared")
     ]
 
@@ -107,11 +112,8 @@ elements ⊤ =
     , show "canvas wrong" (Canvas.byId "image")
     , show "image" (Image.byId "image" ▷ Result.map λimage → Source.info (Source.FromImage image))
     , show "image wrong" (Image.byId "video")
-    , show "video" (Video.byId "video" ▷ Result.map λvideo → Source.info (Source.FromVideo video))
+    , show "video" (Video.byId "video" ▷ Result.map λ_ → "video")
     , show "video wrong" (Video.byId "canvas")
-    , show
-        "broken decode"
-        (Image.load "data:image/png;base64,AAAA" Image.SameOrigin ▷ Result.map λ_ → "decoded")
     ]
 
 
@@ -124,7 +126,7 @@ bitmaps data =
             , orientation = Image.FlipY
         }
     density = Probe.densityImage ⊤
-    decoded = Image.decode density
+    decoded = Image.decodeElement density
     bitmap = Image.bitmap (Source.FromPixels data) Nothing options
     infoBefore = Result.map bitmap λmade → Source.info (Source.FromBitmap made)
     closed = Result.map bitmap λmade →
@@ -165,6 +167,9 @@ bitmaps data =
         )
     , show "broken image" broken
     , show
+        "broken decode"
+        (Image.load "data:image/png;base64,AAAA" Image.SameOrigin ▷ Result.map λ_ → "decoded")
+    , show
         "png bytes"
         (Image.bitmapFromBytes
             (Binary.WholeBuffer (Probe.pngBytes ⊤))
@@ -175,15 +180,12 @@ bitmaps data =
         )
     , show
         "bad bytes"
-        (Binary.fromList [ 1, 2, 3 ]
-            ▷ Result.mapError Image.BinaryError
-            ▷ Result.andThen λbuffer →
-                Image.bitmapFromBytes
-                    (Binary.WholeBuffer buffer)
-                    "image/png"
-                    Nothing
-                    Image.bitmapOptions
-                    ▷ Result.map λ_ → "bitmap"
+        (Image.bitmapFromBytes
+            (Binary.WholeBuffer (must (Binary.fromList [ 1, 2, 3 ])))
+            "image/png"
+            Nothing
+            Image.bitmapOptions
+            ▷ Result.map λ_ → "bitmap"
         )
     ]
 
@@ -202,7 +204,7 @@ frames data =
             Err error →
                 Err (Debug.toString error)
     density = Probe.densityImage ⊤
-    _ = Image.decode density
+    _ = Image.decodeElement density
     densityFrame =
         Video.frame (Source.FromImage density)
             { Video.frameOptions
@@ -272,10 +274,6 @@ frames data =
 
 canvases : Image.Data → List String
 canvases data =
-    created = Canvas.create 3 5
-    createdSize = Result.map created Canvas.size
-    resized = Result.andThen created λcanvas →
-        Result.map (Canvas.resize canvas 7 1) λ_ → Canvas.size canvas
     presented =
         case
             ( Canvas.offscreen 2 2
@@ -305,17 +303,37 @@ canvases data =
                     "offscreen"
                     ( Result.map surface λ_ → "offscreen", Result.map bitmap λ_ → "bitmap" )
                 ]
+    presented
+
+
+pixelStorage : Binary.ViewKind → Binary.View
+pixelStorage kind = must (Binary.view (Binary.Local (must (Binary.allocate 32))) kind Binary.whole)
+
+
+-- Setup that must succeed; a failure here is a broken fixture, not a result.
+must : Result e a → a
+must result =
+    case result of
+        Ok value →
+            value
+        Err error →
+            Debug.todo (Debug.toString error)
+
+
+-- HTML reflects a canvas dimension as `unsigned long`, so above 2^31 − 1 it
+-- would reset to the default; OffscreenCanvas takes [EnforceRange] unsigned
+-- long long, which throws above 2^53 − 1. Both are refused first.
+sizes : ⊤ → List String
+sizes ⊤ =
+    created = Canvas.create 3 5
+    createdSize = Result.map created Canvas.size
+    resized = Result.andThen created λcanvas →
+        Result.map (Canvas.resize canvas 7 1) λ_ → Canvas.size canvas
     [ show "created" createdSize
     , show "resized" resized
     , show "negative" (Canvas.create (-1) 2)
-    , …presented
+    , show "too wide" (Canvas.create 2147483648 3)
+    , show "widest" (Result.map (Canvas.create 2147483647 0) Canvas.size)
+    , show "resize too wide" (Result.andThen created λcanvas → Canvas.resize canvas 3000000000 1)
+    , show "offscreen too wide" (Canvas.offscreen 9007199254740992 1 ▷ Result.map λ_ → "offscreen")
     ]
-
-
-pixelStorage : Binary.ViewKind → Result Image.Error Binary.View
-pixelStorage kind =
-    Result.mapError
-        (Binary.allocate 32
-            ▷ Result.andThen λbuffer → Binary.view (Binary.Local buffer) kind 0 Nothing
-        )
-        Image.BinaryError

@@ -70,7 +70,8 @@ pub type Error
     | WrongPixelView
     | InconsistentPixels
     | SharedPixels
-    | BinaryError Binary.Error
+    | PixelBacking Binary.BackingError
+    | BytesCopy Binary.CopyError
     | AllocationFailed
     | DecodeFailed
     | InvalidSource
@@ -144,7 +145,7 @@ load url crossOrigin =
             Credentials →
                 Js.set value "crossOrigin" (Js.from "use-credentials")
         Js.set value "src" (Js.from url)
-        Task.onExit (λ⊤ → Result.map (decode (Js.to value)) λ_ → Js.to value) λexit →
+        Task.onExit (λ⊤ → Result.map (decodeElement (Js.to value)) λ_ → Js.to value) λexit →
             case exit of
                 Task.Done result →
                     case result of
@@ -157,8 +158,8 @@ load url crossOrigin =
 
 
 --| Decode an existing element without taking ownership of its URL.
-pub decode : Element → Result Error ⊤
-decode image =
+pub decodeElement : Element → Result Error ⊤
+decodeElement image =
     value = Js.from image
     if not (Js.typeIs (Js.get value "decode") "function") then
         Err (Unsupported "HTMLImageElement.decode")
@@ -199,7 +200,7 @@ data width height config =
 pub dataFromView : Binary.View, Int, Maybe Int, Settings → Result Error Data
 dataFromView pixelView width height config =
     positive width?
-    info = Result.mapError (Binary.sourceInfo (Binary.ViewOf pixelView)) BinaryError?
+    info = Result.mapError (Binary.sourceInfo (Binary.ViewOf pixelView)) PixelBacking?
     storage =
         case ( pixelView, config.pixelFormat ) of
             ( Binary.Uint8ClampedArray handle, Rgba8 ) →
@@ -242,7 +243,7 @@ pixels image =
             Binary.Float16Array (Js.to value)
         else
             Binary.Uint8ClampedArray (Js.to value)
-    _ = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) BinaryError?
+    _ = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) PixelBacking?
     Ok view
 
 
@@ -261,7 +262,7 @@ bitmapFromBytes bytes mime crop options =
     if not (Js.typeIs constructor "function") then
         Err (Unsupported "Blob")
     else
-        copied = Result.mapError (Binary.copy bytes) BinaryError?
+        copied = Result.mapError (Binary.copy bytes) BytesCopy?
         blob =
             Js.construct constructor
                 [ Js.array [ Js.from copied ], Js.object [ ( "type", Js.from mime ) ] ]

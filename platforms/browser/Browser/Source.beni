@@ -51,6 +51,9 @@ info source =
             state =
                 if not (Js.to (Js.get value "complete")) then
                     Loading
+                else if Js.same (Js.get value "currentSrc") (Js.from "") then
+                    -- No source at all: complete, and nothing was asked for.
+                    Empty
                 else if width == 0 || height == 0 then
                     Broken
                 else

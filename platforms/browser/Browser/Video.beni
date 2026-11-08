@@ -99,6 +99,9 @@ frame source options =
                 _ →
                     True
         (if timestampRequired && options.timestamp == Nothing then Err MissingTimestamp else Ok ⊤)?
+        -- The constructor checks the source's usability before its rectangle, so
+        -- an unusable source must not be reported as a bad rectangle here.
+        usable source?
         validateOptions value source options?
         Js.catchIf
             (λ⊤ → Ok (Js.to (Js.construct constructor [ value, optionsValue options ])))
@@ -304,11 +307,15 @@ hiddenRectangleFailure source options error =
     if not (Js.instanceOf error (Js.global "TypeError")) || options.visibleRect == Nothing then
         False
     else
+        -- Only an image or video element hides its coded size from beni; every
+        -- other arm's rectangle is bounds-checked before the call.
         case source of
-            Source.FromFrame _ →
-                False
-            _ →
+            Source.FromImage _ →
                 True
+            Source.FromVideo _ →
+                True
+            _ →
+                False
 
 
 codedSize : Js.Value, Source.Input → { width : Int, height : Int }
@@ -404,3 +411,19 @@ finite value = Js.to (Js.call (Js.global "Number") "isFinite" [ Js.from value ])
 domError : String, Js.Value → Bool
 domError name error =
     Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
+
+
+-- A closed bitmap or frame is Closed; a source with no pixels yet (a loading
+-- or broken element, a zero-sized canvas) is InvalidSource. An offscreen
+-- canvas's readiness is private, so the constructor decides.
+usable : Source.Input → Result Error ⊤
+usable source =
+    case (Source.info source).state of
+        Source.Ready →
+            Ok ⊤
+        Source.ContextValidationRequired →
+            Ok ⊤
+        Source.Closed →
+            Err Closed
+        _ →
+            Err InvalidSource

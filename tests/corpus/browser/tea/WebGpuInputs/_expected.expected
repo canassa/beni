@@ -15,6 +15,6 @@
     <canvas id="canvas" width="4" height="4"></canvas>
     <img id="image">
     <video id="video"></video>
-    <pre>"this DOM has no native image sources"</pre>
+    <pre>"canvas: Ok { height = 4, width = 4 }\ncanvas missing: Err (NotFound \"nothing\")\ncanvas wrong: Err (WrongElement \"image\")\nimage: Ok { height = 0, state = \"Empty\", width = 0 }\nimage wrong: Err (WrongElement \"video\")\nvideo: Ok \"video\"\nvideo wrong: Err (WrongElement \"canvas\")\ncreated: Ok { height = 5, width = 3 }\nresized: Ok { height = 1, width = 7 }\nnegative: Err (InvalidDimension (-1))\ntoo wide: Err (InvalidDimension 2147483648)\nwidest: Ok { height = 0, width = 2147483647 }\nresize too wide: Err (InvalidDimension 3000000000)\noffscreen too wide: Err (InvalidDimension 9007199254740992)\nthis DOM has no native image sources"</pre>
   </main>
 </body>
