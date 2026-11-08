@@ -2,21 +2,24 @@
 --! docs/design/browser-sources.md records the HTML failure algorithms.
 
 import Binary
+import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
+import Browser.Host.ImageBitmap exposing (ImageBitmap)
+import Browser.Host.ImageData exposing (ImageData)
 import Browser.Source as Source
 import Js
 import Task
 
 
 pub type alias Element =
-    Source.ImageElement
+    HTMLImageElement
 
 
 pub type alias Bitmap =
-    Source.Bitmap
+    ImageBitmap
 
 
 pub type alias Data =
-    Source.Pixels
+    ImageData
 
 
 pub type ColorSpace
@@ -190,56 +193,85 @@ data width height config =
             λ_ → Err AllocationFailed
 
 
---| Use the exact native Uint8ClampedArray or Float16Array as pixel storage.
---| No copy is made, and later writes to the view change the ImageData.
+--| Use the exact native Uint8ClampedArray (Rgba8) or Float16Array (Rgba16Float)
+--| as pixel storage. No copy is made: later writes to the view change the
+--| ImageData. Shared, resizable, detached or mis-sized storage is refused first.
 pub dataFromView : Binary.View, Int, Maybe Int, Settings → Result Error Data
 dataFromView pixelView width height config =
     positive width?
-    source = Result.mapError (Binary.viewSource pixelView) BinaryError?
-    info = Result.mapError (Binary.sourceInfo source) BinaryError?
+    info = Result.mapError (Binary.sourceInfo (Binary.ViewOf pixelView)) BinaryError?
+    storage =
+        case ( pixelView, config.pixelFormat ) of
+            ( Binary.Uint8ClampedArray handle, Rgba8 ) →
+                Ok (Js.from handle)
+            ( Binary.Float16Array handle, Rgba16Float ) →
+                Ok (Js.from handle)
+            _ →
+                Err WrongPixelView
+    native = storage?
     if info.shared then
         Err SharedPixels
     else
-        name = if config.pixelFormat == Rgba8 then "Uint8ClampedArray" else "Float16Array"
-        constructor = Js.global name
-        if not (Js.typeIs constructor "function") then
-            Err (Unsupported name)
-        else if not (Js.instanceOf (Js.from pixelView) constructor) then
-            Err WrongPixelView
+        stride = if config.pixelFormat == Rgba8 then 4 else 8
+        if
+            info.byteLength == 0
+                || Int.rem info.byteLength stride ≠ 0
+                || Int.rem (info.byteLength // stride) width ≠ 0
+        then
+            Err InconsistentPixels
         else
-            stride = if config.pixelFormat == Rgba8 then 4 else 8
-            if
-                info.byteLength == 0
-                    || Int.rem info.byteLength stride ≠ 0
-                    || Int.rem (info.byteLength // stride) width ≠ 0
-            then
-                Err InconsistentPixels
-            else
-                rows = info.byteLength // stride // width
-                positive rows?
-                case height of
-                    Just explicit →
-                        positive explicit?
-                        if explicit ≠ rows then
-                            Err InconsistentPixels
-                        else
-                            constructData pixelView width rows config
-                    Nothing →
-                        constructData pixelView width rows config
+            rows = info.byteLength // stride // width
+            positive rows?
+            case height of
+                Just explicit →
+                    positive explicit?
+                    if explicit ≠ rows then
+                        Err InconsistentPixels
+                    else
+                        constructData native width rows config
+                Nothing →
+                    constructData native width rows config
 
 
---| The original native pixel view, with current detachment checks.
+--| The original native pixel view, with current backing checks.
 pub pixels : Data → Result Error Binary.View
 pixels image =
     value = Js.get (Js.from image) "data"
-    _ = Result.mapError (Binary.viewSource (Js.to value)) BinaryError?
-    Ok (Js.to value)
+    view =
+        if Js.same (Js.get (Js.from image) "pixelFormat") (Js.from "rgba-float16") then
+            Binary.Float16Array (Js.to value)
+        else
+            Binary.Uint8ClampedArray (Js.to value)
+    _ = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) BinaryError?
+    Ok view
 
 
 --| Create a bitmap from any WebGPU image-source arm. Crop coordinates are signed
 --| source pixels. Negative crop extents retain HTML's specified semantics.
 pub bitmap : Source.Input, Maybe Crop, BitmapOptions → Result Error Bitmap
-bitmap source crop options =
+bitmap source crop options = createBitmap (sourceValue source) crop options InvalidSource
+
+
+--| Decode encoded image bytes into a bitmap. The MIME type names the format
+--| (`image/png`, `image/jpeg`, …); the bytes are copied, so shared storage is
+--| accepted. Bytes the browser cannot decode are DecodeFailed.
+pub bitmapFromBytes : Binary.Source, String, Maybe Crop, BitmapOptions → Result Error Bitmap
+bitmapFromBytes bytes mime crop options =
+    constructor = Js.global "Blob"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "Blob")
+    else
+        copied = Result.mapError (Binary.copy bytes) BinaryError?
+        blob =
+            Js.construct constructor
+                [ Js.array [ Js.from copied ], Js.object [ ( "type", Js.from mime ) ] ]
+        createBitmap blob crop options DecodeFailed
+
+
+-- createImageBitmap's one expected rejection is InvalidStateError: an
+-- unusable or undecodable source, or a closed bitmap or frame.
+createBitmap : Js.Value, Maybe Crop, BitmapOptions, Error → Result Error Bitmap
+createBitmap value crop options failure =
     validateResize options.resizeWidth?
     validateResize options.resizeHeight?
     case crop of
@@ -255,7 +287,6 @@ bitmap source crop options =
     if not (Js.typeIs function "function") then
         Err (Unsupported "createImageBitmap")
     else
-        value = sourceValue source
         config = bitmapValue options
         outcome =
             wait
@@ -279,14 +310,14 @@ bitmap source crop options =
             Fulfilled result →
                 Ok (Js.to result)
             Rejected _ →
-                Err InvalidSource
+                Err failure
 
 
 pub close : Bitmap → ⊤
 close value = Js.to (Js.call (Js.from value) "close" [])
 
 
-constructData : Binary.View, Int, Int, Settings → Result Error Data
+constructData : Js.Value, Int, Int, Settings → Result Error Data
 constructData pixelView width height config =
     formatSupported config?
     constructor = Js.global "ImageData"
@@ -295,7 +326,7 @@ constructData pixelView width height config =
     else
         checkedData
             (Js.construct constructor
-                [ Js.from pixelView, Js.from width, Js.from height, settingsValue config ]
+                [ pixelView, Js.from width, Js.from height, settingsValue config ]
             )
             config
 

@@ -1,40 +1,27 @@
---! Native image-source identities shared by Image, Video, Canvas and GPU.
---! These handles never box or copy the browser object. Readiness is a snapshot;
---! host operations must still classify their own origin and lifetime errors.
+--! The image sources Image, Video, Canvas and GPU share. Each is the generated
+--! native type of `Browser.Host` (workers.md §4), never a box or a copy of the
+--! browser object. Readiness is a snapshot; host operations must still classify
+--! their own origin and lifetime errors.
 
 import Binary
+import Browser.Host.HTMLCanvasElement exposing (HTMLCanvasElement)
+import Browser.Host.HTMLImageElement exposing (HTMLImageElement)
+import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
+import Browser.Host.ImageBitmap exposing (ImageBitmap)
+import Browser.Host.ImageData exposing (ImageData)
+import Browser.Host.OffscreenCanvas exposing (OffscreenCanvas)
+import Browser.Host.VideoFrame exposing (VideoFrame)
 import Js
-
-
-pub foreign type ImageElement
-
-
-pub foreign type Bitmap
-
-
-pub foreign type Pixels
-
-
-pub foreign type VideoElement
-
-
-pub foreign type VideoFrame
-
-
-pub foreign type CanvasElement
-
-
-pub foreign type OffscreenCanvas
 
 
 --| All seven GPU external-image source alternatives, without an unchecked escape.
 pub type Input
-    = FromImage ImageElement
-    | FromBitmap Bitmap
-    | FromPixels Pixels
-    | FromVideo VideoElement
+    = FromImage HTMLImageElement
+    | FromBitmap ImageBitmap
+    | FromPixels ImageData
+    | FromVideo HTMLVideoElement
     | FromFrame VideoFrame
-    | FromCanvas CanvasElement
+    | FromCanvas HTMLCanvasElement
     | FromOffscreen OffscreenCanvas
 
 
@@ -146,218 +133,3 @@ dimensions value =
 
 number : Js.Value, String → Int
 number value field = Js.to (Js.get value field)
-
-
---| A native Worker, worker global or MessagePort granted by Browser.Worker.
-pub foreign type Endpoint
-
-
---| A native MessageEvent delivered by the browser's event loop.
-pub foreign type MessageEvent
-
-
---| Values that structured clone can carry into a browser worker. DOM elements
---| are not transferable; Window-only image/video handles never cross a realm.
-pub type Attachment
-    = Bytes Binary.Buffer
-    | SharedBytes Binary.SharedBuffer
-    | BitmapAttachment Bitmap
-    | FrameAttachment VideoFrame
-    | CanvasAttachment OffscreenCanvas
-    | PixelsAttachment Pixels
-
-
-pub type Transit
-    = Copy Attachment
-    | Move Attachment
-
-
-pub type alias Outgoing =
-    body : String
-    attachments : List Transit
-
-
-pub type alias Packet =
-    body : String
-    attachments : List Attachment
-
-
-pub type TransferError
-    = BinaryTransferError Binary.Error
-    | DuplicateTransfer
-    | CannotMove
-    | CannotCopy
-    | ClosedAttachment
-    | DataCloneRejected
-    | CanvasHasContext
-    | InvalidMessage
-    | CloneUnsupported
-
-
---| Clone/move a packet in this realm. Move uses the native transfer list and
---| invalidates sender aliases exactly as postMessage does.
-pub clone : Outgoing → Result TransferError Packet
-clone outgoing =
-    function = Js.global "structuredClone"
-    if not (Js.typeIs function "function") then
-        Err CloneUnsupported
-    else
-        prepared = prepare outgoing?
-        copied = cloneCall (λ⊤ → Js.apply function [ prepared.value, prepared.options ])?
-        decodePacket copied
-
-
---| Send a typed native packet, preserving explicit copy versus transfer intent.
-pub send : Endpoint, Outgoing → Result TransferError ⊤
-send endpoint outgoing =
-    prepared = prepare outgoing?
-    _ =
-        cloneCall
-            (λ⊤ → Js.call (Js.from endpoint) "postMessage" [ prepared.value, prepared.options ])?
-    Ok ⊤
-
-
---| Validate a received packet and every native attachment brand before adoption.
-pub receive : MessageEvent → Result TransferError Packet
-receive event = decodePacket (Js.get (Js.from event) "data")
-
-
-prepare : Outgoing → Result TransferError { value : Js.Value, options : Js.Value }
-prepare outgoing =
-    values = Js.array []
-    transfers = Js.array []
-    seen = Js.construct (Js.global "Set") []
-    prepareAttachments outgoing.attachments values transfers seen?
-    Ok
-        { value = Js.object [ ( "body", Js.from outgoing.body ), ( "attachments", values ) ]
-        , options = Js.object [ ( "transfer", transfers ) ]
-        }
-
-
-prepareAttachments : List Transit, Js.Value, Js.Value, Js.Value → Result TransferError ⊤
-prepareAttachments remaining values transfers seen =
-    case remaining of
-        [] →
-            Ok ⊤
-        [ transit, …rest ] →
-            attachment =
-                case transit of
-                    Copy handle →
-                        handle
-                    Move handle →
-                        handle
-            encoded = encodeAttachment attachment?
-            case transit of
-                Copy _ →
-                    (if encoded.kind == 4 then Err CannotCopy else Ok ⊤)?
-                Move _ →
-                    (if encoded.kind == 1 || encoded.kind == 5 then Err CannotMove else Ok ⊤)?
-                    (if Js.to (Js.call seen "has" [ encoded.value ]) then
-                        Err DuplicateTransfer
-                     else
-                        Ok ⊤
-                    )?
-                    _ = Js.call seen "add" [ encoded.value ]
-                    _ = Js.call transfers "push" [ encoded.value ]
-                    ⊤
-            _ =
-                Js.call values "push"
-                    [ Js.object [ ( "kind", Js.from encoded.kind ), ( "value", encoded.value ) ] ]
-            prepareAttachments rest values transfers seen
-
-
-encodeAttachment : Attachment → Result TransferError { kind : Int, value : Js.Value }
-encodeAttachment attachment =
-    case attachment of
-        Bytes handle →
-            _ = Result.mapError (Binary.bufferSource handle) BinaryTransferError?
-            Ok { kind = 0, value = Js.from handle }
-        SharedBytes handle →
-            _ = Result.mapError (Binary.sharedSource handle) BinaryTransferError?
-            Ok { kind = 1, value = Js.from handle }
-        BitmapAttachment handle →
-            (if (info (FromBitmap handle)).state == Closed then Err ClosedAttachment else Ok ⊤)?
-            Ok { kind = 2, value = Js.from handle }
-        FrameAttachment handle →
-            (if (info (FromFrame handle)).state == Closed then Err ClosedAttachment else Ok ⊤)?
-            Ok { kind = 3, value = Js.from handle }
-        CanvasAttachment handle →
-            Ok { kind = 4, value = Js.from handle }
-        PixelsAttachment handle →
-            data = Js.get (Js.from handle) "data"
-            _ = Result.mapError (Binary.viewSource (Js.to data)) BinaryTransferError?
-            Ok { kind = 5, value = Js.from handle }
-
-
-decodePacket : Js.Value → Result TransferError Packet
-decodePacket value =
-    if Js.isNullish value || not (Js.typeIs value "object") then
-        Err InvalidMessage
-    else
-        body = Js.get value "body"
-        attached = Js.get value "attachments"
-        if
-            not (Js.typeIs body "string")
-                || not (Js.to (Js.call (Js.global "Array") "isArray" [ attached ]))
-        then
-            Err InvalidMessage
-        else
-            handles = decodeAttachments attached 0 []?
-            Ok { body = Js.to body, attachments = handles }
-
-
-decodeAttachments : Js.Value, Int, List Attachment → Result TransferError (List Attachment)
-decodeAttachments attached index output =
-    if index == (Js.to (Js.get attached "length")) then
-        Ok output
-    else
-        encoded = Js.at attached index
-        (if Js.isNullish encoded || not (Js.typeIs encoded "object") then
-            Err InvalidMessage
-         else
-            Ok ⊤
-        )?
-        value = Js.get encoded "value"
-        kind = Js.get encoded "kind"
-        handle =
-            if Js.same kind (Js.from 0) && brand value "ArrayBuffer" then
-                checked = Result.mapError (Binary.bufferSource (Js.to value)) BinaryTransferError?
-                Ok (Bytes (Js.to (Js.from checked)))
-            else if Js.same kind (Js.from 1) && brand value "SharedArrayBuffer" then
-                checked = Result.mapError (Binary.sharedSource (Js.to value)) BinaryTransferError?
-                Ok (SharedBytes (Js.to (Js.from checked)))
-            else if Js.same kind (Js.from 2) && brand value "ImageBitmap" then
-                Ok (BitmapAttachment (Js.to value))
-            else if Js.same kind (Js.from 3) && brand value "VideoFrame" then
-                Ok (FrameAttachment (Js.to value))
-            else if Js.same kind (Js.from 4) && brand value "OffscreenCanvas" then
-                Ok (CanvasAttachment (Js.to value))
-            else if Js.same kind (Js.from 5) && brand value "ImageData" then
-                Ok (PixelsAttachment (Js.to value))
-            else
-                Err InvalidMessage
-        adopted = handle?
-        decodeAttachments attached (index + 1) [ …output, adopted ]
-
-
-brand : Js.Value, String → Bool
-brand value name =
-    constructor = Js.global name
-    Js.typeIs constructor "function" && Js.instanceOf value constructor
-
-
-cloneCall : sync (⊤ → Js.Value) → Result TransferError Js.Value
-cloneCall operation =
-    Js.catchIf
-        (λ⊤ → Ok (operation ⊤))
-        (λerror → domException "DataCloneError" error || domException "InvalidStateError" error)
-        λerror →
-            if domException "InvalidStateError" error then
-                Err CanvasHasContext
-            else
-                Err DataCloneRejected
-
-
-domException : String, Js.Value → Bool
-domException name error =
-    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)

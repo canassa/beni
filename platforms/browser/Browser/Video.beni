@@ -1,16 +1,18 @@
 --! Native HTML video sources and reference-counted VideoFrame resources.
 --! This exposes GPU intake and lifetime controls, not codec configuration.
 
+import Browser.Host.HTMLVideoElement exposing (HTMLVideoElement)
+import Browser.Host.VideoFrame exposing (VideoFrame)
 import Browser.Source as Source
 import Js
 
 
 pub type alias Element =
-    Source.VideoElement
+    HTMLVideoElement
 
 
 pub type alias Frame =
-    Source.VideoFrame
+    VideoFrame
 
 
 pub type Alpha

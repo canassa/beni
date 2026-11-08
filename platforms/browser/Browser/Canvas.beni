@@ -1,16 +1,20 @@
 --! Typed canvas acquisition and offscreen ownership. GPU context creation lives
 --! in Gpu.Canvas; these native handles preserve the context's browser identity.
 
+import Browser.Host.HTMLCanvasElement exposing (HTMLCanvasElement)
+import Browser.Host.ImageBitmap exposing (ImageBitmap)
+import Browser.Host.ImageBitmapRenderingContext exposing (ImageBitmapRenderingContext)
+import Browser.Host.OffscreenCanvas as Host
 import Browser.Source as Source
 import Js
 
 
 pub type alias Canvas =
-    Source.CanvasElement
+    HTMLCanvasElement
 
 
 pub type alias OffscreenCanvas =
-    Source.OffscreenCanvas
+    Host.OffscreenCanvas
 
 
 pub type Error
@@ -18,7 +22,6 @@ pub type Error
     | NotFound String
     | WrongElement String
     | InvalidDimension Int
-    | AlreadyControlled
     | NoContextOrDetached
     | ContextUnavailable
     | ClosedBitmap
@@ -67,20 +70,6 @@ offscreen width height =
         Ok (Js.to (Js.construct constructor [ Js.from width, Js.from height ]))
 
 
---| Transfer an HTML canvas to offscreen control. A previously acquired rendering
---| context or previous transfer is an explicit AlreadyControlled failure.
-pub transfer : Canvas → Result Error OffscreenCanvas
-transfer canvas =
-    value = Js.from canvas
-    if not (Js.typeIs (Js.get value "transferControlToOffscreen") "function") then
-        Err Unsupported
-    else
-        Js.catchIf
-            (λ⊤ → Ok (Js.to (Js.call value "transferControlToOffscreen" [])))
-            (domError "InvalidStateError" _)
-            λ_ → Err AlreadyControlled
-
-
 pub size : Canvas → { width : Int, height : Int }
 size canvas = dimensions (Js.from canvas)
 
@@ -94,15 +83,9 @@ resize canvas width height =
     dimension 4294967295 width?
     dimension 4294967295 height?
     value = Js.from canvas
-    -- A placeholder canvas rejects width/height mutation with InvalidStateError.
-    Js.catchIf
-        (λ⊤ →
-            Js.set value "width" (Js.from width)
-            Js.set value "height" (Js.from height)
-            Ok ⊤
-        )
-        (domError "InvalidStateError" _)
-        λ_ → Err AlreadyControlled
+    Js.set value "width" (Js.from width)
+    Js.set value "height" (Js.from height)
+    Ok ⊤
 
 
 pub resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤
@@ -137,7 +120,8 @@ domError name error =
 
 
 --| A native bitmaprenderer context, whose presentation consumes bitmap ownership.
-pub foreign type BitmapRenderer
+pub type alias BitmapRenderer =
+    ImageBitmapRenderingContext
 
 
 pub bitmapRenderer : Canvas → Result Error BitmapRenderer
@@ -161,7 +145,7 @@ renderer value =
 
 --| Present a bitmap without copying pixels. The bitmap is consumed: every alias
 --| becomes closed, while frames referencing its media resource remain valid.
-pub present : BitmapRenderer, Source.Bitmap → Result Error ⊤
+pub present : BitmapRenderer, ImageBitmap → Result Error ⊤
 present context bitmap =
     if (Source.info (Source.FromBitmap bitmap)).state == Source.Closed then
         Err ClosedBitmap
@@ -177,7 +161,7 @@ present context bitmap =
 
 --| Detach the current offscreen image into a native bitmap and replace it by a
 --| blank bitmap. This requires a context; it does not acquire one as a side effect.
-pub snapshot : OffscreenCanvas → Result Error Source.Bitmap
+pub snapshot : OffscreenCanvas → Result Error ImageBitmap
 snapshot canvas =
     value = Js.from canvas
     if not (Js.typeIs (Js.get value "transferToImageBitmap") "function") then
