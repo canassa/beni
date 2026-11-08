@@ -1,0 +1,9 @@
+# v2 refuses each write below; every edit would change what the program prints, and none has a caller that vouches for the list (§2.11.3, a need).
+34:12 list_may_be_shared List.push
+48:8 list_still_used value
+54:9 list_still_used value
+61:9 list_still_used SanitiserNeed.pushOf
+68:9 list_still_used value
+83:10 list_still_used value
+91:9 list_still_used value
+92:28 list_still_used value
