@@ -144,6 +144,8 @@ pub const Name = enum {
     contract_no_res,
     /// O5: a contract states no reads of a local's uses.
     contract_no_reads,
+    /// O5: a contract states no reads of what a callback is supplied (#2297).
+    supply_no_reads,
     /// O5: a contract states no writes.
     contract_no_writes,
     /// O5 O8: a contract states no escapes.

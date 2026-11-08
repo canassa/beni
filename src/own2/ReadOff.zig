@@ -951,6 +951,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     for (0..n_esc) |i| try paramEffects(s, e.escapes.items[i].leaf, true, .escapes);
     // Labels: the direct ones with their arguments, the passed-on ones with
     // their callees' supplies.
+    const cb_pass = f.sets.newPass();
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
         if (cb.inst != none) {
             const at = try Put.labelIndex(s, @intCast(ci));
@@ -961,6 +962,11 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 const ap = f.val(a).place;
                 const root = if (ap != .none) try f.places.rootPath(gpa, ap) else rpath;
                 try describe(s, a, root, .{ .label = at, .k = @intCast(k) });
+                // What the frame supplies a callback is read where it is
+                // handed on: the code that runs reads all of it, as a store
+                // or a return does (§2.10 `reads`, §2.11.3 *A supply is
+                // read*). A temporary has no local whose use says so (#2297).
+                if (!@import("Mutate.zig").on(.supply_no_reads)) try readsWhole(s, a, cb_pass);
             }
         }
     }
@@ -1011,7 +1017,13 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 // its value's structure, each at its own key, leaves nothing open at its own (§2.1,
                 // *An arrival's level*). Marked open, it would also open every plain arrival there.
                 var parts: std.ArrayList(SplitRow.Part) = .empty;
-                for (x.arrivals) |a| try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
+                for (x.arrivals) |a| {
+                    // A callee's supply of its argument is this frame's supply
+                    // of what the argument holds there, read as a direct one is.
+                    if (a.kind == .param and a.j < call.args.len and !@import("Mutate.zig").on(.supply_no_reads))
+                        try readsWhole(s, try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot)), cb_pass);
+                    try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
+                }
                 const placed = for (parts.items) |pt| {
                     if (pt.place == .none) break false;
                 } else parts.items.len != 0;
@@ -1047,6 +1059,25 @@ fn supplyPart(s: *Sink, q: u32, pt: SplitRow.Part, out: Put.ResList, entry: Slot
         try FnRun.supplyLeaves(&e.ev, q, pt.a, &ls);
     }
     for (ls.items) |l| try supplyArrive(s, l, key, out);
+}
+
+/// Every parameter slot value `v` holds, read deep: a whole use of a value
+/// that may be a temporary (§2.7's `whole` kind, on no local).
+fn readsWhole(s: *Sink, v: u32, pass: u32) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    var ps: std.ArrayList(Relation.Proj) = .empty;
+    defer ps.deinit(gpa);
+    if (f.val(v).kind == .alt) {
+        const req = [1]Routed.Req{.{ .words = &.{}, .deep = true, .out = &ps }};
+        try Routed.project(&e.ev, v, &req, 0, pass);
+    } else {
+        e.ev.pass = pass;
+        defer e.ev.pass = 0;
+        try e.ev.project(v, &.{}, true, 0, 0, &ps);
+    }
+    for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
 }
 
 /// A callee's reads of an argument (tree `n`), read where value `v` is used
