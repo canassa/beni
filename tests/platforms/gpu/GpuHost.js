@@ -353,13 +353,20 @@ const fakeDevice = (adapter, descriptor) => {
       const [source, sourceOffset, destination, destinationOffset, size] = args.length >= 4 ? args : [args[0], 0, args[1], 0, args[2]];
       const from = fakeBuffers.get(source);
       const length = size === undefined ? from.size - sourceOffset : size;
+      const to = fakeBuffers.get(destination);
       if (length % 4 !== 0 || sourceOffset % 4 !== 0 || destinationOffset % 4 !== 0) invalid = true;
+      // The specification's other copy rules: both buffers valid and alive,
+      // distinct, with COPY_SRC and COPY_DST, and the copy inside each.
+      if (!from.valid || !to.valid || from.destroyed || to.destroyed || source === destination) invalid = true;
+      if ((from.usage & COPY_SRC) === 0 || (to.usage & COPY_DST) === 0) invalid = true;
+      if (sourceOffset + length > from.size || destinationOffset + length > to.size) invalid = true;
       commands.push(() => fakeBuffers.get(destination).storage.set(from.storage.subarray(sourceOffset, sourceOffset + length), destinationOffset));
     };
     encoder.clearBuffer = (buffer, offset = 0, size = undefined) => {
       const s = fakeBuffers.get(buffer);
       const length = size === undefined ? s.size - offset : size;
       if (length % 4 !== 0 || offset % 4 !== 0) invalid = true;
+      if (!s.valid || s.destroyed || (s.usage & COPY_DST) === 0 || offset + length > s.size) invalid = true;
       commands.push(() => s.storage.fill(0, offset, offset + length));
     };
     encoder.resolveQuerySet = (querySet, first, count, destination, offset) => {
@@ -403,7 +410,8 @@ const fakeDevice = (adapter, descriptor) => {
     encoder.finish = (finishDescriptor) => {
       if (invalid) report("validation", new globalThis.GPUValidationError("invalid encoder"));
       const buffer = plainObject(finishDescriptor?.label);
-      fakeCommands.set(buffer, commands);
+      // An invalid command buffer runs nothing when it is submitted.
+      fakeCommands.set(buffer, invalid ? [] : commands);
       return buffer;
     };
     return encoder;
