@@ -4,6 +4,7 @@
 
 import Gpu
 import Gpu.Error as Error
+import Gpu.Flags as Flags
 import Gpu.Limits as Limits
 import Gpu.Types as Types
 
@@ -138,8 +139,8 @@ error problem =
                 ++ " observed "
                 ++ String.fromInt (List.length report.operation.observed)
 
-        Error.MapFailed _ →
-            "MapFailed"
+        Error.MapFailed m →
+            "MapFailed " ++ mapError m
 
         Error.SourceFailed _ →
             "SourceFailed"
@@ -150,8 +151,11 @@ error problem =
         Error.FormatFeatureRejected _ →
             "FormatFeatureRejected"
 
-        Error.HostOperationRejected _ →
-            "HostOperationRejected"
+        Error.HostOperationRejected o →
+            "HostOperationRejected " ++ operationFailure o
+
+        Error.AllocationFailed a →
+            "AllocationFailed " ++ String.fromInt a.bytes
 
         Error.RelatedFailures set →
             "RelatedFailures ["
@@ -159,17 +163,125 @@ error problem =
                 ++ "]"
 
 
-inputError : Error.InputError → String
+--| An input error: its constructor, its path and the numbers it names.
+pub inputError : Error.InputError → String
 inputError input =
     case input of
+        Error.NumericDomain d →
+            "NumericDomain " ++ d.path
+
+        Error.WrongDevice d →
+            "WrongDevice " ++ d.path
+
+        Error.ResourceDestroyed d →
+            "ResourceDestroyed " ++ d.path
+
+        Error.ResourceExpired d →
+            "ResourceExpired " ++ d.path
+
+        Error.ResourceRejected d →
+            "ResourceRejected " ++ d.path
+
+        Error.ResourcePending d →
+            "ResourcePending " ++ d.path
+
+        Error.MappedSizeUnaligned d →
+            "MappedSizeUnaligned " ++ d.path ++ " " ++ String.fromInt d.size
+
+        Error.ResizableBacking d →
+            "ResizableBacking " ++ d.path
+
+        Error.DetachedSource d →
+            "DetachedSource " ++ d.path
+
+        Error.Misaligned d →
+            "Misaligned "
+                ++ d.path
+                ++ " "
+                ++ String.fromInt d.value
+                ++ " by "
+                ++ String.fromInt d.alignment
+
+        Error.OutOfRange d →
+            "OutOfRange "
+                ++ d.path
+                ++ " "
+                ++ String.fromInt d.offset
+                ++ "+"
+                ++ String.fromInt d.size
+                ++ " of "
+                ++ String.fromInt d.available
+
+        Error.InvalidValue d →
+            "InvalidValue " ++ d.path ++ " " ++ String.fromFloat d.value
+
+        Error.InvalidMapMode d →
+            "InvalidMapMode " ++ d.path ++ " " ++ String.fromInt d.bits
+
+        Error.MissingBufferUsage d →
+            "MissingBufferUsage " ++ d.path ++ " " ++ String.fromInt (Flags.bufferUsageBits d.usage)
+
+        Error.MappingState d →
+            "MappingState " ++ d.path ++ " " ++ Types.bufferMapStateToString d.state
+
+        Error.RangeOverlap d →
+            "RangeOverlap "
+                ++ d.path
+                ++ " "
+                ++ String.fromInt d.offset
+                ++ "+"
+                ++ String.fromInt d.size
+
+        Error.ReadOnlyMapping d →
+            "ReadOnlyMapping " ++ d.path
+
         Error.SessionState Error.DeviceLeased →
             "SessionState DeviceLeased"
 
         Error.SessionState Error.SessionEnded →
             "SessionState SessionEnded"
 
-        _ →
-            "another input error"
+        Error.SessionStopped →
+            "SessionStopped"
+
+
+--| A map failure, without the host's message.
+pub mapError : Error.MapError → String
+mapError m =
+    case m of
+        Error.MapRejected _ →
+            "MapRejected"
+
+        Error.MapAborted →
+            "MapAborted"
+
+        Error.MappedAllocationFailed a →
+            "MappedAllocationFailed " ++ String.fromInt a.bytes
+
+        Error.MappedRangeRejected _ →
+            "MappedRangeRejected"
+
+
+--| A documented host rejection, without its message.
+pub operationFailure : Error.OperationFailure → String
+operationFailure o =
+    case o of
+        Error.BufferWriteSourceRejected _ →
+            "BufferWriteSourceRejected"
+
+        Error.ImmediateWriteRejected _ →
+            "ImmediateWriteRejected"
+
+
+--| An input result's constructor, with `f` for an `Ok` value.
+pub inputResult : Result Error.InputError a, (a → String) → String
+inputResult r f =
+    case r of
+        Ok a →
+            "Ok " ++ f a
+
+        Err problem →
+            "Err " ++ inputError problem
 
 
 observation : Error.Observation → String
@@ -190,8 +302,8 @@ observation o =
         Error.ObservedPipelineInternal _ →
             "PipelineInternal"
 
-        Error.ObservedMapFailed _ →
-            "MapFailed"
+        Error.ObservedMapFailed m →
+            "MapFailed " ++ mapError m
 
         Error.ObservedHostRejection _ →
             "HostRejection"

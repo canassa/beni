@@ -1,0 +1,131 @@
+-- load
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #pending
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
+      <li>"destroyed while pending: Err MapFailed MapAborted"</li>
+      <li>"map after destroy: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"lost while pending: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"a second map while pending: Err InvalidInput MappingState buffer pending"</li>
+      <li>"the first: Ok mapping, then mapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #cancelled
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
+      <li>"destroyed while pending: Err MapFailed MapAborted"</li>
+      <li>"map after destroy: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"lost while pending: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"a second map while pending: Err InvalidInput MappingState buffer pending"</li>
+      <li>"the first: Ok mapping, then mapped"</li>
+      <li>"cancelled while pending, then unmapped"</li>
+      <li>"map again: Ok mapping, then mapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #stale
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
+      <li>"destroyed while pending: Err MapFailed MapAborted"</li>
+      <li>"map after destroy: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"lost while pending: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"a second map while pending: Err InvalidInput MappingState buffer pending"</li>
+      <li>"the first: Ok mapping, then mapped"</li>
+      <li>"cancelled while pending, then unmapped"</li>
+      <li>"map again: Ok mapping, then mapped"</li>
+      <li>"the first range after a remap: Err ResourceExpired range"</li>
+      <li>"a range of the first mapping: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"current mapping: the second"</li>
+      <li>"second mapping live after destroy: no"</li>
+      <li>"a range of it after destroy: Err InvalidInput ResourceExpired mapping"</li>
+    </ol>
+  </main>
+</body>
+-- click #bracket
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
+      <li>"destroyed while pending: Err MapFailed MapAborted"</li>
+      <li>"map after destroy: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"lost while pending: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"a second map while pending: Err InvalidInput MappingState buffer pending"</li>
+      <li>"the first: Ok mapping, then mapped"</li>
+      <li>"cancelled while pending, then unmapped"</li>
+      <li>"map again: Ok mapping, then mapped"</li>
+      <li>"the first range after a remap: Err ResourceExpired range"</li>
+      <li>"a range of the first mapping: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"current mapping: the second"</li>
+      <li>"second mapping live after destroy: no"</li>
+      <li>"a range of it after destroy: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"a body that fails: Err InvalidInput SessionStopped, then unmapped"</li>
+      <li>"a body that maps again: Ok done, then mapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #leased
+<body>
+  <main>
+    <button id="pending">"pending"</button>
+    <button id="cancelled">"cancelled"</button>
+    <button id="stale">"stale"</button>
+    <button id="bracket">"bracket"</button>
+    <button id="leased">"leased"</button>
+    <ol>
+      <li>"unmapped while pending (pending): Err MapFailed MapAborted, then unmapped"</li>
+      <li>"destroyed while pending: Err MapFailed MapAborted"</li>
+      <li>"map after destroy: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"lost while pending: Err DeviceLost UnknownLoss observed 0"</li>
+      <li>"a second map while pending: Err InvalidInput MappingState buffer pending"</li>
+      <li>"the first: Ok mapping, then mapped"</li>
+      <li>"cancelled while pending, then unmapped"</li>
+      <li>"map again: Ok mapping, then mapped"</li>
+      <li>"the first range after a remap: Err ResourceExpired range"</li>
+      <li>"a range of the first mapping: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"current mapping: the second"</li>
+      <li>"second mapping live after destroy: no"</li>
+      <li>"a range of it after destroy: Err InvalidInput ResourceExpired mapping"</li>
+      <li>"a body that fails: Err InvalidInput SessionStopped, then unmapped"</li>
+      <li>"a body that maps again: Ok done, then mapped"</li>
+      <li>"map under the lease: Err InvalidInput SessionState DeviceLeased, native calls 0"</li>
+      <li>"under the lease: range read Ok 0, current mapping Just, unmap unmapped"</li>
+      <li>"map after the lease, of the buffer destroyed under it: Err InvalidInput ResourceDestroyed buffer"</li>
+    </ol>
+  </main>
+</body>

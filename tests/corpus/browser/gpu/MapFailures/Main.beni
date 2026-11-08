@@ -1,0 +1,86 @@
+-- The host failures the ledger documents for buffers, mapping and queue
+-- writes (docs/design/webgpu.md §5, §7.1; ledger §3, §4, §5), each its own
+-- typed value, injected where a page cannot cause them: the CPU memory of
+-- a buffer mapped at creation runs out (`MappedAllocationFailed`, apart
+-- from the unaligned size of `BufferRefusals`), a map the device refuses
+-- reports both its rejection and the scope's validation error
+-- (`RelatedFailures`), a map whose CPU memory runs out, a mapped range the
+-- host refuses after the engine's checks passed, and a queue write whose
+-- source the host refuses. Out-of-memory and internal scopes are typed on
+-- a buffer too.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (MapRead, CopyDst, CopySrc)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+creation : ⊤ → List String
+creation ⊤ =
+    allocation = GpuKit.with "buffer-allocation-fails" λd →
+        made =
+            Gpu.Device.createBuffer d
+                { buffer 16 [ CopySrc ] | mappedAtCreation = Types.Value True }
+        plain = Gpu.Device.createBuffer d (buffer 16 [ CopySrc ])
+        [ "mapped at creation, no memory: " ++ GpuShow.checked made λ_ → "buffer"
+        , "not mapped, same host: " ++ GpuShow.checked plain λ_ → "buffer"
+        ]
+    oom = GpuKit.with "pop-oom" λd2 →
+        [ "out of memory: "
+            ++ GpuShow.checked (Gpu.Device.createBuffer d2 (buffer 16 [ CopySrc ])) λ_ → "buffer"
+        ]
+    internal = GpuKit.with "pop-internal" λd3 →
+        [ "internal: "
+            ++ GpuShow.checked (Gpu.Device.createBuffer d3 (buffer 16 [ CopySrc ])) λ_ → "buffer"
+        ]
+    List.concat [ allocation, oom, internal ]
+
+
+mapWith : String → String
+mapWith scenarios =
+    lines = GpuKit.with scenarios λd →
+        b = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+        result = GpuShow.checked (Gpu.Buffer.map b Gpu.Buffer.mapRead) λ_ → "mapping"
+        [ result ++ ", then " ++ Types.bufferMapStateToString (Gpu.Buffer.mapState b) ]
+    String.join lines "; "
+
+
+maps : ⊤ → List String
+maps ⊤ =
+    [ "refused by the device: " ++ mapWith "map-invalid"
+    , "no memory for the map: " ++ mapWith "map-allocation-fails"
+    ]
+
+
+ranges : ⊤ → List String
+ranges ⊤ = GpuKit.with "range-rejected" λd →
+    made = must (Gpu.Device.createMappedBuffer d (buffer 16 [ CopySrc ]))
+    r = Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole
+    [ "range the host refuses: " ++ GpuShow.checked r λ_ → "range" ]
+
+
+writes : ⊤ → List String
+writes ⊤ = GpuKit.with "write-rejected" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst ]))
+    w =
+        Gpu.Queue.writeBuffer
+            (Gpu.Device.queue d)
+            b
+            (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 8)))
+    [ "source the host refuses: " ++ GpuShow.checked w λ_ → "written" ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "creation", creation )
+        , ( "maps", maps )
+        , ( "ranges", ranges )
+        , ( "writes", writes )
+        ]

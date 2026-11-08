@@ -1,0 +1,25 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §4): the
+-- native `getMappedRange` throws a TypeError, where the ledger documents
+-- only an OperationError. The page stops.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (MapRead, CopyDst, CopySrc)
+import Gpu.Queue
+import Gpu.Submission
+import GpuKit exposing (must, buffer, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "range-unlisted" λd →
+    made = must (Gpu.Device.createMappedBuffer d (buffer 16 [ CopySrc ]))
+    [ "range: "
+        ++ GpuShow.checked (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole) λ_ → "range"
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

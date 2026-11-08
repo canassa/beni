@@ -36,6 +36,16 @@ const adapterFeatures = ["depth-clip-control", "timestamp-query", "x-beni-unlist
 
 const lostInfo = (reason, message) => ({ reason, message });
 
+// GPUBufferUsage and GPUMapMode bits the fake checks.
+const MAP_READ = 1;
+const MAP_WRITE = 2;
+const COPY_SRC = 4;
+const COPY_DST = 8;
+const operationError = (message) => new globalThis.DOMException(message, "OperationError");
+const abortError = (message) => new globalThis.DOMException(message, "AbortError");
+// Every fake buffer: its storage and map state.
+const fakeBuffers = new globalThis.WeakMap();
+
 const fakeDevice = (adapter, descriptor) => {
   let resolveLost = null;
   const device = {
@@ -77,6 +87,105 @@ const fakeDevice = (adapter, descriptor) => {
     if (min < 0 || max < min || (anisotropic && !linear)) report("validation", new globalThis.GPUValidationError("invalid sampler descriptor"));
     return { label: d.label ?? "" };
   };
+  // Buffers and the queue (docs/design/webgpu.md §7, §8.3): the
+  // specification's content-timeline throws and device-timeline validation
+  // that the fixtures reach, over plain storage. A buffer's own state is
+  // in `fakeBuffers`, never on the object the page holds.
+  device.createBuffer = (descriptor) => {
+    const size = descriptor.size;
+    const usage = descriptor.usage;
+    const atCreation = descriptor.mappedAtCreation === true;
+    if (atCreation && size % 4 !== 0) throw new globalThis.RangeError("a buffer mapped at creation needs a size that is a multiple of 4");
+    let valid = usage !== 0 && (usage & ~1023) === 0 && size <= limitDefaults.maxBufferSize;
+    if ((usage & MAP_READ) !== 0 && (usage & ~(MAP_READ | COPY_DST)) !== 0) valid = false;
+    if ((usage & MAP_WRITE) !== 0 && (usage & ~(MAP_WRITE | COPY_SRC)) !== 0) valid = false;
+    if (!valid) report("validation", new globalThis.GPUValidationError("invalid buffer descriptor"));
+    const s = { valid, size, usage, storage: new globalThis.Uint8Array(valid || atCreation ? size : 0), mapState: "unmapped", pending: null, mode: 0, offset: 0, length: 0, ranges: [], destroyed: false };
+    const buffer = {
+      label: descriptor.label ?? "",
+      size,
+      usage,
+    };
+    globalThis.Object.defineProperty(buffer, "mapState", { get: () => s.mapState });
+    fakeBuffers.set(buffer, s);
+    if (atCreation) {
+      s.mapState = "mapped";
+      s.mode = MAP_WRITE;
+      s.length = size;
+    }
+    const endMapping = () => {
+      for (const r of s.ranges) {
+        if (s.mode !== MAP_READ && s.valid) s.storage.set(new globalThis.Uint8Array(r.storage), r.offset);
+        r.storage.transfer();
+      }
+      s.ranges = [];
+      s.mapState = "unmapped";
+    };
+    buffer.mapAsync = (mode, offset = 0, rangeSize = undefined) => {
+      if (s.pending !== null) return globalThis.Promise.reject(operationError("a map of the buffer is pending"));
+      const length = rangeSize === undefined ? globalThis.Math.max(0, size - offset) : rangeSize;
+      const invalid = !s.valid || s.destroyed || s.mapState !== "unmapped" || (mode !== MAP_READ && mode !== MAP_WRITE) || (mode & usage) === 0 || offset % 8 !== 0 || length % 4 !== 0 || offset + length > size;
+      if (invalid) {
+        report("validation", new globalThis.GPUValidationError("invalid mapAsync"));
+        return globalThis.Promise.reject(operationError("mapAsync failed validation"));
+      }
+      s.mapState = "pending";
+      return new globalThis.Promise((resolve, reject) => {
+        const pending = { reject };
+        s.pending = pending;
+        globalThis.queueMicrotask(() => {
+          if (s.pending !== pending) return;
+          s.pending = null;
+          s.mapState = "mapped";
+          s.mode = mode;
+          s.offset = offset;
+          s.length = length;
+          resolve(undefined);
+        });
+      });
+    };
+    buffer.getMappedRange = (offset = 0, rangeSize = undefined) => {
+      const length = rangeSize === undefined ? globalThis.Math.max(0, size - offset) : rangeSize;
+      if (s.mapState !== "mapped") throw operationError("the buffer is not mapped");
+      if (offset % 8 !== 0 || length % 4 !== 0 || offset < s.offset || offset + length > s.offset + s.length) throw operationError("the range is outside the mapping");
+      if (s.ranges.some((r) => offset < r.offset + r.length && r.offset < offset + length)) throw operationError("the range overlaps another");
+      const storage = new globalThis.ArrayBuffer(length);
+      new globalThis.Uint8Array(storage).set(s.storage.subarray(offset, offset + length));
+      s.ranges.push({ offset, length, storage });
+      return storage;
+    };
+    buffer.unmap = () => {
+      if (s.pending !== null) {
+        const pending = s.pending;
+        s.pending = null;
+        s.mapState = "unmapped";
+        pending.reject(abortError("the buffer was unmapped while its map was pending"));
+      } else if (s.mapState === "mapped") endMapping();
+    };
+    buffer.destroy = () => {
+      buffer.unmap();
+      s.destroyed = true;
+    };
+    return buffer;
+  };
+  device.queue.writeBuffer = (buffer, bufferOffset, data, dataOffset = 0, size = undefined) => {
+    const whole = data instanceof globalThis.ArrayBuffer || (globalThis.SharedArrayBuffer !== undefined && data instanceof globalThis.SharedArrayBuffer);
+    const per = whole || data instanceof globalThis.DataView ? 1 : data.BYTES_PER_ELEMENT;
+    const dataSize = data.byteLength / per;
+    if (dataOffset > dataSize) throw operationError("dataOffset is past the data");
+    const contents = size === undefined ? dataSize - dataOffset : size;
+    if (dataOffset + contents > dataSize || (contents * per) % 4 !== 0) throw operationError("the data range is outside the data or not a multiple of 4 bytes");
+    const bytes = contents * per;
+    const s = fakeBuffers.get(buffer);
+    if (s === undefined || !s.valid || s.destroyed || s.mapState !== "unmapped" || (s.usage & COPY_DST) === 0 || bufferOffset % 4 !== 0 || bufferOffset + bytes > s.size) {
+      report("validation", new globalThis.GPUValidationError("invalid writeBuffer"));
+      return;
+    }
+    const start = (whole ? 0 : data.byteOffset) + dataOffset * per;
+    s.storage.set(new globalThis.Uint8Array(whole ? data : data.buffer, start, bytes), bufferOffset);
+  };
+  device.queue.submit = (_commandBuffers) => {};
+  device.queue.onSubmittedWorkDone = () => globalThis.Promise.resolve(undefined);
   return device;
 };
 
@@ -144,6 +253,11 @@ let controlLoss = false;
 let popFaults = {};
 let holdPops = false;
 let createThrows = false;
+// The buffer and queue faults of the scenario, by the native call they
+// replace; whether map outcomes are held until `releaseMaps`.
+let bufferFaults = {};
+let holdMaps = false;
+const heldMaps = [];
 const held = [];
 const callCounts = {};
 
@@ -174,6 +288,61 @@ const onAdapters = (gpu, fault, once = true) =>
 
 const faults = {
   none: () => {},
+  // Buffers and the queue (docs/design/webgpu.md §7, §8.3; ledger §3–§5).
+  // The CPU memory of a buffer mapped at creation runs out.
+  "buffer-allocation-fails": () => {
+    bufferFaults.createMapped = () => {
+      throw new globalThis.RangeError("injected mapped allocation failure");
+    };
+  },
+  // A map the ledger documents as refused for its CPU memory, one it does
+  // not document, and one that fails the device's validation: the request
+  // asks the host for a range past the buffer's end, so both the scope
+  // and the promise report it.
+  "map-allocation-fails": () => {
+    bufferFaults.map = () => globalThis.Promise.reject(new globalThis.RangeError("injected map allocation failure"));
+  },
+  "map-unlisted": () => {
+    bufferFaults.map = () => globalThis.Promise.reject(new globalThis.DOMException("injected unlisted map refusal", "NotSupportedError"));
+  },
+  "map-invalid": () => {
+    bufferFaults.map = function (original, mode) {
+      return original.call(this, mode, this.size + 8);
+    };
+  },
+  // Every map's outcome waits, after the host's, until `releaseMaps`.
+  "maps-held": () => {
+    holdMaps = true;
+  },
+  // The range a host refuses after the engine's checks passed, and a
+  // throw the ledger does not list for it.
+  "range-rejected": () => {
+    bufferFaults.range = () => {
+      throw new globalThis.DOMException("injected range refusal", "OperationError");
+    };
+  },
+  "range-unlisted": () => {
+    bufferFaults.range = () => {
+      throw new globalThis.TypeError("injected unlisted range failure");
+    };
+  },
+  // `writeBuffer` refuses its source as documented, or throws what the
+  // ledger does not list.
+  "write-rejected": () => {
+    bufferFaults.write = () => {
+      throw new globalThis.DOMException("injected write refusal", "OperationError");
+    };
+  },
+  "write-unlisted": () => {
+    bufferFaults.write = () => {
+      throw new globalThis.TypeError("injected unlisted write failure");
+    };
+  },
+  // The queue's completion promise rejects, which the ledger does not
+  // document.
+  "work-done-rejected": () => {
+    bufferFaults.workDone = () => globalThis.Promise.reject(new globalThis.DOMException("injected completion failure", "AbortError"));
+  },
   "no-api": () => globalThis.Object.defineProperty(globalThis.navigator, "gpu", { configurable: true, value: undefined }),
   insecure: () => globalThis.Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: false }),
   "adapter-null": (gpu) => wrap(gpu, "requestAdapter", () => globalThis.Promise.resolve(null)),
@@ -258,6 +427,43 @@ const faults = {
 // to throw.
 const instrument = (device) => {
   const stack = [];
+  const count = (name) => {
+    callCounts[name] = (callCounts[name] ?? 0) + 1;
+  };
+  // Every buffer the device makes: its map, its ranges.
+  wrap(device, "createBuffer", function (original, descriptor) {
+    count("createBuffer");
+    if (descriptor?.mappedAtCreation === true && bufferFaults.createMapped !== undefined) return bufferFaults.createMapped();
+    const buffer = original.call(this, descriptor);
+    wrap(buffer, "mapAsync", function (map, ...args) {
+      count("mapAsync");
+      const fault = bufferFaults.map;
+      const outcome = asked(fault === undefined ? map.apply(this, args) : fault.call(this, map, ...args));
+      if (!holdMaps) return outcome;
+      // Held, a rejection is handled here until it is released.
+      outcome.then(null, () => null);
+      return new globalThis.Promise((resolve, reject) => heldMaps.push({ outcome, resolve, reject }));
+    });
+    wrap(buffer, "getMappedRange", function (range, ...args) {
+      count("getMappedRange");
+      if (bufferFaults.range !== undefined) return bufferFaults.range();
+      return range.apply(this, args);
+    });
+    return buffer;
+  });
+  const queue = device.queue;
+  wrap(queue, "writeBuffer", function (original, ...args) {
+    count("writeBuffer");
+    if (bufferFaults.write !== undefined) return bufferFaults.write();
+    return original.apply(this, args);
+  });
+  wrap(queue, "submit", function (original, ...args) {
+    count("submit");
+    return original.apply(this, args);
+  });
+  wrap(queue, "onSubmittedWorkDone", function (original, ...args) {
+    return asked(bufferFaults.workDone === undefined ? original.apply(this, args) : bufferFaults.workDone());
+  });
   wrap(device, "pushErrorScope", function (original, filter) {
     stack.push(filter);
     return original.call(this, filter);
@@ -296,6 +502,8 @@ function prepare() {
   holdPops = false;
   createThrows = false;
   holdRequests = false;
+  bufferFaults = {};
+  holdMaps = false;
   if (native()) {
     delete globalThis.navigator.gpu;
     if (secureContext === null) secureContext = globalThis.Object.getOwnPropertyDescriptor(globalThis, "isSecureContext") ?? false;
@@ -412,3 +620,19 @@ export const releasePop = (filter) => {
   settle(held.splice(at, 1)[0]);
   return null;
 };
+
+// Every held map, in the order they were asked, each settled as its
+// host map did.
+export const releaseMaps = (_unit) => {
+  for (const entry of heldMaps.splice(0)) entry.outcome.then(entry.resolve, entry.reject);
+  return null;
+};
+
+// Storage a host can make and `Binary` never does (#1268): a resizable
+// `ArrayBuffer`, and a growable `SharedArrayBuffer` where the page has
+// shared memory. Neither ever resizes here.
+export const resizable = (bytes) => new globalThis.ArrayBuffer(bytes, { maxByteLength: bytes * 2 });
+export const sharedMemory = (_unit) => globalThis.SharedArrayBuffer !== undefined;
+export const growable = (bytes) => new globalThis.SharedArrayBuffer(bytes, { maxByteLength: bytes * 2 });
+export const resizableBytes = (bytes) => new globalThis.Uint8Array(resizable(bytes));
+export const growableBytes = (bytes) => new globalThis.Uint8Array(growable(bytes));

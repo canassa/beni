@@ -1,0 +1,26 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; docs/design/webgpu.md
+-- §6.4, §8.3; ledger §5): the queue's completion promise, which a receipt
+-- captures right after its submit, rejects, which the ledger does not
+-- document. Nobody waits on the receipt: the outcome still drains, and
+-- reaches the program that requested the device as a defect. The page
+-- stops.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (MapRead, CopyDst, CopySrc)
+import Gpu.Queue
+import Gpu.Submission
+import GpuKit exposing (must, buffer, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "work-done-rejected" λd →
+    receipt = Gpu.Queue.submit (Gpu.Device.queue d) []
+    [ "submit: " ++ GpuShow.checked receipt λ_ → "receipt" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

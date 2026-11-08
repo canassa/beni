@@ -1,0 +1,65 @@
+-- load
+<body>
+  <main>
+    <button id="queue-write">"queue-write"</button>
+    <button id="creation">"creation"</button>
+    <button id="write-mapping">"write-mapping"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #queue-write
+<body>
+  <main>
+    <button id="queue-write">"queue-write"</button>
+    <button id="creation">"creation"</button>
+    <button id="write-mapping">"write-mapping"</button>
+    <ol>
+      <li>"write: Ok done"</li>
+      <li>"state before map: unmapped"</li>
+      <li>"read: Ok Ok 1, Ok 305419896, Ok 3735928559, Ok 4294967295, Ok 4294967295:4294967295, Ok 2097152:1"</li>
+      <li>"state after withMapped: unmapped"</li>
+      <li>"size: 32"</li>
+    </ol>
+  </main>
+</body>
+-- click #creation
+<body>
+  <main>
+    <button id="queue-write">"queue-write"</button>
+    <button id="creation">"creation"</button>
+    <button id="write-mapping">"write-mapping"</button>
+    <ol>
+      <li>"write: Ok done"</li>
+      <li>"state before map: unmapped"</li>
+      <li>"read: Ok Ok 1, Ok 305419896, Ok 3735928559, Ok 4294967295, Ok 4294967295:4294967295, Ok 2097152:1"</li>
+      <li>"state after withMapped: unmapped"</li>
+      <li>"size: 32"</li>
+      <li>"mapping mode: creation"</li>
+      <li>"write through the mapping: Ok done"</li>
+      <li>"current mapping: Just, after unmap: Nothing"</li>
+      <li>"range after unmap: Err ResourceExpired range"</li>
+      <li>"read: Ok Ok 1, Ok 305419896, Ok 3735928559, Ok 4294967295, Ok 4294967295:4294967295, Ok 2097152:1"</li>
+    </ol>
+  </main>
+</body>
+-- click #write-mapping
+<body>
+  <main>
+    <button id="queue-write">"queue-write"</button>
+    <button id="creation">"creation"</button>
+    <button id="write-mapping">"write-mapping"</button>
+    <ol>
+      <li>"write: Ok done"</li>
+      <li>"state before map: unmapped"</li>
+      <li>"read: Ok Ok 1, Ok 305419896, Ok 3735928559, Ok 4294967295, Ok 4294967295:4294967295, Ok 2097152:1"</li>
+      <li>"state after withMapped: unmapped"</li>
+      <li>"size: 32"</li>
+      <li>"mapping mode: creation"</li>
+      <li>"write through the mapping: Ok done"</li>
+      <li>"current mapping: Just, after unmap: Nothing"</li>
+      <li>"range after unmap: Err ResourceExpired range"</li>
+      <li>"read: Ok Ok 1, Ok 305419896, Ok 3735928559, Ok 4294967295, Ok 4294967295:4294967295, Ok 2097152:1"</li>
+      <li>"write mapping: Ok Ok 7, Ok 1.5, Ok 2097152:1"</li>
+    </ol>
+  </main>
+</body>

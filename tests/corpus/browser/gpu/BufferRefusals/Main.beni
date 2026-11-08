@@ -1,0 +1,239 @@
+-- Every input a buffer operation refuses before any native call
+-- (docs/design/webgpu.md §3.1, §7, §7.1; ledger §3, §4, §5), each a typed
+-- `InvalidInput` naming its path, with the native call counted where the
+-- refusal must make none: a mapped-at-creation size of 6 (#1269), map
+-- modes, usages, alignment, bounds and map states, mapped ranges that
+-- overlap, leave their mapping or write to a read mapping, a queue write
+-- whose part leaves its data or is not a multiple of 4 bytes, detached
+-- data, and resizable or growable backing, never resized and in bounds,
+-- refused for an `ArrayBuffer`, a `SharedArrayBuffer` and a view on each
+-- while the fixed equivalents pass (#1268). A descriptor the device
+-- refuses is `Validation`.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Flags as Flags exposing (MapRead, MapWrite, CopyDst, CopySrc, Storage)
+import Gpu.Handle exposing (Buffer, Device)
+import Gpu.MappedRange as MappedRange
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+created : Device, Types.BufferDescriptor → String
+created d descriptor = GpuShow.checked (Gpu.Device.createBuffer d descriptor) λ_ → "buffer"
+
+
+creation : ⊤ → List String
+creation ⊤ = GpuKit.with "none" λd →
+    before = GpuHost.calls "createBuffer"
+    six =
+        Gpu.Device.createBuffer d
+            { buffer 6 [ MapRead, CopyDst ] | mappedAtCreation = Types.Value True }
+    calls = GpuHost.calls "createBuffer" - before
+    [ "mapped at creation, size 6: "
+        ++ GpuShow.checked six λ_ → "buffer"
+        ++ ", native calls "
+        ++ String.fromInt calls
+    , "unmapped, size 6: " ++ created d (buffer 6 [ CopyDst ])
+    , "map read with storage usage: " ++ created d (buffer 16 [ MapRead, Storage ])
+    ]
+
+
+mapRequest : List Flags.MapMode, Int, Maybe Int → Gpu.Buffer.MapRequest
+mapRequest modes offset size = { mode = Flags.mapModes modes, offset = offset, size = size }
+
+
+mapped : Buffer, Gpu.Buffer.MapRequest → String
+mapped b request = GpuShow.checked (Gpu.Buffer.map b request) λ_ → "mapping"
+
+
+maps : ⊤ → List String
+maps ⊤ = GpuKit.with "none" λd →
+    readable = must (Gpu.Device.createBuffer d (buffer 32 [ MapRead, CopyDst ]))
+    destroyed = must (Gpu.Device.createBuffer d (buffer 32 [ MapRead, CopyDst ]))
+    Gpu.Buffer.destroy destroyed
+    before = GpuHost.calls "mapAsync"
+
+    lines =
+        [ "read and write at once: "
+            ++ mapped readable (mapRequest [ Flags.Read, Flags.Write ] 0 Nothing)
+        , "no mode: " ++ mapped readable (mapRequest [] 0 Nothing)
+        , "write without MAP_WRITE: " ++ mapped readable Gpu.Buffer.mapWrite
+        , "offset 4: " ++ mapped readable (mapRequest [ Flags.Read ] 4 Nothing)
+        , "size 6: " ++ mapped readable (mapRequest [ Flags.Read ] 0 (Just 6))
+        , "offset 16, size 24: " ++ mapped readable (mapRequest [ Flags.Read ] 16 (Just 24))
+        , "offset -8: " ++ mapped readable (mapRequest [ Flags.Read ] (-8) Nothing)
+        , "destroyed: " ++ mapped destroyed Gpu.Buffer.mapRead
+        ]
+    calls = GpuHost.calls "mapAsync" - before
+    first = mapped readable Gpu.Buffer.mapRead
+    second = mapped readable Gpu.Buffer.mapRead
+    List.concat
+        [ lines
+        , [ "native calls for the refusals: " ++ String.fromInt calls
+          , "map: " ++ first
+          , "map again while mapped: " ++ second
+          ]
+        ]
+
+
+ranges : ⊤ → List String
+ranges ⊤ = GpuKit.with "none" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 32 [ MapRead, CopyDst ]))
+    mapping = must (Gpu.Buffer.map b (mapRequest [ Flags.Read ] 8 (Just 16)))
+    r = must (Gpu.Buffer.getMappedRange mapping { offset = 8, size = Just 8 })
+    range =
+        λoffset size →
+            GpuShow.checked (Gpu.Buffer.getMappedRange mapping { offset = offset, size = size }) λx →
+                "range of " ++ String.fromInt (MappedRange.size x)
+    [ "the whole buffer, mapped from 8: " ++ range 0 Nothing
+    , "offset 12: " ++ range 12 (Just 4)
+    , "size 2: " ++ range 16 (Just 2)
+    , "overlapping 8+8: " ++ range 8 (Just 4)
+    , "past the mapping: " ++ range 16 (Just 16)
+    , "the rest of the mapping: " ++ range 16 (Just 8)
+    , "write to a read mapping: " ++ GpuShow.inputResult (MappedRange.writeU32 r 0 1) λ_ → "done"
+    , "read past the range: " ++ GpuShow.inputResult (MappedRange.readU32 r 6) String.fromInt
+    , "read at 4: " ++ GpuShow.inputResult (MappedRange.readU32 r 4) String.fromInt
+    , "bytes past the range: "
+        ++ GpuShow.checked (MappedRange.readBytes r { byteOffset = 4, byteLength = Just 8 }) λ_ →
+            "bytes"
+    , "mapping live: " ++ GpuKit.yesNo (Gpu.Buffer.mappingLive mapping)
+    ]
+
+
+values : ⊤ → List String
+values ⊤ = GpuKit.with "none" λd →
+    made = must (Gpu.Device.createMappedBuffer d (buffer 8 [ CopySrc ]))
+    r = must (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole)
+    [ "u8 256: " ++ GpuShow.inputResult (MappedRange.writeU8 r 0 256) λ_ → "done"
+    , "i8 -129: " ++ GpuShow.inputResult (MappedRange.writeI8 r 0 (-129)) λ_ → "done"
+    , "u32 -1: " ++ GpuShow.inputResult (MappedRange.writeU32 r 0 (-1)) λ_ → "done"
+    , "i32 -1: " ++ GpuShow.inputResult (MappedRange.writeI32 r 0 (-1)) λ_ → "done"
+    , "read back as u32: " ++ GpuShow.inputResult (MappedRange.readU32 r 0) String.fromInt
+    , "write 9 bytes into 8: "
+        ++ GpuShow.inputResult (MappedRange.writeBytes r 0 (Binary.WholeBuffer (zeros 9))) λ_ →
+            "done"
+    ]
+
+
+written : Device, Buffer, Gpu.Queue.WriteBufferSource → String
+written d b write = GpuShow.checked (Gpu.Queue.writeBuffer (Gpu.Device.queue d) b write) λ_ →
+    "written"
+
+
+u32s : Int → Binary.Source
+u32s count =
+    Binary.ViewOf (must (Binary.view (Binary.Local (zeros (count * 4))) Binary.U32 Binary.whole))
+
+
+writes : ⊤ → List String
+writes ⊤ = GpuKit.with "none" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 32 [ CopyDst, MapRead ]))
+    noCopy = must (Gpu.Device.createBuffer d (buffer 32 [ MapRead ]))
+    before = GpuHost.calls "writeBuffer"
+    detached = zeros 8
+    _ = Binary.transfer detached
+
+    refused =
+        [ "6 bytes: " ++ written d b (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 6)))
+        , "u32 data from element 3 of 2: "
+            ++ written d b { bufferOffset = 0, data = u32s 2, dataOffset = 3, size = Nothing }
+        , "u32 data, 2 elements from element 1 of 2: "
+            ++ written d b { bufferOffset = 0, data = u32s 2, dataOffset = 1, size = Just 2 }
+        , "detached data: " ++ written d b (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer detached))
+        , "buffer offset -4: " ++ written d b (Gpu.Queue.bufferWrite (-4) (u32s 1))
+        ]
+    calls = GpuHost.calls "writeBuffer" - before
+    List.concat
+        [ refused
+        , [ "native calls for the refusals: " ++ String.fromInt calls
+          , "u32 data, element 1 of 2: "
+              ++ written d b { bufferOffset = 4, data = u32s 2, dataOffset = 1, size = Nothing }
+          , "no COPY_DST usage: " ++ written d noCopy (Gpu.Queue.bufferWrite 0 (u32s 1))
+          , "buffer offset 2: " ++ written d b (Gpu.Queue.bufferWrite 2 (u32s 1))
+          ]
+        ]
+
+
+backing : ⊤ → List String
+backing ⊤ = GpuKit.with "none" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 32 [ CopyDst ]))
+    resizable = GpuHost.resizable 16
+    fixedView = Binary.ViewOf (must (Binary.view (Binary.Local (zeros 16)) Binary.U8 Binary.whole))
+
+    resizableView = Binary.ViewOf (Binary.Uint8Array (GpuHost.resizableBytes 16))
+
+    shared =
+        if GpuHost.sharedMemory ⊤ then
+            growable = GpuHost.growable 16
+            [ "growable SharedArrayBuffer: "
+                ++ written d b (Gpu.Queue.bufferWrite 0 (Binary.WholeShared growable))
+            , "a view on a growable SharedArrayBuffer: "
+                ++ written
+                    d
+                    b
+                    (Gpu.Queue.bufferWrite
+                        0
+                        (Binary.ViewOf (Binary.Uint8Array (GpuHost.growableBytes 16)))
+                    )
+            ]
+        else
+            [ "growable SharedArrayBuffer: no shared memory on this page" ]
+    List.concat
+        [ [ "resizable ArrayBuffer: "
+              ++ written d b (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer resizable))
+          , "a view on a resizable ArrayBuffer: "
+              ++ written d b (Gpu.Queue.bufferWrite 0 resizableView)
+          ]
+        , shared
+        , [ "fixed ArrayBuffer: "
+              ++ written d b (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 16)))
+          , "fixed view: " ++ written d b (Gpu.Queue.bufferWrite 0 fixedView)
+          , "mapped range from fixed storage: " ++ fromFixed d
+          ]
+        ]
+
+
+-- Fixed storage written into a mapping from creation, and read back.
+fromFixed : Device → String
+fromFixed d =
+    made = must (Gpu.Device.createMappedBuffer d (buffer 8 [ CopySrc ]))
+    r = must (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole)
+    source = zeros 8
+    view = must (Binary.dataView (Binary.Local source))
+    must (Binary.writeU32 view 4 Binary.Little 99)
+    case MappedRange.writeBytes r 0 (Binary.WholeBuffer source) of
+        Err problem →
+            "Err " ++ GpuShow.inputError problem
+
+        Ok _ →
+            GpuShow.inputResult (MappedRange.readU32 r 4) String.fromInt
+
+
+others : ⊤ → List String
+others ⊤ = GpuKit.with "none" λd →
+    GpuKit.with "none" λother →
+        mine = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst ]))
+        [ "a buffer of another device's queue: "
+            ++ written other mine (Gpu.Queue.bufferWrite 0 (u32s 1))
+        ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "creation", creation )
+        , ( "maps", maps )
+        , ( "ranges", ranges )
+        , ( "values", values )
+        , ( "writes", writes )
+        , ( "backing", backing )
+        , ( "others", others )
+        ]

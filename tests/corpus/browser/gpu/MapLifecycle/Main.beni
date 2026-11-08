@@ -1,0 +1,203 @@
+-- The life of a mapping (docs/design/webgpu.md §6.4, §7, §8.1, §10; ledger
+-- §4): an unmap or a destroy while a map is pending ends it with
+-- `MapAborted`; a loss while it is pending wins (`DeviceLost`); a second
+-- map while one is pending is refused at once; cancelling the fiber that
+-- waits unmaps that request and no later one; a mapping or a range kept
+-- past its generation is expired for every alias, and use after destroy
+-- too; `withMapped` unmaps however its body ends, never a mapping made
+-- after its own; and under a diagnostic lease `map` refuses with no native
+-- call while unmap, destroy, `currentMapping` and range reads run.
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Flags exposing (MapRead, CopyDst)
+import Gpu.Handle exposing (Buffer, Device, Mapping)
+import Gpu.MappedRange as MappedRange
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Task
+import Tea
+
+
+readable : Device → Buffer
+readable d = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
+
+
+state : Buffer → String
+state b = Types.bufferMapStateToString (Gpu.Buffer.mapState b)
+
+
+mapped : Result Error.Error Mapping → String
+mapped r = GpuShow.checked r λ_ → "mapping"
+
+
+-- Map in a fiber of its own, held until released: the map is pending
+-- once the fiber has run.
+pendingMap : Buffer → Task.Fiber (Result Error.Error Mapping)
+pendingMap b =
+    f = Task.spawn λ⊤ → Gpu.Buffer.map b Gpu.Buffer.mapRead
+    Task.yieldNow ⊤
+    f
+
+
+pending : ⊤ → List String
+pending ⊤ =
+    unmapped = GpuKit.with "maps-held" λd →
+        b = readable d
+        f = pendingMap b
+        during = state b
+        Gpu.Buffer.unmap b
+        GpuHost.releaseMaps ⊤
+        [ "unmapped while pending ("
+            ++ during
+            ++ "): "
+            ++ mapped (Task.join f)
+            ++ ", then "
+            ++ state b
+        ]
+
+    destroyed = GpuKit.with "maps-held" λd2 →
+        b = readable d2
+        f = pendingMap b
+        Gpu.Buffer.destroy b
+        GpuHost.releaseMaps ⊤
+        [ "destroyed while pending: " ++ mapped (Task.join f)
+        , "map after destroy: " ++ mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+        ]
+
+    lost = GpuKit.with "lost-controlled,maps-held" λd3 →
+        b = readable d3
+        f = pendingMap b
+        GpuHost.lose "unknown"
+        result = mapped (Task.join f)
+        GpuHost.releaseMaps ⊤
+        [ "lost while pending: " ++ result ]
+
+    concurrent = GpuKit.with "maps-held" λd4 →
+        b = readable d4
+        f = pendingMap b
+        second = mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+        GpuHost.releaseMaps ⊤
+        [ "a second map while pending: " ++ second
+        , "the first: " ++ mapped (Task.join f) ++ ", then " ++ state b
+        ]
+    List.concat [ unmapped, destroyed, lost, concurrent ]
+
+
+cancelled : ⊤ → List String
+cancelled ⊤ = GpuKit.with "maps-held" λd →
+    b = readable d
+    f = pendingMap b
+    Task.cancel f
+    after = state b
+    GpuHost.releaseMaps ⊤
+    GpuHost.drain ⊤
+    next = pendingMap b
+    GpuHost.releaseMaps ⊤
+    again = mapped (Task.join next)
+    [ "cancelled while pending, then " ++ after
+    , "map again: " ++ again ++ ", then " ++ state b
+    ]
+
+
+stale : ⊤ → List String
+stale ⊤ = GpuKit.with "none" λd →
+    b = readable d
+    same = b
+    first = must (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+    r = must (Gpu.Buffer.getMappedRange first Gpu.Buffer.whole)
+    Gpu.Buffer.unmap same
+    second = must (Gpu.Buffer.map same Gpu.Buffer.mapRead)
+
+    current =
+        case Gpu.Buffer.currentMapping b of
+            Just m →
+                if Gpu.Buffer.mappingLive m then "the second" else "an expired one"
+
+            Nothing →
+                "none"
+    Gpu.Buffer.destroy b
+    [ "the first range after a remap: "
+        ++ GpuShow.inputResult (MappedRange.readU32 r 0) String.fromInt
+    , "a range of the first mapping: "
+        ++ GpuShow.checked (Gpu.Buffer.getMappedRange first Gpu.Buffer.whole) λ_ → "range"
+    , "current mapping: " ++ current
+    , "second mapping live after destroy: " ++ GpuKit.yesNo (Gpu.Buffer.mappingLive second)
+    , "a range of it after destroy: "
+        ++ GpuShow.checked (Gpu.Buffer.getMappedRange second Gpu.Buffer.whole) λ_ → "range"
+    ]
+
+
+failing : Mapping → Result Error.Error ⊤
+failing _ = Err (Error.InvalidInput Error.SessionStopped)
+
+
+-- Unmaps its own mapping and maps again: `withMapped` must not end the
+-- later mapping.
+remapping : Buffer, Mapping → Result Error.Error ⊤
+remapping b _ =
+    Gpu.Buffer.unmap b
+    _ = Gpu.Buffer.map b Gpu.Buffer.mapRead?
+    Ok ⊤
+
+
+bracket : ⊤ → List String
+bracket ⊤ = GpuKit.with "none" λd →
+    b = readable d
+    failed = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead failing
+    afterFailure = state b
+    remapped = Gpu.Buffer.withMapped b Gpu.Buffer.mapRead (remapping b _)
+
+    [ "a body that fails: " ++ GpuShow.checked failed (λ_ → "done") ++ ", then " ++ afterFailure
+    , "a body that maps again: " ++ GpuShow.checked remapped (λ_ → "done") ++ ", then " ++ state b
+    ]
+
+
+leased : ⊤ → List String
+leased ⊤ = GpuKit.with "none" λd →
+    b = readable d
+    other = readable d
+    m = must (Gpu.Buffer.map other Gpu.Buffer.mapRead)
+    r = must (Gpu.Buffer.getMappedRange m Gpu.Buffer.whole)
+    _ = GpuProbe.lease d
+    before = GpuHost.calls "mapAsync"
+    refused = mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+    calls = GpuHost.calls "mapAsync" - before
+    read = GpuShow.inputResult (MappedRange.readU32 r 0) String.fromInt
+
+    current =
+        case Gpu.Buffer.currentMapping other of
+            Just _ →
+                "Just"
+
+            Nothing →
+                "Nothing"
+    Gpu.Buffer.unmap other
+    unmapped = state other
+    Gpu.Buffer.destroy b
+    GpuProbe.releaseLease d
+    [ "map under the lease: " ++ refused ++ ", native calls " ++ String.fromInt calls
+    , "under the lease: range read "
+        ++ read
+        ++ ", current mapping "
+        ++ current
+        ++ ", unmap "
+        ++ unmapped
+    , "map after the lease, of the buffer destroyed under it: "
+        ++ mapped (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+    ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "pending", pending )
+        , ( "cancelled", cancelled )
+        , ( "stale", stale )
+        , ( "bracket", bracket )
+        , ( "leased", leased )
+        ]

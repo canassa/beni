@@ -1,0 +1,317 @@
+-- load
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #creation
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+    </ol>
+  </main>
+</body>
+-- click #maps
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+      <li>"read and write at once: Err InvalidInput InvalidMapMode mode 3"</li>
+      <li>"no mode: Err InvalidInput InvalidMapMode mode 0"</li>
+      <li>"write without MAP_WRITE: Err InvalidInput MissingBufferUsage buffer 2"</li>
+      <li>"offset 4: Err InvalidInput Misaligned offset 4 by 8"</li>
+      <li>"size 6: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"offset 16, size 24: Err InvalidInput OutOfRange size 16+24 of 32"</li>
+      <li>"offset -8: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"map: Ok mapping"</li>
+      <li>"map again while mapped: Err InvalidInput MappingState buffer mapped"</li>
+    </ol>
+  </main>
+</body>
+-- click #ranges
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+      <li>"read and write at once: Err InvalidInput InvalidMapMode mode 3"</li>
+      <li>"no mode: Err InvalidInput InvalidMapMode mode 0"</li>
+      <li>"write without MAP_WRITE: Err InvalidInput MissingBufferUsage buffer 2"</li>
+      <li>"offset 4: Err InvalidInput Misaligned offset 4 by 8"</li>
+      <li>"size 6: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"offset 16, size 24: Err InvalidInput OutOfRange size 16+24 of 32"</li>
+      <li>"offset -8: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"map: Ok mapping"</li>
+      <li>"map again while mapped: Err InvalidInput MappingState buffer mapped"</li>
+      <li>"the whole buffer, mapped from 8: Err InvalidInput OutOfRange range 0+32 of 24"</li>
+      <li>"offset 12: Err InvalidInput Misaligned offset 12 by 8"</li>
+      <li>"size 2: Err InvalidInput Misaligned size 2 by 4"</li>
+      <li>"overlapping 8+8: Err InvalidInput RangeOverlap range 8+4"</li>
+      <li>"past the mapping: Err InvalidInput OutOfRange range 16+16 of 24"</li>
+      <li>"the rest of the mapping: Ok range of 8"</li>
+      <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
+      <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
+      <li>"read at 4: Ok 0"</li>
+      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"mapping live: yes"</li>
+    </ol>
+  </main>
+</body>
+-- click #values
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+      <li>"read and write at once: Err InvalidInput InvalidMapMode mode 3"</li>
+      <li>"no mode: Err InvalidInput InvalidMapMode mode 0"</li>
+      <li>"write without MAP_WRITE: Err InvalidInput MissingBufferUsage buffer 2"</li>
+      <li>"offset 4: Err InvalidInput Misaligned offset 4 by 8"</li>
+      <li>"size 6: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"offset 16, size 24: Err InvalidInput OutOfRange size 16+24 of 32"</li>
+      <li>"offset -8: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"map: Ok mapping"</li>
+      <li>"map again while mapped: Err InvalidInput MappingState buffer mapped"</li>
+      <li>"the whole buffer, mapped from 8: Err InvalidInput OutOfRange range 0+32 of 24"</li>
+      <li>"offset 12: Err InvalidInput Misaligned offset 12 by 8"</li>
+      <li>"size 2: Err InvalidInput Misaligned size 2 by 4"</li>
+      <li>"overlapping 8+8: Err InvalidInput RangeOverlap range 8+4"</li>
+      <li>"past the mapping: Err InvalidInput OutOfRange range 16+16 of 24"</li>
+      <li>"the rest of the mapping: Ok range of 8"</li>
+      <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
+      <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
+      <li>"read at 4: Ok 0"</li>
+      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"mapping live: yes"</li>
+      <li>"u8 256: Err InvalidValue value 256.0"</li>
+      <li>"i8 -129: Err InvalidValue value -129.0"</li>
+      <li>"u32 -1: Err InvalidValue value -1.0"</li>
+      <li>"i32 -1: Ok done"</li>
+      <li>"read back as u32: Ok 4294967295"</li>
+      <li>"write 9 bytes into 8: Err OutOfRange offset 0+9 of 8"</li>
+    </ol>
+  </main>
+</body>
+-- click #writes
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+      <li>"read and write at once: Err InvalidInput InvalidMapMode mode 3"</li>
+      <li>"no mode: Err InvalidInput InvalidMapMode mode 0"</li>
+      <li>"write without MAP_WRITE: Err InvalidInput MissingBufferUsage buffer 2"</li>
+      <li>"offset 4: Err InvalidInput Misaligned offset 4 by 8"</li>
+      <li>"size 6: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"offset 16, size 24: Err InvalidInput OutOfRange size 16+24 of 32"</li>
+      <li>"offset -8: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"map: Ok mapping"</li>
+      <li>"map again while mapped: Err InvalidInput MappingState buffer mapped"</li>
+      <li>"the whole buffer, mapped from 8: Err InvalidInput OutOfRange range 0+32 of 24"</li>
+      <li>"offset 12: Err InvalidInput Misaligned offset 12 by 8"</li>
+      <li>"size 2: Err InvalidInput Misaligned size 2 by 4"</li>
+      <li>"overlapping 8+8: Err InvalidInput RangeOverlap range 8+4"</li>
+      <li>"past the mapping: Err InvalidInput OutOfRange range 16+16 of 24"</li>
+      <li>"the rest of the mapping: Ok range of 8"</li>
+      <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
+      <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
+      <li>"read at 4: Ok 0"</li>
+      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"mapping live: yes"</li>
+      <li>"u8 256: Err InvalidValue value 256.0"</li>
+      <li>"i8 -129: Err InvalidValue value -129.0"</li>
+      <li>"u32 -1: Err InvalidValue value -1.0"</li>
+      <li>"i32 -1: Ok done"</li>
+      <li>"read back as u32: Ok 4294967295"</li>
+      <li>"write 9 bytes into 8: Err OutOfRange offset 0+9 of 8"</li>
+      <li>"6 bytes: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"u32 data from element 3 of 2: Err InvalidInput OutOfRange dataOffset 3+0 of 2"</li>
+      <li>"u32 data, 2 elements from element 1 of 2: Err InvalidInput OutOfRange size 4+8 of 8"</li>
+      <li>"detached data: Err InvalidInput DetachedSource data"</li>
+      <li>"buffer offset -4: Err InvalidInput NumericDomain bufferOffset"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"u32 data, element 1 of 2: Ok written"</li>
+      <li>"no COPY_DST usage: Err Validation"</li>
+      <li>"buffer offset 2: Err Validation"</li>
+    </ol>
+  </main>
+</body>
+-- click #backing
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+      <li>"read and write at once: Err InvalidInput InvalidMapMode mode 3"</li>
+      <li>"no mode: Err InvalidInput InvalidMapMode mode 0"</li>
+      <li>"write without MAP_WRITE: Err InvalidInput MissingBufferUsage buffer 2"</li>
+      <li>"offset 4: Err InvalidInput Misaligned offset 4 by 8"</li>
+      <li>"size 6: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"offset 16, size 24: Err InvalidInput OutOfRange size 16+24 of 32"</li>
+      <li>"offset -8: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"map: Ok mapping"</li>
+      <li>"map again while mapped: Err InvalidInput MappingState buffer mapped"</li>
+      <li>"the whole buffer, mapped from 8: Err InvalidInput OutOfRange range 0+32 of 24"</li>
+      <li>"offset 12: Err InvalidInput Misaligned offset 12 by 8"</li>
+      <li>"size 2: Err InvalidInput Misaligned size 2 by 4"</li>
+      <li>"overlapping 8+8: Err InvalidInput RangeOverlap range 8+4"</li>
+      <li>"past the mapping: Err InvalidInput OutOfRange range 16+16 of 24"</li>
+      <li>"the rest of the mapping: Ok range of 8"</li>
+      <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
+      <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
+      <li>"read at 4: Ok 0"</li>
+      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"mapping live: yes"</li>
+      <li>"u8 256: Err InvalidValue value 256.0"</li>
+      <li>"i8 -129: Err InvalidValue value -129.0"</li>
+      <li>"u32 -1: Err InvalidValue value -1.0"</li>
+      <li>"i32 -1: Ok done"</li>
+      <li>"read back as u32: Ok 4294967295"</li>
+      <li>"write 9 bytes into 8: Err OutOfRange offset 0+9 of 8"</li>
+      <li>"6 bytes: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"u32 data from element 3 of 2: Err InvalidInput OutOfRange dataOffset 3+0 of 2"</li>
+      <li>"u32 data, 2 elements from element 1 of 2: Err InvalidInput OutOfRange size 4+8 of 8"</li>
+      <li>"detached data: Err InvalidInput DetachedSource data"</li>
+      <li>"buffer offset -4: Err InvalidInput NumericDomain bufferOffset"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"u32 data, element 1 of 2: Ok written"</li>
+      <li>"no COPY_DST usage: Err Validation"</li>
+      <li>"buffer offset 2: Err Validation"</li>
+      <li>"resizable ArrayBuffer: Err InvalidInput ResizableBacking data"</li>
+      <li>"a view on a resizable ArrayBuffer: Err InvalidInput ResizableBacking data"</li>
+      <li>"growable SharedArrayBuffer: no shared memory on this page"</li>
+      <li>"fixed ArrayBuffer: Ok written"</li>
+      <li>"fixed view: Ok written"</li>
+      <li>"mapped range from fixed storage: Ok 99"</li>
+    </ol>
+  </main>
+</body>
+-- click #others
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="maps">"maps"</button>
+    <button id="ranges">"ranges"</button>
+    <button id="values">"values"</button>
+    <button id="writes">"writes"</button>
+    <button id="backing">"backing"</button>
+    <button id="others">"others"</button>
+    <ol>
+      <li>"mapped at creation, size 6: Err InvalidInput MappedSizeUnaligned size 6, native calls 0"</li>
+      <li>"unmapped, size 6: Ok buffer"</li>
+      <li>"map read with storage usage: Err Validation"</li>
+      <li>"read and write at once: Err InvalidInput InvalidMapMode mode 3"</li>
+      <li>"no mode: Err InvalidInput InvalidMapMode mode 0"</li>
+      <li>"write without MAP_WRITE: Err InvalidInput MissingBufferUsage buffer 2"</li>
+      <li>"offset 4: Err InvalidInput Misaligned offset 4 by 8"</li>
+      <li>"size 6: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"offset 16, size 24: Err InvalidInput OutOfRange size 16+24 of 32"</li>
+      <li>"offset -8: Err InvalidInput NumericDomain offset"</li>
+      <li>"destroyed: Err InvalidInput ResourceDestroyed buffer"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"map: Ok mapping"</li>
+      <li>"map again while mapped: Err InvalidInput MappingState buffer mapped"</li>
+      <li>"the whole buffer, mapped from 8: Err InvalidInput OutOfRange range 0+32 of 24"</li>
+      <li>"offset 12: Err InvalidInput Misaligned offset 12 by 8"</li>
+      <li>"size 2: Err InvalidInput Misaligned size 2 by 4"</li>
+      <li>"overlapping 8+8: Err InvalidInput RangeOverlap range 8+4"</li>
+      <li>"past the mapping: Err InvalidInput OutOfRange range 16+16 of 24"</li>
+      <li>"the rest of the mapping: Ok range of 8"</li>
+      <li>"write to a read mapping: Err ReadOnlyMapping range"</li>
+      <li>"read past the range: Err OutOfRange offset 6+4 of 8"</li>
+      <li>"read at 4: Ok 0"</li>
+      <li>"bytes past the range: Err InvalidInput OutOfRange bytes 4+8 of 8"</li>
+      <li>"mapping live: yes"</li>
+      <li>"u8 256: Err InvalidValue value 256.0"</li>
+      <li>"i8 -129: Err InvalidValue value -129.0"</li>
+      <li>"u32 -1: Err InvalidValue value -1.0"</li>
+      <li>"i32 -1: Ok done"</li>
+      <li>"read back as u32: Ok 4294967295"</li>
+      <li>"write 9 bytes into 8: Err OutOfRange offset 0+9 of 8"</li>
+      <li>"6 bytes: Err InvalidInput Misaligned size 6 by 4"</li>
+      <li>"u32 data from element 3 of 2: Err InvalidInput OutOfRange dataOffset 3+0 of 2"</li>
+      <li>"u32 data, 2 elements from element 1 of 2: Err InvalidInput OutOfRange size 4+8 of 8"</li>
+      <li>"detached data: Err InvalidInput DetachedSource data"</li>
+      <li>"buffer offset -4: Err InvalidInput NumericDomain bufferOffset"</li>
+      <li>"native calls for the refusals: 0"</li>
+      <li>"u32 data, element 1 of 2: Ok written"</li>
+      <li>"no COPY_DST usage: Err Validation"</li>
+      <li>"buffer offset 2: Err Validation"</li>
+      <li>"resizable ArrayBuffer: Err InvalidInput ResizableBacking data"</li>
+      <li>"a view on a resizable ArrayBuffer: Err InvalidInput ResizableBacking data"</li>
+      <li>"growable SharedArrayBuffer: no shared memory on this page"</li>
+      <li>"fixed ArrayBuffer: Ok written"</li>
+      <li>"fixed view: Ok written"</li>
+      <li>"mapped range from fixed storage: Ok 99"</li>
+      <li>"a buffer of another device's queue: Err InvalidInput WrongDevice buffer"</li>
+    </ol>
+  </main>
+</body>

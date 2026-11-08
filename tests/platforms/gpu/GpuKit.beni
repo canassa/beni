@@ -1,0 +1,73 @@
+--! What the WebGPU fixtures share: a fresh device after injecting faults,
+--! and the small values they build descriptors from.
+
+import Binary
+import Gpu
+import Gpu.Adapter
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Device)
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuShow
+
+
+--| A fresh device after `scenarios` are injected, or why there is none.
+pub device : String → Result String Device
+device scenarios =
+    GpuHost.inject scenarios
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            Err ("adapter: " ++ GpuShow.initError problem)
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    Err ("device: " ++ GpuShow.initError problem)
+
+                Ok d →
+                    Ok d
+
+
+--| `run` on a fresh device after `scenarios`, or why there is none.
+pub with : String, (Device → List String) → List String
+with scenarios run =
+    case device scenarios of
+        Err why →
+            [ why ]
+
+        Ok d →
+            run d
+
+
+--| The value of a result a fixture knows to be `Ok`.
+pub must : Result e a → a
+must r =
+    case r of
+        Ok a →
+            a
+
+        Err _ →
+            Debug.todo "a fixture value failed"
+
+
+--| A buffer descriptor of `bytes` with `usages`.
+pub buffer : Int, List Flags.BufferUsage → Types.BufferDescriptor
+buffer bytes usages = Types.bufferDescriptor (must (Scalar.size64 bytes)) (Flags.buffer usages)
+
+
+--| Fixed storage of `bytes` zero bytes.
+pub zeros : Int → Binary.Buffer
+zeros bytes = must (Binary.allocate bytes)
+
+
+--| A word's two halves, as `high:low`.
+pub showWord : Binary.Word64 → String
+showWord w =
+    words = Binary.words w
+    String.fromInt words.high ++ ":" ++ String.fromInt words.low
+
+
+--| `yes` or `no`.
+pub yesNo : Bool → String
+yesNo b = if b then "yes" else "no"

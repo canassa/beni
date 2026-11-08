@@ -1,0 +1,198 @@
+-- Bytes through a GPU buffer and back (docs/design/webgpu.md §7, §7.1,
+-- §8.3; ledger §4, §5): a queue write read back through a read mapping,
+-- a buffer written through its mapping from creation — writable with no
+-- MAP_WRITE usage — then read back, and a write mapping. The values are
+-- exact: 32-bit words, and 64-bit words above 2⁵³ that a Number cannot
+-- hold. The expected words are written out by hand in the golden, never
+-- computed by the code under test.
+import Binary
+import Gpu
+import Gpu.Adapter
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle exposing (Buffer, Device, Mapping)
+import Gpu.MappedRange as MappedRange
+import Gpu.Queue
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+device : String → Result String Device
+device scenarios =
+    GpuHost.inject scenarios
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            Err ("adapter: " ++ GpuShow.initError problem)
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    Err ("device: " ++ GpuShow.initError problem)
+
+                Ok d →
+                    Ok d
+
+
+with : String, (Device → List String) → List String
+with scenarios run =
+    case device scenarios of
+        Err why →
+            [ why ]
+
+        Ok d →
+            run d
+
+
+must : Result e a → a
+must r =
+    case r of
+        Ok a →
+            a
+
+        Err _ →
+            Debug.todo "a fixture value failed"
+
+
+size : Int → Scalar.Size64
+size n = must (Scalar.size64 n)
+
+
+descriptor : Int, List Flags.BufferUsage → Types.BufferDescriptor
+descriptor bytes usages = Types.bufferDescriptor (size bytes) (Flags.buffer usages)
+
+
+word : Int, Int → Binary.Word64
+word high low = must (Binary.word64 high low)
+
+
+showWord : Binary.Word64 → String
+showWord w =
+    words = Binary.words w
+    String.fromInt words.high ++ ":" ++ String.fromInt words.low
+
+
+-- 32 bytes: four u32 and two u64, little-endian, as WGSL lays them out.
+payload : ⊤ → Binary.Buffer
+payload ⊤ =
+    storage = must (Binary.allocate 32)
+    view = must (Binary.dataView (Binary.Local storage))
+    must (Binary.writeU32 view 0 Binary.Little 1)
+    must (Binary.writeU32 view 4 Binary.Little 305419896)
+    must (Binary.writeU32 view 8 Binary.Little 3735928559)
+    must (Binary.writeU32 view 12 Binary.Little 4294967295)
+    must (Binary.writeWord64 view 16 Binary.Little (word 4294967295 4294967295))
+    must (Binary.writeWord64 view 24 Binary.Little (word 2097152 1))
+    storage
+
+
+-- The six values of a range, as the golden spells them.
+contents : Gpu.Handle.MappedRange → String
+contents range =
+    u32s = List.map [ 0, 4, 8, 12 ] λat →
+        GpuShow.inputResult (MappedRange.readU32 range at) String.fromInt
+    u64s = List.map [ 16, 24 ] λat → GpuShow.inputResult (MappedRange.readWord64 range at) showWord
+    String.join (List.concat [ u32s, u64s ]) ", "
+
+
+readAll : Buffer → String
+readAll buffer =
+    GpuShow.checked (Gpu.Buffer.withMapped buffer Gpu.Buffer.mapRead readContents) λtext → text
+
+
+readContents : Mapping → Result Error.Error String
+readContents mapping =
+    range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+    Ok (contents range)
+
+
+queueWrite : ⊤ → List String
+queueWrite ⊤ = with "none" λd →
+    buffer = must (Gpu.Device.createBuffer d (descriptor 32 [ Flags.MapRead, Flags.CopyDst ]))
+    queue = Gpu.Device.queue d
+    wrote =
+        Gpu.Queue.writeBuffer
+            queue
+            buffer
+            (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (payload ⊤)))
+    [ "write: " ++ GpuShow.checked wrote λ_ → "done"
+    , "state before map: " ++ Types.bufferMapStateToString (Gpu.Buffer.mapState buffer)
+    , "read: " ++ readAll buffer
+    , "state after withMapped: " ++ Types.bufferMapStateToString (Gpu.Buffer.mapState buffer)
+    , "size: " ++ String.fromInt (Gpu.Buffer.size buffer)
+    ]
+
+
+creation : ⊤ → List String
+creation ⊤ = with "none" λd →
+    made = must (Gpu.Device.createMappedBuffer d (descriptor 32 [ Flags.MapRead, Flags.CopyDst ]))
+    mapping = made.mapping
+
+    mode =
+        case Gpu.Buffer.mappingMode mapping of
+            Gpu.Buffer.CreationMapping →
+                "creation"
+
+            _ →
+                "another mode"
+    range = must (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)
+    wrote = MappedRange.writeBytes range 0 (Binary.WholeBuffer (payload ⊤))
+
+    current =
+        case Gpu.Buffer.currentMapping made.buffer of
+            Just _ →
+                "Just"
+
+            Nothing →
+                "Nothing"
+    Gpu.Buffer.unmap made.buffer
+
+    after =
+        case Gpu.Buffer.currentMapping made.buffer of
+            Just _ →
+                "Just"
+
+            Nothing →
+                "Nothing"
+    [ "mapping mode: " ++ mode
+    , "write through the mapping: " ++ GpuShow.inputResult wrote λ_ → "done"
+    , "current mapping: " ++ current ++ ", after unmap: " ++ after
+    , "range after unmap: " ++ GpuShow.inputResult (MappedRange.readU32 range 0) String.fromInt
+    , "read: " ++ readAll made.buffer
+    ]
+
+
+writeMapping : ⊤ → List String
+writeMapping ⊤ = with "none" λd →
+    buffer = must (Gpu.Device.createBuffer d (descriptor 16 [ Flags.MapWrite, Flags.CopySrc ]))
+    written = Gpu.Buffer.withMapped buffer Gpu.Buffer.mapWrite writeThrough
+    [ "write mapping: " ++ GpuShow.checked written λtext → text ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "queue-write", queueWrite )
+        , ( "creation", creation )
+        , ( "write-mapping", writeMapping )
+        ]
+
+
+writeThrough : Mapping → Result Error.Error String
+writeThrough mapping =
+    range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+    Result.mapError (MappedRange.writeU32 range 0 7) Error.InvalidInput?
+    Result.mapError (MappedRange.writeF32 range 4 1.5) Error.InvalidInput?
+    Result.mapError (MappedRange.writeWord64 range 8 (word 2097152 1)) Error.InvalidInput?
+    Ok
+        (GpuShow.inputResult (MappedRange.readU32 range 0) String.fromInt
+            ++ ", "
+            ++ GpuShow.inputResult (MappedRange.readF32 range 4) String.fromFloat
+            ++ ", "
+            ++ GpuShow.inputResult (MappedRange.readWord64 range 8) showWord
+        )

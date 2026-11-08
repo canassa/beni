@@ -1,0 +1,65 @@
+-- Submission receipts (docs/design/webgpu.md §6.4, §8.3; ledger §5): each
+-- `submit` is one native submit with one receipt, an empty list included,
+-- so two submits give two receipts and two native calls; each receipt's
+-- `done` waits for its own work. The queue's faithful
+-- `onSubmittedWorkDone` waits too. Under a diagnostic lease `submit`
+-- refuses with no native call while a receipt's `done` runs; on a
+-- destroyed device both refuse with the loss.
+import Gpu.Device
+import Gpu.Queue
+import Gpu.Submission
+import GpuHost
+import GpuKit exposing (must)
+import GpuPage
+import GpuProbe
+import GpuShow
+import Tea
+
+
+receipts : ⊤ → List String
+receipts ⊤ = GpuKit.with "none" λd →
+    queue = Gpu.Device.queue d
+    before = GpuHost.calls "submit"
+    first = must (Gpu.Queue.submit queue [])
+    second = must (Gpu.Queue.submit queue [])
+    calls = GpuHost.calls "submit" - before
+    [ "two empty submits, native calls " ++ String.fromInt calls
+    , "the second done: " ++ GpuShow.checked (Gpu.Submission.done second) λ_ → "done"
+    , "the first done: " ++ GpuShow.checked (Gpu.Submission.done first) λ_ → "done"
+    , "the first done again: " ++ GpuShow.checked (Gpu.Submission.done first) λ_ → "done"
+    , "queue work done: " ++ GpuShow.checked (Gpu.Queue.onSubmittedWorkDone queue) λ_ → "done"
+    ]
+
+
+refusals : ⊤ → List String
+refusals ⊤ =
+    leased = GpuKit.with "none" λd →
+        queue = Gpu.Device.queue d
+        receipt = must (Gpu.Queue.submit queue [])
+        _ = GpuProbe.lease d
+        before = GpuHost.calls "submit"
+        refused = GpuShow.checked (Gpu.Queue.submit queue []) λ_ → "receipt"
+        calls = GpuHost.calls "submit" - before
+        done = GpuShow.checked (Gpu.Submission.done receipt) λ_ → "done"
+        GpuProbe.releaseLease d
+        [ "submit under the lease: " ++ refused ++ ", native calls " ++ String.fromInt calls
+        , "a receipt's done under the lease: " ++ done
+        ]
+
+    destroyed = GpuKit.with "none" λd2 →
+        queue = Gpu.Device.queue d2
+        Gpu.Device.destroy d2
+        [ "submit on a destroyed device: "
+            ++ GpuShow.checked (Gpu.Queue.submit queue []) λ_ → "receipt"
+        , "queue work done on it: "
+            ++ GpuShow.checked (Gpu.Queue.onSubmittedWorkDone queue) λ_ → "done"
+        ]
+    List.concat [ leased, destroyed ]
+
+
+main : Tea.Program
+main =
+    GpuPage.program
+        [ ( "receipts", receipts )
+        , ( "refusals", refusals )
+        ]

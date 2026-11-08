@@ -1,0 +1,40 @@
+-- load
+<body>
+  <main>
+    <button id="receipts">"receipts"</button>
+    <button id="refusals">"refusals"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #receipts
+<body>
+  <main>
+    <button id="receipts">"receipts"</button>
+    <button id="refusals">"refusals"</button>
+    <ol>
+      <li>"two empty submits, native calls 2"</li>
+      <li>"the second done: Ok done"</li>
+      <li>"the first done: Ok done"</li>
+      <li>"the first done again: Ok done"</li>
+      <li>"queue work done: Ok done"</li>
+    </ol>
+  </main>
+</body>
+-- click #refusals
+<body>
+  <main>
+    <button id="receipts">"receipts"</button>
+    <button id="refusals">"refusals"</button>
+    <ol>
+      <li>"two empty submits, native calls 2"</li>
+      <li>"the second done: Ok done"</li>
+      <li>"the first done: Ok done"</li>
+      <li>"the first done again: Ok done"</li>
+      <li>"queue work done: Ok done"</li>
+      <li>"submit under the lease: Err InvalidInput SessionState DeviceLeased, native calls 0"</li>
+      <li>"a receipt's done under the lease: Ok done"</li>
+      <li>"submit on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+      <li>"queue work done on it: Err DeviceLost Destroyed observed 0"</li>
+    </ol>
+  </main>
+</body>
