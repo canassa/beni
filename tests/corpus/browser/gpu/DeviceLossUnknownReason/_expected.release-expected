@@ -6,7 +6,7 @@
   </main>
 </body>
 -- throws click #run
-(threw: Error: webgpu: a device was lost for a reason outside the pin)
+(threw: Error: webgpu: device 1, lost for a reason outside the pin: exploded)
 <body>
   <main>
     <button id="run">"run"</button>

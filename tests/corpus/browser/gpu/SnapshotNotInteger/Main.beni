@@ -1,0 +1,28 @@
+-- A snapshot read refuses what is not a count (docs/design/webgpu.md
+-- §2.2; CLAUDE.md rule 9): this host reports `maxBindGroups` as NaN, which
+-- a typeof check alone would take for an `Int` and a preflight would then
+-- compare. The read is a defect that names the member; the page stops
+-- with its crash screen, and the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "limits-nan"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            limits = Gpu.Adapter.limits adapter
+            [ "maxBindGroups: " ++ String.fromInt limits.maxBindGroups ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

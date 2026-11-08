@@ -243,14 +243,24 @@ generated `Gpu.Types`, `Gpu.Flags`, `Gpu.Limits` and `Gpu.Native` are held to th
 generator, not to `beni fmt` (`tests/fmt-exempt.txt`). Two `Gpu.Types` dictionaries are
 not descriptors and are not emitted: `GPUPipelineErrorInit` and
 `GPUUncapturedErrorEventInit`, the constructor inits that §3 replaces with pure values.
-A snapshot is read member by member: a member missing or of another type is a defect
-that names it, except the members `optional_members` lists, newer than the rest of their
+A snapshot is read member by member: a member missing or of another type — a count that
+is not a non-negative integer included (NaN, an infinity, a fraction) — is a defect that
+names it, except the members `optional_members` lists, newer than the rest of their
 interface or tied to a feature (`maxImmediateSize`, the four per-stage storage limits,
 `subgroupMinSize`, `subgroupMaxSize`), which are `Maybe Int`; `Gpu.Limits.limit` is
 therefore `Maybe Int`. The sequence arm of `GPUColor`, `GPUOrigin2D`, `GPUOrigin3D` and
 `GPUExtent3D` carries an opaque list (`ColorList`, …) that only a constructor checking the
 length the host accepts makes, `Nothing` otherwise, so no value of the union throws at
 conversion (§3's table).
+
+*As built — S1 (2026-11-08), the engine's waits (§6.4, §8.1):* each request first opens
+a channel to its program, a detached fiber of the requester, and classifies its outcome in
+the promise's reaction whether or not anyone still waits; an adapter is reserved only when
+its request really starts, so a cancel delivered before the wait leaves it free. A defect
+carries its context, an `Error` naming the operation and the device with the original as
+`cause`. A channel keeps the caller's clock and log context for the one path that must
+start a new fiber (core gives no way to keep its scheduler, #2257), and drops a second
+defect, whose program the first one stopped.
 
 ### 2.3 Realms
 

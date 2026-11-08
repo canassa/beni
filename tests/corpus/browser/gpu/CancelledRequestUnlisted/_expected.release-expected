@@ -6,5 +6,5 @@
   </main>
 </body>
 -- throws click #run
-(threw: NotSupportedError: injected unlisted refusal)
+(threw: Error: webgpu: requestDevice, after its caller left: NotSupportedError: injected unlisted refusal)
 (the DOM did not change)

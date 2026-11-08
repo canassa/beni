@@ -6,7 +6,7 @@
   </main>
 </body>
 -- throws click #run
-(threw: AbortError: injected rejection of lost)
+(threw: Error: webgpu: device 1, lost: AbortError: injected rejection of lost)
 <body>
   <main>
     <button id="run">"run"</button>

@@ -13,10 +13,14 @@
 --! No `catch` here turns a failure into a value it does not document
 --! (`CLAUDE.md` rule 9): a promise's outcome is handed to the operation's
 --! own classifier, which names what the ledger documents and makes
---! everything else a defect. The one `catchIf` that holds of every error,
---! `guard`, is the defect path itself: it takes what a promise reaction
---! throws to the requesting program's defect boundary, where a reaction
---! would otherwise leave it as an unhandled rejection that the program
+--! everything else a defect. Two `catchIf`s hold of every error, and both
+--! end in a defect, never a value: `classified`, around a classifier in a
+--! promise's reaction, makes what it throws `Unexpected`, which the waiting
+--! fiber throws or the channel's program receives; `guard`, around the rest
+--! of a reaction's body (a device's `lost`, an error scope's pop, the
+--! abandoning of a late value, which also runs from the wait's `onExit`
+--! finaliser), hands what it throws to the channel's program. Without them
+--! a throw in a reaction would be an unhandled rejection that the program
 --! survives.
 
 import Gpu.Error as Error exposing (DeviceLoss, LossReason, UnknownLoss, Destroyed, Observation)
@@ -116,7 +120,7 @@ openChannels = Js.ref 0
 --| adds a holder — a device the request made — and the fiber ends when the
 --| last holder releases it. Made before the request suspends, so an
 --| outcome that arrives after its fiber was cancelled still reaches its
---| program.
+--| program. It keeps the caller's clock and log context too.
 pub channel : ⊤ → V
 channel ⊤ =
     ch =
@@ -125,6 +129,9 @@ channel ⊤ =
             , ( "pending", Js.null )
             , ( "holds", Js.from 1 )
             , ( "closed", Js.from False )
+            , ( "defected", Js.from False )
+            , ( "clock", Task.currentClock ⊤ )
+            , ( "log", Task.currentLogContext ⊤ )
             ]
     Js.write openChannels (Js.read openChannels + 1)
     _ = Task.spawnDetached λ⊤ → sentinel ch
@@ -183,17 +190,28 @@ release ch =
             ⊤
 
 
---| Stop the channel's program with `error`. A channel whose fiber already
---| ended cannot be handed anything: its error then stops whatever program
---| the engine runs in, from a fiber of its own.
+--| Stop the channel's program with `error`. Its first defect is its
+--| program's stop, so a later one has nobody left to stop and is dropped.
+--| A channel whose fiber already ended — which no outcome of its holders
+--| can reach, since each holds it while one may come — still stops a
+--| program: a new detached fiber throws it, with the caller's clock and log
+--| context. Core gives no way to carry the caller's scheduler there
+--| (#2257).
 pub channelDefect : V, V → ⊤
 channelDefect ch error =
-    if Js.to (Js.get ch "closed") then
-        _ = Task.spawnDetached λ⊤ → Js.throw error
+    if Js.to (Js.get ch "defected") then
         ⊤
     else
-        close ch
-        deliver ch (Js.object [ ( "end", Js.from False ), ( "error", error ) ])
+        Js.set ch "defected" (Js.from True)
+        if Js.to (Js.get ch "closed") then
+            clock = Js.get ch "clock"
+            log = Js.get ch "log"
+            _ = Task.spawnDetached λ⊤ →
+                Task.withClock clock λ⊤ → Task.withLogContext log λ⊤ → Js.throw error
+            ⊤
+        else
+            close ch
+            deliver ch (Js.object [ ( "end", Js.from False ), ( "error", error ) ])
 
 
 --| How many channels are open.
@@ -201,10 +219,23 @@ pub openChannelCount : ⊤ → Int
 openChannelCount ⊤ = Js.read openChannels
 
 
+--| An unexpected outcome as a defect with its context (§6.1, §8.1): an
+--| `Error` whose message names the operation, and the device when there is
+--| one, with the original as its `cause`.
+pub contextual : String, V → V
+contextual context cause =
+    Js.construct (Js.global "Error")
+        [ Js.from ("webgpu: " ++ context ++ ": " ++ Js.to (Js.apply (Js.global "String") [ cause ]))
+        , Js.object [ ( "cause", cause ) ]
+        ]
+
+
 --| Run the body of a promise reaction; what it throws goes to the channel's
---| program as a defect instead of on as an unhandled rejection.
-pub guard : V, sync (⊤ → ⊤) → ⊤
-guard ch body = Js.catchIf (λ⊤ → body ⊤) (λ_ → True) λerror → channelDefect ch error
+--| program as a defect, with its context, instead of on as an unhandled
+--| rejection.
+pub guard : V, String, sync (⊤ → ⊤) → ⊤
+guard ch context body = Js.catchIf (λ⊤ → body ⊤) (λ_ → True) λerror →
+    channelDefect ch (contextual context error)
 
 
 int : V → Int
@@ -221,17 +252,21 @@ pub type Outcome a
 
 
 --| Wait for the promise `start` returns, for the holder of `ch` that is
---| the caller. `classify` runs in the promise's reaction, `True` for a
---| fulfilled one: it makes the outcome — recording a native object, giving
---| back a reservation — whether or not anyone still waits, and what it
---| throws is `Unexpected`. The fiber is resumed one microtask after it, so
---| a reaction the outcome set off (a device's `lost`) runs first. An
---| `Unexpected` outcome is thrown in the fiber, a defect. Once the fiber is
---| gone — cancelled, or interrupted before it waited — an `Expected` value
---| that arrives is handed to `abandon`, and an `Unexpected` one to the
---| channel's program; the caller's hold is released then, never before.
-pub awaitHost : V, sync (⊤ → V), sync (Bool, V → Outcome a), sync (a → ⊤) → a
-awaitHost ch start classify abandon =
+--| the caller; `operation` names it in a defect. `classify` runs in the
+--| promise's reaction, `True` for a fulfilled one: it makes the outcome —
+--| recording a native object, giving back a reservation — whether or not
+--| anyone still waits, and what it throws is `Unexpected`. The fiber is
+--| resumed one microtask after it, so a reaction the outcome set off (a
+--| device's `lost`) runs first. An `Unexpected` outcome is thrown in the
+--| fiber, a defect. Once the fiber is gone — cancelled, or interrupted
+--| before it waited — an `Expected` value that arrives is handed to
+--| `abandon`, and an `Unexpected` one to the channel's program; the
+--| caller's hold is released then, never before. `start` runs only when
+--| the fiber really waits, so what it takes (an adapter's reservation) is
+--| taken only then; a `start` that throws, or gives no promise, is a
+--| defect, and the wait never started.
+pub awaitHost : V, String, sync (⊤ → V), sync (Bool, V → Outcome a), sync (a → ⊤) → a
+awaitHost ch operation start classify abandon =
     st =
         Js.object
             [ ( "waiting", Js.from True )
@@ -247,33 +282,37 @@ awaitHost ch start classify abandon =
             (λ⊤ →
                 got = Task.callback λresume →
                     Js.set st "resume" (Js.from resume)
-                    Js.set st "started" (Js.from True)
                     _ =
                         Js.call (start ⊤) "then"
-                            [ Js.from λvalue → arrive ch st (classified classify True value) abandon
+                            [ Js.from λvalue →
+                                arrive ch operation st (classified classify True value) abandon
                             , Js.from λerror →
-                                arrive ch st (classified classify False error) abandon
+                                arrive ch operation st (classified classify False error) abandon
                             ]
+                    Js.set st "started" (Js.from True)
                     λ⊤ → ⊤
                 Js.set st "taken" (Js.from True)
                 got
             )
-            λ_ → leave ch st abandon
+            λ_ → leave ch operation st abandon
     case outcome of
         Expected value →
             value
 
         Unexpected error →
-            Js.throw error
+            Js.throw (contextual operation error)
 
 
+-- The classifier, in the promise's reaction. The second catch that holds
+-- of every error: what the classifier throws becomes `Unexpected`, which
+-- ends in a defect, in the fiber or in the channel's program.
 classified : sync (Bool, V → Outcome a), Bool, V → Outcome a
 classified classify fulfilled value =
     Js.catchIf (λ⊤ → classify fulfilled value) (λ_ → True) λerror → Unexpected error
 
 
-arrive : V, V, Outcome a, sync (a → ⊤) → ⊤
-arrive ch st outcome abandon =
+arrive : V, String, V, Outcome a, sync (a → ⊤) → ⊤
+arrive ch operation st outcome abandon =
     Js.set st "settled" (Js.from True)
     if Js.to (Js.get st "waiting") then
         Js.set st "outcome" (Js.from outcome)
@@ -283,32 +322,32 @@ arrive ch st outcome abandon =
                 [ Js.from λ_ → Task.resume (Js.to resume) outcome ]
         ⊤
     else
-        late ch outcome abandon
+        late ch operation outcome abandon
 
 
 -- The fiber left the wait, however: its outcome taken, or not.
-leave : V, V, sync (a → ⊤) → ⊤
-leave ch st abandon =
+leave : V, String, V, sync (a → ⊤) → ⊤
+leave ch operation st abandon =
     Js.set st "waiting" (Js.from False)
     if Js.to (Js.get st "taken") || not (Js.to (Js.get st "started")) then
         release ch
     else if Js.to (Js.get st "settled") then
-        late ch (Js.to (Js.get st "outcome")) abandon
+        late ch operation (Js.to (Js.get st "outcome")) abandon
     else
         ⊤
 
 
 -- An outcome nobody takes: a value is abandoned, an unexpected one stops
 -- the program.
-late : V, Outcome a, sync (a → ⊤) → ⊤
-late ch outcome abandon =
+late : V, String, Outcome a, sync (a → ⊤) → ⊤
+late ch operation outcome abandon =
     case outcome of
         Expected value →
-            guard ch λ⊤ → abandon value
+            guard ch (operation ++ ", abandoned") λ⊤ → abandon value
             release ch
 
         Unexpected error →
-            channelDefect ch error
+            channelDefect ch (contextual (operation ++ ", after its caller left") error)
 
 
 --| Whether `error` is a native `DOMException` named `name`: a plain object
@@ -396,8 +435,8 @@ adoptDevice device ch =
     hold ch
     _ =
         Js.call (Js.get device "lost") "then"
-            [ Js.from λinfo → guard ch λ⊤ → lost r info
-            , Js.from λerror → reportDefect r error
+            [ Js.from λinfo → guard ch (deviceContext r "lost") λ⊤ → lost r info
+            , Js.from λerror → reportDefect r (contextual (deviceContext r "lost") error)
             ]
     -- The queue belongs to the device: its record names the device.
     _ = Js.call table "set" [ member device "queue", Js.object [ ( "device", r ) ] ]
@@ -472,13 +511,7 @@ lost r info =
         Js.set r "final" (Js.from True)
         settleDevice r
     else
-        reportDefect
-            r
-            (Js.construct (Js.global "Error")
-                [ Js.from "webgpu: a device was lost for a reason outside the pin"
-                , Js.object [ ( "cause", reason ) ]
-                ]
-            )
+        reportDefect r (contextual (deviceContext r "lost for a reason outside the pin") reason)
 
 
 -- Latch the loss and wake every waiter. A later report replaces an earlier
@@ -506,6 +539,11 @@ settleDevice r =
         release (Js.get r "channel")
     else
         ⊤
+
+
+--| How a defect names a device and what it did: `device 2, lost`.
+pub deviceContext : V, String → String
+deviceContext r what = "device " ++ String.fromInt (int (Js.get r "id")) ++ ", " ++ what
 
 
 --| Hand an unexpected outcome of the device to its program.

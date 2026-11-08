@@ -1,1 +1,0 @@
-{ "platform": true, "name": "tea-only", "platforms": ["browser-tea"], "reexports": ["Html", "Cmd", "Sub", "Tea", "Gpu"] }

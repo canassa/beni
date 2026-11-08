@@ -57,11 +57,16 @@ requestDevice adapter descriptor =
             else
                 converted = Native.deviceDescriptor descriptor
                 ch = Engine.channel ⊤
-                Engine.reserveAdapter native True
                 granted =
                     Engine.awaitHost
                         ch
-                        (λ⊤ → Js.call native "requestDevice" [ converted ])
+                        "requestDevice"
+                        -- Reserved only when the request really starts: a fiber
+                        -- cancelled before it waits never holds the adapter.
+                        (λ⊤ →
+                            Engine.reserveAdapter native True
+                            Js.call native "requestDevice" [ converted ]
+                        )
                         (λfulfilled value → deviceOutcome native ch requested fulfilled value)
                         λresult →
                             case result of

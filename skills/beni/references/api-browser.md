@@ -302,18 +302,20 @@ module Gpu.Engine
   value admit : V, String → Result Error ⊤  -- impure
   value adoptAdapter : V → ⊤  -- impure
   value adoptDevice : V, V → ⊤  -- impure
-  value awaitHost : V, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
+  value awaitHost : V, String, (⊤ → V), (Bool, V → Outcome a), (a → ⊤) → a  -- suspends
   value awaitLost : V → DeviceLoss  -- suspends
   value channel : ⊤ → V  -- impure
   value channelDefect : V, V → ⊤  -- impure
   value checked : V, String, List String, (⊤ → Result Error V) → Result Error V  -- suspends
   value consumeAdapter : V → ⊤  -- impure
+  value contextual : String, V → V  -- impure
   value defect : String → a  -- impure
   value destroy : V → ⊤  -- impure
   value destroyed : V → Bool  -- impure
+  value deviceContext : V, String → String  -- impure
   value deviceId : V → Int  -- impure
   value entry : ⊤ → Result Missing V  -- impure
-  value guard : V, (⊤ → ⊤) → ⊤  -- impure
+  value guard : V, String, (⊤ → ⊤) → ⊤  -- impure
   value hold : V → ⊤  -- impure
   value isDomException : V, String → Bool  -- impure
   value isTypeError : V → Bool  -- impure

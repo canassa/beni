@@ -911,6 +911,14 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         try collect(arena, inline_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-inline";
     }
+    // `build/bad/tea/`: refusals of a program built for `browser-tea` itself,
+    // so that what its re-exports hide is what is tested.
+    if (kind == .build_bad) {
+        const tea_dir = try std.fs.path.join(arena, &.{ kind_dir, "tea" });
+        const start = fixtures.items.len;
+        try collect(arena, tea_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
+    }
     // `prerender/`: projects built for `browser-inline` whose `main` says
     // `Browser.prerender` (`prerender.md` §7.2) — `browser/prerender/`
     // pages, whose pages are goldens and whose steps run on the
