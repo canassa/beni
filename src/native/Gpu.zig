@@ -138,6 +138,44 @@ pub const scalar_typedefs = [_]struct { idl: []const u8, scalar: Scalar }{
     .{ .idl = "GPUPipelineConstantValue", .scalar = .f64 },
 };
 
+/// Snapshot members a host may lack: each is newer than the rest of its
+/// interface or belongs to an optional feature, so a host without it is not
+/// a broken host. They are `Maybe Int`; every other member a snapshot reads
+/// must be there with its IDL type, or the read is a defect naming it.
+pub const OptionalMember = struct { owner: []const u8, member: []const u8, reason: []const u8 };
+pub const optional_members = [_]OptionalMember{
+    .{ .owner = "GPUSupportedLimits", .member = "maxImmediateSize", .reason = "immediate data, added to the standard in 2025" },
+    .{ .owner = "GPUSupportedLimits", .member = "maxStorageBuffersInVertexStage", .reason = "per-stage storage limits, added in 2025 with compatibility mode" },
+    .{ .owner = "GPUSupportedLimits", .member = "maxStorageBuffersInFragmentStage", .reason = "per-stage storage limits, added in 2025 with compatibility mode" },
+    .{ .owner = "GPUSupportedLimits", .member = "maxStorageTexturesInVertexStage", .reason = "per-stage storage limits, added in 2025 with compatibility mode" },
+    .{ .owner = "GPUSupportedLimits", .member = "maxStorageTexturesInFragmentStage", .reason = "per-stage storage limits, added in 2025 with compatibility mode" },
+    .{ .owner = "GPUAdapterInfo", .member = "subgroupMinSize", .reason = "the subgroups feature" },
+    .{ .owner = "GPUAdapterInfo", .member = "subgroupMaxSize", .reason = "the subgroups feature" },
+};
+
+/// The limits of the *alignment* class (WebGPU, *Limits*): a better value is
+/// lower, and it is a power of two. Every other limit is a maximum; a `min…`
+/// limit this table does not name stops generation, since its class is
+/// unknown.
+pub const alignment_limits = [_][]const u8{ "minUniformBufferOffsetAlignment", "minStorageBufferOffsetAlignment" };
+
+/// The sequence arm of a union whose native conversion checks its length
+/// (WebGPU, *validate GPUColor shape*, *GPUOrigin2D*, *GPUOrigin3D*,
+/// *GPUExtent3D shape*): the arm carries an opaque list made only by a
+/// constructor that checks the length, so a value of the arm never throws.
+pub const SequenceShape = struct { union_key: []const u8, list: []const u8, min: u32, max: u32 };
+pub const sequence_shapes = [_]SequenceShape{
+    .{ .union_key = "GPUColor", .list = "ColorList", .min = 4, .max = 4 },
+    .{ .union_key = "GPUOrigin2D", .list = "Origin2DList", .min = 0, .max = 2 },
+    .{ .union_key = "GPUOrigin3D", .list = "Origin3DList", .min = 0, .max = 3 },
+    .{ .union_key = "GPUExtent3D", .list = "Extent3DList", .min = 1, .max = 3 },
+};
+
+fn sequenceShape(key: []const u8) ?SequenceShape {
+    for (sequence_shapes) |s| if (std.mem.eql(u8, s.union_key, key)) return s;
+    return null;
+}
+
 /// The snapshot interfaces whose readonly attributes become a record.
 pub const snapshots = [_]Rename{
     .{ .idl = "GPUAdapterInfo", .beni = "AdapterInfo" },
@@ -161,7 +199,7 @@ const Dictionary = struct { idl: []const u8, name: []const u8, parent: ?[]const 
 const Enum = struct { idl: []const u8, name: []const u8, values: []const []const u8, ctors: []const []const u8 };
 const Constant = struct { name: []const u8, value: u32 };
 const Flags = struct { domain: FlagDomain, constants: []const Constant, ctors: []const []const u8 };
-const Attribute = struct { name: []const u8, ty: []const u8 };
+const Attribute = struct { name: []const u8, ty: []const u8, reader: []const u8 };
 
 const Model = struct {
     arena: Allocator,
@@ -602,7 +640,22 @@ fn attributes(m: *Model, decl: u32) Error![]const Attribute {
         } else return m.fail(.unsupported_type, text, member.source_span.start);
         const name = t.next();
         if (!t.eat(";")) return m.fail(.invalid_member, text, member.source_span.start);
-        try out.append(m.arena, .{ .name = name, .ty = ty });
+        const optional = for (optional_members) |row| {
+            if (std.mem.eql(u8, row.owner, d.name) and std.mem.eql(u8, row.member, name)) break true;
+        } else false;
+        if (optional and !std.mem.eql(u8, ty, "Int")) return m.fail(.unsupported_type, text, member.source_span.start);
+        try out.append(m.arena, .{
+            .name = name,
+            .ty = if (optional) "Maybe Int" else ty,
+            .reader = if (optional) "readOptionalInt" else if (std.mem.eql(u8, ty, "Int")) "readInt" else if (std.mem.eql(u8, ty, "String")) "readString" else "readBool",
+        });
+    }
+    // A row of the table that names no member is stale.
+    for (optional_members) |row| {
+        if (!std.mem.eql(u8, row.owner, d.name)) continue;
+        for (out.items) |a| {
+            if (std.mem.eql(u8, a.name, row.member)) break;
+        } else return m.fail(.unmapped_name, row.member, d.source_span.start);
     }
     return out.toOwnedSlice(m.arena);
 }
@@ -718,6 +771,7 @@ fn checkCollisions(m: *Model) Error!void {
         for (u.arms) |arm| if ((try ctors.getOrPut(m.arena, arm)).found_existing) return m.fail(.name_collision, arm, 0);
     }
     for (snapshots) |s| if ((try types.getOrPut(m.arena, s.beni)).found_existing) return m.fail(.name_collision, s.beni, 0);
+    for (sequence_shapes) |s| if ((try types.getOrPut(m.arena, s.list)).found_existing) return m.fail(.name_collision, s.list, 0);
     var flag_ctors: std.StringHashMapUnmanaged(void) = .empty;
     for (m.flags.items) |f| for (f.ctors) |ctor| {
         if ((try flag_ctors.getOrPut(m.arena, ctor)).found_existing) return m.fail(.name_collision, ctor, 0);
@@ -828,7 +882,7 @@ fn limitsModule(m: *Model) (Error || Writer.Error)![]const u8 {
     );
     for (m.limits, 0..) |a, i| try w.print("    {s} {s}\n", .{ if (i == 0) "=" else "|", try pascal(m.arena, a.name) orelse a.name });
     try w.writeAll("\n\n--| Every limit of the pin, read once.\npub type alias Limits =\n");
-    for (m.limits) |a| try w.print("    {s} : Int\n", .{a.name});
+    for (m.limits) |a| try w.print("    {s} : {s}\n", .{ a.name, a.ty });
     try w.writeAll("\n\n--| Whether a better value is higher (a maximum) or lower (an alignment, a\n--| power of two) (the WebGPU *limit class*).\npub type LimitClass\n    = Maximum\n    | Alignment\n");
     try w.writeAll("\n\n--| The limit's name in the native API.\npub limitNameToString : LimitName → String\nlimitNameToString name =\n    case name of\n");
     for (m.limits, 0..) |a, i| {
@@ -841,16 +895,20 @@ fn limitsModule(m: *Model) (Error || Writer.Error)![]const u8 {
     try w.writeAll("\n\n--| The class of a limit: the two `min…Alignment` limits are alignments.\npub limitClass : LimitName → LimitClass\nlimitClass name =\n    case name of\n");
     var first = true;
     for (m.limits) |a| {
-        if (!std.mem.startsWith(u8, a.name, "min")) continue;
+        const alignment = for (alignment_limits) |name| {
+            if (std.mem.eql(u8, name, a.name)) break true;
+        } else false;
+        if (!alignment and std.mem.startsWith(u8, a.name, "min")) return m.fail(.unmapped_name, a.name, 0);
+        if (!alignment) continue;
         if (!first) try w.writeAll("\n");
         first = false;
         try w.print("        {s} →\n            Alignment\n", .{try pascal(m.arena, a.name) orelse a.name});
     }
     try w.writeAll("\n        _ →\n            Maximum\n");
-    try w.writeAll("\n\n--| One limit of a snapshot, by name.\npub limit : Limits, LimitName → Int\nlimit limits name =\n    case name of\n");
+    try w.writeAll("\n\n--| One limit of a snapshot, by name: `Nothing` for one the host does not\n--| report.\npub limit : Limits, LimitName → Maybe Int\nlimit limits name =\n    case name of\n");
     for (m.limits, 0..) |a, i| {
         if (i > 0) try w.writeAll("\n");
-        try w.print("        {s} →\n            limits.{s}\n", .{ try pascal(m.arena, a.name) orelse a.name, a.name });
+        try w.print("        {s} →\n            {s}limits.{s}\n", .{ try pascal(m.arena, a.name) orelse a.name, if (std.mem.startsWith(u8, a.ty, "Maybe")) "" else "Just ", a.name });
     }
     try w.writeAll("\n\n--| Every limit name of the pin, in its order.\npub allLimitNames : List LimitName\nallLimitNames =\n    [ ");
     for (m.limits, 0..) |a, i| try w.print("{s}{s}", .{ if (i == 0) "" else ", ", try pascal(m.arena, a.name) orelse a.name });
@@ -945,12 +1003,24 @@ fn typesModule(m: *Model) (Error || Writer.Error)![]const u8 {
         for (e.ctors, e.values) |ctor, value| try w.print("        \"{s}\" →\n            Just {s}\n\n", .{ value, ctor });
         try w.writeAll("        _ →\n            Nothing\n");
     }
-    // Unions.
+    // Unions, each sequence arm whose length the host checks behind an
+    // opaque list a constructor checks first.
     for (m.used_unions.items, m.union_arms.items) |u, arms| {
+        for (arms) |arm| if (arm == .sequence and sequenceShape(u.key) == null) return m.fail(.unmapped_name, u.key, 0);
+        for (arms) |arm| if (arm == .sequence) if (sequenceShape(u.key)) |shape| {
+            const element = try atom(m, arm.sequence.*, "");
+            const lower = try lowerFirst(m.arena, shape.list);
+            const length = if (shape.min == shape.max) try std.fmt.allocPrint(m.arena, "exactly {d}", .{shape.min}) else if (shape.min == 0) try std.fmt.allocPrint(m.arena, "at most {d}", .{shape.max}) else try std.fmt.allocPrint(m.arena, "{d} to {d}", .{ shape.min, shape.max });
+            try w.print("\n\n--| The sequence form of a `{s}`: {s} values, the length the host\n--| accepts. Made only by `{s}`.\npub opaque type {s}\n    = {s} (List {s})\n", .{ u.key, length, lower, shape.list, shape.list, element });
+            try w.print("\n\n--| A `{s}` of these values, or `Nothing` when there are not {s}.\npub {s} : List {s} → Maybe {s}\n{s} values =\n    n = List.length values\n    if n >= {d} && n <= {d} then Just ({s} values) else Nothing\n", .{ shape.list, length, lower, element, shape.list, lower, shape.min, shape.max, shape.list });
+            try w.print("\n\n--| The values of a `{s}`.\npub {s}Values : {s} → List {s}\n{s}Values list =\n    case list of\n        {s} values →\n            values\n", .{ shape.list, lower, shape.list, element, lower, shape.list });
+        };
         try w.print("\n\n--| `{s}`: one arm per alternative of the union.\npub type {s}\n", .{ u.key, u.name });
         for (u.arms, arms, 0..) |ctor, arm, i| {
             if (try nullaryArm(m, arm)) {
                 try w.print("    {s} {s}\n", .{ if (i == 0) "=" else "|", ctor });
+            } else if (arm == .sequence and sequenceShape(u.key) != null) {
+                try w.print("    {s} {s} {s}\n", .{ if (i == 0) "=" else "|", ctor, sequenceShape(u.key).?.list });
             } else try w.print("    {s} {s} {s}\n", .{ if (i == 0) "=" else "|", ctor, try atom(m, arm, "") });
         }
     }
@@ -1092,6 +1162,45 @@ fn nativeModule(m: *Model) (Error || Writer.Error)![]const u8 {
         \\        Types.Value x →
         \\            Js.set out name (f x)
         \\
+        \\
+        \\
+        \\-- A member a native snapshot must have, of its IDL type; a defect naming
+        \\-- it when it is missing or of another type.
+        \\readInt : Js.Value, String → Int
+        \\readInt native name =
+        \\    value = Js.get native name
+        \\    if Js.typeIs value "number" then Js.to value else missing name "number"
+        \\
+        \\
+        \\readString : Js.Value, String → String
+        \\readString native name =
+        \\    value = Js.get native name
+        \\    if Js.typeIs value "string" then Js.to value else missing name "string"
+        \\
+        \\
+        \\readBool : Js.Value, String → Bool
+        \\readBool native name =
+        \\    value = Js.get native name
+        \\    if Js.typeIs value "boolean" then Js.to value else missing name "boolean"
+        \\
+        \\
+        \\-- A member a host may lack (`optional_members` in src/native/Gpu.zig):
+        \\-- `Nothing` when it is absent, a defect when it is of another type.
+        \\readOptionalInt : Js.Value, String → Maybe Int
+        \\readOptionalInt native name =
+        \\    value = Js.get native name
+        \\    if Js.isUndefined value then
+        \\        Nothing
+        \\    else if Js.typeIs value "number" then
+        \\        Just (Js.to value)
+        \\    else
+        \\        missing name "number"
+        \\
+        \\
+        \\missing : String, String → a
+        \\missing name kind =
+        \\    Js.throw (Js.construct (Js.global "TypeError") [ Js.from ("webgpu: the host's snapshot has no " ++ kind ++ " `" ++ name ++ "`") ])
+        \\
     );
     for (m.used_unions.items, m.union_arms.items) |u, arms| {
         const lower = try lowerFirst(m.arena, u.name);
@@ -1101,6 +1210,9 @@ fn nativeModule(m: *Model) (Error || Writer.Error)![]const u8 {
             if (try nullaryArm(m, arm)) {
                 const e = findEnum(m, arm.named).?;
                 try w.print("        Types.{s} →\n            Js.from \"{s}\"\n", .{ ctor, e.values[0] });
+            } else if (arm == .sequence and sequenceShape(u.key) != null) {
+                const values = try std.fmt.allocPrint(m.arena, "(Types.{s}Values x0)", .{try lowerFirst(m.arena, sequenceShape(u.key).?.list)});
+                try w.print("        Types.{s} x0 →\n            {s}\n", .{ ctor, try convert(m, arm, values, 0) });
             } else try w.print("        Types.{s} x0 →\n            {s}\n", .{ ctor, try convert(m, arm, "x0", 0) });
         }
     }
@@ -1125,11 +1237,11 @@ fn nativeModule(m: *Model) (Error || Writer.Error)![]const u8 {
         const lower = try lowerFirst(m.arena, s.beni);
         try w.print("\n\n--| Read a native `{s}` once.\npub read{s} : Js.Value → Types.{s}\nread{s} native =\n", .{ s.idl, s.beni, s.beni, s.beni });
         _ = lower;
-        for (attrs, 0..) |a, i| try w.print("    {s} {s} = Js.to (Js.get native \"{s}\")\n", .{ if (i == 0) "{" else ",", a.name, a.name });
+        for (attrs, 0..) |a, i| try w.print("    {s} {s} = {s} native \"{s}\"\n", .{ if (i == 0) "{" else ",", a.name, a.reader, a.name });
         try w.writeAll("    }\n");
     }
     try w.writeAll("\n\n--| Read a native `GPUSupportedLimits` once.\npub readLimits : Js.Value → Limits.Limits\nreadLimits native =\n");
-    for (m.limits, 0..) |a, i| try w.print("    {s} {s} = Js.to (Js.get native \"{s}\")\n", .{ if (i == 0) "{" else ",", a.name, a.name });
+    for (m.limits, 0..) |a, i| try w.print("    {s} {s} = {s} native \"{s}\"\n", .{ if (i == 0) "{" else ",", a.name, a.reader, a.name });
     try w.writeAll("    }\n");
     return buffer.toOwnedSlice();
 }

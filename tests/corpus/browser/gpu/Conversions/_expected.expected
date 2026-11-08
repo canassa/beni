@@ -25,6 +25,10 @@
       <li>"color target: {\"format\":\"bgra8unorm\",\"blend\":{\"color\":{},\"alpha\":{}},\"writeMask\":9}"</li>
       <li>"depth stencil, a signed bias: {\"format\":\"depth24plus\",\"depthWriteEnabled\":true,\"depthCompare\":\"less\",\"stencilFront\":{\"compare\":\"always\",\"passOp\":\"replace\"},\"depthBias\":-3}"</li>
       <li>"color as a sequence: [0.5,1,0,1]"</li>
+      <li>"a color of three values: Nothing"</li>
+      <li>"an extent of no values: Nothing"</li>
+      <li>"an origin of four values: Nothing"</li>
+      <li>"an origin of no values: Just"</li>
       <li>"color as fields: {\"r\":0.25,\"g\":0,\"b\":0,\"a\":1}"</li>
       <li>"every buffer usage: 1023"</li>
       <li>"ColorWrite All holds Red: yes"</li>
@@ -52,6 +56,10 @@
       <li>"color target: {\"format\":\"bgra8unorm\",\"blend\":{\"color\":{},\"alpha\":{}},\"writeMask\":9}"</li>
       <li>"depth stencil, a signed bias: {\"format\":\"depth24plus\",\"depthWriteEnabled\":true,\"depthCompare\":\"less\",\"stencilFront\":{\"compare\":\"always\",\"passOp\":\"replace\"},\"depthBias\":-3}"</li>
       <li>"color as a sequence: [0.5,1,0,1]"</li>
+      <li>"a color of three values: Nothing"</li>
+      <li>"an extent of no values: Nothing"</li>
+      <li>"an origin of four values: Nothing"</li>
+      <li>"an origin of no values: Just"</li>
       <li>"color as fields: {\"r\":0.25,\"g\":0,\"b\":0,\"a\":1}"</li>
       <li>"every buffer usage: 1023"</li>
       <li>"ColorWrite All holds Red: yes"</li>
@@ -66,9 +74,10 @@
       <li>"u32Truncating NaN: Err U32Domain NaN"</li>
       <li>"i32 -2147483648: Ok -2147483648"</li>
       <li>"i32 2147483648: Err I32Domain 2147483648.0"</li>
-      <li>"size64 2⁵³ + 2: Ok 9007199254740994"</li>
-      <li>"size64FromFloat 2⁶⁴ − 2048: Ok 18446744073709550000"</li>
-      <li>"size64FromFloat 2⁶⁴: Err Size64Domain 18446744073709552000.0"</li>
+      <li>"a domain error at its path: size.width: -1.0"</li>
+      <li>"size64 2⁵³ − 1: Ok 9007199254740991"</li>
+      <li>"size64 2⁵³: Err Size64Domain 9007199254740992.0"</li>
+      <li>"size64FromFloat 2⁶⁴ − 2048: Err Size64Domain 18446744073709550000.0"</li>
       <li>"size64FromFloat 1.5: Err Size64Domain 1.5"</li>
       <li>"size64Truncating 1.5: Ok 1"</li>
       <li>"finiteF32 3.4e38: Ok 3.4e+38"</li>

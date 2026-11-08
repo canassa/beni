@@ -1,0 +1,10 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- throws click #run
+(threw: AbortError: injected rejection of lost)
+(the DOM did not change)

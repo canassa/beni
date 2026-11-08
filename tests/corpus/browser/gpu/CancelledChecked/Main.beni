@@ -1,0 +1,75 @@
+-- Cancelling a checked operation's wait (docs/design/webgpu.md §6.1 step
+-- 5, §8.1): its scopes were popped before it could suspend, and the pops
+-- still settle after the cancel, drained; the device takes the next
+-- operation as if nothing happened. A device keeps its channel to the
+-- program while any of its pops is pending, even after its loss, and
+-- gives it up once the last one settles.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Handle exposing (Device)
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuProbe
+import GpuShow
+import Task
+import Tea
+
+
+with : String, (Device → List String) → List String
+with scenarios run =
+    GpuHost.inject scenarios
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            case Gpu.Adapter.requestDevice adapter Types.deviceDescriptor of
+                Err problem →
+                    [ "device: " ++ GpuShow.initError problem ]
+
+                Ok device →
+                    run device
+
+
+sampler : Device → String
+sampler d = GpuShow.checked (Gpu.Device.createSampler d Types.samplerDescriptor) λ_ → "sampler"
+
+
+channels : Int → String
+channels before = "open channels " ++ String.fromInt (GpuProbe.openChannels ⊤ - before)
+
+
+cancelled : ⊤ → List String
+cancelled ⊤ =
+    with "pops-held" λd →
+        op = Task.spawn λ⊤ → sampler d
+        Task.yieldNow ⊤
+        Task.cancel op
+        GpuHost.releasePops ⊤
+        GpuHost.drain ⊤
+        GpuHost.inject "none"
+        [ "after a cancelled operation: " ++ sampler d ]
+
+
+lostWithPops : ⊤ → List String
+lostWithPops ⊤ =
+    before = GpuProbe.openChannels ⊤
+    with "lost-controlled,pops-held" λd →
+        op = Task.spawn λ⊤ → sampler d
+        Task.yieldNow ⊤
+        GpuHost.lose "unknown"
+        lost = Task.join op
+        GpuHost.drain ⊤
+        pending = channels before
+        GpuHost.releasePops ⊤
+        GpuHost.drain ⊤
+        [ "lost while checked: " ++ lost
+        , "lost, pops pending: " ++ pending
+        , "pops settled: " ++ channels before
+        ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "cancelled", cancelled ), ( "lost-with-pops", lostWithPops ) ]

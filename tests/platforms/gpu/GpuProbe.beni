@@ -73,3 +73,10 @@ lease device = Engine.tryLease (Js.from device)
 --| Give the device's lease back.
 pub releaseLease : Handle.Device → ⊤
 releaseLease device = Engine.releaseLease (Js.from device)
+
+
+--| How many of the engine's channels to a program are open: each request
+--| holds one while it is pending, and each device until its loss is
+--| reported and nothing of it is pending.
+pub openChannels : ⊤ → Int
+openChannels ⊤ = Engine.openChannelCount ⊤

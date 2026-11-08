@@ -5,6 +5,9 @@
 --! `navigator.gpu`; under `zig build test-webgpu` it is Chrome's own, and
 --! each fault wraps the native method it is about.
 
+import Task
+
+
 --| Prepare the host for scenarios, named and separated by commas: the host
 --| starts as no fault touched it; `"none"` leaves it so, and each other
 --| name, listed in `GpuHost.js`, makes one native call fail as the ledger
@@ -24,3 +27,26 @@ pub foreign impure releasePops : ⊤ → ⊤
 
 --| How many times the page called the native method `name` of a device.
 pub foreign impure calls : String → Int
+
+
+--| Settle the latest request held since `inject "requests-held"`:
+--| `"host"` as the host answered it, `"reject-operation"` with an
+--| `OperationError`, `"reject-unlisted"` with a `DOMException` the ledger
+--| does not list.
+pub foreign impure releaseRequest : String → ⊤
+
+
+--| Call `f` once every request the host was asked has been answered and
+--| the reactions it set off have run.
+pub foreign impure later : sync (⊤ → ⊤) → ⊤
+
+
+--| Wait in the calling fiber until `later` calls back.
+pub drain : ⊤ → ⊤
+drain ⊤ = Task.callback λresume →
+    later λ⊤ → Task.resume resume ⊤
+    λ⊤ → ⊤
+
+
+--| Release only the latest pop held since `inject "pops-held"`.
+pub foreign impure releaseOnePop : ⊤ → ⊤

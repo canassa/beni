@@ -39,8 +39,9 @@ pub opaque type I32
     = I32 Int
 
 
---| An integer in 0 … 2⁶⁴ − 2048, the largest such Number: `GPUSize64`.
---| Values above 2⁵³ are those a Number holds exactly.
+--| An integer in 0 … 2⁵³ − 1: `GPUSize64`, an `[EnforceRange] unsigned long
+--| long`, which Web IDL's ConvertToInt refuses above 2⁵³ − 1 (a `TypeError`).
+--| A 64-bit value beyond it is binary data, not a `Size64`.
 pub opaque type Size64
     = Size64 Int
 
@@ -128,15 +129,15 @@ i32ToInt value =
             n
 
 
--- 2⁶⁴: no Number lies between 2⁶⁴ − 2048 and it, so below it is at most
--- 2⁶⁴ − 2048.
+-- 2⁵³ − 1, the largest integer `[EnforceRange] unsigned long long` accepts
+-- (Web IDL, ConvertToInt with bitLength 64).
 size64Bound : Float
-size64Bound = 18446744073709551616.0
+size64Bound = 9007199254740991.0
 
 
 size64Of : Float → Result DomainError Size64
 size64Of x =
-    if isInteger x && x >= 0.0 && x < size64Bound then
+    if isInteger x && x >= 0.0 && x <= size64Bound then
         Ok (Size64 (Js.to (Js.from x)))
     else
         Err { expected = Size64Domain, actual = x }
@@ -147,8 +148,7 @@ pub size64 : Int → Result DomainError Size64
 size64 n = size64Of (toFloat n)
 
 
---| The `Size64` of a number that is an integer: what reaches the values
---| above 2⁵³ that an `Int` literal does not spell.
+--| The `Size64` of a number that is an integer in the domain.
 pub size64FromFloat : Float → Result DomainError Size64
 size64FromFloat x = size64Of x
 

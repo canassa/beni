@@ -79,7 +79,7 @@ pub type Error
 --| An input refused before any native call: each names the descriptor
 --| member or argument (`path`) it is about.
 pub type InputError
-    = NumericDomain { path : String, expected : Scalar.Domain, actual : Float }
+    = NumericDomain { path : String, domain : Scalar.DomainError }
     | WrongDevice { path : String }
     | ResourceDestroyed { path : String }
     | ResourceExpired { path : String }
@@ -209,3 +209,12 @@ pub type alias FormatFailure =
 pub type OperationFailure
     = BufferWriteSourceRejected HostMessage
     | ImmediateWriteRejected HostMessage
+
+
+--| A scalar's domain error, at the descriptor member or argument `path`:
+--| what a `Gpu.Scalar` constructor's `Err` becomes in an operation's input
+--| error.
+--|
+--|     Result.mapError (Gpu.Scalar.u32 n) (Gpu.Error.atPath "size.width" _)
+pub atPath : String, Scalar.DomainError → InputError
+atPath path domain = NumericDomain { path = path, domain = domain }

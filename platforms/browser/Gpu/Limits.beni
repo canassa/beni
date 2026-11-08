@@ -54,18 +54,18 @@ pub type alias Limits =
     maxTextureArrayLayers : Int
     maxBindGroups : Int
     maxBindGroupsPlusVertexBuffers : Int
-    maxImmediateSize : Int
+    maxImmediateSize : Maybe Int
     maxBindingsPerBindGroup : Int
     maxDynamicUniformBuffersPerPipelineLayout : Int
     maxDynamicStorageBuffersPerPipelineLayout : Int
     maxSampledTexturesPerShaderStage : Int
     maxSamplersPerShaderStage : Int
     maxStorageBuffersPerShaderStage : Int
-    maxStorageBuffersInVertexStage : Int
-    maxStorageBuffersInFragmentStage : Int
+    maxStorageBuffersInVertexStage : Maybe Int
+    maxStorageBuffersInFragmentStage : Maybe Int
     maxStorageTexturesPerShaderStage : Int
-    maxStorageTexturesInVertexStage : Int
-    maxStorageTexturesInFragmentStage : Int
+    maxStorageTexturesInVertexStage : Maybe Int
+    maxStorageTexturesInFragmentStage : Maybe Int
     maxUniformBuffersPerShaderStage : Int
     maxUniformBufferBindingSize : Int
     maxStorageBufferBindingSize : Int
@@ -336,48 +336,49 @@ limitClass name =
             Maximum
 
 
---| One limit of a snapshot, by name.
-pub limit : Limits, LimitName → Int
+--| One limit of a snapshot, by name: `Nothing` for one the host does not
+--| report.
+pub limit : Limits, LimitName → Maybe Int
 limit limits name =
     case name of
         MaxTextureDimension1D →
-            limits.maxTextureDimension1D
+            Just limits.maxTextureDimension1D
 
         MaxTextureDimension2D →
-            limits.maxTextureDimension2D
+            Just limits.maxTextureDimension2D
 
         MaxTextureDimension3D →
-            limits.maxTextureDimension3D
+            Just limits.maxTextureDimension3D
 
         MaxTextureArrayLayers →
-            limits.maxTextureArrayLayers
+            Just limits.maxTextureArrayLayers
 
         MaxBindGroups →
-            limits.maxBindGroups
+            Just limits.maxBindGroups
 
         MaxBindGroupsPlusVertexBuffers →
-            limits.maxBindGroupsPlusVertexBuffers
+            Just limits.maxBindGroupsPlusVertexBuffers
 
         MaxImmediateSize →
             limits.maxImmediateSize
 
         MaxBindingsPerBindGroup →
-            limits.maxBindingsPerBindGroup
+            Just limits.maxBindingsPerBindGroup
 
         MaxDynamicUniformBuffersPerPipelineLayout →
-            limits.maxDynamicUniformBuffersPerPipelineLayout
+            Just limits.maxDynamicUniformBuffersPerPipelineLayout
 
         MaxDynamicStorageBuffersPerPipelineLayout →
-            limits.maxDynamicStorageBuffersPerPipelineLayout
+            Just limits.maxDynamicStorageBuffersPerPipelineLayout
 
         MaxSampledTexturesPerShaderStage →
-            limits.maxSampledTexturesPerShaderStage
+            Just limits.maxSampledTexturesPerShaderStage
 
         MaxSamplersPerShaderStage →
-            limits.maxSamplersPerShaderStage
+            Just limits.maxSamplersPerShaderStage
 
         MaxStorageBuffersPerShaderStage →
-            limits.maxStorageBuffersPerShaderStage
+            Just limits.maxStorageBuffersPerShaderStage
 
         MaxStorageBuffersInVertexStage →
             limits.maxStorageBuffersInVertexStage
@@ -386,7 +387,7 @@ limit limits name =
             limits.maxStorageBuffersInFragmentStage
 
         MaxStorageTexturesPerShaderStage →
-            limits.maxStorageTexturesPerShaderStage
+            Just limits.maxStorageTexturesPerShaderStage
 
         MaxStorageTexturesInVertexStage →
             limits.maxStorageTexturesInVertexStage
@@ -395,58 +396,58 @@ limit limits name =
             limits.maxStorageTexturesInFragmentStage
 
         MaxUniformBuffersPerShaderStage →
-            limits.maxUniformBuffersPerShaderStage
+            Just limits.maxUniformBuffersPerShaderStage
 
         MaxUniformBufferBindingSize →
-            limits.maxUniformBufferBindingSize
+            Just limits.maxUniformBufferBindingSize
 
         MaxStorageBufferBindingSize →
-            limits.maxStorageBufferBindingSize
+            Just limits.maxStorageBufferBindingSize
 
         MinUniformBufferOffsetAlignment →
-            limits.minUniformBufferOffsetAlignment
+            Just limits.minUniformBufferOffsetAlignment
 
         MinStorageBufferOffsetAlignment →
-            limits.minStorageBufferOffsetAlignment
+            Just limits.minStorageBufferOffsetAlignment
 
         MaxVertexBuffers →
-            limits.maxVertexBuffers
+            Just limits.maxVertexBuffers
 
         MaxBufferSize →
-            limits.maxBufferSize
+            Just limits.maxBufferSize
 
         MaxVertexAttributes →
-            limits.maxVertexAttributes
+            Just limits.maxVertexAttributes
 
         MaxVertexBufferArrayStride →
-            limits.maxVertexBufferArrayStride
+            Just limits.maxVertexBufferArrayStride
 
         MaxInterStageShaderVariables →
-            limits.maxInterStageShaderVariables
+            Just limits.maxInterStageShaderVariables
 
         MaxColorAttachments →
-            limits.maxColorAttachments
+            Just limits.maxColorAttachments
 
         MaxColorAttachmentBytesPerSample →
-            limits.maxColorAttachmentBytesPerSample
+            Just limits.maxColorAttachmentBytesPerSample
 
         MaxComputeWorkgroupStorageSize →
-            limits.maxComputeWorkgroupStorageSize
+            Just limits.maxComputeWorkgroupStorageSize
 
         MaxComputeInvocationsPerWorkgroup →
-            limits.maxComputeInvocationsPerWorkgroup
+            Just limits.maxComputeInvocationsPerWorkgroup
 
         MaxComputeWorkgroupSizeX →
-            limits.maxComputeWorkgroupSizeX
+            Just limits.maxComputeWorkgroupSizeX
 
         MaxComputeWorkgroupSizeY →
-            limits.maxComputeWorkgroupSizeY
+            Just limits.maxComputeWorkgroupSizeY
 
         MaxComputeWorkgroupSizeZ →
-            limits.maxComputeWorkgroupSizeZ
+            Just limits.maxComputeWorkgroupSizeZ
 
         MaxComputeWorkgroupsPerDimension →
-            limits.maxComputeWorkgroupsPerDimension
+            Just limits.maxComputeWorkgroupsPerDimension
 
 
 --| Every limit name of the pin, in its order.
