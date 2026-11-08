@@ -89,6 +89,8 @@ const layers = [_]Entry{
     .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
+    // A relative slot's text, below the contracts: `Needs` errors name it too (§2.10).
+    .{ .file = "RelText.zig", .layer = 3, .max_lines = 50 },
     // The identity tree's one normal form, below `Contract` (#1714).
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
@@ -108,6 +110,10 @@ const layers = [_]Entry{
     .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
     // The environment rows are read in, split from `Rows` (#1752).
     .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
+    // Which declarations a comparison's walk covers, split from `Groups`.
+    .{ .file = "ComparisonWalks.zig", .layer = 5, .max_lines = 30 },
+    // The arrivals a need meets in the code a caller hands, split from `Needs` (§2.11.3).
+    .{ .file = "NeedArrivals.zig", .layer = 5, .max_lines = 75 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // `within`, split from `Contract` (#1991).
@@ -256,6 +262,8 @@ const layers = [_]Entry{
     // What the labels outward of a virtual call add to its demands and to
     // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    // A label's need published and discharged (§2.11.3).
+    .{ .file = "Needs.zig", .layer = 11, .max_lines = 260 },
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     // What a closure's creation asks of its writes, split from `Eval` (#2028).
     .{ .file = "Once.zig", .layer = 11, .max_lines = 60 },
@@ -829,7 +837,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 140), layers.len);
+    try testing.expectEqual(@as(usize, 144), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -1,3 +1,3 @@
-# v2 refuses a push onto what a record field call answers: unknown code, which may answer a list its caller still reads (§2.11.5).
-18:10 list_may_be_shared List.push
-22:15 list_may_be_shared List.push
+# v2 refuses a function handed in a record field that answers a list its caller still reads: each callee publishes a need, each caller discharges it (§2.11.3, a need).
+32:10 list_still_used value
+33:10 list_still_used value
