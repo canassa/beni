@@ -42,7 +42,9 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Error`: `InitError`, `Error` and their parts.
 - `Gpu.Handle`: the handle types, for example `Adapter` and `Device`.
 
-Canvases come in a later release.
+- `Gpu.Surface`: `fromElement`, `fromCanvas`, `fromOffscreen`, `configure`, `unconfigure`,
+  `getConfiguration`, `canvas`.
+- `Gpu.Frame`: `submit`, `batch`, `getCurrentTexture`, `encode`, `submitCommands`.
 
 ## Rules
 
@@ -108,6 +110,28 @@ Canvases come in a later release.
 ## Encoding, compute and rendering
 
 Encoding, batches, compute and render passes are in `references/webgpu-render.md`.
+
+## Canvases and frames
+
+1. **A surface is the WebGPU context of a canvas.** `Gpu.Surface.fromElement "id"`,
+   `fromCanvas` and `fromOffscreen` give it. Configure it with `Gpu.Surface.configure`, which
+   can suspend. A configuration that failed leaves the surface unconfigured.
+2. **Draw in a frame.** `Gpu.Frame.submit surface name body` calls `body` once. In `body`, get
+   the texture with `Gpu.Frame.getCurrentTexture`, make resources with the frame's batch
+   (`Gpu.Frame.batch`), encode with `Gpu.Frame.encode` and submit with
+   `Gpu.Frame.submitCommands`. `body` cannot suspend, and no other fiber runs while it runs.
+3. **A frame gives one receipt for each submit.** A frame that submits nothing gives no
+   receipt. A frame that fails gives no receipt.
+4. **The current texture is for one frame only.** After the frame, after `configure` or
+   `unconfigure`, and after each `Browser.Canvas.resize` (also to the same size), the texture,
+   its views, and command buffers, bundles and bind groups that use them give
+   `ResourceExpired`. Do not keep them.
+5. **Set the backing size with `Browser.Canvas.resize`.** It is separate from the CSS size.
+6. **Keep the canvas node in the view.** In `browser-tea`, put the `<canvas>` in `view` and draw
+   from a command (`Cmd.task`). A render keeps the node, so `fromElement` gives the same
+   surface again.
+7. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
+   `UnsupportedCapability`. A field the browser does not report is `Default`.
 
 ## Example
 
@@ -180,5 +204,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §6.2, §7, §7.1, §8, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/webgpu.md` §2–§5, §6.2, §7, §7.1, §8, §8.2, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
 modules' doc comments.

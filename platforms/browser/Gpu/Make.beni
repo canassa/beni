@@ -189,8 +189,10 @@ adopt op made =
             Js.set (Engine.recordOf made) "code" (Js.from code)
 
         CreateView _ _ →
-            -- A view keeps its texture, so a check of the view sees it.
+            -- A view keeps its texture, so a check of the view sees it, and
+            -- the frame mark of a frame's texture (§8.2).
             Js.set (Engine.recordOf made) "texture" op.target
+            Engine.markView made op.target
 
         CreateBindGroup _ uses →
             Js.set (Engine.recordOf made) "uses" uses

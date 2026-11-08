@@ -1,0 +1,37 @@
+-- A frame's batch submits only to its own device's queue (docs/design/webgpu.md
+-- §6.3, §8.3): another device's queue is `WrongDevice` at `queue`, even with
+-- an empty list of command buffers, so the frame fails and publishes no
+-- receipt.
+import Browser.Canvas as Canvas
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Frame, Queue)
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuPage
+import GpuShow
+import Tea
+
+
+elsewhere : Queue, Frame → Result Error.Error ⊤
+elsewhere queue frame =
+    _ = Batch.submit (Frame.batch frame) queue []?
+    Ok ⊤
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    other = must (GpuKit.device "none")
+    surface = must (Surface.fromCanvas (must (Canvas.create 4 4)))
+    must (Surface.configure surface (Types.canvasConfiguration d Types.Rgba8unorm))
+    result = Frame.submit surface "other queue" (elsewhere (Gpu.Device.queue other) _)
+    [ "submit to another device's queue: "
+        ++ GpuShow.checked result λr → String.fromInt (List.length r.submissions) ++ " receipts"
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

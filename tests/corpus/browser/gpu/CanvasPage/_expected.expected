@@ -1,0 +1,36 @@
+-- load
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="draw">"draw"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #draw
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="draw">"draw"</button>
+    <ol>
+      <li>"configure: Ok done"</li>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"pixel: Ok 0"</li>
+    </ol>
+  </main>
+</body>
+-- click #draw
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="draw">"draw"</button>
+    <ol>
+      <li>"configure: Ok done"</li>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"pixel: Ok 0"</li>
+      <li>"configure: Ok done"</li>
+      <li>"frame: Ok 1 receipts"</li>
+      <li>"pixel: Ok 0"</li>
+      <li>"same surface: yes"</li>
+    </ol>
+  </main>
+</body>

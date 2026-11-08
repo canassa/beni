@@ -146,8 +146,8 @@ error problem =
         Error.SourceFailed _ →
             "SourceFailed"
 
-        Error.CanvasFailed _ →
-            "CanvasFailed"
+        Error.CanvasFailed c →
+            "CanvasFailed " ++ canvasError c
 
         Error.FormatFeatureRejected _ →
             "FormatFeatureRejected"
@@ -371,6 +371,26 @@ checked r f =
 
         Err problem →
             "Err " ++ error problem
+
+
+--| A canvas failure, without the host's message.
+pub canvasError : Error.CanvasError → String
+canvasError c =
+    case c of
+        Error.CanvasNotFound id →
+            "CanvasNotFound " ++ id
+
+        Error.WrongElementKind id →
+            "WrongElementKind " ++ id
+
+        Error.CanvasContextUnavailable →
+            "CanvasContextUnavailable"
+
+        Error.CanvasUnconfigured →
+            "CanvasUnconfigured"
+
+        Error.CanvasConfigurationRejected _ →
+            "CanvasConfigurationRejected"
 
 
 --| A `readBytes` result's constructor, with `f` for an `Ok` value.

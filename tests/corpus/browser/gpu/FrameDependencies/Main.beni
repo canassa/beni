@@ -1,0 +1,108 @@
+-- What a frame's texture is in expires with it (docs/design/webgpu.md §8,
+-- §8.2): a command buffer that renders into the current texture and a bind
+-- group that binds a view of it, both made in the frame and returned, are
+-- `ResourceExpired` after it, when submitted or bound. Before the fix both
+-- went to the host, which would draw into a texture already presented.
+import Browser.Canvas as Canvas
+import Gpu.Batch as Batch
+import Gpu.Device
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (BindGroup, BindGroupLayout, CommandBuffer, CommandEncoder, Frame, RenderPass, TextureView)
+import Gpu.Queue
+import Gpu.RenderPass as RenderPass
+import Gpu.Surface as Surface
+import Gpu.Texture
+import Gpu.Types as Types
+import GpuKit exposing (must, u32)
+import GpuPage
+import GpuShow
+import Tea
+
+
+nothing : RenderPass → Result InputError ⊤
+nothing _ = Ok ⊤
+
+
+cleared : TextureView, CommandEncoder → Result InputError ⊤
+cleared v enc =
+    attachment =
+        Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store
+    RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) nothing
+
+
+-- Encode a pass into the current texture and bind a view of it; submit
+-- nothing.
+keep : BindGroupLayout, Frame → Result Error.Error (CommandBuffer × BindGroup)
+keep layout frame =
+    b = Frame.batch frame
+    t = Frame.getCurrentTexture frame?
+    v = Batch.createView b t Types.textureViewDescriptor?
+    encoded = Frame.encode frame Types.commandEncoderDescriptor (cleared v _)?
+    g =
+        Batch.createBindGroup
+            b
+            (Types.bindGroupDescriptor layout
+                [ Types.bindGroupEntry (u32 0) (Types.TextureViewBinding v) ]
+            )?
+    Ok ( encoded.commands, g )
+
+
+bound : BindGroup, RenderPass → Result InputError ⊤
+bound g rp = RenderPass.setBindGroup rp (u32 0) (Just g) []
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    canvas = must (Canvas.create 4 4)
+    surface = must (Surface.fromCanvas canvas)
+
+    configuration =
+        { (Types.canvasConfiguration d Types.Rgba8unorm)
+            | usage = Types.Value (Flags.texture [ Flags.RenderAttachment, Flags.TextureBinding ])
+        }
+    must (Surface.configure surface configuration)
+    entry =
+        { (Types.bindGroupLayoutEntry (u32 0) (Flags.shaderStages [ Flags.FragmentStage ]))
+            | texture = Types.Value Types.textureBindingLayout
+        }
+    layout = must (Gpu.Device.createBindGroupLayout d (Types.bindGroupLayoutDescriptor [ entry ]))
+    case Frame.submit surface "keep" (keep layout _) of
+        Err problem →
+            [ "frame: " ++ GpuShow.error problem ]
+
+        Ok frame →
+            ( commands, g ) = frame.value
+            other =
+                must
+                    (Gpu.Device.createTexture
+                        d
+                        (Types.textureDescriptor
+                            (Types.Extent3DFields
+                                { width = u32 4
+                                , height = Types.Default
+                                , depthOrArrayLayers = Types.Default
+                                }
+                            )
+                            Types.Rgba8unorm
+                            (Flags.texture [ Flags.RenderAttachment ])
+                        )
+                    )
+            target = must (Gpu.Texture.createView other Types.textureViewDescriptor)
+            attachment =
+                Types.renderPassColorAttachment
+                    (Types.AttachmentTextureView target)
+                    Types.Clear
+                    Types.Store
+            submitted = Gpu.Queue.submit (Gpu.Device.queue d) [ commands ]
+            binding = Encode.run d Types.commandEncoderDescriptor λenc →
+                RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) (bound g _)
+            [ "submit the frame's commands after it: " ++ GpuShow.checked submitted λ_ → "submitted"
+            , "bind the frame's bind group after it: " ++ GpuShow.checked binding λ_ → "bound"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

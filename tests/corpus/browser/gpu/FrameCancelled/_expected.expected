@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"configure: Ok done"</li>
+      <li>"the cancelled frame's buffer: Err InvalidInput ResourceRejected buffer"</li>
+    </ol>
+  </main>
+</body>

@@ -110,6 +110,15 @@ pub foreign impure kept : ⊤ → Buffer
 pub foreign impure commands : ⊤ → List String
 
 
+--| Queue a microtask that marks it ran: with `microtaskHasRun`, what shows
+--| that no microtask ran between two points of one synchronous callback.
+pub foreign impure armMicrotask : ⊤ → ⊤
+
+
+--| Whether the microtask `armMicrotask` queued last has run.
+pub foreign impure microtaskHasRun : ⊤ → Bool
+
+
 --| Keep a batch for `keptBatch`, past the callback it was given to.
 pub foreign impure keepBatch : Batch → ⊤
 

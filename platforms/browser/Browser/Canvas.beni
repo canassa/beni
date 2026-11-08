@@ -73,6 +73,42 @@ offscreen width height =
         Ok (Js.to (Js.construct constructor [ Js.from width, Js.from height ]))
 
 
+ignore : Js.Value → ⊤
+ignore _ = ⊤
+
+
+-- How often each canvas's size was set here, by canvas.
+resizes : Js.Value
+resizes = Js.pure λ⊤ → Js.construct (Js.global "WeakMap") []
+
+
+-- Count one write of a canvas's size.
+counted : Js.Value → ⊤
+counted value =
+    before = Js.call resizes "get" [ value ]
+    count = if Js.isUndefined before then 0 else Js.to before
+    Js.call resizes "set" [ value, Js.from (count + 1) ] ▷ ignore
+
+
+-- How often a canvas's size was set here.
+countOf : Js.Value → Int
+countOf value =
+    count = Js.call resizes "get" [ value ]
+    if Js.isUndefined count then 0 else Js.to count
+
+
+--| How often `resize` set this canvas's size: every write counts, one that
+--| changes nothing or undoes an earlier one too. What expires a GPU
+--| surface's frame textures (`Gpu.Surface`).
+pub resizeCount : Canvas → Int
+resizeCount canvas = countOf (Js.from canvas)
+
+
+--| How often `resizeOffscreen` set this canvas's size, as `resizeCount`.
+pub offscreenResizeCount : OffscreenCanvas → Int
+offscreenResizeCount canvas = countOf (Js.from canvas)
+
+
 pub size : Canvas → { width : Int, height : Int }
 size canvas = dimensions (Js.from canvas)
 
@@ -86,6 +122,7 @@ resize canvas width height =
     dimension 2147483647 width?
     dimension 2147483647 height?
     value = Js.from canvas
+    counted value
     Js.set value "width" (Js.from width)
     Js.set value "height" (Js.from height)
     Ok ⊤
@@ -96,6 +133,7 @@ resizeOffscreen canvas width height =
     dimension 9007199254740991 width?
     dimension 9007199254740991 height?
     value = Js.from canvas
+    counted value
     Js.set value "width" (Js.from width)
     Js.set value "height" (Js.from height)
     Ok ⊤

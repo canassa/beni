@@ -480,6 +480,14 @@ pub const Chrome = struct {
                 // SwiftShader, which needs no GPU; the gates' pages need none.
                 if (with_webgpu) "--enable-unsafe-webgpu" else "--disable-gpu",
                 if (with_webgpu) "--use-webgpu-adapter=swiftshader" else "--disable-gpu",
+                // A canvas texture is a shared image the compositor reads.
+                // On ANGLE's SwiftShader GL Chrome composites in software
+                // and has no shared-image backing for a WebGPU swap chain,
+                // so `getCurrentTexture` loses the device (#2267). Skia and
+                // ANGLE on SwiftShader's Vulkan have one.
+                if (with_webgpu) "--enable-features=Vulkan" else "--disable-gpu",
+                if (with_webgpu) "--use-vulkan=swiftshader" else "--disable-gpu",
+                if (with_webgpu) "--use-angle=vulkan" else "--disable-gpu",
                 // A page loads the program's modules from the file system.
                 "--allow-file-access-from-files",
                 "--disable-extensions",

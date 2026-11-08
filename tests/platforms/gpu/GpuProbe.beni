@@ -82,6 +82,26 @@ pub openChannels : ⊤ → Int
 openChannels ⊤ = Engine.openChannelCount ⊤
 
 
+--| Whether two surfaces are one canvas context: a page that renders again
+--| keeps its canvas node, and so its surface.
+pub sameSurface : Handle.Surface, Handle.Surface → Bool
+sameSurface a b = Js.same (Js.from a) (Js.from b)
+
+
+-- The surface `remember` was given last.
+remembered : Js.Ref (Maybe Js.Value)
+remembered = Js.ref Nothing
+
+
+--| Remember `surface`, and say whether it is the context remembered
+--| before, `Nothing` the first time.
+pub remember : Handle.Surface → Maybe Bool
+remember surface =
+    before = Js.read remembered
+    Js.write remembered (Just (Js.from surface))
+    Maybe.map before λb → Js.same b (Js.from surface)
+
+
 -- The render bundle `keepBundle` was given last.
 keptBundles : Js.Ref (Maybe Js.Value)
 keptBundles = Js.ref Nothing
@@ -96,3 +116,18 @@ keepBundle b = Js.write keptBundles (Just (Js.from b))
 --| The render bundle kept last.
 pub keptBundle : ⊤ → Maybe Handle.RenderBundle
 keptBundle ⊤ = Maybe.map (Js.read keptBundles) Js.to
+
+
+-- The texture view `keepView` was given last.
+keptViews : Js.Ref (Maybe Js.Value)
+keptViews = Js.ref Nothing
+
+
+--| Keep a texture view, as a program that stores a frame's view might.
+pub keepView : Handle.TextureView → ⊤
+keepView v = Js.write keptViews (Just (Js.from v))
+
+
+--| The texture view kept last.
+pub keptView : ⊤ → Maybe Handle.TextureView
+keptView ⊤ = Maybe.map (Js.read keptViews) Js.to

@@ -1,0 +1,37 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §6): the native
+-- `getCurrentTexture` throws a plain object named `InvalidStateError`: only a
+-- native `DOMException` of that name is the documented refusal of an
+-- unconfigured canvas. The page stops.
+import Browser.Canvas as Canvas
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Frame)
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuKit exposing (must)
+import GpuPage
+import GpuShow
+import Tea
+
+
+acquire : Frame → Result Error.Error ⊤
+acquire frame =
+    _ = Frame.getCurrentTexture frame?
+    Ok ⊤
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "current-spoofed" λd →
+    surface = must (Surface.fromCanvas (must (Canvas.create 4 4)))
+
+    configuration =
+        { (Types.canvasConfiguration d Types.Rgba8unorm)
+            | usage = Types.Value (Flags.texture [ Flags.RenderAttachment ])
+        }
+    must (Surface.configure surface configuration)
+    [ "frame: " ++ GpuShow.checked (Frame.submit surface "unlisted" acquire) λ_ → "drawn" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

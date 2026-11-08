@@ -1,0 +1,11 @@
+click #inside
+click #configuration
+click #refused
+click #injected
+click #noContext
+click #leased
+click #checkpoint
+click #conflict
+click #lost
+click #refusalsKeep
+click #concurrent

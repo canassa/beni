@@ -224,7 +224,10 @@ runSession s native body value =
                 Js.get enc "finished"
             else
                 Js.call native "finish" []
-        Js.call usesTable "set" [ commands, Js.get s "uses" ] ▷ ignore
+        uses = Js.get s "uses"
+        Js.call usesTable "set" [ commands, uses ] ▷ ignore
+        -- What the session finished expires with any frame texture it uses (§8.2).
+        Engine.dependsOn commands (Js.call (Js.global "Array") "from" [ uses ])
         Ok commands
 
 

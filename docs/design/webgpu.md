@@ -1363,6 +1363,51 @@ as a defect (`browser/gpu/WorkDoneRejected`). `done` answers at once for work al
 buffer of another device before the native call; the other command-buffer checks land with the
 encoders (S2b).
 
+*As built — S3b (2026-11-08, #2241).* `Gpu.Surface` has `fromElement`, `fromCanvas`, `fromOffscreen`
+(a main-thread `Browser.Canvas.offscreen`), `configure`, `unconfigure`, `getConfiguration` and
+`canvas`, whose `CanvasSource` is `Element Browser.Canvas.Canvas | Offscreen
+Browser.Canvas.OffscreenCanvas`. `configure` is a checked operation on the configuration's device: a
+feature-gated format is `UnsupportedCapability` first, the host's `TypeError` is
+`CanvasConfigurationRejected`, and a configuration that failed leaves the surface unconfigured for
+frames; a refusal before the native call (a missing feature, a lease, a loss) changes nothing of the
+surface, and a configuration that an `unconfigure` or another `configure` overtook while it was
+checked does not configure it. `getConfiguration : Surface → Result Error (Maybe
+CanvasConfiguration)` reads the host's configuration back, a member the host leaves out as `Default`;
+a host without the method is `UnsupportedCapability`, and a usage that is not a set of the pin's bits
+is a defect. `Gpu.Frame` has `submit`, `batch`, `getCurrentTexture`, `encode` and `submitCommands`; a
+frame is a `Gpu.Batch.run` on the surface's device whose batch is the `Frame`, so §8.2's batch bridge
+is the batch itself, and `Frame.submit` refuses an unconfigured surface (`CanvasUnconfigured`) and a
+leased device before the callback runs. Every native submit of the frame, through
+`submitCommands` or `Gpu.Batch.submit` on the frame's batch, adds its receipt to `submissions` in
+issue order. **The non-yielding host-turn section is the scope section itself**: the callback is
+`sync`, so it is emitted as plain JavaScript with no suspension point, and the engine runs it inside
+the device's scope section, one synchronous call; `browser/gpu/SurfaceFrames`' *checkpoint* shows
+that a microtask queued at the start of the callback has not run when it has submitted. A current
+texture and every view of it expire (`ResourceExpired`, the engine's `usable`) when its frame ends,
+when the surface is configured again or unconfigured, and when its canvas is resized: every
+`Browser.Canvas.resize` counts (`resizeCount`), one to the same size or undone at once too, and a
+size changed any other way is caught by comparing `width` and `height`. A view keeps the frame mark
+of the frame that made it, so a later frame that gets the same native texture (the host gives one a
+task) takes the texture as its own but never revives an earlier frame's view. What a frame's texture
+is in expires with it: an encoder session records every frame-bound object a command names, and the
+command buffer or bundle it finishes holds them, as a bind group holds the frame views it binds; a
+held object expired is `ResourceExpired` (`browser/gpu/FrameRetry`, `FrameDependencies`). `importExternalTexture` waits for S5 with the other media sources. Since the batch review a
+frame's callback and its operations return `Result Error`, as a batch's do, a failed frame is
+`BatchFailed` with the operations it issued and refused, and a cancelled frame rejects what it made
+and publishes no receipt (`FrameCancelled`); a submit on another device's queue is `WrongDevice`
+(`FrameOtherQueue`). Fixtures:
+`SurfaceFrames` (receipts, expiry, resize, reconfiguration, an `OffscreenCanvas`, the checkpoint),
+`SurfaceConfiguration` (configuration, its refusals and readback, a lease), `CanvasPage` (a TEA page
+with a stable `<canvas>`), and the defects `CurrentTextureUnlisted`, `CurrentTextureSpoofed`, `ConfigureUnlisted` and
+`ConfigureSpoofed`. `SurfaceConfiguration`'s *checkpoint* repeats the microtask probe in a frame that
+acquires no texture, and its *conflict* shows a canvas keeping its first context kind. All of them run in `test-webgpu`'s
+Chrome, which runs Skia and ANGLE on SwiftShader's Vulkan (`--enable-features=Vulkan
+--use-vulkan=swiftshader --use-angle=vulkan`): on ANGLE's SwiftShader GL, Chrome composites in
+software and has no shared-image backing for a canvas texture, so `getCurrentTexture` lost the
+device and the next `popErrorScope` and `onSubmittedWorkDone` rejected with an `OperationError`
+(#2267, a host configuration failure, not a ledger row). A direct `Browser.hosted` page is #2268.
+
+
 ## 9. Reserved
 
 The additional rendering abstraction was removed by the owner on 2026-10-30.
