@@ -38,6 +38,7 @@ const AtomGraft = @import("AtomGraft.zig");
 const Put = @import("Put.zig");
 const Needs = @import("Needs.zig");
 const PastPayload = @import("PastPayload.zig");
+const PutMemo = @import("PutMemo.zig");
 const LevelTargets = @import("LevelTargets.zig");
 const Made = @import("Made.zig");
 const Host = @import("Host.zig");
@@ -330,13 +331,13 @@ fn canNode(s: *Sink, q: PathId, out: Put.ResList) Error!bool {
 fn nodeOfValue(s: *Sink, v: u32, q: PathId, out: Put.ResList) Error!Contract.Node {
     const f = s.e.fr();
     const key: [6]u32 = .{ 1, v, 0, 0, f.places.pathPlace(q).int(), 0 };
-    if (Put.memoGet(s, key)) |n| return if (n == none) 0 else n;
+    if (PutMemo.get(s, key)) |n| return if (n == none) 0 else n;
     try s.nodes.put(s.e.gpa(), key, none);
     try f.charge(.inspection, 1);
     try Put.begin(s, q);
     try valueBody(s, v, q, out, null);
     const n = try Put.end(s);
-    try Put.memoPut(s, key, n);
+    try PutMemo.put(s, key, n);
     return n;
 }
 
@@ -372,7 +373,7 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     const t = &e.contracts.trees;
     const key: [6]u32 = .{ 2, call, which, n, f.places.pathPlace(q).int(), tags };
     // Below an open node a slot's key reads it too: no subtree is shared.
-    if (!above) if (Put.memoGet(s, key)) |m| return if (m == none) 0 else if (m == none - 1) null else m;
+    if (!above) if (PutMemo.get(s, key)) |m| return if (m == none) 0 else if (m == none - 1) null else m;
     // Every kid's step reaches a slot of both.
     const kids = try gpa.dupe([2]u32, t.kids(n));
     defer gpa.free(kids);
@@ -467,7 +468,7 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
         try Put.emitPart(s, a[1], m, out);
     }
     const m = try Put.end(s);
-    if (!above) try Put.memoPut(s, key, m);
+    if (!above) try PutMemo.put(s, key, m);
     return m;
 }
 
