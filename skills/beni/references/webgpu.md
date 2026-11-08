@@ -8,7 +8,14 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu`: `available`, `requestAdapter`, `preferredCanvasFormat`, `wgslLanguageFeatures`.
 - `Gpu.Adapter`: `features`, `limits`, `info`, `requestDevice`.
 - `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`, and the
-  first checked operation, `createSampler`.
+  checked operations `createSampler`, `createBuffer` and `createMappedBuffer`.
+- `Gpu.Buffer`: `size`, `usage`, `mapState`, `label`, `setLabel`, `map`, `currentMapping`,
+  `getMappedRange`, `withMapped`, `unmap`, `destroy`, and the mapping's `mappingMode`,
+  `mappingRange`, `mappingBuffer` and `mappingLive`.
+- `Gpu.MappedRange`: reads and writes of mapped memory: `readU8` to `readF64`, `readF16`,
+  `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`.
+- `Gpu.Queue`: `writeBuffer`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
+- `Gpu.Submission`: `done`, which waits for the work of one submit.
 - `Gpu.Types`: one record for each IDL dictionary, one type for each IDL enum, one sum for each
   IDL union. These are generated from the pinned IDL.
 - `Gpu.Flags`: the five flag domains. A buffer usage set is not a texture usage set.
@@ -18,7 +25,7 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Error`: `InitError`, `Error` and their parts.
 - `Gpu.Handle`: the handle types, for example `Adapter` and `Device`.
 
-Buffers, textures, shaders, pipelines, passes and canvases come in later releases.
+Textures, shaders, pipelines, command encoders, passes and canvases come in later releases.
 
 ## Rules
 
@@ -51,6 +58,33 @@ Buffers, textures, shaders, pipelines, passes and canvases come in later release
    waits for it. `Gpu.Device.destroy` latches `Destroyed` immediately. To recover, request a new
    adapter and a new device.
 8. **These functions can suspend.** Call them in a fiber: in `browser-tea`, in `Cmd.task`.
+
+## Buffers and mapping
+
+1. **Map a buffer to read or write its memory.** `Gpu.Buffer.map buffer Gpu.Buffer.mapRead` gives a
+   `Mapping`. `Gpu.Buffer.getMappedRange` gives a `MappedRange` of it. `Gpu.Buffer.withMapped`
+   maps, calls your function, and unmaps after it, also when it returns `Err` or is cancelled.
+2. **A mapping ends at `unmap`, at `destroy` and at the next `map`.** After that, the mapping and
+   all its ranges give `ResourceExpired`, also where you kept a copy of them.
+3. **A buffer made with `mappedAtCreation = Value True` is mapped.** Get its mapping with
+   `Gpu.Buffer.currentMapping`, or use `Gpu.Device.createMappedBuffer`. You can write that mapping
+   without the `MapWrite` usage. Its size must be a multiple of 4 (`MappedSizeUnaligned`).
+4. **Inputs are checked before the browser is called.** A map mode that is not exactly read or
+   write, a missing usage, an offset that is not a multiple of 8, a size that is not a multiple
+   of 4, a range out of bounds, a second map, overlapping ranges and a write to a read mapping
+   each give their own `InvalidInput`.
+5. **Mapped memory is little-endian.** Offsets count bytes from the start of the range.
+   `readWord64` and `writeWord64` keep all 64 bits: use them for `u64` and `i64` values.
+6. **Binary data for the GPU must have a fixed length.** A resizable `ArrayBuffer` or a growable
+   `SharedArrayBuffer` gives `ResizableBacking`, also through a view and also when it never
+   resized. Detached data gives `DetachedSource`.
+7. **`Gpu.Queue.writeBuffer` counts `dataOffset` and `size` in elements of the data**, as the
+   browser does: bytes for an `ArrayBuffer` or a `DataView`, elements for a typed array.
+8. **Each `Gpu.Queue.submit` gives one receipt.** `Gpu.Submission.done` waits for the work of that
+   submit. An empty list is a submit too. Nothing waits if you do not call `done`.
+9. **Some calls run while a diagnostic session holds the device**: `unmap`, `destroy`,
+   `currentMapping`, the mapped range reads and writes, and `Gpu.Submission.done`. A checked
+   operation (`map`, `createBuffer`, `writeBuffer`, `submit`) returns `DeviceLeased`.
 
 ## Example
 
@@ -123,5 +157,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §8, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/webgpu.md` §2–§5, §7, §7.1, §8, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
 modules' doc comments.

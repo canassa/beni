@@ -980,10 +980,10 @@ Gpu.Buffer.destroy : Buffer → ⊤
 Gpu.Texture.destroy : Texture → ⊤
 Gpu.QuerySet.destroy : QuerySet → ⊤
 
-Gpu.MappedRange.readBytes : MappedRange, Range → Result InputError Binary.Buffer
-Gpu.MappedRange.writeBytes : MappedRange, Offset, Binary.Source → Result InputError ⊤
-Gpu.MappedRange.readU32 : MappedRange, Offset → Result InputError U32
-Gpu.MappedRange.writeF32 : MappedRange, Offset, Float → Result InputError ⊤
+Gpu.MappedRange.readBytes : MappedRange, Binary.ByteRange → Result Error Binary.Buffer
+Gpu.MappedRange.writeBytes : MappedRange, Int, Binary.Source → Result InputError ⊤
+Gpu.MappedRange.readU32 : MappedRange, Int → Result InputError Int
+Gpu.MappedRange.writeF32 : MappedRange, Int, Float → Result InputError ⊤
 ```
 
 Mapped ranges access native mapped storage directly through typed reads/writes;
@@ -1047,6 +1047,35 @@ check passes is a native `RangeError` from `createBuffer` classified as
 §3). Acceptance needs two separate fixtures: a size of 6 returns
 `MappedSizeUnaligned` with no native call, and an aligned size whose CPU
 allocation fails (host fault injection) returns `MappedAllocationFailed`.
+
+*As built — S2a (2026-11-08, #2240).* `Gpu.Device.createBuffer` and `createMappedBuffer`,
+`Gpu.Buffer` (`map`, `currentMapping`, `getMappedRange`, `withMapped`, `unmap`, `destroy`, the
+snapshot getters and `mappingMode`/`mappingRange`/`mappingBuffer`/`mappingLive`),
+`Gpu.MappedRange`, `Gpu.Queue` (`writeBuffer`, `submit`, `onSubmittedWorkDone`) and
+`Gpu.Submission.done`. A buffer's record in the engine's table holds its size, usages, latched
+map state, destroyed flag and mapping generation; the generation changes with every map
+request, unmap and destroy, before the native call, so every alias of a mapping or a range of
+an earlier generation reads `ResourceExpired`. `map` is a checked operation whose native call
+answers with a promise (`Gpu.Engine.checkedAwait`): the operation waits for the three pops and
+the map promise, or for the loss, and a rejection joins the scopes' observations (a map the
+device refuses is `RelatedFailures [MapFailed MapRejected, Validation]`). *Amended the same
+day:* `MapRequest` is `{ mode : MapModes, offset : Int, size : Maybe Int }` with `mapRead` and
+`mapWrite` for the whole buffer, and `Range` is `{ offset : Int, size : Maybe Int }`; offsets and
+sizes are `Int`s checked as `GPUSize64` (`NumericDomain`), not `Size64`, as `Binary` takes its
+byte ranges. A mapped range's integer reads give `Int` and its writes take `Int`, as `Binary`'s
+do — a payload is raw bits (§3.1), not a descriptor domain — with `InvalidValue` for a value
+outside the width; values are little-endian. `readBytes` returns `Result Error`, since the copy
+allocates: a host with no memory for it is `Error.AllocationFailed { bytes }`. The new
+`InputError` arms are `DetachedSource`, `Misaligned`, `OutOfRange`, `InvalidValue`,
+`InvalidMapMode`, `MissingBufferUsage`, `MappingState`, `RangeOverlap` and `ReadOnlyMapping`.
+`Gpu.Queue.writeBuffer` takes a `WriteBufferSource` (`{ bufferOffset, data, dataOffset, size }`,
+`bufferWrite` for the whole data), which is §6.3's `Batch.writeBuffer` argument too.
+`withMapped` unmaps in a `Task.onExit` finaliser; a defect stops the program, which unmaps
+nothing further. Fixtures: `browser/gpu/BufferRoundTrip` (exact u32 and u64 round trips, read
+back natively under `test-webgpu`), `BufferRefusals`, `MapFailures`, `MapLifecycle`,
+`Submissions` and the defects `MapUnlisted`, `RangeUnlisted`, `WriteUnlisted`,
+`WorkDoneRejected`. `GPUBufferUsage` validity beyond what the engine checks stays the device's
+(`Validation`).
 
 ## 8. Canvas, media, events, fibers and page integration
 
@@ -1232,6 +1261,14 @@ submit has none. Nothing is fabricated.
   neither is display completion. A failed batch or frame publishes no
   receipts; its native submissions may still have happened (§6.3: a batch is
   not a transaction), and its failure report lists them as issued.
+
+*As built — S2a (2026-11-08, #2240).* A receipt holds the completion promise in an engine
+record that counts as one of the device's pending outcomes, so the device keeps its channel to
+the program while it is pending; an unexpected settlement nobody waits for reaches that program
+as a defect (`browser/gpu/WorkDoneRejected`). `done` answers at once for work already done,
+`DeviceLost` for a loss latched first or while it waits. `Gpu.Queue.submit` refuses a command
+buffer of another device before the native call; the other command-buffer checks land with the
+encoders (S2b).
 
 ## 9. Reserved
 
