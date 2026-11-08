@@ -1,0 +1,9 @@
+import List
+
+
+shared : List Int
+shared = [ 5 ]
+
+
+pub mapShared : List Int → List (List Int)
+mapShared xs = List.map xs λ_ → shared

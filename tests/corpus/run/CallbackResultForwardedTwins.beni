@@ -1,0 +1,56 @@
+-- CallbackResultForwardedTwins (Appendix B, S4; R-4.6.2, R-4.8.17): the
+-- twins of CallbackResultForwarded. `hRec` forwards its callback's last answer
+-- through its own recursion, and `kDup` stores the answer `hOnce` forwards from
+-- one call twice through `dup`. Each list holds one answer at two positions, so
+-- each element write is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+hRec : (⊤ → List Int), Int → List Int
+hRec f n =
+    if n == 0 then
+        f ⊤
+    else
+        _ = f ⊤
+        hRec f (n - 1)
+
+
+kRec : (⊤ → List Int) → List (List Int)
+kRec f =
+    a = hRec f 2
+    [ a, a ]
+
+
+hOnce : (⊤ → List Int) → List Int
+hOnce f = f ⊤
+
+
+dup : List Int → List (List Int)
+dup a = [ a, a ]
+
+
+kDup : (⊤ → List Int) → List (List Int)
+kDup f = dup (hOnce f)
+
+
+main : Program
+main =
+    r = kRec λ⊤ → [ 1 ]
+    d = kDup λ⊤ → [ 2 ]
+    Node.print
+        (show (List.update r 0 λl → List.push l 9)
+            ++ "|"
+            ++ show (List.update d 0 λl → List.push l 8)
+        )

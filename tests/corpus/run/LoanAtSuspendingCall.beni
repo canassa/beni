@@ -1,0 +1,38 @@
+-- LoanAtSuspendingCall (Appendix B, S4 and S8; R-5.12.3): `slowShow` sleeps
+-- before it reads its argument, a loan of the cell's contents, while the other
+-- fiber of `Task.par` edits those contents in place. The edit is refused.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+slowShow : List Int → String
+slowShow xs =
+    Io.sleep 10
+    ints xs
+
+
+edit : Ref (List Int), ⊤ → ⊤
+edit r _ =
+    Io.sleep 1
+    Ref.update r λxs → List.push xs 1
+
+
+loaned : ⊤ → String
+loaned ⊤ =
+    r = Ref.make [ 0 ]
+    ( a, _ ) = Task.par (λ⊤ → slowShow (Ref.get r)) (edit r _)
+    "loaned ${a} ${ints (Ref.get r)}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.print (loaned ⊤)

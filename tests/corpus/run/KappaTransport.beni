@@ -1,0 +1,31 @@
+-- KappaTransport (Appendix B, S4; R-5.2.9, R-5.7.1): the elements of a map of
+-- a fresh callback, direct and through a wrapper, are written: accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+wrap : List a, (a → b) → List b
+wrap xs f = List.map xs f
+
+
+direct : List Int → List (List Int)
+direct ns = List.map (List.map ns λn → [ n ]) λl → List.push l 0
+
+
+wrapped : List Int → List (List Int)
+wrapped ns = List.map (wrap ns λn → [ n ]) λl → List.push l 0
+
+
+main : Program
+main = Node.print "${show (direct [ 1, 2 ])} ${show (wrapped [ 3, 4 ])}"

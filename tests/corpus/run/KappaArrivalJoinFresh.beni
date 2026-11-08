@@ -1,0 +1,31 @@
+-- KappaArrivalJoinFresh (Appendix B, S4; R-4.6.3, R-5.5.5): the accepted twin
+-- of KappaArrivalJoin. `zs` joins a shared alternative and is only read, so
+-- the write of `ys`'s fresh elements is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+shared : List Int
+shared = [ 9 ]
+
+
+joined : Bool → String
+joined c =
+    ys = List.map [ 1, 2 ] λn → [ n ]
+    zs = List.map [ 1, 2 ] λn → if c then shared else [ n ]
+    "${show (List.map ys λl → List.push l 0)} ${show zs}"
+
+
+main : Program
+main = Node.print (joined True)

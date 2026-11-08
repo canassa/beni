@@ -1,0 +1,53 @@
+-- ProjectedKappaLabelRefused (Appendix B, S4; R-4.6.4, R-4.10.3, R-3.1): the
+-- refused rows of ProjectedKappa, through `List.map`'s label. `[ ( a, b ), ( b,
+-- a ) ]` with a writer of `.0` reaches `b` through the other pair's `.1`; an
+-- alias at `.1` is written twice; and `make` answers one list at `.0` and
+-- `.1`, so its pair never justifies two writes. Each is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pairs : List (List Int × List Int) → String
+pairs ps = String.join (List.map ps λ( p, q ) → "${ints p}/${ints q}") ";"
+
+
+crossed : Int → String
+crossed n =
+    a = [ n ]
+    b = [ n, n ]
+    ys = List.map [ ( a, b ), ( b, a ) ] λ( p, q ) → ( List.push p 1, q )
+    pairs ys
+
+
+aliasAtOne : Int → String
+aliasAtOne n =
+    s = [ n ]
+    ys = List.map [ ( [ 1 ], s ), ( [ 2 ], s ) ] λ( p, q ) → ( p, List.push q 1 )
+    pairs ys
+
+
+make : ⊤ → List Int × List Int
+make ⊤ =
+    x = [ 1 ]
+    ( x, x )
+
+
+fromMake : ⊤ → String
+fromMake ⊤ =
+    ys = List.map [ make ⊤ ] λ( p, q ) → ( List.push p 1, List.push q 2 )
+    pairs ys
+
+
+main : Program
+main = Node.print "${crossed 3} ${aliasAtOne 4} ${fromMake ⊤}"

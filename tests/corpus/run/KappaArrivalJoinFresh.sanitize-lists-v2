@@ -1,0 +1,1 @@
+The accepted twin of KappaArrivalJoin (Appendix B, S4): built again under --ownership=v2 and the list stale-read sanitiser. v2 accepts the write of the fresh arrivals.
