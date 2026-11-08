@@ -1,0 +1,16 @@
+-- Native IEEE-754 bits are the oracle, independent of beni's Float printer.
+import Js
+
+
+pub bits : Float → { high : Int, low : Int }
+bits value =
+    buffer = Js.construct (Js.global "ArrayBuffer") [ Js.from 8 ]
+    view = Js.construct (Js.global "DataView") [ buffer ]
+    _ = Js.call view "setFloat64" [ Js.from 0, Js.from value, Js.from False ]
+    { high = Js.to (Js.call view "getUint32" [ Js.from 0, Js.from False ])
+    , low = Js.to (Js.call view "getUint32" [ Js.from 4, Js.from False ])
+    }
+
+
+pub negativeZero : ⊤ → Float
+negativeZero ⊤ = Js.rem (-1.0) 1.0
