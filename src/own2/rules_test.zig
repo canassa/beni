@@ -111,6 +111,8 @@ const layers = [_]Entry{
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },
     // A selection in its one spelling of a subtree (#1714).
     .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
+    // Split from `Relation` (#2195): a read at a caller slot.
+    .{ .file = "ArriveAt.zig", .layer = 5, .max_lines = 60 },
     // A set met against a run of slots in one pass, for `Descent` (#1714).
     .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
     // The environment rows are read in, split from `Rows` (#1752).
@@ -846,7 +848,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 146), layers.len);
+    try testing.expectEqual(@as(usize, 150), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
