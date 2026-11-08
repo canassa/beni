@@ -70,6 +70,17 @@ const fakeGpu = () => ({
 
 // ---- Faults ---------------------------------------------------------------
 
+// Requests held since "requests-held", newest last: the host's promise and
+// what settles the one the page was given.
+let holdRequests = false;
+const heldRequests = [];
+const hostAnswers = [];
+const holding = (promise) => {
+  hostAnswers.push(promise);
+  if (!holdRequests) return promise;
+  return new globalThis.Promise((resolve, reject) => heldRequests.push({ promise, resolve, reject }));
+};
+
 // Every device made since "lost-controlled", newest last, with what
 // settles its injected `lost`.
 const controlled = [];
@@ -112,7 +123,6 @@ const faults = {
   "device-operation-error": (gpu) => onAdapters(gpu, () => globalThis.Promise.reject(new globalThis.DOMException("injected device refusal", "OperationError"))),
   "device-spoofed": (gpu) => onAdapters(gpu, () => globalThis.Promise.reject({ name: "OperationError", message: "a plain object, not a DOMException" })),
   "device-unlisted": (gpu) => onAdapters(gpu, () => globalThis.Promise.reject(new globalThis.DOMException("injected unlisted refusal", "NotSupportedError"))),
-  "device-range-error": (gpu) => onAdapters(gpu, () => globalThis.Promise.reject(new globalThis.RangeError("injected range error"))),
   // The device arrives already lost.
   "device-lost-at-birth": (gpu) =>
     onAdapters(gpu, function (original, ...args) {
@@ -124,6 +134,28 @@ const faults = {
   // The next device's loss is the fixture's to settle, with `lose`.
   "lost-controlled": () => {
     controlLoss = true;
+  },
+  // The device's `lost` settles with null, or the device has none: what the
+  // engine reads of it throws, and that is a defect, never an unhandled
+  // rejection.
+  "device-null-lost-info": (gpu) =>
+    onAdapters(gpu, function (original, ...args) {
+      return original.apply(this, args).then((device) => {
+        globalThis.Object.defineProperty(device, "lost", { configurable: true, value: globalThis.Promise.resolve(null) });
+        return device;
+      });
+    }),
+  "device-without-lost": (gpu) =>
+    onAdapters(gpu, function (original, ...args) {
+      return original.apply(this, args).then((device) => {
+        globalThis.Object.defineProperty(device, "lost", { configurable: true, value: undefined });
+        return device;
+      });
+    }),
+  // Every later `requestAdapter` and `requestDevice` waits, after the host
+  // answered, until `releaseRequest` settles it.
+  "requests-held": () => {
+    holdRequests = true;
   },
 };
 
@@ -138,6 +170,7 @@ let secureContext = null;
 // holds. Each `inject` starts from it, so faults never pile up.
 function prepare() {
   controlLoss = false;
+  holdRequests = false;
   if (native()) {
     delete globalThis.navigator.gpu;
     if (secureContext === null) secureContext = globalThis.Object.getOwnPropertyDescriptor(globalThis, "isSecureContext") ?? false;
@@ -153,6 +186,17 @@ function prepare() {
   }
   if (!native()) globalThis.Object.defineProperty(globalThis.navigator, "gpu", { configurable: true, value: fakeGpu() });
   host = globalThis.navigator.gpu;
+  // Next to the host: the host answers, and a held request waits after it
+  // for `releaseRequest`; the loss control and every fault see it after.
+  const hostRequest = host.requestAdapter;
+  host.requestAdapter = function (...args) {
+    return holding(hostRequest.apply(this, args)).then((adapter) => {
+      if (adapter !== null) wrap(adapter, "requestDevice", function (request, ...rest) {
+        return holding(request.apply(this, rest));
+      });
+      return adapter;
+    });
+  };
   onAdapters(host, function (original, ...args) {
     return original.apply(this, args).then((device) => {
       if (controlLoss) {
@@ -172,10 +216,13 @@ function prepare() {
   return host;
 }
 
-export const inject = (scenario) => {
-  const fault = faults[scenario];
-  if (fault === undefined) throw new globalThis.Error(`GpuHost.inject: no scenario "${scenario}"`);
-  fault(prepare());
+export const inject = (scenarios) => {
+  const gpu = prepare();
+  for (const scenario of scenarios.split(",")) {
+    const fault = faults[scenario];
+    if (fault === undefined) throw new globalThis.Error(`GpuHost.inject: no scenario "${scenario}"`);
+    fault(gpu);
+  }
   return null;
 };
 
@@ -184,5 +231,28 @@ export const lose = (reason) => {
   if (entry === undefined) throw new globalThis.Error("GpuHost.lose: no device was made under \"lost-controlled\"");
   if (reason === "reject") entry.reject(new globalThis.DOMException("injected rejection of lost", "AbortError"));
   else entry.resolve(lostInfo(reason, "injected loss"));
+  return null;
+};
+
+// Settle the latest held request: `"host"` as the host did, or rejected
+// with an `OperationError` (`"reject-operation"`) or a `DOMException` the
+// ledger does not list (`"reject-unlisted"`).
+export const releaseRequest = (how) => {
+  const entry = heldRequests.pop();
+  if (entry === undefined) throw new globalThis.Error("GpuHost.releaseRequest: no request is held");
+  if (how === "host") entry.promise.then(entry.resolve, entry.reject);
+  else if (how === "reject-operation") entry.reject(new globalThis.DOMException("injected device refusal", "OperationError"));
+  else if (how === "reject-unlisted") entry.reject(new globalThis.DOMException("injected unlisted refusal", "NotSupportedError"));
+  else throw new globalThis.Error(`GpuHost.releaseRequest: no way "${how}"`);
+  return null;
+};
+
+// Call `f` once every request the host was asked has been answered and
+// 64 more microtasks have run: by then each reaction an answer set off has
+// run, the engine's included.
+export const later = (f) => {
+  let chain = globalThis.Promise.allSettled(hostAnswers.slice());
+  for (let i = 0; i < 64; i += 1) chain = chain.then(() => null);
+  chain.then(() => f(null));
   return null;
 };

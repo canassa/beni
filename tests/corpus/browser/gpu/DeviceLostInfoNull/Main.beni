@@ -1,0 +1,28 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §2, §7):
+-- a device whose `lost` settles with null. What the engine reads of it throws in the promise's reaction, and the throw reaches this program's defect boundary instead of going on as an unhandled rejection.
+-- The page stops with its crash screen; the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "device-null-lost-info"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            [ "device: "
+                ++ GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

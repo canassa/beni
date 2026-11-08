@@ -1,0 +1,37 @@
+-- A defect that arrives after its waiter left (docs/design/webgpu.md §6.4,
+-- *Outcomes that outlive their caller*; §8.1): a device request is
+-- cancelled, then the host rejects it with a `DOMException` the ledger
+-- does not list for `requestDevice`. Nobody waits, so the channel made
+-- before the request suspended — a fiber of this program — throws it, and
+-- the page stops with its crash screen; the release build stops with none.
+import Gpu
+import Gpu.Adapter
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ =
+    GpuHost.inject "none"
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            [ "adapter: " ++ GpuShow.initError problem ]
+
+        Ok adapter →
+            GpuHost.inject "requests-held"
+            pending = Task.spawn λ⊤ →
+                GpuShow.result (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor) λ_ →
+                    "device"
+            Task.yieldNow ⊤
+            Task.cancel pending
+            GpuHost.releaseRequest "reject-unlisted"
+            GpuHost.drain ⊤
+            [ "the request was cancelled" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

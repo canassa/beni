@@ -594,7 +594,15 @@ fn walk(kind: Kind) !void {
         walker.work(io);
     }
     const failures = walker.failures.load(.monotonic);
-    if (cfg.webgpu) browser.reportWebGpu();
+    if (cfg.webgpu) {
+        browser.reportWebGpu();
+        // A run that passed no page proved nothing about WebGPU: no adapter,
+        // or every page skipped, is a failure of the run.
+        if (failures == 0 and browser.webgpu_tally.passed.load(.monotonic) == 0) {
+            std.debug.print("test-webgpu: no page passed\n", .{});
+            return error.WebGpuNothingPassed;
+        }
+    }
     if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,

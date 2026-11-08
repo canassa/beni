@@ -1,0 +1,122 @@
+-- Cancelling a wait S1 owns (docs/design/webgpu.md §8.1, §10): the host's
+-- request still settles, in its own reaction. An adapter that arrives
+-- after the cancel is recorded and dropped; a device refusal frees its
+-- adapter, so the next request is the host's and is granted; a device that
+-- arrives is destroyed, and its adapter is consumed. A cancelled `awaitLost`
+-- leaves the other waiters. Every request holds a channel to its program
+-- while it is pending, and a device holds one until the host reports its
+-- loss: once each device is destroyed and settled the count is back where
+-- it started.
+import Gpu
+import Gpu.Adapter
+import Gpu.Device
+import Gpu.Handle exposing (Adapter)
+import Gpu.Types as Types
+import GpuHost
+import GpuPage
+import GpuProbe
+import GpuShow
+import Task
+import Tea
+
+
+adapter : String → Result String Adapter
+adapter scenarios =
+    GpuHost.inject scenarios
+    case Gpu.requestAdapter Types.adapterOptions of
+        Err problem →
+            Err (GpuShow.initError problem)
+
+        Ok a →
+            Ok a
+
+
+with : String, (Adapter → List String) → List String
+with scenarios run =
+    case adapter scenarios of
+        Err why →
+            [ "adapter: " ++ why ]
+
+        Ok a →
+            run a
+
+
+channels : Int → String
+channels before = "open channels " ++ String.fromInt (GpuProbe.openChannels ⊤ - before)
+
+
+requests : ⊤ → List String
+requests ⊤ =
+    before = GpuProbe.openChannels ⊤
+    GpuHost.inject "requests-held"
+    pending = Task.spawn λ⊤ →
+        GpuShow.result (Gpu.requestAdapter Types.adapterOptions) λ_ → "adapter"
+    Task.yieldNow ⊤
+    held = channels before
+    Task.cancel pending
+    GpuHost.releaseRequest "host"
+    GpuHost.drain ⊤
+    adapterLine = "an adapter request, cancelled: " ++ held ++ ", then " ++ channels before
+
+    refusedLines = with "none" λa →
+        GpuHost.inject "requests-held"
+        refused = Task.spawn λ⊤ →
+            GpuShow.result (Gpu.Adapter.requestDevice a Types.deviceDescriptor) λ_ → "device"
+        Task.yieldNow ⊤
+        Task.cancel refused
+        GpuHost.releaseRequest "reject-operation"
+        GpuHost.drain ⊤
+        GpuHost.inject "none"
+        again = Gpu.Adapter.requestDevice a Types.deviceDescriptor
+        case again of
+            Ok device →
+                Gpu.Device.destroy device
+
+            Err _ →
+                ⊤
+        [ "a refused device request, cancelled; the adapter again: "
+            ++ GpuShow.result again λ_ → "device"
+        ]
+
+    grantedLines = with "none" λa →
+        GpuHost.inject "requests-held"
+        granted = Task.spawn λ⊤ →
+            GpuShow.result (Gpu.Adapter.requestDevice a Types.deviceDescriptor) λ_ → "device"
+        Task.yieldNow ⊤
+        Task.cancel granted
+        GpuHost.releaseRequest "host"
+        GpuHost.drain ⊤
+        GpuHost.inject "none"
+        [ "a granted device request, cancelled; the adapter again: "
+            ++ GpuShow.result (Gpu.Adapter.requestDevice a Types.deviceDescriptor) λ_ → "device"
+        ]
+    GpuHost.drain ⊤
+    settled = "after all of it: " ++ channels before
+    List.concat [ [ adapterLine ], refusedLines, grantedLines, [ settled ] ]
+
+
+waits : ⊤ → List String
+waits ⊤ =
+    before = GpuProbe.openChannels ⊤
+    with "lost-controlled" λa →
+        case Gpu.Adapter.requestDevice a Types.deviceDescriptor of
+            Err problem →
+                [ "device: " ++ GpuShow.initError problem ]
+
+            Ok device →
+                live = channels before
+                cancelled = Task.spawn λ⊤ → Gpu.Device.awaitLost device
+                kept = Task.spawn λ⊤ → Gpu.Device.awaitLost device
+                Task.yieldNow ⊤
+                Task.cancel cancelled
+                GpuHost.lose "unknown"
+                woken = GpuShow.loss (Task.join kept)
+                GpuHost.drain ⊤
+                [ "a live device: " ++ live
+                , "the waiter left woke with: " ++ woken
+                , "its loss reported: " ++ channels before
+                ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "requests", requests ), ( "waits", waits ) ]

@@ -6,7 +6,11 @@
 -- inherited member (`label`) is a field like any other. Each scalar
 -- holds only what its IDL type accepts: integral, in range, finite after
 -- rounding to 32 bits; the truncating constructors drop the fraction
--- first, as `[EnforceRange]` does, and `Size64` reaches 2⁶⁴ − 2048.
+-- first, as `[EnforceRange]` does, and `Size64` stops at 2⁵³ − 1, where
+-- Web IDL's ConvertToInt does. A sequence arm of a union holds a list
+-- whose length the host accepts: a color has exactly four values, an
+-- extent one to three, an origin at most two or three.
+import Gpu.Error as Error
 import Gpu.Flags as Flags
 import Gpu.Limits as Limits
 import Gpu.Scalar as Scalar
@@ -64,7 +68,9 @@ descriptors ⊤ =
             (Flags.buffer [ Flags.Uniform, Flags.CopyDst ])
     texture =
         Types.textureDescriptor
-            (Types.Extent3DSequence [ ok (Scalar.u32 64), ok (Scalar.u32 32) ])
+            (Types.Extent3DSequence
+                (some (Types.extent3DList [ ok (Scalar.u32 64), ok (Scalar.u32 32) ]))
+            )
             Types.Rgba8unorm
             (Flags.texture [ Flags.RenderAttachment ])
     stages = Flags.shaderStages [ Flags.VertexStage, Flags.FragmentStage ]
@@ -146,12 +152,28 @@ descriptors ⊤ =
     , "color as a sequence: "
         ++ GpuProbe.color
             (Types.ColorSequence
-                [ ok (Scalar.finiteF64 0.5)
-                , ok (Scalar.finiteF64 1.0)
-                , ok (Scalar.finiteF64 0.0)
-                , ok (Scalar.finiteF64 1.0)
-                ]
+                (some
+                    (Types.colorList
+                        [ ok (Scalar.finiteF64 0.5)
+                        , ok (Scalar.finiteF64 1.0)
+                        , ok (Scalar.finiteF64 0.0)
+                        , ok (Scalar.finiteF64 1.0)
+                        ]
+                    )
+                )
             )
+    , "a color of three values: "
+        ++ shaped
+            (Types.colorList
+                [ ok (Scalar.finiteF64 0.5), ok (Scalar.finiteF64 1.0), ok (Scalar.finiteF64 0.0) ]
+            )
+    , "an extent of no values: " ++ shaped (Types.extent3DList [])
+    , "an origin of four values: "
+        ++ shaped
+            (Types.origin3DList
+                [ ok (Scalar.u32 1), ok (Scalar.u32 2), ok (Scalar.u32 3), ok (Scalar.u32 4) ]
+            )
+    , "an origin of no values: " ++ shaped (Types.origin2DList [])
     , "color as fields: "
         ++ GpuProbe.color
             (Types.ColorFields
@@ -201,13 +223,13 @@ scalars ⊤ =
     , "i32 -2147483648: "
         ++ domain (Scalar.i32 (-2147483648)) λv → String.fromInt (Scalar.i32ToInt v)
     , "i32 2147483648: " ++ domain (Scalar.i32 2147483648) λv → String.fromInt (Scalar.i32ToInt v)
-    , "size64 2⁵³ + 2: "
-        ++ domain (Scalar.size64 9007199254740994) λv → String.fromInt (Scalar.size64ToInt v)
+    , "a domain error at its path: " ++ atPath (Scalar.u32 (-1))
+    , "size64 2⁵³ − 1: "
+        ++ domain (Scalar.size64 9007199254740991) λv → String.fromInt (Scalar.size64ToInt v)
+    , "size64 2⁵³: "
+        ++ domain (Scalar.size64 9007199254740992) λv → String.fromInt (Scalar.size64ToInt v)
     , "size64FromFloat 2⁶⁴ − 2048: "
         ++ domain (Scalar.size64FromFloat 18446744073709549568.0) λv →
-            String.fromInt (Scalar.size64ToInt v)
-    , "size64FromFloat 2⁶⁴: "
-        ++ domain (Scalar.size64FromFloat 18446744073709551616.0) λv →
             String.fromInt (Scalar.size64ToInt v)
     , "size64FromFloat 1.5: "
         ++ domain (Scalar.size64FromFloat 1.5) λv → String.fromInt (Scalar.size64ToInt v)
@@ -226,3 +248,38 @@ scalars ⊤ =
 
 main : Tea.Program
 main = GpuPage.program [ ( "descriptors", descriptors ), ( "scalars", scalars ) ]
+
+
+some : Maybe a → a
+some m =
+    case m of
+        Just v →
+            v
+
+        Nothing →
+            Debug.todo "a list of a length the host refuses"
+
+
+shaped : Maybe a → String
+shaped m =
+    case m of
+        Just _ →
+            "Just"
+
+        Nothing →
+            "Nothing"
+
+
+atPath : Result Scalar.DomainError Scalar.U32 → String
+atPath r =
+    case r of
+        Ok _ →
+            "in the domain"
+
+        Err problem →
+            case Error.atPath "size.width" problem of
+                Error.NumericDomain d →
+                    d.path ++ ": " ++ String.fromFloat d.domain.actual
+
+                _ →
+                    "another input error"
