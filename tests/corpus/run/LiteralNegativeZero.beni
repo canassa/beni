@@ -1,0 +1,19 @@
+-- run: the literal `-0` is negative zero, in a development build and in
+-- `--release` (#1651). `1 / -0` is `-Infinity`, where `1 / 0` is `Infinity`;
+-- a `-0` written as `0 - 0` is positive zero and prints `Infinity`. Each
+-- form a program can write it in: an Int literal, a Float literal, one with
+-- an exponent, one in parentheses, and a named constant the release
+-- optimiser can inline.
+import Node exposing (Program)
+
+
+negativeZero : Float
+negativeZero = -0.0
+
+
+main : Program
+main =
+    [ 1 / -0, 1 / -0.0, 1 / -0.0e0, 1 / (-0), 1 / negativeZero, 1 / 0 ]
+        ▷ List.map String.fromFloat
+        ▷ String.join " "
+        ▷ Node.print
