@@ -31,12 +31,12 @@ fn selfArrival(s: *Sink) Contract.Arrival {
 
 /// The answer of frame label `cb` at slot `rel` as an arrival. In a called
 /// code, a label its creation called was answered once: what the value holds.
-pub fn answer(s: *Sink, cb: u32, rel: u32) Error!Contract.Arrival {
+pub fn answer(s: *Sink, cb: u32, rel: u32, deep: bool) Error!Contract.Arrival {
     const e = s.e;
     const last = e.w.code.called == null or cb >= e.w.last.cbs and for (e.passes.items) |p| {
         if (p[0] == cb) break true;
     } else e.fr().cbs.items[cb].inst != Ids.none_int;
-    return if (last) .{ .kind = .cb, .j = try s.labelIndex(cb), .slot = rel } else selfArrival(s);
+    return if (last) .{ .kind = .cb, .j = try s.labelIndex(cb), .slot = rel, .deep = deep } else selfArrival(s);
 }
 
 /// In a called code, an escape of an object the creation made is one of

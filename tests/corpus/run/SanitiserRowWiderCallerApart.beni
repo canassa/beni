@@ -1,0 +1,39 @@
+-- `SanitiserRowWiderCaller`'s accepted twin: `k` is at the field the wrapper names and the callback writes one the
+-- row keeps, so the row is told apart at the wrapper's argument, each of its steps its own kid (§2.1).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+names : { r | a : L, b : L }, { g : { r | a : L, b : L } → y } → y
+names rec o = app rec o
+
+
+closed : { a : L, b : L }, { g : { a : L, b : L } → y } → y
+closed rec o = app rec o
+
+
+deep : { r | a : L, b : { x : L } }, { g : { r | a : L, b : { x : L } } → y } → y
+deep rec o = app rec o
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y1 = names { a = [], b = k, c = [ 2 ] } { g = λs → List.push s.c 1 }
+    y2 = deep { a = [], b = { x = k }, c = [ 2 ] } { g = λs → List.push s.c 1 }
+    Node.print (show y1 ++ show y2 ++ show k)

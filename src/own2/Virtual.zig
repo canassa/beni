@@ -20,26 +20,24 @@ pub fn make(f: *Value.Frame, ctx: WalkContext.Context, q: u32, l: Contract.Label
     const gpa = f.gpa;
     const call = f.calls.items[q];
     const sig = try ctx.codeSig(ctx.ctx, code);
-    // The supplies and the answer at the call site's function type, never
-    // the code's own: a polymorphic code (`a → a`) has a type variable's
-    // place, which no step below it can name (`.values` of an `R → R` label).
-    // The site is the argument's instruction, else the type the label's
-    // origin call has its callee at (a capture has no instruction at the
-    // call, #1758). Where neither is to hand, a code with such a place is
-    // unknown.
+    // The supplies and the answer at the call site's function type, the
+    // argument's instruction's. Else at the code's own type, unless a
+    // polymorphic code (`a → a`) has a type variable's place there, which no
+    // step below it can name (`.values` of an `R → R` label). Then at the type
+    // the label's origin call has its callee at (a capture has no instruction
+    // at the call, #1758): a callee's view, whose row stands for what the code
+    // names (§2.1, #2172). Where neither is to hand, such a code is unknown.
     var site: std.ArrayList(PlaceId) = .empty;
     defer site.deinit(gpa);
     var site_result: ?PlaceId = if (f.slots.relWords(l.slot).len == 0 and l.j < call.arg_insts.len) try ctx.siteSig(ctx.ctx, call.arg_insts[l.j], &site) else null;
-    if (site_result == null or site.items.len != sig.own) {
+    var at_site = site_result != null and site.items.len == sig.own;
+    var wild = !at_site and try BelowSize.wildSig(gpa, f.places, sig.params[0..@min(sig.own, sig.params.len)], sig.result);
+    if (wild) {
         site.clearRetainingCapacity();
         site_result = try ctx.originSig(ctx.ctx, l.origin, &site);
+        at_site = site_result != null and site.items.len == sig.own;
+        wild = !at_site;
     }
-    const at_site = site_result != null and site.items.len == sig.own;
-    var wild = false;
-    if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
-        wild = wild or try BelowSize.wildBelow(gpa, f.places, p);
-    };
-    if (!at_site) wild = wild or try BelowSize.wildBelow(gpa, f.places, sig.result);
     const vi: u32 = @intCast(f.calls.items.len);
     var args: std.ArrayList(u32) = .empty;
     defer args.deinit(gpa);

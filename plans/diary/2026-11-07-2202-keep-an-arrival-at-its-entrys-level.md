@@ -1,0 +1,11 @@
+## 2026-11-07 22:02 CET — keep an arrival at its entry's level
+
+**What I did.** Took over #2175 after its adversarial review failed head `30e45a9fd7`. A supply's row and open entries are now written by the value's structure, for every value (`SplitRow`, `ByStructure`, `SupplyKey`). A row step stays at the entry's word. A row read reads the named kids it holds even when a kid has its very word. `Contract.arrivalLess` is total over `Arrival.eql`. An arrival with no record to walk is read whole, deep. §2.1 has *An arrival's level*; §2.14's G3 is corrected. Filed #2226, #2227, #2228; #2222 got its reproducers. New generator `s4u/gen/lv.mjs`, derived from the review's `rg.mjs`.
+
+**What I learned.**
+- The owner's hypothesis held: findings 3 and 4 are one cause, and #2219's payload is the same rule's other case. An arrival's words do not say its level. `π1.n…` is one text in `app rec.n o` and in `app (idr rec) o`, so no reader can separate them. The writer can, because it has the value. So the rule has a writer half (keep the level) and a reader half (where nothing says a level, whole). The payload is the reader half with no writer half.
+- "Read whole" was not whole. `Hit.open = false` with a shallow arrival read `π1.n` at `.n.z` as the record's own object, so it reached nothing below it. Every claim that whole-reading was sound rested on that word.
+- Non-convergence was real and has nothing to do with rows. `Forest.merge` treats two arrivals neither of which is less as one, and appends both if they are not `eql`. `arrivalLess` ignored `path`, so a pair told apart by `path` grew a run each round. A reader of the size limit sees only a refusal.
+- A limit printed as `REFUSED` hid a defect from three sweeps. On master r2 and r3 have 6 limit failures each, at this head 0.
+- The first version of the fix passed the review's findings and still trapped 13 closed programs. Those came from the same missing rule, in built records and updates: closed types are no shelter, because a supply at a code's own type reads an open entry at them.
+- `SplitRow` is the wrong place to stop. Writing only a parameter's record left every other value to the reader. Writing every value is what brought back the precision (`A5idrTA`, `B3builtNA`) that whole-reading gave up.

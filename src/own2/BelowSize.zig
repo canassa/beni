@@ -45,6 +45,13 @@ pub fn moreBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Plac
     return false;
 }
 
+/// Whether a type variable's or an opaque place is at or below a parameter of
+/// these or a result.
+pub fn wildSig(gpa: Allocator, places: *const Place.Table, params: []const PlaceId, result: PlaceId) Allocator.Error!bool {
+    for (params) |p| if (try wildBelow(gpa, places, p)) return true;
+    return wildBelow(gpa, places, result);
+}
+
 /// Whether a type variable's or an opaque place is at or below `p`: a
 /// place no step below it can name.
 pub fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {

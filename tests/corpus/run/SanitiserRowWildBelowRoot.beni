@@ -1,0 +1,33 @@
+-- A code with a type variable in its own type is read at the origin's type, whose row stands for the
+-- field it writes: `.b` is no step of `{ r | a : L }`, and it is read at the row, not read as nothing (§2.1).
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+hold : { r | a : L }, { g : { r | a : L } → y } → y
+hold rec o =
+    g = o.g
+    g rec
+
+
+run : L, t → String
+run k t =
+    y = hold { a = [], b = k, t = t } { g = λs → List.push s.b 1 }
+    show y
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = run k 0
+    Node.print (show k ++ n)

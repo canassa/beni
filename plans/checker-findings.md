@@ -6582,7 +6582,7 @@ conditions on master already, so that half of the row has no red fixture.
 
 ## CK-294 — `need` demands a callback answer's items when the callee writes only the outer list (2026-10-25)
 
-**Issue:** #188. **Fixture:** `tests/pending/ownership/NeedOuterOnly.beni`. `pushOuter f = List.push (f
+**Issue:** #188. **Fixture:** `tests/corpus/ownership/NeedOuterOnly.beni`, moved from `tests/pending/` by #2116, where v2 passes it. `pushOuter f = List.push (f
 ⊤) [ 0 ]` and `pushOuter λ⊤ → [ xs, xs ]`, with `xs` read after, is safe: only the fresh outer list is
 written. `need` records no written path, so the call-site demand is deep and the lambda is refused
 `need`. R-5.2.8 accepts it. A fresh control stays accepted; a callback that answers the caller's own

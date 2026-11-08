@@ -1,0 +1,1 @@
+A lambda that calls a writer of its function's answer, stored (ownership-v2.md §2.11.3): built again under --ownership=v2 and the sanitiser; each write is refused.

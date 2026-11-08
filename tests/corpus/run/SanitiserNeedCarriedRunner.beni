@@ -1,0 +1,42 @@
+-- A recursive runner over closures that capture a writer of its function's
+-- answer (`ownership-v2.md` §2.11.3, *A value that carries a need*): `runAll`
+-- reads each from a list it is handed, so it runs them as unknown code, and
+-- each writer answers the same list, written twice. Refused where the writer
+-- is made. Without the rule, the second run edits what the first answered.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+appE : Dict Int (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+appE o k =
+    case Dict.get o 1 of
+        Just h →
+            (h ⊤) λ⊤ → k
+
+        Nothing →
+            []
+
+
+runAll : List (⊤ → ((⊤ → List Int) → List Int)), List Int → List Int
+runAll fs k =
+    case fs of
+        [ h, …rest ] →
+            x = (h ⊤) λ⊤ → k
+            if List.isEmpty rest then x else runAll rest k
+
+        _ →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    wr = λs → List.push (s ⊤) 2
+    y = runAll [ λ⊤ → wr, λ⊤ → wr ] [ 7 ]
+    Node.print (show y ++ "|" ++ show k)

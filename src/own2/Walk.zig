@@ -111,6 +111,16 @@ pub const Demand = struct {
     kept: bool = false,
     /// A `once` code's capture written where it may run again: refused `once`.
     many: bool = false,
+    /// A label's supply judged (§2.11.3): an answer in it is unknown code's, a need does not touch it.
+    supplied: bool = false,
+    /// A need no code discharges: refused `need` (§2.11.3).
+    need: bool = false,
+    /// A fresh answer's need: judged, with no line of its own.
+    quiet: bool = false,
+    /// A need met by a fresh answer: a comparison may write it (§2.11.3).
+    fresh_answer: bool = false,
+    /// A need below the root: the virtual call whose result separation it asks.
+    res_of: u32 = none,
     /// A cell operation on a `◆` slot (`Eval.cellWrite`): never `once`.
     cell: bool = false,
     /// A write grafted at the frame's parameter (`Graft`, §2.11.2): its

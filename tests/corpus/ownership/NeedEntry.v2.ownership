@@ -1,0 +1,18 @@
+module NeedEntry
+  21:36 List.push <call>: accepted call
+  35:8 Tea.sandbox <record>: rejected need: Tea.sandbox runs a function that edits what another returns, and nothing checks that yet
+  35:53 value NeedEntry.update: rejected need: a closure that leaves edits what it returns, which may be a list it does not own
+  account update: source 14, baseline 397, growth 0 of 65536, total 397, continuation 386 of 14336, demands 43, walks 1, rounds 1, liveness_index lanes 5, transfer_settlement lanes 1
+  summary update: res ε fresh, .get π2.get, .out cb(π2.get@10); nondup no; answers ⇐ sel π2{.get!!}; reads π2ε*; label π2.get@10 once need ε [1: sep yes below yes]
+  summary update@.get: res ε cb(π3.get@13); nondup yes; reads π1ε*; label π3.get@13 once [1: sep yes below yes]
+  account view: source 10, baseline 151, growth 0 of 65536, total 151, continuation 150 of 10240, demands 0, walks 1, rounds 1, transfer_settlement lanes 1
+  summary view: res ε fresh ⊤, ε… ⊤; nondup no
+  account shared: source 13, baseline 427, growth 0 of 65536, total 427, continuation 421 of 13312, demands 0, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
+  summary shared: res ε fresh, .get fresh, .out = .get; nondup yes
+  summary shared@.get: res ε π3ε*; nondup yes; reads π1ε* π3ε*
+  account main: source 11, baseline 276, growth 0 of 65536, total 276, continuation 274 of 11264, demands 6, walks 2, rounds 2, transfer_settlement lanes 2
+  summary main: res ε ⊤, ε… ⊤; nondup no
+  block: 20 bytes, hash 5f2de3e8fe478b60
+  demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause need 2

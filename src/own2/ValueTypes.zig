@@ -161,4 +161,6 @@ pub const Leaf = struct {
     routes: u32 = 0,
     /// A shallow target at its position's own slot only.
     at_pos: bool = false,
+    /// An answer read whole, its slot and all below it (§2.1, *An arrival's level*).
+    whole: bool = false,
 };

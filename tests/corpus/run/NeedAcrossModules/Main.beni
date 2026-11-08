@@ -1,0 +1,35 @@
+-- A need read from an imported block, accepted: `ownership/NeedAcrossModules`
+-- has the refusals. Every write lands on an object only the callee reaches.
+import List
+import Node exposing (Program)
+import String
+import Writers
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows xss = String.join (List.map xss show) ";"
+
+
+outerOnly : ⊤ → String
+outerOnly ⊤ =
+    xs = [ 5 ]
+    out = Writers.pushOuter λ⊤ → [ xs, xs ]
+    shows out ++ "|" ++ show xs
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ show (Writers.push1 λ⊤ → [ 1 ])
+            , show (Writers.pushOf (λl → l) [ 2 ])
+            , show (Writers.fwd (λ⊤ → [ 3 ]) ⊤)
+            , shows (Writers.go [ [ 4 ] ] (λl → l) [])
+            , outerOnly ⊤
+            ]
+            "\n"
+        )

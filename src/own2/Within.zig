@@ -54,7 +54,7 @@ pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got:
     // Labels by identity; `cb` arrivals compared through them.
     for (t.labelsOf(g.labels)) |l| {
         const m = findLabel(t, c, l) orelse return false;
-        if (@backingInt(l.calls) > @backingInt(m.calls) or (l.answer_left and !m.answer_left)) return false;
+        if (@backingInt(l.calls) > @backingInt(m.calls) or (l.answer_left and !m.answer_left) or !effectsWithin(t, slots, l.need, m.need)) return false;
         for (t.suppliesOf(l.supplies)) |s| {
             const u = for (t.suppliesOf(m.supplies)) |u| {
                 if (u.k == s.k) break u;

@@ -1,0 +1,46 @@
+-- A wrapper names a field its callee leaves in the row. The row's arrival at the wrapper is `.b` of the wrapper's
+-- parameter, and a caller's `.b` is that, not `.b` of it, however deep the caller reads (§2.1).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+app : { r | a : L }, { g : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    g rec
+
+
+names : { r | a : L, b : L }, { g : { r | a : L, b : L } → y } → y
+names rec o = app rec o
+
+
+closed : { a : L, b : L }, { g : { a : L, b : L } → y } → y
+closed rec o = app rec o
+
+
+deep : { r | a : L, b : { x : L } }, { g : { r | a : L, b : { x : L } } → y } → y
+deep rec o = app rec o
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 = names { a = [], b = k1 } { g = λs → List.push s.b 1 }
+    k2 = [ 2 ]
+    y2 = closed { a = [], b = k2 } { g = λs → List.push s.b 1 }
+    k3 = [ 3 ]
+    y3 = deep { a = [], b = { x = k3 } } { g = λs → List.push s.b.x 1 }
+    k4 = [ 4 ]
+    y4 = names { a = [], b = k4 } { g = λs → s }
+    n4 = List.push y4.b 1
+    Node.print
+        (show y1 ++ show k1 ++ show y2 ++ show k2 ++ show y3 ++ show k3 ++ show n4 ++ show k4)
