@@ -53,7 +53,7 @@ clearAndCopy t v out enc =
         )
 
 
-paint : Buffer, Frame → Result InputError ⊤
+paint : Buffer, Frame → Result Error.Error ⊤
 paint out frame =
     t = Frame.getCurrentTexture frame?
     v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?

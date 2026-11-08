@@ -83,8 +83,9 @@ browser's WebGPU API with types. Only the main thread has them now.
 1. **Map a buffer to read or write its memory.** `Gpu.Buffer.map buffer Gpu.Buffer.mapRead` gives a
    `Mapping`. `Gpu.Buffer.getMappedRange` gives a `MappedRange` of it. `Gpu.Buffer.withMapped`
    maps, calls your function, and unmaps after it, also when it returns `Err` or is cancelled.
-2. **A mapping ends at `unmap`, at `destroy` and at the next `map`.** After that, the mapping and
-   all its ranges give `ResourceExpired`, also where you kept a copy of them.
+2. **A mapping ends at `unmap`, at `destroy`, at the next `map`, and when its device is
+   destroyed.** After that, the mapping and all its ranges give `ResourceExpired`, also where
+   you kept a copy of them.
 3. **A buffer made with `mappedAtCreation = Value True` is mapped.** Get its mapping with
    `Gpu.Buffer.currentMapping`, or use `Gpu.Device.createMappedBuffer`. You can write that mapping
    without the `MapWrite` usage. Its size must be a multiple of 4 (`MappedSizeUnaligned`).
@@ -96,7 +97,8 @@ browser's WebGPU API with types. Only the main thread has them now.
    `readWord64` and `writeWord64` keep all 64 bits: use them for `u64` and `i64` values.
 6. **Binary data for the GPU must have a fixed length.** A resizable `ArrayBuffer` or a growable
    `SharedArrayBuffer` gives `ResizableBacking`, also through a view and also when it never
-   resized. Detached data gives `DetachedSource`.
+   resized. Detached data gives `DetachedSource`. `Gpu.MappedRange.writeBytes` is a copy in
+   CPU memory: it takes any attached storage.
 7. **`Gpu.Queue.writeBuffer` counts `dataOffset` and `size` in elements of the data**, as the
    browser does: bytes for an `ArrayBuffer` or a `DataView`, elements for a typed array.
 8. **Each `Gpu.Queue.submit` gives one receipt.** `Gpu.Submission.done` waits for the work of that
@@ -105,89 +107,9 @@ browser's WebGPU API with types. Only the main thread has them now.
    `currentMapping`, the mapped range reads and writes, and `Gpu.Submission.done`. A checked
    operation (`map`, `createBuffer`, `writeBuffer`, `submit`) returns `DeviceLeased`.
 
-## Compute
+## Encoding, compute and rendering
 
-1. **Encode in one callback.** `Gpu.Encode.run device descriptor λencoder → …` gives the
-   callback a `CommandEncoder`. The callback cannot suspend. Use `Gpu.ComputePass.with` for a
-   pass. The result has your value and the `CommandBuffer`. Submit it with `Gpu.Queue.submit`.
-2. **An `Ok` from a command means it was issued, not that the device accepted it.** The
-   `Result` of `Encode.run` tells you that.
-3. **The first refusal stops the session.** Later commands give `SessionStopped`. `Encode.run`
-   returns the first refusal, also when your callback ignored it.
-4. **A command buffer is used once.** A second submit gives `CommandBufferSubmitted`.
-5. **`Gpu.Batch.run` checks many synchronous operations together.** What the batch makes is
-   provisional: the batch can use it at once; other code gets it after the batch is accepted.
-   A failed batch rejects all that it made. A batch is not a transaction: a write it did stays.
-6. **The GPU memory is little-endian.** Read a query result with `readWord64`.
-
-## Rendering
-
-1. **A render pass is a callback too.** `Gpu.RenderPass.with encoder descriptor body` begins
-   the pass, calls `body` and ends the pass. Write `body` as a named function: a `?` cannot be
-   in a lambda. While the pass is open, an encoder command gives `EncoderLocked`. After `end`, a
-   pass command gives `PassEnded`.
-2. **`draw` takes a record.** `Gpu.RenderPass.vertices count` and `Gpu.RenderPass.indices count`
-   give the arguments with the browser's defaults. Change a field with a record update:
-   `{ (Gpu.RenderPass.vertices six) | instanceCount = two }`.
-3. **An attachment must be usable.** A view of a destroyed texture gives `ResourceDestroyed`, and
-   a view of another device gives `WrongDevice`.
-4. **An occlusion query needs a query set in the pass descriptor.** Without one,
-   `beginOcclusionQuery` gives `QuerySetMissing`. A second begin gives `QueryActive`. An end with
-   no open query gives `QueryInactive`.
-5. **`executeBundles` clears the pass state.** After it, set the pipeline, the bind groups and
-   the buffers again before the next draw.
-6. **A format that needs a feature is checked first.** A pipeline, a view or a bundle encoder
-   that names such a format on a device without the feature gives `UnsupportedCapability`.
-7. **A batch can make render resources.** `Gpu.Batch.createView`, `createRenderPipeline`,
-   `getRenderBindGroupLayout` and `encodeBundle` are the batch forms.
-8. **An occlusion query ends before its pass.** A pass that ends with an open query gives
-   `QueryActive`. An index used a second time in one pass gives `QueryReused`.
-
-```beni platform=browser-tea
-import Gpu.Device
-import Gpu.Encode as Encode
-import Gpu.Error as Error exposing (InputError)
-import Gpu.Handle exposing (CommandBuffer, Device, RenderPass, RenderPipeline, TextureView)
-import Gpu.RenderPass as RenderPass
-import Gpu.Scalar as Scalar
-import Gpu.Types as Types
-
-
-wgsl : String
-wgsl =
-    "@vertex fn vs(@builtin(vertex_index) v : u32) -> @builtin(position) vec4f {\n"
-        ++ "    return vec4f(f32(v % 2u), f32(v / 2u), 0.0, 1.0);\n"
-        ++ "}\n"
-        ++ "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
-
-
-pipeline : Device → Result Error.Error RenderPipeline
-pipeline device =
-    module = (Gpu.Device.createShaderModule device (Types.shaderModuleDescriptor wgsl))?
-    base = Types.renderPipelineDescriptor Types.Auto (Types.vertexState module)
-    fragment = Types.fragmentState module [ Just (Types.colorTargetState Types.Rgba8unorm) ]
-    Gpu.Device.createRenderPipeline device { base | fragment = Types.Value fragment }
-
-
-triangle : RenderPipeline, RenderPass → Result InputError ⊤
-triangle p pass =
-    RenderPass.setPipeline pass p?
-    three = Result.mapError (Scalar.u32 3) (Error.atPath "vertexCount" _)?
-    RenderPass.draw pass (RenderPass.vertices three)
-
-
-draw : Device, TextureView → Result Error.Error CommandBuffer
-draw device target =
-    p = pipeline device?
-    color =
-        Types.renderPassColorAttachment (Types.AttachmentTextureView target) Types.Clear Types.Store
-    pass = Types.renderPassDescriptor [ Just color ]
-    encoded =
-        (Encode.run device Types.commandEncoderDescriptor λencoder →
-            RenderPass.with encoder pass (triangle p _)
-        )?
-    Ok encoded.commands
-```
+Encoding, batches, compute and render passes are in `references/webgpu-render.md`.
 
 ## Canvases and frames
 

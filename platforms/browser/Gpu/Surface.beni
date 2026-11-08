@@ -13,8 +13,8 @@ import Browser.Canvas as Canvas
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Flags as Flags
+import Gpu.Formats as Formats
 import Gpu.Handle as Handle
-import Gpu.Make as Make
 import Gpu.Native as Native
 import Gpu.Types as Types
 import Js
@@ -101,7 +101,7 @@ configure surface configuration =
                 []
     -- A refusal before the native call changes nothing of the surface.
     Engine.admit device "configure"?
-    Make.formatsAvailable device [ configuration.format, …views ]?
+    Formats.formatsAvailable device [ configuration.format, …views ]?
     converted = Native.canvasConfiguration configuration
     Engine.nextGeneration s
     Js.set s "device" Js.null

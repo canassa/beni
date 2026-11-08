@@ -113,6 +113,9 @@ pub setBindGroupSlice :
 setBindGroupSlice native at index bindGroup offsets start length =
     s = at.session
     g = group s bindGroup?
+    -- `dynamicOffsetsDataStart` is a `GPUSize64`, the length a `GPUSize32`.
+    size64 s start "dynamicOffsetsDataStart"?
+    Session.check s (u32 length "dynamicOffsetsDataLength")?
     case offsets of
         Binary.Uint32Array data →
             case Memory.sourceInfo (Binary.ViewOf offsets) "dynamicOffsetsData" of
@@ -187,7 +190,8 @@ setImmediates native at interface rangeOffset data dataOffset size =
 
 immediatesPreflight : Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
 immediatesPreflight rangeOffset data dataOffset size =
-    _ = Memory.size64 rangeOffset "rangeOffset"?
+    -- `rangeOffset` is a `GPUSize32`.
+    u32 rangeOffset "rangeOffset"?
     Memory.aligned rangeOffset 4 "rangeOffset"?
     info = Memory.sourceInfo data "data"?
     _ = Memory.size64 dataOffset "dataOffset"?
@@ -306,3 +310,14 @@ drawIndirect native at method buffer offset =
     size64 s offset "indirectOffset"?
     Js.call native method [ buffer, Js.from offset ] ▷ ignore
     Ok ⊤
+
+
+-- A value at `path` as a `GPUSize32` (`unsigned long`) accepts it.
+u32 : Int, String → Result InputError ⊤
+u32 value path =
+    case Scalar.u32 value of
+        Ok _ →
+            Ok ⊤
+
+        Err domain →
+            Err (Error.atPath path domain)

@@ -95,5 +95,4 @@ pub createView : Handle.Texture, Types.TextureViewDescriptor → Result Error.Er
 createView texture descriptor =
     native = Js.from texture
     device = Js.get (Engine.recordOf native) "native"
-    Result.map (Make.checked device (Make.textureView device Js.null native descriptor)) λv →
-        Js.to v
+    Result.map (Make.checked (Make.textureView device Js.null native descriptor)) λv → Js.to v

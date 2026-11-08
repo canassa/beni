@@ -120,6 +120,14 @@ slices ⊤ = GpuKit.with "none" λd →
                 ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing resizable 0 1)
             ]
         , inPass λpass →
+            [ "start -1: "
+                ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing (u32View 2) (-1) 1)
+            ]
+        , inPass λpass →
+            [ "length -1: "
+                ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing (u32View 2) 0 (-1))
+            ]
+        , inPass λpass →
             [ "elements 1+1 of 2, unbound: "
                 ++ result (ComputePass.setBindGroupSlice pass (u32 0) Nothing (u32View 2) 1 1)
             ]
@@ -139,6 +147,10 @@ immediates ⊤ =
         List.concat
             [ inPass λpass →
                 [ "range offset 2: " ++ result (ComputePass.setImmediates pass 2 data 0 Nothing) ]
+            , inPass λpass →
+                [ "range offset 2³²: "
+                    ++ result (ComputePass.setImmediates pass 4294967296 data 0 Nothing)
+                ]
             , inPass λpass →
                 [ "6 bytes: " ++ result (ComputePass.setImmediates pass 0 data 2 Nothing) ]
             , inPass λpass →

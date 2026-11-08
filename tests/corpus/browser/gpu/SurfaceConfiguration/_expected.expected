@@ -30,7 +30,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
     </ol>
   </main>
 </body>
@@ -49,7 +49,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -73,7 +73,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -101,7 +101,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -130,7 +130,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -160,7 +160,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -172,7 +172,7 @@
       <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
-      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"leased: Err BatchFailed frame leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
     </ol>
   </main>
 </body>
@@ -191,7 +191,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -203,7 +203,7 @@
       <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
-      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"leased: Err BatchFailed frame leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
       <li>"receipts: Ok 1 receipts"</li>
     </ol>
@@ -224,7 +224,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -236,7 +236,7 @@
       <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
-      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"leased: Err BatchFailed frame leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
       <li>"receipts: Ok 1 receipts"</li>
       <li>"bitmap renderer first: a bitmap renderer"</li>
@@ -261,7 +261,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -273,14 +273,14 @@
       <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
-      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"leased: Err BatchFailed frame leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
       <li>"receipts: Ok 1 receipts"</li>
       <li>"bitmap renderer first: a bitmap renderer"</li>
       <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
       <li>"WebGPU first: Ok surface"</li>
       <li>"then a bitmap renderer: ContextUnavailable"</li>
-      <li>"a frame on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+      <li>"a frame on a destroyed device: Err BatchFailed frame lost: DeviceLost Destroyed observed 0; issued [], refused []"</li>
     </ol>
   </main>
 </body>
@@ -299,7 +299,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -311,14 +311,14 @@
       <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
-      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"leased: Err BatchFailed frame leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
       <li>"receipts: Ok 1 receipts"</li>
       <li>"bitmap renderer first: a bitmap renderer"</li>
       <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
       <li>"WebGPU first: Ok surface"</li>
       <li>"then a bitmap renderer: ContextUnavailable"</li>
-      <li>"a frame on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+      <li>"a frame on a destroyed device: Err BatchFailed frame lost: DeviceLost Destroyed observed 0; issued [], refused []"</li>
       <li>"a format the device lacks: Err UnsupportedCapability"</li>
       <li>"a leased device: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"a frame after both: Ok 0 receipts"</li>
@@ -341,7 +341,7 @@
     <button id="refusalsKeep">"refusalsKeep"</button>
     <button id="concurrent">"concurrent"</button>
     <ol>
-      <li>"acquired unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
+      <li>"acquired unconfigured: Err BatchFailed frame inside: CanvasFailed CanvasUnconfigured; issued [getCurrentTexture], refused []"</li>
       <li>"before: Ok none"</li>
       <li>"frame before: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"after: Ok rgba8unorm, usage 17"</li>
@@ -353,14 +353,14 @@
       <li>"not a canvas: Err CanvasFailed WrongElementKind refused"</li>
       <li>"configure: Err CanvasFailed CanvasConfigurationRejected"</li>
       <li>"context: Err CanvasFailed CanvasContextUnavailable"</li>
-      <li>"leased: Err InvalidInput SessionState DeviceLeased"</li>
+      <li>"leased: Err BatchFailed frame leased: InvalidInput SessionState DeviceLeased; issued [], refused []"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
       <li>"receipts: Ok 1 receipts"</li>
       <li>"bitmap renderer first: a bitmap renderer"</li>
       <li>"then WebGPU: Err CanvasFailed CanvasContextUnavailable"</li>
       <li>"WebGPU first: Ok surface"</li>
       <li>"then a bitmap renderer: ContextUnavailable"</li>
-      <li>"a frame on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
+      <li>"a frame on a destroyed device: Err BatchFailed frame lost: DeviceLost Destroyed observed 0; issued [], refused []"</li>
       <li>"a format the device lacks: Err UnsupportedCapability"</li>
       <li>"a leased device: Err InvalidInput SessionState DeviceLeased"</li>
       <li>"a frame after both: Ok 0 receipts"</li>

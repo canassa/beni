@@ -125,7 +125,7 @@ marker : RenderBundleEncoder → Result InputError ⊤
 marker b = BundleEncoder.insertDebugMarker b "in a batch"
 
 
-batchRender : RenderPipeline, Batch → Result InputError ⊤
+batchRender : RenderPipeline, Batch → Result Error.Error ⊤
 batchRender p b =
     t =
         Batch.createTexture
@@ -316,7 +316,7 @@ depthAttachments ⊤ = GpuKit.with "none" λd →
 
 
 -- A batch that encodes a bundle, keeps it, then is refused.
-refusedBatch : Batch → Result InputError ⊤
+refusedBatch : Batch → Result Error.Error ⊤
 refusedBatch b =
     made =
         Batch.encodeBundle b (Types.renderBundleEncoderDescriptor [ Just Types.Rgba8unorm ]) marker?

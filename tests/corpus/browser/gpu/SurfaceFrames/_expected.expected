@@ -99,7 +99,7 @@
       <li>"wait: Ok done"</li>
       <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
       <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
-      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized in the frame: Err BatchFailed frame resize: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"next frame: Ok width 8"</li>
     </ol>
   </main>
@@ -125,9 +125,9 @@
       <li>"wait: Ok done"</li>
       <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
       <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
-      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized in the frame: Err BatchFailed frame resize: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"next frame: Ok width 8"</li>
-      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"unconfigured in the frame: Err BatchFailed frame unconfigure: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"configure again: Ok done"</li>
       <li>"frame after: Ok 1 receipts"</li>
@@ -155,9 +155,9 @@
       <li>"wait: Ok done"</li>
       <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
       <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
-      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized in the frame: Err BatchFailed frame resize: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"next frame: Ok width 8"</li>
-      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"unconfigured in the frame: Err BatchFailed frame unconfigure: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"configure again: Ok done"</li>
       <li>"frame after: Ok 1 receipts"</li>
@@ -189,9 +189,9 @@
       <li>"wait: Ok done"</li>
       <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
       <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
-      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized in the frame: Err BatchFailed frame resize: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"next frame: Ok width 8"</li>
-      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"unconfigured in the frame: Err BatchFailed frame unconfigure: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"configure again: Ok done"</li>
       <li>"frame after: Ok 1 receipts"</li>
@@ -224,9 +224,9 @@
       <li>"wait: Ok done"</li>
       <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
       <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
-      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized in the frame: Err BatchFailed frame resize: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"next frame: Ok width 8"</li>
-      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"unconfigured in the frame: Err BatchFailed frame unconfigure: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"configure again: Ok done"</li>
       <li>"frame after: Ok 1 receipts"</li>
@@ -235,8 +235,8 @@
       <li>"wait: Ok done"</li>
       <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
-      <li>"resized to its own size: Err InvalidInput ResourceExpired texture"</li>
-      <li>"resized and back: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized to its own size: Err BatchFailed frame same: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
+      <li>"resized and back: Err BatchFailed frame undone: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
     </ol>
   </main>
 </body>
@@ -261,9 +261,9 @@
       <li>"wait: Ok done"</li>
       <li>"texture after its frame: Err InvalidInput ResourceExpired texture"</li>
       <li>"view after its frame: Err InvalidInput ResourceExpired colorAttachments.view"</li>
-      <li>"resized in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized in the frame: Err BatchFailed frame resize: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"next frame: Ok width 8"</li>
-      <li>"unconfigured in the frame: Err InvalidInput ResourceExpired texture"</li>
+      <li>"unconfigured in the frame: Err BatchFailed frame unconfigure: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"frame unconfigured: Err CanvasFailed CanvasUnconfigured"</li>
       <li>"configure again: Ok done"</li>
       <li>"frame after: Ok 1 receipts"</li>
@@ -272,8 +272,8 @@
       <li>"wait: Ok done"</li>
       <li>"row 0: Ok 0 0 0 0, 0 0 0 0, 0 0 0 0, 0 0 0 0"</li>
       <li>"a microtask ran inside the frame: Ok no"</li>
-      <li>"resized to its own size: Err InvalidInput ResourceExpired texture"</li>
-      <li>"resized and back: Err InvalidInput ResourceExpired texture"</li>
+      <li>"resized to its own size: Err BatchFailed frame same: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
+      <li>"resized and back: Err BatchFailed frame undone: InvalidInput ResourceExpired texture; issued [getCurrentTexture], refused [createView]"</li>
       <li>"first device: Ok 1 receipts"</li>
       <li>"second device: Ok 1 receipts"</li>
       <li>"wait: Ok done"</li>

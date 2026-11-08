@@ -23,20 +23,20 @@ import Tea
 
 
 -- Acquire, view, keep the view, and fail.
-failing : Frame → Result InputError ⊤
+failing : Frame → Result Error.Error ⊤
 failing frame =
     t = Frame.getCurrentTexture frame?
     v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
     GpuProbe.keepView v
-    Err Error.SessionStopped
+    Err (Error.InvalidInput Error.SessionStopped)
 
 
 -- Acquire and view.
-retry : Frame → Result InputError String
+retry : Frame → Result Error.Error String
 retry frame =
     t = Frame.getCurrentTexture frame?
     fresh = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor
-    Ok (GpuShow.inputResult fresh λ_ → "view")
+    Ok (GpuShow.checked fresh λ_ → "view")
 
 
 nothing : RenderPass → Result InputError ⊤

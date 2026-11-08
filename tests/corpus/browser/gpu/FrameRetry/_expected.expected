@@ -10,7 +10,7 @@
   <main>
     <button id="run">"run"</button>
     <ol>
-      <li>"first frame: Err InvalidInput SessionStopped"</li>
+      <li>"first frame: Err BatchFailed frame first: InvalidInput SessionStopped; issued [getCurrentTexture, createView], refused []"</li>
       <li>"second frame's view: Ok Ok view"</li>
       <li>"the first frame's view: Err InvalidInput ResourceExpired colorAttachments.view"</li>
     </ol>

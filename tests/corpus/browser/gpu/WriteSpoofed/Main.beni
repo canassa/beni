@@ -1,0 +1,27 @@
+-- A defect, never a typed error (CLAUDE.md rule 9; ledger §1, §4, §7):
+-- `writeBuffer` throws a plain object named `OperationError`, not a DOMException. The page stops.
+import Binary
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (CopyDst, CopySrc, MapRead)
+import Gpu.Queue
+import Gpu.Types as Types
+import GpuKit exposing (buffer, must, zeros)
+import GpuPage
+import GpuShow
+import Tea
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "write-spoofed" λd →
+    b = must (Gpu.Device.createBuffer d (buffer 16 [ CopyDst ]))
+    w =
+        Gpu.Queue.writeBuffer
+            (Gpu.Device.queue d)
+            b
+            (Gpu.Queue.bufferWrite 0 (Binary.WholeBuffer (zeros 8)))
+    [ "write: " ++ GpuShow.checked w λ_ → "written" ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

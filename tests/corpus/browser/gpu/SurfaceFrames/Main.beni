@@ -81,7 +81,7 @@ readback d = must (Gpu.Device.createBuffer d (buffer 2048 [ MapRead, CopyDst ]))
 
 -- Clear the current texture to `fill`, copy it into `out`, submit; give
 -- the texture.
-paint : Buffer, Types.Color, Frame → Result InputError Texture
+paint : Buffer, Types.Color, Frame → Result Error.Error Texture
 paint out fill frame =
     t = Frame.getCurrentTexture frame?
     v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
@@ -149,7 +149,7 @@ draw ⊤ = GpuKit.with "none" λd →
     [ "frame: " ++ receipts result, "wait: " ++ waited result, "row 0: " ++ row out ]
 
 
-twice : Buffer, Frame → Result InputError ⊤
+twice : Buffer, Frame → Result Error.Error ⊤
 twice out frame =
     _ = paint out green frame?
     _ = paint out red frame?
@@ -166,7 +166,7 @@ manyReceipts ⊤ = GpuKit.with "none" λd →
 
 
 -- Paint, and give the texture and a view of it.
-keep : Buffer, Frame → Result InputError (Texture × TextureView)
+keep : Buffer, Frame → Result Error.Error (Texture × TextureView)
 keep out frame =
     t = paint out green frame?
     v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
@@ -197,7 +197,7 @@ expiry ⊤ = GpuKit.with "none" λd →
 
 
 -- Acquire, then `change`, then use the texture.
-changed : (⊤ → ⊤), Frame → Result InputError ⊤
+changed : (⊤ → ⊤), Frame → Result Error.Error ⊤
 changed change frame =
     t = Frame.getCurrentTexture frame?
     change ⊤
@@ -264,7 +264,7 @@ offscreen ⊤ = GpuKit.with "none" λd →
             ]
 
 
-probe : Buffer, Frame → Result InputError Bool
+probe : Buffer, Frame → Result Error.Error Bool
 probe out frame =
     GpuHost.armMicrotask ⊤
     _ = paint out green frame?

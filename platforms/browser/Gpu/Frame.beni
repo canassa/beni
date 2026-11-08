@@ -15,7 +15,7 @@
 --!         → Result Gpu.Error.Error { value : ⊤, submissions : List Gpu.Handle.Submission }
 --!     draw surface pipeline = Gpu.Frame.submit surface "draw" (drawFrame pipeline _)
 --!
---!     drawFrame : Gpu.Handle.RenderPipeline, Gpu.Handle.Frame → Result Gpu.Error.InputError ⊤
+--!     drawFrame : Gpu.Handle.RenderPipeline, Gpu.Handle.Frame → Result Gpu.Error.Error ⊤
 --!     drawFrame pipeline frame =
 --!         target = Gpu.Frame.getCurrentTexture frame?
 --!         view = Gpu.Batch.createView (Gpu.Frame.batch frame) target Gpu.Types.textureViewDescriptor?
@@ -50,7 +50,7 @@ type alias V =
 pub submit :
       Handle.Surface
     , String
-    , sync (Handle.Frame → Result InputError a)
+    , sync (Handle.Frame → Result Error.Error a)
     → Result Error.Error { value : a, submissions : List Handle.Submission }
 submit surface name body =
     native = Js.from surface
@@ -65,7 +65,7 @@ submit surface name body =
 
 
 -- The batch is the frame: it knows its surface, and keeps its receipts.
-inFrame : V, V, sync (Handle.Frame → Result InputError a), Handle.Batch → Result InputError a
+inFrame : V, V, sync (Handle.Frame → Result Error.Error a), Handle.Batch → Result Error.Error a
 inFrame surface receipts body b =
     frame = Js.from b
     Js.set frame "surface" surface
@@ -79,27 +79,36 @@ pub batch : Handle.Frame → Handle.Batch
 batch frame = Js.to (Js.from frame)
 
 
--- The frame may go on: live, and no failure latched.
-open : V → Result InputError ⊤
-open frame =
-    if not (Js.to (Js.get frame "live")) then
-        Err (Error.SessionState Error.SessionEnded)
-    else if not (Js.isNull (Js.get frame "failure")) then
-        Err Error.SessionStopped
-    else
-        Ok ⊤
+-- The frame may go on: live, and no failure latched. Each operation is
+-- listed as issued or refused, as the batch's are, for its failure report.
+open : V, String → Result Error.Error ⊤
+open frame name =
+    refusal =
+        if not (Js.to (Js.get frame "live")) then
+            Just (Error.SessionState Error.SessionEnded)
+        else if not (Js.isNull (Js.get frame "failure")) then
+            Just Error.SessionStopped
+        else
+            Nothing
+    case refusal of
+        Just problem →
+            Js.call (Js.get frame "refused") "push" [ Js.from name ] ▷ ignore
+            Err (Error.InvalidInput problem)
+
+        Nothing →
+            Js.call (Js.get frame "issued") "push" [ Js.from name ] ▷ ignore
+            Ok ⊤
 
 
 --| The surface's current texture, for this frame only: it expires when the
 --| frame ends, when the surface is configured again or unconfigured, and
 --| when its canvas changes size (`ResourceExpired`), as every view of it
 --| does. The host's refusal of an unconfigured surface (ledger §6) is
---| latched as `CanvasFailed CanvasUnconfigured`, and the call gives
---| `SessionStopped`.
-pub getCurrentTexture : Handle.Frame → Result InputError Handle.Texture
+--| `CanvasFailed CanvasUnconfigured`, latched for the frame.
+pub getCurrentTexture : Handle.Frame → Result Error.Error Handle.Texture
 getCurrentTexture frame =
     b = Js.from frame
-    open b?
+    open b "getCurrentTexture"?
     surface = Js.get b "surface"
     s = Engine.recordOf surface
 
@@ -110,7 +119,9 @@ getCurrentTexture frame =
             λ_ → Err ⊤
     case current of
         Err _ →
-            Session.stopped b (Error.CanvasFailed Error.CanvasUnconfigured)
+            problem = Error.CanvasFailed Error.CanvasUnconfigured
+            Session.latch b problem
+            Err problem
 
         Ok texture →
             if Engine.known texture then
@@ -127,7 +138,7 @@ getCurrentTexture frame =
             -- Accepted or rejected with the frame, never destroyed: the
             -- canvas owns it.
             Js.call (Js.get b "made") "push"
-                [ Js.object [ ( "made", texture ), ( "discard", Js.from λ_ → ⊤ ) ] ]
+                [ Js.object [ ( "made", texture ), ( "op", Js.null ) ] ]
                 ▷ ignore
             Engine.expiresWith texture b s
             Ok (Js.to texture)
@@ -138,13 +149,13 @@ pub encode :
       Handle.Frame
     , Types.CommandEncoderDescriptor
     , sync (Handle.CommandEncoder → Result InputError a)
-    → Result InputError { value : a, commands : Handle.CommandBuffer }
+    → Result Error.Error { value : a, commands : Handle.CommandBuffer }
 encode frame descriptor body = Batch.encode (batch frame) descriptor body
 
 
 --| Submit in the frame, on its device's queue: one native submit, whose
 --| receipt the frame's result lists (§8.3).
-pub submitCommands : Handle.Frame, List Handle.CommandBuffer → Result InputError Handle.Submission
+pub submitCommands : Handle.Frame, List Handle.CommandBuffer → Result Error.Error Handle.Submission
 submitCommands frame commands =
     queue = Js.get (Js.get (Js.from frame) "native") "queue"
     Batch.submit (batch frame) (Js.to queue) commands

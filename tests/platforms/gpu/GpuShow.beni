@@ -6,6 +6,7 @@ import Gpu
 import Gpu.Error as Error
 import Gpu.Flags as Flags
 import Gpu.Limits as Limits
+import Gpu.MappedRange
 import Gpu.Types as Types
 
 
@@ -154,8 +155,21 @@ error problem =
         Error.HostOperationRejected o →
             "HostOperationRejected " ++ operationFailure o
 
-        Error.AllocationFailed a →
-            "AllocationFailed " ++ String.fromInt a.bytes
+        Error.ShaderRejected f →
+            "ShaderRejected, "
+                ++ String.fromInt (List.length (List.filter f.messages λm → m.type_ == Types.Error))
+                ++ " error messages"
+
+        Error.BatchFailed report →
+            "BatchFailed "
+                ++ report.batch
+                ++ ": "
+                ++ error report.failure
+                ++ "; issued ["
+                ++ String.join report.issued ", "
+                ++ "], refused ["
+                ++ String.join report.unissued ", "
+                ++ "]"
 
         Error.RelatedFailures set →
             "RelatedFailures ["
@@ -341,6 +355,12 @@ observation o =
         Error.ObservedHostRejection _ →
             "HostRejection"
 
+        Error.ObservedRefusal i →
+            "Refusal " ++ inputError i
+
+        Error.ObservedUnsupported _ →
+            "Unsupported"
+
 
 --| A checked result's constructor, with `f` for an `Ok` value.
 pub checked : Result Error.Error a, (a → String) → String
@@ -371,3 +391,16 @@ canvasError c =
 
         Error.CanvasConfigurationRejected _ →
             "CanvasConfigurationRejected"
+
+--| A `readBytes` result's constructor, with `f` for an `Ok` value.
+pub readResult : Result Gpu.MappedRange.ReadError a, (a → String) → String
+readResult r f =
+    case r of
+        Ok a →
+            "Ok " ++ f a
+
+        Err (Gpu.MappedRange.Refused problem) →
+            "Err Refused " ++ inputError problem
+
+        Err (Gpu.MappedRange.Allocation _) →
+            "Err Allocation"

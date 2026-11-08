@@ -1,0 +1,106 @@
+--! Texture formats a feature gates (`docs/design/webgpu.md` §3; ledger §3,
+--! §5): which feature a format needs, the refusal of a format the device
+--! lacks before any native call, and the classifier of a native call whose
+--! content timeline checks those features. Shared by `Gpu.Make` and
+--! `Gpu.Session`; an application never needs it, and its signatures name
+--! `Js.Value`.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Feature as Feature
+import Gpu.Types as Types
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+--| The feature a texture format needs, if any (the specification's
+--| texture format capability tables).
+pub formatFeature : Types.TextureFormat → Maybe Types.FeatureName
+formatFeature format =
+    name = Types.textureFormatToString format
+    if String.startsWith name "bc" then
+        Just Types.FeatureTextureCompressionBc
+    else if String.startsWith name "etc2" || String.startsWith name "eac" then
+        Just Types.FeatureTextureCompressionEtc2
+    else if String.startsWith name "astc" then
+        Just Types.FeatureTextureCompressionAstc
+    else if name == "depth32float-stencil8" then
+        Just Types.FeatureDepth32floatStencil8
+    else if
+        List.member
+            [ "r16unorm", "r16snorm", "rg16unorm", "rg16snorm", "rgba16unorm", "rgba16snorm" ]
+            name
+    then
+        Just Types.FeatureTextureFormatsTier1
+    else
+        Nothing
+
+
+--| Every format of `formats` that a feature gates, with the feature, in
+--| order and once each.
+pub gated : List Types.TextureFormat → List (Types.TextureFormat × Types.FeatureName)
+gated formats = List.foldl formats [] λf found →
+    case formatFeature f of
+        Just n →
+            if List.member found ( f, n ) then found else [ …found, ( f, n ) ]
+
+        Nothing →
+            found
+
+
+--| The failure of a host that refused one of `candidates` (not empty).
+pub formatFailure : List (Types.TextureFormat × Types.FeatureName), V → Error.Error
+formatFailure candidates error =
+    case candidates of
+        [ ( format, required ), …_ ] →
+            Error.FormatFeatureRejected
+                { format = format
+                , required = required
+                , candidates = candidates
+                , message = Engine.messageOf error
+                }
+
+        [] →
+            Engine.defect "a format failure with no feature-gated format"
+
+
+--| Every format of `formats` must have its feature on `device` (a native
+--| device): the first that lacks one is `UnsupportedCapability`, before any
+--| native call.
+pub formatsAvailable : V, List Types.TextureFormat → Result Error.Error ⊤
+formatsAvailable device formats =
+    features = Feature.fromNames (Engine.readNames device "features")
+    missing = List.filter (List.filterMap formats formatFeature) λf → not (Feature.has features f)
+    case missing of
+        [ f, …_ ] →
+            Err (Error.UnsupportedCapability (Error.MissingFeature f))
+
+        [] →
+            Ok ⊤
+
+
+--| Make the native call `call`, whose content timeline checks the features
+--| of `formats` (ledger §3, §5): a `TypeError` it throws is
+--| `FormatFeatureRejected` when one of them is feature-gated — the
+--| preflight saw the feature, the host refused it anyway — and goes on, a
+--| defect, otherwise.
+pub formatChecked : List Types.TextureFormat, sync (⊤ → V) → Result Error.Error V
+formatChecked formats call =
+    candidates = gated formats
+    Js.catchIf (λ⊤ → Ok (call ⊤)) (λerror → Engine.isTypeError error && candidates ≠ []) λerror →
+        Err (formatFailure candidates error)
+
+
+--| The formats a render bundle encoder names.
+pub bundleFormats : Types.RenderBundleEncoderDescriptor → List Types.TextureFormat
+bundleFormats descriptor =
+    colors = List.filterMap descriptor.colorFormats λf → f
+    case descriptor.depthStencilFormat of
+        Types.Value f →
+            [ …colors, f ]
+
+        Types.Default →
+            colors

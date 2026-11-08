@@ -35,6 +35,7 @@
       <li>"a receipt's done under the lease: Ok done"</li>
       <li>"submit on a destroyed device: Err DeviceLost Destroyed observed 0"</li>
       <li>"queue work done on it: Err DeviceLost Destroyed observed 0"</li>
+      <li>"a receipt done before the destroy, asked after: Err DeviceLost Destroyed observed 0"</li>
     </ol>
   </main>
 </body>

@@ -113,7 +113,9 @@ a GPU operation, and it calls the host through private code (non-`pub`
 can import. *As built — S1 (2026-11-08):* `browser-tea` re-exports the public `Gpu`
 modules only, so a TEA program cannot import `Gpu.Engine` or `Gpu.Native`; a direct
 `browser` program can, since a platform cannot keep a module from the program it is the
-top of (#2256). Their signatures name `Js.Value`, which such a program cannot make.
+top of (#2256). Their signatures name `Js.Value`, which such a program cannot make. The
+private `Gpu.Memory` (S2a), `Gpu.Make` and `Gpu.Session` (S2b) are in the same position,
+accepted as debt under #2256.
 
 **`Gpu.Handle`** imports only core, including those generated modules, and no
 `Gpu` module. It declares:
@@ -842,6 +844,27 @@ written by hand, under `test-webgpu`), `TextureCopies`, `EncodeSession`, `Encode
 `ShadersAndPipelines`, `Batches`, and the defects `PipelineAsyncUnlisted` and
 `CompilationInfoRejected`.
 
+*Amended after review, 2026-11-08, by the manager, under the owner's delegation of names.* A
+batch operation returns `Result Error a` and the batch's callback `Result Error a`, so a
+local failure that is not an input error (a feature a format or a query type needs) surfaces
+as itself; `Batch.run`'s failure is `BatchFailed { batch, failure, issued, unissued }`, the
+issued and refused operations by name (this section's failure report). `Gpu.Batch.segment`
+starts a named scope segment (three scopes each), whose name a scope's failure carries;
+`Gpu.Batch.awaitReady` waits until the batch settles. A cancelled run rejects what it made.
+In a batch, a pipeline or a queue of another device is `WrongDevice` before any native call.
+A prepared operation is a record with a tagged `Action` that a `sync` `perform` switches on,
+so the checker proves nothing in the scope section suspends; a record field cannot have a
+`sync` function type (#2271). Invalid WGSL is `ShaderRejected { failure, messages }`, the
+compiler's messages read before the failure is returned; `CompilationInfo` and
+`CompilationMessage` live in `Gpu.Error` (aliased by `Gpu.Shader`), since `Gpu.Error` must
+name them and `Gpu.Shader` imports `Gpu.Device`. A rejected asynchronous pipeline's
+`PipelineFailure` keeps the entry points asked for. A failure set may hold a refusal
+(`ObservedRefusal`) or a missing capability (`ObservedUnsupported`), so an operation's own
+refusal and the scopes' observations are both kept. `Queue.submit` refuses a command buffer
+using, directly or through a bind group, a resource destroyed (`ResourceDestroyed`) or
+mapped (`MappingState`) since it was encoded. `getBindGroupLayout` refuses an index at or
+above `maxBindGroups` (`OutOfRange`).
+
 *As built — S3a (2026-11-08, #2241).* Rendering follows the compute half. `Gpu.Texture.createView`
 (and `Gpu.Batch.createView`), `Gpu.Device.createRenderPipeline` and `createRenderPipelineAsync` (and
 `Gpu.Batch.createRenderPipeline`, `getRenderBindGroupLayout`) are prepared in `Gpu.Make` like every
@@ -867,7 +890,11 @@ destroyed (`ResourceDestroyed`). Occlusion queries are checked locally: the new 
 `OutOfRange` at `queryIndex`. The host does not say which feature-gated format it refused, so
 `FormatFailure` names the first and lists every `candidates`; only a native `TypeError` is that
 failure, and a same-named object, an `Error` named `TypeError`, a `RangeError` or a
-`DOMException` there is a defect (`browser/gpu/FormatHostile*`). `executeBundles` keeps no shadow state, so it has none to clear. Fixtures:
+`DOMException` there is a defect (`browser/gpu/FormatHostile*`). Since the batch review the render
+creations are `Gpu.Make` actions (`CreateView`, `CreateRenderPipeline`) run by `perform` like the
+others, the render batch operations return `Result Error`, a batch checks a texture or a pipeline
+it is given against its device with the same check as for a queue (`WrongDevice`), and the format
+checks live in `Gpu.Formats`, which `Gpu.Make` and `Gpu.Session` share. `executeBundles` keeps no shadow state, so it has none to clear. Fixtures:
 `browser/gpu/RenderScenes` (multi-pass, indirect, depth, stencil, MSAA resolve, MRT, a bundle, a
 batch and occlusion, compared under `test-webgpu` with pixels worked out by hand),
 `RenderRefusals`, `RenderPipelines`, `RenderFormatRejected`, and the defects
@@ -1040,7 +1067,7 @@ Gpu.Buffer.destroy : Buffer → ⊤
 Gpu.Texture.destroy : Texture → ⊤
 Gpu.QuerySet.destroy : QuerySet → ⊤
 
-Gpu.MappedRange.readBytes : MappedRange, Binary.ByteRange → Result Error Binary.Buffer
+Gpu.MappedRange.readBytes : MappedRange, Binary.ByteRange → Result ReadError Binary.Buffer
 Gpu.MappedRange.writeBytes : MappedRange, Int, Binary.Source → Result InputError ⊤
 Gpu.MappedRange.readU32 : MappedRange, Int → Result InputError Int
 Gpu.MappedRange.writeF32 : MappedRange, Int, Float → Result InputError ⊤
@@ -1054,11 +1081,12 @@ bulk copies and exact bit access, not only the representative methods above.
 Expose read/write modes, size and mapState. `mappedAtCreation` produces a mapping
 handle without pretending `MAP_WRITE` was required (§7.1). Ranges track overlap,
 alignment, mapping generation and read/write permission. Every access validates
-the generation, including one saved outside `withMapped`. `unmap`/destroy
-detaches all native ranges and invalidates every alias before any subsequent use.
+the generation, including one saved outside `withMapped`. `unmap`/destroy, and
+the destruction of the buffer's device, detach all native ranges and invalidates every alias before any subsequent use.
 
-The bracket helper unmaps in a finalizer even if the callback suspends, cancels,
-returns an error or defects. Concurrent map requests are refused precisely;
+The bracket helper unmaps in a finalizer even if the callback suspends, is
+cancelled or returns an error. A defect stops the program that owns the
+mapping (§8.1), so nothing of that program runs again, the finalizer included. Concurrent map requests are refused precisely;
 cancelling the fiber waiting for a pending map calls unmap only for that owned
 map generation. It cannot cancel a later independent mapping. Native map
 promises are still drained. Direct map/unmap remains available for full native
@@ -1119,19 +1147,22 @@ an earlier generation reads `ResourceExpired`. `map` is a checked operation whos
 answers with a promise (`Gpu.Engine.checkedAwait`): the operation waits for the three pops and
 the map promise, or for the loss, and a rejection joins the scopes' observations (a map the
 device refuses is `RelatedFailures [MapFailed MapRejected, Validation]`). *Amended the same
-day:* `MapRequest` is `{ mode : MapModes, offset : Int, size : Maybe Int }` with `mapRead` and
+day by the manager, under the owner's delegation of names (2026-11-08):* `MapRequest` is `{ mode : MapModes, offset : Int, size : Maybe Int }` with `mapRead` and
 `mapWrite` for the whole buffer, and `Range` is `{ offset : Int, size : Maybe Int }`; offsets and
 sizes are `Int`s checked as `GPUSize64` (`NumericDomain`), not `Size64`, as `Binary` takes its
 byte ranges. A mapped range's integer reads give `Int` and its writes take `Int`, as `Binary`'s
 do — a payload is raw bits (§3.1), not a descriptor domain — with `InvalidValue` for a value
-outside the width; values are little-endian. `readBytes` returns `Result Error`, since the copy
-allocates: a host with no memory for it is `Error.AllocationFailed { bytes }`. The new
+outside the width; values are little-endian. `readBytes` returns its own `ReadError`, since the copy
+allocates on the CPU (ledger §4: a host allocation has its own classifier, outside the GPU
+error): `Refused InputError` or `Allocation Binary.AllocationError`; `Gpu.Error.Error` gains
+no arm. `writeBytes` is a CPU copy, not a GPU input, so it takes any attached storage,
+resizable or growable included (CLAUDE.md rule 7). Destroying a device expires the mappings
+of all its buffers first, as `unmap` does. The new
 `InputError` arms are `DetachedSource`, `Misaligned`, `OutOfRange`, `InvalidValue`,
 `InvalidMapMode`, `MissingBufferUsage`, `MappingState`, `RangeOverlap` and `ReadOnlyMapping`.
 `Gpu.Queue.writeBuffer` takes a `WriteBufferSource` (`{ bufferOffset, data, dataOffset, size }`,
 `bufferWrite` for the whole data), which is §6.3's `Batch.writeBuffer` argument too.
-`withMapped` unmaps in a `Task.onExit` finaliser; a defect stops the program, which unmaps
-nothing further. Fixtures: `browser/gpu/BufferRoundTrip` (exact u32 and u64 round trips, read
+`withMapped` unmaps in a `Task.onExit` finaliser (above: a defect stops the program). Fixtures: `browser/gpu/BufferRoundTrip` (exact u32 and u64 round trips, read
 back natively under `test-webgpu`), `BufferRefusals`, `MapFailures`, `MapLifecycle`,
 `Submissions` and the defects `MapUnlisted`, `RangeUnlisted`, `WriteUnlisted`,
 `WorkDoneRejected`. `GPUBufferUsage` validity beyond what the engine checks stays the device's
@@ -1312,7 +1343,9 @@ submit has none. Nothing is fabricated.
   submission and the earlier ones on the queue, which complete first anyway,
   and never a later submission.
 - `Gpu.Submission.done : Submission → Result Error ⊤` waits for that promise;
-  observed device loss wins, as for every wait. Nothing waits unless `done`
+  observed device loss wins, as for every wait, even for work done before the
+  loss (*as built — S2a*: `done` gives `DeviceLost` once the loss is
+  observed). Nothing waits unless `done`
   is called, so a receipt does not stall a frame.
 - `Gpu.Queue.onSubmittedWorkDone` stays the faithful native form: it captures
   at its own call, so it also covers unrelated work submitted before it. Use a
@@ -1358,7 +1391,11 @@ of the frame that made it, so a later frame that gets the same native texture (t
 task) takes the texture as its own but never revives an earlier frame's view. What a frame's texture
 is in expires with it: an encoder session records every frame-bound object a command names, and the
 command buffer or bundle it finishes holds them, as a bind group holds the frame views it binds; a
-held object expired is `ResourceExpired` (`browser/gpu/FrameRetry`, `FrameDependencies`). `importExternalTexture` waits for S5 with the other media sources. Fixtures:
+held object expired is `ResourceExpired` (`browser/gpu/FrameRetry`, `FrameDependencies`). `importExternalTexture` waits for S5 with the other media sources. Since the batch review a
+frame's callback and its operations return `Result Error`, as a batch's do, a failed frame is
+`BatchFailed` with the operations it issued and refused, and a cancelled frame rejects what it made
+and publishes no receipt (`FrameCancelled`); a submit on another device's queue is `WrongDevice`
+(`FrameOtherQueue`). Fixtures:
 `SurfaceFrames` (receipts, expiry, resize, reconfiguration, an `OffscreenCanvas`, the checkpoint),
 `SurfaceConfiguration` (configuration, its refusals and readback, a lease), `CanvasPage` (a TEA page
 with a stable `<canvas>`), and the defects `CurrentTextureUnlisted`, `CurrentTextureSpoofed`, `ConfigureUnlisted` and

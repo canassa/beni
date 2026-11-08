@@ -61,7 +61,7 @@ receipts result = GpuShow.checked result λr →
     String.fromInt (List.length r.submissions) ++ " receipts"
 
 
-acquireAfter : Surface, Frame → Result InputError ⊤
+acquireAfter : Surface, Frame → Result Error.Error ⊤
 acquireAfter surface frame =
     Surface.unconfigure surface
     _ = Frame.getCurrentTexture frame?
@@ -151,7 +151,7 @@ noContext ⊤ = GpuKit.with "context-null" λ_ →
     [ "context: " ++ GpuShow.checked (Surface.fromCanvas canvas) λ_ → "surface" ]
 
 
-noted : Frame → Result InputError ⊤
+noted : Frame → Result Error.Error ⊤
 noted _ =
     GpuHost.note "the callback ran"
     Ok ⊤
@@ -168,7 +168,7 @@ leased ⊤ = GpuKit.with "none" λd →
 
 -- A frame that submits an empty command buffer and acquires no texture:
 -- the probe's microtask, queued at the start, has not run at the end.
-probe : Frame → Result InputError Bool
+probe : Frame → Result Error.Error Bool
 probe frame =
     GpuHost.armMicrotask ⊤
     encoded = Frame.encode frame Types.commandEncoderDescriptor (λ_ → Ok ⊤)?

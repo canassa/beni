@@ -115,7 +115,7 @@ Open the file your task needs.
   `browser-inline`.
 - `references/websocket.md` — the `WebSocket` module: the shared operations, a server on `node` with
   `listenWith`, `accept` and `refuse`, and a page on `browser-tea` with `listen` and `send`.
-- `references/webgpu.md` — the `Gpu` modules: WebGPU in a page.
+- `references/webgpu.md`, `references/webgpu-render.md` — WebGPU in a page.
 - `references/child-process.md` — `ChildProcess.run` on `node`: no shell; output, exit status, `cwd`,
   `env`, errors, cancellation.
 - `references/project.md` — `beni.json`, `beni new`, the output tree, `beni serve`.

@@ -471,7 +471,7 @@ batch ⊤ = GpuKit.with "none" λd →
                 )
 
 
-inBatch : Device, Shader, Buffer, Gpu.Handle.Batch → Result InputError Gpu.Handle.Submission
+inBatch : Device, Shader, Buffer, Gpu.Handle.Batch → Result Error.Error Gpu.Handle.Submission
 inBatch d module out b =
     usages = Flags.texture [ Flags.RenderAttachment, Flags.TextureCopySrc ]
     t = Batch.createTexture b (Types.textureDescriptor side Types.Rgba8unorm usages)?

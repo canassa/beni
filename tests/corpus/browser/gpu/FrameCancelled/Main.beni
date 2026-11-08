@@ -1,0 +1,58 @@
+-- A cancelled frame (docs/design/webgpu.md §6.3, §8.1, §8.3): the frame
+-- makes a buffer in its batch, keeps it and submits once, then its fiber is
+-- cancelled while the frame's scopes are still pending. The frame rejects
+-- what it made — the kept buffer is `ResourceRejected` — and publishes no
+-- receipt, since its result never reaches anyone.
+import Browser.Canvas as Canvas
+import Gpu.Batch as Batch
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Encode as Encode
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst)
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Frame)
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import GpuHost
+import GpuKit exposing (must, buffer)
+import GpuPage
+import GpuShow
+import Task
+import Tea
+
+
+keeping : Frame → Result Error.Error ⊤
+keeping frame =
+    b = Batch.createBuffer (Frame.batch frame) (buffer 16 [ CopyDst ])?
+    GpuHost.keep b
+    encoded = Frame.encode frame Types.commandEncoderDescriptor (λ_ → Ok ⊤)?
+    _ = Frame.submitCommands frame [ encoded.commands ]?
+    Ok ⊤
+
+
+run : ⊤ → List String
+run ⊤ = GpuKit.with "none" λd →
+    surface = must (Surface.fromCanvas (must (Canvas.create 4 4)))
+    configured = Surface.configure surface (Types.canvasConfiguration d Types.Rgba8unorm)
+    -- From here on the device's scope pops wait for `releasePops`.
+    GpuHost.inject "pops-held"
+    f = Task.spawn λ⊤ → Frame.submit surface "cancelled" keeping
+    GpuHost.drain ⊤
+    Task.cancel f
+    GpuHost.releasePops ⊤
+    GpuHost.drain ⊤
+    kept = GpuHost.kept ⊤
+    -- Pops are still held: the check runs in a fiber of its own, released.
+    g = Task.spawn λ⊤ →
+        Encode.run d Types.commandEncoderDescriptor λenc →
+            CommandEncoder.clearBuffer enc kept 0 Nothing
+    GpuHost.drain ⊤
+    GpuHost.releasePops ⊤
+    use = Task.join g
+    [ "configure: " ++ GpuShow.checked configured λ_ → "done"
+    , "the cancelled frame's buffer: " ++ GpuShow.checked use λ_ → "used"
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "run", run ) ]

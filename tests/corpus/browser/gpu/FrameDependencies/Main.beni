@@ -35,7 +35,7 @@ cleared v enc =
 
 -- Encode a pass into the current texture and bind a view of it; submit
 -- nothing.
-keep : BindGroupLayout, Frame → Result InputError (CommandBuffer × BindGroup)
+keep : BindGroupLayout, Frame → Result Error.Error (CommandBuffer × BindGroup)
 keep layout frame =
     b = Frame.batch frame
     t = Frame.getCurrentTexture frame?

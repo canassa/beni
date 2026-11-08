@@ -3,7 +3,7 @@
 -- native `DOMException` of that name is the documented refusal of an
 -- unconfigured canvas. The page stops.
 import Browser.Canvas as Canvas
-import Gpu.Error exposing (InputError)
+import Gpu.Error as Error
 import Gpu.Flags as Flags
 import Gpu.Frame as Frame
 import Gpu.Handle exposing (Frame)
@@ -15,7 +15,7 @@ import GpuShow
 import Tea
 
 
-acquire : Frame → Result InputError ⊤
+acquire : Frame → Result Error.Error ⊤
 acquire frame =
     _ = Frame.getCurrentTexture frame?
     Ok ⊤

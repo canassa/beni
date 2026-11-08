@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #run
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <ol>
+      <li>"submit to another device's queue: Err BatchFailed frame other queue: InvalidInput WrongDevice queue; issued [], refused [submit]"</li>
+    </ol>
+  </main>
+</body>
