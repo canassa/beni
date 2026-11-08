@@ -9182,3 +9182,9 @@ tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 60:12 #0 :: Li
 tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 71:13 #0 :: List.push top :: rejected :: accepted  v2 accepts where v1 refused: a front that the prepend itself computes is no element of the base's array, so the result is a new list (§2.3.4, When a prepend may re-cons, #2325); the sanitised run prints the plain run's output
 tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 81:15 #0 :: SanitiserPrependFront.record <literal> :: accepted :: absent  v1's demand at the caller of a function whose push v1 puts on its parameter; v2 accepts that push as fresh, so the function writes no parameter (§2.3.4, #2325)
 tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 82:15 #0 :: SanitiserPrependFront.tuple <literal> :: accepted :: absent  v1's demand at the caller of a function whose push v1 puts on its parameter; v2 accepts that push as fresh, so the function writes no parameter (§2.3.4, #2325)
+#
+# run/FloatNegation (#1292, carried by #1651): a Ref counts one evaluation of a negated operand.
+tests/corpus/run/FloatNegation Main 19:5 #0 :: cell count◆ :: absent :: rejected  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/FloatNegation Main 23:9 #0 :: Ref.update count◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/FloatNegation Main 32:13 #0 :: counted <call> :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/FloatNegation Main 37:12 #0 :: construction <call> :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
