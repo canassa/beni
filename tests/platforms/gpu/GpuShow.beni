@@ -392,6 +392,7 @@ canvasError c =
         Error.CanvasConfigurationRejected _ →
             "CanvasConfigurationRejected"
 
+
 --| A `readBytes` result's constructor, with `f` for an `Ok` value.
 pub readResult : Result Gpu.MappedRange.ReadError a, (a → String) → String
 readResult r f =
