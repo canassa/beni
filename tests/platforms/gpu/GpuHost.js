@@ -138,7 +138,7 @@ const fakeDevice = (adapter, descriptor) => {
       return new globalThis.Promise((resolve, reject) => {
         const pending = { reject };
         s.pending = pending;
-        globalThis.queueMicrotask(() => {
+        const settle = () => {
           if (s.pending !== pending) return;
           s.pending = null;
           s.mapState = "mapped";
@@ -146,7 +146,11 @@ const fakeDevice = (adapter, descriptor) => {
           s.offset = offset;
           s.length = length;
           resolve(undefined);
-        });
+        };
+        // Under "maps-held" the map stays pending until `releaseMaps`, so an
+        // unmap or a destroy meanwhile rejects it with `AbortError`.
+        if (holdMaps) heldFakeMaps.push(settle);
+        else globalThis.queueMicrotask(settle);
       });
     };
     buffer.getMappedRange = (offset = 0, rangeSize = undefined) => {
@@ -263,6 +267,8 @@ let createThrows = false;
 let bufferFaults = {};
 let holdMaps = false;
 const heldMaps = [];
+// The fake host's own pending maps, held under "maps-held".
+const heldFakeMaps = [];
 const held = [];
 const callCounts = {};
 
@@ -629,6 +635,7 @@ export const releasePop = (filter) => {
 // Every held map, in the order they were asked, each settled as its
 // host map did.
 export const releaseMaps = (_unit) => {
+  for (const settle of heldFakeMaps.splice(0)) settle();
   for (const entry of heldMaps.splice(0)) entry.outcome.then(entry.resolve, entry.reject);
   return null;
 };
