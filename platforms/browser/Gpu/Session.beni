@@ -101,7 +101,27 @@ pass native path =
 --| A resource a command names, at `path`: usable on the session's device,
 --| or provisional in its batch.
 pub usable : V, V, String → Result InputError ⊤
-usable s native path = check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)
+usable s native path =
+    check s (Engine.usable native (Js.get s "device") (Js.get s "batch") path)?
+    uses = Js.get s "uses"
+    Js.call uses "add" [ native ] ▷ ignore
+    -- What a bind group binds is used through it.
+    bound = Js.get (Engine.recordOf native) "uses"
+    if Js.isNullish bound then ⊤ else Js.each bound λx → Js.call uses "add" [ x ] ▷ ignore
+    Ok ⊤
+
+
+-- What every command buffer an encoding finished uses: the resources its
+-- commands named, for `submit`'s checks (ledger §5).
+usesTable : V
+usesTable = Js.pure λ⊤ → Js.construct (Js.global "WeakMap") []
+
+
+--| The resources a command buffer's commands use, as a native `Set`.
+pub usesOf : V → V
+usesOf commands =
+    u = Js.call usesTable "get" [ commands ]
+    if Js.isUndefined u then Js.construct (Js.global "Set") [] else u
 
 
 --| One debug group more, or one fewer — refused when none is open.
@@ -139,6 +159,7 @@ encode device batch descriptor body value =
             , ( "batch", batch )
             , ( "live", Js.from True )
             , ( "failure", Js.null )
+            , ( "uses", Js.construct (Js.global "Set") [] )
             ]
     native = Js.call device "createCommandEncoder" [ Native.commandEncoderDescriptor descriptor ]
     Engine.adoptInBatch native r batch
@@ -159,10 +180,14 @@ encode device batch descriptor body value =
         Err (Js.to failure)
     else if Js.same (Js.get enc "state") (Js.from "locked") then
         Err (Error.InvalidInput (Error.EncoderLocked { path = "encoder" }))
-    else if Js.same (Js.get enc "state") (Js.from "finished") then
-        Ok (Js.get enc "finished")
     else
-        Ok (Js.call native "finish" [])
+        commands =
+            if Js.same (Js.get enc "state") (Js.from "finished") then
+                Js.get enc "finished"
+            else
+                Js.call native "finish" []
+        Js.call usesTable "set" [ commands, Js.get s "uses" ] ▷ ignore
+        Ok commands
 
 
 --| Record a command buffer an encoder finished.

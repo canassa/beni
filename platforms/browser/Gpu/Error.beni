@@ -60,7 +60,10 @@ pub type LimitProblem
     | NotPowerOfTwo
 
 
---| A failed GPU operation.
+--| A failed GPU operation. `ShaderRejected` is invalid WGSL, with the
+--| compiler's messages; `BatchFailed` a `Gpu.Batch.run` that failed, with
+--| its failure and which of its operations were issued and which were
+--| refused (§6.3: a batch is not a transaction).
 pub type Error
     = InvalidInput InputError
     | UnsupportedCapability Capability
@@ -76,6 +79,8 @@ pub type Error
     | FormatFeatureRejected FormatFailure
     | HostOperationRejected OperationFailure
     | RelatedFailures FailureSet
+    | ShaderRejected ShaderFailure
+    | BatchFailed { batch : String, failure : Error, issued : List String, unissued : List String }
 
 
 --| An input refused before any native call: each names the descriptor
@@ -155,10 +160,37 @@ pub type alias FailureDetail =
     message : String
 
 
---| A pipeline the host refused when it created it asynchronously.
+--| A pipeline the host refused when it created it asynchronously, with the
+--| entry points it was asked for (none when the descriptor left them to the
+--| host).
 pub type alias PipelineFailure =
     operation : String
     message : String
+    entryPoints : List String
+
+
+--| A shader module the device refused: the scope's failure, and every
+--| message the compiler gave for it.
+pub type alias ShaderFailure =
+    failure : FailureDetail
+    messages : List CompilationMessage
+
+
+--| One message of the WGSL compiler, with every native field: its kind,
+--| text, line and position (from 1, 0 when it has none), and its offset
+--| and length in the source, in UTF-16 code units.
+pub type alias CompilationMessage =
+    message : String
+    type_ : Types.CompilationMessageType
+    lineNum : Int
+    linePos : Int
+    offset : Int
+    length : Int
+
+
+--| What the compiler said of a module.
+pub type alias CompilationInfo =
+    messages : List CompilationMessage
 
 
 --| A device's loss: its reason and the host's message.
@@ -197,6 +229,8 @@ pub type Observation
     | ObservedPipelineInternal PipelineFailure
     | ObservedMapFailed MapError
     | ObservedHostRejection OperationFailure
+    | ObservedRefusal InputError
+    | ObservedUnsupported Capability
 
 
 --| Several failures of one operation: never empty, and each a leaf.

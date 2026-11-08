@@ -6,10 +6,17 @@
 --!         → Result Gpu.Error.Error { value : ⊤, commands : Gpu.Handle.CommandBuffer }
 --!     doubled device pipeline group =
 --!         Gpu.Encode.run device Gpu.Types.commandEncoderDescriptor λencoder →
---!             Gpu.ComputePass.with encoder Gpu.Types.computePassDescriptor λpass →
---!                 Gpu.ComputePass.setPipeline pass pipeline?
---!                 Gpu.ComputePass.setBindGroup pass zero (Just group) []?
---!                 Gpu.ComputePass.dispatchWorkgroups pass four one one
+--!             Gpu.ComputePass.with encoder Gpu.Types.computePassDescriptor (dispatch pipeline group _)
+--!
+--!     dispatch : Gpu.Handle.ComputePipeline, Gpu.Handle.BindGroup, Gpu.Handle.ComputePass
+--!         → Result Gpu.Error.InputError ⊤
+--!     dispatch pipeline group pass =
+--!         Gpu.ComputePass.setPipeline pass pipeline?
+--!         zero = (Result.mapError (Gpu.Scalar.u32 0) (Gpu.Error.atPath "index" _))?
+--!         four = (Result.mapError (Gpu.Scalar.u32 4) (Gpu.Error.atPath "x" _))?
+--!         one = (Result.mapError (Gpu.Scalar.u32 1) (Gpu.Error.atPath "y" _))?
+--!         Gpu.ComputePass.setBindGroup pass zero (Just group) []?
+--!         Gpu.ComputePass.dispatchWorkgroups pass four one one
 
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)

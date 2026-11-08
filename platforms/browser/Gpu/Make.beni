@@ -1,13 +1,19 @@
---! The resource creations of a device (`docs/design/webgpu.md` §4, §6.1,
---! §6.3), each prepared once and run two ways: as a checked operation of
---! its own (`Gpu.Device`) or inside a batch (`Gpu.Batch`). An application
---! never needs it, and its signatures name `Js.Value`.
+--! The resource creations and queue operations of a device
+--! (`docs/design/webgpu.md` §4, §6.1, §6.3), each prepared once and run two
+--! ways: as a checked operation of its own (`Gpu.Device`, `Gpu.Queue`) or
+--! inside a batch (`Gpu.Batch`). An application never needs it, and its
+--! signatures name `Js.Value` (#2256).
 --!
---! Preparing checks the inputs — the handles a descriptor names, the
---! features a format or a query type needs — before any native call, and
---! gives the one native call with its own synchronous classifier: what the
---! ledger documents at that call is a precise `Error`, anything else
---! propagates and is a defect.
+--! Preparing checks the inputs — the handles a descriptor names and the
+--! device they belong to, the features a format or a query type needs —
+--! before any native call. What remains is an `Op`: data, and a tag that
+--! `perform` switches on to make the one native call with its own
+--! synchronous classifier: what the ledger documents at that call is a
+--! precise `Error`, anything else propagates and is a defect. `perform`,
+--! `adopt` and `discard` are ordinary `sync` functions, so the checker
+--! proves that nothing in the scope section suspends. (A record of `sync`
+--! functions would say it more directly, but a record field cannot have a
+--! `sync` function type: #2271.)
 
 import Binary
 import Dict
@@ -16,9 +22,11 @@ import Gpu.Error as Error
 import Gpu.Feature as Feature
 import Gpu.Flags as Flags
 import Gpu.Handle as Handle
+import Gpu.Limits as Limits
 import Gpu.Memory as Memory
 import Gpu.Native as Native
 import Gpu.Scalar as Scalar
+import Gpu.Session as Session
 import Gpu.Types as Types
 import Js
 
@@ -31,42 +39,192 @@ ignore : V → ⊤
 ignore _ = ⊤
 
 
---| One prepared creation: its operation's name, the labels of what it
---| makes, the native call, what fills the made object's record while it is
---| provisional, and what releases it when it is rejected: each a beni
---| function held as a value (`sync (⊤ → Result Error V)`, `sync (V → ⊤)`),
---| run by `call`, `adopt` and `discard`.
+--| What a prepared operation does, with the data it needs.
+pub type Action
+    = Create String V
+    | CreateBuffer V Int Int Bool
+    | CreateTexture V Types.TextureFormat
+    | CreateShader V String
+    | CreateQuerySet V
+    | CreateBindGroup V V
+    | GetBindGroupLayout Int
+    | WriteBuffer (List V)
+    | WriteTexture (List V)
+    | Submit (List Handle.CommandBuffer)
+
+
+--| One prepared operation: its name, the labels of what it touches, the
+--| native object it calls (a device, a pipeline or a queue), the device it
+--| runs on, and what it does.
 pub type alias Op =
     name : String
     labels : List String
-    call : V
-    adopt : V
-    discard : V
+    target : V
+    device : V
+    action : Action
 
 
-plain : String, Types.Option String, sync (⊤ → Result Error.Error V) → Op
-plain name label call =
-    { name = name
-    , labels = labelsOf label
-    , call = Js.from call
-    , adopt = Js.from ignore
-    , discard = Js.from ignore
-    }
+--| Make the native call of a prepared operation, with its classifier: what
+--| it made, or a documented failure.
+pub perform : Op → Result Error.Error V
+perform op =
+    target = op.target
+    case op.action of
+        Create method converted →
+            Ok (callNamed target method converted)
+
+        CreateBuffer converted bytes _ mapped →
+            if mapped then
+                -- The ledger's one synchronous failure (§3): the CPU memory
+                -- of the mapping, once the size passed.
+                Js.catchIf
+                    (λ⊤ → Ok (Js.call target "createBuffer" [ converted ]))
+                    Engine.isRangeError
+                    λerror →
+                        Err
+                            (Error.MapFailed
+                                (Error.MappedAllocationFailed
+                                    { bytes = bytes, message = Engine.messageOf error }
+                                )
+                            )
+            else
+                Ok (Js.call target "createBuffer" [ converted ])
+
+        CreateTexture converted format →
+            Js.catchIf
+                (λ⊤ → Ok (Js.call target "createTexture" [ converted ]))
+                (λerror → Engine.isTypeError error && formatFeature format ≠ Nothing)
+                λerror →
+                    case formatFeature format of
+                        Just f →
+                            Err
+                                (Error.FormatFeatureRejected
+                                    { format = format
+                                    , required = f
+                                    , message = Engine.messageOf error
+                                    }
+                                )
+
+                        Nothing →
+                            Js.throw error
+
+        CreateShader converted _ →
+            Ok (Js.call target "createShaderModule" [ converted ])
+
+        CreateQuerySet converted →
+            Ok (Js.call target "createQuerySet" [ converted ])
+
+        CreateBindGroup converted _ →
+            Ok (Js.call target "createBindGroup" [ converted ])
+
+        GetBindGroupLayout index →
+            Ok (Js.call target "getBindGroupLayout" [ Js.from index ])
+
+        WriteBuffer args →
+            case args of
+                [ a1, a2, a3, a4, a5 ] →
+                    Js.catchIf
+                        (λ⊤ →
+                            Js.call target "writeBuffer" [ a1, a2, a3, a4, a5 ] ▷ ignore
+                            -- What the call made: nothing but its outcome.
+                            Ok (Js.object [])
+                        )
+                        (λerror → Engine.isDomException error "OperationError")
+                        λerror →
+                            Err
+                                (Error.HostOperationRejected
+                                    (Error.BufferWriteSourceRejected
+                                        { message = Engine.messageOf error }
+                                    )
+                                )
+
+                _ →
+                    Engine.defect "a writeBuffer prepared without its five arguments"
+
+        WriteTexture args →
+            case args of
+                [ a1, a2, a3, a4 ] →
+                    Js.call target "writeTexture" [ a1, a2, a3, a4 ] ▷ ignore
+                    Ok (Js.object [])
+
+                _ →
+                    Engine.defect "a writeTexture prepared without its four arguments"
+
+        Submit commands →
+            List.foldl commands ⊤ λc _ →
+                Js.set (Engine.recordOf (Js.from c)) "submitted" (Js.from True)
+            Js.call target "submit" [ Native.array commands λc → Js.from c ] ▷ ignore
+            Ok
+                (Engine.pendingOutcome
+                    op.device
+                    "onSubmittedWorkDone"
+                    (Js.call target "onSubmittedWorkDone" [])
+                    workDone
+                )
 
 
---| Make the native call of a prepared creation.
-pub runCall : Op → Result Error.Error V
-runCall op = Js.to (Js.apply op.call [ Js.from ⊤ ])
+-- The creations with no failure of their own, by the method's name.
+callNamed : V, String, V → V
+callNamed target method converted =
+    if method == "createSampler" then
+        Js.call target "createSampler" [ converted ]
+    else if method == "createBindGroupLayout" then
+        Js.call target "createBindGroupLayout" [ converted ]
+    else if method == "createPipelineLayout" then
+        Js.call target "createPipelineLayout" [ converted ]
+    else if method == "createComputePipeline" then
+        Js.call target "createComputePipeline" [ converted ]
+    else
+        Engine.defect ("no prepared creation " ++ method)
 
 
---| Fill the record of what it made.
-pub runAdopt : Op, V → ⊤
-runAdopt op made = Js.to (Js.apply op.adopt [ made ])
+--| Fill the record of what an operation made, while it is provisional.
+pub adopt : Op, V → ⊤
+adopt op made =
+    case op.action of
+        CreateBuffer _ bytes usage mapped →
+            Memory.adoptBuffer op.device made bytes usage mapped
+
+        CreateTexture _ _ →
+            Js.set (Engine.recordOf made) "destroyed" (Js.from False)
+
+        CreateQuerySet _ →
+            Js.set (Engine.recordOf made) "destroyed" (Js.from False)
+
+        CreateShader _ code →
+            Js.set (Engine.recordOf made) "code" (Js.from code)
+
+        CreateBindGroup _ uses →
+            Js.set (Engine.recordOf made) "uses" uses
+
+        _ →
+            ⊤
 
 
---| Release what it made, rejected.
-pub runDiscard : Op, V → ⊤
-runDiscard op made = Js.to (Js.apply op.discard [ made ])
+--| Release what an operation made, rejected: a buffer, a texture or a
+--| query set is destroyed.
+pub discard : Op, V → ⊤
+discard op made =
+    case op.action of
+        CreateBuffer _ _ _ _ →
+            Memory.destroy made
+
+        CreateTexture _ _ →
+            Js.call made "destroy" [] ▷ ignore
+
+        CreateQuerySet _ →
+            Js.call made "destroy" [] ▷ ignore
+
+        _ →
+            ⊤
+
+
+--| Run a prepared operation as a checked operation of its own (§6.1).
+pub checked : Result Error.Error Op → Result Error.Error V
+checked prepared =
+    op = prepared?
+    Engine.checkedMaking op.device op.name op.labels (λ⊤ → perform op) (λm → adopt op m) λm →
+        discard op m
 
 
 --| The labels of an optional label.
@@ -85,15 +243,34 @@ handle : V, V, V, String → Result Error.Error ⊤
 handle native r batch path = Result.mapError (Engine.usable native r batch path) Error.InvalidInput
 
 
+-- In a batch, an object the call is made on (a pipeline, a queue) must be
+-- of the batch's device (§6.3).
+ofBatch : V, V, String → Result Error.Error ⊤
+ofBatch native batch path =
+    if
+        Js.isNull batch
+            || Js.same (Js.get (Engine.recordOf native) "device") (Js.get batch "device")
+    then
+        Ok ⊤
+    else
+        Err (Error.InvalidInput (Error.WrongDevice { path = path }))
+
+
+creation : V, String, Types.Option String, V → Op
+creation device method label converted =
+    { name = method
+    , labels = labelsOf label
+    , target = device
+    , device = device
+    , action = Create method converted
+    }
+
+
 --| A sampler.
 pub sampler : V, Types.SamplerDescriptor → Result Error.Error Op
 sampler device descriptor =
-    converted = Native.samplerDescriptor descriptor
     -- The ledger documents no synchronous failure of `createSampler` (§3).
-    Ok
-        (plain "createSampler" descriptor.label λ⊤ →
-            Ok (Js.call device "createSampler" [ converted ])
-        )
+    Ok (creation device "createSampler" descriptor.label (Native.samplerDescriptor descriptor))
 
 
 --| A buffer (§7.1): a mapped-at-creation size that is not a multiple of 4
@@ -113,28 +290,17 @@ buffer device descriptor =
     if mapped && Int.rem bytes 4 ≠ 0 then
         Err (Error.InvalidInput (Error.MappedSizeUnaligned { path = "size", size = bytes }))
     else
-        converted = Native.bufferDescriptor descriptor
-        usage = Flags.bufferUsagesBits descriptor.usage
         Ok
             { name = "createBuffer"
             , labels = labelsOf descriptor.label
-            , call =
-                Js.from λ⊤ →
-                    if mapped then
-                        Js.catchIf
-                            (λ⊤ → Ok (Js.call device "createBuffer" [ converted ]))
-                            Engine.isRangeError
-                            λerror →
-                                Err
-                                    (Error.MapFailed
-                                        (Error.MappedAllocationFailed
-                                            { bytes = bytes, message = Engine.messageOf error }
-                                        )
-                                    )
-                    else
-                        Ok (Js.call device "createBuffer" [ converted ])
-            , adopt = Js.from λmade → Memory.adoptBuffer device made bytes usage mapped
-            , discard = Js.from λmade → Memory.destroy made
+            , target = device
+            , device = device
+            , action =
+                CreateBuffer
+                    (Native.bufferDescriptor descriptor)
+                    bytes
+                    (Flags.bufferUsagesBits descriptor.usage)
+                    mapped
             }
 
 
@@ -169,6 +335,7 @@ formatFeature format =
 pub texture : V, Types.TextureDescriptor → Result Error.Error Op
 texture device descriptor =
     features = Feature.fromNames (Engine.readNames device "features")
+
     missing =
         List.filter (List.filterMap [ descriptor.format, …(viewFormats descriptor) ] formatFeature) λf →
             not (Feature.has features f)
@@ -177,33 +344,12 @@ texture device descriptor =
             Err (Error.UnsupportedCapability (Error.MissingFeature f))
 
         [] →
-            converted = Native.textureDescriptor descriptor
             Ok
                 { name = "createTexture"
                 , labels = labelsOf descriptor.label
-                , call =
-                    Js.from λ⊤ →
-                        Js.catchIf
-                            (λ⊤ → Ok (Js.call device "createTexture" [ converted ]))
-                            (λerror →
-                                Engine.isTypeError error
-                                    && formatFeature descriptor.format ≠ Nothing
-                            )
-                            λerror →
-                                case formatFeature descriptor.format of
-                                    Just f →
-                                        Err
-                                            (Error.FormatFeatureRejected
-                                                { format = descriptor.format
-                                                , required = f
-                                                , message = Engine.messageOf error
-                                                }
-                                            )
-
-                                    Nothing →
-                                        Js.throw error
-                , adopt = Js.from λmade → Js.set (Engine.recordOf made) "destroyed" (Js.from False)
-                , discard = Js.from λmade → Js.call made "destroy" [] ▷ ignore
+                , target = device
+                , device = device
+                , action = CreateTexture (Native.textureDescriptor descriptor) descriptor.format
                 }
 
 
@@ -220,15 +366,19 @@ viewFormats descriptor =
 --| A bind group layout.
 pub bindGroupLayout : V, Types.BindGroupLayoutDescriptor → Result Error.Error Op
 bindGroupLayout device descriptor =
-    converted = Native.bindGroupLayoutDescriptor descriptor
     Ok
-        (plain "createBindGroupLayout" descriptor.label λ⊤ →
-            Ok (Js.call device "createBindGroupLayout" [ converted ])
+        (creation
+            device
+            "createBindGroupLayout"
+            descriptor.label
+            (Native.bindGroupLayoutDescriptor descriptor)
         )
 
 
 --| A bind group: its layout and every resource it binds must be usable on
---| the device (in `batch`, when it runs in one).
+--| the device (in `batch`, when it runs in one). The group remembers what
+--| it binds, so a submit can refuse a command buffer that would use a
+--| destroyed or mapped resource through it.
 pub bindGroup : V, V, Types.BindGroupDescriptor → Result Error.Error Op
 bindGroup device batch descriptor =
     r = Engine.recordOf device
@@ -236,11 +386,14 @@ bindGroup device batch descriptor =
     each
         descriptor.entries
         (λentry → handle (resourceObject entry.resource) r batch "entries.resource")?
-    converted = Native.bindGroupDescriptor descriptor
+    uses = Native.array descriptor.entries λentry → resourceObject entry.resource
     Ok
-        (plain "createBindGroup" descriptor.label λ⊤ →
-            Ok (Js.call device "createBindGroup" [ converted ])
-        )
+        { name = "createBindGroup"
+        , labels = labelsOf descriptor.label
+        , target = device
+        , device = device
+        , action = CreateBindGroup (Native.bindGroupDescriptor descriptor) uses
+        }
 
 
 -- The native object a binding names.
@@ -270,34 +423,37 @@ resourceObject resource =
 pub pipelineLayout : V, V, Types.PipelineLayoutDescriptor → Result Error.Error Op
 pipelineLayout device batch descriptor =
     r = Engine.recordOf device
-    each
-        descriptor.bindGroupLayouts
-        (λslot →
-            case slot of
-                Just layout →
-                    handle (Js.from layout) r batch "bindGroupLayouts"
-
-                Nothing →
-                    Ok ⊤
-        )?
-    converted = Native.pipelineLayoutDescriptor descriptor
+    each descriptor.bindGroupLayouts (slotUsable r batch _)?
     Ok
-        (plain "createPipelineLayout" descriptor.label λ⊤ →
-            Ok (Js.call device "createPipelineLayout" [ converted ])
+        (creation
+            device
+            "createPipelineLayout"
+            descriptor.label
+            (Native.pipelineLayoutDescriptor descriptor)
         )
 
 
---| A shader module. Invalid WGSL is the device's to report (`Validation`,
---| with the host's message).
+slotUsable : V, V, Maybe Handle.BindGroupLayout → Result Error.Error ⊤
+slotUsable r batch slot =
+    case slot of
+        Just layout →
+            handle (Js.from layout) r batch "bindGroupLayouts"
+
+        Nothing →
+            Ok ⊤
+
+
+--| A shader module. Invalid WGSL is the device's to report (`Validation`),
+--| and `Gpu.Device.createShaderModule` carries the compiler's messages with
+--| it.
 pub shaderModule : V, Types.ShaderModuleDescriptor → Result Error.Error Op
 shaderModule device descriptor =
-    converted = Native.shaderModuleDescriptor descriptor
     Ok
         { name = "createShaderModule"
         , labels = labelsOf descriptor.label
-        , call = Js.from λ⊤ → Ok (Js.call device "createShaderModule" [ converted ])
-        , adopt = Js.from λmade → Js.set (Engine.recordOf made) "code" (Js.from descriptor.code)
-        , discard = Js.from ignore
+        , target = device
+        , device = device
+        , action = CreateShader (Native.shaderModuleDescriptor descriptor) descriptor.code
         }
 
 
@@ -319,10 +475,12 @@ computeHandles device batch descriptor =
 pub computePipeline : V, V, Types.ComputePipelineDescriptor → Result Error.Error Op
 computePipeline device batch descriptor =
     computeHandles device batch descriptor?
-    converted = Native.computePipelineDescriptor descriptor
     Ok
-        (plain "createComputePipeline" descriptor.label λ⊤ →
-            Ok (Js.call device "createComputePipeline" [ converted ])
+        (creation
+            device
+            "createComputePipeline"
+            descriptor.label
+            (Native.computePipelineDescriptor descriptor)
         )
 
 
@@ -338,39 +496,48 @@ querySet device descriptor =
     then
         Err (Error.UnsupportedCapability (Error.MissingFeature Types.FeatureTimestampQuery))
     else
-        converted = Native.querySetDescriptor descriptor
         Ok
             { name = "createQuerySet"
             , labels = labelsOf descriptor.label
-            , call = Js.from λ⊤ → Ok (Js.call device "createQuerySet" [ converted ])
-            , adopt = Js.from λmade → Js.set (Engine.recordOf made) "destroyed" (Js.from False)
-            , discard = Js.from λmade → Js.call made "destroy" [] ▷ ignore
+            , target = device
+            , device = device
+            , action = CreateQuerySet (Native.querySetDescriptor descriptor)
             }
 
 
 --| The bind group layout of a pipeline at `index`: the pipeline must be
---| usable.
+--| usable, of the batch's device in a batch, and the index below the
+--| device's `maxBindGroups` (`OutOfRange`), all before the native call.
 pub getBindGroupLayout : V, V, Scalar.U32 → Result Error.Error Op
 getBindGroupLayout pipeline batch index =
     p = Engine.recordOf pipeline
+    ofBatch pipeline batch "pipeline"?
     handle pipeline (Js.get p "device") batch "pipeline"?
-    Ok
-        { name = "getBindGroupLayout"
-        , labels = [ Js.to (Js.get pipeline "label") ]
-        , call =
-            Js.from λ⊤ →
-                Ok (Js.call pipeline "getBindGroupLayout" [ Js.from (Scalar.u32ToInt index) ])
-        , adopt = Js.from ignore
-        , discard = Js.from ignore
-        }
+    device = Js.get p "native"
+    at = Scalar.u32ToInt index
 
+    groups =
+        case
+            Limits.limit (Native.readLimits (Engine.member device "limits")) Limits.MaxBindGroups
+        of
+            Just n →
+                n
 
---| Run a prepared creation as a checked operation of its own (§6.1).
-pub checked : V, Result Error.Error Op → Result Error.Error V
-checked device prepared =
-    op = prepared?
-    Engine.checkedMaking device op.name op.labels (λ⊤ → runCall op) (λm → runAdopt op m) λm →
-        runDiscard op m
+            Nothing →
+                Engine.defect "the host gave no maxBindGroups"
+    if at ≥ groups then
+        Err
+            (Error.InvalidInput
+                (Error.OutOfRange { path = "index", offset = at, size = 1, available = groups })
+            )
+    else
+        Ok
+            { name = "getBindGroupLayout"
+            , labels = [ Js.to (Js.get pipeline "label") ]
+            , target = pipeline
+            , device = device
+            , action = GetBindGroupLayout at
+            }
 
 
 --| `check` on every element, stopping at the first `Err`.
@@ -385,14 +552,16 @@ each xs check =
             each rest check
 
 
---| A queue write (ledger §5): the buffer must be usable (in `batch`, when
---| the write runs in one), the data fixed and attached, the part inside it
+--| A queue write (ledger §5): the queue of the batch's device in a batch,
+--| the buffer usable there, the data fixed and attached, the part inside it
 --| and a multiple of 4 bytes. The host's `OperationError` at the call is
 --| `BufferWriteSourceRejected`. The call makes nothing of its own.
 pub writeBuffer : V, V, Handle.Buffer, Memory.WriteBufferSource → Result Error.Error Op
 writeBuffer queue batch target write =
+    ofBatch queue batch "queue"?
     q = Engine.recordOf queue
     Result.mapError (writePreflight q batch target write) Error.InvalidInput?
+
     sizeArg =
         case write.size of
             Just s →
@@ -403,31 +572,16 @@ writeBuffer queue batch target write =
     Ok
         { name = "writeBuffer"
         , labels = [ Js.to (Js.get (Js.from target) "label") ]
-        , call =
-            Js.from λ⊤ →
-                Js.catchIf
-                    (λ⊤ →
-                        Js.call queue "writeBuffer"
-                            [ Js.from target
-                            , Js.from write.bufferOffset
-                            , Memory.sourceObject write.data
-                            , Js.from write.dataOffset
-                            , sizeArg
-                            ]
-                            ▷ ignore
-                        -- What the call made: nothing but its outcome.
-                        Ok (Js.object [])
-                    )
-                    (λerror → Engine.isDomException error "OperationError")
-                    λerror →
-                        Err
-                            (Error.HostOperationRejected
-                                (Error.BufferWriteSourceRejected
-                                    { message = Engine.messageOf error }
-                                )
-                            )
-        , adopt = Js.from ignore
-        , discard = Js.from ignore
+        , target = queue
+        , device = Js.get q "native"
+        , action =
+            WriteBuffer
+                [ Js.from target
+                , Js.from write.bufferOffset
+                , Memory.sourceObject write.data
+                , Js.from write.dataOffset
+                , sizeArg
+                ]
         }
 
 
@@ -465,32 +619,23 @@ writePreflight q batch target write =
             Memory.aligned (contents * info.bytesPerElement) 4 "size"
 
 
---| A submit (§8.3): every command buffer usable (in `batch`, when it runs
---| in one), not submitted before, and named once. The call marks them
---| submitted, makes the one native submit and captures the queue's
---| completion in the receipt, which it makes.
+--| A submit (§8.3; ledger §5): the queue of the batch's device in a batch,
+--| every command buffer usable there, not submitted before, named once,
+--| and none using a resource that was destroyed since it was encoded
+--| (`ResourceDestroyed`) or is mapped or being mapped (`MappingState`). The
+--| call marks them submitted, makes the one native submit and captures the
+--| queue's completion in the receipt, which it makes.
 pub submit : V, V, List Handle.CommandBuffer → Result Error.Error Op
 submit queue batch commands =
+    ofBatch queue batch "queue"?
     q = Engine.recordOf queue
     Result.mapError (submitPreflight q batch commands) Error.InvalidInput?
-    device = Js.get q "native"
     Ok
         { name = "submit"
         , labels = []
-        , call =
-            Js.from λ⊤ →
-                List.foldl commands ⊤ λc _ →
-                    Js.set (Engine.recordOf (Js.from c)) "submitted" (Js.from True)
-                Js.call queue "submit" [ Native.array commands λc → Js.from c ] ▷ ignore
-                Ok
-                    (Engine.pendingOutcome
-                        device
-                        "onSubmittedWorkDone"
-                        (Js.call queue "onSubmittedWorkDone" [])
-                        workDone
-                    )
-        , adopt = Js.from ignore
-        , discard = Js.from ignore
+        , target = queue
+        , device = Js.get q "native"
+        , action = Submit commands
         }
 
 
@@ -515,13 +660,30 @@ submittable q batch seen command =
         Err (Error.DuplicateCommandBuffer { path = "commands" })
     else
         Js.call seen "add" [ native ] ▷ ignore
-        Ok ⊤
+        each (Js.to (Js.call (Js.global "Array") "from" [ Session.usesOf native ])) resourceReady
 
 
---| A queue write into a texture (ledger §5): the texture must be usable
---| and the data fixed and attached; copy layouts, extents and texel blocks
---| are the device's to validate, and the call documents no host failure of
---| its own. The call makes nothing of its own.
+-- A resource a command buffer uses, at submit: not destroyed, not mapped.
+resourceReady : V → Result Error.InputError ⊤
+resourceReady native =
+    r = Engine.recordOf native
+    if Js.same (Js.get r "destroyed") (Js.from True) then
+        Err (Error.ResourceDestroyed { path = "commands" })
+    else
+        state = Js.get r "state"
+        if Js.same state (Js.from "mapped") then
+            Err (Error.MappingState { path = "commands", state = Types.Mapped })
+        else if Js.same state (Js.from "pending") then
+            Err (Error.MappingState { path = "commands", state = Types.Pending })
+        else
+            Ok ⊤
+
+
+--| A queue write into a texture (ledger §5): the queue of the batch's
+--| device in a batch, the texture usable there and the data fixed and
+--| attached; copy layouts, extents and texel blocks are the device's to
+--| validate, and the call documents no host failure of its own. The call
+--| makes nothing of its own.
 pub writeTexture :
       V
     , V
@@ -531,6 +693,7 @@ pub writeTexture :
     , Types.Extent3D
     → Result Error.Error Op
 writeTexture queue batch destination data layout extent =
+    ofBatch queue batch "queue"?
     q = Engine.recordOf queue
     Result.mapError
         (Engine.usable (Js.from destination.texture) (Js.get q "device") batch "destination.texture"
@@ -540,16 +703,91 @@ writeTexture queue batch destination data layout extent =
     Ok
         { name = "writeTexture"
         , labels = [ Js.to (Js.get (Js.from destination.texture) "label") ]
-        , call =
-            Js.from λ⊤ →
-                Js.call queue "writeTexture"
-                    [ Native.texelCopyTextureInfo destination
-                    , Memory.sourceObject data
-                    , Native.texelCopyBufferLayout layout
-                    , Native.extent3D extent
-                    ]
-                    ▷ ignore
-                Ok (Js.object [])
-        , adopt = Js.from ignore
-        , discard = Js.from ignore
+        , target = queue
+        , device = Js.get q "native"
+        , action =
+            WriteTexture
+                [ Native.texelCopyTextureInfo destination
+                , Memory.sourceObject data
+                , Native.texelCopyBufferLayout layout
+                , Native.extent3D extent
+                ]
         }
+
+
+-- ---- Compilation messages ------------------------------------------------------
+
+--| Every message the compiler gave for a module, read from the host: a
+--| message kind outside the pin, or a position that is not a non-negative
+--| integer, is a defect, as for every snapshot (§2.2). The host documents
+--| no rejection (ledger §3): one is a defect too. `DeviceLost` when the
+--| device is lost first. May suspend.
+pub compilationInfo : V → Result Error.Error Error.CompilationInfo
+compilationInfo shader =
+    record = Engine.recordOf shader
+    info = Js.ref Nothing
+
+    pending =
+        Engine.pendingOutcome
+            (Js.get record "native")
+            "getCompilationInfo"
+            (Js.call shader "getCompilationInfo" [])
+            λfulfilled value →
+                if fulfilled then
+                    Js.write info (Just (readInfo value))
+                    Engine.Expected ⊤
+                else
+                    Engine.Unexpected value
+    Engine.awaitPending pending?
+    case Js.read info of
+        Just i →
+            Ok i
+
+        Nothing →
+            Engine.defect "getCompilationInfo settled without its messages"
+
+
+readInfo : V → Error.CompilationInfo
+readInfo value =
+    messages = Js.call (Js.global "Array") "from" [ Engine.member value "messages" ]
+    total : Int
+    total = Js.to (Js.get messages "length")
+    { messages = List.map (List.range 0 (total - 1)) λi → readMessage (Js.at messages i) }
+
+
+readMessage : V → Error.CompilationMessage
+readMessage m =
+    kind =
+        case Types.compilationMessageTypeFromString (Js.to (Js.get m "type")) of
+            Just k →
+                k
+
+            Nothing →
+                Engine.defect "a compilation message of a type outside the pin"
+
+    text = Js.get m "message"
+    { message =
+        if Js.typeIs text "string" then
+            Js.to text
+        else
+            Engine.defect "a compilation message without its text"
+    , type_ = kind
+    , lineNum = count m "lineNum"
+    , linePos = count m "linePos"
+    , offset = count m "offset"
+    , length = count m "length"
+    }
+
+
+-- A member that is a non-negative integer, or a defect naming it.
+count : V, String → Int
+count m name =
+    value = Js.get m name
+    if
+        Js.typeIs value "number"
+            && Js.to (Js.call (Js.global "Number") "isInteger" [ value ])
+            && Js.to (Js.ge value (Js.from 0))
+    then
+        Js.to value
+    else
+        Engine.defect ("a compilation message whose `" ++ name ++ "` is not a non-negative integer")

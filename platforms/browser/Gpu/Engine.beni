@@ -648,7 +648,10 @@ filterName i =
 newScopes : ⊤ → V
 newScopes ⊤ =
     Js.object
-        [ ( "results", Js.array [ Js.null, Js.null, Js.null ] )
+        [ ( "results", Js.array [] )
+        , ( "pushed", Js.from 0 )
+        , ( "current", Js.from 0 )
+        , ( "base", Js.from 0 )
         , ( "owed", Js.from 0 )
         , ( "settled", Js.from 0 )
         , ( "unexpected", Js.null )
@@ -928,21 +931,64 @@ section device r scopes operation labels call =
         defect "a GPU call entered a device's scope section from inside it"
     else
         Js.set r "section" (Js.from True)
-        pushed = Js.ref 0
+        Js.set r "sectionScopes" scopes
+        Js.set scopes "native" device
+        Js.set scopes "name" (Js.from operation)
+        Js.set scopes "labels" (Js.from labels)
         Js.finally
             (λ⊤ →
-                pushScope device 0
-                Js.write pushed 1
-                pushScope device 1
-                Js.write pushed 2
-                pushScope device 2
-                Js.write pushed 3
+                pushSegment device scopes
                 call ⊤
             )
             λ⊤ →
-                Js.set scopes "owed" (Js.from (Js.read pushed))
-                popScopes device r scopes operation labels (Js.read pushed - 1)
+                Js.set scopes "owed" (Js.get scopes "pushed")
+                popSegment device r scopes
+                Js.set r "sectionScopes" Js.null
                 Js.set r "section" (Js.from False)
+
+
+-- Push the three scopes of a new segment, counting each once it is pushed.
+pushSegment : V, V → ⊤
+pushSegment device scopes =
+    pushScope device 0
+    pushedOne scopes
+    pushScope device 1
+    pushedOne scopes
+    pushScope device 2
+    pushedOne scopes
+
+
+pushedOne : V → ⊤
+pushedOne scopes =
+    Js.set scopes "pushed" (Js.from (int (Js.get scopes "pushed") + 1))
+    Js.set scopes "current" (Js.from (int (Js.get scopes "current") + 1))
+
+
+-- Pop every scope of the current segment, in reverse, under its name.
+popSegment : V, V, V → ⊤
+popSegment device r scopes =
+    base = int (Js.get scopes "base")
+    name = Js.to (Js.get scopes "name")
+    labels = Js.to (Js.get scopes "labels")
+    popScopes device r scopes name labels base (base + int (Js.get scopes "current") - 1)
+    Js.set scopes "base" (Js.from (base + int (Js.get scopes "current")))
+    Js.set scopes "current" (Js.from 0)
+
+
+--| Close the current scope segment of the section open on `device` and
+--| start one named `name` (§6.3): its three scopes are popped under the
+--| old name, and three new ones pushed. Only inside a section: anywhere
+--| else, a wrapper invariant broke.
+pub segment : V, String → ⊤
+segment device name =
+    r = recordOf device
+    scopes = Js.get r "sectionScopes"
+    if Js.isNullish scopes then
+        defect "a scope segment outside a scope section"
+    else
+        popSegment device r scopes
+        Js.set scopes "name" (Js.from name)
+        pushSegment device scopes
 
 
 pushScope : V, Int → ⊤
@@ -951,10 +997,11 @@ pushScope device i = Js.to (Js.call device "pushErrorScope" [ filterName i ])
 
 -- Each pop counts as pending on the device until its reaction ran, so the
 -- device keeps its channel to the program while one is pending; what a
--- reaction throws goes to that program as a defect.
-popScopes : V, V, V, String, List String, Int → ⊤
-popScopes device r scopes operation labels i =
-    if i < 0 then
+-- reaction throws goes to that program as a defect. Scope `i` reports the
+-- filter `i` modulo 3.
+popScopes : V, V, V, String, List String, Int, Int → ⊤
+popScopes device r scopes operation labels base i =
+    if i < base then
         ⊤
     else
         Js.set r "pops" (Js.from (int (Js.get r "pops") + 1))
@@ -969,7 +1016,7 @@ popScopes device r scopes operation labels i =
                 popped r
             ]
             ▷ ignore
-        popScopes device r scopes operation labels (i - 1)
+        popScopes device r scopes operation labels base (i - 1)
 
 
 popped : V → ⊤
@@ -1001,7 +1048,7 @@ scoped : V, V, String, List String, Int, V → ⊤
 scoped r scopes operation labels i error =
     if Js.isNull error then
         counted r scopes
-    else if not (isInstance error (filterClass i)) then
+    else if not (isInstance error (filterClass (Int.rem i 3))) then
         unexpectedScope
             r
             scopes
@@ -1022,9 +1069,9 @@ scoped r scopes operation labels i error =
             }
 
         observation =
-            if i == 0 then
+            if Int.rem i 3 == 0 then
                 Error.ObservedValidation detail
-            else if i == 1 then
+            else if Int.rem i 3 == 1 then
                 Error.ObservedOutOfMemory detail
             else
                 Error.ObservedInternal detail
@@ -1117,9 +1164,11 @@ unwatch r scopes =
 observations : V → List Observation
 observations scopes =
     results = Js.get scopes "results"
-    List.filterMap [ 0, 1, 2 ] λi →
+    total : Int
+    total = Js.to (Js.get results "length")
+    List.filterMap (List.range 0 (total - 1)) λi →
         o = Js.at results i
-        if Js.isNull o then Nothing else Just (Js.to o)
+        if Js.isNullish o then Nothing else Just (Js.to o)
 
 
 failure : Observation → Error.Error
@@ -1145,6 +1194,12 @@ failure observation =
 
         Error.ObservedHostRejection o →
             Error.HostOperationRejected o
+
+        Error.ObservedRefusal i →
+            Error.InvalidInput i
+
+        Error.ObservedUnsupported c →
+            Error.UnsupportedCapability c
 
 
 -- The observation a call's own failure is, when it is a leaf a failure
@@ -1172,6 +1227,12 @@ observationOf problem =
 
         Error.HostOperationRejected o →
             Just (Error.ObservedHostRejection o)
+
+        Error.InvalidInput i →
+            Just (Error.ObservedRefusal i)
+
+        Error.UnsupportedCapability c →
+            Just (Error.ObservedUnsupported c)
 
         _ →
             Nothing
@@ -1357,11 +1418,11 @@ pub isInstanceOf : V, String → Bool
 isInstanceOf value name = isInstance value name
 
 
--- A provisional object of a batch that still runs, or of `batch`.
+-- A provisional object of a batch that still runs.
 inLiveBatch : V, V → Bool
 inLiveBatch o batch =
     made = Js.get o "batch"
     if Js.isNullish made then
         False
     else
-        Js.same made batch || Js.same (Js.get made "live") (Js.from True)
+        Js.same (Js.get made "live") (Js.from True)

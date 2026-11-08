@@ -28,5 +28,4 @@ pub getBindGroupLayout :
     → Result Error.Error Handle.BindGroupLayout
 getBindGroupLayout pipeline index =
     native = Js.from pipeline
-    device = Js.get (Engine.recordOf native) "native"
-    Result.map (Make.checked device (Make.getBindGroupLayout native Js.null index)) λl → Js.to l
+    Result.map (Make.checked (Make.getBindGroupLayout native Js.null index)) λl → Js.to l

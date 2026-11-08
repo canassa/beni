@@ -1,12 +1,14 @@
 --! Shader modules (`docs/design/webgpu.md` §4): made by
 --! `Gpu.Device.createShaderModule`, which reports invalid WGSL as
---! `Validation` with the host's message. Every message the compiler gave —
---! errors, warnings and notes — is `getCompilationInfo`'s.
+--! `ShaderRejected` with the host's message and the compiler's messages.
+--! Every message the compiler gave an accepted module — warnings and notes
+--! — is `getCompilationInfo`'s.
 
 import Gpu.Device as Device
 import Gpu.Engine as Engine
 import Gpu.Error as Error
 import Gpu.Handle as Handle
+import Gpu.Make as Make
 import Gpu.Types as Types
 import Js
 
@@ -15,21 +17,14 @@ type alias V =
     Js.Value
 
 
---| One message of the WGSL compiler, with every native field: its kind,
---| text, line and position (from 1, 0 when it has none), and its offset
---| and length in the source, in UTF-16 code units.
+--| One message of the WGSL compiler (`Gpu.Error.CompilationMessage`).
 pub type alias CompilationMessage =
-    message : String
-    type_ : Types.CompilationMessageType
-    lineNum : Int
-    linePos : Int
-    offset : Int
-    length : Int
+    Error.CompilationMessage
 
 
---| What the compiler said of a module.
+--| What the compiler said of a module (`Gpu.Error.CompilationInfo`).
 pub type alias CompilationInfo =
-    messages : List CompilationMessage
+    Error.CompilationInfo
 
 
 --| The module's label.
@@ -49,7 +44,7 @@ source shader = Js.to (Js.get (Engine.recordOf (Js.from shader)) "code")
 
 --| Every message the compiler gave for the module. The host documents no
 --| rejection (ledger §3): one is a defect, and so is a message kind
---| outside the pin. `DeviceLost` when the device is lost first. May
+--| outside the pin or a position that is not a non-negative integer. `DeviceLost` when the device is lost first. May
 --| suspend.
 pub getCompilationInfo : Handle.Shader → Result Error.Error CompilationInfo
 getCompilationInfo shader =
@@ -58,52 +53,7 @@ getCompilationInfo shader =
     Result.mapError
         (Engine.usable native (Js.get record "device") Js.null "shader")
         Error.InvalidInput?
-    info = Js.ref Nothing
-
-    pending =
-        Engine.pendingOutcome
-            (Js.get record "native")
-            "getCompilationInfo"
-            (Js.call native "getCompilationInfo" [])
-            λfulfilled value →
-                if fulfilled then
-                    Js.write info (Just (readInfo value))
-                    Engine.Expected ⊤
-                else
-                    Engine.Unexpected value
-    Engine.awaitPending pending?
-    case Js.read info of
-        Just i →
-            Ok i
-
-        Nothing →
-            Engine.defect "getCompilationInfo settled without its messages"
-
-
-readInfo : V → CompilationInfo
-readInfo value =
-    messages = Js.call (Js.global "Array") "from" [ Engine.member value "messages" ]
-    count : Int
-    count = Js.to (Js.get messages "length")
-    { messages = List.map (List.range 0 (count - 1)) λi → readMessage (Js.at messages i) }
-
-
-readMessage : V → CompilationMessage
-readMessage m =
-    kind =
-        case Types.compilationMessageTypeFromString (Js.to (Js.get m "type")) of
-            Just k →
-                k
-
-            Nothing →
-                Engine.defect "a compilation message of a type outside the pin"
-    { message = Js.to (Js.get m "message")
-    , type_ = kind
-    , lineNum = Js.to (Js.get m "lineNum")
-    , linePos = Js.to (Js.get m "linePos")
-    , offset = Js.to (Js.get m "offset")
-    , length = Js.to (Js.get m "length")
-    }
+    Make.compilationInfo native
 
 
 --| `Gpu.Device.createShaderModule` and the module's compilation messages

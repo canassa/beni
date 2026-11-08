@@ -60,9 +60,7 @@ deviceOf queue = Js.get (Engine.recordOf (Js.from queue)) "native"
 --| the host refuses anyway. May suspend.
 pub writeBuffer : Handle.Queue, Handle.Buffer, WriteBufferSource → Result Error.Error ⊤
 writeBuffer queue buffer write =
-    Result.map
-        (Make.checked (deviceOf queue) (Make.writeBuffer (Js.from queue) Js.null buffer write))
-        λ_ → ⊤
+    Result.map (Make.checked (Make.writeBuffer (Js.from queue) Js.null buffer write)) λ_ → ⊤
 
 
 --| Submit `commands`, checked (§6.1, §8.3): one native submit, whose
@@ -76,7 +74,7 @@ writeBuffer queue buffer write =
 --| (`DuplicateCommandBuffer`). May suspend.
 pub submit : Handle.Queue, List Handle.CommandBuffer → Result Error.Error Handle.Submission
 submit queue commands =
-    Result.map (Make.checked (deviceOf queue) (Make.submit (Js.from queue) Js.null commands)) λreceipt →
+    Result.map (Make.checked (Make.submit (Js.from queue) Js.null commands)) λreceipt →
         Js.to receipt
 
 
@@ -121,7 +119,6 @@ pub writeTexture :
 writeTexture queue destination data layout extent =
     Result.map
         (Make.checked
-            (deviceOf queue)
             (Make.writeTexture (Js.from queue) Js.null destination data layout extent)
         )
         λ_ → ⊤

@@ -127,6 +127,9 @@ setBindGroupSlice pass index bindGroup offsets start length =
     at = Session.pass native "pass"?
     s = at.session
     g = group s bindGroup?
+    -- `dynamicOffsetsDataStart` is a `GPUSize64`, the length a `GPUSize32`.
+    Session.check s (Result.map (Memory.size64 start "dynamicOffsetsDataStart") λ_ → ⊤)?
+    Session.check s (u32 length "dynamicOffsetsDataLength")?
     case offsets of
         Binary.Uint32Array data →
             case Memory.sourceInfo (Binary.ViewOf offsets) "dynamicOffsetsData" of
@@ -237,7 +240,8 @@ setImmediates pass rangeOffset data dataOffset size =
 
 immediatesPreflight : Int, Binary.Source, Int, Maybe Int → Result InputError ⊤
 immediatesPreflight rangeOffset data dataOffset size =
-    _ = Memory.size64 rangeOffset "rangeOffset"?
+    -- `rangeOffset` is a `GPUSize32`.
+    u32 rangeOffset "rangeOffset"?
     Memory.aligned rangeOffset 4 "rangeOffset"?
     info = Memory.sourceInfo data "data"?
     _ = Memory.size64 dataOffset "dataOffset"?
@@ -297,3 +301,14 @@ insertDebugMarker pass markerLabel =
 --| The pass's label.
 pub label : Handle.ComputePass → String
 label pass = Js.to (Js.get (Js.from pass) "label")
+
+
+-- A value at `path` as a `GPUSize32` (`unsigned long`) accepts it.
+u32 : Int, String → Result InputError ⊤
+u32 value path =
+    case Scalar.u32 value of
+        Ok _ →
+            Ok ⊤
+
+        Err domain →
+            Err (Error.atPath path domain)
