@@ -70,16 +70,27 @@ const fakeGpu = () => ({
 
 // ---- Faults ---------------------------------------------------------------
 
-// Requests held since "requests-held", newest last: the host's promise and
-// what settles the one the page was given.
+// Every answer the host was asked for, for `later` to wait on: requests,
+// pops, and the loss of a device the page destroyed.
+const hostAnswers = [];
+const asked = (promise) => {
+  hostAnswers.push(promise);
+  return promise;
+};
+
+// Requests held since "requests-held", newest last: the host is not asked
+// until `releaseRequest` says how the request settles, so a refusal
+// injected there is the only answer it gets, on either host.
 let holdRequests = false;
 const heldRequests = [];
-const hostAnswers = [];
-const holding = (promise) => {
-  hostAnswers.push(promise);
-  if (!holdRequests) return promise;
-  return new globalThis.Promise((resolve, reject) => heldRequests.push({ promise, resolve, reject }));
+const holding = (call) => {
+  if (!holdRequests) return asked(call());
+  return new globalThis.Promise((resolve, reject) => heldRequests.push({ call, resolve, reject }));
 };
+
+// The devices whose `lost` the fixture settles, whose loss nobody waits for
+// in `later`.
+const controlledDevices = new globalThis.WeakSet();
 
 // Every device made since "lost-controlled", newest last, with what
 // settles its injected `lost`.
@@ -190,17 +201,23 @@ function prepare() {
   // for `releaseRequest`; the loss control and every fault see it after.
   const hostRequest = host.requestAdapter;
   host.requestAdapter = function (...args) {
-    return holding(hostRequest.apply(this, args)).then((adapter) => {
+    return holding(() => hostRequest.apply(this, args)).then((adapter) => {
       if (adapter !== null) wrap(adapter, "requestDevice", function (request, ...rest) {
-        return holding(request.apply(this, rest));
+        return holding(() => request.apply(this, rest));
       });
       return adapter;
     });
   };
   onAdapters(host, function (original, ...args) {
     return original.apply(this, args).then((device) => {
+      // A destroyed device's loss is an answer `later` waits for.
+      wrap(device, "destroy", function (destroy) {
+        if (!controlledDevices.has(this)) asked(this.lost);
+        return destroy.call(this);
+      });
       if (controlLoss) {
         controlLoss = false;
+        controlledDevices.add(device);
         const entry = {};
         const lost = new globalThis.Promise((done, fail) => {
           entry.resolve = done;
@@ -240,7 +257,7 @@ export const lose = (reason) => {
 export const releaseRequest = (how) => {
   const entry = heldRequests.pop();
   if (entry === undefined) throw new globalThis.Error("GpuHost.releaseRequest: no request is held");
-  if (how === "host") entry.promise.then(entry.resolve, entry.reject);
+  if (how === "host") asked(entry.call()).then(entry.resolve, entry.reject);
   else if (how === "reject-operation") entry.reject(new globalThis.DOMException("injected device refusal", "OperationError"));
   else if (how === "reject-unlisted") entry.reject(new globalThis.DOMException("injected unlisted refusal", "NotSupportedError"));
   else throw new globalThis.Error(`GpuHost.releaseRequest: no way "${how}"`);
