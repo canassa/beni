@@ -487,6 +487,7 @@ module Gpu.Commands
   value drawIndexed : V, Int, Int, Int, Int, Int → Result InputError ⊤  -- impure
   value drawIndirect : V, At, String, V, Int → Result InputError ⊤  -- impure
   value insertDebugMarker : V, String → Result InputError ⊤  -- impure
+  value optional : Maybe Int → V
   value optionalSize : V, Maybe Int, String → Result InputError ⊤  -- impure
   value popDebugGroup : V, At, String → Result InputError ⊤  -- impure
   value pushDebugGroup : V, At, String, String → Result InputError ⊤  -- impure
@@ -665,6 +666,7 @@ module Gpu.Error
     QueryActive
     QueryInactive
     QuerySetMissing
+    QueryReused
     SessionState
     SessionStopped
   alias LimitMismatch
@@ -873,10 +875,11 @@ module Gpu.Make
   value computePipeline : V, V, ComputePipelineDescriptor → Result Error Op  -- impure
   value each : List a, (a → Result e ⊤) → Result e ⊤
   value formatChecked : List TextureFormat, (⊤ → V) → Result Error V  -- impure
+  value formatFailure : List (TextureFormat × FeatureName), V → Error  -- impure
   value formatFeature : TextureFormat → Maybe FeatureName
   value formatsAvailable : V, List TextureFormat → Result Error ⊤  -- impure
-  value gated : List TextureFormat → Maybe (TextureFormat × FeatureName)
-  value getBindGroupLayout : V, V, U32 → Result Error Op  -- impure
+  value gated : List TextureFormat → List (TextureFormat × FeatureName)
+  value getBindGroupLayout : V, V, V, U32 → Result Error Op  -- impure
   value labelsOf : Option String → List String
   value pipelineLayout : V, V, PipelineLayoutDescriptor → Result Error Op  -- impure
   value querySet : V, QuerySetDescriptor → Result Error Op  -- impure
@@ -1134,6 +1137,7 @@ module Gpu.Session
   value finished : V, V → ⊤  -- impure
   value latch : V, Error → ⊤  -- impure
   value pass : V, String → Result InputError { record : V, session : V }  -- impure
+  value queriesClosed : { record : V, session : V } → Result InputError ⊤  -- impure
   value refuse : V, InputError → Result InputError a  -- impure
   value stopped : V, Error → Result InputError a  -- impure
   value usable : V, V, String → Result InputError ⊤  -- impure
