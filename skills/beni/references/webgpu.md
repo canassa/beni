@@ -10,7 +10,8 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Device`: `features`, `limits`, `adapterInfo`, `queue`, `destroy`, `loss`, `awaitLost`, and the
   checked operations `createSampler`, `createBuffer`, `createMappedBuffer`, `createTexture`,
   `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createShaderModule`,
-  `createComputePipeline`, `createComputePipelineAsync` and `createQuerySet`.
+  `createComputePipeline`, `createComputePipelineAsync`, `createRenderPipeline`,
+  `createRenderPipelineAsync` and `createQuerySet`.
 - `Gpu.Buffer`: `size`, `usage`, `mapState`, `label`, `setLabel`, `map`, `currentMapping`,
   `getMappedRange`, `withMapped`, `unmap`, `destroy`, and the mapping's `mappingMode`,
   `mappingRange`, `mappingBuffer` and `mappingLive`.
@@ -18,9 +19,16 @@ browser's WebGPU API with types. Only the main thread has them now.
   `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`.
 - `Gpu.Queue`: `writeBuffer`, `writeTexture`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
 - `Gpu.Shader`: `getCompilationInfo`, `compile`, `source`. `Gpu.ComputePipeline`:
-  `getBindGroupLayout`. `Gpu.Texture` and `Gpu.QuerySet`: snapshots and `destroy`.
-- `Gpu.Encode.run`: encode commands. `Gpu.CommandEncoder` and `Gpu.ComputePass` have the
-  commands: copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
+  `getBindGroupLayout`. `Gpu.Texture`: snapshots, `createView` and `destroy`. `Gpu.QuerySet`:
+  snapshots and `destroy`. `Gpu.TextureView`, `Gpu.RenderBundle`: `label`, `setLabel`.
+- `Gpu.RenderPipeline`: `label`, `setLabel`, `getBindGroupLayout`.
+- `Gpu.RenderPass`: the commands of a render pass: `with`, `end`, `setPipeline`,
+  `setBindGroup`, `setVertexBuffer`, `setIndexBuffer`, `draw`, `drawIndexed`, `drawIndirect`,
+  `drawIndexedIndirect`, `setViewport`, `setScissorRect`, `setBlendConstant`,
+  `setStencilReference`, `beginOcclusionQuery`, `endOcclusionQuery`, `executeBundles` and the
+  others. `Gpu.RenderBundleEncoder`: the same draw commands and `finish`.
+- `Gpu.Encode.run`: encode commands. `Gpu.Encode.bundle`: encode a render bundle.
+  `Gpu.CommandEncoder` and `Gpu.ComputePass` have the commands: `beginRenderPass`, copies, `clearBuffer`, `resolveQuerySet`, debug groups, `setPipeline`,
   `setBindGroup`, `dispatchWorkgroups`, `setImmediates` and the others.
 - `Gpu.Batch`: many synchronous operations, checked together.
 - `Gpu.Submission`: `done`, which waits for the work of one submit.
@@ -33,7 +41,7 @@ browser's WebGPU API with types. Only the main thread has them now.
 - `Gpu.Error`: `InitError`, `Error` and their parts.
 - `Gpu.Handle`: the handle types, for example `Adapter` and `Device`.
 
-Texture views, render pipelines, render passes and canvases come in later releases.
+Canvases come in a later release.
 
 ## Rules
 
@@ -109,6 +117,27 @@ Texture views, render pipelines, render passes and canvases come in later releas
    A failed batch rejects all that it made. A batch is not a transaction: a write it did stays.
 6. **The GPU memory is little-endian.** Read a query result with `readWord64`.
 
+## Rendering
+
+1. **A render pass is a callback too.** `Gpu.RenderPass.with encoder descriptor body` begins
+   the pass, calls `body` and ends the pass. Write `body` as a named function: a `?` cannot be
+   in a lambda. While the pass is open, an encoder command gives `EncoderLocked`. After `end`, a
+   pass command gives `PassEnded`.
+2. **`draw` takes a record.** `Gpu.RenderPass.vertices count` and `Gpu.RenderPass.indices count`
+   give the arguments with the browser's defaults. Change a field with a record update:
+   `{ (Gpu.RenderPass.vertices six) | instanceCount = two }`.
+3. **An attachment must be usable.** A view of a destroyed texture gives `ResourceDestroyed`, and
+   a view of another device gives `WrongDevice`.
+4. **An occlusion query needs a query set in the pass descriptor.** Without one,
+   `beginOcclusionQuery` gives `QuerySetMissing`. A second begin gives `QueryActive`. An end with
+   no open query gives `QueryInactive`.
+5. **`executeBundles` clears the pass state.** After it, set the pipeline, the bind groups and
+   the buffers again before the next draw.
+6. **A format that needs a feature is checked first.** A pipeline, a view or a bundle encoder
+   that names such a format on a device without the feature gives `UnsupportedCapability`.
+7. **A batch can make render resources.** `Gpu.Batch.createView`, `createRenderPipeline`,
+   `getRenderBindGroupLayout` and `encodeBundle` are the batch forms.
+
 ## Example
 
 ```beni platform=browser-tea
@@ -180,5 +209,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §7, §7.1, §8, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/webgpu.md` §2–§5, §6.2, §7, §7.1, §8, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
 modules' doc comments.

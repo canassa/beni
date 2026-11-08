@@ -423,11 +423,15 @@ module Gpu.Batch
   value createComputePipeline : Batch, ComputePipelineDescriptor → Result InputError ComputePipeline  -- impure
   value createPipelineLayout : Batch, PipelineLayoutDescriptor → Result InputError PipelineLayout  -- impure
   value createQuerySet : Batch, QuerySetDescriptor → Result InputError QuerySet  -- impure
+  value createRenderPipeline : Batch, RenderPipelineDescriptor → Result InputError RenderPipeline  -- impure
   value createSampler : Batch, SamplerDescriptor → Result InputError Sampler  -- impure
   value createShaderModule : Batch, ShaderModuleDescriptor → Result InputError Shader  -- impure
   value createTexture : Batch, TextureDescriptor → Result InputError Texture  -- impure
+  value createView : Batch, Texture, TextureViewDescriptor → Result InputError TextureView  -- impure
   value encode : Batch, CommandEncoderDescriptor, (CommandEncoder → Result InputError a) → Result InputError { commands : CommandBuffer, value : a }  -- impure
+  value encodeBundle : Batch, RenderBundleEncoderDescriptor, (RenderBundleEncoder → Result InputError a) → Result InputError { bundle : RenderBundle, value : a }  -- impure
   value getBindGroupLayout : Batch, ComputePipeline, U32 → Result InputError BindGroupLayout  -- impure
+  value getRenderBindGroupLayout : Batch, RenderPipeline, U32 → Result InputError BindGroupLayout  -- impure
   value live : Batch → Bool  -- impure
   value run : Device, String, (Batch → Result InputError a) → Result Error a  -- suspends
   value submit : Batch, Queue, List CommandBuffer → Result InputError Submission  -- impure
@@ -462,6 +466,7 @@ module Gpu.Buffer
   value withMapped : Buffer, MapRequest, (Mapping → Result Error a) → Result Error a  -- suspends
 module Gpu.CommandEncoder
   value beginComputePass : CommandEncoder, ComputePassDescriptor → Result InputError ComputePass  -- impure
+  value beginRenderPass : CommandEncoder, RenderPassDescriptor → Result InputError RenderPass  -- impure
   value clearBuffer : CommandEncoder, Buffer, Int, Maybe Int → Result InputError ⊤  -- impure
   value copyBuffer : CommandEncoder, Buffer, Buffer, Maybe Int → Result InputError ⊤  -- impure
   value copyBufferToBuffer : CommandEncoder, Buffer, Int, Buffer, Int, Maybe Int → Result InputError ⊤  -- impure
@@ -475,6 +480,23 @@ module Gpu.CommandEncoder
   value pushDebugGroup : CommandEncoder, String → Result InputError ⊤  -- impure
   value resolveQuerySet : CommandEncoder, QuerySet, U32, U32, Buffer, Int → Result InputError ⊤  -- impure
   value setLabel : CommandEncoder, String → ⊤  -- impure
+module Gpu.Commands
+  alias At
+    At
+  value draw : V, Int, Int, Int, Int → Result InputError ⊤  -- impure
+  value drawIndexed : V, Int, Int, Int, Int, Int → Result InputError ⊤  -- impure
+  value drawIndirect : V, At, String, V, Int → Result InputError ⊤  -- impure
+  value insertDebugMarker : V, String → Result InputError ⊤  -- impure
+  value optionalSize : V, Maybe Int, String → Result InputError ⊤  -- impure
+  value popDebugGroup : V, At, String → Result InputError ⊤  -- impure
+  value pushDebugGroup : V, At, String, String → Result InputError ⊤  -- impure
+  value setBindGroup : V, At, U32, Maybe V, List U32 → Result InputError ⊤  -- impure
+  value setBindGroupSlice : V, At, U32, Maybe V, View, Int, Int → Result InputError ⊤  -- impure
+  value setImmediates : V, At, String, Int, Source, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setIndexBuffer : V, At, V, IndexFormat, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setPipeline : V, At, V → Result InputError ⊤  -- impure
+  value setVertexBuffer : V, At, U32, Maybe V, Int, Maybe Int → Result InputError ⊤  -- impure
+  value size64 : V, Int, String → Result InputError ⊤  -- impure
 module Gpu.ComputePass
   value dispatchWorkgroups : ComputePass, U32, U32, U32 → Result InputError ⊤  -- impure
   value dispatchWorkgroupsIndirect : ComputePass, Buffer, Int → Result InputError ⊤  -- impure
@@ -503,6 +525,8 @@ module Gpu.Device
   value createMappedBuffer : Device, BufferDescriptor → Result Error { buffer : Buffer, mapping : Mapping }  -- suspends
   value createPipelineLayout : Device, PipelineLayoutDescriptor → Result Error PipelineLayout  -- suspends
   value createQuerySet : Device, QuerySetDescriptor → Result Error QuerySet  -- suspends
+  value createRenderPipeline : Device, RenderPipelineDescriptor → Result Error RenderPipeline  -- suspends
+  value createRenderPipelineAsync : Device, RenderPipelineDescriptor → Result Error RenderPipeline  -- suspends
   value createSampler : Device, SamplerDescriptor → Result Error Sampler  -- suspends
   value createShaderModule : Device, ShaderModuleDescriptor → Result Error Shader  -- suspends
   value createTexture : Device, TextureDescriptor → Result Error Texture  -- suspends
@@ -512,6 +536,7 @@ module Gpu.Device
   value loss : Device → Maybe DeviceLoss  -- impure
   value queue : Device → Queue  -- impure
 module Gpu.Encode
+  value bundle : Device, RenderBundleEncoderDescriptor, (RenderBundleEncoder → Result InputError a) → Result Error { bundle : RenderBundle, value : a }  -- suspends
   value run : Device, CommandEncoderDescriptor, (CommandEncoder → Result InputError a) → Result Error { commands : CommandBuffer, value : a }  -- suspends
 module Gpu.Engine
   type Missing
@@ -637,6 +662,9 @@ module Gpu.Error
     CommandBufferSubmitted
     DuplicateCommandBuffer
     ViewKindRequired
+    QueryActive
+    QueryInactive
+    QuerySetMissing
     SessionState
     SessionStopped
   alias LimitMismatch
@@ -839,15 +867,22 @@ module Gpu.Make
   value bindGroup : V, V, BindGroupDescriptor → Result Error Op  -- impure
   value bindGroupLayout : V, BindGroupLayoutDescriptor → Result Error Op  -- impure
   value buffer : V, BufferDescriptor → Result Error Op  -- impure
+  value bundleFormats : RenderBundleEncoderDescriptor → List TextureFormat
   value checked : V, Result Error Op → Result Error V  -- suspends
   value computeHandles : V, V, ComputePipelineDescriptor → Result Error ⊤  -- impure
   value computePipeline : V, V, ComputePipelineDescriptor → Result Error Op  -- impure
   value each : List a, (a → Result e ⊤) → Result e ⊤
+  value formatChecked : List TextureFormat, (⊤ → V) → Result Error V  -- impure
   value formatFeature : TextureFormat → Maybe FeatureName
+  value formatsAvailable : V, List TextureFormat → Result Error ⊤  -- impure
+  value gated : List TextureFormat → Maybe (TextureFormat × FeatureName)
   value getBindGroupLayout : V, V, U32 → Result Error Op  -- impure
   value labelsOf : Option String → List String
   value pipelineLayout : V, V, PipelineLayoutDescriptor → Result Error Op  -- impure
   value querySet : V, QuerySetDescriptor → Result Error Op  -- impure
+  value renderFormats : RenderPipelineDescriptor → List TextureFormat
+  value renderHandles : V, V, RenderPipelineDescriptor → Result Error ⊤  -- impure
+  value renderPipeline : V, V, RenderPipelineDescriptor → Result Error Op  -- impure
   value runAdopt : Op, V → ⊤  -- impure
   value runCall : Op → Result Error V  -- impure
   value runDiscard : Op, V → ⊤  -- impure
@@ -855,6 +890,7 @@ module Gpu.Make
   value shaderModule : V, ShaderModuleDescriptor → Result Error Op  -- impure
   value submit : V, V, List CommandBuffer → Result Error Op  -- impure
   value texture : V, TextureDescriptor → Result Error Op  -- impure
+  value textureView : V, V, V, TextureViewDescriptor → Result Error Op  -- impure
   value writeBuffer : V, V, Buffer, WriteBufferSource → Result Error Op  -- impure
   value writeTexture : V, V, TexelCopyTextureInfo, Source, TexelCopyBufferLayout, Extent3D → Result Error Op  -- impure
 module Gpu.MappedRange
@@ -1002,6 +1038,60 @@ module Gpu.Queue
   value submit : Queue, List CommandBuffer → Result Error Submission  -- suspends
   value writeBuffer : Queue, Buffer, WriteBufferSource → Result Error ⊤  -- suspends
   value writeTexture : Queue, TexelCopyTextureInfo, Source, TexelCopyBufferLayout, Extent3D → Result Error ⊤  -- suspends
+module Gpu.RenderBundle
+  value label : RenderBundle → String  -- impure
+  value setLabel : RenderBundle, String → ⊤  -- impure
+module Gpu.RenderBundleEncoder
+  value draw : RenderBundleEncoder, DrawArguments → Result InputError ⊤  -- impure
+  value drawIndexed : RenderBundleEncoder, DrawIndexedArguments → Result InputError ⊤  -- impure
+  value drawIndexedIndirect : RenderBundleEncoder, Buffer, Int → Result InputError ⊤  -- impure
+  value drawIndirect : RenderBundleEncoder, Buffer, Int → Result InputError ⊤  -- impure
+  value finish : RenderBundleEncoder, RenderBundleDescriptor → Result InputError ⊤  -- impure
+  value insertDebugMarker : RenderBundleEncoder, String → Result InputError ⊤  -- impure
+  value label : RenderBundleEncoder → String  -- impure
+  value popDebugGroup : RenderBundleEncoder → Result InputError ⊤  -- impure
+  value pushDebugGroup : RenderBundleEncoder, String → Result InputError ⊤  -- impure
+  value setBindGroup : RenderBundleEncoder, U32, Maybe BindGroup, List U32 → Result InputError ⊤  -- impure
+  value setBindGroupSlice : RenderBundleEncoder, U32, Maybe BindGroup, View, Int, Int → Result InputError ⊤  -- impure
+  value setImmediates : RenderBundleEncoder, Int, Source, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setIndexBuffer : RenderBundleEncoder, Buffer, IndexFormat, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setLabel : RenderBundleEncoder, String → ⊤  -- impure
+  value setPipeline : RenderBundleEncoder, RenderPipeline → Result InputError ⊤  -- impure
+  value setVertexBuffer : RenderBundleEncoder, U32, Maybe Buffer, Int, Maybe Int → Result InputError ⊤  -- impure
+module Gpu.RenderPass
+  alias DrawArguments
+    DrawArguments
+  alias DrawIndexedArguments
+    DrawIndexedArguments
+  value beginOcclusionQuery : RenderPass, U32 → Result InputError ⊤  -- impure
+  value draw : RenderPass, DrawArguments → Result InputError ⊤  -- impure
+  value drawIndexed : RenderPass, DrawIndexedArguments → Result InputError ⊤  -- impure
+  value drawIndexedIndirect : RenderPass, Buffer, Int → Result InputError ⊤  -- impure
+  value drawIndirect : RenderPass, Buffer, Int → Result InputError ⊤  -- impure
+  value end : RenderPass → Result InputError ⊤  -- impure
+  value endOcclusionQuery : RenderPass → Result InputError ⊤  -- impure
+  value executeBundles : RenderPass, List RenderBundle → Result InputError ⊤  -- impure
+  value indices : U32 → DrawIndexedArguments
+  value insertDebugMarker : RenderPass, String → Result InputError ⊤  -- impure
+  value label : RenderPass → String  -- impure
+  value popDebugGroup : RenderPass → Result InputError ⊤  -- impure
+  value pushDebugGroup : RenderPass, String → Result InputError ⊤  -- impure
+  value setBindGroup : RenderPass, U32, Maybe BindGroup, List U32 → Result InputError ⊤  -- impure
+  value setBindGroupSlice : RenderPass, U32, Maybe BindGroup, View, Int, Int → Result InputError ⊤  -- impure
+  value setBlendConstant : RenderPass, Color → Result InputError ⊤  -- impure
+  value setImmediates : RenderPass, Int, Source, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setIndexBuffer : RenderPass, Buffer, IndexFormat, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setPipeline : RenderPass, RenderPipeline → Result InputError ⊤  -- impure
+  value setScissorRect : RenderPass, U32, U32, U32, U32 → Result InputError ⊤  -- impure
+  value setStencilReference : RenderPass, U32 → Result InputError ⊤  -- impure
+  value setVertexBuffer : RenderPass, U32, Maybe Buffer, Int, Maybe Int → Result InputError ⊤  -- impure
+  value setViewport : RenderPass, FiniteF32, FiniteF32, FiniteF32, FiniteF32, FiniteF32, FiniteF32 → Result InputError ⊤  -- impure
+  value vertices : U32 → DrawArguments
+  value with : CommandEncoder, RenderPassDescriptor, (RenderPass → Result InputError a) → Result InputError a  -- impure
+module Gpu.RenderPipeline
+  value getBindGroupLayout : RenderPipeline, U32 → Result Error BindGroupLayout  -- suspends
+  value label : RenderPipeline → String  -- impure
+  value setLabel : RenderPipeline, String → ⊤  -- impure
 module Gpu.Scalar
   type Domain
     U32Domain
@@ -1023,24 +1113,31 @@ module Gpu.Scalar
   value i32 : Int → Result DomainError I32
   value i32ToInt : I32 → Int
   value i32Truncating : Float → Result DomainError I32
+  value i32Zero : I32
   value size64 : Int → Result DomainError Size64
   value size64FromFloat : Float → Result DomainError Size64
   value size64ToInt : Size64 → Int
   value size64Truncating : Float → Result DomainError Size64
   value u32 : Int → Result DomainError U32
+  value u32One : U32
   value u32ToInt : U32 → Int
   value u32Truncating : Float → Result DomainError U32
+  value u32Zero : U32
 module Gpu.Session
+  value beginPass : V, V, V → ⊤  -- impure
+  value bundle : V, V, RenderBundleEncoderDescriptor, (V → Result InputError a), Ref (Maybe a) → Result Error V  -- impure
   value check : V, Result InputError ⊤ → Result InputError ⊤  -- impure
   value debug : V, V, Int, String → Result InputError ⊤  -- impure
   value encode : V, V, CommandEncoderDescriptor, (V → Result InputError a), Ref (Maybe a) → Result Error V  -- impure
   value encoder : V, String → Result InputError { record : V, session : V }  -- impure
+  value endPass : V, V → ⊤  -- impure
   value finished : V, V → ⊤  -- impure
   value latch : V, Error → ⊤  -- impure
   value pass : V, String → Result InputError { record : V, session : V }  -- impure
   value refuse : V, InputError → Result InputError a  -- impure
   value stopped : V, Error → Result InputError a  -- impure
   value usable : V, V, String → Result InputError ⊤  -- impure
+  value withPass : V, Result InputError a → Result InputError a  -- impure
 module Gpu.Shader
   alias CompilationInfo
     CompilationInfo
@@ -1054,6 +1151,7 @@ module Gpu.Shader
 module Gpu.Submission
   value done : Submission → Result Error ⊤  -- suspends
 module Gpu.Texture
+  value createView : Texture, TextureViewDescriptor → Result Error TextureView  -- suspends
   value depthOrArrayLayers : Texture → Int  -- impure
   value destroy : Texture → ⊤  -- impure
   value format : Texture → TextureFormat  -- impure
@@ -1064,6 +1162,9 @@ module Gpu.Texture
   value setLabel : Texture, String → ⊤  -- impure
   value usage : Texture → TextureUsages  -- impure
   value width : Texture → Int  -- impure
+module Gpu.TextureView
+  value label : TextureView → String  -- impure
+  value setLabel : TextureView, String → ⊤  -- impure
 module Gpu.Types
   alias AdapterInfo
     AdapterInfo
