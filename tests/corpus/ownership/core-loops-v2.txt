@@ -1,3 +1,7 @@
+# KNOWN MISMATCH (#2297): C.2 and C.4 say mapHelp and foldlFrom read π1's
+# elements ([*] R); the walker says reads π1ε, which is unsound for a direct
+# caller (latent: only base-wrapped callers exist). Fixing #2297 changes
+# the mapHelp, foldlFrom and foldrFrom lines below to read π1[*].
 # Appendix C.2–C.5 of docs/design/ownership-v2.md, as the checker v2 derives them
 # (`beni dump --stage=ownership --ownership=v2 --core core/List.beni`, its `summary`
 # lines, a label's origin written `@n`), read by tests/blackbox/check_test.zig. Read a change against Appendix C
