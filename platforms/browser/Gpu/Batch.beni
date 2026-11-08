@@ -279,8 +279,15 @@ live b = Js.to (Js.get (Js.from b) "live")
 --| A queue write into a texture in the batch (`Gpu.Queue.writeTexture`'s
 --| checks); it may write a texture the batch made.
 pub writeTexture :
-    Handle.Batch, Handle.Queue, Types.TexelCopyTextureInfo, Binary.Source, Types.TexelCopyBufferLayout, Types.Extent3D
+      Handle.Batch
+    , Handle.Queue
+    , Types.TexelCopyTextureInfo
+    , Binary.Source
+    , Types.TexelCopyBufferLayout
+    , Types.Extent3D
     → Result InputError ⊤
 writeTexture b queue destination data layout extent =
     batch = Js.from b
-    Result.map (inBatch batch λ⊤ → Make.writeTexture (Js.from queue) batch destination data layout extent) λ_ → ⊤
+    Result.map
+        (inBatch batch λ⊤ → Make.writeTexture (Js.from queue) batch destination data layout extent)
+        λ_ → ⊤

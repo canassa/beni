@@ -112,9 +112,16 @@ onSubmittedWorkDone queue =
 --| extent and texel blocks are the device's to check (`Validation`). Queue
 --| writes need no 256-byte row alignment. May suspend.
 pub writeTexture :
-    Handle.Queue, Types.TexelCopyTextureInfo, Binary.Source, Types.TexelCopyBufferLayout, Types.Extent3D
+      Handle.Queue
+    , Types.TexelCopyTextureInfo
+    , Binary.Source
+    , Types.TexelCopyBufferLayout
+    , Types.Extent3D
     → Result Error.Error ⊤
 writeTexture queue destination data layout extent =
     Result.map
-        (Make.checked (deviceOf queue) (Make.writeTexture (Js.from queue) Js.null destination data layout extent))
+        (Make.checked
+            (deviceOf queue)
+            (Make.writeTexture (Js.from queue) Js.null destination data layout extent)
+        )
         λ_ → ⊤

@@ -23,7 +23,9 @@ import Tea
 
 
 extent : Types.Extent3D
-extent = Types.Extent3DFields { width = u32 4, height = Types.Value (u32 2), depthOrArrayLayers = Types.Default }
+extent =
+    Types.Extent3DFields
+        { width = u32 4, height = Types.Value (u32 2), depthOrArrayLayers = Types.Default }
 
 
 texels : ⊤ → Binary.Source
@@ -36,8 +38,7 @@ copies first second target encoder =
         encoder
         (Types.texelCopyTextureInfo first)
         (Types.texelCopyTextureInfo second)
-        extent
-    ?
+        extent?
     CommandEncoder.copyTextureToBuffer
         encoder
         (Types.texelCopyTextureInfo second)
@@ -46,24 +47,25 @@ copies first second target encoder =
 
 
 run : ⊤ → List String
-run ⊤ =
-    GpuKit.with "none" λd →
-        usage = Flags.texture [ Flags.TextureCopySrc, Flags.TextureCopyDst ]
-        first = must (Gpu.Device.createTexture d (Types.textureDescriptor extent Types.Rgba8unorm usage))
-        second = must (Gpu.Device.createTexture d (Types.textureDescriptor extent Types.Rgba8unorm usage))
-        target = must (Gpu.Device.createBuffer d (buffer 512 [ MapRead, CopyDst ]))
-        queue = Gpu.Device.queue d
-        layout = { (Types.texelCopyBufferLayout) | bytesPerRow = Types.Value (u32 16) }
-        wrote = Gpu.Queue.writeTexture queue (Types.texelCopyTextureInfo first) (texels ⊤) layout extent
-        encoded = must (Encode.run d Types.commandEncoderDescriptor (copies first second target _))
-        receipt = must (Gpu.Queue.submit queue [ encoded.commands ])
-        _ = Gpu.Submission.done receipt
-        words = GpuKit.readU32s target 65
-        [ "write: " ++ GpuShow.checked wrote (λ_ → "done")
-        , "read back: "
-            ++ GpuShow.checked words λxs →
-                String.join (List.map [ …(List.take xs 4), …(List.drop xs 64) ] String.fromInt) ", "
-        ]
+run ⊤ = GpuKit.with "none" λd →
+    usage = Flags.texture [ Flags.TextureCopySrc, Flags.TextureCopyDst ]
+    first =
+        must (Gpu.Device.createTexture d (Types.textureDescriptor extent Types.Rgba8unorm usage))
+    second =
+        must (Gpu.Device.createTexture d (Types.textureDescriptor extent Types.Rgba8unorm usage))
+    target = must (Gpu.Device.createBuffer d (buffer 512 [ MapRead, CopyDst ]))
+    queue = Gpu.Device.queue d
+    layout = { (Types.texelCopyBufferLayout) | bytesPerRow = Types.Value (u32 16) }
+    wrote = Gpu.Queue.writeTexture queue (Types.texelCopyTextureInfo first) (texels ⊤) layout extent
+    encoded = must (Encode.run d Types.commandEncoderDescriptor (copies first second target _))
+    receipt = must (Gpu.Queue.submit queue [ encoded.commands ])
+    _ = Gpu.Submission.done receipt
+    words = GpuKit.readU32s target 65
+    [ "write: " ++ GpuShow.checked wrote λ_ → "done"
+    , "read back: "
+        ++ GpuShow.checked words λxs →
+            String.join (List.map [ …(List.take xs 4), …(List.drop xs 64) ] String.fromInt) ", "
+    ]
 
 
 main : Tea.Program

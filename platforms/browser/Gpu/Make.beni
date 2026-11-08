@@ -523,12 +523,19 @@ submittable q batch seen command =
 --| are the device's to validate, and the call documents no host failure of
 --| its own. The call makes nothing of its own.
 pub writeTexture :
-    V, V, Types.TexelCopyTextureInfo, Binary.Source, Types.TexelCopyBufferLayout, Types.Extent3D → Result Error.Error Op
+      V
+    , V
+    , Types.TexelCopyTextureInfo
+    , Binary.Source
+    , Types.TexelCopyBufferLayout
+    , Types.Extent3D
+    → Result Error.Error Op
 writeTexture queue batch destination data layout extent =
     q = Engine.recordOf queue
-    Result.mapError (Engine.usable (Js.from destination.texture) (Js.get q "device") batch "destination.texture")
-        Error.InvalidInput
-    ?
+    Result.mapError
+        (Engine.usable (Js.from destination.texture) (Js.get q "device") batch "destination.texture"
+        )
+        Error.InvalidInput?
     _ = Result.mapError (Memory.sourceInfo data "data") Error.InvalidInput?
     Ok
         { name = "writeTexture"

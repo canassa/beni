@@ -77,7 +77,7 @@ cleared ⊤ = GpuKit.with "none" λd →
     queue = Gpu.Device.queue d
     source = must (Gpu.Device.createBuffer d (buffer 16 [ CopySrc, CopyDst ]))
     target = must (Gpu.Device.createBuffer d (buffer 16 [ MapRead, CopyDst ]))
-    _ = must (Gpu.Queue.writeBuffer queue source (Gpu.Queue.bufferWrite 0 (payload ⊤)))
+    must (Gpu.Queue.writeBuffer queue source (Gpu.Queue.bufferWrite 0 (payload ⊤)))
     run = must (Encode.run d Types.commandEncoderDescriptor (copies _ source target))
     receipt = must (Gpu.Queue.submit queue [ run.commands ])
     _ = Gpu.Submission.done receipt
