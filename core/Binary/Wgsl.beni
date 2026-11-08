@@ -1,0 +1,641 @@
+--! Explicit WGSL host-shareable layouts and little-endian codecs.
+--! WGSL 14.4 and docs/design/binary.md own the byte and uniform constraints.
+
+import Binary
+import Js
+import List
+
+
+pub type Scalar
+    = Signed32
+    | Unsigned32
+    | Float32
+    | Float16
+    | AtomicSigned32
+    | AtomicUnsigned32
+
+
+pub opaque type Layout
+    = Layout Int Int Shape
+
+
+type Shape
+    = Atom Scalar
+    | Sequence Layout Int Int
+    | FixedArray Layout Int Int
+    | Runtime Layout Int
+    | Record (List Member)
+
+
+pub type alias Field =
+    name : String
+    layout : Layout
+    align : Maybe Int
+    size : Maybe Int
+
+
+pub type alias Member =
+    name : String
+    layout : Layout
+    offset : Int
+    alignment : Int
+    byteSize : Int
+
+
+pub type Value
+    = Integer Int
+    | Floating Float
+    | Composite (List Value)
+
+
+pub type UniformRules
+    = Standard
+    | Legacy
+
+
+--| A layout that WGSL does not allow, or whose size passes 2^53 − 1.
+pub type LayoutError
+    = InvalidDimension Int
+    | InvalidScalar
+    | InvalidCount Int
+    | Overflow
+    | EmptyStructure
+    | DuplicateMember String
+    | InvalidAlignment Int
+    | InvalidMemberSize Int
+    | RuntimePlacement
+
+
+--| A layout that the uniform address space refuses (WGSL 14.4.4).
+pub type UniformError
+    = UniformStride Int
+    | UniformOffset String Int
+    | UniformStructureGap String
+    | AtomicInUniform
+    | RuntimeInUniform
+
+
+--| A value that does not fit its layout, or storage that cannot hold it.
+pub type CodecError
+    = ValueShape
+    | ValueCount Int Int
+    | EmptyRuntime
+    | IntegerRange Int
+    | SizeOverflow
+    | Access Binary.AccessError
+    | Allocation Binary.AllocationError
+    | NoFloat16
+
+
+pub scalar : Scalar → Layout
+scalar kind = Layout (scalarSize kind) (scalarSize kind) (Atom kind)
+
+
+pub vector : Scalar, Int → Result LayoutError Layout
+vector kind count =
+    (if kind == AtomicSigned32 || kind == AtomicUnsigned32 then Err InvalidScalar else Ok ⊤)?
+    (if count < 2 || count > 4 || not (integer count) then Err (InvalidDimension count) else Ok ⊤)?
+    width = scalarSize kind
+    Ok
+        (Layout
+            ((if count == 2 then 2 else 4) * width)
+            (count * width)
+            (Sequence (scalar kind) count width)
+        )
+
+
+--| Matrices are ordered lists of column vectors, never row-major lists.
+pub matrix : Scalar, Int, Int → Result LayoutError Layout
+matrix kind columns rows =
+    (if kind ≠ Float32 && kind ≠ Float16 then Err InvalidScalar else Ok ⊤)?
+    (if columns < 2 || columns > 4 || not (integer columns) then
+        Err (InvalidDimension columns)
+     else
+        Ok ⊤
+    )?
+    column = vector kind rows?
+    step = strideOf column?
+    Ok (Layout (alignment column) (columns * step) (Sequence column columns step))
+
+
+pub array : Layout, Int → Result LayoutError Layout
+array element count =
+    validCount count?
+    (if runtime element then Err RuntimePlacement else Ok ⊤)?
+    step = strideOf element?
+    length = multiply step count?
+    Ok (Layout (alignment element) length (FixedArray element count step))
+
+
+pub runtimeArray : Layout → Result LayoutError Layout
+runtimeArray element =
+    (if runtime element then Err RuntimePlacement else Ok ⊤)?
+    step = strideOf element?
+    Ok (Layout (alignment element) 0 (Runtime element step))
+
+
+pub field : String, Layout → Field
+field name layout = { name = name, layout = layout, align = Nothing, size = Nothing }
+
+
+pub structure : List Field → Result LayoutError Layout
+structure fields =
+    (if List.isEmpty fields then Err EmptyStructure else Ok ⊤)?
+    placed = place fields [] 0 1?
+    if List.any placed λmember → runtime member.layout then
+        Ok (Layout (membersAlignment placed) (membersEnd placed) (Record placed))
+    else
+        size = roundUp (membersAlignment placed) (membersEnd placed)?
+        Ok (Layout (membersAlignment placed) size (Record placed))
+
+
+pub alignment : Layout → Int
+alignment (Layout align _ _) = align
+
+
+--| Nothing means a runtime array determines the final byte size.
+pub byteSize : Layout → Maybe Int
+byteSize layout = if runtime layout then Nothing else Just (fixedSize layout)
+
+
+pub stride : Layout → Maybe Int
+stride (Layout _ _ shape) =
+    case shape of
+        Sequence _ _ step →
+            Just step
+        FixedArray _ _ step →
+            Just step
+        Runtime _ step →
+            Just step
+        _ →
+            Nothing
+
+
+pub members : Layout → List Member
+members (Layout _ _ shape) =
+    case shape of
+        Record fields →
+            fields
+        _ →
+            []
+
+
+--| Validate the declared byte layout; this does not rewrite the shader's type.
+pub uniform : UniformRules, Layout → Result UniformError ⊤
+uniform rules layout =
+    case layout of
+        Layout _ _ (Atom kind) →
+            if kind == AtomicSigned32 || kind == AtomicUnsigned32 then Err AtomicInUniform else Ok ⊤
+        Layout _ _ (Runtime _ _) →
+            Err RuntimeInUniform
+        Layout _ _ (Sequence element _ _) →
+            uniform rules element
+        Layout _ _ (FixedArray element _ step) →
+            uniform rules element?
+            if rules == Legacy && Int.rem step 16 ≠ 0 then Err (UniformStride step) else Ok ⊤
+        Layout _ _ (Record fields) →
+            uniformMembers rules fields
+
+
+--| Encode a value into new zero-filled storage; padding stays zero.
+pub encode : Layout, Value → Result CodecError Binary.Buffer
+encode layout value =
+    size = valueSize layout value?
+    buffer = Result.mapError (Binary.allocate size) Allocation?
+    view = Result.mapError (Binary.dataView (Binary.Local buffer)) backingFailure?
+    writeValue view 0 layout value?
+    Ok buffer
+
+
+--| Validate the entire shape and destination before writing accessible bytes.
+pub write : Binary.View, Int, Layout, Value → Result CodecError ⊤
+write view offset layout value =
+    size = valueSize layout value?
+    checkRange view offset size?
+    writeValue view offset layout value
+
+
+--| Decode a layout from a view. For a runtime tail, remaining bytes determine
+--| the element count by floor division by its stride, as a buffer binding does.
+pub decode : Binary.View, Int, Layout → Result CodecError Value
+decode view offset layout =
+    info = viewInfo view?
+    (if offset < 0 || offset > info.byteLength || not (integer offset) then
+        Err (Access (Binary.OutOfBounds offset 0 info.byteLength))
+     else
+        Ok ⊤
+    )?
+    readValue view offset (info.byteLength - offset) layout
+
+
+fixedSize : Layout → Int
+fixedSize (Layout _ size _) = size
+
+
+runtime : Layout → Bool
+runtime (Layout _ _ shape) =
+    case shape of
+        Runtime _ _ →
+            True
+        Record fields →
+            List.any fields λmember → runtime member.layout
+        _ →
+            False
+
+
+scalarSize : Scalar → Int
+scalarSize kind = if kind == Float16 then 2 else 4
+
+
+strideOf : Layout → Result LayoutError Int
+strideOf layout = roundUp (alignment layout) (fixedSize layout)
+
+
+place : List Field, List Member, Int, Int → Result LayoutError (List Member)
+place remaining output end maximumAlign =
+    case remaining of
+        [] →
+            Ok output
+        [ current, …rest ] →
+            (if List.any output λprior → prior.name == current.name then
+                Err (DuplicateMember current.name)
+             else
+                Ok ⊤
+            )?
+            isRuntime = runtime current.layout
+            (if
+                isRuntime
+                    && (not (List.isEmpty rest)
+                           || not (directRuntime current.layout)
+                           || current.size ≠ Nothing
+                       )
+             then
+                Err RuntimePlacement
+             else
+                Ok ⊤
+            )?
+            align = Maybe.withDefault current.align (alignment current.layout)
+            (if align < alignment current.layout || not (powerOfTwo align) then
+                Err (InvalidAlignment align)
+             else
+                Ok ⊤
+            )?
+            size = Maybe.withDefault current.size (fixedSize current.layout)
+            (if
+                size < fixedSize current.layout || not (integer size) || size > 9007199254740991
+             then
+                Err (InvalidMemberSize size)
+             else
+                Ok ⊤
+            )?
+            offset = roundUp align end?
+            next = add offset size?
+            member =
+                { name = current.name
+                , layout = current.layout
+                , offset = offset
+                , alignment = align
+                , byteSize = size
+                }
+            place rest [ …output, member ] next (max maximumAlign align)
+
+
+directRuntime : Layout → Bool
+directRuntime (Layout _ _ shape) =
+    case shape of
+        Runtime _ _ →
+            True
+        _ →
+            False
+
+
+membersAlignment : List Member → Int
+membersAlignment fields = List.foldl fields 1 λmember result → max result member.alignment
+
+
+membersEnd : List Member → Int
+membersEnd fields = List.foldl fields 0 λmember _ → member.offset + member.byteSize
+
+
+isArray : Layout → Bool
+isArray (Layout _ _ shape) =
+    case shape of
+        FixedArray _ _ _ →
+            True
+        _ →
+            False
+
+
+uniformMembers : UniformRules, List Member → Result UniformError ⊤
+uniformMembers rules fields =
+    case fields of
+        [] →
+            Ok ⊤
+        [ current, …rest ] →
+            uniform rules current.layout?
+            required =
+                if rules == Legacy && aggregate current.layout then
+                    max 16 (alignment current.layout)
+                else
+                    alignment current.layout
+            (if Int.rem current.offset required ≠ 0 then
+                Err (UniformOffset current.name current.offset)
+             else
+                Ok ⊤
+            )?
+            case rest of
+                [] →
+                    Ok ⊤
+                [ next, …_ ] →
+                    -- Sizes of a built layout are at most 2^53 − 1, so this cannot overflow.
+                    gap = fixedSize current.layout + Int.mod (-(fixedSize current.layout)) 16
+                    (if
+                        rules == Legacy
+                            && record current.layout
+                            && next.offset - current.offset < gap
+                     then
+                        Err (UniformStructureGap current.name)
+                     else
+                        Ok ⊤
+                    )?
+                    uniformMembers rules rest
+
+
+aggregate : Layout → Bool
+aggregate layout = record layout || isArray layout
+
+
+record : Layout → Bool
+record (Layout _ _ shape) =
+    case shape of
+        Record _ →
+            True
+        _ →
+            False
+
+
+valueSize : Layout, Value → Result CodecError Int
+valueSize layout value =
+    case ( layout, value ) of
+        ( Layout _ size (Atom kind), Integer number ) →
+            lower = if kind == Signed32 || kind == AtomicSigned32 then -2147483648 else 0
+            upper = if kind == Signed32 || kind == AtomicSigned32 then 2147483647 else 4294967295
+            if kind == Float32 || kind == Float16 then
+                Err ValueShape
+            else if number < lower || number > upper || not (integer number) then
+                Err (IntegerRange number)
+            else
+                Ok size
+        ( Layout _ size (Atom kind), Floating _ ) →
+            if kind == Float32 || kind == Float16 then Ok size else Err ValueShape
+        ( Layout _ size (Sequence element count _), Composite values ) →
+            (if List.length values ≠ count then
+                Err (ValueCount count (List.length values))
+             else
+                Ok ⊤
+            )?
+            validateValues element values?
+            Ok size
+        ( Layout _ size (FixedArray element count _), Composite values ) →
+            (if List.length values ≠ count then
+                Err (ValueCount count (List.length values))
+             else
+                Ok ⊤
+            )?
+            validateValues element values?
+            Ok size
+        ( Layout _ _ (Runtime element step), Composite values ) →
+            (if List.isEmpty values then Err EmptyRuntime else Ok ⊤)?
+            validateValues element values?
+            sized (multiply step (List.length values))
+        ( Layout _ size (Record fields), Composite values ) →
+            end = validateMembers fields values?
+            Ok (max size end)
+        _ →
+            Err ValueShape
+
+
+validateValues : Layout, List Value → Result CodecError ⊤
+validateValues element values =
+    case values of
+        [] →
+            Ok ⊤
+        [ first, …rest ] →
+            _ = valueSize element first?
+            validateValues element rest
+
+
+validateMembers : List Member, List Value → Result CodecError Int
+validateMembers fields values =
+    case ( fields, values ) of
+        ( [], [] ) →
+            Ok 0
+        ( [ current, …rest ], [ first, …remaining ] ) →
+            size = valueSize current.layout first?
+            end = sized (add current.offset size)?
+            next = validateMembers rest remaining?
+            Ok (max end next)
+        _ →
+            Err ValueShape
+
+
+writeValue : Binary.View, Int, Layout, Value → Result CodecError ⊤
+writeValue view offset layout value =
+    case ( layout, value ) of
+        ( Layout _ _ (Atom kind), Integer number ) →
+            Result.mapError
+                (if kind == Signed32 || kind == AtomicSigned32 then
+                    Binary.writeI32 view offset Binary.Little number
+                 else
+                    Binary.writeU32 view offset Binary.Little number
+                )
+                fromWrite
+        ( Layout _ _ (Atom kind), Floating number ) →
+            if kind == Float16 then
+                Result.mapError (Binary.writeF16 view offset Binary.Little number) fromFloat16
+            else
+                Result.mapError (Binary.writeF32 view offset Binary.Little number) Access
+        ( Layout _ _ (Sequence element _ step), Composite values ) →
+            writeSequence view offset element step values
+        ( Layout _ _ (FixedArray element _ step), Composite values ) →
+            writeSequence view offset element step values
+        ( Layout _ _ (Runtime element step), Composite values ) →
+            writeSequence view offset element step values
+        ( Layout _ _ (Record fields), Composite values ) →
+            writeMembers view offset fields values
+        _ →
+            Err ValueShape
+
+
+writeSequence : Binary.View, Int, Layout, Int, List Value → Result CodecError ⊤
+writeSequence view offset element step values =
+    case values of
+        [] →
+            Ok ⊤
+        [ first, …rest ] →
+            writeValue view offset element first?
+            writeSequence view (offset + step) element step rest
+
+
+writeMembers : Binary.View, Int, List Member, List Value → Result CodecError ⊤
+writeMembers view offset fields values =
+    case ( fields, values ) of
+        ( [], [] ) →
+            Ok ⊤
+        ( [ current, …rest ], [ first, …remaining ] ) →
+            writeValue view (offset + current.offset) current.layout first?
+            writeMembers view offset rest remaining
+        _ →
+            Err ValueShape
+
+
+readValue : Binary.View, Int, Int, Layout → Result CodecError Value
+readValue view offset available layout =
+    checkRange view offset (fixedSize layout)?
+    case layout of
+        Layout _ _ (Atom kind) →
+            case kind of
+                Signed32 →
+                    Result.map
+                        (Result.mapError (Binary.readI32 view offset Binary.Little) Access)
+                        Integer
+                AtomicSigned32 →
+                    Result.map
+                        (Result.mapError (Binary.readI32 view offset Binary.Little) Access)
+                        Integer
+                Unsigned32 →
+                    Result.map
+                        (Result.mapError (Binary.readU32 view offset Binary.Little) Access)
+                        Integer
+                AtomicUnsigned32 →
+                    Result.map
+                        (Result.mapError (Binary.readU32 view offset Binary.Little) Access)
+                        Integer
+                Float32 →
+                    Result.map
+                        (Result.mapError (Binary.readF32 view offset Binary.Little) Access)
+                        Floating
+                Float16 →
+                    Result.map
+                        (Result.mapError (Binary.readF16 view offset Binary.Little) fromFloat16)
+                        Floating
+        Layout _ _ (Sequence element count step) →
+            Result.map (readSequence view offset element count step) Composite
+        Layout _ _ (FixedArray element count step) →
+            Result.map (readSequence view offset element count step) Composite
+        Layout _ _ (Runtime element step) →
+            count = available // step
+            (if count == 0 then Err EmptyRuntime else Ok ⊤)?
+            Result.map (readSequence view offset element count step) Composite
+        Layout _ _ (Record fields) →
+            Result.map (readMembers view offset available fields) Composite
+
+
+readSequence : Binary.View, Int, Layout, Int, Int → Result CodecError (List Value)
+readSequence view offset element count step = readSequenceLoop view offset element count step []
+
+
+readSequenceLoop : Binary.View, Int, Layout, Int, Int, List Value → Result CodecError (List Value)
+readSequenceLoop view offset element count step output =
+    if count == 0 then
+        Ok output
+    else
+        first = readValue view offset step element?
+        readSequenceLoop view (offset + step) element (count - 1) step [ …output, first ]
+
+
+readMembers : Binary.View, Int, Int, List Member → Result CodecError (List Value)
+readMembers view offset available fields = readMembersLoop view offset available fields []
+
+
+readMembersLoop : Binary.View, Int, Int, List Member, List Value → Result CodecError (List Value)
+readMembersLoop view offset available fields output =
+    case fields of
+        [] →
+            Ok output
+        [ current, …rest ] →
+            first =
+                readValue view (offset + current.offset) (available - current.offset) current.layout?
+            readMembersLoop view offset available rest [ …output, first ]
+
+
+viewInfo : Binary.View → Result CodecError Binary.SourceInfo
+viewInfo view = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) backingFailure
+
+
+checkRange : Binary.View, Int, Int → Result CodecError ⊤
+checkRange view offset size =
+    info = viewInfo view?
+    if
+        offset < 0
+            || not (integer offset)
+            || offset > info.byteLength
+            || size > info.byteLength - offset
+    then
+        Err (Access (Binary.OutOfBounds offset size info.byteLength))
+    else
+        Ok ⊤
+
+
+validCount : Int → Result LayoutError ⊤
+validCount count =
+    if count ≤ 0 || not (integer count) || count > 9007199254740991 then
+        Err (InvalidCount count)
+    else
+        Ok ⊤
+
+
+roundUp : Int, Int → Result LayoutError Int
+roundUp align value =
+    extra = Int.mod (-value) align
+    add value extra
+
+
+add : Int, Int → Result LayoutError Int
+add first second = if first > 9007199254740991 - second then Err Overflow else Ok (first + second)
+
+
+multiply : Int, Int → Result LayoutError Int
+multiply first second =
+    if second > 9007199254740991 // first then Err Overflow else Ok (first * second)
+
+
+integer : Int → Bool
+integer value = Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ])
+
+
+powerOfTwo : Int → Bool
+powerOfTwo value =
+    if value < 1 || value > 9007199254740991 || not (integer value) then
+        False
+    else if value == 1 then
+        True
+    else
+        Int.rem value 2 == 0 && powerOfTwo (value // 2)
+
+
+fromWrite : Binary.WriteError → CodecError
+fromWrite error =
+    case error of
+        Binary.WriteAccess access →
+            Access access
+        Binary.InvalidValue value _ _ →
+            IntegerRange value
+
+
+fromFloat16 : Binary.Float16Error → CodecError
+fromFloat16 error =
+    case error of
+        Binary.Float16Access access →
+            Access access
+        Binary.NoFloat16 →
+            NoFloat16
+
+
+-- A codec's only size failure is passing 2^53 − 1.
+sized : Result LayoutError Int → Result CodecError Int
+sized result = Result.mapError result λ_ → SizeOverflow
+
+
+backingFailure : Binary.BackingError → CodecError
+backingFailure error = Access (Binary.AccessBacking error)

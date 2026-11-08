@@ -1,0 +1,70 @@
+--! Native storage only a host makes, handed to Binary: resizable and growable
+--! backing, WebAssembly memory, and a host whose constructor was replaced.
+--! No production implementation is hidden here.
+
+import Binary
+import Js
+
+
+--| Resizable and growable backing is refused by every Binary entry point,
+--| even when the storage never resized.
+pub fixedRequirement : ⊤ → List String
+fixedRequirement ⊤ =
+    options = Js.object [ ( "maxByteLength", Js.from 16 ) ]
+    buffer = Js.construct (Js.global "ArrayBuffer") [ Js.from 8, options ]
+    view = Js.construct (Js.global "Uint8Array") [ buffer, Js.from 0, Js.from 4 ]
+    shared = Js.construct (Js.global "SharedArrayBuffer") [ Js.from 8, options ]
+    [ Debug.toString (Binary.sourceInfo (Binary.WholeBuffer (Js.to buffer)))
+    , Debug.toString (Binary.sourceInfo (Binary.ViewOf (Binary.Uint8Array (Js.to view))))
+    , Debug.toString (Binary.sourceInfo (Binary.WholeShared (Js.to shared)))
+    , Debug.toString (Binary.view (Binary.Local (Js.to buffer)) Binary.U8 Binary.whole)
+    , Debug.toString (Binary.transfer (Js.to buffer))
+    ]
+
+
+--| WebAssembly memory has a detach key: its transfer is refused, TransferDenied.
+pub transferDenied : ⊤ → String
+transferDenied ⊤ =
+    memory =
+        Js.construct (Js.get (Js.global "WebAssembly") "Memory")
+            [ Js.object [ ( "initial", Js.from 1 ) ] ]
+    Debug.toString (Binary.transfer (Js.to (Js.get memory "buffer")))
+
+
+--| A failure Binary does not document is a defect: it is thrown, not typed.
+pub unknownDefects : ⊤ → String
+unknownDefects ⊤ =
+    original = Js.global "ArrayBuffer"
+    Js.set (Js.global "globalThis") "ArrayBuffer" Js.null
+    Js.finally
+        (λ⊤ →
+            Js.catchIf
+                (λ⊤ → Debug.toString (Binary.allocate 8))
+                (λerror → Js.instanceOf error (Js.global "TypeError"))
+                λ_ → "thrown"
+        )
+        λ⊤ → Js.set (Js.global "globalThis") "ArrayBuffer" original
+
+
+--| A SharedArrayBuffer from another realm (node:vm) is still shared: the brand
+--| check does not use instanceof. Handed to `transfer` as if it were an
+--| ArrayBuffer, it is refused before the host call.
+pub foreignRealm : ⊤ → List String
+foreignRealm ⊤ =
+    shared = Js.call (Js.module "node:vm") "runInNewContext" [ Js.from "new SharedArrayBuffer(8)" ]
+    [ Debug.toString
+        (Result.map (Binary.sourceInfo (Binary.WholeShared (Js.to shared))) λinfo → info.shared)
+    , Debug.toString (Binary.transfer (Js.to shared))
+    ]
+
+
+--| A page that is not cross-origin isolated has `crossOriginIsolated` false:
+--| shared memory is then IsolationRequired, whatever the host constructor.
+pub notIsolated : ⊤ → String
+notIsolated ⊤ =
+    Js.set (Js.global "globalThis") "crossOriginIsolated" (Js.from False)
+    Js.finally (λ⊤ → Debug.toString (Binary.shared 8)) λ⊤ →
+        _ =
+            Js.call (Js.global "Reflect") "deleteProperty"
+                [ Js.global "globalThis", Js.from "crossOriginIsolated" ]
+        ⊤

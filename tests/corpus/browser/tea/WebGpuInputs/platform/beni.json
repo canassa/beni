@@ -1,0 +1,18 @@
+{
+  "platform": true,
+  "name": "probe",
+  "platforms": [
+    "browser-tea"
+  ],
+  "reexports": [
+    "Browser",
+    "Tea",
+    "Cmd",
+    "Sub",
+    "Html",
+    "Browser.Source",
+    "Browser.Image",
+    "Browser.Video",
+    "Browser.Canvas"
+  ]
+}

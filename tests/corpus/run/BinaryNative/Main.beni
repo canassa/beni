@@ -1,0 +1,13 @@
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main =
+    Node.printLines
+        [ …Probe.fixedRequirement ⊤
+        , Probe.transferDenied ⊤
+        , Probe.unknownDefects ⊤
+        , …Probe.foreignRealm ⊤
+        , Probe.notIsolated ⊤
+        ]

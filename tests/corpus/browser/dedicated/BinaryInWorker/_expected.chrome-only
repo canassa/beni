@@ -1,0 +1,1 @@
+Dedicated module workers require Chrome. happy-dom builds both modes but has no Worker.

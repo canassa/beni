@@ -4,6 +4,7 @@ const std = @import("std");
 const Idl = @import("Idl.zig");
 pub const Callable = @import("Callable.zig");
 pub const Gpu = @import("Gpu.zig");
+pub const Operations = @import("Operations.zig");
 const Allocator = std.mem.Allocator;
 pub const source = .{
     .package = "@webref/idl",
@@ -45,7 +46,8 @@ pub const name_map = [_]NameMap{.{ .idl = "console", .beni = "Console" }};
 pub const Catalogue = struct {
     name_map: []const NameMap = &name_map,
     callable_bindings: []const Callable.Binding = &.{},
-    intrinsic_revision: u32 = 1,
+    intrinsic_revision: u32 = 2,
+    intrinsic_types: []const []const u8 = &Operations.intrinsic_types,
     format_version: u32 = 2,
     source: @TypeOf(source) = source,
     files: []const File,
@@ -209,6 +211,12 @@ pub fn index(arena: Allocator, files: []const File) Allocator.Error!Result {
         }
     }.less);
     for (types.items, 0..) |t, i| if (i > 0 and std.mem.eql(u8, t.name, types.items[i - 1].name)) {
+        const d = declarations[t.declaration];
+        return failure(.duplicate_identity, files[d.file], d, t.name);
+    };
+    // An intrinsic type is not IDL; an IDL interface of the same name would
+    // be a second identity for one module.
+    for (types.items) |t| for (Operations.intrinsic_types) |name| if (std.mem.eql(u8, t.name, name)) {
         const d = declarations[t.declaration];
         return failure(.duplicate_identity, files[d.file], d, t.name);
     };
