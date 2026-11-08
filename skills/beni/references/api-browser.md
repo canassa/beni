@@ -24,6 +24,29 @@ module Browser
   value prerender : Program, List String → Program
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
+module Browser.Canvas
+  alias BitmapRenderer
+  alias Canvas
+  type Error
+    Unsupported
+    NotFound
+    WrongElement
+    InvalidDimension
+    NoContext
+    ContextUnavailable
+    ClosedBitmap
+  alias OffscreenCanvas
+  value bitmapRenderer : Canvas → Result Error BitmapRenderer  -- impure
+  value byId : String → Result Error Canvas  -- impure
+  value create : Int, Int → Result Error Canvas  -- impure
+  value offscreen : Int, Int → Result Error OffscreenCanvas  -- impure
+  value offscreenBitmapRenderer : OffscreenCanvas → Result Error BitmapRenderer  -- impure
+  value offscreenSize : OffscreenCanvas → { height : Int, width : Int }  -- impure
+  value present : BitmapRenderer, ImageBitmap → Result Error ⊤  -- impure
+  value resize : Canvas, Int, Int → Result Error ⊤  -- impure
+  value resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤  -- impure
+  value size : Canvas → { height : Int, width : Int }  -- impure
+  value snapshot : OffscreenCanvas → Result Error ImageBitmap  -- impure
 module Browser.Events
   alias Size
     Size
@@ -46,6 +69,66 @@ module Browser.Events
   value onVisibilityChange : (Visibility → msg) → Sub msg  -- impure
   value size : ⊤ → Size  -- impure
   value visibility : ⊤ → Visibility  -- impure
+module Browser.Image
+  type Alpha
+    DefaultAlpha
+    Straight
+    Premultiplied
+  alias Bitmap
+  alias BitmapOptions
+    BitmapOptions
+  type ColorSpace
+    Srgb
+    DisplayP3
+  type Conversion
+    DefaultConversion
+    NoConversion
+  alias Crop
+    Crop
+  type CrossOrigin
+    SameOrigin
+    Anonymous
+    Credentials
+  alias Data
+  alias Element
+  type Error
+    Unsupported
+    NotFound
+    WrongElement
+    InvalidDimension
+    InvalidCrop
+    WrongPixelView
+    InconsistentPixels
+    SharedPixels
+    PixelBacking
+    BytesCopy
+    AllocationFailed
+    DecodeFailed
+    InvalidSource
+  type Orientation
+    FromImage
+    FlipY
+  type PixelFormat
+    Rgba8
+    Rgba16Float
+  type Quality
+    Pixelated
+    Low
+    Medium
+    High
+  alias Settings
+    Settings
+  value bitmap : Input, Maybe Crop, BitmapOptions → Result Error Bitmap  -- suspends
+  value bitmapFromBytes : Source, String, Maybe Crop, BitmapOptions → Result Error Bitmap  -- suspends
+  value bitmapOptions : BitmapOptions
+  value byId : String → Result Error Element  -- impure
+  value close : Bitmap → ⊤  -- impure
+  value data : Int, Int, Settings → Result Error Data  -- impure
+  value dataFromView : View, Int, Maybe Int, Settings → Result Error Data  -- impure
+  value decodeElement : Element → Result Error ⊤  -- suspends
+  value load : String, CrossOrigin → Result Error Element  -- suspends
+  value pixels : Data → Result Error View  -- impure
+  value settings : Settings
 module Browser.Navigation
   type Error
     BadUrl
@@ -70,6 +153,57 @@ module Browser.Navigation
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
+module Browser.Source
+  alias Info
+    Info
+  type Input
+    FromImage
+    FromBitmap
+    FromPixels
+    FromVideo
+    FromFrame
+    FromCanvas
+    FromOffscreen
+  type State
+    Ready
+    Loading
+    Broken
+    Closed
+    Empty
+    ContextValidationRequired
+  value info : Input → Info  -- impure
+  value same : Input, Input → Bool
+module Browser.Video
+  type Alpha
+    Keep
+    Discard
+  alias Element
+  type Error
+    Unsupported
+    NotFound
+    WrongElement
+    WrongSource
+    InvalidSource
+    Security
+    MissingTimestamp
+    InvalidTimestamp
+    InvalidDuration
+    InvalidDimensions
+    InvalidRectangle
+    InvalidRotation
+    Closed
+  alias Frame
+  alias FrameOptions
+    FrameOptions
+  alias Rect
+    Rect
+  value byId : String → Result Error Element  -- impure
+  value clone : Frame → Result Error Frame  -- impure
+  value close : Frame → ⊤  -- impure
+  value closed : Frame → Bool  -- impure
+  value frame : Input, FrameOptions → Result Error Frame  -- impure
+  value frameOptions : FrameOptions
+  value info : Frame → { closed : Bool, codedHeight : Int, codedWidth : Int, displayHeight : Int, displayWidth : Int, duration : Maybe Int, flip : Bool, rotation : Float, timestamp : Int }  -- impure
 module Browser.Worker
   type CallError a
     Application

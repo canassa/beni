@@ -5579,6 +5579,8 @@ tests/corpus/run/SanitiserFoldStored.beni SanitiserFoldStored 25:15 #0 :: List.f
 tests/corpus/run/SanitiserFoldStored.beni SanitiserFoldStored 28:16 #0 :: List.foldl <literal> :: accepted :: rejected  a fold's storage write is judged by its slot (§2.11.3); v1 names or refuses it elsewhere.
 tests/corpus/run/SanitiserFoldStored.beni SanitiserFoldStored 29:42 #0 :: List.push acc :: rejected :: accepted  a fold's storage write is judged by its slot (§2.11.3); v1 names or refuses it elsewhere.
 core Markdown 1271:22 #0 :: List.foldl <expression>.0 :: absent :: accepted  a fold's storage write is judged by its slot (§2.11.3); v1 names or refuses it elsewhere.
+core Binary.Wgsl 300:13 #0 :: Binary.Wgsl.place <construction> :: accepted :: rejected  v2 reads the Int offset from a nested Result helper as reaching the accumulator (#2251)
+core Binary.Wgsl 300:26 #0 :: construction output :: accepted :: rejected  v2 reads the Int offset from a nested Result helper as reaching the accumulator (#2251)
 tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 58:35 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses the writer at the call, v1 leaves it pending
 tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 60:35 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses the writer at the call, v1 leaves it pending
 tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 62:32 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses the writer at the call, v1 leaves it pending

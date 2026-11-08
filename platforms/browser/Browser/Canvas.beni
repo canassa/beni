@@ -1,0 +1,174 @@
+--! Typed canvas acquisition and offscreen ownership. GPU context creation lives
+--! in Gpu.Canvas; these native handles preserve the context's browser identity.
+
+import Browser.Host.HTMLCanvasElement exposing (HTMLCanvasElement)
+import Browser.Host.ImageBitmap exposing (ImageBitmap)
+import Browser.Host.ImageBitmapRenderingContext exposing (ImageBitmapRenderingContext)
+import Browser.Host.OffscreenCanvas as Host
+import Browser.Source as Source
+import Js
+
+
+pub type alias Canvas =
+    HTMLCanvasElement
+
+
+pub type alias OffscreenCanvas =
+    Host.OffscreenCanvas
+
+
+pub type Error
+    = Unsupported
+    | NotFound String
+    | WrongElement String
+    | InvalidDimension Int
+    | NoContext
+    | ContextUnavailable
+    | ClosedBitmap
+
+
+--| Find a canvas in the current document, without changing its context mode.
+pub byId : String → Result Error Canvas
+byId id =
+    document = Js.global "document"
+    if Js.isUndefined document then
+        Err Unsupported
+    else
+        value = Js.call document "getElementById" [ Js.from id ]
+        if Js.isNull value then
+            Err (NotFound id)
+        else if not (Js.instanceOf value (Js.global "HTMLCanvasElement")) then
+            Err (WrongElement id)
+        else
+            Ok (Js.to value)
+
+
+--| Create an unattached HTML canvas. Zero dimensions are permitted by HTML; a
+--| dimension above 2^31 − 1 is InvalidDimension, as HTML would reset it to the
+--| default (its `unsigned long` reflection).
+pub create : Int, Int → Result Error Canvas
+create width height =
+    dimension 2147483647 width?
+    dimension 2147483647 height?
+    document = Js.global "document"
+    if Js.isUndefined document then
+        Err Unsupported
+    else
+        value = Js.call document "createElement" [ Js.from "canvas" ]
+        Js.set value "width" (Js.from width)
+        Js.set value "height" (Js.from height)
+        Ok (Js.to value)
+
+
+--| Create an offscreen canvas in a Window or browser Worker realm. A dimension
+--| above 2^53 − 1 is InvalidDimension ([EnforceRange] unsigned long long).
+pub offscreen : Int, Int → Result Error OffscreenCanvas
+offscreen width height =
+    dimension 9007199254740991 width?
+    dimension 9007199254740991 height?
+    constructor = Js.global "OffscreenCanvas"
+    if not (Js.typeIs constructor "function") then
+        Err Unsupported
+    else
+        Ok (Js.to (Js.construct constructor [ Js.from width, Js.from height ]))
+
+
+pub size : Canvas → { width : Int, height : Int }
+size canvas = dimensions (Js.from canvas)
+
+
+pub offscreenSize : OffscreenCanvas → { width : Int, height : Int }
+offscreenSize canvas = dimensions (Js.from canvas)
+
+
+pub resize : Canvas, Int, Int → Result Error ⊤
+resize canvas width height =
+    dimension 2147483647 width?
+    dimension 2147483647 height?
+    value = Js.from canvas
+    Js.set value "width" (Js.from width)
+    Js.set value "height" (Js.from height)
+    Ok ⊤
+
+
+pub resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤
+resizeOffscreen canvas width height =
+    dimension 9007199254740991 width?
+    dimension 9007199254740991 height?
+    value = Js.from canvas
+    Js.set value "width" (Js.from width)
+    Js.set value "height" (Js.from height)
+    Ok ⊤
+
+
+dimension : Int, Int → Result Error ⊤
+dimension maximum value =
+    if
+        value < 0
+            || value > maximum
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+    then
+        Err (InvalidDimension value)
+    else
+        Ok ⊤
+
+
+dimensions : Js.Value → { width : Int, height : Int }
+dimensions value = { width = Js.to (Js.get value "width"), height = Js.to (Js.get value "height") }
+
+
+domError : String, Js.Value → Bool
+domError name error =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
+
+
+--| A native bitmaprenderer context, whose presentation consumes bitmap ownership.
+pub type alias BitmapRenderer =
+    ImageBitmapRenderingContext
+
+
+pub bitmapRenderer : Canvas → Result Error BitmapRenderer
+bitmapRenderer canvas = renderer (Js.from canvas)
+
+
+pub offscreenBitmapRenderer : OffscreenCanvas → Result Error BitmapRenderer
+offscreenBitmapRenderer canvas = renderer (Js.from canvas)
+
+
+renderer : Js.Value → Result Error BitmapRenderer
+renderer value =
+    -- getContext throws InvalidStateError only for a canvas handed to another
+    -- realm, which needs worker transfer (#1299); a canvas whose context is
+    -- of another kind gives null.
+    context = Js.call value "getContext" [ Js.from "bitmaprenderer" ]
+    if Js.isNull context then Err ContextUnavailable else Ok (Js.to context)
+
+
+--| Present a bitmap without copying pixels. The bitmap is consumed: every alias
+--| becomes closed, while frames referencing its media resource remain valid.
+pub present : BitmapRenderer, ImageBitmap → Result Error ⊤
+present context bitmap =
+    if (Source.info (Source.FromBitmap bitmap)).state == Source.Closed then
+        Err ClosedBitmap
+    else
+        Js.catchIf
+            (λ⊤ →
+                _ = Js.call (Js.from context) "transferFromImageBitmap" [ Js.from bitmap ]
+                Ok ⊤
+            )
+            (domError "InvalidStateError" _)
+            λ_ → Err ClosedBitmap
+
+
+--| Detach the current offscreen image into a native bitmap and replace it by a
+--| blank bitmap. This requires a context; it does not acquire one as a side effect.
+pub snapshot : OffscreenCanvas → Result Error ImageBitmap
+snapshot canvas =
+    value = Js.from canvas
+    if not (Js.typeIs (Js.get value "transferToImageBitmap") "function") then
+        Err Unsupported
+    else
+        Js.catchIf
+            (λ⊤ → Ok (Js.to (Js.call value "transferToImageBitmap" [])))
+            (domError "InvalidStateError" _)
+            λ_ → Err NoContext

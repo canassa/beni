@@ -1,0 +1,69 @@
+-- Binary.Atomics on shared storage: exact 64-bit words through BigUint64Array
+-- and BigInt64Array, Number views sharing bytes, and each typed refusal. Each
+-- expected line is worked out by hand from ECMA-262's Atomics.
+import Binary exposing (Data, F32, I32, I64, I8, U16, U64, U8, U8Clamped)
+import Binary.Atomics as Atomic exposing (Add, CompareExchange, Exchange, Load, Number, Store, Words)
+import Node exposing (Program)
+
+
+main : Program
+main = Node.printLines (exercise ⊤)
+
+
+ok : Result e a → a
+ok result =
+    case result of
+        Ok value →
+            value
+        Err error →
+            Debug.todo (Debug.toString error)
+
+
+show : Result Atomic.Error Atomic.Value → String
+show result =
+    case result of
+        Ok (Words words) →
+            "Ok " ++ Debug.toString (Binary.words words)
+        _ →
+            Debug.toString result
+
+
+view : Binary.SharedBuffer, Binary.ViewKind, Int → Binary.View
+view storage kind offset =
+    ok (Binary.view (Binary.Shared storage) kind { byteOffset = offset, byteLength = Nothing })
+
+
+exercise : ⊤ → List String
+exercise ⊤ =
+    storage = ok (Binary.shared 16)
+    big = view storage U64 0
+    maximum = ok (Binary.word64 4294967295 4294967295)
+    one = ok (Binary.word64 0 1)
+    zero = ok (Binary.word64 0 0)
+    bytes = view storage I8 8
+    unsigned = view storage U8 8
+    halves = view storage U16 10
+    [ show (Atomic.access big 0 (Store (Words maximum)))
+    , show (Atomic.access big 0 (Add (Words one)))
+    , show (Atomic.access big 0 Load)
+    , show (Atomic.access big 0 (CompareExchange (Words zero) (Words maximum)))
+    , show (Atomic.access big 0 Load)
+    , show (Atomic.access (view storage I64 0) 0 Load)
+    , show (Atomic.access bytes 0 (Store (Number (-1))))
+    , show (Atomic.access bytes 0 Load)
+    , show (Atomic.access unsigned 0 Load)
+    , show (Atomic.access unsigned 0 (Add (Number 300)))
+    , show (Atomic.access unsigned 0 (Add (Number 1)))
+    , show (Atomic.access unsigned 0 Load)
+    , show (Atomic.access halves 0 (Store (Number 65535)))
+    , show (Atomic.access halves 0 (Exchange (Number 7)))
+    , show (Atomic.access halves 0 Load)
+    , show (Atomic.access bytes 8 Load)
+    , show (Atomic.access (view storage F32 0) 0 Load)
+    , show (Atomic.access (view storage U8Clamped 0) 0 Load)
+    , show (Atomic.access (view storage Data 0) 0 Load)
+    , show (Atomic.access unsigned 0 (Store (Words one)))
+    , show (Atomic.access big 0 (Store (Number 1)))
+    , show (Atomic.access (view storage I32 0) 0 (Store (Number 2147483648)))
+    , Debug.toString (Atomic.isLockFree 4)
+    ]

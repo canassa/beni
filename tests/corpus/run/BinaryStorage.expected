@@ -1,0 +1,53 @@
+(Ok (-128),Ok 128)
+(Ok (-2),Ok 65279)
+(Ok 3735928559,Ok 4022250974,Ok (-559038737))
+Ok 0.10000000149011612
+Ok { high = 3220701184, low = 0 }
+(Ok ⊤,Ok 65504.0,Ok 31743)
+Ok [255,255,255,255,255,255,255,254,254,255,255,255,255,255,255,255]
+Ok { high = 4294967295, low = 4294967294 }
+{ high = 4294967295, low = 4294967295 }
+Ok (-1)
+Err PrecisionLost
+Ok { high = 2097152, low = 0 }
+{ high = 4294967295, low = 4294965248 }
+Ok 18446744073709550000
+Err (InvalidWord 4294967296 0 4294967295)
+Err (InvalidWord (-1) 0 18446744073709550000)
+(True,8,40)
+(True,8,40)
+(True,8,40)
+(True,8,20)
+(True,8,20)
+(True,8,10)
+(True,8,10)
+(True,8,5)
+(True,8,5)
+(True,8,20)
+(True,8,10)
+(True,8,5)
+(True,8,40)
+Ok ⊤
+Ok [1,2,3,3,4,5,6,8]
+Ok [3,4,5,6]
+Err (OutOfBounds 6 4 8)
+Err (NotAByte (-1))
+True
+Err (AccessBacking Detached)
+Err Detached
+Err (TransferBacking Detached)
+Err (ViewBacking Detached)
+Ok [9,8,7,6]
+Err (InvalidSize (-1))
+Err (InvalidSize 9007199254740992)
+Err (Misaligned 1 4)
+Err (Misaligned 6 4)
+Err (ViewOutOfRange 0 12 8)
+Err (ViewOutOfRange 9 0 8)
+Err (Misaligned 4 8)
+Err (Misaligned 4 8)
+Err (OutOfBounds 0 4 3)
+Err (InvalidValue 256 0 255)
+Err (InvalidValue (-32769) (-32768) 32767)
+Err (WriteAccess (OutOfBounds 6 4 8))
+Err (Float16Access (OutOfBounds 2 2 3))

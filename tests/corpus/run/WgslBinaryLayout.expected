@@ -1,0 +1,43 @@
+{ align = 8, offsets = [0,4,8,16], size = Just 24, stride = Nothing }
+{ align = 16, offsets = [0,16,28,32,40,64,80,152], size = Just 160, stride = Nothing }
+Ok ⊤
+Err (UniformOffset "e" 40)
+{ align = 16, offsets = [0,4,12], size = Just 16, stride = Nothing }
+[(16,4),(4,8),(4,4)]
+Err (InvalidAlignment 2)
+Err (InvalidAlignment 12)
+Err (InvalidMemberSize 2)
+Err (DuplicateMember "a")
+Err EmptyStructure
+Err (InvalidDimension 5)
+Err InvalidScalar
+Err Overflow
+{ align = 4, offsets = [], size = Just 4, stride = Just 2 }
+{ align = 8, offsets = [], size = Just 6, stride = Just 2 }
+{ align = 8, offsets = [], size = Just 16, stride = Just 8 }
+{ align = 8, offsets = [], size = Just 32, stride = Just 8 }
+Ok [0,60,0,64,0,66]
+Ok True
+Err (UniformStructureGap "a")
+Ok ⊤
+(Ok ⊤,"{ align = 16, offsets = [0,16], size = Just 32, stride = Nothing }")
+Err (UniformOffset "s" 4)
+Err (UniformStride 4)
+Ok ⊤
+Err AtomicInUniform
+Err RuntimeInUniform
+{ align = 16, offsets = [0,12,16], size = Just 64, stride = Nothing }
+Just 16
+Ok True
+Ok 12.0
+Ok 0
+Ok 4294967295
+Err ValueShape
+Err (ValueCount 3 2)
+Err (IntegerRange (-1))
+Err (Access (OutOfBounds 60 64 64))
+{ align = 4, offsets = [0,4], size = Nothing, stride = Nothing }
+Ok [3,0,0,0,11,0,0,0,22,0,0,0,33,0,0,0]
+Ok True
+Err RuntimePlacement
+Err EmptyRuntime
