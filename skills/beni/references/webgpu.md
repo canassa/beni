@@ -16,7 +16,9 @@ browser's WebGPU API with types. Only the main thread has them now.
   `getMappedRange`, `withMapped`, `unmap`, `destroy`, and the mapping's `mappingMode`,
   `mappingRange`, `mappingBuffer` and `mappingLive`.
 - `Gpu.MappedRange`: reads and writes of mapped memory: `readU8` to `readF64`, `readF16`,
-  `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`.
+  `readWord64`, the `write` forms, `readBytes` (a copy) and `writeBytes`. `region` and
+  `readRegion` give the range as a `Binary.Region` that is checked once; after the mapping
+  ends, it gives `Detached`.
 - `Gpu.Queue`: `writeBuffer`, `writeTexture`, `submit`, `onSubmittedWorkDone`, `label`, `setLabel`.
 - `Gpu.Shader`: `getCompilationInfo`, `compile`, `source`. `Gpu.ComputePipeline`:
   `getBindGroupLayout`. `Gpu.Texture`: snapshots (`dimension` and `textureBindingViewDimension`
