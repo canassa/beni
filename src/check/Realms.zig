@@ -117,10 +117,12 @@ pub fn carrier(e: *const Effects, r: Effects.Var) bool {
 
 /// Discharge each image of the source class independently. A generic parameter
 /// can instantiate to a record or nominal aggregate, not just a function arrow.
-pub fn applyCopy(e: *Effects, record: Effects.Record, source_node: u32, target: u32, work: *std.ArrayList(u32), scratch: std.mem.Allocator) Effects.Error!void {
-    for (e.pairs.items[record.start..][0..record.len]) |p| {
-        if ((e.nodeOf(p.a) orelse continue) != source_node) continue;
-        const bits = try connectValue(e, p.b, target, scratch);
+/// `pairs` are the offsets in `record` of the pairs whose scheme side is in
+/// the source class, in order (`Effects.applyRecord`).
+pub fn applyCopy(e: *Effects, record: Effects.Record, pairs: []const u32, target: u32, work: *std.ArrayList(u32), scratch: std.mem.Allocator) Effects.Error!void {
+    const all = e.pairs.items[record.start..][0..record.len];
+    for (pairs) |k| {
+        const bits = try connectValue(e, all[k].b, target, scratch);
         try raiseRealm(e, target, bits, work, scratch);
     }
 }

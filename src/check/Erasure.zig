@@ -126,12 +126,12 @@ pub fn entries(e: *Effects, bir: *const Bir, schemes: []const Var.Optional, work
     }
 }
 
-/// An own declaration's erased class `ci`, at the use `r` copied it for.
-pub fn applyRecord(e: *Effects, r: Effects.Record, target: u32, ci: usize, bits: u2, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
-    for (e.pairs.items[r.start..][0..r.len]) |p| {
-        if (e.solved.classIndex(target, try e.nodeFor(p.a)) != @as(u32, @intCast(ci))) continue;
-        try walk(e, p.b, bits, false, work, scratch);
-    }
+/// An own declaration's erased class, at the use `r` copied it for: `pairs`
+/// are the offsets in `r` of the pairs whose scheme side is in the class,
+/// in order (`Effects.applyRecord`).
+pub fn applyRecord(e: *Effects, r: Effects.Record, pairs: []const u32, bits: u2, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
+    const all = e.pairs.items[r.start..][0..r.len];
+    for (pairs) |k| try walk(e, all[k].b, bits, false, work, scratch);
 }
 
 /// Raise each class `v` holds in a position the host makes to `impure` —
