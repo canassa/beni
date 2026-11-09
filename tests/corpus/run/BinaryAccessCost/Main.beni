@@ -1,0 +1,6 @@
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main = Node.printLines [ …Probe.perAccess ⊤, …Probe.olderHost ⊤ ]

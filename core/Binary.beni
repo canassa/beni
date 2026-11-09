@@ -746,54 +746,68 @@ sourceBuffer source =
             Js.get (native value) "buffer"
 
 
--- A fresh Uint8Array over exactly a checked source's bytes.
+-- A fresh Uint8Array over exactly a checked source's bytes. Like
+-- `scalarView`, it builds no record and never asks whether storage is shared.
 sourceBytes : Source → Result BackingError Js.Value
 sourceBytes source =
-    info = sourceInfo source?
-    Ok
-        (Js.construct (Js.global "Uint8Array")
-            [ sourceBuffer source, Js.from info.byteOffset, Js.from info.byteLength ]
-        )
+    buffer = sourceBuffer source
+    validBacking buffer?
+    case source of
+        ViewOf value →
+            handle = native value
+            Ok
+                (Js.construct (Js.global "Uint8Array")
+                    [ buffer, Js.get handle "byteOffset", Js.get handle "byteLength" ]
+                )
+        _ →
+            Ok (Js.construct (Js.global "Uint8Array") [ buffer ])
 
 
--- A brand check that works across realms: SharedArrayBuffer.prototype's
--- byteLength getter throws a TypeError for anything but shared storage.
+-- ES2024 gives a genuine ArrayBuffer, of any realm, a `detached` getter and
+-- shared storage a `growable` one; neither has the other's. A host with
+-- neither falls back to a brand check that works across realms:
+-- SharedArrayBuffer.prototype's byteLength getter throws a TypeError for
+-- anything but shared storage. On a current host nothing here throws.
 isShared : Js.Value → Bool
 isShared buffer =
-    constructor = Js.global "SharedArrayBuffer"
-    if not (Js.typeIs constructor "function") then
+    if Js.typeIs (Js.get buffer "detached") "boolean" then
         False
+    else if Js.typeIs (Js.get buffer "growable") "boolean" then
+        True
     else
-        descriptor =
-            Js.call (Js.global "Object") "getOwnPropertyDescriptor"
-                [ Js.get constructor "prototype", Js.from "byteLength" ]
-        Js.catchIf
-            (λ⊤ →
-                _ = Js.call (Js.get descriptor "get") "call" [ buffer ]
-                True
-            )
-            (λerror → Js.instanceOf error (Js.global "TypeError"))
-            λ_ → False
+        constructor = Js.global "SharedArrayBuffer"
+        if not (Js.typeIs constructor "function") then
+            False
+        else
+            descriptor =
+                Js.call (Js.global "Object") "getOwnPropertyDescriptor"
+                    [ Js.get constructor "prototype", Js.from "byteLength" ]
+            Js.catchIf
+                (λ⊤ →
+                    _ = Js.call (Js.get descriptor "get") "call" [ buffer ]
+                    True
+                )
+                (λerror → Js.instanceOf error (Js.global "TypeError"))
+                λ_ → False
 
 
 isDetached : Js.Value → Bool
 isDetached buffer =
-    if isShared buffer then
+    state = Js.get buffer "detached"
+    if Js.typeIs state "boolean" then
+        Js.to state
+    else if isShared buffer then
         False
     else
-        state = Js.get buffer "detached"
-        if Js.typeIs state "boolean" then
-            Js.to state
-        else
-            -- Before ES2024's `detached` getter: a zero-length view of a genuine
-            -- ArrayBuffer throws a TypeError only when the storage is detached.
-            Js.catchIf
-                (λ⊤ →
-                    _ = Js.construct (Js.global "Uint8Array") [ buffer, Js.from 0, Js.from 0 ]
-                    False
-                )
-                (λerror → Js.instanceOf error (Js.global "TypeError"))
-                λ_ → True
+        -- Before ES2024's `detached` getter: a zero-length view of a genuine
+        -- ArrayBuffer throws a TypeError only when the storage is detached.
+        Js.catchIf
+            (λ⊤ →
+                _ = Js.construct (Js.global "Uint8Array") [ buffer, Js.from 0, Js.from 0 ]
+                False
+            )
+            (λerror → Js.instanceOf error (Js.global "TypeError"))
+            λ_ → True
 
 
 validBacking : Js.Value → Result BackingError ⊤
@@ -857,15 +871,25 @@ inRange offset size total =
         Ok ⊤
 
 
--- A DataView over exactly the view's bytes, after the backing and range checks.
+-- After the backing and range checks, the view's own DataView, or a new one
+-- over exactly its bytes. It builds no record and never asks whether the
+-- storage is shared: no check here needs to know.
 scalarView : View, Int, Int → Result AccessError Js.Value
 scalarView value offset size =
-    info = Result.mapError (sourceInfo (ViewOf value)) AccessBacking?
-    inRange offset size info.byteLength?
-    Ok
-        (Js.construct (Js.global "DataView")
-            [ sourceBuffer (ViewOf value), Js.from info.byteOffset, Js.from info.byteLength ]
-        )
+    handle = native value
+    buffer = Js.get handle "buffer"
+    Result.mapError (validBacking buffer) AccessBacking?
+    total : Int
+    total = Js.to (Js.get handle "byteLength")
+    inRange offset size total?
+    case value of
+        DataView data →
+            Ok (Js.from data)
+        _ →
+            Ok
+                (Js.construct (Js.global "DataView")
+                    [ buffer, Js.get handle "byteOffset", Js.from total ]
+                )
 
 
 isRangeError : Js.Value → Bool
