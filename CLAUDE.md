@@ -467,7 +467,9 @@ network — with run hashes like `run/`'s; `zig build test-browser` runs the
 same fixtures in headless Chrome, every page every time, with no run hash
 (the owner, 2026-10-28). Every `browser/tea/` page is also a value-fuzz
 case unless `tests/corpus/browser/tea/no-value-fuzz.txt` names it with a
-reason (the owner, 2026-10-28). On Linux, run it as `nix develop .#browser
+reason (the owner, 2026-10-28). The page fuzzer and the value-fuzz cases
+run under happy-dom in the gates and not in Chrome (the owner, 2026-11-09,
+#2340). On Linux, run it as `nix develop .#browser
 -c zig build test-browser`. The shell's Chromium is the flake's own, and it
 ignores the caller's `LD_LIBRARY_PATH`. Thus a host library directory on
 that path, such as an `alsa-lib` for a newer glibc, cannot stop it. A

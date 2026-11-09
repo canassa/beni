@@ -740,7 +740,9 @@ pub fn build(b: *std.Build) void {
     // The `browser/` corpus in a real browser: every fixture's pages run in
     // one headless Chrome instead of happy-dom, against the same goldens
     // (`tests/blackbox/browser.zig`), so a difference between the two DOMs
-    // that a fixture reaches fails here. Chrome comes from `-Dchrome` or
+    // that a fixture reaches fails here. It runs no page fuzz and no
+    // value-fuzz case: those run under happy-dom in the gates alone (the
+    // owner, 2026-11-09, #2340). Chrome comes from `-Dchrome` or
     // `PATH` (`nix develop .#browser`); with none the step fails and says
     // so. Takes `-Dcorpus`; not a gate. Each case has its own hang guard.
     const browser_step = b.step("test-browser", "Run the browser/ corpus in a headless Chrome instead of happy-dom");

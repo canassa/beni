@@ -115,7 +115,8 @@ nothing it recorded with the old meaning. Locally one directory serves
 every worktree, so run a branch that changes the harness with a
 `BENI_RUN_HASH_DIR` of its own. Headless Chrome (`zig build test-browser`)
 looks nothing up and records nothing: it runs every page, every time (the
-owner, 2026-10-28). The code is
+owner, 2026-10-28), and no page fuzz (the owner, 2026-11-09, #2340).
+The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
 show a verified build skipped, a changed one run, a mismatch failed with
 nothing written, and one digest written by eight writers at once.
@@ -901,7 +902,8 @@ fuzz sweep leaves about 116 000 entries, which the gates' runs then clear
 128 at a time. Deleting the directory is always safe; a missing entry is
 compiled again. `zig build test-browser` runs the
 same fixtures in one headless Chrome (a fresh target per page) against the
-same goldens; Chrome comes from `-Dchrome=` or `PATH` (`nix develop
+same goldens, with no page fuzz and no value-fuzz case; Chrome comes
+from `-Dchrome=` or `PATH` (`nix develop
 .#browser`). `tests/blackbox/browser.zig` has the measurements behind the
 choice. Where the two DOMs are known to differ, a fixture that reaches the
 difference carries a `<name>.chrome-expected`, which `test-browser`
@@ -1167,6 +1169,10 @@ is a line `<page>: <reason>` of `browser/tea/no-value-fuzz.txt` (a
 project by its directory's name), and the file fails closed: a line that
 names no page, or gives no reason, fails the walk, so a page that comes
 back is fuzzed until someone writes down again why it cannot be.
+The page fuzz and the value-fuzz cases run under happy-dom in the gates
+and not in Chrome: `zig build test-browser` runs each page's pages and
+no fuzz (the owner, 2026-11-09, #2340). The fuzzer cost about half of the
+Chrome job's CPU.
 
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering
