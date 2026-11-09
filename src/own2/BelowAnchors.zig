@@ -19,8 +19,8 @@ pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId)
     var ps: std.ArrayList(PathId) = .empty;
     try ps.append(arena, q);
     if (!@import("Mutate.zig").on(.below_join_one_name)) for (try f.slots.joinNames(g, arena, f.account, f.places, q)) |y| try add(arena, &ps, .from(y));
-    const n = ps.items.len; // `q` and its names; `LevelTargets.of` closes over the folds above each
-    for (0..n) |i| if (LevelTargets.hasMiddle(f.places, f.places.pathPlace(ps.items[i])) and !@import("Mutate.zig").on(.below_folds_off)) try LevelTargets.of(f, g, arena, ps.items[i], &ps);
+    const n = ps.items.len; // `q` and its names; `LevelTargets.of` closes over each fold, so a name below one is done
+    for (0..n) |i| if ((i == 0 or !LevelTargets.coveredBy(f.places, ps.items, ps.items[i])) and LevelTargets.hasMiddle(f.places, f.places.pathPlace(ps.items[i])) and !@import("Mutate.zig").on(.below_folds_off)) try LevelTargets.of(f, g, arena, ps.items[i], &ps);
     var i = n; // a fold's level paths
     while (i < ps.items.len) : (i += 1) if (!@import("Mutate.zig").on(.below_join_one_name)) for (try f.slots.joinNames(g, arena, f.account, f.places, ps.items[i])) |y| try add(arena, &ps, .from(y));
     var out: std.ArrayList(PathId) = .empty;
