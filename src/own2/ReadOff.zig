@@ -44,7 +44,8 @@ const Building = @import("Building.zig");
 const Made = @import("Made.zig");
 const Host = @import("Host.zig");
 const Cells = @import("Cells.zig");
-const Dests = @import("Dests.zig");
+const ReadCols = @import("ReadCols.zig");
+const BelowAnchors = @import("BelowAnchors.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -198,13 +199,13 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             defer named.deinit(gpa);
             try named.appendSlice(gpa, if (held) Subtree.explicit(f.slots, l.slots) else f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots)));
             // The result slots of the slots this leaf names: the read's column.
-            const col = if (by_structure) try readDests(s, pslot, q) else none;
+            const col = if (by_structure) try ReadCols.read(s, pslot, q) else none;
             if (by_structure) {
                 var domain: std.ArrayList(u32) = .empty;
                 defer domain.deinit(gpa);
                 try domain.appendSlice(gpa, named.items);
                 if (held and r.kind != .param) for (Subtree.subs(f.slots, l.slots)) |el| try domain.append(gpa, Slots.pathOf(el).int());
-                try fillDests(s, pslot, q, domain.items, col);
+                try ReadCols.fill(s, pslot, q, domain.items, col);
             }
             if (held) for (Subtree.subs(f.slots, l.slots)) |el| {
                 const x = Slots.pathOf(el);
@@ -220,7 +221,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
                 if (by_structure) {
                     var ps: std.ArrayList(u32) = .empty;
                     defer ps.deinit(gpa);
-                    try destsOf(s, col, pslot, .from(sl), q, &ps);
+                    try ReadCols.dests(s, col, pslot, .from(sl), q, &ps);
                     if (ps.items.len == 0) {
                         at = q;
                     } else {
@@ -270,16 +271,47 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
     };
     if (try canNode(s, q, out) and try callNode(s, call, which, prefix, tags, q, out)) return;
     const saved = e.ev.cur_sub;
-    e.ev.cur_sub = if (e.solver != null) .{ .kind = .describe_below, .a = out.label, .b = q.int(), .c = out.k, .d = prefix.int(), .tags = tags, .key = out.key } else null;
-    const ki = e.ev.instBelow(call, prefix, which) catch |err| {
+    const live = e.solver != null;
+    e.ev.cur_sub = if (live) .{ .kind = .describe_below, .a = out.label, .b = q.int(), .c = out.k, .d = prefix.int(), .tags = tags, .key = out.key } else null;
+    // Every anchor (§2.1, *One below*): the prefix's key by its steps, a fold's all of it at `q` and below.
+    var anchors: std.ArrayList(BelowAnchors.Anchor) = .empty;
+    defer anchors.deinit(e.gpa());
+    e.ev.instBelow(call, prefix, which, if (live) .{ .kind = .describe_whole, .a = out.label, .b = q.int(), .c = out.k, .tags = tags, .key = out.key } else null, &anchors) catch |err| {
         e.ev.cur_sub = saved;
         return err;
     };
     e.ev.cur_sub = saved;
+    for (anchors.items) |an| if (an.at == prefix) try describeKey(s, an.key, prefix, tags, q, out) else try describeFold(s, an.key, tags, q, out);
+}
+
+/// The items of a fold's key `ki`, each all of it at result slot `q` and below it (`describeEach`).
+fn describeFold(s: *Sink, ki: u32, tags: u32, q: PathId, out: Put.ResList) Error!void {
+    const e = s.e;
+    if ((try s.described.getOrPut(e.gpa(), try Building.describedKey(s, ki | Relation.open_bit, .from(q.int() | Relation.open_bit), out))).found_existing) return;
+    var i: usize = 0;
+    while (i < e.ev.keys.items[ki].leaves.items.len) : (i += 1) {
+        const k = e.ev.keys.items[ki];
+        if (try e.fr().withTags(try e.ev.widen(k.leaves.items[i], k.at.items[i]), tags)) |y| try describeEach(s, y, q, out);
+    }
+}
+
+/// Leaf `li` of a fold's key at result slot `q` and at every slot below it: no steps from the
+/// read's prefix name a slot below the fold, and the result's own folds are other places.
+fn describeEach(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
+    const f = s.e.fr();
+    if (Held.has(try Held.atoms(f, try Put.resList(s, out), try SupplyKey.relAt(s, q, out.key)), f.leafAt(li))) return;
+    try describeLeaf(s, li, q, true, out);
+    for (f.slots.items(try Subtree.belowAll(f.slots, s.e.gpa(), f.account, f.places, q))) |qs| try describeLeaf(s, li, .from(qs), true, out);
+}
+
+/// The prefix's key `ki` of a read below it, each item at the result slot its steps take `q` to.
+fn describeKey(s: *Sink, ki: u32, prefix: PathId, tags: u32, q: PathId, out: Put.ResList) Error!void {
+    const e = s.e;
+    const f = e.fr();
     if ((try s.described.getOrPut(e.gpa(), try Building.describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
     const held = try Held.atoms(f, try Put.resList(s, out), try SupplyKey.relAt(s, q, out.key));
     // The result slots of the key's items: the read's column.
-    const col = try readDests(s, prefix, q);
+    const col = try ReadCols.read(s, prefix, q);
     {
         var domain: std.ArrayList(u32) = .empty;
         defer domain.deinit(e.gpa());
@@ -289,7 +321,7 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
             const y = (try f.withTags(x, tags)) orelse continue;
             if (!Held.has(held, f.leafAt(y))) try domain.append(e.gpa(), at & ~Relation.open_bit);
         }
-        try fillDests(s, prefix, q, domain.items, col);
+        try ReadCols.fill(s, prefix, q, domain.items, col);
     }
     var i: usize = 0;
     while (i < e.ev.keys.items[ki].leaves.items.len) : (i += 1) {
@@ -344,6 +376,7 @@ fn callNode(s: *Sink, call: u32, which: u32, prefix: PathId, tags: u32, q: PathI
     const f = e.fr();
     const c = e.ev.contractOf(call) orelse return false;
     if (e.contracts.head(c).flags.pessimistic) return false;
+    if (try BelowAnchors.foldsAbove(f, e.gpa(), e.ev.arena, prefix)) return false; // §2.1, *One below*
     const pw = f.slots.relWords(try f.slots.relOf(e.gpa(), f.account, f.places, prefix));
     var n = e.ev.resRoot(c, which);
     try f.charge(.inspection, @intCast(1 + pw.len));
@@ -440,12 +473,12 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
         defer all.deinit(gpa);
         for (f.slots.items(try Subtree.belowAll(f.slots, gpa, f.account, f.places, cs))) |sl| if (sl != cs.int()) try all.append(gpa, sl);
         // The result slots of every slot below `cs`: the read's column.
-        const col = try readDests(s, cs, q);
-        try fillDests(s, cs, q, all.items, col);
+        const col = try ReadCols.read(s, cs, q);
+        try ReadCols.fill(s, cs, q, all.items, col);
         for (all.items) |sl| {
             var ps: std.ArrayList(u32) = .empty;
             defer ps.deinit(gpa);
-            try destsOf(s, col, cs, .from(sl), q, &ps);
+            try ReadCols.dests(s, col, cs, .from(sl), q, &ps);
             if (ps.items.len == 0) try ps.append(gpa, q.int());
             const run = try gpa.dupe(u32, try e.ev.instAt(call, .from(sl), which));
             defer gpa.free(run);
@@ -465,43 +498,6 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     return m;
 }
 
-/// The slots of `domain` entered in the column `d` of the read `(from, q)`,
-/// in their order: a path's id is above its parent's, so a slot's ancestors
-/// in the domain are entered before it (`Dests.addPath`).
-fn fillDests(s: *Sink, from: PathId, q: PathId, domain: []const u32, d: u32) Error!void {
-    const gpa = s.e.gpa();
-    const xs = try gpa.dupe(u32, domain);
-    defer gpa.free(xs);
-    std.mem.sort(u32, xs, {}, std.sort.asc(u32));
-    for (xs) |x| try addDest(s, from, q, d, x);
-}
-
-fn env(s: *Sink) Dests.Env {
-    const f = s.e.fr();
-    return .{ .gpa = s.e.gpa(), .account = f.account, .places = f.places, .slots = f.slots };
-}
-
-/// `slot`'s entry in the column of the read `(from, q)` (`Dests.addPath`).
-fn addDest(s: *Sink, from: PathId, q: PathId, d: u32, slot: u32) Error!void {
-    try Dests.addPath(env(s), &s.reads.cols.items[d], from, q, slot);
-}
-
-/// The column of the read of a value below `from` at result slot `q`
-/// (§2.10 *Read-off*): an entry per slot the read meets, added as it meets
-/// it (a leaf's slots, a key's items, one delivered later).
-fn readDests(s: *Sink, from: PathId, q: PathId) Error!u32 {
-    return s.reads.col(s.e.gpa(), .{ from.int(), q.int() });
-}
-
-/// The result slots below `q` that the steps from `from` down to `slot`
-/// reach (`Slots.replay`; from `q` itself where `slot` is not below
-/// `from`), appended to `out`: from the read's column `col` where it has
-/// the slot, else replayed.
-fn destsOf(s: *Sink, col: u32, from: PathId, slot: PathId, q: PathId, out: *std.ArrayList(u32)) Error!void {
-    if (s.reads.cols.items[col].at(slot.int())) |ds| return out.appendSlice(s.e.gpa(), ds);
-    try Dests.replay(env(s), from, slot, q, out);
-}
-
 /// An item of a key below `prefix` (leaf `li` at slot `at`), described at
 /// the result slot the steps from the prefix take `q` to.
 fn describeItem(s: *Sink, col: u32, li: u32, at: u32, prefix: PathId, q: PathId, held: Held.Atoms, out: Put.ResList) Error!void {
@@ -514,8 +510,8 @@ fn describeItem(s: *Sink, col: u32, li: u32, at: u32, prefix: PathId, q: PathId,
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(gpa);
     if (slot == prefix) try ps.append(gpa, q.int()) else {
-        try addDest(s, prefix, q, col, slot.int());
-        try destsOf(s, col, prefix, slot, q, &ps);
+        try ReadCols.add(s, prefix, q, col, slot.int());
+        try ReadCols.dests(s, col, prefix, slot, q, &ps);
         if (ps.items.len == 0) try ps.append(gpa, q.int());
     }
     for (ps.items) |dest| {
@@ -570,6 +566,7 @@ fn wholeAtoms(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: Put.ResLis
     if (e.ev.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
     const pk = f.places.kind(f.places.pathPlace(sl));
     if (pk == .@"var" or pk == .@"opaque" or f.places.pathPlace(sl) != f.places.pathPlace(dest)) return false;
+    if (try BelowAnchors.foldsAbove(f, e.gpa(), e.ev.arena, sl)) return false; // §2.1, *One below*
     const xw = if (sl == r.path) &.{} else f.slots.relWords(try f.slots.relOf(e.gpa(), f.account, f.places, sl));
     var hits: std.ArrayList(Contract.Hit) = .empty;
     defer hits.deinit(e.gpa());
@@ -1092,7 +1089,8 @@ pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
     const y = (try f.withTags(x, sub.tags)) orelse return;
     switch (sub.kind) {
         .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c, .key = sub.key }),
-        .describe_below => try describeItem(&e.sink, try readDests(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c, .key = sub.key }), try SupplyKey.relAt(&e.sink, .from(sub.b), sub.key)), .{ .label = sub.a, .k = sub.c, .key = sub.key }),
+        .describe_below => try describeItem(&e.sink, try ReadCols.read(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c, .key = sub.key }), try SupplyKey.relAt(&e.sink, .from(sub.b), sub.key)), .{ .label = sub.a, .k = sub.c, .key = sub.key }),
+        .describe_whole => try describeEach(&e.sink, y, .from(sub.b), .{ .label = sub.a, .k = sub.c, .key = sub.key }),
         .forward_below => unreachable,
         .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
         .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b, .key = sub.key }),

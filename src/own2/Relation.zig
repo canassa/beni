@@ -31,7 +31,7 @@ const LevelCycle = @import("LevelCycle.zig");
 const PastPayload = @import("PastPayload.zig");
 const ArriveAt = @import("ArriveAt.zig");
 const CallFolds = @import("CallFolds.zig");
-const LevelTargets = @import("LevelTargets.zig");
+const BelowAnchors = @import("BelowAnchors.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -55,8 +55,8 @@ pub const Ov = Pairs.Ov;
 /// leaves reach it once each, the ones it saw when it subscribed and every
 /// one added after. `forward` adds them to another key (`a`); the other
 /// kinds are the read-off's (`Eval.zig` delivers them).
-pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, effect, supply, escape, escape_fn };
-/// `d`: a `describe_below` consumer's prefix slot (its key's).
+pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, describe_whole, effect, supply, escape, escape_fn };
+/// `d`: a `describe_below` consumer's prefix slot (its key's); a `describe_whole` one reads a fold's key.
 /// `key`: a supply list's key (`Put.ResList.key`), carried to the delivery whole.
 pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0, key: u32 = std.math.maxInt(u32) };
 
@@ -723,13 +723,23 @@ pub const Eval = struct {
         return e.keys.items[ki].leaves.items;
     }
 
-    /// Every arrival of call `call`'s callee at the caller slots at and below
-    /// `prefix` (a path under the call's result root), each with its slot:
-    /// one key per prefix, never one per slot below it. A callee's entry at a
-    /// slot below the prefix is read there; an open entry above it is read at
-    /// the prefix, open (§2.10 *Read-off*). Items are `(leaf, at)` pairs of
-    /// the key's `leaves` and `at`.
-    pub fn instBelow(e: *Eval, call: u32, prefix: PathId, which: u32) Error!u32 {
+    /// Every arrival of call `call`'s callee at and below caller slot `prefix`: one key below
+    /// each anchor (`BelowAnchors.of`, §2.1 *One below*), in `out`. A fold's key holds slots no
+    /// steps from the prefix name. While a group is solved the prefix's key delivers to `cur_sub`.
+    pub fn instBelow(e: *Eval, call: u32, prefix: PathId, which: u32, fold_sub: ?Sub, out: *std.ArrayList(BelowAnchors.Anchor)) Error!void {
+        const saved = e.cur_sub;
+        defer e.cur_sub = saved;
+        for (try BelowAnchors.of(e.f, e.gpa(), e.arena, prefix)) |p| {
+            e.cur_sub = if (p == prefix) saved else fold_sub;
+            try out.append(e.gpa(), .{ .at = p, .key = try e.keyBelow(call, p, which) });
+        }
+    }
+
+    /// The key of `instBelow`'s anchor `prefix`: one key per prefix, never one per slot below it,
+    /// each item with its slot. A callee's entry at a slot below the prefix is read there; an open
+    /// entry above it is read at the prefix, open (§2.10 *Read-off*). Items are `(leaf, at)` pairs
+    /// of the key's `leaves` and `at`.
+    fn keyBelow(e: *Eval, call: u32, prefix: PathId, which: u32) Error!u32 {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
         e.pass = 0;
@@ -979,6 +989,7 @@ pub const Eval = struct {
         if (cl.contract == none) return false;
         if (e.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
         if ((try CallFolds.of(e, r.a, none)).len != 0) return false;
+        if (try BelowAnchors.foldsAbove(e.f, e.gpa(), e.arena, .from(sls[0]))) return false; // §2.1, *One below*
         const xw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sls[0])));
         const root = e.contracts.head(cl.contract).res_root;
         // Nothing may be said below the slot, nor plainly at it.
@@ -1202,20 +1213,6 @@ pub const Eval = struct {
         };
     }
 
-    /// Every arrival of call `call`'s callee at and below caller slot
-    /// `prefix`, through one key below it and one below each fold above it
-    /// that a walk below it reaches (`↓p` is `Subtree.belowAll`, §2.1), widened, with `tags`.
-    fn wholeItems(e: *Eval, call: u32, which: u32, prefix: PathId, tags: u32, out: *std.ArrayList(u32)) Error!void {
-        var ps: std.ArrayList(PathId) = .empty; // the arena's
-        try ps.append(e.arena, prefix);
-        if (LevelTargets.hasMiddle(e.places(), e.places().pathPlace(prefix)) and !@import("Mutate.zig").on(.below_folds_off)) try LevelTargets.of(e.f, e.gpa(), e.arena, prefix, &ps);
-        for (ps.items) |p| if (!LevelTargets.coveredBy(e.places(), ps.items, p)) {
-            const ki = try e.instBelow(call, p, which);
-            var i: usize = 0;
-            while (i < e.keys.items[ki].leaves.items.len) : (i += 1) if (try e.f.withTags(try e.widen(e.keys.items[ki].leaves.items[i], e.keys.items[ki].at.items[i]), tags)) |y| try out.append(e.gpa(), y);
-        };
-    }
-
     /// `expandRouted`, each leaf's route set written out (§2.3.5, *a key's leaf*): one leaf a route.
     pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
         var ls: std.ArrayList(u32) = .empty;
@@ -1250,7 +1247,7 @@ pub const Eval = struct {
         // else the set holds.
         if (r.kind == .call or r.kind == .supply) {
             const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else .{ e.f.supplies.items[r.a].call, r.a };
-            for (Subtree.subs(e.f.slots, l.slots)) |sb| try e.wholeItems(call, which, Slots.pathOf(sb), l.tags, out);
+            for (Subtree.subs(e.f.slots, l.slots)) |sb| try BelowAnchors.whole(e, call, which, Slots.pathOf(sb), l.tags, out);
             if (Subtree.explicit(e.f.slots, l.slots).len == 0) return;
         }
         if (e.live != null) {

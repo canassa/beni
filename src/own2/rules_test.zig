@@ -80,6 +80,8 @@ const layers = [_]Entry{
     .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
     .{ .file = "Replay.zig", .layer = 2, .max_lines = 130 },
+    // One set of the folds above a slot, checked under runtime safety (§2.1, *One below*, #2377).
+    .{ .file = "UpCheck.zig", .layer = 2, .max_lines = 35 },
     .{ .file = "SlotWords.zig", .layer = 2, .max_lines = 110 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
@@ -100,6 +102,8 @@ const layers = [_]Entry{
     // The answers occurrence (§2.11.3).
     .{ .file = "AnsOcc.zig", .layer = 4, .max_lines = 35 },
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
+    // The anchors of a read below a caller slot (§2.1, *One below*, #2359).
+    .{ .file = "BelowAnchors.zig", .layer = 4, .max_lines = 50 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
     // What an open arrival says at the `⟲`s above it (#2195).
@@ -121,6 +125,8 @@ const layers = [_]Entry{
     .{ .file = "ComparisonWalks.zig", .layer = 5, .max_lines = 30 },
     // The arrivals a need meets in the code a caller hands, split from `Needs` (§2.11.3).
     .{ .file = "NeedArrivals.zig", .layer = 5, .max_lines = 75 },
+    // A plain arrival at a type variable's slot is open, checked (§2.1, *One below*, #2377).
+    .{ .file = "VarOpen.zig", .layer = 5, .max_lines = 30 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // `within`, split from `Contract` (#1991).
@@ -145,6 +151,8 @@ const layers = [_]Entry{
     .{ .file = "RefRead.zig", .layer = 6, .max_lines = 90 },
     // What a callee's open arrival says at a caller's folds above it (#2223).
     .{ .file = "CallFolds.zig", .layer = 6, .max_lines = 150 },
+    // A deep need read at the folds above its slot, split from `Needs` (§2.1, *One below*).
+    .{ .file = "NeedFolds.zig", .layer = 6, .max_lines = 35 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
@@ -264,6 +272,8 @@ const layers = [_]Entry{
     // The read-off, split from `Eval` (#1714).
     // Where the read-off puts what it describes, split from `ReadOff` (#1714).
     .{ .file = "Put.zig", .layer = 11, .max_lines = 170 },
+    // The read-off's columns, split from `ReadOff` (§2.10, #2359).
+    .{ .file = "ReadCols.zig", .layer = 11, .max_lines = 55 },
     // The memo of subtrees described once per place, split from `Put` (#2195).
     .{ .file = "PutMemo.zig", .layer = 11, .max_lines = 40 },
     // The stack of subtrees the read-off describes once per place, split from `Put` (#2197).
@@ -858,7 +868,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 155), layers.len);
+    try testing.expectEqual(@as(usize, 160), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

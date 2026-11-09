@@ -15,6 +15,7 @@ const Contract = @import("Contract.zig");
 const Distinct = @import("Distinct.zig");
 const LabelChain = @import("LabelChain.zig");
 const NeedArrivals = @import("NeedArrivals.zig");
+const NeedFolds = @import("NeedFolds.zig");
 const NeedCarry = @import("NeedCarry.zig");
 const CallFolds = @import("CallFolds.zig");
 const SlotWords = @import("SlotWords.zig");
@@ -117,6 +118,8 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
     const m = memberOf(e, vc);
     var hs: std.ArrayList(NeedArrivals.At) = .empty;
     const met = try NeedArrivals.of(e, if (m) |mm| &mm.draft.res else null, vc.contract, f.roots.items[vc.root].place, words, n.deep, &hs);
+    // A deep need reads each fold above its slot too (§2.1, *One below*).
+    if (n.deep) try NeedFolds.of(e, if (m) |mm| &mm.draft.res else null, vc.contract, f.roots.items[vc.root].path, f.roots.items[vc.root].place, words, &hs);
     // A contract's tree also says each fold the caller's instance adds, read whole (§2.1, #2223).
     if (m == null) for (try CallFolds.of(&e.ev, v, none)) |s| if (SlotWords.startsAt(words, s.words) or (n.deep and SlotWords.startsAt(s.words, words)))
         try hs.append(e.ev.arena, .{ .a = s.a, .rest = &.{}, .whole = true });

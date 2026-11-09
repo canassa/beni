@@ -39,7 +39,7 @@ pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId,
             const t = if (!got.found_existing) (if (level) d else continue) else if (level) continue else try pl.foldOnto(g, f.account, d);
             if (!(try met.getOrPut(g, .{ 0, t.int() })).found_existing) try out.append(arena, t);
         }
-        if (i == out.items.len) return;
+        if (i == out.items.len) return if (std.debug.runtime_safety) try @import("UpCheck.zig").agrees(f.places, g, q, out.items[start..]);
     }
 }
 

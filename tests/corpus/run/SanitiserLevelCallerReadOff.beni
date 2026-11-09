@@ -1,0 +1,52 @@
+-- A result read off below a call's slot reads the folds above it (`ownership-v2.md` §2.1, *One below*, #2359):
+-- `outer` returns `hc`'s result at `#Just.0#GP.0#GL.0`, whose walk below folds onto `#Just.0#GP.0⟲` through `RW`,
+-- where `hc` says `k`. `outer`'s result says it at every slot below, so `rr` edits `k`, still live: refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GZ (List Int)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+rr : R → Int
+rr r =
+    case r of
+        RW (GL (RL ys)) →
+            List.length (List.push ys 1)
+        _ →
+            0
+
+
+hc : G R → Maybe (G R)
+hc t =
+    case t of
+        GP x n →
+            Just (GP x n)
+        _ →
+            Nothing
+
+
+outer : G R → R
+outer t =
+    case hc t of
+        Just (GP (GL r) _) →
+            r
+        _ →
+            RL []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (RW (GL (RL k)))) 0
+    a = rr (outer v)
+    Node.print (String.fromInt (a + List.length k))
