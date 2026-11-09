@@ -76,6 +76,14 @@ of, in order: `batch` concatenates, `map` composes its function onto each declar
   3); one whose key splits further, on the payload's own shape, is a limit of the compiler (§5,
   class 4), since only the handler could tell. *Amended 2026-10-29 (§10.3):* one whose tagger is a
   constructor of one field reaches its key through the dispatcher, as the message, and is compiled.
+  *Amended 2026-11-09 (#2258):* "no message is made" holds only for a key whose last step names the
+  constructor, whose handler takes the constructor's fields. A key of no step, or of a default step
+  last, takes the message itself (`Program.Key.fields`), as an event's handler of that key does, so
+  the value reaches it as the message the tagger makes of it — `send(handler, Got(v))`, still with no
+  dispatcher (`boundary.md` §9.4.6, version 1.25). Before, the value went to such a handler bare,
+  and an `update` that matched the message in its parameter (`update (Got s) model`) or read it in a
+  default arm read a field of the value: `undefined` in a development build, where a constructor of
+  one field is an object, and right only by chance in release, which unboxes it.
 - **`start` must not suspend**: `Sub.on`'s `start` is `sync`, so the checker refuses one that
   does, before the lowering sees it.
 

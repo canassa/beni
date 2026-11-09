@@ -1,0 +1,42 @@
+-- `update` matches the message in its parameter, `update (Got s) model`,
+-- so its one key takes the whole message (`docs/design/browser-inline.md`
+-- §3, amended 2026-11-09). A subscription whose start sends "x" when the
+-- page mounts hands that key the message `Got "x"`, not the bare value, and
+-- the key's handler reads the field once: the page shows "x", then "xy"
+-- after the button's own `Got "y"` (#2258).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Got String
+
+
+type K
+    = K
+
+
+start : (String → ⊤) → (⊤ → ⊤)
+start send =
+    send "x"
+    λ⊤ → ⊤
+
+
+update : Msg, String → String × Cmd Msg
+update (Got s) model = ( model ++ s, Cmd.none )
+
+
+view : String → Html Msg
+view model = <button onClick={Got "y"}>{model}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.on K start Got
+        }

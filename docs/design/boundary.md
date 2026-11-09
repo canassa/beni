@@ -2676,6 +2676,16 @@ takes the route and the page's text, from that text — and binds the lambda's p
 known (`program_shape`) and, in the prerender tree, one whose conversions may be impure
 (`prerender_impure`). A lowering that targets 1.22 sees what it saw.
 
+Version 1.24 is Trusted Types (§9.4.7, *Amended 2026-11-07*).
+
+**Version 1.25** (*added 2026-11-09*, additive, gated on nothing; `browser-inline.md` §3, #2258):
+`Program.Subscription.whole`, a declaration whose key has no step that names the tagger's
+constructor — no step, or a default step last — so that the key's handler takes the message
+itself (`Program.Key.fields`). The lowering sends each value to that handler as
+`programSubscriptionMessage(i, payload)`, the message the tagger makes of it, which since 1.25 also
+answers for such a declaration. A lowering that targets 1.24 sees what it saw, and hands such a
+handler the bare value, which is the defect 1.25 corrects; `inline` targets 1.25.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

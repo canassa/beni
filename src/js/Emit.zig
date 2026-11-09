@@ -4796,7 +4796,7 @@ const Emitter = struct {
                         const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
                         const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
                         for (subs.decls, set, starts) |dcl, *s, *st| {
-                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message };
+                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message, .whole = dcl.whole };
                             const info = try w.funInfo(dcl.start);
                             st.* = .{
                                 .kind = switch (info.kind) {
@@ -4808,7 +4808,7 @@ const Emitter = struct {
                                 .decl = info.d,
                                 .inst = info.inst,
                                 .bound = try a.dupe(u32, info.bound),
-                                .message = if (dcl.message) e.directCtor(w, dcl.ctor) else null,
+                                .message = if (dcl.message or dcl.whole) e.directCtor(w, dcl.ctor) else null,
                             };
                             // A lambda of another module: the piece it is
                             // lifted as, and its captures' values here.

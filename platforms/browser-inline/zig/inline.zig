@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 22 },
+    .targets = .{ .major = 1, .minor = 25 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -1884,6 +1884,12 @@ const Page = struct {
                 // sent to the dispatcher (§10.3).
                 const call = if (t.message)
                     try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(pg.dispatch.?), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)) })
+                else if (t.whole)
+                    // A key whose handler takes the message itself — no step,
+                    // or a default step last — is handed the message the
+                    // tagger makes of the value, not the value (§3, amended
+                    // 2026-11-09, #2258).
+                    try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(try pg.handler(t.handler)), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)) })
                 else blk: {
                     const handler_ = try js.name(try pg.handler(t.handler));
                     break :blk try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) });

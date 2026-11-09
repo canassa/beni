@@ -187,6 +187,12 @@ pub const Declaration = struct {
     /// constructor makes of it (`browser-inline.md` §10.3), and `key_index`
     /// is none.
     message: bool = false,
+    /// The key `key_index` names has no step that names the constructor —
+    /// no step at all, or a default step last — so its handler takes the
+    /// message itself, not the constructor's fields: the value reaches it
+    /// as the message the tagger makes of it (`browser-inline.md` §3,
+    /// amended 2026-11-09, #2258).
+    whole: bool = false,
     /// Per field of the constructor: `payload` or a literal term.
     fields: []const u32 = &.{},
     /// Where the start is: its lambda's instruction or its declaration's
@@ -3156,7 +3162,11 @@ fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscript
         const c = a.termWord(v, 1);
         o.ctor = c;
         switch (leafOf(keys, c)) {
-            .key => |ki| o.key_index = ki,
+            .key => |ki| {
+                o.key_index = ki;
+                const ks = keys[ki].steps;
+                o.whole = ks.len == 0 or ks[ks.len - 1].ctor == none;
+            },
             // The key tree splits the message again on the value itself:
             // which key it is is known only when the value is, so it goes
             // through the dispatcher as the message (`browser-inline.md`

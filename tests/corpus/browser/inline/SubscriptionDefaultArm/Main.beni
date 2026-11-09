@@ -1,0 +1,60 @@
+-- A subscription's tagger, `Got`, reaches the key of `update`'s `_` arm,
+-- and that arm reads the message whole (`text msg`). A default step's key
+-- takes the whole message (`docs/design/browser-inline.md` §3, amended
+-- 2026-11-09), so the value the start sends, "x", reaches it as `Got "x"`:
+-- the page shows "x", then "xy" after the button's `Got "y"`. Before
+-- #2258 the handler was handed the bare value, and `text` read a field of
+-- a string.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Got String
+    | Other
+
+
+type K
+    = K
+
+
+start : (String → ⊤) → (⊤ → ⊤)
+start send =
+    send "x"
+    λ⊤ → ⊤
+
+
+update : Msg, String → String × Cmd Msg
+update msg model =
+    case msg of
+        Other →
+            ( model, Cmd.none )
+
+        _ →
+            ( model ++ text msg, Cmd.none )
+
+
+text : Msg → String
+text m =
+    case m of
+        Got t →
+            t
+
+        Other →
+            "-"
+
+
+view : String → Html Msg
+view model = <button onClick={Got "y"}>{model}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.on K start Got
+        }

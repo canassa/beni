@@ -72,7 +72,10 @@ const std = @import("std");
 /// Version 1.24 adds Trusted Types (`boundary.md` §9.4.7, amended
 /// 2026-11-07): `Build.trusted_types`, the lowering's
 /// `Lowering.trusted_types`, and `Context.reportTrustedTypes`.
-pub const version: Version = .{ .major = 1, .minor = 24 };
+/// Version 1.25 adds `Program.Subscription.whole`, a declaration whose key's
+/// handler takes the message itself (`browser-inline.md` §3, amended
+/// 2026-11-09, #2258).
+pub const version: Version = .{ .major = 1, .minor = 25 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -596,6 +599,13 @@ pub const Program = struct {
         /// dispatcher, and `handler` names no key (`browser-inline.md`
         /// §10.3).
         message: bool = false,
+        /// 1.25: `handler`'s key has no step that names the tagger's
+        /// constructor — no step, or a default step last — so its handler
+        /// takes the message itself (`Program.Key.fields`): each value is
+        /// sent to it as the message the tagger makes of it
+        /// (`Context.programSubscriptionMessage`), not as the fields
+        /// (`browser-inline.md` §3, amended 2026-11-09, #2258).
+        whole: bool = false,
     };
 
     /// 1.14: what `Context.programSubscriptions` says of the set.
@@ -1836,7 +1846,8 @@ pub const Context = struct {
 
     /// 1.21: the message declaration `i`'s tagger makes of `payload`, for a
     /// declaration whose value reaches its key through the program's
-    /// dispatcher (`Program.Subscription.message`).
+    /// dispatcher (`Program.Subscription.message`) or, since 1.25, whose
+    /// key's handler takes the message whole (`Program.Subscription.whole`).
     pub fn programSubscriptionMessage(cx: *Context, i: u32, payload: Expr) Error!Expr {
         return cx.vtable.program_subscription_message(cx.impl, i, payload);
     }
