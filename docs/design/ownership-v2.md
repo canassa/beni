@@ -2320,7 +2320,10 @@ of `k` a later run writes, and no object a label is handed sits at a written slo
 conditions on stores, cell writes, other arguments' escapes and labels were the twin's whole-code tests before, and are now
 asked of the objects a later run writes, so `List.foldl [ [ 1 ], [ 2 ] ] [ [ 0 ] ] λx acc → (_ = Task.soon … x …; List.update acc
 0 λm → List.push m 5)` is accepted, sound. Refused that a perfect checker accepts: a callback that hands a label a fresh object (or a label's answer)
-while its answer holds another fresh object at a slot it writes. Fixtures `run/SanitiserFoldKeepsAnswer` (each fold refused;
+while its answer holds another fresh object at a slot it writes; and a callback that hands `k` itself to a label that keeps
+nothing, `List.foldl xs [] λx acc → if has acc x then acc else List.push acc x` with `has` a predicate the caller gives or a
+local lambda (accepted on master, which also accepted the `has` that keeps `l` in a task and traps): the label's code is not
+known in the callback, and passing the obligation outward to where it is known is #2386. Fixtures `run/SanitiserFoldKeepsAnswer` (each fold refused;
 accepted, the sanitised run traps) and `run/SanitiserFoldKeepsAnswerApart` (each accepted, the sanitised run prints the same);
 the folds of `ownership/FoldKeepsInnerRefused` whose callback keeps `acc` in a task (25:12, 29:15, 32:16, 33:5, 36:17, 46:16, 64:18)
 and `ownership/FoldAccumulators`' 36:18 are refused at the fold too, as well as inside the callback, where they were refused
