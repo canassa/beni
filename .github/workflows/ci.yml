@@ -353,9 +353,26 @@ jobs:
             # the prelude. Keep this list with Task's imports.
             runtime=(platforms/browser src/js
               core/{Task,Duration,Schedule,Js,List,Basics,Maybe,Result,String,Char,Int,Float,Debug}.{beni,js})
-            changed=$(git diff --name-only HEAD^1 HEAD -- "${runtime[@]}")
+            # The page driver runs every Chrome page, and the gates put its
+            # bytes in each page's digest (tests/blackbox/browser.zig). So
+            # the driver and each local module it imports, with `from` or
+            # with `import()`, also select the corpus. The list comes from
+            # the code, and the loop follows the imports of each module.
+            driver=(tests/browser/driver.mjs)
+            i=0
+            while [ "$i" -lt "${#driver[@]}" ]; do
+              dir=$(dirname "${driver[$i]}")
+              for m in $(grep -oE '(from|import\() ?"\./[^"]+\.mjs"' "${driver[$i]}" | grep -oE '\./[^"]+'); do
+                f="$dir/${m#./}"
+                case " ${driver[*]} " in *" $f "*) ;; *) driver+=("$f") ;; esac
+              done
+              i=$((i + 1))
+            done
+            echo "page driver and its imports: ${driver[*]}"
+            changed=$(git diff --name-only HEAD^1 HEAD -- "${runtime[@]}" "${driver[@]}")
+            echo "$changed"
             if [ -z "$changed" ]; then
-              echo "::notice::No browser runtime, Task dependency or JavaScript backend changed; skip the Chrome corpus."
+              echo "::notice::No browser runtime, Task dependency, JavaScript backend or page driver changed; skip the Chrome corpus."
               run=false
             fi
             # The site check also reads the examples and their site build,
