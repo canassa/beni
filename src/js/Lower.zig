@@ -3960,6 +3960,10 @@ pub const Lowerer = struct {
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "writer"), .tag = JsIr.Name.no_tag }),
                 .local = try l.sanitizerLocal("writer"),
             },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "len"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("len"),
+            },
         }));
         // The markup runtime: the lowering's exports and the markup
         // primitives this module uses, one binding each (`backend.md` §15.1).
@@ -5407,8 +5411,16 @@ pub const Lowerer = struct {
         return l.call(try l.ident(try l.sanitizerLocal("writer"), p), &.{ try l.stringNode(site, p), value }, p);
     }
 
-    /// `_sanitize$<export>`, one of the sanitiser's two exports (`list`,
-    /// `writer`) as this module names it.
+    /// `_sanitize$len(list)`: a read of a list's length under the
+    /// sanitiser. A plain array's `length` cannot throw, so the read goes
+    /// through a check that traps on a list an accepted write made stale.
+    fn sanitizedLength(l: *Lowerer, list: Node.Index, p: u32) !Node.Index {
+        l.needs.sanitize = true;
+        return l.call(try l.ident(try l.sanitizerLocal("len"), p), &.{list}, p);
+    }
+
+    /// `_sanitize$<export>`, one of the sanitiser's exports (`list`,
+    /// `writer`, `len`) as this module names it.
     fn sanitizerLocal(l: *Lowerer, comptime export_name: []const u8) !JsIr.NameIndex {
         return l.name(.{
             .module = (try l.interner.getOrPut(l.gpa, "_sanitize")).toOptional(),
@@ -6375,6 +6387,7 @@ pub const Lowerer = struct {
 
     /// `list.length`, which every form answers (§4's protocol).
     fn lengthOf(l: *Lowerer, list: Node.Index, p: u32) !Node.Index {
+        if (l.sanitizesLists()) return l.sanitizedLength(list, p);
         return l.member(list, l.well.length, p);
     }
 
@@ -11850,7 +11863,10 @@ pub const Lowerer = struct {
             // the code List's `length`, `traverseAt` and `put` words describe)
             .list_at, .list_traverseAt => l.add(.index_get, p, v[0].int(), v[1].int()),
             .list_half => l.binary(.shr, v[0], try l.numberNode("1", p), p),
-            .list_length => l.member(v[0], try l.interner.getOrPut(l.gpa, "length"), p),
+            .list_length => if (l.sanitizesLists())
+                try l.sanitizedLength(v[0], p)
+            else
+                l.member(v[0], try l.interner.getOrPut(l.gpa, "length"), p),
             // `b[i] = x;` where the call was, then `b`: the builder is read
             // twice, so a builder that is not a name is bound first, and
             // the store runs where the call ran, after its operands.
