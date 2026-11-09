@@ -52,7 +52,7 @@ pub fn of(e: *Eval, v: u32, comptime F: type) Error!?Twin {
     const vc = e.f.calls.items[v];
     if (k >= vc.args.len) return null;
     try es.of(&e.contracts.trees, e.gpa(), e.places(), e.contracts.head(kc).res_root, &.{});
-    for (es.items.items) |rs| for (rs.arrivals) |a| if (a.kind == .param and a.j == k and e.f.slots.rels.find(es.wordsOf(rs)) != a.slot) return null;
+    for (es.items.items) |rs| for (rs.arrivals) |a| if (a.kind == .param and a.j == k and !@import("Mutate.zig").on(.self_fed_slot_off) and e.f.slots.rels.find(es.wordsOf(rs)) != a.slot) return null;
     if (try F.at(e, q, Contract.occFed(labs[li].j, labs[li].slot, k), null) != .yes) return null;
     const args = try e.arena.dupe(u32, vc.args);
     args[k] = try twinOf(e, e.f.val(vc.args[k]).root, li);

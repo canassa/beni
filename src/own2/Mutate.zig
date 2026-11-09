@@ -270,6 +270,8 @@ pub const Name = enum {
     self_fed_answer_free,
     /// O14 H3: `SelfFed.keepsNothing` true of any known code.
     self_fed_keeps_ok,
+    /// O14 H3: `SelfFed.of` asks no arrival of the fed argument to stay at its own slot.
+    self_fed_slot_off,
     /// O14 H3: `AnswerCall.at` answers false.
     answer_call_no,
     /// O14 H3: `Answers.allMade` true of any call with a contract.
