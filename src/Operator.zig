@@ -15,8 +15,8 @@
 //! `modBy` and `remainderBy` answer 0 for a zero divisor where `/` and `%`
 //! would not, and `Int32.div`, `rem`, `mod` likewise, so they stay calls;
 //! `Int32.mul` is `Math.imul`, a global the renamer would have to be taught,
-//! so it stays one too. `negate` is `0 - n`, not `-n`: the two differ at
-//! zero, where `-0` is a different number. `List`'s core-private
+//! so it stays one too. `negate` is `-n`, not `0 - n`: the two differ at
+//! zero, and `-n` keeps the sign IEEE 754 gives it (#2247). `List`'s core-private
 //! primitives are here for a reason of their own: each is what its sibling
 //! export computes, and written in place each loop of `List.beni` has its
 //! own property accesses, where one shared sibling function's go
@@ -25,7 +25,7 @@
 //! Keyed on the core package, the module's name and the value's name, never
 //! on a user's spelling: a root-package `Basics` is an ordinary module. The
 //! reference is an `ext_value` from another module, or a `top` when the
-//! module being lowered IS the core module (`Basics.negate` calls `sub`).
+//! module being lowered IS the core module (`Basics.add` calls `add`).
 
 const std = @import("std");
 const Bir = @import("bir/Bir.zig");

@@ -693,6 +693,22 @@ const Printer = struct {
         try p.joiner.pushOwned(text);
     }
 
+    /// A development build has no adjacency guard (`push`), and `-` before
+    /// an operand that itself begins with `-` would close up to the
+    /// decrement `--`: `-(-0.0)` is `- -0.0`. Only a negation and a negative
+    /// literal begin with `-` at a unary operand's precedence; anything
+    /// looser is bracketed. `negate` is `-n` since #2247, which is what
+    /// first put one `-` before another in a development build.
+    fn devNegSpace(p: *Printer, op: JsIr.UnaryOp, operand: Index) Allocator.Error!void {
+        if (p.compact or op != .neg) return;
+        const leads = switch (p.ir.tag(operand)) {
+            .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(p.ir.data(operand).rhs))) == .neg,
+            .number => std.mem.startsWith(u8, p.ir.bytes(operand), "-"),
+            else => false,
+        };
+        if (leads) try p.push(" ");
+    }
+
     /// `dev` in a development build, `release` under `--release`. Every
     /// whitespace decision of §9 item 3 is one of these, so the two forms sit
     /// next to each other and a dev build cannot drift.
@@ -2689,6 +2705,7 @@ const Printer = struct {
                 // the guard supplies one only where it is needed, so
                 // `typeof x` keeps it and `typeof(a)` would not.
                 try p.tok(op.text(), op.compactText());
+                try p.devNegSpace(op, @fromBackingInt(@intCast(d.lhs)));
                 try p.expression(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op), level);
             },
             .assign => {
@@ -2873,6 +2890,7 @@ const Printer = struct {
                 // `typeof x` keeps it and `typeof(a)` would not.
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
                 try p.tok(op.text(), op.compactText());
+                try p.devNegSpace(op, @fromBackingInt(@intCast(d.lhs)));
                 return .expr(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op));
             },
             .assign => {
@@ -4131,6 +4149,28 @@ test "compact: a mark goes past the guard's space, and with the `;` a block's en
     try testing.expectEqual(@as(u32, @intCast(std.mem.indexOf(u8, text, "t=").?)), marks.list.items[1].generated);
     try testing.expectEqual(@as(u32, 60), marks.list.items[1].source);
     try testing.expectEqual(SourceMap.Mapping{ .generated = @intCast(std.mem.indexOf(u8, text, "g()}").?), .source = 50 }, marks.list.items[2]);
+}
+
+test "dev: a negation of a negation or of a negative literal keeps a space, and `--` never forms" {
+    // `-(-0.0)` closing up to `--0.0` is a decrement of a literal, a
+    // SyntaxError at load (#2247). Compact mode has its guard; this is the
+    // development build's.
+    try expectPrinted(
+        \\const a = - -y;
+        \\const b = - -0.0;
+        \\const c = -y;
+        \\const d = -!y;
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const neg_y = try f.node(.unary, (try f.ident("y")).int(), @backingInt(JsIr.UnaryOp.neg));
+            try f.constDecl(out, "a", try f.node(.unary, neg_y.int(), @backingInt(JsIr.UnaryOp.neg)));
+            try f.constDecl(out, "b", try f.node(.unary, (try f.number("-0.0")).int(), @backingInt(JsIr.UnaryOp.neg)));
+            try f.constDecl(out, "c", try f.node(.unary, (try f.ident("y")).int(), @backingInt(JsIr.UnaryOp.neg)));
+            const not_y = try f.node(.unary, (try f.ident("y")).int(), @backingInt(JsIr.UnaryOp.not));
+            try f.constDecl(out, "d", try f.node(.unary, not_y.int(), @backingInt(JsIr.UnaryOp.neg)));
+        }
+    }.go);
 }
 
 test "compact: a binary minus before a negation keeps one space and nothing else does" {

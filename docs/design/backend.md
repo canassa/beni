@@ -2302,7 +2302,7 @@ computes**, written by `Lower` in both builds, with no call, no import, and no e
 | `Basics.pow a b` (`^`) | `a ** b` | the sibling's body. `**` is right-associative, like `^`, and its left operand may not be a unary expression, so the printer brackets it on its own rule (`JsIr.BinaryOp.leftPrecedence`) |
 | `Basics.lt`, `gt`, `le`, `ge` called by name | `a < b`, â¦ | the sibling's body. The comparison OPERATORS were already `<` on a number, through `compare`'s `primitive` answer |
 | `Basics.not b` | `!b` | a `Bool` is `true`/`false` (correction 1) |
-| `Basics.negate n` (prefix `-`) | `0 - n` | `negate`'s own body. Not `-n`: the two differ at zero, where `-0` is another number (`1 / -0` is `-Infinity`) |
+| `Basics.negate n` (prefix `-`) | `-n` | `negate`'s own body. *Amended 2026-11-09 (#2247):* it was `0 - n`, which is `+0` for `n = +0`, so `-0.0` and `negate 0.0` were `+0` and `1 / (-0.0)` was `Infinity`, a silent wrong answer. `-n` keeps the sign IEEE 754 gives it, as Elm's `negate` does. The backend reads no type, so an `Int`'s `negate 0` is `-0` too: a valid `Int` that `==`, printing, `Dict` keys and patterns do not see, and `toFloat` does (the owner's D3, #1998). The release optimiser folds no `-` of a zero (`Spec.zig`), so both builds agree |
 | `Int32.fromInt n` | `n \| 0` | the sibling's body, ToInt32 |
 | `Int32.toInt x` | `x` | the identity (the table's `Int32` row) |
 | `Int32.toUnsignedInt x` | `x >>> 0` | the sibling's body |

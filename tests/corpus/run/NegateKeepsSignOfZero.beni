@@ -1,0 +1,32 @@
+-- `-x` and `negate x` keep the IEEE 754 sign of zero (#2247), in both builds.
+-- `negate` was `0 - n`, which is `+0` for `n = +0`, so each line below
+-- printed `Infinity`. A `-` of a literal, a call of `negate`, a `-` of a
+-- variable, a `negate` passed as a value, and a zero that is already
+-- negative, which `-` turns back to `+0`. `Debug.toString` tells the two
+-- zeros apart by `Object.is` against core's own `-0.0`, which was `+0` too,
+-- so it printed `-0.0` for `0.0`.
+import Node exposing (Program)
+
+
+zero : Float
+zero = 0.0
+
+
+apply : (Float → Float), Float → Float
+apply f x = f x
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromFloat (1 / (-0.0))
+        , String.fromFloat (1 / negate 0.0)
+        , String.fromFloat (1 / -zero)
+        , String.fromFloat (1 / apply negate zero)
+        , String.fromFloat (1 / -(-0.0))
+        , String.fromFloat (-zero)
+        , String.fromFloat (-2.5)
+        , Debug.toString zero
+        , Debug.toString (-zero)
+        , Debug.toString (-0.0)
+        ]
