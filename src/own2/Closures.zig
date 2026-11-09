@@ -5,9 +5,8 @@
 //! callers to hand it a list nothing else holds. A known caller says what
 //! it hands (§2.11.3: a label's supplies, the `callsite` demands). Where the
 //! closure escapes instead — to a callee with the pessimistic contract, to
-//! JavaScript, into a cell, back to its caller in a callee's answer — its
-//! caller is unknown and so are its supplies
-//! (O1): each such write is a demand on `⊤`, refused `unknown`.
+//! JavaScript, into a cell, back to a callee in a known code's answer — its
+//! caller is unknown and so are its supplies (O1): each such write is a demand on `⊤`, refused `unknown`.
 //!
 //! A closure whose code writes a capture is `once` (R-2.8): an escape of it,
 //! or a callee that may call it more than once (a label whose `calls` is
@@ -23,6 +22,7 @@ const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
+const FnSite = @import("FnSite.zig");
 
 const none: u32 = Ids.none_int;
 
@@ -35,9 +35,8 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
     var out: std.ArrayList(u32) = .empty;
     defer out.deinit(gpa);
     if (e.w.result != none) try e.ev.leavesOf(e.w.result, 0, &out);
-    // What a callee hands back: a closure among a call's result arrivals is
-    // a function value that callee returns, which the caller calls as
-    // unknown code (§2.11.3), so its callers are unknown from there on.
+    // A closure a known code hands back to the callee whose label runs it is run by code the frame does not see (§2.11.3);
+    // one a walked call hands back is followed where the frame runs it, and escapes where the result goes (`FnSite`, #2395).
     var back: std.ArrayList(Eval.Escape) = .empty;
     defer back.deinit(gpa);
     var back_done = false;
@@ -53,6 +52,7 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         if (!back_done) {
             back_done = true;
             try handedBack(e, &back);
+            try FnSite.escapedSites(&e.ev, e.escapes.items, out.items, &back);
         }
         // Its first escape, else (for a capture write) another closure that
         // captures it, which may call it any number of times (as v1 has it).
@@ -118,13 +118,13 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
     }
 }
 
-/// The objects each call of the walk hands back to the frame through its
-/// callee's result: its `res` arrivals of the arguments, projected, as
+/// The objects each virtual call hands back to the callee through its
+/// code's result: its `res` arrivals of the arguments, projected, as
 /// escapes at the call.
 fn handedBack(e: *Eval.Evaluation, out: *std.ArrayList(Eval.Escape)) Eval.Error!void {
     const f = e.fr();
     const gpa = e.gpa();
-    for (f.calls.items, 0..) |call, q| {
+    for (f.calls.items[e.w.walk_calls..], e.w.walk_calls..) |call, q| {
         if (call.contract == none) continue;
         var es: Forest.Entries = .{};
         defer es.deinit(gpa);

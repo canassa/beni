@@ -28,6 +28,7 @@ const Bir = @import("../bir/Bir.zig");
 const WalkContext = @import("WalkContext.zig");
 const Called = @import("Called.zig");
 const Construction = @import("Construction.zig");
+const FnSite = @import("FnSite.zig");
 
 pub const Error = Ids.ChargeError;
 pub const PathId = Ids.PathId;
@@ -41,6 +42,7 @@ pub const fixed_bit = Contract.fixed_bit;
 
 pub const Callee = WalkContext.Callee;
 pub const Context = WalkContext.Context;
+pub const Followed = WalkContext.Followed;
 
 /// What `Groups` hands a walk: the code and its frame of instructions.
 pub const Code = struct {
@@ -911,15 +913,19 @@ const Walker = struct {
             // A callback call (§2.11.3): a label of the frame, of a parameter's
             // function slot or of a value that is one by the contracts settled
             // now (`g = pick f 0`, #1773).
-            .ref => if (if (fr.roots.items[x.root].kind == .param and x.family == Slots.empty) .{ fr.roots.items[x.root].a, try fr.slots.relOf(k.gpa, fr.account, fr.places, fr.pos.items[x.pos].slot) } else try k.ctx.settledParam(k.ctx.ctx, fr, fv)) |js| {
-                const slot = js[1];
-                const at = try k.callPlace(i);
-                const cbi: u32 = @intCast(fr.cbs.items.len);
-                const root = try fr.addRoot(.cb, cbi, at);
-                for (arg_insts) |a| try k.consume(a, i);
-                const offset = i - k.w.code.decl.inst_start.int() | if (k.in_last) Called.last_origin else 0;
-                try fr.cbs.append(k.gpa, .{ .j = js[0], .slot = slot, .origin = .{ k.module, k.w.code.decl_index, offset }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
-                return fr.refRoot(root);
+            .ref => if (if (fr.roots.items[x.root].kind == .param and x.family == Slots.empty) Followed{ .param = .{ fr.roots.items[x.root].a, try fr.slots.relOf(k.gpa, fr.account, fr.places, fr.pos.items[x.pos].slot) } } else try k.ctx.settledFn(k.ctx.ctx, fr, fv)) |got| switch (got) {
+                // One closure of the frame by every arrival (`ident λa → …`, #2395): a call of it.
+                .site => |s| if (FnSite.closureAt(k.contracts, k.ctx, k.w.closures.items, s)) |cv| return k.valueCall(i, cv, arg_insts, vals, depth),
+                .param => |js| {
+                    const slot = js[1];
+                    const at = try k.callPlace(i);
+                    const cbi: u32 = @intCast(fr.cbs.items.len);
+                    const root = try fr.addRoot(.cb, cbi, at);
+                    for (arg_insts) |a| try k.consume(a, i);
+                    const offset = i - k.w.code.decl.inst_start.int() | if (k.in_last) Called.last_origin else 0;
+                    try fr.cbs.append(k.gpa, .{ .j = js[0], .slot = slot, .origin = .{ k.module, k.w.code.decl_index, offset }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
+                    return fr.refRoot(root);
+                },
             } else if (try Called.value(fr, k.ctx, k.contracts, fv)) |cv| return k.valueCall(i, cv, arg_insts, vals, depth),
             else => {},
         }

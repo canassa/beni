@@ -17,6 +17,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Contract = @import("Contract.zig");
+const FnSite = @import("FnSite.zig");
 const LabelChain = @import("LabelChain.zig");
 const Origin = @import("Origin.zig");
 const RouteWalk = @import("RouteWalk.zig");
@@ -224,11 +225,9 @@ pub fn oneParam(ev: *Relation.Eval, v: u32, words: []const u32) Error!?[2]u32 {
     return got;
 }
 
-/// `oneParam` of value `v` of frame `f`, read at its walk through the
-/// contracts settled then (an earlier group's, an import's, words; a call
-/// of a member of the walk's own group has none, so it gives null), as the
-/// identity control reads them (§2.11.2, §2.11.3).
-pub fn settled(f: *Value.Frame, contracts: *Contract.Table, cx: WalkContext.Context, v: u32) Error!?[2]u32 {
+/// `oneParam` of value `v` of frame `f`, else `FnSite.one`, read at its walk through the contracts settled then (an earlier
+/// group's, an import's, words; a member of the walk's own group has none: null), as the identity control reads them (§2.11.2–3).
+pub fn settled(f: *Value.Frame, contracts: *Contract.Table, cx: WalkContext.Context, v: u32) Error!?WalkContext.Followed {
     // The walk's calls read their contracts at the evaluation; here, for
     // this read only, each settled code's.
     var set: std.ArrayList(u32) = .empty;
@@ -242,7 +241,8 @@ pub fn settled(f: *Value.Frame, contracts: *Contract.Table, cx: WalkContext.Cont
     };
     var ev: Relation.Eval = .{ .f = f, .contracts = contracts, .arena = f.arena, .routed = routedLeaves, .code_sig = .{ .ctx = cx.ctx, .of = cx.codeSig } };
     defer ev.deinit();
-    return oneParam(&ev, v, &.{});
+    if (try oneParam(&ev, v, &.{})) |p| return .{ .param = p };
+    return if (try FnSite.one(&ev, v, &.{})) |s| .{ .site = s } else null;
 }
 
 fn routedLeaves(e: *Relation.Eval, v: u32, words: []const u32, deep: bool, _: u32, out: *std.ArrayList(u32)) Error!void {

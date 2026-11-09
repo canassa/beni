@@ -1,0 +1,12 @@
+# v2 follows a callback a callee hands back to the call that runs it, and a composition's fold to its codes (§2.11.3, #2395).
+38:9 list_still_used f
+39:9 list_still_used f
+47:9 list_still_used f
+48:9 list_still_used f
+56:9 list_still_used List.foldl
+56:9 list_may_be_shared List.foldl
+60:17 list_still_used Ref.set
+70:9 list_still_used List.foldl
+70:9 list_may_be_shared List.foldl
+70:9 list_may_be_shared List.foldl
+83:11 list_may_be_shared List.foldl

@@ -32,6 +32,7 @@ const Loans = @import("Loans.zig");
 const Captures = @import("Captures.zig");
 const AnswerRead = @import("AnswerRead.zig");
 const FnRun = @import("FnRun.zig");
+const FnSite = @import("FnSite.zig");
 const Called = @import("Called.zig");
 const Virtual = @import("Virtual.zig");
 const W = @import("Walk.zig");
@@ -187,6 +188,11 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
         var x = f.val(fv);
         // A call's result at a slot with a called contract, unless it is a parameter's slot.
         if (try Called.value(f, e.ctx, e.contracts, fv)) |cv| if (try FnRun.oneParam(&e.ev, arg, f.slots.relWords(l.slot)) == null) {
+            fv = cv;
+            x = f.val(cv);
+        };
+        // One closure of the frame by every arrival (`ident λa → …`): that closure (#2395).
+        if (!(x.kind == .built and x.form == .closure)) if (try FnSite.one(&e.ev, arg, f.slots.relWords(l.slot))) |site| if (FnSite.closureAt(e.contracts, e.ctx, e.w.closures.items, site)) |cv| {
             fv = cv;
             x = f.val(cv);
         };
