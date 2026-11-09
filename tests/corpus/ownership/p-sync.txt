@@ -38,3 +38,5 @@ browser           platforms/browser/Browser/Worker.beni Browser.Worker.listen
 browser           platforms/browser/Browser/Worker.beni Browser.Worker.installFatal
 browser           platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition
 browser           platforms/browser/Gpu/Engine.beni Gpu.Engine.watchUncaptured
+browser-base      platforms/browser-base/Listen.beni              Listen.on
+browser-base      platforms/browser-base/Listen.beni              Listen.on2

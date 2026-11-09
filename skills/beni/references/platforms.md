@@ -9,6 +9,7 @@ A type of your own with the same name is not the platform's Program. Name the pl
 | `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, the `Gpu` modules, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
+| `browser-base` | none | a dependency or library | renderer-independent listener capabilities; no runnable entry |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
 | `html` | none | — | the markup vocabulary the four above share |
 | `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |
@@ -295,5 +296,4 @@ payload each event carries (`onInput` gives the input's value as a `String`; `on
 `Event`; the pointer events give an `Html.Pointer`, read with `Html.localX` and `Html.localY`).
 `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`, `Html.targetSelection` (a text field's selection, in code
 points; `Dom.select id selection` sets one). A program never names this platform; the others include it.
-
-Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12, §9.14; `platforms/*/beni.json`; the modules' doc comments.
+Sources: `docs/design/browser-capability-base.md` §2, §4.1; `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12, §9.14; `platforms/*/beni.json`; the modules' doc comments.

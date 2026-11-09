@@ -1,0 +1,9 @@
+-- A renderer-free base supplies listener registration, not a renderer.
+-- Nested registration restores the prior entry; installed listeners keep
+-- their own entry after all registration scopes have returned.
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main = Node.print (Probe.run ⊤)

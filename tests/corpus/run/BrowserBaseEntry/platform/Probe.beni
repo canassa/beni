@@ -1,0 +1,67 @@
+--! Exercise scoped entry with the host's real EventTarget, without a DOM.
+
+import Js
+import Listen
+
+
+note : Js.Value, String → ⊤
+note log line = Js.to (Js.call log "push" [ Js.from line ])
+
+
+entry : Js.Value, String, sync (⊤ → ⊤) → ⊤
+entry log name work =
+    note log name
+    work ⊤
+
+
+install : Js.Value, String → (⊤ → ⊤)
+install log name =
+    Listen.on "beniEntryProbe" name
+        (λ_ →
+            note log "read:${name}"
+            name
+        )
+        λvalue → note log "send:${value}"
+
+
+fire : Js.Value, String → ⊤
+fire target name =
+    Js.to (Js.call target "dispatchEvent" [ Js.construct (Js.global "Event") [ Js.from name ] ])
+
+
+pub run : ⊤ → String
+run ⊤ =
+    target = Js.construct (Js.global "EventTarget") []
+    Js.set (Js.global "globalThis") "beniEntryProbe" target
+    log = Js.array []
+    removers = Js.array []
+
+    Listen.withEntry (entry log "A" _) λ⊤ →
+        _ = Js.call removers "push" [ Js.from (install log "a") ]
+        Listen.withEntry (entry log "B" _) λ⊤ →
+            Js.to (Js.call removers "push" [ Js.from (install log "b") ])
+        Js.catchIf
+            (λ⊤ →
+                Listen.withEntry (entry log "failed" _) λ⊤ →
+                    Js.throw
+                        (Js.construct (Js.global "TypeError") [ Js.from "registration failed" ])
+            )
+            (λerr →
+                Js.instanceOf err (Js.global "TypeError")
+                    && Js.same (Js.get err "message") (Js.from "registration failed")
+            )
+            λ_ → note log "caught"
+        Js.to (Js.call removers "push" [ Js.from (install log "c") ])
+
+    removeD = install log "d"
+    fire target "a"
+    fire target "b"
+    fire target "c"
+    fire target "d"
+    Js.each removers λremove → Js.to (Js.apply remove [])
+    removeD ⊤
+    fire target "a"
+    fire target "b"
+    fire target "c"
+    fire target "d"
+    Js.to (Js.call log "join" [ Js.from "," ])

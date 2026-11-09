@@ -396,3 +396,57 @@ until separately authorized.
 Binary HTTP responses, new scroll/wheel/touch/pointermove events,
 `animationend`/`focusin`, observers, media queries, device pixel ratio,
 SVG geometry and a monotonic clock remain outside this work.
+
+
+## 9. Implementation ledger
+
+### Renderer-free package and listener-entry foundation
+
+The first local implementation provides the `browser-base` manifest and
+its `Listen` module. Existing renderer chains still use their original
+listener modules; the base becomes their dependency when those duplicate
+modules are removed together. No shared Cmd/Sub or capability-family move
+is claimed by this foundation.
+
+`Listen.withEntry` selects a synchronous registration entry and restores
+it with `Js.finally`. `Listen.callback` captures that entry once and runs
+both reader and send inside it. `on` and `on2` use that helper. Registration
+stores the checked function as `Js.Value`: `sync` is an argument marker in
+a top-level annotation, not a property permitted inside a type alias or
+on a returned function type. `withEntry` spells the checked function type
+out; the callback applies the stored entry synchronously over `Js`.
+
+The `run/BrowserBaseEntry` fixture uses the host's real EventTarget. It
+checks nested entry selection, restoration after an exact recognized
+registration exception, captured entry identity after scopes return, the
+unbound direct mode, and listener removal. It failed before the package
+existed, then passed in development and release. The fixture also checks
+restoration after a specifically recognized registration exception.
+
+Release JavaScript for four capability-free pages is byte-identical before
+and after this foundation (Node 24.19.0; brotli quality 11; gzip level 9):
+
+| Page | Raw | Brotli | Gzip |
+|---|---:|---:|---:|
+| Empty sandbox | 498 | 271 | 331 |
+| Empty element, no command/subscription | 498 | 271 | 331 |
+| Prerendered empty sandbox | 1882 | 881 | 981 |
+| Prerendered empty element | 1882 | 881 | 981 |
+
+Sources, hashes, command script and results are under
+`zig-out/scratch/size/` and `zig-out/scratch/measure-base.mjs`. These figures
+are JavaScript only; they do not include HTML or source maps. The existing
+TodoMVC source fails its inline baseline because `Dom` and `Storage` are
+not present. No browser-tea number is substituted. The extraction still
+owes a real inline TodoMVC comparison after its compiler limits are known.
+
+Full validation on 2026-11-09 used zorg 0.17.1+zorg.3, without the
+temporary equality patch in either worktree, against clean master
+620c322a45 with the same default build mode and Node 24.19.0. Gates have
+identical failure identities: six ownership golden mismatches, two
+ownership CPU budgets and two APFS case-folding tests. Chrome passes
+744 of 745 cases on both; only the existing `tea/DomCapabilities` golden
+mismatch remains. The separate driver settle repair makes HttpDefect
+pass. No golden or timing budget changed. Exact comparisons and logs are
+under `zig-out/scratch/foundation-final-*-comparison.json` and
+`foundation-{repair,master}-{gates,browser}.log`.

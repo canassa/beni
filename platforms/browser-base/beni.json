@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "browser-base",
+  "platforms": ["html"],
+  "reexports": ["Html", "Html.Markdown"]
+}
