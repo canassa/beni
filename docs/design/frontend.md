@@ -2118,7 +2118,9 @@ that way. Until then a reference states a value only in a whole module, or not a
 ### 12.2 Installed beside the binary
 
 `zig build install` copies `skills/beni/` to `<prefix>/share/beni/skills/beni/`, byte for byte
-and with every file. With the default prefix that is `zig-out/share/beni/skills/beni/`. Nothing
+and with every file. Before it copies, it deletes each entry of `<prefix>/share/beni/skills/`
+that `skills/` does not have, so a file that an earlier build installed does not stay
+(`tests/install_prune.zig`). With the default prefix that is `zig-out/share/beni/skills/beni/`. Nothing
 of the folder is compiled into `beni`, so its size does not move the binary's. A Nix package
 installs the same tree under `$out/share/beni/skills/beni/`.
 

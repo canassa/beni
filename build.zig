@@ -367,11 +367,29 @@ pub fn build(b: *std.Build) void {
     // The skill for coding agents (`docs/design/frontend.md` §12.2): the
     // folder `skills/beni/` goes beside the binary, under
     // `<prefix>/share/beni/skills/`, byte for byte, and never into it.
+    // `addInstallDirectory` never deletes a file the source no longer has,
+    // so `tests/install_prune.zig` first deletes every installed entry the
+    // source lacks: a file another branch installed does not stay (#1987).
     const skills_install = b.addInstallDirectory(.{
         .source_dir = b.path("skills"),
         .install_dir = .prefix,
         .install_subdir = "share/beni/skills",
     });
+    {
+        const prune_exe = b.addExecutable(.{
+            .name = "beni-install-prune",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/install_prune.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
+        const prune = b.addRunArtifact(prune_exe);
+        prune.addDirectoryArg(b.path("skills"));
+        prune.addDirectoryArg(b.graph.path(.install_prefix, "share/beni/skills"));
+        prune.has_side_effects = true;
+        skills_install.step.dependOn(&prune.step);
+    }
     b.getInstallStep().dependOn(&skills_install.step);
 
     const run_step = b.step("run", "Build and run beni");
