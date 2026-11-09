@@ -11965,7 +11965,9 @@ text (Â§15.3, Â§15.6) are compiled; and the differential oracle has a harnes
   is rewritten, as the file is copied, to import the declarations' emitted names from the module's
   file â `import { Rt$first as first } from "./Rt.mjs";`, the specifier relative to where the file
   is written, the names as the build spells them â listing only the names the kept part of the file
-  mentions (all of them in a development build, which keeps the whole file); in a scope-hoisted
+  mentions (all of them in a development build, which keeps the whole file; *amended 2026-11-09*,
+  issue #1877: a `--library` build has no entry file but keeps `run` and `start` all the same, so
+  the names those two mention are listed too); in a scope-hoisted
   build the statement goes, and every occurrence of a name it imports is spelled as the
   declaration's name in the one scope (Â§9, *One scope-hoisted file under `--release`*), which is
   the rule a hand-written binding an emitted module imports already follows, run the other way. In
