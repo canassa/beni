@@ -41,6 +41,7 @@ const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const RowEnv = @import("RowEnv.zig");
+const AnsOcc = @import("AnsOcc.zig");
 const Ast = @import("../parse/Ast.zig");
 
 pub const Error = Ids.ChargeError;
@@ -123,6 +124,8 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
     const rw = sig.result_words;
     var exclusive = true;
     var known_result = false;
+    // A `once taken stored` callback's answer, put back at `[*]`.
+    var taken_answer: ?u64 = null;
     for (sig.params, 0..) |p, k| {
         const j: u32 = @intCast(k);
         const from = try env.root(p.place);
@@ -165,8 +168,9 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
                 // the caller (`Eval.takenOccs`), the origin marking it.
                 if (Env.has(ws, .stored)) if (try env.places.extend(env.gpa, .growth(env.account), r, Place.Step.elem)) |re| {
                     _ = try Draft.addWide(&d.res, env.arena, try env.rel(re), .{ .kind = .cb, .j = li, .slot = Slots.root });
+                    if (Env.has(ws, .once)) taken_answer = AnsOcc.occ(j, Slots.root, 0);
                 };
-                exclusive = false;
+                if (taken_answer == null) exclusive = false;
                 continue;
             };
             // A callback of a row: called by the row's own code, which the
@@ -293,5 +297,13 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
         for (d.res.items.items) |s| if (s.node == 0) if (s.a.kind == .param) try occs.append(env.arena, if (s.a.deep) Contract.occDeep(Contract.occ(s.a.j, s.a.slot)) else Contract.occ(s.a.j, s.a.slot));
         d.res_cond = try Contract.Cond.of(env.account, occs.items);
     }
+    // `π1` with one element replaced by the answer: separated where `π1` is
+    // and the callback answers parts of its element or fresh objects
+    // (§2.11.3 item 3, *a taken row's answer*).
+    if (taken_answer) |ta| if (!d.res_cond.no) {
+        var one = [1]u64{ta};
+        d.res_read = try Contract.Cond.conj(env.arena, env.account, d.res_cond, try Contract.Cond.of(env.account, &one));
+        d.res_cond = .unprovable;
+    };
     return env.commit(&d);
 }

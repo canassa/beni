@@ -68,7 +68,9 @@ pub const Cb = struct {
 
 /// A supply root (§2.11.3): what call `call`'s callee hands the label
 /// virtual call `virtual` applies as argument `k`.
-pub const Supply = struct { call: u32, virtual: u32, k: u32, root: u32 };
+/// `twin`: the root value of its twin, which reads every arrival but the
+/// label's own answer; a twin's `no_self` is that label (`SelfFed`).
+pub const Supply = struct { call: u32, virtual: u32, k: u32, root: u32, twin: u32 = none, no_self: u32 = none };
 
 pub const Root = struct {
     kind: RootKind,

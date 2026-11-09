@@ -1,0 +1,74 @@
+-- A fold whose callback edits an element of its accumulator in place
+-- (`ownership-v2.md` §2.11.3, *a label's answer handed back to it*, at the
+-- caller): the accumulator a run is handed is the first value or an earlier
+-- run's answer, never both, so its condition is asked of the first value,
+-- and the answer's own separation is the run's, by induction. v2 accepts
+-- each edit in place, through `List.update`, `List.map`, a helper, `foldr`
+-- and a hand-written fold; the sanitised run prints the same. The last line
+-- edits two positions of an update's answer in turn (the answer of a
+-- `once taken stored` callback, §2.11.3 item 3).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+viaUpdate : List Int → List (List Int)
+viaUpdate xs = List.foldl xs [ [ 0 ], [ 5 ] ] λk acc → List.update acc 0 λl → List.push l k
+
+
+viaMap : List Int → List (List Int)
+viaMap xs = List.foldl xs [ [ 0 ], [ 5 ] ] λk acc → List.map acc λl → List.push l k
+
+
+upd : List (List Int), Int → List (List Int)
+upd acc k = List.update acc 1 λl → List.push l k
+
+
+viaHelper : List Int → List (List Int)
+viaHelper xs = List.foldl xs [ [ 0 ], [ 5 ] ] λk acc → upd acc k
+
+
+viaRight : List Int → List (List Int)
+viaRight xs = List.foldr xs [ [ 0 ], [ 5 ] ] λk acc → List.update acc 0 λl → List.push l k
+
+
+myFold : List a, b, (a, b → b) → b
+myFold xs acc f =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            myFold rest (f x acc) f
+
+
+viaUser : List Int → List (List Int)
+viaUser xs = myFold xs [ [ 0 ], [ 5 ] ] λk acc → List.update acc 0 λl → List.push l k
+
+
+chain : ⊤ → List (List Int)
+chain ⊤ =
+    x = List.update [ [ 0 ], [ 1 ] ] 0 λi → List.push i 1
+    List.update x 1 λi → List.push i 2
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    Node.printLines
+        [ shows (viaUpdate xs)
+        , shows (viaMap xs)
+        , shows (viaHelper xs)
+        , shows (viaRight xs)
+        , shows (viaUser xs)
+        , shows (chain ⊤)
+        , show xs
+        ]

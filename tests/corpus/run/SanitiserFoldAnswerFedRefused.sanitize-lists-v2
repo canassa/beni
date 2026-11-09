@@ -1,0 +1,3 @@
+The unsafe twins of SanitiserFoldAnswerFed (ownership-v2.md §2.11.3, a label's answer handed back to it):
+built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each fold; were the
+answer's own separation not asked, the sanitised run would show the stale read.

@@ -1,0 +1,15 @@
+# v2 refuses each fold whose answer holds one element twice, a capture, a handed element or a list a closure in
+# the answer reads, and one whose first value is a top-level list (§2.11.3, a label's answer handed back to it).
+28:12 list_may_be_shared List.foldl
+28:12 list_may_be_shared List.foldl
+40:18 list_may_be_shared List.foldl
+40:18 list_may_be_shared List.foldl
+45:13 list_may_be_shared List.foldl
+45:13 list_may_be_shared List.foldl
+51:14 list_may_be_shared List.foldl
+51:14 list_may_be_shared List.foldl
+56:15 list_may_be_shared List.foldr
+56:15 list_may_be_shared List.foldr
+56:15 list_may_be_shared List.foldr
+68:18 top_level_list_changed List.foldl
+68:18 top_level_list_changed List.foldl

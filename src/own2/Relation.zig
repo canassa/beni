@@ -582,6 +582,11 @@ pub const Eval = struct {
         e.applied.items[vi] = .{ call, li };
     }
 
+    /// A twin supply's arrival of its label's own answer, which it never reads (`SelfFed`).
+    pub fn selfAnswer(e: *const Eval, which: u32, a: Contract.Arrival) bool {
+        return which != none and a.kind == .cb and a.j == e.f.supplies.items[which].no_self;
+    }
+
     /// The result tree of contract `c` (`which` none) or of the supply `which`.
     pub fn resRoot(e: *Eval, c: Contract.Id, which: u32) Contract.Node {
         const h = e.contracts.head(c);
@@ -640,7 +645,7 @@ pub const Eval = struct {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try ArriveAt.at(e, call, c, a, slot, hit.open, words[hit.depth..], &acc);
+            for (hits.items) |hit| for (hit.arrivals) |a| if (!e.selfAnswer(which, a)) try ArriveAt.at(e, call, c, a, slot, hit.open, words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
             if (!@import("Mutate.zig").on(.inst_no_contract_empty)) try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -707,7 +712,7 @@ pub const Eval = struct {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try e.feed(ki, a, hit.depth, hit.open);
+            for (hits.items) |hit| for (hit.arrivals) |a| if (!e.selfAnswer(which, a)) try e.feed(ki, a, hit.depth, hit.open);
         } else if (!@import("Mutate.zig").on(.inst_live_no_contract_empty)) try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
         e.cur_sub = sub;
         e.inst_depth -= 1;
@@ -824,6 +829,7 @@ pub const Eval = struct {
     /// key's prefix, at the prefix, open, when the slot is open above it.
     /// `inside`: the entry is strictly below the read's prefix.
     pub fn feedBelow(e: *Eval, ki: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival, inside: bool) Error!void {
+        if (e.selfAnswer(e.keys.items[ki].which, a)) return;
         const k = e.keys.items[ki];
         const r = e.f.roots.items[e.rootOfKey(ki)];
         const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));

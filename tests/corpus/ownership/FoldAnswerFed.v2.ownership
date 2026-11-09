@@ -1,0 +1,72 @@
+module FoldAnswerFed
+  13:16 List.foldl <literal>: accepted callback-param
+  13:16 List.foldl <literal>[*]: accepted callback-param
+  13:56 List.update acc: accepted param
+  13:56 List.update acc[*]: accepted callback-param
+  13:79 List.push l: accepted param
+  17:13 List.foldl <literal>[*]: accepted callback-param
+  17:53 List.map acc[*]: accepted callback-param
+  17:71 List.push l: accepted param
+  21:13 List.update acc: accepted param
+  21:13 List.update acc[*]: accepted callback-param
+  21:36 List.push l: accepted param
+  25:16 List.foldl <literal>: accepted callback-param
+  25:16 List.foldl <literal>[*]: accepted callback-param
+  25:56 FoldAnswerFed.upd acc: accepted param
+  25:56 FoldAnswerFed.upd acc[*]: accepted param
+  29:15 List.foldr <literal>: accepted callback-param
+  29:15 List.foldr <literal>[*]: accepted callback-param
+  29:55 List.update acc: accepted param
+  29:55 List.update acc[*]: accepted callback-param
+  29:78 List.push l: accepted param
+  43:14 FoldAnswerFed.myFold <literal>: accepted callback-param
+  43:14 FoldAnswerFed.myFold <literal>[*]: accepted callback-param
+  43:50 List.update acc: accepted param
+  43:50 List.update acc[*]: accepted callback-param
+  43:73 List.push l: accepted param
+  48:9 List.update <literal>: accepted fresh
+  48:9 List.update <literal>[*]: accepted callback-param
+  48:45 List.push i: accepted param
+  49:5 List.update x: accepted fresh
+  49:5 List.update x[*]: accepted callback-param
+  49:26 List.push i: accepted param
+  59:13 FoldAnswerFed.recur <call List.update>: rejected disjoint: another path of the same argument reaches it (approx)
+  59:13 FoldAnswerFed.recur <call List.update>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  59:25 List.update acc: accepted param
+  59:25 List.update acc[*]: accepted callback-param
+  59:48 List.push l: accepted param
+  63:15 FoldAnswerFed.recur <literal>: accepted fresh
+  63:15 FoldAnswerFed.recur <literal>[*]: accepted fresh
+  68:12 List.foldl <literal>: accepted callback-param
+  68:38 List.push acc: accepted param
+  69:5 List.foldl rows: rejected disjoint: another operand of the same operation reaches it (approx)
+  69:5 List.foldl rows[*]: rejected disjoint: another operand of the same operation reaches it (approx)
+  69:36 List.update acc: accepted param
+  69:36 List.update acc[*]: accepted callback-param
+  69:59 List.push l: accepted param
+  account viaUpdate: source 31, baseline 3647, growth 0 of 65536, total 3647, continuation 3635 of 31744, demands 213, walks 3, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary viaUpdate: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  account viaMap: source 30, baseline 3948, growth 0 of 65536, total 3948, continuation 3936 of 30720, demands 164, walks 3, rounds 4, liveness_index lanes 5, transfer_settlement lanes 3
+  summary viaMap: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  account upd: source 24, baseline 2220, growth 0 of 65536, total 2220, continuation 2210 of 24576, demands 135, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 2
+  summary upd: res ε π1ε, [*] π1[*]; nondup no; answers ⇐ sel π1{ε,[*]}; reads π1ε*; writes π1ε π1[*]; req ⇐ sel π1{[*]}
+  account viaHelper: source 25, baseline 2916, growth 0 of 65536, total 2916, continuation 2909 of 25600, demands 141, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 2
+  summary viaHelper: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  account viaRight: source 31, baseline 3647, growth 0 of 65536, total 3647, continuation 3635 of 31744, demands 213, walks 3, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary viaRight: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  account myFold: source 31, baseline 3540, growth 0 of 65536, total 3540, continuation 3509 of 31744, demands 0, walks 1, rounds 4, liveness_index lanes 7, transfer_settlement lanes 3
+  summary myFold: res ε… π2ε* cb(π3ε@26); nondup no; reads π1ε* π2ε* π3ε*; label π3ε@26 many [1 each: ε… π1[*]* sep ⇐ sel π1{ε~,[*]*} π2{ε*~} π3{ε*~,ε!2} below ⇐ sel π1{[*]*}] [2: ε… π2ε* cb(π3ε@26) sep ⇐ sel π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2} below ⇐ sel π2{ε*} π3{ε!2}]
+  account viaUser: source 31, baseline 3647, growth 0 of 65536, total 3647, continuation 3635 of 31744, demands 213, walks 3, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary viaUser: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  account chain: source 34, baseline 2994, growth 0 of 65536, total 2994, continuation 2987 of 34816, demands 300, walks 3, rounds 3, liveness_index lanes 3, transfer_settlement lanes 4
+  summary chain: res ε fresh, [*] fresh; nondup no; answers yes
+  account recur: source 39, baseline 3522, growth 0 of 65536, total 3522, continuation 3494 of 39936, demands 677, walks 2, rounds 3, liveness_index lanes 7, transfer_settlement lanes 4
+  summary recur: res ε π2ε, [*] π2[*]; nondup no; reads π1ε* π2ε*; writes π2ε π2[*]; req ⇐ sel π1{ε~} π2{ε,[*]}
+  account recurred: source 16, baseline 178, growth 0 of 65536, total 178, continuation 176 of 16384, demands 27, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary recurred: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  account folded: source 42, baseline 4782, growth 0 of 65536, total 4782, continuation 4761 of 43008, demands 342, walks 4, rounds 3, liveness_index lanes 8, transfer_settlement lanes 5
+  summary folded: res ε fresh, [*] fresh; nondup no; reads π1ε*
+  block: 1284 bytes, hash eef35e1932a771ca
+  demands 45: accepted 41 (fresh 4, call 0, param 18, callback-param 19, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 45: accepted 41 (fresh 4, call 0, param 18, callback-param 19, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause disjoint 4
