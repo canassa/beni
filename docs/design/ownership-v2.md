@@ -2472,6 +2472,16 @@ answers it, so the escape is now where the value goes, not where it comes back:
   code, given to JavaScript) or that the frame returns has escaped there (`FnSite.escapedSites`, read by `Closures`):
   its parameter writes are demands on `⊤`, refused `unknown`, and a capture write `once`, as at any escape. A returned
   one is named by the call that hands it back.
+- **Runs add up** (amended 2026-11-09, the review of #2410). A walked call that runs the closure (a virtual call of
+  it, under any depth of labels) and hands it back has run it once already when the frame runs what it gets back. The
+  frame's holder of the closure after that run is the call's own answer, which a write at the call does not stale
+  (§2.8), but the next run reads the capture the first wrote in place, where a plain run reads it unwritten:
+  `g = runBack λ⊤ → List.push k 1` and then `g ⊤` pushed `k` twice. So a closure of the frame run under two calls of
+  the walk (a code call of it is one, made under itself), one of which runs it and hands it back (its result holds
+  the closure at some slot through the callees' results, a returned closure's capture among them: `runBack f`,
+  `{ run = f }`, `Just f`, `ident (runBack f)`, `λ⊤ → f ⊤`),
+  runs more than once (`CaptureRuns.handedAgain`): each capture write made at a run of it, or at a run made under one
+  (a code it applies writing the capture through a label, §2.11.4), is `many`, refused `once`.
 - **A known code's answer** to a callee's label still escapes every closure it hands back, at the virtual call: the
   callee runs it out of the frame's sight (§2.11.4). So does a **worded row or a fixed contract** that hands one back
   (`Task.raceOk`, `Dict.singleton`), at its call: its labels need not say what it runs, and a fiber starter runs what
@@ -2487,6 +2497,16 @@ nested virtual call is placed at its own type's variables (#2407). Fixtures `run
 refused on master, accepted in place, the sanitised run printing the same), `run/SanitiserHandedBackCallback` and
 `run/SanitiserHandedBackKept` (refused: a later read, two calls on one list, a capture writer run twice, a fold whose
 composition keeps the accumulator in a cell, keeps the list it is handed, or answers a capture).
+
+Sound for the runs: every run of a closure of the frame is a call of it in the frame, a code call or a virtual call
+under the call of the walk whose labels apply it. Runs under one call are that callee's count (`calls` many, labels of
+one slot). Of runs under two calls, the later one uses a holder of the closure that outlives the earlier one's
+writes: a local or a value, which the liveness of §2.8 refuses, or the earlier call's answer and what is made of it,
+which is that call handing the closure back, which *runs add up* refuses. Refused that a perfect checker accepts: a
+closure run and handed back under one arm and run under another, exclusive one. Fixtures
+`run/SanitiserHandedBackKept`'s `ranBack`, `ranBackField`, `ranBackIdent`, `ranBackJust`, `ranBackApplied` and
+`ranBackAgain` (each trapped under the sanitiser before the runs added up), and `run/SanitiserHandedBackApart`'s
+`ranOnce`, `ranOnceField`, `ranOnceJust` and `ranInside`, whose runs add up to one, accepted in place.
 
 *Amended 2026-11-05 (#1955): a capture written across the callee's run.* A known code applied at a callee's label
 runs inside the callee, while the callee holds what it was handed. Its supplies are judged at the callee (their kept
@@ -3081,7 +3101,9 @@ the label is handed the capture as. Only a code's own capture writes were `once`
 hand-back escape that *a closure handed back* withdraws. Now a known code's write of its own parameter is followed through
 the arrivals of each label outward (`CaptureRuns.many`): where it reaches a capture of an outer known code (a closure's
 capture, a called code's `D` parameter), it is that code's capture write, and it is refused `once` where any label outward
-runs that code more than once (`LabelChain.outwardMany`). An arrival that is another label's answer (`λ⊤ → f (g ⊤)` with
+runs that code more than once (`LabelChain.outwardMany`), or where that code, or one outward, is a closure whose runs add up
+(§2.11.3, *a closure handed back*, *runs add up*; the outermost code may be a closure the frame calls directly, whose
+captures follow its arguments). An arrival that is another label's answer (`λ⊤ → f (g ⊤)` with
 `g = λ⊤ → y`) is read through the known code that label applies, its answer's arrivals by the same rule; a fresh arrival is
 no capture; any other arrival, or a label applied to no known code, is asked of the code's runs. Sound because the arrival
 chain names every object the written parameter can be (§2.11.3, *every label outward*): a parameter's, a label's answer's
@@ -6075,12 +6097,12 @@ L0  Ids  Counters  Scratch
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
-| `CaptureRuns.zig` | 9 | a known code's write of its own parameter that reaches, through the labels outward, a capture of an outer known code run more than once: `once` (§2.11.4, *a capture written through a label the code applies*, #2395); split from `Closures` | Ids, Value, LabelChain |
+| `CaptureRuns.zig` | 9 | a known code's write of its own parameter that reaches, through the labels outward, a capture of an outer known code run more than once: `once` (§2.11.4, *a capture written through a label the code applies*, #2395); a closure a walked call runs and hands back, run again (§2.11.3, *runs add up*); split from `Closures` | Ids, Value, Relation, LabelChain, FnSite |
 | `Stored.zig` | 9 | what a cell callback's write-back makes escape: the contents and the answer's objects at a shared slot (§2.13.7, #1729, #1955) | Place, Contract, Relation, Cells, LabelChain |
 | `Contents.zig` | 11 | a cell's contents stay separated: a store that may hold one object twice escapes them; the `stores` a contract publishes (§2.13.7, #1984, #1986), and a move between slots judged as an edit | Ids, Place, Slots, Contract, Relation, Forest, LabelChain, Distinct, Cells, Loans, Stored, Eval |
 | `Loans.zig` | 9 | a cell callback's label by its supply below the `◆`, and what it answers as its caller reads it: a loan of the cell, or `Ref.modify`'s `.0` owned when the stored `.1` keeps none of it (§2.13.7, #1977) | Ids, Place, Slots, Value, Contract, Forest, Relation, LabelChain, Trees |
 | `Called.zig` | 8 | a function value in a result: the closure of a called code a call's result is (§2.11.3, #2028) | Ids, Slots, Value, Contract |
-| `FnSite.zig` | 8 | a function value that is one closure of the frame through callees' results, and the closures an escaped or returned result reaches through them (§2.11.3, *a closure handed back*, #2395) | Ids, Contract, Relation |
+| `FnSite.zig` | 8 | a function value that is one closure of the frame through callees' results, and the closures an escaped or returned result reaches through them, and whether a call hands one back (§2.11.3, *a closure handed back*, #2395) | Ids, Subtree, Contract, Relation |
 | `Virtual.zig` | 9 | a virtual call: a label's application to a known code, with its roots (§2.11.3, #2166) | Ids, BelowSize, Contract, Value, WalkContext |
 | `Construction.zig` | 8 | a construction over its base, split from `Walk` (§2.13.2) | Ids, Facts, Place, Value, Relation |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, FnSite, LabelChain, RouteWalk, Relation, Value, WalkContext |

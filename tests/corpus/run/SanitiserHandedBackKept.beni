@@ -1,11 +1,11 @@
 -- A callback a callee hands back, where an edit in place would change a list
--- something else still reads (`ownership-v2.md` §2.11.3, §2.11.4): `ident`'s
--- writer called twice on one list, a capture writer called twice, folds over
--- a composition that keeps the accumulator in a cell, keeps the list it is
--- handed or answers a capture, and a writer applied to a capture (or to a
--- label's answer that is one) of a code run twice (`two λ⊤ → f y`, which
--- trapped on master). Each is refused; were it accepted, the sanitised run would read
--- the list a later call had pushed onto in place (#2395).
+-- something else still reads (`ownership-v2.md` §2.11.3, §2.11.4): `ident`'s writer called twice on one list, a
+-- capture writer called twice, folds over a composition that keeps the accumulator in a cell, keeps the list it is
+-- handed or answers a capture, a writer applied to a capture (or to a label's answer that is one) of a code run
+-- twice (`two λ⊤ → f y`, which trapped on master), and a capture writer a callee runs once and hands back (itself, in
+-- a record or a `Just`, through `ident`) that the caller runs again or hands to a callee that runs it. Each is
+-- refused; were it accepted, the sanitised run would read the list a later call had pushed onto in place
+-- (#2395, #2410).
 import Node exposing (Program)
 import Ref
 import String
@@ -130,7 +130,78 @@ thunkTwice n =
     "${show a} ${show b}"
 
 
+runBack : (⊤ → List Int) → (⊤ → List Int)
+runBack f =
+    _ = f ⊤
+    f
+
+
+runBackIn : (⊤ → List Int) → { run : ⊤ → List Int }
+runBackIn f =
+    _ = f ⊤
+    { run = f }
+
+
+runBackJust : (⊤ → List Int) → Maybe (⊤ → List Int)
+runBackJust f =
+    _ = f ⊤
+    Just f
+
+
+apply : (⊤ → List Int) → List Int
+apply f = f ⊤
+
+
+ranBack : Int → String
+ranBack n =
+    k = [ n ]
+    g = runBack λ⊤ → List.push k 1
+    show (g ⊤)
+
+
+ranBackField : Int → String
+ranBackField n =
+    k = [ n ]
+    r = runBackIn λ⊤ → List.push k 1
+    g = r.run
+    show (g ⊤)
+
+
+ranBackIdent : Int → String
+ranBackIdent n =
+    k = [ n ]
+    g = ident (runBack λ⊤ → List.push k 1)
+    show (g ⊤)
+
+
+ranBackJust : Int → String
+ranBackJust n =
+    k = [ n ]
+    case runBackJust λ⊤ → List.push k 1 of
+        Just g →
+            show (g ⊤)
+
+        Nothing →
+            ""
+
+
+ranBackApplied : Int → String
+ranBackApplied n =
+    k = [ n ]
+    p = λl → List.push l 1
+    g = runBack λ⊤ → p k
+    show (apply g)
+
+
+ranBackAgain : Int → String
+ranBackAgain n =
+    k = [ n ]
+    p = λl → List.push l 1
+    g = ident λ⊤ → p k
+    show (apply (runBack g))
+
+
 main : Program
 main =
     Node.print
-        "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0} ${capturedTwice 0} ${laterTwice 0} ${answeredTwice 0} ${thunkTwice 0}"
+        "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0} ${capturedTwice 0} ${laterTwice 0} ${answeredTwice 0} ${thunkTwice 0} ${ranBack 0} ${ranBackField 0} ${ranBackIdent 0} ${ranBackJust 0} ${ranBackApplied 0} ${ranBackAgain 0}"

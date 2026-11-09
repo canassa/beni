@@ -102,10 +102,14 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
             });
         }
     }
-    // A known code's capture write at a label that may call it again, also one made through a label it applies (#2395).
+    // A known code's capture write at a label that may call it again, also one made through a label it applies, or at a run
+    // of a closure a walked call runs and hands back, which runs again (#2395).
+    var again: std.ArrayList(u32) = .empty;
+    defer again.deinit(gpa);
+    for (e.w.closures.items) |cl| if (try CaptureRuns.handedAgain(&e.ev, e.chain(), cl.value, cl.inst)) try again.append(gpa, cl.value);
     for (e.demands.items) |*d| {
         if (d.call == none or d.call >= f.calls.items.len or d.arg == none or d.cell) continue;
-        if (try CaptureRuns.many(e.chain(), d.call, d.arg)) d.many = true;
+        if (try CaptureRuns.many(e.chain(), d.call, d.arg, again.items)) d.many = true;
     }
 }
 

@@ -5449,6 +5449,17 @@ tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 64:11 #0
 tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 69:22 #0 :: List.push l :: pending :: accepted  v1 holds the callback a returned record holds pending; v2 follows the field to it (§2.11.3, a closure handed back)
 tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 70:14 #0 :: <lambda> <literal> :: accepted :: absent  v1 names the call of the field by its lambda; v2 names the call
 tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 70:14 #0 :: <literal> :: absent :: accepted  as above: v2's name for the same call of a fresh list
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 97:23 #0 :: List.push k :: pending :: accepted  v1 holds a capture writer a callee hands back pending; v2 follows it to the one call that runs it (§2.11.3, a closure handed back), so its runs add up to one (§2.11.4)
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 105:28 #0 :: List.push k :: pending :: accepted  as above, in a `Just`
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 116:22 #0 :: List.push k :: pending :: accepted  as above, run once by the callee that hands it back to a caller that does not run it
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 90:15 #0 :: once k :: absent :: accepted  as above: v2's `once` demand at the closure, which no escape refuses
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 91:11 #0 :: g <call> :: absent :: accepted  as above: the one call of the closure `ident` hands back
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 97:18 #0 :: once k :: absent :: accepted  as above, in a record
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 99:11 #0 :: g <call> :: absent :: accepted  as above
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 105:23 #0 :: once k :: absent :: accepted  as above, in a `Just`
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 107:19 #0 :: g <call> :: absent :: accepted  as above
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 116:9 #0 :: SanitiserHandedBackApart.runBack <call> :: absent :: accepted  as above: the callee's one run
+tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 116:17 #0 :: once k :: absent :: accepted  as above
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 38:9 #0 :: <lambda> xs :: rejected :: absent  both refuse the second call on one list; v1 names it by the lambda, v2 by the call it follows (§2.11.3, a closure handed back)
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 39:9 #0 :: <lambda> xs :: rejected :: absent  as above
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 38:9 #0 :: f xs :: absent :: rejected  as above: v2's name
@@ -5489,6 +5500,28 @@ tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:21 #0 
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:21 #1 :: value SanitiserHandedBackKept.push1 :: pending :: absent  as above
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:16 #0 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above: v2's `once` refusal at the call
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:16 #1 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 158:22 #0 :: List.push k :: pending :: accepted  v1 holds a capture writer a callee runs and hands back pending; v2 adds the callee's run to the caller's and refuses both runs `once` (§2.11.3, a closure handed back)
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 165:24 #0 :: List.push k :: pending :: accepted  as above, in a record
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 173:29 #0 :: List.push k :: pending :: accepted  as above, through `ident`
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 180:27 #0 :: List.push k :: pending :: accepted  as above, in a `Just`
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 192:22 #0 :: <lambda> k :: pending :: absent  as above, a writer applied to the capture, the closure handed to a callee that runs it
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 200:20 #0 :: <lambda> k :: pending :: absent  as above, handed back unrun first, then run and handed back by `runBack`
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 158:9 #0 :: SanitiserHandedBackKept.runBack <call> :: absent :: rejected  as above: v2's `once` refusal at the callee's run
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 158:17 #0 :: once k :: absent :: accepted  as above: v2's `once` demand at the closure
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 159:11 #0 :: g <call> :: absent :: rejected  as above: v2's `once` refusal at the caller's run
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 165:9 #0 :: SanitiserHandedBackKept.runBackIn <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 165:19 #0 :: once k :: absent :: accepted  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 167:11 #0 :: g <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 173:16 #0 :: SanitiserHandedBackKept.runBack <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 173:24 #0 :: once k :: absent :: accepted  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 174:11 #0 :: g <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 180:10 #0 :: SanitiserHandedBackKept.runBackJust <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 180:22 #0 :: once k :: absent :: accepted  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 182:19 #0 :: g <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 192:9 #0 :: SanitiserHandedBackKept.runBack <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 193:11 #0 :: SanitiserHandedBackKept.apply <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 201:11 #0 :: SanitiserHandedBackKept.apply <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 201:18 #0 :: SanitiserHandedBackKept.runBack <call> :: absent :: rejected  as above
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 92:14 #0 :: List.push a :: rejected :: accepted  a returned closure has a called contract (§2.11.3): its answer is fresh per call; v1 calls it unknown
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 100:14 #0 :: List.push a :: rejected :: accepted  as above, a `case` of two codes
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 108:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive declaration

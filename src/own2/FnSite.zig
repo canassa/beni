@@ -13,6 +13,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
+const Subtree = @import("Subtree.zig");
 
 const Error = Relation.Error;
 
@@ -47,6 +48,17 @@ pub fn throughCalls(ev: *Relation.Eval, leaf: u32, out: *std.ArrayList(u32)) Err
     defer ls.deinit(ev.gpa());
     try expanded(ev, leaf, &ls);
     for (ls.items) |li| if (ev.f.leafAt(li).kind == .site) try out.append(ev.gpa(), li);
+}
+
+/// Whether call `q`'s result holds the closure made at instruction `site`, through callees' results: hands it back.
+pub fn handsBack(ev: *Relation.Eval, q: u32, site: u32) Error!bool {
+    const r = ev.f.roots.items[ev.f.calls.items[q].root];
+    const all = try ev.f.leaf(.{ .kind = .ref, .root = ev.f.calls.items[q].root, .pos = r.pos, .slots = try Subtree.below(ev.f.slots, ev.gpa(), ev.account(), ev.places(), r.path) });
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(ev.gpa());
+    try throughCalls(ev, all, &ls);
+    for (ls.items) |l| if (ev.f.leafAt(l).atom == site) return true;
+    return false;
 }
 
 /// Leaf `leaf` with every callee's result it comes through expanded: the
