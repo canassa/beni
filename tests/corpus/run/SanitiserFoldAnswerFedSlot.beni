@@ -1,0 +1,74 @@
+-- A fold whose answer moves a part of its accumulator to another slot
+-- (`ownership-v2.md` §2.11.3, *a label's answer handed back to it*, at the
+-- caller): the first value holds the parameter `c` at one slot, the answer
+-- moves it to the slot the next run edits in place, which the callback
+-- reads `c` after. The twin reads the first value's pairs slot by slot, so
+-- v2 asks every arrival of the accumulator in the answer to stay at its
+-- own slot and refuses each fold: a pair swapped, a record's fields
+-- swapped, a tree's depth 1 lifted to its root. None needs a recursive
+-- type. Accepted, the build prints other lengths.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+tuple : List Int → List String
+tuple c =
+    case
+        List.foldl [ 1, 2, 3 ] ( [ 0 ], c ) λx acc →
+            case acc of
+                ( a, b ) →
+                    ( b, List.push a (List.length c) )
+    of
+        ( a, b ) →
+            [ show a, show b ]
+
+
+type alias P =
+    a : List Int
+    b : List Int
+
+
+record : List Int → List String
+record c =
+    r = List.foldl [ 1, 2, 3 ] { a = [ 0 ], b = c } λx acc →
+        { a = acc.b, b = List.push acc.a (List.length c) }
+    [ show r.a, show r.b ]
+
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+vals : Rose → List Int
+vals r =
+    case r of
+        Rose v _ →
+            v
+
+
+kid : List Rose → Rose
+kid ks = Maybe.withDefault (List.get ks 0) (Rose [] [])
+
+
+-- Depth 1's values move to the root; the root's are edited and moved down.
+lift : List Int, Rose → Rose
+lift c acc =
+    case acc of
+        Rose v ks →
+            Rose (vals (kid ks)) [ Rose (List.push v (List.length c)) [] ]
+
+
+rose : List Int → List String
+rose c =
+    case List.foldl [ 1, 2, 3 ] (Rose [ 0 ] [ Rose c [] ]) λx acc → lift c acc of
+        Rose v ks →
+            [ show v, show (vals (kid ks)) ]
+
+
+main : Program
+main = Node.printLines [ …tuple [ 5 ], …record [ 5 ], …rose [ 5 ] ]

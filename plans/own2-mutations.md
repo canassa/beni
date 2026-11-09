@@ -14,6 +14,8 @@ crash, 3 v1 only, 6 stale, 32 survive. *Since #2276's pins:* `within_always` is 
 the pending fixtures and core), so the cut is a panic under safety and the mutant has no meaning; 171 mutations.
 Measured on master `2f7bf74216`; the seven mutants of what `Pairs` changed on `fa2b611b38`; all 40
 candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#2214) on that branch.
+*Since #2344:* the three mutants of a fold handed its own answer (`SelfFed`, `Distinct.reqOn`) are killed
+(`--only=self_fed_slot_off,self_fed_keeps_ok,self_fed_answer_free`, 222 s), so 174 mutations, 125 killed.
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -163,6 +165,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `all_made_true` | O14 H3 | `Answers.allMade` true of any call with a contract | killed | | 2: SanitiserAnswers (SanitisedRefusalDiffers), … | 4: FoldCertificate (OwnershipV2Differs), … | 0 | |
 | `self_fed_answer_free` | O14 H3 | `Distinct.reqOn` on a twin asks nothing of the answer itself | killed | | 1: SanitiserFoldAnswerFedRefused (SanitisedRefusalDiffers) | 0 | 0 | |
 | `self_fed_keeps_ok` | O14 H3 | `SelfFed.keepsNothing` true of any known code | killed | | 1: SanitiserFoldAnswerFedKept (GoldenMismatch) | 1: FoldKeepsInnerRefused [node+everywhere] (OwnershipV2Differs) | 0 | |
+| `self_fed_slot_off` | O14 H3 | `SelfFed.of` asks no arrival of the fed argument to stay at its own slot | killed | | 1: SanitiserFoldAnswerFedSlot (GoldenMismatch) | 0 | 0 | |
 | `call_write_off` | H1 | `Eval.callWriteFrom` off: a callee's write makes no demand | blanket | | 73: SanitiserAnswerHandedOn (SanitisedRefusalAccepted), … | 451: Accumulator (OwnershipV2Differs), … | 0 | |
 | `disjoint_off` | H1 | a callee's own reliance is not refused | killed | | 4: SanitiserAnswerHandedOn (SanitisedRefusalDiffers), … | 13: ChildBesideOwnCall (OwnershipV2Differs), … | 0 | |
 | `exclusive_off` | H1 | what a write relied on, if it cannot hold, is not refused | SURVIVED | dead | 0 | 0 | 0 | 0 |

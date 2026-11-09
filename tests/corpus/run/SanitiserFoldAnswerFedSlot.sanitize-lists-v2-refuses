@@ -1,0 +1,5 @@
+# v2 refuses each fold whose answer holds an arrival of the accumulator at another slot: a pair swapped, a
+# record's fields swapped, a tree's depth 1 lifted to its root (§2.11.3, the same-slot condition of the twin).
+22:9 list_may_be_shared List.foldl
+38:9 list_may_be_shared List.foldl
+68:10 list_may_be_shared List.foldl
