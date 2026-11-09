@@ -1,23 +1,17 @@
-//! L6: what a callee's open arrival says at the caller's folds above it, which
-//! the callee's own place graph does not have (`docs/design/ownership-v2.md`
-//! §2.1, *A level read on a built value*, #2223). `hg : G a → Maybe (G a)` says
-//! `π1#1.0#0.0*` open at `#0.0#1.0#0.0`, a type variable's slot: below it the
-//! callee has no step, so `LevelWide` says it at no fold. At a caller of
-//! `G R`, `type R = RL (List Int) | RW (G R)`, a walk below that slot returns
-//! to `G R` and folds above it, onto `#Just.0#GP.0⟲`, whose words do not
-//! start with the entry's: `Forest.atSlot` met no kid there, and the read said
-//! fresh. So the caller says it at each such fold, read whole there: its
-//! level below the fold is not known (§2.1, *An arrival's level*).
+//! L6: what a callee's open arrival says at a caller's folds that the callee's own place graph
+//! has not (`docs/design/ownership-v2.md` §2.1, *A fold the caller's instance adds*, #2223): a
+//! type variable's slot has no step below it in the callee, but at a caller's instance a walk
+//! below it can return to a place above it and fold there, out of the entry's words. The caller
+//! says the arrival at each such fold, whole (§2.1, *An arrival's level*).
 //!
-//! Obligations kept here: O6 (`⟲` covers every level of a result, at a
-//! caller's instance too).
+//! Obligations kept here: O6 (`⟲` covers every level of a result, at a caller's instance too).
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Replay = @import("Replay.zig");
 const SlotWords = @import("SlotWords.zig");
 const Trees = @import("Trees.zig");
-const Forest = @import("Forest.zig");
+const Place = @import("Place.zig");
 const LevelTargets = @import("LevelTargets.zig");
 
 const Error = Ids.ChargeError;
@@ -68,39 +62,59 @@ pub fn of(e: anytype, call: u32, which: u32) Error![]const Said {
     if (m.index.get(.{ call, which })) |i| return m.lists.items[i];
     const c = e.contractOf(call) orelse return &.{};
     const root = e.resRoot(c, which);
-    const g = e.gpa();
-    const pl = e.places();
     const rp = e.f.roots.items[if (which == none) e.f.calls.items[call].root else e.f.supplies.items[which].root].path;
     var out: std.ArrayList(Said) = .empty;
-    if (root != 0 and !@import("Mutate.zig").on(.caller_folds_off) and try reachesMiddle(e, pl.pathPlace(rp))) {
-        var es: Forest.Entries = .{};
-        defer es.deinit(g);
-        try e.charge(.inspection, e.contracts.trees.count(root));
-        try es.of(&e.contracts.trees, g, pl, root, &.{});
-        var qs: std.ArrayList(u32) = .empty;
-        defer qs.deinit(g);
-        var ts: std.ArrayList(Ids.PathId) = .empty; // the arena's
-        for (es.items.items) |x| if (x.open) {
-            qs.clearRetainingCapacity();
-            try Replay.replay(g, e.account(), pl, rp, es.wordsOf(x), &qs);
-            for (qs.items) |q| {
-                if (!LevelTargets.hasMiddle(pl, pl.pathPlace(.from(q)))) continue;
-                ts.clearRetainingCapacity();
-                try LevelTargets.of(e.f, g, e.arena, .from(q), &ts);
-                for (ts.items) |t| if (!LevelTargets.coveredBy(pl, ts.items, t)) {
-                    const tw = try e.arena.dupe(u32, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), pl, t)));
-                    for (x.arrivals) |a| if (!try saidAt(e, root, tw, a)) {
-                        var w = a;
-                        w.deep = true;
-                        try out.append(e.arena, .{ .words = tw, .a = w });
-                    };
-                };
-            }
-        };
-    }
-    try m.index.put(g, .{ call, which }, @intCast(m.lists.items.len));
-    try m.lists.append(g, out.items);
+    var w: Walk = .{ .root = root, .rp = rp, .out = &out };
+    defer w.words.deinit(e.gpa());
+    if (root != 0 and !@import("Mutate.zig").on(.caller_folds_off)) try walk(e, &w, root, e.places().pathPlace(rp), true);
+    try m.index.put(e.gpa(), .{ call, which }, @intCast(m.lists.items.len));
+    try m.lists.append(e.gpa(), out.items);
     return out.items;
+}
+
+const Walk = struct { root: Trees.Node, rp: Ids.PathId, words: std.ArrayList(u32) = .empty, out: *std.ArrayList(Said) };
+
+/// Node `n` at caller place `at` and below it, charged a node a visit; no fold is below a place
+/// that reaches no middle. `prune`: `at` is the node's own (a row's step keeps its parent's).
+fn walk(e: anytype, w: *Walk, n: Trees.Node, at: Ids.PlaceId, prune: bool) Error!void {
+    try e.charge(.inspection, 1);
+    const pl = e.places();
+    const t = &e.contracts.trees;
+    if (prune and !try reachesMiddle(e, at)) return;
+    if (t.open(n).len != 0 and (!prune or LevelTargets.hasMiddle(pl, at))) try sayOpen(e, w, t.open(n));
+    for (t.kids(n)) |k| {
+        try w.words.append(e.gpa(), k[0]);
+        defer _ = w.words.pop();
+        const step = Place.Step.fromWord(k[0]);
+        const c = if (step.isRow()) null else pl.child(at, step);
+        try walk(e, w, k[1], c orelse at, prune and c != null);
+    }
+}
+
+/// Open arrivals `as` of the node at `w.words`, at each fold above it a walk below it reaches.
+fn sayOpen(e: anytype, w: *Walk, as: []const Arrival) Error!void {
+    const g = e.gpa();
+    const pl = e.places();
+    var qs: std.ArrayList(u32) = .empty;
+    defer qs.deinit(g);
+    try Replay.replay(g, e.account(), pl, w.rp, w.words.items, &qs);
+    var ts: std.ArrayList(Ids.PathId) = .empty; // the arena's
+    for (qs.items) |q| if (LevelTargets.hasMiddle(pl, pl.pathPlace(.from(q)))) {
+        ts.clearRetainingCapacity();
+        try LevelTargets.of(e.f, g, e.arena, .from(q), &ts);
+        // A fold below the slot is read through the entry's node, by the words, when the
+        // caller names the slot by the entry's words; else the slot itself is a fold to say.
+        const own = SlotWords.same(e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), pl, .from(q))), w.words.items);
+        if (!own) try ts.append(e.arena, .from(q));
+        for (ts.items) |t| if (!LevelTargets.coveredBy(pl, ts.items, t) and !(own and pl.isPrefix(.from(q), t))) {
+            const tw = try e.arena.dupe(u32, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), pl, t)));
+            for (as) |a| if (!try saidAt(e, w.root, tw, a)) {
+                var x = a;
+                x.deep = true;
+                try w.out.append(e.arena, .{ .words = tw, .a = x });
+            };
+        };
+    };
 }
 
 /// Whether the callee says `a` at fold words `tw` itself (`LevelWide`, its own graph's fold):
@@ -109,10 +123,8 @@ fn saidAt(e: anytype, root: Trees.Node, tw: []const u32, a: Arrival) Error!bool 
     var hs: std.ArrayList(Trees.Hit) = .empty;
     defer hs.deinit(e.gpa());
     try e.hitsAt(root, tw, &hs);
-    for (hs.items) |h| if (h.open) for (h.arrivals) |b| {
-        if (b.eql(a)) return true;
-        if (b.kind == a.kind and b.j == a.j and b.kind != .fresh and b.slot == try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), tw[0..h.depth])) return true;
-    };
+    for (hs.items) |h| if (h.open) for (h.arrivals) |b| if (b.eql(a) or (b.kind == a.kind and b.j == a.j and b.kind != .fresh and
+        b.slot == try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), tw[0..h.depth]))) return true;
     return false;
 }
 
