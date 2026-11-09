@@ -48,6 +48,7 @@ const allowlist = [_]Allowed{
     .{ .path = "frontend/artifact_bytes.zig", .needle = "var table: std.AutoArrayHashMapUnmanaged(InternPool.Symbol, u32)", .why = "writing an artifact only: a file's symbols in first-use order, which is the order written" },
     .{ .path = "check/Evidence.zig", .needle = "rejected: std.AutoHashMapUnmanaged(Var, std.ArrayList(Flag))", .why = "the error path: a receiver a rejection was reported on" },
     .{ .path = "check/Schema.zig", .needle = "var memo: std.AutoHashMapUnmanaged(Var, Var)", .why = "a schema endpoint's copy, once per schema declaration; the store's own copy memo is the instantiator's while this runs" },
+    .{ .path = "check/Generalize.zig", .needle = "var keys: std.HashMapUnmanaged(Var, void, Ctx,", .why = "hash-consing (`share`, checker-v2.md §38): the key is a node's head and child roots, hashed by `Ctx`, not the `Var` id, so no column indexed by the id can find an equal node" },
     .{ .path = "check/Publish.zig", .needle = "var seen: std.AutoHashMapUnmanaged(Types.TypeId, void)", .why = "once per module, over the few types its interface names" },
     .{ .path = "check/Publish.zig", .needle = "slots: InternPool.Symbol.Map(u32)", .why = "a constructor's payload fields by name, once per published constructor" },
     .{ .path = "check/Schemes.zig", .needle = "ref_index: int_hash.Map(TypeStore.TypeId, u32)", .why = "an interface's type references, few per module, from a session-wide id space; measured in place" },

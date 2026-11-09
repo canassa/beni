@@ -30,6 +30,7 @@ const Obligations = @import("Obligations.zig");
 const Solve = @import("Solve.zig");
 const Effects = @import("Effects.zig");
 const Context = @import("Context.zig");
+const Types = @import("Types.zig");
 const Report = @import("Report.zig");
 const EnvFile = @import("Env.zig");
 const Graph = @import("../resolve/Graph.zig");
@@ -756,6 +757,89 @@ const Successor = struct {
         if (s.maxes) s.max.* = @max(s.max.*, rank);
     }
 };
+
+/// Step 5 of §8.1, before `quantify`: every two young nodes of `pool` that are
+/// one type — the same head and the same child roots (`Walk.shareHash`) — become
+/// one node, children first, so equal subtrees are one node (checker-v2.md
+/// §8.4, *amended 2026-11-09*). Instantiation copies a scheme once per use,
+/// and a type that holds two uses of one scheme, `( w f, w f )`, would hold two
+/// copies: a chain of n such declarations has a type of 2ⁿ nodes, and every
+/// walk over it — instantiation, rank adjustment, occurs, the type keys, effect
+/// summaries — paid 2ⁿ (#2034). Shared, the scheme is n nodes.
+///
+/// A variable, an `err` and a function or function-holding application keep
+/// their own node: a variable is its identity, and an effect class is keyed
+/// by its node (`Effects.carriesContent`). A node on a cycle is not shared.
+pub fn share(store: *TypeStore, scratch: Allocator, types: *const Types, pool: []const Var, young: u32) Error!void {
+    const cand = store.nextMark();
+    var candidates: usize = 0;
+    for (pool) |v| {
+        const r = store.find(v);
+        if (store.rank(r) < young or store.mark(r) == cand) continue;
+        switch (store.content(r)) {
+            .flex, .rigid, .err => continue,
+            .structure => |flat| if (flat == .func) continue,
+            .alias => {},
+        }
+        if (Effects.carriesContent(types, store.content(r))) continue;
+        store.setMark(r, cand);
+        candidates += 1;
+    }
+    if (candidates < 2) return;
+    const open = store.nextMark();
+    const done = store.nextMark();
+    const Ctx = struct {
+        store: *TypeStore,
+        pub fn hash(c: @This(), v: Var) u64 {
+            return Walk.shareHash(c.store, v);
+        }
+        pub fn eql(c: @This(), a: Var, b: Var) bool {
+            return Walk.shareEql(c.store, a, b);
+        }
+    };
+    const ctx: Ctx = .{ .store = store };
+    var keys: std.HashMapUnmanaged(Var, void, Ctx, std.hash_map.default_max_load_percentage) = .empty;
+    defer keys.deinit(scratch);
+    try keys.ensureTotalCapacityContext(scratch, @intCast(candidates), ctx);
+    const Item = struct { v: Var, expanded: bool };
+    var stack: std.ArrayList(Item) = .empty;
+    defer stack.deinit(scratch);
+    for (pool) |v| {
+        const start = store.find(v);
+        if (store.mark(start) != cand) continue;
+        try stack.append(scratch, .{ .v = start, .expanded = false });
+        while (stack.items.len != 0) {
+            const top = &stack.items[stack.items.len - 1];
+            const r = top.v;
+            if (!top.expanded) {
+                // Pushed twice, and finished (or entered) since.
+                if (store.mark(r) != cand) {
+                    _ = stack.pop();
+                    continue;
+                }
+                top.expanded = true;
+                store.setMark(r, open);
+                var n: u32 = 0;
+                while (Walk.child(store, r, n, .structural)) |c| : (n += 1) {
+                    const cr = store.find(c);
+                    if (store.mark(cr) == cand) try stack.append(scratch, .{ .v = cr, .expanded = false });
+                }
+                continue;
+            }
+            _ = stack.pop();
+            // Every child is final now, unless it is an ancestor still open.
+            var cyclic = false;
+            var n: u32 = 0;
+            while (Walk.child(store, r, n, .structural)) |c| : (n += 1) {
+                if (store.mark(store.find(c)) == open) cyclic = true;
+            }
+            store.setMark(r, done);
+            if (cyclic) continue;
+            const gop = keys.getOrPutAssumeCapacityContext(r, ctx);
+            if (gop.found_existing) store.share(r, gop.key_ptr.*);
+        }
+    }
+}
 
 /// Step 5 of §8.1: every pool member still at the young rank is quantified;
 /// everything below it escaped and joins the pool of the frame at its rank

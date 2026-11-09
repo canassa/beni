@@ -618,6 +618,31 @@ test "checking an unannotated doubling record is linear in the size of its type"
     try s.finish("an unannotated doubling record", try s.ratioWith("L13.beni", "L14.beni", 1 << 13, &.{"--ownership=v2"}));
 }
 
+// Appendix B's CallbackWrapperDag in its tuple form, unannotated: `w0 f =
+// ( f ⊤, f ⊤ )`, `wk f = ( w(k-1) f, w(k-1) f )`. The type of `wk` has
+// 2^(k+1) leaves, and each use of `w(k-1)` copies its scheme. The sharing
+// pass makes equal young nodes one node at generalisation (checker-v2.md
+// §8.4, amended 2026-11-09), so each scheme is k + 1 tuple nodes and every
+// walk over it — instantiation, rank adjustment, occurs, the type keys,
+// effect summaries — is linear in the program (#2034). Calibration
+// (ReleaseFast, wall): without it, depth 16 / 18 / 20 take 0.06 / 0.22 /
+// 3.3 s and 70 / 208 / 723 MB, ×3 in memory every two levels; with it,
+// depth 12 / 24 / 200 each take 10 to 20 ms, the process floor.
+test "checking CallbackWrapperDag's tuple form is linear in its depth" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("D12.beni", try wrapperDag(s.arena(), 12));
+    try s.w.write("D24.beni", try wrapperDag(s.arena(), 24));
+    try s.finish("CallbackWrapperDag's tuple form", try s.ratioWith("D12.beni", "D24.beni", 12, &.{}));
+}
+
+fn wrapperDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "w0 f = ( f ⊤, f ⊤ )\n");
+    for (1..depth + 1) |k| try out.print(arena, "\n\nw{d} f = ( w{d} f, w{d} f )\n", .{ k, k - 1, k - 1 });
+    return out.items;
+}
+
 /// `w0 = { items = … }` and `w{i} = { a = w{i-1}, b = w{i-1} }` up to
 /// `depth`, read once at the end of the left spine: `.annotated` as top-level
 /// values, each with its `type alias W{i}`; `.local` as the bindings of one
