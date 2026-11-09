@@ -3079,10 +3079,13 @@ the label is handed the capture as. Only a code's own capture writes were `once`
 hand-back escape that *a closure handed back* withdraws. Now a known code's write of its own parameter is followed through
 the arrivals of each label outward (`CaptureRuns.many`): where it reaches a capture of an outer known code (a closure's
 capture, a called code's `D` parameter), it is that code's capture write, and it is refused `once` where any label outward
-runs that code more than once (`LabelChain.outwardMany`). Sound because the arrival chain names every object the written
-parameter can be (§2.11.3, *every label outward*), so a write that reaches a capture is one, made at each run of the code
-that holds it. Fixture: `run/SanitiserHandedBackKept`'s `capturedTwice` (the sanitised run trapped on master) and
-`laterTwice`.
+runs that code more than once (`LabelChain.outwardMany`). An arrival that is another label's answer (`λ⊤ → f (g ⊤)` with
+`g = λ⊤ → y`) is read through the known code that label applies, its answer's arrivals by the same rule; a fresh arrival is
+no capture; any other arrival, or a label applied to no known code, is asked of the code's runs. Sound because the arrival
+chain names every object the written parameter can be (§2.11.3, *every label outward*): a parameter's, a label's answer's
+(which its known code's result names), or a fresh one, so a write that reaches a capture is one, made at each run of the
+code that holds it. Fixture: `run/SanitiserHandedBackKept`'s `capturedTwice` and `answeredTwice` (the sanitised runs
+trapped on master), `laterTwice` and `thunkTwice` (found by the review of #2395, trapping once the hand-back escape went).
 
 *Amended 2026-11-02 (#1727):* a **cell operation** on a captured `Ref` is not a write of a capture for `once`. A
 cell operation is a shallow write of a `◆` slot (`Ref.set`, `Ref.update`, `Ref.modify`: the `cellwrite` rows of

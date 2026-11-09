@@ -50,10 +50,31 @@ fn outward(c: LabelChain.Chain, q: u32, k: u32, depth: u32) Error!bool {
     if (!oc.virtual or oc.callee_val == none) return false;
     const own = ownOf(c, o[0]);
     for (c.contracts.suppliesOf(LabelChain.labelAt(c, o).supplies)) |su| if (su.k == k) for ((try LabelChain.entriesOf(c, su.res_root)).items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind != .param) continue;
-        if (if (a.j >= own) LabelChain.outwardMany(c, o[0]) else try outward(c, o[0], a.j, depth + 1)) return true;
+        if (try reaches(c, o[0], own, a, depth)) return true;
     };
     return false;
+}
+
+/// Whether arrival `a` at virtual call `o` (of `own` own parameters), written, is a capture of a code run more
+/// than once: a capture of `o`, a parameter of `o` followed outward, or what another label of `o` answers (`λ⊤ → f
+/// (g ⊤)` with `g = λ⊤ → l` writes `g`'s capture `l`), read through the known code it applies. A fresh object is
+/// no capture; anything else is asked of `o`'s runs.
+fn reaches(c: LabelChain.Chain, o: u32, own: usize, a: anytype, depth: u32) Error!bool {
+    if (depth > max_depth) return true;
+    return switch (a.kind) {
+        .param => if (a.j >= own) LabelChain.outwardMany(c, o) else try outward(c, o, a.j, depth + 1),
+        .fresh => false,
+        .cb => blk: {
+            const vm = c.known.get(.{ o, a.j }) orelse break :blk LabelChain.outwardMany(c, o);
+            const h = c.contracts.head(c.f.calls.items[vm].contract);
+            const own_m = ownOf(c, vm);
+            for ((try LabelChain.entriesOf(c, h.res_root)).items.items) |rs| for (rs.arrivals) |b| {
+                if (try reaches(c, vm, own_m, b, depth + 1)) break :blk true;
+            };
+            break :blk false;
+        },
+        else => LabelChain.outwardMany(c, o),
+    };
 }
 
 /// The number of virtual call `q`'s own parameters: its arguments but the closure's captures.

@@ -5484,6 +5484,13 @@ tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 109:21 #0 
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 109:21 #1 :: value SanitiserHandedBackKept.push1 :: pending :: absent  as above
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 109:16 #0 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above: v2's `once` refusal at the call
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 109:16 #1 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 122:25 #0 :: SanitiserHandedBackKept.push1 <call> :: rejected :: absent  both refuse a writer applied to another label's answer that is a capture, in a code run twice; v1 names the write, v2 the call that runs the code twice (§2.11.4, a capture written through a label the code applies)
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 122:16 #0 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above: v2's `once` refusal at the call
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 122:16 #1 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:21 #0 :: value SanitiserHandedBackKept.push1 :: pending :: absent  v1 holds the writer a returned closure captures pending; v2 follows `thunkOf@ε` and refuses the call that runs it twice
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:21 #1 :: value SanitiserHandedBackKept.push1 :: pending :: absent  as above
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:16 #0 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above: v2's `once` refusal at the call
+tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 129:16 #1 :: SanitiserHandedBackKept.two <call> :: absent :: rejected  as above
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 92:14 #0 :: List.push a :: rejected :: accepted  a returned closure has a called contract (§2.11.3): its answer is fresh per call; v1 calls it unknown
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 100:14 #0 :: List.push a :: rejected :: accepted  as above, a `case` of two codes
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 108:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive declaration

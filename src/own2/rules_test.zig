@@ -248,7 +248,7 @@ const layers = [_]Entry{
     // What a callee holds across a run of a known code it is handed (#1955).
     .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
     // A known code's capture written through a label it applies, split from `Closures` (#2395).
-    .{ .file = "CaptureRuns.zig", .layer = 9, .max_lines = 80 },
+    .{ .file = "CaptureRuns.zig", .layer = 9, .max_lines = 100 },
     // What a cell callback's write-back makes escape, from `Eval` (#1729, #1955).
     .{ .file = "Stored.zig", .layer = 9, .max_lines = 65 },
     // A cell callback's label, and what it answers: a loan of the cell or
