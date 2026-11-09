@@ -190,7 +190,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             // never one a slot below it (§2.10, *Arrivals by structure*). So is one in
             // the result at its own path, whatever its size (§2.11.2).
             if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try Eval.acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
-            if (r.kind == .cb and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and try Eval.acyclicBelow(s, f.places.pathPlace(q))) {
+            if (r.kind == .cb and out.label == none and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and try Eval.acyclicBelow(s, f.places.pathPlace(q))) {
                 const crel = (try f.slots.relUnder(gpa, f.account, f.places, r.path, pslot)) orelse Slots.root;
                 return Put.arriveWide(s, q, try Made.answer(s, r.a, crel, true), out);
             }
