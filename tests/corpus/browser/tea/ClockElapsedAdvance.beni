@@ -1,0 +1,49 @@
+-- The page's clock is virtual (tests/corpus/README.md, *The page's clock
+-- is virtual*), and so is the host's `performance.now()`. `Clock.elapsed`
+-- reads it outside `Clock.run` (transparent-effects-proposal.md §17.6), so
+-- a page reads 0 ms at first and 250 ms after `advance 250`, in happy-dom
+-- and in Chrome. On the host's real clock the first reading changes from
+-- run to run and `advance` does not move it.
+import Clock
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Read
+    | Got Float
+
+
+type alias Model =
+    reads : Int
+    latest : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg m =
+    case msg of
+        Read →
+            ( m, Cmd.perform λsend → send (Got (Clock.elapsed ⊤)) )
+
+        Got ms →
+            ( { m | reads = m.reads + 1, latest = round ms }, Cmd.none )
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <p id="elapsed">{"read ${m.reads}: ${m.latest} ms"}</p>
+        <button id="read" onClick={Read}>read</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { reads = 0, latest = -1 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

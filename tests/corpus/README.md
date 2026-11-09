@@ -697,8 +697,10 @@ with nothing under it, then `-- load`: how a fixture starts a page at an
 address or with something stored. Every page starts with empty storage.
 
 **The page's clock is virtual.** The driver replaces `setTimeout`,
-`clearTimeout`, `setInterval`, `clearInterval` and `Date.now` before the
-program loads: `Date.now()` is 0 until an `advance` step moves it, and a
+`clearTimeout`, `setInterval`, `clearInterval`, `Date.now` and
+`performance.now` before the program loads: `Date.now()` and
+`performance.now()` are 0 until an `advance` step moves them
+(`browser/tea/ClockElapsedAdvance`), and a
 timer fires only when an `advance` step reaches its time — an interval at
 each of its times, as one timer that `timers` counts once — so a debounce of 250 ms costs no wall-clock time and
 a fixture about timing is deterministic in both DOMs. So are the page's
