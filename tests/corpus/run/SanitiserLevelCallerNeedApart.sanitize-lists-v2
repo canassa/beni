@@ -1,0 +1,1 @@
+v2 keeps a list a need meets at a caller's fold in place when it is not live (§2.1, §2.11.3, #2223): built again under --ownership=v2 and the sanitiser.

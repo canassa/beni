@@ -1,0 +1,2 @@
+# v2 refuses a need met at a caller's fold above a known code's arrival (§2.1, §2.11.3, #2223)
+42:9 list_still_used SanitiserLevelCallerNeed.app2
