@@ -3520,7 +3520,7 @@ const Emitter = struct {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
         }
-        const uses = try e.programUses(entry);
+        const uses = try e.programUses();
         try names.appendSlice(e.scratch, uses);
         e.program_uses = uses;
 
@@ -3533,20 +3533,27 @@ const Emitter = struct {
     /// The values of the runtime module the markup runtime's kept part
     /// imports: all of them when the file is copied whole, none when it is
     /// not written.
-    fn programUses(e: *Emitter, entry: ?Entry) ![]const []const u8 {
+    fn programUses(e: *Emitter) ![]const []const u8 {
         const spec = try e.programSpecifier() orelse return &.{};
         const source = try e.markupRuntimePath() orelse return &.{};
         const program_runtime = e.markupRuntimeIsProgramRuntime();
         if (!e.uses_markup_runtime and !program_runtime) return &.{};
         const bytes = e.readAsset(source) orelse return &.{};
         if (!e.options.release) return e.program_names;
+        return try Minify.programUses(e.scratch, bytes, spec, try e.markupRuntimeKeep()) orelse e.program_names;
+    }
+
+    /// The exports `--release` keeps of the markup runtime: what the
+    /// modules import, and, when it is the program runtime too, `run` and
+    /// `start`, which the entry file imports — and which a build with no
+    /// entry file keeps as well, for the page's own entry (issue #1877).
+    /// `copyAssets` cuts the file to these, and `programUses` reads the
+    /// imports of the same kept part, so the two cannot disagree.
+    fn markupRuntimeKeep(e: *Emitter) ![]const []const u8 {
         var keep: std.ArrayList([]const u8) = .empty;
+        if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, &.{ "run", "start" });
         try keep.appendSlice(e.scratch, e.markup_exports.items);
-        if (program_runtime and entry != null) {
-            if (e.suppliedAs("run") == null) try keep.append(e.scratch, "run");
-            if (e.suppliedAs("start") == null) try keep.append(e.scratch, "start");
-        }
-        return try Minify.programUses(e.scratch, bytes, spec, keep.items) orelse e.program_names;
+        return keep.items;
     }
 
     /// The whole-program name of the runtime module's value `name`.
@@ -9688,12 +9695,11 @@ const Emitter = struct {
         };
         // What the entry file imports from it (`emitEntry`), and, when it is
         // the markup runtime too, what the modules do.
-        var keep: std.ArrayList([]const u8) = .empty;
-        try keep.appendSlice(e.scratch, &.{ "run", "start" });
-        if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.markup_exports.items);
         const out = try e.runtimeOutputPath();
-        const text: HandText = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else .{ .text = bytes };
-        try e.produceHandWritten(out, text, runtime_source, keep.items);
+        if (e.markupRuntimeIsProgramRuntime()) {
+            return e.produceHandWritten(out, try e.rewriteProgramImports(bytes, out), runtime_source, try e.markupRuntimeKeep());
+        }
+        try e.produceHandWritten(out, .{ .text = bytes }, runtime_source, &.{ "run", "start" });
     }
 
     /// A hand-written file — a sibling, a runtime: copied as written, or
@@ -9738,7 +9744,7 @@ const Emitter = struct {
         // A missing file was reported by `checkMarkupRuntime` already.
         const bytes = e.readAsset(source) orelse return;
         const out = (try e.markupRuntimeOutputPath()).?;
-        try e.produceHandWritten(out, try e.rewriteProgramImports(bytes, out), source, e.markup_exports.items);
+        try e.produceHandWritten(out, try e.rewriteProgramImports(bytes, out), source, try e.markupRuntimeKeep());
     }
 
     /// Where the markup runtime is written: its package's output directory,

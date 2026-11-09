@@ -5498,6 +5498,85 @@ test "a markup runtime the build rewrites maps back to the file as written" {
     try testing.expect(!w.exists("out/_main.mjs.map"));
 }
 
+test "a release library keeps the runtime module import that the kept run uses" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Issue #1877. The platform `views` names `ssr` with a program runtime
+    // split between `markup.js` and the module `Views` (`boundary.md`
+    // §9.2). A build with `--library` has no entry file, but it keeps the
+    // file's `run` and `start` (`backend.md` §9), so it must also keep
+    // their imports of `beni:Views`. Here only `run` calls `escape`: the
+    // ssr exports the program does not reach are cut, and with them every
+    // other use of the name. `escape` is also JavaScript's legacy global,
+    // so a lost import does not throw: `run` calls the global and prints
+    // `hello` with no brackets.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("views/beni.json",
+        \\{ "platform": true, "name": "views", "platforms": ["node"], "reexports": ["Node"], "runtime": "markup.js", "markup": { "lowering": "ssr", "runtime": "markup.js", "module": "Views" } }
+    );
+    try w.write("views/Views.beni",
+        \\pub escape : String → String
+        \\escape text = "<" ++ text ++ ">"
+        \\
+        \\
+        \\pub list : String, String, String → String
+        \\list items row empty = items
+        \\
+    );
+    try w.write("views/markup.js",
+        \\import process from "node:process";
+        \\import { escape } from "beni:Views";
+        \\
+        \\export const escapeAttr = (value) => value;
+        \\export const safeUrl = (url) => url;
+        \\export const classes = (entries) => "";
+        \\export const styles = (entries) => "";
+        \\export const rawText = (text, tag) => text;
+        \\export const text = (s) => ({ t: s });
+        \\export const map = (html, f) => html;
+        \\export const run = (program) => {
+        \\  process.stdout.write(escape(program.$o) + "\n");
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "hello"
+        \\
+    );
+    try w.write("call-run.mjs",
+        \\import { run } from "./lib/_platform/markup.foreign.mjs";
+        \\run({ $o: "hello" });
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=views", "--release", "--library", "--out=lib", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const ran = try w.runNode(&.{"call-run.mjs"});
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", ran.stderr);
+    try testing.expectEqualStrings("<hello>\n", ran.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The kept file imports `escape` from the module's file.
+    const kept = try w.read("lib/_platform/markup.foreign.mjs");
+    try testing.expect(std.mem.indexOf(u8, kept, "as escape}from") != null);
+}
+
 test "a release library map names the module a copied body came from" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
