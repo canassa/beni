@@ -1,0 +1,45 @@
+-- The twin of `SanitiserLevelCallerPassThroughPart`: the list below the caller's fold is not `k`, so the edit in place is accepted.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GQ (G a) (G a)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+wq : G R → Int
+wq t =
+    case t of
+        GQ (GL (RW (GL (RL xs)))) _ →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+f : G a, G a → G a
+f t d =
+    case t of
+        GQ _ (GL m) →
+            GQ (GL m) d
+        GQ x _ →
+            GQ x d
+        _ →
+            d
+
+
+main : Program
+main =
+    k = [ 1 ]
+    j = [ 2 ]
+    v = GQ (GL (RL [ 9 ])) (GL (RW (GL (RL j))))
+    a = wq (f v (GL (RL [ 3 ])))
+    Node.print (String.fromInt (a + List.length k))
