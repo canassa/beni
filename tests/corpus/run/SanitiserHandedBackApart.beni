@@ -1,10 +1,10 @@
--- A callback that writes its own parameter and that a callee hands back to
--- its caller, run on a list nothing else holds (`ownership-v2.md` §2.11.3,
--- *a function value goes where a value goes*; §2.11.4): as itself (`ident`),
--- through a fold and a map, captured by a closure the callee
--- returns (`later`, `comp`), and in a record (`mkOps`). The caller follows
--- the value it gets back to the callback's code, so each write is judged at
--- the call that runs it, and each is accepted in place (#2395).
+-- A callback that writes its own parameter and that a callee hands back to its caller, run on a list nothing else
+-- holds (`ownership-v2.md` §2.11.3, *a function value goes where a value goes*; §2.11.4): as itself (`ident`), through
+-- a fold and a map, captured by a closure the callee returns (`later`, `comp`), and in a record (`mkOps`); and a
+-- capture writer handed back unrun (itself, in a record, in a `Just`) and run once, or run once by a callee that hands
+-- it back to a caller that does not run it. The caller follows the value it gets back to the callback's code, so each
+-- write is judged at the call that runs it, and each is accepted in place (#2395); the runs of a capture writer add
+-- up, and here they are one (#2410).
 import List
 import Node exposing (Program)
 import String
@@ -70,7 +70,54 @@ viaRecord n =
     show (ops.run [ n ])
 
 
+handBack : (⊤ → List Int) → { run : ⊤ → List Int }
+handBack f = { run = f }
+
+
+handBackJust : (⊤ → List Int) → Maybe (⊤ → List Int)
+handBackJust f = Just f
+
+
+runBack : (⊤ → List Int) → (⊤ → List Int)
+runBack f =
+    _ = f ⊤
+    f
+
+
+ranOnce : Int → String
+ranOnce n =
+    k = [ n ]
+    g = ident λ⊤ → List.push k 7
+    show (g ⊤)
+
+
+ranOnceField : Int → String
+ranOnceField n =
+    k = [ n ]
+    r = handBack λ⊤ → List.push k 8
+    g = r.run
+    show (g ⊤)
+
+
+ranOnceJust : Int → String
+ranOnceJust n =
+    k = [ n ]
+    case handBackJust λ⊤ → List.push k 9 of
+        Just g →
+            show (g ⊤)
+
+        Nothing →
+            ""
+
+
+ranInside : Int → String
+ranInside n =
+    k = [ n ]
+    _ = runBack λ⊤ → List.push k 10
+    "in"
+
+
 main : Program
 main =
     Node.print
-        "${viaIdent 0} ${viaFold 0} ${viaComp 0} ${viaCompCall 0} ${viaMap 0} ${viaLater 0} ${viaRecord 0}"
+        "${viaIdent 0} ${viaFold 0} ${viaComp 0} ${viaCompCall 0} ${viaMap 0} ${viaLater 0} ${viaRecord 0} ${ranOnce 0} ${ranOnceField 0} ${ranOnceJust 0} ${ranInside 0}"

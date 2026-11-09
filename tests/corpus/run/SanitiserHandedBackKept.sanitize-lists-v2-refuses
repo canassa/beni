@@ -1,4 +1,4 @@
-# v2 follows a callback a callee hands back to the call that runs it, and a composition's fold to its codes (§2.11.3, #2395).
+# v2 follows a callback a callee hands back to the call that runs it, adding the runs the callee made of it, and a composition's fold to its codes (§2.11.3, #2395).
 38:9 list_still_used f
 39:9 list_still_used f
 47:9 list_still_used f
@@ -18,3 +18,15 @@
 122:16 list_still_used SanitiserHandedBackKept.two
 129:16 list_still_used SanitiserHandedBackKept.two
 129:16 list_still_used SanitiserHandedBackKept.two
+158:9 list_still_used SanitiserHandedBackKept.runBack
+159:11 list_still_used g
+165:9 list_still_used SanitiserHandedBackKept.runBackIn
+167:11 list_still_used g
+173:16 list_still_used SanitiserHandedBackKept.runBack
+174:11 list_still_used g
+180:10 list_still_used SanitiserHandedBackKept.runBackJust
+182:19 list_still_used g
+192:9 list_still_used SanitiserHandedBackKept.runBack
+193:11 list_still_used SanitiserHandedBackKept.apply
+201:11 list_still_used SanitiserHandedBackKept.apply
+201:18 list_still_used SanitiserHandedBackKept.runBack
