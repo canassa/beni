@@ -263,10 +263,13 @@ past it gets `Detached`, which the range's own functions report as
 
 ## 7. Bulk operations
 
-**Status: decided 2026-11-09** (§8), not built yet. Each call checks once — backing (or the
-region's length), the whole byte range, every value — and then runs at host
-speed. A call that fails writes nothing: values are validated before the
-first byte is written.
+**Status: decided 2026-11-09** (§8); built the same day in `core/Binary.beni`
+and `core/Binary/Region.beni` (fixtures `run/BinaryBulk` and the bulk line of
+`run/BinaryAccessCost`). Each call checks once — backing (or, on a region,
+the backing once per call: a region refused resizable storage, so only
+detachment can fail it), the whole byte range, every value — and then runs
+at host speed. A call that fails writes nothing: values are validated before
+the first byte is written.
 
 On `View` (backing checked per call, as §1) and on `Region` (§6), with the
 same names in both modules:
@@ -277,22 +280,37 @@ fill      : v, ByteRange, Int → Result WriteError ⊤
 copyWithin: v, Int (to), ByteRange (from) → Result AccessError ⊤
             -- overlapping ranges copy as through a temporary (copyWithin)
 copyInto  : v, Int, Source → Result AccessError ⊤      -- exists on View (§1)
-writeU8s, writeI8s, writeU16s, writeI16s, writeU32s, writeI32s,
-writeF16s, writeF32s, writeF64s
-          : v, Int (offset), Endian, List number → Result WriteError ⊤
-readU8s … readF64s
-          : v, Int (offset), Int (count), Endian → Result AccessError (List number)
-writeWord64s / readWord64s : likewise, with Word64
+writeU8s, writeI8s, writeU16s, writeI16s, writeU32s, writeI32s
+          : v, Int (offset), Endian, List Int → Result BulkWriteError ⊤
+writeF16s : v, Int, Endian, List Float → Result Float16Error ⊤
+writeF32s, writeF64s
+          : v, Int, Endian, List Float → Result AccessError ⊤
+writeWord64s : v, Int, Endian, List Word64 → Result AccessError ⊤
+readU8s, readI8s, readU16s, readI16s, readU32s, readI32s
+          : v, Int (offset), Int (count), Endian → Result AccessError (List Int)
+readF16s  : v, Int, Int, Endian → Result Float16Error (List Float)
+readF32s, readF64s
+          : v, Int, Int, Endian → Result AccessError (List Float)
+readWord64s : v, Int, Int, Endian → Result AccessError (List Word64)
+
+BulkWriteError = BulkAccess AccessError
+               | InvalidValueAt Int Int Int Int   -- index, value, minimum, maximum
 ```
 
-(`Endian` is left out for the one-byte forms.) On a region, every write
-(`fill`, `copyWithin`, `copyInto`, `write…s`) takes `Region ReadWrite`. Lengths are in elements, every
-range a failure reports in bytes, as §1. An integer list with a value out of
-range is `InvalidValue value minimum maximum` for the first such element, plus
-its index (§8 Q5). Where the offset is aligned and the endianness is the
-host's, the implementation uses a typed array's `set`/`slice` (one host call);
-otherwise a DataView loop after the single check. Both give the same bytes;
-the choice is not observable.
+Each module has its own `BulkWriteError` over its own `AccessError`, as it
+has its own `WriteError`. The error of a float or word write is that of the
+scalar write it repeats: no value can be refused. (`Endian` is left out for
+the one-byte forms.) On a region, every write (`fill`, `copyWithin`,
+`copyInto`, `write…s`) takes `Region ReadWrite`. Lengths are in elements,
+every range a failure reports in bytes, as §1. An integer list with a value
+out of range is `InvalidValueAt index value minimum maximum` for the first
+such element (§8 Q5). Where the offset is aligned, the host has the typed
+array, and the endianness is the host's, the implementation uses that typed
+array: one `set` for a write, and for a read one typed array copied by index
+into an array made at its length (`Array.from` took eight times as long for a
+million floats); otherwise a DataView loop after the single check. Both give the same bytes; the choice is not observable.
+A list reaches the host as a plain array (a pattern's `rest` view gives its
+own, `backend.md` §4).
 
 ## 8. Choices for §6–§7 — decided 2026-11-09
 

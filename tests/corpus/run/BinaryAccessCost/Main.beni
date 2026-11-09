@@ -5,4 +5,9 @@ import Probe
 main : Program
 main =
     Node.printLines
-        [ …Probe.perAccess ⊤, …Probe.regionAccess ⊤, …Probe.wgslAccess ⊤, …Probe.olderHost ⊤ ]
+        [ …Probe.perAccess ⊤
+        , …Probe.regionAccess ⊤
+        , …Probe.wgslAccess ⊤
+        , …Probe.bulkAccess ⊤
+        , …Probe.olderHost ⊤
+        ]

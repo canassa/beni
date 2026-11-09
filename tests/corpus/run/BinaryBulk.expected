@@ -1,0 +1,40 @@
+aligned u16: Ok [0,0,2,1,4,3,0,0]
+unaligned u16: Ok [0,2,1,4,3,0,0,0]
+big-endian u16: Ok [0,0,1,2,3,4,0,0]
+f32: Ok [0,0,128,63,0,0,0,192,205,204,204,61]
+word64 big: Ok [0,0,0,1,0,0,0,2,255,255,255,255,0,0,0,0]
+i8: Ok [255,128,127,0]
+rest of a list: Ok [8,7,6]
+Ok [1,2,3,4]
+Ok [-1,-1,0,-128]
+Ok [513,1027]
+Ok [515,1279]
+Ok [-1,-32768]
+Ok [16909060]
+Ok [-2147418113]
+Ok [1.0,2.0]
+Ok [2.000000473111868]
+Ok [{ high = 16909060, low = 4294901888 },{ high = 32831, low = 64 }]
+Ok [1.875]
+Ok []
+Err (InvalidValueAt 1 300 0 255)
+Err (InvalidValueAt 1 (-32769) (-32768) 32767)
+Err (BulkAccess (OutOfBounds 4 8 8))
+Err (OutOfBounds 1 8 8)
+Err (OutOfBounds 0 (-1) 8)
+Err (OutOfBounds 6 4 8)
+after them: Ok [0,0,0,0,0,0,0,0]
+(Err (AccessBacking Detached),Err (BulkAccess (AccessBacking Detached)),Err (WriteAccess (AccessBacking Detached)))
+fill: Ok [1,2,3,0,0,6,7,8]
+copyWithin: Ok [1,2,3,0,3,0,0,6]
+fill the rest: Ok [1,2,3,0,3,0,9,9]
+Err (InvalidValue 256 0 255)
+Err (WriteAccess (OutOfBounds 5 2 6))
+Err (OutOfBounds 4 3 6)
+Err (OutOfBounds 7 0 6)
+after them: Ok [1,2,3,0,3,0,9,9]
+region: Ok [0,0,0,0,63,128,0,0,192,0,0,0,7,63,128,5]
+Ok [1.0,-2.0]
+Err (InvalidValueAt 1 (-1) 0 4294967295)
+Err (OutOfBounds 10 4 12)
+(Err Detached,Err (BulkAccess Detached),Err (WriteAccess Detached))

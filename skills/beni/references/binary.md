@@ -115,6 +115,22 @@ total region index acc =
         total region (index + 1) (acc + value)
 ```
 
+## Bulk operations
+
+`Binary` and `Binary.Region` have the same bulk functions. Each call checks the
+storage, the whole range and every value one time. Then it runs at host speed. A
+call that fails writes nothing.
+
+- `fill view range byte` sets all the bytes of a `ByteRange` to one byte value.
+- `copyWithin view to range` copies a byte range to another offset of the same view.
+  The ranges can overlap.
+- `writeU8s`, `writeI8s`, `writeU16s`, `writeI16s`, `writeU32s`, `writeI32s`,
+  `writeF16s`, `writeF32s`, `writeF64s` and `writeWord64s` write a `List` from a byte
+  offset. An integer out of range is `InvalidValueAt index value minimum maximum`.
+- `readU8s` to `readF64s` and `readWord64s` read a count of values from a byte offset
+  into a `List`.
+- Give the `Endian` for values wider than one byte. Offsets and errors are bytes.
+
 ## Exact 64-bit words
 
 `Word64` keeps two exact unsigned 32-bit words. `word64ToInt` and
@@ -165,7 +181,7 @@ Each failure that the host documents for an operation is one typed error. An
 unexpected host failure stops the program; do not catch it. `Binary.shared` gives
 `Err IsolationRequired` in a page that is not cross-origin isolated.
 
-Sources: `docs/design/binary.md` §1–§6, §8; `docs/design/browser-sources.md`;
+Sources: `docs/design/binary.md` §1–§8; `docs/design/browser-sources.md`;
 `docs/design/webgpu.md` §3.1, §3.2; `core/Binary.beni`; `core/Binary/Atomics.beni`;
 `core/Binary/Wgsl.beni`; `core/Binary/Region.beni`;
 `platforms/browser/Browser/Image.beni`, `Video.beni`, `Canvas.beni`, `Source.beni`.

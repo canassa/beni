@@ -44,6 +44,14 @@ pub type Float16Error
     | NoFloat16
 
 
+--| A bulk integer write: the access failed, or the element at an index is
+--| outside value, minimum, maximum (index, value, minimum, maximum). A call
+--| that fails writes nothing.
+pub type BulkWriteError
+    = BulkAccess AccessError
+    | InvalidValueAt Int Int Int Int
+
+
 -- `data` is a DataView over exactly the view's bytes (the view itself when it
 -- is one); `probe` a Uint8Array over the same bytes, whose `byteLength` reads
 -- 0, without a throw, once the storage is detached.
@@ -313,6 +321,143 @@ writeF64 (Region fields) offset endian number =
     Ok ⊤
 
 
+--| Set every byte of a range of the region to one byte value (binary.md §7).
+pub fill : Region ReadWrite, Binary.ByteRange, Int → Result WriteError ⊤
+fill (Region fields) range byte = Result.mapError (Binary.fill (asView fields) range byte) fromWrite
+
+
+--| Copy a byte range of the region to a byte offset of it, as through a temporary.
+pub copyWithin : Region ReadWrite, Int, Binary.ByteRange → Result AccessError ⊤
+copyWithin (Region fields) target range =
+    Result.mapError (Binary.copyWithin (asView fields) target range) fromBinary
+
+
+--| Copy source bytes into the region at a byte offset, as `Binary.copyInto`.
+pub copyInto : Region ReadWrite, Int, Binary.Source → Result AccessError ⊤
+copyInto (Region fields) offset source =
+    Result.mapError (Binary.copyInto (asView fields) offset source) fromBinary
+
+
+--| Write U8 values from a byte offset; one check for the call.
+pub writeU8s : Region ReadWrite, Int, List Int → Result BulkWriteError ⊤
+writeU8s (Region fields) offset numbers =
+    Result.mapError (Binary.writeU8s (asView fields) offset numbers) fromBulk
+
+
+--| Write I8 values from a byte offset; one check for the call.
+pub writeI8s : Region ReadWrite, Int, List Int → Result BulkWriteError ⊤
+writeI8s (Region fields) offset numbers =
+    Result.mapError (Binary.writeI8s (asView fields) offset numbers) fromBulk
+
+
+--| Write U16 values from a byte offset; one check for the call.
+pub writeU16s : Region ReadWrite, Int, Binary.Endian, List Int → Result BulkWriteError ⊤
+writeU16s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeU16s (asView fields) offset endian numbers) fromBulk
+
+
+--| Write I16 values from a byte offset; one check for the call.
+pub writeI16s : Region ReadWrite, Int, Binary.Endian, List Int → Result BulkWriteError ⊤
+writeI16s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeI16s (asView fields) offset endian numbers) fromBulk
+
+
+--| Write U32 values from a byte offset; one check for the call.
+pub writeU32s : Region ReadWrite, Int, Binary.Endian, List Int → Result BulkWriteError ⊤
+writeU32s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeU32s (asView fields) offset endian numbers) fromBulk
+
+
+--| Write I32 values from a byte offset; one check for the call.
+pub writeI32s : Region ReadWrite, Int, Binary.Endian, List Int → Result BulkWriteError ⊤
+writeI32s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeI32s (asView fields) offset endian numbers) fromBulk
+
+
+--| Write Float16 values from a byte offset; one check for the call.
+pub writeF16s : Region ReadWrite, Int, Binary.Endian, List Float → Result Float16Error ⊤
+writeF16s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeF16s (asView fields) offset endian numbers) fromFloat16
+
+
+--| Write F32 values from a byte offset; one check for the call.
+pub writeF32s : Region ReadWrite, Int, Binary.Endian, List Float → Result AccessError ⊤
+writeF32s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeF32s (asView fields) offset endian numbers) fromBinary
+
+
+--| Write F64 values from a byte offset; one check for the call.
+pub writeF64s : Region ReadWrite, Int, Binary.Endian, List Float → Result AccessError ⊤
+writeF64s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeF64s (asView fields) offset endian numbers) fromBinary
+
+
+--| Write exact 64-bit word pairs from a byte offset; one check for the call.
+pub writeWord64s : Region ReadWrite, Int, Binary.Endian, List Binary.Word64 → Result AccessError ⊤
+writeWord64s (Region fields) offset endian numbers =
+    Result.mapError (Binary.writeWord64s (asView fields) offset endian numbers) fromBinary
+
+
+--| Read a count of U8 values from a byte offset; one check for the call.
+pub readU8s : Region mode, Int, Int → Result AccessError (List Int)
+readU8s (Region fields) offset number =
+    Result.mapError (Binary.readU8s (asView fields) offset number) fromBinary
+
+
+--| Read a count of I8 values from a byte offset; one check for the call.
+pub readI8s : Region mode, Int, Int → Result AccessError (List Int)
+readI8s (Region fields) offset number =
+    Result.mapError (Binary.readI8s (asView fields) offset number) fromBinary
+
+
+--| Read a count of U16 values from a byte offset; one check for the call.
+pub readU16s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Int)
+readU16s (Region fields) offset number endian =
+    Result.mapError (Binary.readU16s (asView fields) offset number endian) fromBinary
+
+
+--| Read a count of I16 values from a byte offset; one check for the call.
+pub readI16s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Int)
+readI16s (Region fields) offset number endian =
+    Result.mapError (Binary.readI16s (asView fields) offset number endian) fromBinary
+
+
+--| Read a count of U32 values from a byte offset; one check for the call.
+pub readU32s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Int)
+readU32s (Region fields) offset number endian =
+    Result.mapError (Binary.readU32s (asView fields) offset number endian) fromBinary
+
+
+--| Read a count of I32 values from a byte offset; one check for the call.
+pub readI32s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Int)
+readI32s (Region fields) offset number endian =
+    Result.mapError (Binary.readI32s (asView fields) offset number endian) fromBinary
+
+
+--| Read a count of Float16 values from a byte offset; one check for the call.
+pub readF16s : Region mode, Int, Int, Binary.Endian → Result Float16Error (List Float)
+readF16s (Region fields) offset number endian =
+    Result.mapError (Binary.readF16s (asView fields) offset number endian) fromFloat16
+
+
+--| Read a count of F32 values from a byte offset; one check for the call.
+pub readF32s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Float)
+readF32s (Region fields) offset number endian =
+    Result.mapError (Binary.readF32s (asView fields) offset number endian) fromBinary
+
+
+--| Read a count of F64 values from a byte offset; one check for the call.
+pub readF64s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Float)
+readF64s (Region fields) offset number endian =
+    Result.mapError (Binary.readF64s (asView fields) offset number endian) fromBinary
+
+
+--| Read a count of exact 64-bit word pairs from a byte offset.
+pub readWord64s : Region mode, Int, Int, Binary.Endian → Result AccessError (List Binary.Word64)
+readWord64s (Region fields) offset number endian =
+    Result.mapError (Binary.readWord64s (asView fields) offset number endian) fromBinary
+
+
 -- The one check per access: the current length, read from the probe, and the
 -- range. An Int is integral, and NaN or an infinity fails both comparisons.
 -- Detachment makes that length 0, so a detached region fails here before any
@@ -330,7 +475,8 @@ checked fields offset size =
 
 
 -- The region's DataView as a `Binary.View`, for the operations Binary already
--- has: they check the backing once more, which a region refused resizable for.
+-- has: they check the backing once per call, and a region refused resizable
+-- storage, so their backing failure can only be detachment.
 asView : Fields → View
 asView fields = Binary.DataView (Js.to fields.data)
 
@@ -342,6 +488,33 @@ fromBinary error =
             Detached
         Binary.OutOfBounds offset length available →
             OutOfBounds offset length available
+
+
+fromWrite : Binary.WriteError → WriteError
+fromWrite error =
+    case error of
+        Binary.WriteAccess problem →
+            WriteAccess (fromBinary problem)
+        Binary.InvalidValue value minimum maximum →
+            InvalidValue value minimum maximum
+
+
+fromBulk : Binary.BulkWriteError → BulkWriteError
+fromBulk error =
+    case error of
+        Binary.BulkAccess problem →
+            BulkAccess (fromBinary problem)
+        Binary.InvalidValueAt index value minimum maximum →
+            InvalidValueAt index value minimum maximum
+
+
+fromFloat16 : Binary.Float16Error → Float16Error
+fromFloat16 error =
+    case error of
+        Binary.Float16Access problem →
+            Float16Access (fromBinary problem)
+        Binary.NoFloat16 →
+            NoFloat16
 
 
 -- Shared storage never detaches.

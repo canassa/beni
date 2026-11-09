@@ -5,6 +5,7 @@ region of Uint8Array: Ok (-0.0), brand checks 0, DataViews 0, detached reads 0
 detached region: Err "WriteAccess Detached", brand checks 0, DataViews 0, detached reads 1
 Wgsl encode of 256 f32: detached reads 3
 Wgsl decode of 256 f32: True, detached reads 2
+bulk f32 x1000 on Uint8Array: Ok ⊤, read back True, brand checks 0, DataViews 2, detached reads 2
 older host: local Ok False, after transfer Err Detached, moved Ok False
 older host: shared Ok True
 older host: other realm local Ok False, shared Ok True
