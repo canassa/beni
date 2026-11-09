@@ -1,0 +1,30 @@
+-- A regression guard for #2225: a function matched out of a type that recurs with larger
+-- arguments (`Wrap (T (List a))`) inside a `List.map` callback. `--release` closed the wild
+-- set of representation keys through `T X`, `T (List X)`, `T (List (List X))`, … and never
+-- ended (`backend.md` §9, *Declared-type filtering of fact 3*, amended 2026-11-08). The
+-- development build and the release build print the same thing.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+f : List (T (List Int → List Int)), List Int → Int
+f ts a =
+    List.length
+        (List.map ts λt →
+            case t of
+                Wrap (Leaf [ g ]) →
+                    g a
+
+                _ →
+                    a
+        )
+
+
+main : Program
+main = Node.print (String.fromInt (f [ Wrap (Leaf [ λv → List.push v 2 ]) ] [ 1 ]))

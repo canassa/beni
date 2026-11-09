@@ -124,6 +124,9 @@ queue: std.ArrayList(u32) = .empty,
 plan_ids: []?[]const TypeId = &.{},
 /// One node's children while it is interned.
 scratch_children: std.ArrayList(u32) = .empty,
+/// Per named type: how many of its applications the wild set closed
+/// through (`max_closed_applications`).
+closed: []u32 = &.{},
 
 const unset: u32 = std.math.maxInt(u32) - 1;
 const pending: u32 = std.math.maxInt(u32) - 2;
@@ -131,6 +134,14 @@ const wild_id: u32 = RepKey.wild.int();
 
 /// How deep a written type is followed before it is given up on.
 const max_depth = 256;
+
+/// How many applications of one named type the wild set closes through
+/// before every key is wild. A type that recurs with larger arguments
+/// (`Nest a = Done a | Deeper (Nest (List a))`) has no finite closure: each
+/// application makes the next one wild. A finite closure meets finitely many
+/// applications, and an infinite one meets infinitely many of one type,
+/// because a closure adds only parts and constructor fields.
+const max_closed_applications = 1024;
 
 const Interned = struct { id: u32 };
 
@@ -177,6 +188,8 @@ pub fn build(in: Input) Allocator.Error!RepKeys {
     const arena = in.arena;
     r.plan_ids = try arena.alloc(?[]const TypeId, in.plans.len);
     @memset(r.plan_ids, null);
+    r.closed = try arena.alloc(u32, in.types.entries.len);
+    @memset(r.closed, 0);
     const count = in.artifacts.len;
 
     // The artifacts' nodes, as the build's, in module order. A child
@@ -637,6 +650,11 @@ fn closeThrough(r: *RepKeys, w: u32) Allocator.Error!void {
     // (checker-v2.md §36, the wild set's local half).
     if (e.schema_endpoint) return;
     if (e.module.int() >= r.in.birs.len) {
+        r.all_wild = true;
+        return;
+    }
+    r.closed[id.int()] += 1;
+    if (r.closed[id.int()] > max_closed_applications) {
         r.all_wild = true;
         return;
     }
