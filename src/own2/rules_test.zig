@@ -191,6 +191,8 @@ const layers = [_]Entry{
     .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
     // A callee's `fed` occurrence at a call, split from `Fed` (#1721).
     .{ .file = "FedCall.zig", .layer = 8, .max_lines = 105 },
+    // A known code's run handed its own answer, its separation by induction (#1713).
+    .{ .file = "SelfFed.zig", .layer = 8, .max_lines = 100 },
     // A label's answers read, and their occurrence decided (§2.11.3).
     .{ .file = "Answers.zig", .layer = 8, .max_lines = 190 },
     // An answers occurrence decided at a caller.
@@ -850,7 +852,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 151), layers.len);
+    try testing.expectEqual(@as(usize, 152), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

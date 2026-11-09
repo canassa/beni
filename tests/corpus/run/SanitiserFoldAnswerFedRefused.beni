@@ -1,0 +1,84 @@
+-- The unsafe twins of `SanitiserFoldAnswerFed` (`ownership-v2.md` §2.11.3,
+-- *a label's answer handed back to it*, at the caller): a fold whose
+-- callback edits an element of its accumulator in place is refused where
+-- the answer holds one element twice (directly and through a helper), a
+-- capture the closure keeps for its next run, an element of the list it
+-- folds, or a list a closure in the answer still reads, and where the
+-- first value is a top-level list. Each traps or prints another result
+-- under the sanitiser when it is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+first : List (List Int) → List Int
+first acc = Maybe.withDefault (List.get acc 0) []
+
+
+-- The answer holds its first element twice; the next run edits it in place.
+twice : List Int → List (List Int)
+twice xs = List.foldl xs [ [ 0 ] ] λk acc →
+    a = List.update acc 0 λl → List.push l k
+    [ …a, first a ]
+
+
+grow : List (List Int), Int → List (List Int)
+grow acc k =
+    a = List.update acc 0 λl → List.push l k
+    [ …a, first a ]
+
+
+twiceHelper : List Int → List (List Int)
+twiceHelper xs = List.foldl xs [ [ 0 ] ] λk acc → grow acc k
+
+
+-- The answer is a capture, which a later run answers again.
+held : List Int, List Int → List (List Int)
+held xs c = List.foldl xs [ [ 0 ] ] λk acc →
+    if k == 1 then [ c ] else List.update acc 0 λl → List.push l k
+
+
+-- The answer holds the element it was handed, which the list folds twice.
+element : List (List Int) → List (List Int)
+element xs = List.foldl xs [ [ 0 ] ] λk acc → [ …(List.update acc 0 λl → List.push l 1), k ]
+
+
+-- A closure in the answer reads the list the next run edits.
+captured : List Int → { values : List (List Int), readers : List (⊤ → Int) }
+captured xs = List.foldr xs { values = [ [ 0 ] ], readers = [] } λx acc →
+    grown = List.update acc.values 0 λl → List.push l x
+    reader = λ⊤ → List.length (first grown)
+    { values = grown, readers = [ …acc.readers, reader ] }
+
+
+shared : List (List Int)
+shared = [ [ 0 ] ]
+
+
+-- The first value is a top-level list.
+sharedStart : List Int → List (List Int)
+sharedStart xs = List.foldl xs shared λk acc → List.update acc 0 λl → List.push l k
+
+
+main : Program
+main =
+    k = [ 3 ]
+    r = captured [ 1, 2 ]
+    Node.printLines
+        [ shows (twice [ 1, 2 ])
+        , shows (twiceHelper [ 1, 2 ])
+        , shows (held [ 1, 2, 1 ] [ 7 ])
+        , shows (element [ k, k ])
+        , shows r.values
+        , String.join (List.map r.readers λf → String.fromInt (f ⊤)) ","
+        , shows (sharedStart [ 1 ])
+        , shows shared
+        ]

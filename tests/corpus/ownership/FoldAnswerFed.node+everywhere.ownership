@@ -1,0 +1,60 @@
+module FoldAnswerFed
+  13:16 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  13:16 call List.foldl <literal>[*]: accepted fresh (<lambda> writes what List.foldl supplies it)
+  13:56 List.update acc: accepted callback-param (List.foldl supplies it owned)
+  13:56 List.update acc[*]: accepted callback-param (List.foldl supplies it owned)
+  13:79 List.push l: accepted callback-param (List.update supplies it owned)
+  17:13 call List.foldl <literal>[*]: accepted fresh (<lambda> writes what List.foldl supplies it)
+  17:53 call List.map acc[*]: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  17:71 List.push l: accepted callback-param (List.map supplies it owned)
+  21:13 List.update acc: accepted param
+  21:13 List.update acc[*]: accepted param (<lambda> writes what List.update supplies it)
+  21:36 List.push l: accepted callback-param (List.update supplies it owned)
+  25:16 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  25:16 call List.foldl <literal>[*]: accepted fresh (<lambda> writes what List.foldl supplies it)
+  25:56 call FoldAnswerFed.upd acc: accepted callback-param (List.foldl supplies it owned)
+  25:56 call FoldAnswerFed.upd acc[*]: accepted callback-param (List.foldl supplies it owned)
+  29:15 call List.foldr <literal>: accepted fresh (<lambda> writes what List.foldr supplies it)
+  29:15 call List.foldr <literal>[*]: accepted fresh (<lambda> writes what List.foldr supplies it)
+  29:55 List.update acc: accepted callback-param (List.foldr supplies it owned)
+  29:55 List.update acc[*]: accepted callback-param (List.foldr supplies it owned)
+  29:78 List.push l: accepted callback-param (List.update supplies it owned)
+  43:14 call FoldAnswerFed.myFold <literal>: accepted fresh (<lambda> writes what FoldAnswerFed.myFold supplies it)
+  43:14 call FoldAnswerFed.myFold <literal>[*]: accepted fresh (<lambda> writes what FoldAnswerFed.myFold supplies it)
+  43:50 List.update acc: accepted callback-param (FoldAnswerFed.myFold supplies it owned)
+  43:50 List.update acc[*]: accepted callback-param (FoldAnswerFed.myFold supplies it owned)
+  43:73 List.push l: accepted callback-param (List.update supplies it owned)
+  48:9 List.update <literal>: accepted fresh
+  48:9 List.update <literal>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  48:45 List.push i: accepted callback-param (List.update supplies it owned)
+  49:5 List.update x: accepted fresh
+  49:5 List.update x[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  49:26 List.push i: accepted callback-param (List.update supplies it owned)
+  59:13 call FoldAnswerFed.recur <call List.update>: accepted param (FoldAnswerFed.recur writes π2)
+  59:13 call FoldAnswerFed.recur <call List.update>[*]: accepted param (FoldAnswerFed.recur writes π2[*])
+  59:25 List.update acc: accepted param
+  59:25 List.update acc[*]: accepted param (<lambda> writes what List.update supplies it)
+  59:48 List.push l: accepted callback-param (List.update supplies it owned)
+  63:15 call FoldAnswerFed.recur <literal>: accepted fresh (FoldAnswerFed.recur writes π2)
+  63:15 call FoldAnswerFed.recur <literal>[*]: accepted fresh (FoldAnswerFed.recur writes π2[*])
+  68:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  68:38 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  69:5 call List.foldl rows: accepted fresh (<lambda> writes what List.foldl supplies it)
+  69:5 call List.foldl rows[*]: accepted call (<lambda> writes what List.foldl supplies it)
+  69:36 List.update acc: accepted callback-param (List.foldl supplies it owned)
+  69:36 List.update acc[*]: accepted callback-param (List.foldl supplies it owned)
+  69:59 List.push l: accepted callback-param (List.update supplies it owned)
+  summary viaUpdate: π1 R; res [*] ~fresh1, ~fresh2
+  summary viaMap: π1 R; res [*] ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh3) ~fresh3, ~fresh2
+  summary upd: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq spine π1[*]
+  summary viaHelper: π1 R; res [*] ~fresh1, ~fresh2
+  summary viaRight: π1 R; res [*] ~fresh1, ~fresh2
+  summary myFold: π1 R, π1[*] R, π2 RA, π3 R; res ~cb3{excl cb3}r{excl cb3} π2; π3 calls many, supply 1 π1[*] owned taken{excl π1}r{excl π1}, supply 2 cb3 owned{excl cb3}r{excl cb3}, supply 2 π2 owned{excl π2}r{excl π2}
+  summary viaUser: π1 R, π1[*] R; res [*] ~fresh1, ~fresh2
+  summary chain: res [*] fresh1, fresh2
+  summary recur: π1 R, π2 RAW[storage], π2[*] RAW[storage], π2[*][*] A; res [*] ~π2[*], [*][*] ~π2[*][*], π2{excl π2[*]}; xreq spine π2[*]
+  summary recurred: π1 R; res [*] fresh1, fresh2
+  summary folded: π1 R; res [*] ~fresh2, [*][*] ~fresh3, ~fresh1
+  demands 45: accepted 44 (fresh 17, call 1, param 6, callback-param 20, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 45: accepted 44 (fresh 17, call 1, param 6, callback-param 20, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

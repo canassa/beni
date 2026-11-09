@@ -37,7 +37,7 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         if (d.call == none or @import("Mutate.zig").on(.relies_off)) continue;
         const call = f.calls.items[d.call];
         const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
-        if (req_of[d.call] == null) req_of[d.call] = (try MovedReq.of(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
+        if (req_of[d.call] == null) req_of[d.call] = (try MovedReq.of(&e.ev, call, c)) orelse try Distinct.reqOn(&e.ev, c, d.call);
         d.relies = req_of[d.call].?;
         const held = e.contracts.head(call.contract).flags.taken_write;
         if (held and !@import("Mutate.zig").on(.taken_mark_off) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;

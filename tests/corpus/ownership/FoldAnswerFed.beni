@@ -1,0 +1,69 @@
+-- A fold whose callback edits an element of its accumulator in place
+-- (`ownership-v2.md` §2.11.3, *a label's answer handed back to it*, at the
+-- caller). Accepted: through `List.update`, `List.map`, a helper, `foldr`
+-- and a hand-written fold, and an update's answer edited at another
+-- position (§2.11.3 item 3). Refused by v2 where v1 accepts: a
+-- hand-written recursion over `List.update` and a fold over another
+-- fold's result (`run/SanitiserFoldAnswerFed` runs the accepted ones,
+-- `run/SanitiserFoldAnswerFedRefused` the unsafe twins).
+import List
+
+
+pub viaUpdate : List Int → List (List Int)
+viaUpdate xs = List.foldl xs [ [ 0 ], [ 5 ] ] λk acc → List.update acc 0 λl → List.push l k
+
+
+pub viaMap : List Int → List (List Int)
+viaMap xs = List.foldl xs [ [ 0 ], [ 5 ] ] λk acc → List.map acc λl → List.push l k
+
+
+upd : List (List Int), Int → List (List Int)
+upd acc k = List.update acc 1 λl → List.push l k
+
+
+pub viaHelper : List Int → List (List Int)
+viaHelper xs = List.foldl xs [ [ 0 ], [ 5 ] ] λk acc → upd acc k
+
+
+pub viaRight : List Int → List (List Int)
+viaRight xs = List.foldr xs [ [ 0 ], [ 5 ] ] λk acc → List.update acc 0 λl → List.push l k
+
+
+myFold : List a, b, (a, b → b) → b
+myFold xs acc f =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            myFold rest (f x acc) f
+
+
+pub viaUser : List Int → List (List Int)
+viaUser xs = myFold xs [ [ 0 ], [ 5 ] ] λk acc → List.update acc 0 λl → List.push l k
+
+
+pub chain : ⊤ → List (List Int)
+chain ⊤ =
+    x = List.update [ [ 0 ], [ 1 ] ] 0 λi → List.push i 1
+    List.update x 1 λi → List.push i 2
+
+
+recur : List Int, List (List Int) → List (List Int)
+recur xs acc =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            recur rest (List.update acc 0 λl → List.push l x)
+
+
+pub recurred : List Int → List (List Int)
+recurred xs = recur xs [ [ 0 ] ]
+
+
+pub folded : List Int → List (List Int)
+folded xs =
+    rows = List.foldl xs [] λk acc → List.push acc [ k ]
+    List.foldl [ 3 ] rows λk acc → List.update acc 0 λl → List.push l k

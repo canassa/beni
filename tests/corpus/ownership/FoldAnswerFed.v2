@@ -1,0 +1,1 @@
+v2 accepts a fold callback's in-place edit of an accumulator element by induction on the runs, where v1 accepts it as a whole (§2.11.3, a label's answer handed back to it); the refusals differ in place.

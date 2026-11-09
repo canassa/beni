@@ -38,6 +38,7 @@ const Coexist = @import("Coexist.zig");
 const Chains = @import("Chains.zig");
 const Ends = @import("Ends.zig");
 const AtomSets = @import("AtomSets.zig");
+const SelfFed = @import("SelfFed.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -122,7 +123,8 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
 }
 
 /// The callee's `res_cond` on call `call`'s arguments, once per call; a
-/// cycle through it reads `no`.
+/// cycle through it reads `no`. A virtual call handed its own answer reads
+/// it through its twin (`SelfFed`, §2.11.3).
 pub fn instCond(e: *Eval, call: u32) Error!Cond {
     if (@import("Mutate.zig").on(.inst_cond_yes)) return Cond.yes;
     try condStates(e);
@@ -136,10 +138,30 @@ pub fn instCond(e: *Eval, call: u32) Error!Cond {
         else => {},
     }
     e.cond_state.items[at] |= 1;
-    const got = if (e.contractOf(call)) |c| try instSel(e, try e.contracts.resCond(e.arena, c, e.read_mode == .reading), call) else Cond.unprovable;
+    var got = Cond.unprovable;
+    if (e.contractOf(call)) |c| {
+        const rc = try e.contracts.resCond(e.arena, c, e.read_mode == .reading);
+        got = try instSel(e, rc, call);
+        if (got.no) if (try SelfFed.of(e, call, FedCall)) |tw| {
+            got = try instSelOn(e, rc, call, tw.args, null);
+        };
+    }
     e.cond_state.items[at] ^= 3; // in progress → done, `mixed_on` kept
     e.cond_of.items[at] = got;
     return got;
+}
+
+/// A known code's `req` on its virtual call `call` (§2.11.2 item 4): where
+/// it fails on the call's own arguments and the label is handed its own
+/// answer, on the twin, with the answer's separation (`SelfFed`, §2.11.3).
+pub fn reqOn(e: *Eval, c: Cond, call: u32) Error!Cond {
+    const got = try instSel(e, c, call);
+    if (!got.no) return got;
+    const tw = (try SelfFed.of(e, call, FedCall)) orelse return got;
+    const r = e.f.roots.items[e.f.calls.items[call].root];
+    const answer = try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[call].root, .pos = r.pos, .slots = try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), r.path) });
+    if (@import("Mutate.zig").on(.self_fed_answer_free)) return instSelOn(e, c, call, tw.args, null);
+    return Cond.conj(e.arena, e.account(), try instSelOn(e, c, call, tw.args, null), try distinct(e, &.{.{ .leaf = answer, .route = 1 }}, false));
 }
 
 fn condStates(e: *Eval) Error!void {
@@ -160,6 +182,11 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
 /// *a label's answer handed back to it*): `Fed` reads the label's own answer
 /// handed back as what its call was handed, and decides `fed` occurrences.
 pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
+    return instSelOn(e, c0, call, null, feed);
+}
+
+/// `instSelFeed` on `args` in place of the call's own, when given.
+fn instSelOn(e: *Eval, c0: Cond, call: u32, args: ?[]const u32, feed: ?Fed.Feed) Error!Cond {
     if (@import("Mutate.zig").on(.inst_sel_yes)) return Cond.yes;
     if (c0.no) return Cond.unprovable;
     if (c0.sel.len == 0) return Cond.yes;
@@ -175,13 +202,14 @@ pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
         .no => return Cond.unprovable,
         .occ => |x| try fed.append(e.arena, x),
     };
-    if (rest.items.len != own_n) return withFed(e, try Cond.conj(e.arena, e.account(), own, try instSelFeed(e, try Cond.of(e.account(), rest.items), call, feed)), fed.items);
+    if (rest.items.len != own_n) return withFed(e, try Cond.conj(e.arena, e.account(), own, try instSelOn(e, try Cond.of(e.account(), rest.items), call, args, feed)), fed.items);
     const c: Cond = .{ .sel = rest.items };
     if (c.sel.len == 0) return withFed(e, Cond.yes, fed.items);
     // Arguments that are the caller's parameters whole: renamed (`CallGraft`).
     if (try CallGraft.sel(e, c, call)) |rc| return withFed(e, rc, fed.items);
     const g = e.gpa();
-    const cl = e.f.calls.items[call];
+    var cl = e.f.calls.items[call];
+    if (args) |a| cl.args = a;
     var ps: std.ArrayList(Proj) = .empty;
     defer ps.deinit(g);
     // A parameter asked deep apart and plain below: its objects part by part.
