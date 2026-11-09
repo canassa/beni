@@ -35,11 +35,14 @@ on:
 
 permissions: {}
 
-# A newer push to a pull request replaces its older run. Every push to
-# master has a group of its own, because a group keeps only one pending run
-# and would drop the run of a commit between two quick pushes.
+# A newer push to a pull request replaces its older run, and a newer push
+# to master replaces the older master run (the owner, 2026-11-09): the 3
+# azathoth runners spent most of their time on runs of commits that were
+# already behind. A commit between two quick pushes to master gets no run
+# of its own; the newer run checks it. Nightly and manual runs each have a
+# group of their own.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-run-{0}', github.run_id) }}
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'ci-master' || format('ci-run-{0}', github.run_id) }}
   cancel-in-progress: true
 
 jobs:
