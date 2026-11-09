@@ -108,7 +108,7 @@ fn sayOpen(e: anytype, w: *Walk, as: []const Arrival) Error!void {
         if (!own) try ts.append(e.arena, .from(q));
         for (ts.items) |t| if (!LevelTargets.coveredBy(pl, ts.items, t) and !(own and pl.isPrefix(.from(q), t))) {
             const tw = try e.arena.dupe(u32, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), pl, t)));
-            for (as) |a| if (!try saidAt(e, w.root, tw, a)) {
+            for (as) |a| if (!try saidAt(e, w.root, tw, w.words.items, a)) {
                 var x = a;
                 x.deep = true;
                 try w.out.append(e.arena, .{ .words = tw, .a = x });
@@ -117,13 +117,16 @@ fn sayOpen(e: anytype, w: *Walk, as: []const Arrival) Error!void {
     };
 }
 
-/// Whether the callee says `a` at fold words `tw` itself (`LevelWide`, its own graph's fold):
-/// at `tw` or above it, as it is or as the parameter read at that slot's own words.
-fn saidAt(e: anytype, root: Trees.Node, tw: []const u32, a: Arrival) Error!bool {
+/// Whether the callee says `a`, open at entry words `qw`, at fold `tw` or above it (`LevelWide`):
+/// an atom as it is, a parameter at its own slot as the parameter at the fold's own words. No
+/// other arrival is evidence: a pass-through `π1ε` beside `π1#2.1…` at `#2.0…` names other objects.
+fn saidAt(e: anytype, root: Trees.Node, tw: []const u32, qw: []const u32, a: Arrival) Error!bool {
     var hs: std.ArrayList(Trees.Hit) = .empty;
     defer hs.deinit(e.gpa());
     try e.hitsAt(root, tw, &hs);
-    for (hs.items) |h| if (h.open) for (h.arrivals) |b| if (b.eql(a) or (b.kind == a.kind and b.j == a.j and b.kind != .fresh and
+    const atom = a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host;
+    const own = a.kind == .param and SlotWords.same(e.f.slots.relWords(a.slot), qw);
+    for (hs.items) |h| if (h.open) for (h.arrivals) |b| if ((atom and b.eql(a)) or (own and b.kind == .param and b.j == a.j and
         b.slot == try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), tw[0..h.depth]))) return true;
     return false;
 }

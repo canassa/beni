@@ -1,0 +1,45 @@
+-- `SanitiserLevelCallerPassThrough` with the pass-through below the root (`ownership-v2.md` §2.1, #2223): `f`'s
+-- `GQ x _ → GQ x d` says `π1#2.0` open at `#2.0`, beside `π1#2.1#0.0` at `#2.0#0.0`, and `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GQ (G a) (G a)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+wq : G R → Int
+wq t =
+    case t of
+        GQ (GL (RW (GL (RL xs)))) _ →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+f : G a, G a → G a
+f t d =
+    case t of
+        GQ _ (GL m) →
+            GQ (GL m) d
+        GQ x _ →
+            GQ x d
+        _ →
+            d
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GQ (GL (RL [ 9 ])) (GL (RW (GL (RL k))))
+    a = wq (f v (GL (RL [ 3 ])))
+    Node.print (String.fromInt (a + List.length k))

@@ -1,0 +1,44 @@
+-- `SanitiserLevelCaller` beside a pass-through (`ownership-v2.md` §2.1, #2223): `f` hands `t` back whole at its root
+-- (`ε… π1ε`) and puts `t`'s `#GQ.1#GL.0` at `#GQ.0#GL.0`, a type variable's slot. The pass-through names other
+-- objects at the caller's fold, so the arrival is said there too, and `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GQ (G a) (G a)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+wq : G R → Int
+wq t =
+    case t of
+        GQ (GL (RW (GL (RL xs)))) _ →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+f : G a, G a → G a
+f t d =
+    case t of
+        GQ _ (GL m) →
+            GQ (GL m) d
+        _ →
+            t
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GQ (GL (RL [ 9 ])) (GL (RW (GL (RL k))))
+    a = wq (f v (GL (RL [ 3 ])))
+    Node.print (String.fromInt (a + List.length k))

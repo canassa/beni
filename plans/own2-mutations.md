@@ -117,7 +117,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `level_route_shortest` | O6 | a reference's next levels are the first route alone | killed | | 3: SanitiserLevelRoutes | | |
 | `level_slot_twice` | O6 | a slot two routes of a `⟲` reach is read twice | killed | | 2: SanitiserLevelRoutesFolded | | |
 | `level_wide_off` | O6 | an open arrival is not said at the folds above it | killed | | 3: SanitiserLevelResult | | |
-| `caller_folds_off` | O6 | an open arrival is not said at a caller's folds its callee's graph has not | killed | | 6: SanitiserLevelCaller | | |
+| `caller_folds_off` | O6 | an open arrival is not said at a caller's folds its callee's graph has not | killed | | 8: SanitiserLevelCaller | | |
 | `unescaped_off` | O8 H1 H6 | `Resolve.judge` skips Unescaped | killed | | 9: SanitiserAnswerLeft (ProgramFailed), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_unknown_off` | O8 | an escape of unknown keys reaches no target | v1 only | | 0 | 0 | 0 | 3 parity |
 | `escape_params_off` | O8 | an escape of a parameter reaches no parameter's target | killed | | SanitiserHandedWriter (SanitisedRefusalDiffers) | 7: BranchEscapes (OwnershipV2Differs), … | 0 | |
