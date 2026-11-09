@@ -1296,9 +1296,24 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
     const reps = try scratch.alloc(u32, classes.len);
     defer scratch.free(reps);
     @memset(reps, none);
-    for (e.pairs.items[r.start..][0..r.len]) |p| {
+    // Each pair's class, kept for `Erasure.applyRecord` and
+    // `Realms.applyCopy`: rescanning the pairs per erased class or per realm
+    // dependency cost classes × pairs × classes (#2329).
+    const of_pair = try scratch.alloc(u32, r.len);
+    defer scratch.free(of_pair);
+    @memset(of_pair, none);
+    // `Solved.classIndex` by a map: a scan per pair costs pairs × classes.
+    var index: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer index.deinit(scratch);
+    try index.ensureTotalCapacity(scratch, @intCast(classes.len));
+    for (classes, 0..) |c, ci| {
+        const slot = index.getOrPutAssumeCapacity(c.node);
+        if (!slot.found_existing) slot.value_ptr.* = @intCast(ci);
+    }
+    for (e.pairs.items[r.start..][0..r.len], of_pair) |p, *pc| {
         const sn = try e.nodeFor(p.a);
-        const c = s.classIndex(target, sn) orelse continue;
+        const c = index.get(sn) orelse continue;
+        pc.* = c;
         const i = try e.nodeFor(p.b);
         if (reps[c] == none) {
             reps[c] = i;
@@ -1313,17 +1328,37 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
             try e.raiseRealm(reps[c], e.realmOf(i), work, scratch);
         }
     }
+    // The pairs of each class, in pair order: `by_class[starts[ci]..starts[ci + 1]]`.
+    const starts = try scratch.alloc(u32, classes.len + 1);
+    defer scratch.free(starts);
+    @memset(starts, 0);
+    for (of_pair) |c| {
+        if (c != none) starts[c + 1] += 1;
+    }
+    for (1..starts.len) |k| starts[k] += starts[k - 1];
+    const by_class = try scratch.alloc(u32, starts[classes.len]);
+    defer scratch.free(by_class);
+    {
+        const next = try scratch.dupe(u32, starts[0..classes.len]);
+        defer scratch.free(next);
+        for (of_pair, 0..) |c, k| {
+            if (c == none) continue;
+            by_class[next[c]] = @intCast(k);
+            next[c] += 1;
+        }
+    }
     for (classes, 0..) |c, ci| {
         const rep = reps[ci];
         if (rep == none) continue;
         try e.raise(rep, c.rung, work, scratch);
         try e.raiseRealm(rep, c.realms, work, scratch);
-        if (c.erased != 0) try Erasure.applyRecord(e, r, target, ci, c.erased, work, scratch);
+        if (c.erased != 0) try Erasure.applyRecord(e, r, by_class[starts[ci]..starts[ci + 1]], c.erased, work, scratch);
         for (s.depsOf(c)) |d| {
-            const from = reps[d & ~Interface.EffectBlock.realm_only];
+            const dc = d & ~Interface.EffectBlock.realm_only;
+            const from = reps[dc];
             if (from == none) continue;
             const realm_only = d & Interface.EffectBlock.realm_only != 0;
-            if (realm_only) try @import("Realms.zig").applyCopy(e, r, classes[d & ~Interface.EffectBlock.realm_only].node, rep, work, scratch);
+            if (realm_only) try @import("Realms.zig").applyCopy(e, r, by_class[starts[dc]..starts[dc + 1]], rep, work, scratch);
             try e.edgeNodes(from, rep, if (realm_only) realm_origin else none);
             if (!realm_only) try e.raise(rep, s.level.items[from], work, scratch);
             try e.raiseRealm(rep, e.realmOf(from), work, scratch);
