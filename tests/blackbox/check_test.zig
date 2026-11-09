@@ -1567,7 +1567,7 @@ test "ownership words: a taken result is followed through every form that forwar
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
-    try w.copyTreeInto("core", "core", "");
+    try w.copyTreeInto("core", "core", null);
     // Forwarders of `traverseAt` in each form, each with a caller that
     // reads its result twice; a caller across modules; a fold's caller.
     const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, "core/List.beni", arena, .limited(1 << 22));
