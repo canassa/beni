@@ -6116,11 +6116,13 @@ are identical and nothing is written (R-7.11).
 
    **Specified limits of this instrument:**
 
-   - A plain array's `length` is non-configurable, so it cannot trap. As built (#1547) the poisoned array
-     takes the written list's length, the number an in-place write leaves there: a stale length-only read
-     (`List.length`, a pattern's `[]` or `[ _, …_ ]` test) then answers as the in-place run answers, and
-     the output differs from the golden instead of trapping. Indexed reads/methods trap. A stale length
-     read the written list's length does not change (`List.set`) changes nothing in place either. Do not
+   - A plain array's `length` is non-configurable, so it cannot trap on its own. As built (#1547) the
+     poisoned array takes the written list's length, the number an in-place write leaves there, so a
+     read through a foreign sibling still answers as the in-place run does. Since #2347 every length
+     read a module lowers (`List.length`, a pattern's `[]` or `[ _, …_ ]` test, a loop's offset) goes
+     through `_sanitize.len`, which traps on a poisoned plain array, so a stale length-only read traps
+     too, and one the write leaves unchanged (`List.set`) as well. Indexed reads/methods trap. A length
+     read inside JavaScript a platform or core writes is not lowered and still answers only. Do not
      claim complete stale-read detection from a green run.
    - Persistent `Dict` writes have no v1 demand to justify poisoning. Add Dict storage poisoning with
      #961 at S8; until then it is outside this instrument's coverage.

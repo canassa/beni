@@ -1,0 +1,31 @@
+-- A list stored in a cell and edited in place, read stale through the `old`
+-- that `Ref.update` hands its callback (#2347). The only stale read is
+-- `List.length`, which a plain array cannot throw on, so the sanitiser's
+-- `len` check traps it. v2 refuses the fold; a compiler that accepted it
+-- printed `4;0,1,2,3` here, with no trap, instead of `3;0,1,2,3`.
+import List
+import Ref exposing (Ref)
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+first : List (List Int) → List Int
+first acc = Maybe.withDefault (List.get acc 0) []
+
+
+main : Program
+main =
+    r = Ref.make [ [ 0 ], [ 5 ] ]
+    out = List.foldl [ 1, 2, 3 ] [ [ 0 ], [ 5 ] ] λx acc →
+        a = List.update acc 0 λl → List.push l x
+        Ref.update r λold → [ [ List.length (Maybe.withDefault (List.get old 1) []) ], first a ]
+        a
+    Node.printLines [ shows out, shows (Ref.get r) ]

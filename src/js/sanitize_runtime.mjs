@@ -17,9 +17,11 @@
 // - A plain array loses its elements, and its `length` becomes the written
 //   list's: JavaScript makes an array's `length` non-configurable, so it
 //   cannot throw, but it can say what an in-place write would have left
-//   there. A stale read of the length alone (`List.length`, a pattern's
-//   `[]` or `[ _, …_ ]` test) then answers what the in-place run answers,
-//   and the program's output differs from its golden; a read past it traps.
+//   there. A read of the length that a foreign sibling makes then answers
+//   what the in-place run answers, and the program's output differs from its
+//   golden; a read past it traps. Every length read the compiler lowers
+//   (`List.length`, a pattern's `[]` or `[ _, …_ ]` test) goes through
+//   `len`, which traps on a poisoned plain array.
 //   Each index is a hole, and a hole is read from the prototype, which is a
 //   proxy that throws. So does every method the array is read through
 //   (`slice`, `concat`, the iterator).
@@ -46,7 +48,11 @@ const trap = (site) =>
     has: (_, key) => stale(site, `test ${String(key)}`),
   });
 
+// The site that made each poisoned plain array stale, for `len`.
+const staleSites = new WeakMap();
+
 const poisonArray = (a, site, n = a.length) => {
+  staleSites.set(a, site);
   a.length = 0;
   a.length = n;
   Object.setPrototypeOf(a, trap(site));
@@ -100,3 +106,11 @@ export const list = (site, writer, base, ...rest) => {
 // A writer handed on as a value (`apply List.push xs`): each call of it is a
 // write under the sanitiser.
 export const writer = (site, f) => (base, ...rest) => list(site, f, base, ...rest);
+
+// `xs.length` under the sanitiser. A stale plain array answers its length
+// without throwing, so a read of it that goes through here traps. A view or a
+// trie header throws on its own.
+export const len = (xs) => {
+  if (Array.isArray(xs) && staleSites.has(xs)) stale(staleSites.get(xs), "read length");
+  return xs.length;
+};
