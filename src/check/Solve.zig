@@ -1033,6 +1033,7 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     if (!top and requirements) try Resolve.holdLet(s, rank, binders);
     s.carriers.clearRetainingCapacity();
     s.resolver.wanters.clearRetainingCapacity();
+    try Generalize.share(s.store(), s.cx.scratch, s.cx.types, s.frame().pool.items, rank);
     s.generalisations += try Generalize.quantify(s.store(), gpa, s.frames.items, rank, &s.carriers, &s.resolver.wanters);
     // 6. The generality check.
     for (annotated) |i| try Generalize.generality(s, s.tree.annotated.items[i], top);

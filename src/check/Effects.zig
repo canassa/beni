@@ -312,10 +312,16 @@ pub fn evalNode(e: *Effects, decl: u32) Error!Var {
 /// a nominal type whose body holds a function (§14.5). Any other
 /// application's class is one nothing can ever join, so it is not recorded.
 pub fn carries(e: *const Effects, r: Var) bool {
-    return switch (e.store.content(r)) {
+    return carriesContent(e.types, e.store.content(r));
+}
+
+/// `carries`, by content: also what the sharing pass (`Generalize.share`)
+/// leaves unshared, since a class is keyed by its node.
+pub fn carriesContent(types: *const Types, content: TypeStore.Content) bool {
+    return switch (content) {
         .structure => |s| switch (s) {
             .func => true,
-            .app => |a| a.type != .none and e.types.entry(a.type).has_function,
+            .app => |a| a.type != .none and types.entry(a.type).has_function,
             else => false,
         },
         else => false,

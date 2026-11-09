@@ -637,6 +637,88 @@ fn hasSuccessors(content: TypeStore.Content) bool {
     };
 }
 
+/// One node's identity for the sharing pass (`Generalize.share`,
+/// checker-v2.md §8.4, *amended 2026-11-09*): its head — the tag, an
+/// application's or alias's type, a record's field names — and the ROOT of
+/// each child. Two nodes with equal keys are one type. A variable, an `err`
+/// and a function have no key: a variable is its own identity, and a
+/// function's node is what its effect class is keyed by.
+pub fn shareHash(store: *TypeStore, root: Var) u64 {
+    var h: u64 = 0x5a17;
+    switch (store.content(root)) {
+        .flex, .rigid, .err => unreachable,
+        .alias => |a| {
+            h = mixWord(mixWord(h, 1), a.type.int());
+            h = mixWord(h, store.find(a.actual).int());
+            for (store.vars(a.args)) |c| h = mixWord(h, store.find(c).int());
+        },
+        .structure => |flat| switch (flat) {
+            .func => unreachable,
+            .unit => h = mixWord(h, 2),
+            .empty_record => h = mixWord(h, 3),
+            .app => |a| {
+                h = mixWord(mixWord(h, 4), a.type.int());
+                for (store.vars(a.args)) |c| h = mixWord(h, store.find(c).int());
+            },
+            .tuple => |t| {
+                h = mixWord(mixWord(h, 5), t.len);
+                for (store.vars(t)) |c| h = mixWord(h, store.find(c).int());
+            },
+            .record => |r| {
+                h = mixWord(h, 6);
+                for (store.fields(r.fields)) |f| h = mixWord(mixWord(h, @backingInt(f.name)), store.find(f.value).int());
+                h = mixWord(h, store.find(r.ext).int());
+            },
+        },
+    }
+    return h ^ (h >> 29);
+}
+
+/// Whether roots `a` and `b` have one key (`shareHash`).
+pub fn shareEql(store: *TypeStore, a: Var, b: Var) bool {
+    const ca = store.content(a);
+    const cb = store.content(b);
+    if (std.meta.activeTag(ca) != std.meta.activeTag(cb)) return false;
+    switch (ca) {
+        .flex, .rigid, .err => unreachable,
+        .alias => |x| {
+            const y = cb.alias;
+            return x.type == y.type and store.find(x.actual) == store.find(y.actual) and sameRoots(store, store.vars(x.args), store.vars(y.args));
+        },
+        .structure => |fx| {
+            const fy = cb.structure;
+            if (std.meta.activeTag(fx) != std.meta.activeTag(fy)) return false;
+            switch (fx) {
+                .func => unreachable,
+                .unit, .empty_record => return true,
+                .app => |x| return x.type == fy.app.type and sameRoots(store, store.vars(x.args), store.vars(fy.app.args)),
+                .tuple => |x| return sameRoots(store, store.vars(x), store.vars(fy.tuple)),
+                .record => |x| {
+                    const y = fy.record;
+                    if (store.find(x.ext) != store.find(y.ext)) return false;
+                    const xs = store.fields(x.fields);
+                    const ys = store.fields(y.fields);
+                    if (xs.len != ys.len) return false;
+                    for (xs, ys) |p, q| {
+                        if (p.name != q.name or store.find(p.value) != store.find(q.value)) return false;
+                    }
+                    return true;
+                },
+            }
+        },
+    }
+}
+
+fn sameRoots(store: *TypeStore, xs: []const Var, ys: []const Var) bool {
+    if (xs.len != ys.len) return false;
+    for (xs, ys) |x, y| if (store.find(x) != store.find(y)) return false;
+    return true;
+}
+
+inline fn mixWord(h: u64, w: u32) u64 {
+    return std.math.rotl(u64, (h ^ w) *% 0x9E3779B97F4A7C15, 23);
+}
+
 /// The variable a record's field range gives `name`, by binary search (a
 /// range is sorted by symbol): the generator's lookup into a record it just
 /// built.

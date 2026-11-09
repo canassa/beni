@@ -14764,29 +14764,31 @@ test "the checker v2 walks CallbackWrapperDag's doubling wrappers in records tha
     // w(k-1) f )` names 2^(k+1) callback answers in `wk`. Each wrapper is
     // walked within the default allowance, or stops at the loud
     // `ownership_summary_size`, never silently. The tuple form is the
-    // spec's own, at depth 10: its type has 2^(k+1) leaves and `beni check`
-    // pays for them (depth 24 is #2034). The list form (`++`) has a constant
-    // type and runs at 8/16/24. Measured on the slot domain: 270 to 330
-    // records per wrapper, growth 0, at every depth.
+    // spec's own: its type has 2^(k+1) leaves, which the checker keeps as
+    // k + 1 shared nodes (checker-v2.md §8.4, amended 2026-11-09). Before
+    // that, it paid for every leaf, and depth 24 took minutes (#2034). The
+    // list form (`++`) has a constant type. Both run at 8/16/24. Measured
+    // on the slot domain: the tuple form 320 / 464 / 608 records, the list
+    // form 270 to 330 records per wrapper, growth 0, at every depth.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const tuple_dump = try dumpGenerated(&w, .{ .wrapper_tuples = 10 });
+    const tuple_dump = try dumpGenerated(&w, .{ .wrapper_tuples = 24 });
     const list_dump = try dumpGenerated(&w, .{ .wrapper_lists = 24 });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    for ([_][]const u8{ "w2", "w6", "w10" }) |owner| try testing.expect(!try expectBoundedOrLimit(tuple_dump, owner, 2_000));
-    try testing.expect(try accountTotal(tuple_dump, "w10") <= 2 * try accountTotal(tuple_dump, "w2"));
-    for ([_][]const u8{ "w8", "w16", "w24" }) |owner| {
-        try testing.expect(!try expectBoundedOrLimit(list_dump, owner, 2_000));
-        try testing.expectEqual(@as(u64, 0), try accountField(list_dump, owner, "growth"));
+    for ([_][]const u8{ tuple_dump, list_dump }) |dump| {
+        for ([_][]const u8{ "w8", "w16", "w24" }) |owner| {
+            try testing.expect(!try expectBoundedOrLimit(dump, owner, 2_000));
+            try testing.expectEqual(@as(u64, 0), try accountField(dump, owner, "growth"));
+        }
+        try testing.expect(try accountTotal(dump, "w24") <= 2 * try accountTotal(dump, "w8"));
     }
-    try testing.expect(try accountTotal(list_dump, "w24") <= 2 * try accountTotal(list_dump, "w8"));
 }
 
 test "the checker v2 walks ClosureTower at depths 8, 16 and 24 in a flat number of records" {

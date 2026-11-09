@@ -533,6 +533,20 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     return keep;
 }
 
+/// Root `drop` joins the class of root `keep`, and `keep` stays the root with
+/// its content: the two are the same type, node for node — the same head and
+/// the same child ROOTS (`Generalize.share`, checker-v2.md §8.4, *amended
+/// 2026-11-09*). The link is directed, not by size, so a root the sharing pass
+/// has keyed stays a root. No edge is added: `keep`'s successors are `drop`'s,
+/// so a proof `drop` had holds for `keep` too.
+pub fn share(store: *TypeStore, drop: Var, keep: Var) void {
+    std.debug.assert(drop != keep and store.col.parent[drop.int()] == drop and store.col.parent[keep.int()] == keep);
+    store.col.parent[drop.int()] = keep;
+    store.col.size[keep.int()] += store.col.size[drop.int()];
+    store.col.rank[keep.int()] = @min(store.col.rank[drop.int()], store.col.rank[keep.int()]);
+    if (store.tracks_proofs and store.proved(drop) and !store.proved(keep)) store.prove(keep);
+}
+
 /// Alias root `alias` joins the class of `end`, the root its chain resolves
 /// to, and `end` stays the root with its content: the class shows the
 /// EXPANSION (checker-v2.md §7.1). The alias's
