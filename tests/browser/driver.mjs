@@ -1965,6 +1965,17 @@ function pendingRequests() {
   return globalThis.__beniHarness.requests.filter((r) => !r.settled).map((r) => r.n);
 }
 
+// Observe a Chrome phase after it has settled. No action is combined with
+// this observation: each step (and each character or burst repetition)
+// keeps its own task. The DOM is read only when the phase can succeed,
+// just as in runPage's host-side checks.
+async function observe({ throws, fault }) {
+  const settled = await settle();
+  const { log, errors } = drain();
+  const dom = settled && (throws ? errors.length !== 0 : errors.length === 0) && !fault ? serialise() : null;
+  return { settled, log, errors, dom };
+}
+
 // What the phase logged and threw, taken out of the record.
 function drain() {
   const record = globalThis.__beniHarness;
@@ -2760,9 +2771,9 @@ async function chromePage(endpoint) {
   await send("Page.addScriptToEvaluateOnNewDocument", { source: `(${prelude})();` }, sessionId);
   // Helpers belong to the document, just like the prelude. Reuse their
   // compiled functions on every call; navigation installs a fresh set.
-  const helpers = `const webgpuProbe = ${webgpuProbe}; const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
-  const pageHelpers = { webgpuProbe, step, settle, drain, serialise, load, pendingRequests, fiberSubscriptions, openPage, markPage, takenOver, editPage, arrived };
-  await send("Page.addScriptToEvaluateOnNewDocument", { source: `globalThis.__beniHelpers = (() => { ${helpers} return { webgpuProbe, step, settle, drain, serialise, load, pendingRequests, fiberSubscriptions, openPage, markPage, takenOver, editPage, arrived }; })();` }, sessionId);
+  const helpers = `const webgpuProbe = ${webgpuProbe}; const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const observe = ${observe}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
+  const pageHelpers = { webgpuProbe, step, settle, drain, observe, serialise, load, pendingRequests, fiberSubscriptions, openPage, markPage, takenOver, editPage, arrived };
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: `globalThis.__beniHelpers = (() => { ${helpers} return { webgpuProbe, step, settle, drain, observe, serialise, load, pendingRequests, fiberSubscriptions, openPage, markPage, takenOver, editPage, arrived }; })();` }, sessionId);
   const loaded = new Promise((done) => {
     events.push((m) => {
       if (m.sessionId === sessionId && m.method === "Page.loadEventFired") done();
@@ -2862,7 +2873,9 @@ async function runPage(entry, fiber, html = false) {
   const phase = async (title, act, throws = false) => {
     transcript.push(`-- ${title}`);
     const fault = await act();
-    let settled = await page.run(settle);
+    // happy-dom keeps its existing call sequence, including handshakes.
+    const observed = options.chrome === undefined ? null : await page.run(observe, { throws, fault: fault !== null && fault !== undefined });
+    let settled = observed === null ? await page.run(settle) : observed.settled;
     // `--wait-handshakes`: the host answers the handshake of every socket
     // before the snapshot, and the page settles again. The answer is held
     // all the same, so the page shows it only in a `socket <n> wait` step.
@@ -2870,7 +2883,7 @@ async function runPage(entry, fiber, html = false) {
       await page.run(handshakes);
       settled = await page.run(settle);
     }
-    const { log, errors } = await page.run(drain);
+    const { log, errors } = observed ?? await page.run(drain);
     transcript.push(...log);
     // A page that did not settle fails its step, `throws` or not: the cap's
     // error is the driver's, never one the step was to make the page throw.
@@ -2892,7 +2905,7 @@ async function runPage(entry, fiber, html = false) {
       await finish(1, fault);
       return false;
     }
-    const dom = await page.run(serialise);
+    const dom = observed === null ? await page.run(serialise) : observed.dom;
     transcript.push(dom === shown ? "(the DOM did not change)" : dom);
     shown = dom;
     // With `--server`, the serve driver that started this page learns that
