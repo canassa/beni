@@ -30,7 +30,7 @@ pub fn bit(k: u32) u64 {
 /// answer holds only objects of `vi`'s arguments `ks` or fresh ones: its code
 /// answers only what a supply holds that holds nothing else (no object of
 /// another argument, no other label's answer but one that does), or fresh.
-pub fn answers(e: anytype, vi: u32, m: u32, ks: u64, written: anytype, depth: u32) Ids.ChargeError!bool {
+pub fn answers(e: anytype, vi: u32, m: u32, ks: u64, depth: u32) Ids.ChargeError!bool {
     if (depth > max_depth) return false;
     const vm = e.known.get(.{ vi, m }) orelse return false;
     const lab = e.contracts.labelsOf(e.contracts.head(e.contractOf(vi) orelse return false).labels)[m];
@@ -45,20 +45,20 @@ pub fn answers(e: anytype, vi: u32, m: u32, ks: u64, written: anytype, depth: u3
                 other = true;
             },
             .fresh => {},
-            .cb => if (!try answers(e, vi, a.j, ks, written, depth + 1)) {
+            .cb => if (!try answers(e, vi, a.j, ks, depth + 1)) {
                 other = true;
             },
             else => other = true,
         };
         if (!other) fed |= bit(su.k);
     }
-    return code(e, vm, fed, written, depth + 1);
+    return code(e, vm, fed, depth + 1);
 }
 
 /// Whether the answer of virtual call `vi` holds only objects of its arguments `ks` or fresh ones, at every
-/// slot that holds an object and that `written` reaches (every slot when null), as `FedCall.at` reads `K`'s
-/// own answer: a label's answer, at the root, is read by `answers`, at the same slots.
-pub fn code(e: anytype, vi: u32, ks: u64, written: anytype, depth: u32) Ids.ChargeError!bool {
+/// slot that holds an object, whatever slots a later run writes: its answer is in its own type's words, which a
+/// later label may reshape. A label's answer, at the root, is read by `answers`.
+pub fn code(e: anytype, vi: u32, ks: u64, depth: u32) Ids.ChargeError!bool {
     const kh = e.contracts.head(e.contractOf(vi) orelse return false);
     if (kh.flags.pessimistic) return false;
     const root = e.f.roots.items[e.f.calls.items[vi].root].path;
@@ -67,11 +67,10 @@ pub fn code(e: anytype, vi: u32, ks: u64, written: anytype, depth: u32) Ids.Char
     try es.of(&e.contracts.trees, e.gpa(), e.places(), kh.res_root, &.{});
     for (es.items.items) |rs| {
         if (!try holdsAt(e, root, es.wordsOf(rs))) continue;
-        if (@TypeOf(written) != @TypeOf(null) and !written.reaches(e.places(), es.wordsOf(rs))) continue;
         for (rs.arrivals) |a| switch (a.kind) {
             .param => if (ks & bit(a.j) == 0 and try objectAt(e, vi, a.j, a.slot)) return false,
             .fresh => {},
-            .cb => if (es.wordsOf(rs).len != 0 or !try answers(e, vi, a.j, ks, written, depth)) return false,
+            .cb => if (es.wordsOf(rs).len != 0 or !try answers(e, vi, a.j, ks, depth)) return false,
             else => return false,
         };
     }

@@ -78,7 +78,7 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
                 .cb => {
                     if (es.wordsOf(rs).len != 0) return .no;
                     const fc = e.label_map.get(.{ vi, a.j }) orelse {
-                        if (k != Contract.fresh_arg and ks == 0 or !try FedThrough.answers(e, vi, a.j, ks, written, 0)) return .no;
+                        if (k != Contract.fresh_arg and ks == 0 or !try FedThrough.answers(e, vi, a.j, ks, 0)) return .no;
                         composed = true;
                         continue;
                     };

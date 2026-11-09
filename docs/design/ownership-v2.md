@@ -2341,15 +2341,16 @@ probe lists' 8 229 programs that fold move no verdict but refusal positions in p
 label `g` answers (`comp@ε: res ε… cb(π4ε@23)`). `FedCall.at` read a label's answer in `K`'s only where that label passes
 on, so `List.foldl xs [ 0 ] (comp (λx a → List.push a x) λ_ v → v)` was refused `disjoint` at the fold. At a caller the
 labels of `K` are applied too, to known codes. So an answer of `K`'s label `m` at `K`'s root, `m` applied to a known code
-`M`, is now read through `M` (`FedThrough.answers`): it counts as `K`'s argument `k` or fresh when `M`'s answer, at the
-slots asked, holds only fresh objects and what `M` is handed at supplies of `m` that hold nothing but `k`'s objects, fresh
+`M`, is now read through `M` (`FedThrough.answers`): it counts as `K`'s argument `k` or fresh when `M`'s answer, at every
+slot that holds an object (not only those a later run writes: `M`'s slots are its own type's, which a later label may reshape),
+holds only fresh objects and what `M` is handed at supplies of `m` that hold nothing but `k`'s objects, fresh
 ones, objects of no slot, or such answers of `K`'s other labels, label by label, eight deep at most (`FedThrough.code`).
 `K` must then keep nothing of `k`, asked in full (`FedThrough.keepsNone`): no store, no write of a cell's `◆` that may hold
 an object, no escape of `k` at any slot, no label that lets its answer go, and every label handed anything but another
 argument (`k`, a fresh object, a label's answer) applied to a known code that keeps nothing of what it is handed there, at
 any slot, in turn. That asks more than `RunKeeps.nothing`, whose written slots are `K`'s own: in a composition the writes
 are its labels' codes'. A label of `K` passed on beside one read through is `no`. Sound by the induction above: a run's
-answer is `M`'s, which holds at the asked slots only what `M` made or was handed at such supplies, by induction on the
+answer is `M`'s, which holds at every slot only what `M` made or was handed at such supplies, by induction on the
 depth `k`'s objects or fresh ones; and no code the run hands any of them to keeps one, so no holder but the answer
 outlives the run. Refused that a perfect checker accepts: a composition whose codes keep a part of `k` below every slot a
 later run writes. Fixtures `run/SanitiserHandedBackApart`'s `viaComp`, `run/SanitiserHandedBackKept`'s `keptInCell`,
@@ -3069,6 +3070,19 @@ escapes (to a callee with the pessimistic contract, to JavaScript, into a cell),
 such write is a `callsite` demand on `⊤` at the first escape, refused `unknown` (O1; `Closures.zig`). A `once`
 code's capture write at its escape, at its capture by another closure (which may call it any number of times), or at a label of a callee that may call it again (`calls` many, or two labels
 of one function slot), is refused `once`.
+
+*Amended 2026-11-09 (#2395): **a capture written through a label the code applies.*** A code that hands its capture to
+a function it calls by a label (`λ⊤ → f y` with `f` a capture; a called code `mk y g = λ⊤ → g y`) writes nothing in its own
+contract: the write is made where the label is applied, by the known code there, as a write of its own parameter, which
+the label is handed the capture as. Only a code's own capture writes were `once`, so `two (λ⊤ → f y)` with `f = push1` and
+`two h = ( h ⊤, h ⊤ )` pushed `y` twice in place (on master too), and `two (mk [ 1 ] push1)` was refused only by the
+hand-back escape that *a closure handed back* withdraws. Now a known code's write of its own parameter is followed through
+the arrivals of each label outward (`CaptureRuns.many`): where it reaches a capture of an outer known code (a closure's
+capture, a called code's `D` parameter), it is that code's capture write, and it is refused `once` where any label outward
+runs that code more than once (`LabelChain.outwardMany`). Sound because the arrival chain names every object the written
+parameter can be (§2.11.3, *every label outward*), so a write that reaches a capture is one, made at each run of the code
+that holds it. Fixture: `run/SanitiserHandedBackKept`'s `capturedTwice` (the sanitised run trapped on master) and
+`laterTwice`.
 
 *Amended 2026-11-02 (#1727):* a **cell operation** on a captured `Ref` is not a write of a capture for `once`. A
 cell operation is a shallow write of a `◆` slot (`Ref.set`, `Ref.update`, `Ref.modify`: the `cellwrite` rows of
@@ -6056,6 +6070,7 @@ L0  Ids  Counters  Scratch
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
+| `CaptureRuns.zig` | 9 | a known code's write of its own parameter that reaches, through the labels outward, a capture of an outer known code run more than once: `once` (§2.11.4, *a capture written through a label the code applies*, #2395); split from `Closures` | Ids, Value, LabelChain |
 | `Stored.zig` | 9 | what a cell callback's write-back makes escape: the contents and the answer's objects at a shared slot (§2.13.7, #1729, #1955) | Place, Contract, Relation, Cells, LabelChain |
 | `Contents.zig` | 11 | a cell's contents stay separated: a store that may hold one object twice escapes them; the `stores` a contract publishes (§2.13.7, #1984, #1986), and a move between slots judged as an edit | Ids, Place, Slots, Contract, Relation, Forest, LabelChain, Distinct, Cells, Loans, Stored, Eval |
 | `Loans.zig` | 9 | a cell callback's label by its supply below the `◆`, and what it answers as its caller reads it: a loan of the cell, or `Ref.modify`'s `.0` owned when the stored `.1` keeps none of it (§2.13.7, #1977) | Ids, Place, Slots, Value, Contract, Forest, Relation, LabelChain, Trees |
@@ -6076,7 +6091,7 @@ L0  Ids  Counters  Scratch
 | `Kept.zig` | 10 | a group's judgements kept across its rounds: each with its key, the footprints and holder events it read, its writes; the round's print of what no key names (§2.12, #1714) | Ids, Facts, Contract, Value, Walk |
 | `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept, Fed |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
-| `Closures.zig` | 9 | a closure that escapes (also through a callee's result, or handed back by a known code to its callee) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval, FnSite |
+| `Closures.zig` | 9 | a closure that escapes (also through a callee's result, or handed back by a known code to its callee) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval, FnSite, CaptureRuns |
 | `Once.zig` | 11 | what a closure's creation asks of what its code writes, split from `Eval` (§2.11.4) | Ids, Contract, Relation, Cells, Eval |
 | `Building.zig` | 11 | the stack of subtrees the read-off describes once per place, split from `Put` (§2.10, #2197); their memo is `PutMemo` | Ids, SupplyKey, Contract, Relation, Eval |
 | `Made.zig` | 11 | what a called code says of what its creation made: its `self` parameter (§2.11.3, #2028) | Ids, Slots, Value, Contract, Eval |

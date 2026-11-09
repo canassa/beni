@@ -1,11 +1,11 @@
--- A callback that a callee hands back, where an edit in place would change
--- a list something else still reads (`ownership-v2.md` §2.11.3, *a function
--- value goes where a value goes*, *a `fed` answer keeps nothing*; §2.11.4):
--- the writer handed back by `ident` called twice on one list, a capture
--- writer called twice, and folds over a composition whose second function
--- keeps the accumulator in a cell, keeps the list it is handed beside it, or
--- answers a capture. Each is refused; were it accepted, the sanitised run
--- would read the list a later call had pushed onto in place (#2395).
+-- A callback a callee hands back, where an edit in place would change a list
+-- something else still reads (`ownership-v2.md` §2.11.3, §2.11.4): `ident`'s
+-- writer called twice on one list, a capture writer called twice, folds over
+-- a composition that keeps the accumulator in a cell, keeps the list it is
+-- handed or answers a capture, and a writer applied to a capture of a code
+-- run twice (`two λ⊤ → f y`, also through a returned closure, which trapped
+-- on master). Each is refused; were it accepted, the sanitised run would read
+-- the list a later call had pushed onto in place (#2395).
 import Node exposing (Program)
 import Ref
 import String
@@ -84,5 +84,33 @@ answersCapture n =
     "${show acc} ${show k}"
 
 
+two : (⊤ → a) → a × a
+two h = ( h ⊤, h ⊤ )
+
+
+later : List Int, (List Int → List Int) → (⊤ → List Int)
+later y g = λ⊤ → g y
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+capturedTwice : Int → String
+capturedTwice n =
+    y = [ n ]
+    f = push1
+    ( a, b ) = two λ⊤ → f y
+    "${show a} ${show b}"
+
+
+laterTwice : Int → String
+laterTwice n =
+    ( a, b ) = two (later [ n ] push1)
+    "${show a} ${show b}"
+
+
 main : Program
-main = Node.print "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0}"
+main =
+    Node.print
+        "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0} ${capturedTwice 0} ${laterTwice 0}"
