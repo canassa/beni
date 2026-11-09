@@ -1,0 +1,3 @@
+The unsafe twins of SanitiserFoldAnswerFed whose callback keeps a part of its answer in a cell it captures
+(ownership-v2.md §2.11.3, a label's answer handed back to it): built again under --ownership=v2 and the list
+stale-read sanitiser. v2 refuses each fold; accepted, the sanitised run prints another cell and does not trap.
