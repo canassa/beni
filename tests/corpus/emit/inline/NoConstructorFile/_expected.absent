@@ -1,0 +1,7 @@
+# Output paths this development build must NOT have written (#2106).
+# The inline lowering compiles `Tea.sandbox`'s call as the mount and names
+# the constructor not at all (`boundary.md` §9.4.6, version 1.14), so no
+# module imports `Tea`, and reachability does not keep it
+# (`browser-inline.md` §10.5, amended 2026-11-09).
+out/_platform/Tea.mjs
+out/_platform/Tea.mjs.map

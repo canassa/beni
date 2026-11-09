@@ -757,6 +757,7 @@ pub fn run(
         try e.runWrites();
         try e.findLifts();
         try e.cutPrerender();
+        if (lw.constructs) try e.cutConstructors(lw);
     };
     try e.workerDiscoveryReach(entry);
     try e.planWorkers(entry);
@@ -4268,6 +4269,56 @@ const Emitter = struct {
         }
         try cuts.append(e.scratch, .{ .module = spine.module, .lo = try Lift.low(b, e.scratch, args[1].int()), .hi = args[1].int() });
         e.cuts = cuts.items;
+    }
+
+    /// `boundary.md` §9.4.6, version 1.14: a lowering that sets `constructs`
+    /// compiles a program constructor's call as the mount alone, and
+    /// `Lower.programCall` writes no callee. So the callee's edge is not
+    /// followed: nothing imports the constructor, and a development build
+    /// writes no module for it (`browser-inline.md` §10.5, amended
+    /// 2026-11-09, #2106). The calls are those `Lower.findPrograms` finds:
+    /// every `call` in a value declaration whose callee is one of the
+    /// lowering's `programs`, in any module but core's, as every module is
+    /// lowered with the lowering.
+    fn cutConstructors(e: *Emitter, lowering: *const beni_markup.Lowering) !void {
+        if (lowering.programs.len == 0) return;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        try cuts.appendSlice(e.scratch, e.cuts);
+        const before = cuts.items.len;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            // Core imports no platform module, so it calls no constructor.
+            if (e.graph().modulePackage(m) == .core) continue;
+            const b = e.bir(m);
+            const tags = b.insts.items(.tag);
+            const data = b.insts.items(.data);
+            for (b.decls) |decl| {
+                if (!decl.kind.isValue()) continue;
+                var at = decl.inst_start.int();
+                while (at < decl.inst_end.int()) : (at += 1) {
+                    if (tags[at] != .call) continue;
+                    if (!e.isProgramConstructor(m, @fromBackingInt(data[at].lhs), lowering)) continue;
+                    try cuts.append(e.scratch, .{ .module = m, .lo = data[at].lhs, .hi = data[at].lhs });
+                }
+            }
+        }
+        if (cuts.items.len != before) e.cuts = cuts.items;
+    }
+
+    /// Whether instruction `at` of module `m` names one of the lowering's
+    /// program constructors: `Lower.programConstructorOf`'s rule, a value of
+    /// a platform module whose module and name are one of `programs`.
+    fn isProgramConstructor(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index, lowering: *const beni_markup.Lowering) bool {
+        const v = e.resolvedValue(m, at) orelse return false;
+        if (e.graph().modulePackage(v.module) != .platform) return false;
+        const module = e.session.interner.slice(e.graph().moduleName(v.module));
+        const vb = e.bir(v.module);
+        if (v.index >= vb.decls.len) return false;
+        const name = e.session.interner.slice(vb.symbol(vb.decls[v.index].name));
+        for (lowering.programs) |p| {
+            if (std.mem.eql(u8, p.module, module) and std.mem.eql(u8, p.name, name)) return true;
+        }
+        return false;
     }
 
     /// `prerender.md` §8.4: the schema `Browser.prerenderData` is handed is
