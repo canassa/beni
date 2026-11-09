@@ -1,0 +1,39 @@
+-- The twin of `SanitiserLevelRerootMiddle`: `k` is not read after the write, so the edit in place is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = L (List Int)
+    | W U
+    | E
+
+
+type U
+    = Z T
+
+
+hg : T → T
+hg t0 =
+    case t0 of
+        W (Z (W m)) →
+            W m
+        _ →
+            E
+
+
+pt : T → Int
+pt t =
+    case t of
+        W (Z (W (Z (L xs)))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = pt (hg (W (Z (W (Z (W (Z (L k))))))))
+    Node.print (String.fromInt a)

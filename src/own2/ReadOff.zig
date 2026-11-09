@@ -539,12 +539,14 @@ fn describeCallWide(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: Put.
     const k = f.places.kind(f.places.pathPlace(sl));
     if ((k != .@"opaque" and k != .@"var") or f.places.pathPlace(sl) == f.places.pathPlace(dest)) return;
     for (f.slots.items(try Subtree.belowAll(f.slots, gpa, f.account, f.places, dest))) |qs| {
-        const rel = (try f.slots.relBelow(gpa, f.account, f.places, dest, .from(qs))) orelse continue;
-        const words = f.slots.relWords(rel);
-        if (words.len == 0) continue;
+        // What arrives at `qs` by every route from `dest` (§2.1, *Every name*).
+        const rels = try f.slots.relsBelow(gpa, f.account, f.places, dest, .from(qs), f.arena);
         var ps: std.ArrayList(Relation.Proj) = .empty;
         defer ps.deinit(gpa);
-        if (!try e.ev.throughCall(l.root, sl, words, false, l.tags, 0, &ps)) {
+        const known = for (rels) |rel| {
+            if (f.slots.relWords(rel).len != 0 and !try e.ev.throughCall(l.root, sl, f.slots.relWords(rel), false, l.tags, 0, &ps)) break false;
+        } else true;
+        if (!known) {
             const all = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try Subtree.below(f.slots, gpa, f.account, f.places, sl), .tags = l.tags });
             try describeLeaf(s, all, .from(qs), true, out);
             continue;
@@ -677,7 +679,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                         for (qs_all) |qs| try Put.arrive(s, .from(qs), a, out);
                     },
                     .cb => {
-                        const crel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, Slots.pathOf(sl))) orelse Slots.root;
+                        const crel = (try f.slots.relUnder(gpa, f.account, f.places, r.path, Slots.pathOf(sl))) orelse Slots.root;
                         const a = try Made.answer(s, r.a, crel, PastPayload.answerWhole(f.places, sl));
                         try Put.arrive(s, q, a, out);
                         for (qs_all) |qs| try Put.arrive(s, .from(qs), a, out);
@@ -725,7 +727,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                         } else if (whole or Slots.isSub(sl)) try Put.arriveWide(s, .from(dest), a, out) else try Put.arrive(s, .from(dest), a, out);
                     },
                     .cb => {
-                        const crel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, Slots.pathOf(sl))) orelse Slots.root;
+                        const crel = (try f.slots.relUnder(gpa, f.account, f.places, r.path, Slots.pathOf(sl))) orelse Slots.root;
                         const a = try Made.answer(s, r.a, crel, PastPayload.answerWhole(f.places, sl));
                         if (whole or Slots.isSub(sl)) try Put.arriveWide(s, .from(dest), a, out) else try Put.arrive(s, .from(dest), a, out);
                     },
@@ -749,7 +751,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
             try Put.arrive(s, at, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep, .path = sl }, out);
         },
         .cb => {
-            const rel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
+            const rel = (try f.slots.relUnder(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
             try Put.arrive(s, at, try Made.answer(s, r.a, rel, PastPayload.answerWhole(f.places, sl)), out);
         },
         .call, .supply => {
@@ -823,7 +825,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                 s.d.labels.items[try s.labelIndex(r.a)].answer_left = true;
             } else if (out == .writes) for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
                 // Deep where a step names no level (a payload's `var`), and whole where no slot names it.
-                const rel = try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl));
+                const rel = try f.slots.relUnder(gpa, f.account, f.places, r.path, .from(sl));
                 _ = try Needs.publish(s, r.a, rel orelse Slots.root, deep or rel == null or f.places.kind(f.places.pathPlace(.from(sl))) == .@"var");
             },
         }
@@ -903,7 +905,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         const b = w.bindings[u.local];
         if (b.value == none) continue;
         const lroot = try f.places.rootPath(gpa, try e.ctx.placeOfLocal(e.ctx.ctx, u.local));
-        const rel = (try f.slots.relBelow(gpa, f.account, f.places, lroot, u.path)) orelse Slots.root;
+        const rel = (try f.slots.relUnder(gpa, f.account, f.places, lroot, u.path)) orelse Slots.root;
         // A call use reads what its callee's footprint reads of the
         // argument (§2.10 *Read-off*, §2.11.2 item 1), not all of it.
         if (u.kind == .call and u.use_node != .none) foot: {
@@ -1134,7 +1136,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
                         _ = try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .deep = Slots.isSub(el) or f.places.kind(f.places.pathPlace(sl)) == .@"var" or (SlotWords.endsInRow(f.slots.relWords(rel)) and !SlotWords.endsInRow(f.slots.relWords(try f.slots.relOf(gpa, f.account, f.places, sl)))), .path = sl.int() });
                     },
                     .cb => for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
-                        const below = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
+                        const below = (try f.slots.relUnder(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
                         _ = try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, try Made.answer(s, r.a, below, PastPayload.answerWhole(f.places, sl)));
                     },
                     .call, .supply => {

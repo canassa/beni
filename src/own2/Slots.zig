@@ -66,7 +66,7 @@ pub const Table = struct {
     below_of: ByPath = .{},
     canon_of: ByPath = .{},
     rel_of: ByPath = .{},
-    /// Per path: its index in `walks`, a run of `steps` (`relBelow`'s
+    /// Per path: its index in `walks`, a run of `steps` (`relsBelow`'s
     /// walk from it).
     steps_of: ByPath = .{},
     walks: std.ArrayList([2]u32) = .empty,
@@ -333,20 +333,32 @@ pub const Table = struct {
         return t.internRel(gpa, places, words);
     }
 
-    /// The relative steps of `p` below `from`, a prefix of it (or `root`
-    /// when it is not one).
-    /// A path below `from` whose canonical name folds at a level (§2.3.1:
-    /// `#Rose.1[*]⟲#Rose.0` below `#Rose.1[*]#Rose.1`) is no textual
-    /// extension of it: its steps are then the shortest ones the place graph
-    /// takes from `from` to it, found by one walk per `from`, a module
-    /// table like `below`'s.
-    pub fn relBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId, p: PathId) Error!?Rel {
+    /// The relative steps of `p` below a root's `ε` path `from`: `p`'s own
+    /// words, its one route. Any other `from` takes `relsBelow`, which
+    /// names every route (§2.1, *Every name*).
+    pub fn relUnder(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId, p: PathId) Error!?Rel {
+        if (std.debug.runtime_safety) std.debug.assert(places.pathParent(from) == .none);
         const a = t.relWords(try t.relOf(gpa, account, places, from));
         const b = t.relWords(try t.relOf(gpa, account, places, p));
-        if (WordRun.startsAt(b, a)) {
+        if (!WordRun.startsAt(b, a)) return null;
+        const rest = try gpa.dupe(u32, b[a.len..]);
+        defer gpa.free(rest);
+        return try t.relOfWords(gpa, account, places, rest);
+    }
+
+    /// Every run of steps naming `p` below `from`, in `into` (§2.1, *Every
+    /// name*). Below a `from` with no `⟲`, a textual extension has its own
+    /// steps alone: a fold lands on a `⟲`, never below such a `from`. Any
+    /// other `p` (one folded above `from`, §2.3.1, or one below a `from`
+    /// inside a level) has each name `walkFrom` pairs it with; a `⟲` in one
+    /// is every route around its cycle where it is replayed. None when unreached.
+    pub fn relsBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId, p: PathId, into: Allocator) Error![]Rel {
+        const a = t.relWords(try t.relOf(gpa, account, places, from));
+        const b = t.relWords(try t.relOf(gpa, account, places, p));
+        if (!places.paths.col.info[from.int()].levels and WordRun.startsAt(b, a)) {
             const rest = try gpa.dupe(u32, b[a.len..]);
             defer gpa.free(rest);
-            return try t.relOfWords(gpa, account, places, rest);
+            return into.dupe(Rel, &.{try t.relOfWords(gpa, account, places, rest)});
         }
         try account.reserve(.memo, 1);
         const wi = if (t.steps_of.get(from)) |hit| hit else blk: {
@@ -360,34 +372,52 @@ pub const Table = struct {
         };
         try account.readEntry(gpa, .rel_walk, from.int(), t.walk_cost.get(from.int()));
         const run = t.walks.items[wi];
-        for (t.steps.items[run[0]..][0..run[1]]) |x| if (x[0] == p.int()) return x[1];
-        return null;
+        var out: std.ArrayList(Rel) = .empty;
+        for (t.steps.items[run[0]..][0..run[1]]) |x| if (x[0] == p.int()) {
+            try out.append(into, x[1]);
+            if (@import("Mutate.zig").on(.reroot_one_route)) break;
+        };
+        return out.toOwnedSlice(into);
     }
 
-    /// Every path the place graph reaches from `from`, each with the
-    /// shortest steps to it: the index of its run in `walks`.
+    /// `relsBelow`'s runs, each after run `at`: `p` below `from`
+    /// re-rooted at `at`, interned (`at` itself where no route reaches `p`).
+    pub fn relsAt(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, at: Rel, from: PathId, p: PathId, into: Allocator) Error![]Rel {
+        const rels = try t.relsBelow(gpa, account, places, from, p, into);
+        if (rels.len == 0) return into.dupe(Rel, &.{at});
+        for (rels) |*r| {
+            const ws = try std.mem.concat(gpa, u32, &.{ t.relWords(at), t.relWords(r.*) });
+            defer gpa.free(ws);
+            r.* = try t.relOfWords(gpa, account, places, ws);
+        }
+        return rels;
+    }
+
+    /// Every path the walk from `from` reaches, paired with each name the
+    /// same routes reach from an `ε` of its place (`extend` on both, each
+    /// pair once; both sides are finite): the index of its run in `walks`.
     fn walkFrom(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId) Error!u32 {
         const start: u32 = @intCast(t.steps.items.len);
-        var queue: std.ArrayList(struct { PathId, Rel }) = .empty;
+        const top = try places.rootPath(gpa, places.pathPlace(from));
+        var queue: std.ArrayList([2]PathId) = .empty;
         defer queue.deinit(gpa);
-        var seen: Ids.FixedDict(1) = .{};
+        var seen: Ids.FixedDict(2) = .{};
         defer seen.deinit(gpa);
-        try queue.append(gpa, .{ from, root });
-        _ = try seen.getOrPut(gpa, .{from.int()});
-        var words: std.ArrayList(u32) = .empty;
-        defer words.deinit(gpa);
+        try queue.append(gpa, .{ from, top });
+        _ = try seen.getOrPut(gpa, .{ from.int(), top.int() });
         var qi: usize = 0;
         while (qi < queue.items.len) : (qi += 1) {
-            const at, const rel = queue.items[qi];
+            const at, const y = queue.items[qi];
             try account.reserve(.path, 1);
-            try t.steps.append(gpa, .{ at.int(), rel });
+            try t.steps.append(gpa, .{ at.int(), try t.relOf(gpa, account, places, y) });
             for (places.steps(places.pathPlace(at)).steps) |st| {
+                // A `⟲` is no step of a route: the routes it stands for are.
+                if (st.kind == .level) continue;
                 const nx = (try places.extend(gpa, .growth(account), at, st)) orelse continue;
-                if ((try seen.getOrPut(gpa, .{nx.int()})).found_existing) continue;
-                words.clearRetainingCapacity();
-                try words.appendSlice(gpa, t.relWords(rel));
-                try words.append(gpa, st.word());
-                try queue.append(gpa, .{ nx, try t.relOfWords(gpa, account, places, words.items) });
+                // One place on both sides, so one step answers both.
+                const ny = (try places.extend(gpa, .growth(account), y, st)) orelse unreachable;
+                if ((try seen.getOrPut(gpa, .{ nx.int(), ny.int() })).found_existing) continue;
+                try queue.append(gpa, .{ nx, ny });
             }
         }
         const wi: u32 = @intCast(t.walks.items.len);

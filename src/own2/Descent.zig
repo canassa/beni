@@ -215,17 +215,35 @@ fn cover(uses: *Later.Uses, u: Facts.Use, c: PathId) Error!Cover {
     if (uses.feet) |l| try l.append(fr.gpa, foot);
     if (call.contract == none) return .all;
     const hd = uses.contracts.head(call.contract);
-    const rem = (try fr.slots.relBelow(fr.gpa, fr.account, fr.places, u.path, c)) orelse return .some;
-    const rw = fr.slots.relWords(rem);
-    try fr.charge(.inspection, @intCast(rw.len + 1));
+    // Each route from the argument to `c` is a slot of the callee's
+    // parameter (§2.1, *Every name*): the most any of them reads.
+    const rems = try fr.slots.relsBelow(fr.gpa, fr.account, fr.places, u.path, c, fr.gpa);
+    defer fr.gpa.free(rems);
+    if (rems.len == 0) return .some;
     var got: Cover = .none;
-    for (uses.contracts.readsOf(hd.reads)) |r| if (r[0] == foot[1]) switch (readCover(&uses.contracts.trees, fr.places, r[1], rw)) {
+    for (rems) |rem| {
+        const rw = fr.slots.relWords(rem);
+        try fr.charge(.inspection, @intCast(rw.len + 1));
+        switch (coverAt(uses, hd, foot[1], rw)) {
+            .all => return .all,
+            .some => got = .some,
+            .none => {},
+        }
+    }
+    return got;
+}
+
+/// `cover` at one slot `rw` of the callee's parameter `j`.
+fn coverAt(uses: *Later.Uses, hd: anytype, j: u32, rw: []const u32) Cover {
+    const fr = &uses.w.f;
+    var got: Cover = .none;
+    for (uses.contracts.readsOf(hd.reads)) |r| if (r[0] == j) switch (readCover(&uses.contracts.trees, fr.places, r[1], rw)) {
         .all => return .all,
         .some => got = .some,
         .none => {},
     };
     // A write at `c` or above it is all of it; one only below it, some.
-    for (uses.contracts.writesOf(hd.writes)) |r| if (r[0] == foot[1]) {
+    for (uses.contracts.writesOf(hd.writes)) |r| if (r[0] == j) {
         if (writtenAbove(&uses.contracts.trees, fr.places, r[1], rw)) return .all;
         if (Later.writeMeets(&uses.contracts.trees, fr.places, r[1], rw)) return .some;
     };

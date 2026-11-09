@@ -8,7 +8,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
-const Replay = @import("Replay.zig");
+const Dests = @import("Dests.zig");
 const Subtree = @import("Subtree.zig");
 const MeetRun = @import("MeetRun.zig");
 const Value = @import("Value.zig");
@@ -62,10 +62,10 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
                 any = true;
                 continue;
             }
-            const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
+            // Held at every slot a route to the target reaches (§2.1, *Every name*).
             var ps: std.ArrayList(u32) = .empty;
             defer ps.deinit(g);
-            try Replay.replay(g, fr.account, fr.places, hd.q, fr.slots.relWords(rel), &ps);
+            _ = try Dests.routes(.{ .gpa = g, .account = fr.account, .places = fr.places, .slots = fr.slots }, pslot, .from(ts), hd.q, &ps);
             for (ps.items) |p| {
                 try out.append(g, .{ .from(p), o });
                 any = true;

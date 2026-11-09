@@ -1,0 +1,1 @@
+v2 refuses a write below a result of G R whose parameter's slots fold above it (§2.1, *Every name*, #2353): built again under --ownership=v2 and the sanitiser.

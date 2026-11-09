@@ -1,0 +1,41 @@
+-- `SanitiserLevelReroot` on a cycle through a second type (`ownership-v2.md` §2.1, *Every name*, #2353): `m` of
+-- `W (Z (W m))` is a `U`, and its slots in the fold above it reach the result's own fold by every lap of `T` and
+-- `U`. One route said them at the first level alone, and `k`, still live, was edited in place; it is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = L (List Int)
+    | W U
+    | E
+
+
+type U
+    = Z T
+
+
+hg : T → T
+hg t0 =
+    case t0 of
+        W (Z (W m)) →
+            W m
+        _ →
+            E
+
+
+pt : T → Int
+pt t =
+    case t of
+        W (Z (W (Z (L xs)))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = pt (hg (W (Z (W (Z (W (Z (L k))))))))
+    Node.print (String.fromInt (a + List.length k))
