@@ -2256,23 +2256,36 @@ separation. The twin is made only where:
 - `cb L` arrives at supply `k` only, and at its root only;
 - `K`'s answer is `fed` for `k` (`FedCall.at` answers `yes`): at every slot that holds an object it holds `K`'s argument
   `k`'s objects or fresh ones, and no other argument's, capture's or label's;
-- and every arrival of `k` in `K`'s answer is at the same slot as the entry it is at: an answer's objects at a slot `s` are
-  what the run was handed at `s`, or fresh.
+- every arrival of `k` in `K`'s answer is at the same slot as the entry it is at: an answer's objects at a slot `s` are
+  what the run was handed at `s`, or fresh. No recursive type is needed for this to matter: a pair swapped
+  (`( b, List.push a … )`), a record's fields swapped and a tree's depth 1 lifted to its root each move the first value's
+  object at one slot to a slot whose pairs the twin read for another object (`run/SanitiserFoldAnswerFedSlot`,
+  `self_fed_slot_off`);
+- and `K` keeps nothing a later run writes (`SelfFed.keepsNothing`): it has no store, writes no cell's `◆`, and no label
+  of it is handed anything or lets its answer go; it has no escape (a cell's contents, a send, a closure that is kept) but
+  of its argument `k`, and none of those at or above a slot of `k` it writes, or below a slot it writes open. Otherwise a
+  part of a run's answer may also be held by a cell or a capture, and a later run edits that part in place through the
+  accumulator (`run/SanitiserFoldAnswerFedKept`, `self_fed_keeps_ok`: a callback that also puts its answer's first element
+  in a captured `Ref` prints another cell; v1 accepts it too, #2349). A part kept below every slot `K` writes stays as it
+  was kept: `FoldKeepsInner`'s `grandchild` keeps `acc[0][0]` in a closure and pushes onto `acc[0]`, and is accepted.
 
 Sound by induction on the runs, under the condition `C` the twin gives. A run `n` is handed at `k` the first value or the
 answer of a run `m < n`. The first value is what the twin reads, so `C` gives `K`'s `res_cond` and `req` for that run as
-they are asked. For an earlier answer, by the last two conditions its objects at `s` are the first value's at `s`, or
-objects a run made, which are apart from every object that existed before them: so the pairs of it with the other
-arguments are the first value's pairs, which `C` gives, or apart; and its own separation is run `m`'s, which holds by the
-induction. Run `0` is handed the first value. So every run's answer is separated, and every run's `req` holds. No
+they are asked. For an earlier answer, by the second and third conditions its objects at `s` are the first value's at `s`,
+or objects a run made, which are apart from every object that existed before them; by the last, no object a run keeps
+elsewhere is one a later run writes, so a write in place through the accumulator reaches no other holder: so the pairs
+of it with the other arguments are the first value's pairs, which `C` gives, or apart; and its own separation is run `m`'s, which holds by
+the induction. Run `0` is handed the first value. So every run's answer is separated, and every run's `req` holds. No
 condition is computed under a hypothesis, so nothing is kept that needs one: the twin is another root, with its own keys,
 and `instCond`'s cut stays where it was, for every other cycle (G12). Where the call's own arguments do give the condition,
 it stands as before, so no verdict moves to refused. Measured on the fixtures (2026-11-09): accepted, in place, with the
-sanitised runs printing the same, the folds above, `FoldKeepsInner`'s `grandchild` (79:20) and `FoldKeepsInnerRefused`'s
-75:19 (whose callback's own write is refused, escaped, inside it); refused, an answer that holds an element twice
+sanitised runs printing the same, the folds above and `FoldKeepsInner`'s `grandchild` (79:20); refused, `FoldKeepsInnerRefused`'s
+75:19, whose callback keeps the element it writes (its own write is refused too, escaped, inside it), an answer that holds an element twice
 (directly and through a helper: without the answer's own separation in `req`, the sanitised run reads a stale list,
-`self_fed_answer_free`), a capture answered, an element handed, a list a closure in the answer reads, a top-level first
-value (`run/SanitiserFoldAnswerFed`, `run/SanitiserFoldAnswerFedRefused`, `ownership/FoldAnswerFed`). Not by this rule: a
+`self_fed_answer_free`), a capture answered, an element handed, a list a closure in the answer reads, a part of the
+answer kept in a captured cell (as a lambda and through a helper), an arrival moved to another slot, a top-level first
+value (`run/SanitiserFoldAnswerFed`, `run/SanitiserFoldAnswerFedRefused`, `run/SanitiserFoldAnswerFedKept`,
+`run/SanitiserFoldAnswerFedSlot`, `ownership/FoldAnswerFed`). Not by this rule: a
 fold whose first value is another fold's result, whose separation is not read at a family (#2339), and a hand-written
 recursion that hands `List.update`'s answer back as its own accumulator (#2338), both refused, sound.
 
@@ -4806,7 +4819,7 @@ Mutated: every row. Unmoved, and so unpinned here: `Supplied.mayBeHeld`, `Distin
 | O11 | *No bound accepts:* reserve before expansion, terminal error on exhaustion, no partial summary or lowering channel | `Ids.Account.reserve`, `Ownership`, `Hoists.Builder.finish` | `ownership/WideModelArms` and the limit unit tests **mutated** (`reserve_off`); `hoists_of_refused`: a unit test alone | kept |
 | O12 | *Hoisted reads are this frame's own* (§2.7, §3.7). Nothing hoists until S5; `Liveness` already reports `field` uses, and `Hoists` publishes the list half only | `Liveness.Index.build`, `Hoists` | `hoists_drop_write` **mutated** (47 fixtures, the site lists). The rest waits for S5: no mutation is possible while nothing hoists | waits for S5 |
 | O13 | *Constructions keep I-κ.* A value's `Sep` is the distinct check: two entries of one atom that coexist, related positions whose slots meet, or a `⊤` or `shared` entry make it `no` | `Distinct.sepOf`, `Distinct.distinct`, `Entries`, `Distinct.resConds` | `ownership/NestedLambdaSend` **mutated** (`sep_top_ok`, no `run/Sanitiser*` fixture); `atom_twice_off`, `within_group_off`, `sep_family_off`, `made_meets_own_off`, `answer_meets_off` **mutated**; `distinct_yes`, `res_conds_off` crash on core. `sep_answer_supply_off` **survives** (#2188) | no file names it |
-| O14 | *Instantiation keeps I-κ.* A callee's selection at a call asks every projected object; `yes` only when the entries hold of the actual arguments. A label's half: a supply's condition holds at every call that applies the label, outward. An answer's half: `fed`, `fresh`, `answers` are decided at a known code from its contract | `Distinct.instSel`, `Distinct.instSelFeed`, `CallGraft.sel`, `Graft.movedReq`, `SupplyCond.publish`, `Outward.finishDemands`, `Traversal`, `FedCall`, `AnswerCall`, `Answers`, `SelfFed`, `Distinct.reqOn` | `relies_off`, `moved_req_yes`, `repeated_off`, `each_takes_true`, `fed_relies_off`, `fed_call_no`, `answer_call_no`, `all_made_true`, `self_fed_answer_free` **mutated**; `inst_sel_yes`, `inst_cond_yes`, `below_direct_off`, `below_pass_off` crash on core. **Survive** (#2188): `below_outer_off`, the four gates of `each`, `fed_covered_true` | §2.14.5's F2 |
+| O14 | *Instantiation keeps I-κ.* A callee's selection at a call asks every projected object; `yes` only when the entries hold of the actual arguments. A label's half: a supply's condition holds at every call that applies the label, outward. An answer's half: `fed`, `fresh`, `answers` are decided at a known code from its contract | `Distinct.instSel`, `Distinct.instSelFeed`, `CallGraft.sel`, `Graft.movedReq`, `SupplyCond.publish`, `Outward.finishDemands`, `Traversal`, `FedCall`, `AnswerCall`, `Answers`, `SelfFed`, `Distinct.reqOn` | `relies_off`, `moved_req_yes`, `repeated_off`, `each_takes_true`, `fed_relies_off`, `fed_call_no`, `answer_call_no`, `all_made_true`, `self_fed_answer_free`, `self_fed_slot_off`, `self_fed_keeps_ok` **mutated**; `inst_sel_yes`, `inst_cond_yes`, `below_direct_off`, `below_pass_off` crash on core. **Survive** (#2188): `below_outer_off`, the four gates of `each`, `fed_covered_true` | §2.14.5's F2 |
 | O15 | *A join only weakens.* An `alt` keeps its arms, routes are exact (§2.3.5), `many` is the arms' maximum, a condition only weakens, and `no` is never made a selection. Replaces the widen rule | `Leaves.Table.alt`, `Routes`, `Coexist.setsMeet`, `Cond.conj`, `Contract.Table.join` | `join_once_off`, `sets_meet_never` **mutated**; `conj_drop_right`, `conj_forgets_no` crash on core. `join_calls_second`, `weaker_always` **survive** (#2188) | no file names it |
 
 **The headers, checked 2026-11-06.** 79 of the 121 files of `src/own2` say `none`. O5, O7, O8, O13 and O15 are cited by none. A file

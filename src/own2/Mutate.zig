@@ -268,6 +268,8 @@ pub const Name = enum {
     fed_call_no,
     /// O14 H3: `Distinct.reqOn` on a twin asks nothing of the answer itself.
     self_fed_answer_free,
+    /// O14 H3: `SelfFed.keepsNothing` true of any known code.
+    self_fed_keeps_ok,
     /// O14 H3: `AnswerCall.at` answers false.
     answer_call_no,
     /// O14 H3: `Answers.allMade` true of any call with a contract.

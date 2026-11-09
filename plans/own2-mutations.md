@@ -161,6 +161,8 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `fed_call_no` | O14 H3 | `FedCall.at` answers `.no` | killed | | 15: SanitiserAnswerFoldCycle (BuildFailed), … | 14: Accumulator (OwnershipV2Differs), … | 0 | |
 | `answer_call_no` | O14 H3 | `AnswerCall.at` answers false | killed | | 2: SanitiserAnswersApart (BuildFailed), … | 4: CallbackAnswerInList (OwnershipV2Differs), … | 0 | |
 | `all_made_true` | O14 H3 | `Answers.allMade` true of any call with a contract | killed | | 2: SanitiserAnswers (SanitisedRefusalDiffers), … | 4: FoldCertificate (OwnershipV2Differs), … | 0 | |
+| `self_fed_answer_free` | O14 H3 | `Distinct.reqOn` on a twin asks nothing of the answer itself | killed | | 1: SanitiserFoldAnswerFedRefused (SanitisedRefusalDiffers) | 0 | 0 | |
+| `self_fed_keeps_ok` | O14 H3 | `SelfFed.keepsNothing` true of any known code | killed | | 1: SanitiserFoldAnswerFedKept (GoldenMismatch) | 1: FoldKeepsInnerRefused [node+everywhere] (OwnershipV2Differs) | 0 | |
 | `call_write_off` | H1 | `Eval.callWriteFrom` off: a callee's write makes no demand | blanket | | 73: SanitiserAnswerHandedOn (SanitisedRefusalAccepted), … | 451: Accumulator (OwnershipV2Differs), … | 0 | |
 | `disjoint_off` | H1 | a callee's own reliance is not refused | killed | | 4: SanitiserAnswerHandedOn (SanitisedRefusalDiffers), … | 13: ChildBesideOwnCall (OwnershipV2Differs), … | 0 | |
 | `exclusive_off` | H1 | what a write relied on, if it cannot hold, is not refused | SURVIVED | dead | 0 | 0 | 0 | 0 |
