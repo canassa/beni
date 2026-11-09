@@ -1,0 +1,13 @@
+look 0,1: ⊤
+direct 0,1,2: ⊤
+direct 0,1,2: ⊤
+look 0: ⊤
+passed 0,2: ⊤
+look 0,1: ⊤
+mapped 0,1,2: ⊤
+look 0,1: ⊤
+after 0,1,2: ⊤
+reads 0,1: ⊤
+answered 0,1,2: ⊤
+soon 0,1: ⊤
+soon 0,1,2: ⊤

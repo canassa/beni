@@ -1,0 +1,99 @@
+-- The safe twins of `SanitiserLabelKeeps` (`ownership-v2.md` §2.11.3, *a need on a supply*): the same frames
+-- given a function that keeps nothing of what it is handed, and frames that hand a keeping function a list
+-- they never edit again, or edit before they hand it over. Each is accepted, and the sanitised run prints the
+-- same.
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+keep : List Int → ⊤
+keep v =
+    _ = Task.soon λ⊤ → say ("soon " ++ show v)
+    ⊤
+
+
+look : List Int → ⊤
+look v = say ("look " ++ show v)
+
+
+direct : (List Int → ⊤) → ⊤
+direct g =
+    b = List.push [ 0 ] 1
+    g b
+    say ("direct " ++ show (List.push b 2))
+
+
+twice : (List Int → ⊤), List Int → List Int
+twice g a =
+    g a
+    List.push a 2
+
+
+passed : (List Int → ⊤) → ⊤
+passed g = say ("passed " ++ show (twice g [ 0 ]))
+
+
+mapped : (List Int → ⊤) → ⊤
+mapped g =
+    out = List.map [ List.push [ 0 ] 1 ] λa →
+        g a
+        List.push a 2
+    say ("mapped " ++ String.join (List.map out show) ";")
+
+
+tap : (List Int → ⊤), List Int → List Int
+tap g a =
+    g a
+    a
+
+
+after : (List Int → ⊤) → ⊤
+after g =
+    b = tap g (List.push [ 0 ] 1)
+    say ("after " ++ show (List.push b 2))
+
+
+-- Read again after the hand-over, never edited.
+reads : (List Int → ⊤) → ⊤
+reads g =
+    b = List.push [ 0 ] 1
+    g b
+    say ("reads " ++ show b)
+
+
+-- Edited before the hand-over, never after.
+before : (List Int → ⊤) → ⊤
+before g =
+    b = List.push (List.push [ 0 ] 1) 2
+    g b
+
+
+answered : (List Int → List Int) → ⊤
+answered g =
+    c = g (List.push [ 0 ] 1)
+    say ("answered " ++ show (List.push c 2))
+
+
+main : Program
+main = Io.run λ⊤ →
+    direct look
+    direct λ_ → ⊤
+    passed look
+    mapped look
+    after look
+    reads keep
+    before keep
+    answered λv → v
+    Io.sleep 1
+    Node.done

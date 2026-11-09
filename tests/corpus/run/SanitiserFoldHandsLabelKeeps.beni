@@ -1,0 +1,34 @@
+-- The predicate a fold's callback hands its accumulator to keeps it in a task (`ownership-v2.md` §2.11.3, *a
+-- need on a supply*, #2386): the next run pushes onto that list in place, before the task reads it. v2 refuses
+-- the call that gives the predicate; accepted, the sanitised run reads a stale list. The twin of
+-- `SanitiserFoldHandsLabel`.
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+dedupe : (List Int, Int → Bool), List Int → List Int
+dedupe has xs = List.foldl xs [] λx acc → if has acc x then acc else List.push acc x
+
+
+keeps : List Int, Int → Bool
+keeps l x =
+    _ = Task.soon λ⊤ → say ("has " ++ show l)
+    List.member l x
+
+
+main : Program
+main = Io.run λ⊤ →
+    say ("dedupe " ++ show (dedupe keeps [ 1, 2, 1 ]))
+    Io.sleep 1
+    Node.done

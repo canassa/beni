@@ -126,6 +126,7 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
         try w.print("@{d} {t}", .{ l.origin[2] & ~Contract.last_origin, l.calls });
         for (t.effectsOf(l.need)) |n| {
             try w.writeAll(" need ");
+            if (n.j != 0) try w.print("{d}:", .{n.j});
             try relText(slots, places, names, w, n.slot);
             if (n.deep) try w.writeAll("*");
         }

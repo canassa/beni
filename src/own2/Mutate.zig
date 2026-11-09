@@ -284,6 +284,8 @@ pub const Name = enum {
     self_fed_answer_free,
     /// O14 H3: `RunKeeps.nothing` true of any known code.
     self_fed_keeps_ok,
+    /// O14: `HandedWrites.pass` publishes no need on a supply (§2.11.3, #2393).
+    handed_writes_off,
     /// O14 H3: `SelfFed.of` asks no arrival of the fed argument to stay at its own slot.
     self_fed_slot_off,
     /// O14 H3: `AnswerCall.at` answers false.

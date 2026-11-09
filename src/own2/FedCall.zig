@@ -12,6 +12,7 @@ const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const RunKeeps = @import("RunKeeps.zig");
 const FedThrough = @import("FedThrough.zig");
+const KeepsNot = @import("KeepsNot.zig");
 
 const Error = Relation.Error;
 const Eval = Relation.Eval;
@@ -92,7 +93,7 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
             };
         }
         if (composed and through != null) return .no;
-        if (k != Contract.fresh_arg and !try if (composed) FedThrough.keepsNone(e, vi, ks, 0) else RunKeeps.nothing(e, vi, k)) return .no;
+        if (k != Contract.fresh_arg and !try if (composed) FedThrough.keepsNone(e, vi, ks, 0) else RunKeeps.nothing(e, vi, k, try KeepsNot.selfFed(e, call, @intCast(li), k), KeepsNot.none_sink)) return .no;
         if (through) |t| return .{ .occ = t };
         return .yes;
     }

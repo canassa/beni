@@ -1,0 +1,10 @@
+# v2 refuses each call that hands a function keeping what it is handed to a frame that edits it after the hand-over (§2.11.3, a need on a supply, #2393).
+119:5 list_still_used value
+120:5 list_still_used value
+121:5 list_still_used value
+123:5 list_still_used value
+124:5 list_still_used value
+125:5 list_still_used value
+126:5 list_still_used value
+127:5 list_still_used value
+128:5 list_still_used value

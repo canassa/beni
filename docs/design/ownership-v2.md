@@ -6244,7 +6244,7 @@ L0  Ids  Counters  Scratch
 | `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
 | `KeepsNot.zig` | 6 | whether a known code keeps nothing of what a label hands it: stores, cell writes, escapes, labels handed it, which carry the need on (§2.11.3, *a need on a supply*, #2393) | Ids, Slots, Replay, Forest, Contract, Place, SlotWords |
-| `RunKeeps.zig` | 7 | whether a known code's run keeps nothing of its fed argument a later run writes, which `FedCall` asks of every `fed` occurrence it decides at a known code (§2.11.3, #2367); split from `SelfFed`; a label handed it carries a need on where the label is `fed` (#2386) | Forest, Contract, Place, SlotWords, FedThrough, KeepsNot |
+| `RunKeeps.zig` | 7 | whether a known code's run keeps nothing of its fed argument a later run writes, which `FedCall` asks of every `fed` occurrence it decides at a known code (§2.11.3, #2367); split from `SelfFed`; a label handed it carries a need on where the label is `fed` (#2386) | Forest, Contract, SlotWords, FedThrough, KeepsNot |
 | `Fed.zig` | 8 | a label's answer handed back to it: what a pass reads and judges for that answer (§2.11.3, #1713); below `Distinct` | Ids, Slots, Contract, Relation |
 | `FedCall.zig` | 8 | a callee's `fed` occurrence at a call, renamed or decided, and the label argument a callee's parameter arrives at whole (§2.11.3, #1713, #1721); below `Distinct` | Forest, Contract, Relation, RunKeeps, FedThrough, KeepsNot |
 | `SelfFed.zig` | 8 | a known code's run handed its own answer back: the twin of the fed supply, which reads every arrival but that answer (§2.11.3, #1713); below `Distinct` | Ids, Forest, Contract, Relation |
@@ -6281,7 +6281,7 @@ L0  Ids  Counters  Scratch
 | `Building.zig` | 11 | the stack of subtrees the read-off describes once per place, split from `Put` (§2.10, #2197); their memo is `PutMemo` | Ids, SupplyKey, Contract, Relation, Eval |
 | `Made.zig` | 11 | what a called code says of what its creation made: its `self` parameter (§2.11.3, #2028) | Ids, Slots, Value, Contract, Eval |
 | `CondsOff.zig` | 12 | the conditions of a contract, split from `ReadOff` (§2.10) | as `ReadOff` |
-| `HandedWrites.zig` | 12 | a frame's write of what it handed a label, at or after the hand-over, and its answer holding what it made and handed: a need on the label's supply (§2.11.3, *a need on a supply*, #2393) | Ids, Slots, Contract, Relation, Distinct, Regions, Eval, Needs |
+| `HandedWrites.zig` | 12 | a frame's write of what it handed a label, at or after the hand-over, and its answer holding what it made and handed: a need on the label's supply (§2.11.3, *a need on a supply*, #2393) | Ids, Slots, Place, Relation, Distinct, Regions, Value, Eval, Needs |
 | `ReadCols.zig` | 11 | the read-off's columns: the result slots each slot a read meets reaches, split from `ReadOff` (§2.10) | Ids, Dests, Eval |
 | `CodeCaps.zig` | 12 | nested codes' captures, split from `Groups` (§2.11.4) | Ids |
 | `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |

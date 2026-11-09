@@ -159,6 +159,8 @@ const layers = [_]Entry{
     .{ .file = "FedThrough.zig", .layer = 6, .max_lines = 150 },
     // Whether a prepend may answer its base's array, split from `Relation` (§2.3.4, #2325).
     .{ .file = "Recons.zig", .layer = 6, .max_lines = 135 },
+    // What a known code keeps of what a label hands it (§2.11.3, *a need on a supply*, #2393).
+    .{ .file = "KeepsNot.zig", .layer = 6, .max_lines = 110 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
@@ -325,6 +327,8 @@ const layers = [_]Entry{
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // The conditions of a contract, split from `ReadOff` (#2028).
     .{ .file = "CondsOff.zig", .layer = 12, .max_lines = 120 },
+    // A frame's write of what it handed a label: a need on the supply (§2.11.3, #2393).
+    .{ .file = "HandedWrites.zig", .layer = 12, .max_lines = 175 },
     // Nested codes' captures, split from `Groups` (#2028).
     .{ .file = "CodeCaps.zig", .layer = 12, .max_lines = 90 },
     // A parameter annotated with a type variable, split from `Groups` (#2028).
@@ -880,7 +884,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 166), layers.len);
+    try testing.expectEqual(@as(usize, 168), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

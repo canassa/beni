@@ -1,0 +1,4 @@
+A function hands a list to a function its caller gives and edits it later, while the caller's function keeps
+it in a task, a fiber, a view or a stored closure (ownership-v2.md §2.11.3, a need on a supply): built again
+under --ownership=v2 and the list stale-read sanitiser. v2 refuses each call that gives a keeping function;
+accepted, the sanitised run reads a stale list.
