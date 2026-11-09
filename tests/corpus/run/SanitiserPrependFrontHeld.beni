@@ -1,0 +1,88 @@
+-- The red twins of `SanitiserPrependFront` (`ownership-v2.md` §2.3.4, *A
+-- deferred storage*; #2325): a front item that something else holds may be
+-- the element stored just before the base's view, so the prepend may answer
+-- the base's own array, and an edit of the result in place changes what the
+-- base's holder reads. Each is refused.
+--
+--   * `handedBack`: the front is a call that hands its argument back, and
+--     that list is the element the pattern skipped.
+--   * `oneOfTwo`: the front is a call that may hand its argument back.
+--   * `hidden`: the front is a local the callee put before the view it
+--     answers. The callee's result does not hold the local, so only the
+--     array behind the view does.
+--
+-- Each line prints the edited list's length, then what the holder reads.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+rows : List (List Int) → String
+rows xs = String.join (List.map xs ints) "|"
+
+
+ident : List Int → List Int
+ident v = v
+
+
+handedBack : Int → String
+handedBack x =
+    v = [ x ]
+    base = [ v, [ 0 ] ]
+    case base of
+        [ _, …rest ] →
+            top = [ ident v, …rest ]
+            edited = List.set top 0 [ 9 ]
+            "handedBack ${String.fromInt (List.length edited)} ${rows base}"
+
+        _ →
+            "handedBack"
+
+
+pick : Bool, List Int → List Int
+pick fresh v =
+    if fresh then
+        [ 7 ]
+    else
+        v
+
+
+oneOfTwo : Int → String
+oneOfTwo x =
+    v = [ x ]
+    base = [ v, [ 0 ] ]
+    case base of
+        [ _, …rest ] →
+            top = [ pick False v, …rest ]
+            edited = List.set top 0 [ 9 ]
+            "oneOfTwo ${String.fromInt (List.length edited)} ${rows base}"
+
+        _ →
+            "oneOfTwo"
+
+
+hide : List Int, List (List Int) → List (List Int)
+hide v s =
+    case [ v, …s ] of
+        [ _, …rest ] →
+            rest
+
+        _ →
+            []
+
+
+hidden : Int, List (List Int) → String
+hidden x s =
+    v = [ x ]
+    r = hide v s
+    top = [ v, …r ]
+    edited = List.set top 1 [ 9 ]
+    "hidden ${String.fromInt (List.length edited)} ${rows r}"
+
+
+main : Program
+main = Node.print (String.join [ handedBack 1, oneOfTwo 1, hidden 1 [ [ 2 ] ] ] "\n")

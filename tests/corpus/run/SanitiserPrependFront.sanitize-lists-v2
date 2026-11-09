@@ -1,0 +1,4 @@
+A prepend whose front item the prepend itself computes, a call's fresh list or record or a literal, cannot answer its
+base's own array (ownership-v2.md §2.3.4, A deferred storage; #2325): built again under --ownership=v2 and the list
+stale-read sanitiser. v2 accepts each edit of the result in place while the base is read, and the run prints what the
+plain run prints.

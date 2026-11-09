@@ -1,0 +1,6 @@
+# v2 refuses the edit of a prepend whose front is a call that hands its argument back: the list is the element the pattern skipped.
+39:22 list_may_be_shared List.set
+# and of one whose front is a call that may hand its argument back.
+61:22 list_may_be_shared List.set
+# and of one whose front is a local the callee put before the view it answers: only the array behind the view holds it.
+83:14 list_may_be_shared List.set

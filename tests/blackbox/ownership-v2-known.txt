@@ -2572,11 +2572,9 @@ core Dict 550:13 #0 :: Dict.foldl <literal> :: accepted :: rejected  v2 refuses 
 core Dict 557:15 #0 :: Dict.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 core Dict 566:15 #0 :: Dict.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 core Schedule 92:21 #0 :: Schedule.delaysFrom <call> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-examples/bike-wars Bike 56:62 #0 :: ++ <construction> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 examples/bike-wars Game 232:9 #0 :: ++ <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 platforms/browser-tea Tea 280:26 #0 :: Tea.put state.jobs#Table.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 platforms/browser-tea Tea 286:13 #0 :: Tea.put state.jobs#Table.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/browser/tea/BikeWars Bike 56:62 #0 :: ++ <construction> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/browser/tea/BikeWars Game 232:9 #0 :: ++ <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/CallOtherPathsKeys.beni [node] CallOtherPathsKeys 22:5 #0 :: CallOtherPathsKeys.two <record>.z :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/CallbackChain.beni [browser-inline] CallbackChain 74:7 #0 :: List.push xs :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
@@ -2594,7 +2592,6 @@ tests/corpus/ownership/LevelsApartRoutes.beni [node] LevelsApartRoutes 36:5 #0 :
 tests/corpus/ownership/LevelsApartRoutes.beni [node] LevelsApartRoutes 42:5 #0 :: LevelsApartRoutes.incAll <B …>#B.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/NominalHolds.beni [browser-inline] NominalHolds 90:15 #0 :: List.push xs :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/ParamLeafByNode.beni [node] ParamLeafByNode 52:13 #0 :: ParamLeafByNode.two p.1 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/PrependFresh.beni [node] PrependFresh 47:41 #0 :: ++ <construction> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/RecursiveHolds.beni [browser-inline] RecursiveHolds 23:20 #0 :: List.push xs :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/WriteExtents.beni [browser-inline] WriteExtents 19:7 #0 :: List.swap xs :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/WriteExtents.beni [browser-inline] WriteExtents 29:7 #0 :: List.push xs :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
@@ -3362,15 +3359,12 @@ tests/corpus/workers/Yielding Main 39:21 #0 :: Ref.set Main.long◆ :: absent ::
 # v2-core: 169
 bench/websocket/server Main 90:25 #0 :: Ref.make <literal> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 core List 1807:5 #1 :: List.partitionHelp <call> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
-examples/bike-wars Game 159:11 #0 :: Bike.update <record>.current.trail :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/chat/server Main 33:24 #0 :: Ref.make <literal> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/chat/server Main 42:17 #0 :: Deferred.complete server :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/todo/server Main 32:13 #0 :: Ref.make Api.empty :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/todo/server Main 38:17 #0 :: Deferred.complete server :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 tests/corpus/browser/tea/BallMachine Machine 159:9 #0 :: Task.spawnIn <lambda> :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 tests/corpus/browser/tea/BallMachine Machine 37:13 #0 :: Ref.make <call> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
-tests/corpus/browser/tea/BikeWars Game 159:11 #0 :: Bike.update <record>.current.trail :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
-tests/corpus/browser/tea/BikeWars Game 160:11 #0 :: Bike.update <record>.current.trail :: absent :: accepted  v2 makes the demand at a call into core or a platform; `Record.copy`'s result is host objects (§2.10, host objects), apart from the trail it edits
 tests/corpus/browser/tea/LogCommandContext.beni LogCommandContext 324:41 #0 :: Ref.make <literal> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 tests/corpus/ownership/BridgeResultPaths.beni [browser-inline] BridgeResultPaths 114:5 #0 :: once xs :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 tests/corpus/ownership/BridgeResultPaths.beni [browser-inline] BridgeResultPaths 67:5 #0 :: once state.values :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
@@ -3414,11 +3408,7 @@ tests/corpus/workers/ObjectHibernate Main 29:5 #0 :: Worker.Object.define Main.s
 tests/corpus/workers/ObjectIsolation Main 61:5 #0 :: Worker.Object.define Main.serve :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 #
 # v2-other: 372
-examples/bike-wars Game 114:7 #0 :: Game.pureUpdate model.bikes.green.trail :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
-examples/bike-wars Game 123:13 #0 :: Game.stepGame model.bikes.green.trail :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/browser/tea/BallMachine Machine 57:18 #0 :: once <lambda> :: absent :: rejected  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
-tests/corpus/browser/tea/BikeWars Game 114:7 #0 :: Game.pureUpdate model.bikes.green.trail :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
-tests/corpus/browser/tea/BikeWars Game 123:13 #0 :: Game.stepGame model.bikes.green.trail :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/ownership/Binders.beni [node] Binders 55:12 #0 :: once xs :: absent :: rejected  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/ownership/Binders.beni [node] Binders 56:18 #0 :: push <call> :: absent :: rejected  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/ownership/Binders.beni [node] Binders 96:5 #0 :: once xs :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
@@ -4532,7 +4522,6 @@ tests/corpus/run/WebSocketArena.beni WebSocketArena 68:5 #0 :: Task.onExit <call
 tests/corpus/run/WebSocketArena.beni WebSocketArena 68:5 #1 :: Task.onExit <call> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 #
 # v2-other: 77
-examples/bike-wars Game 160:11 #0 :: Bike.update <record>.current.trail :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/browser/tea/DictFoldLeft.beni DictFoldLeft 27:29 #0 :: DictFoldLeft.want d#Dict.0#Node.3#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/browser/tea/DictFoldLeft.beni DictFoldLeft 27:29 #0 :: DictFoldLeft.want d#Dict.0#Node.3⟨Tree⟩#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/browser/tea/DictFoldLeft.beni DictFoldLeft 27:29 #0 :: DictFoldLeft.want d#Dict.0#Node.4#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
@@ -9183,3 +9172,10 @@ tests/corpus/run/SanitiserLevelRerootMiddleApart.beni SanitiserLevelRerootMiddle
 tests/corpus/run/SanitiserLevelRerootMiddleApart.beni SanitiserLevelRerootMiddleApart 38:9 #0 :: SanitiserLevelRerootMiddleApart.pt <call>#W.0#Z.0⟨T⟩#L.0 :: absent :: accepted  #2353: the fixture's demands differ in name, v2's slot by route and v1's by its level marker; v2 re-roots a parameter's slot by every route
 tests/corpus/run/SanitiserLevelRerootMiddle.beni SanitiserLevelRerootMiddle 40:9 #0 :: SanitiserLevelRerootMiddle.pt <call>⟨T⟩⁺#L.0 :: rejected :: absent  #2353: the fixture's demands differ in name, v2's slot by route and v1's by its level marker; v2 re-roots a parameter's slot by every route
 tests/corpus/run/SanitiserLevelRerootMiddle.beni SanitiserLevelRerootMiddle 40:9 #0 :: SanitiserLevelRerootMiddle.pt <call>#W.0#Z.0⟨T⟩#L.0 :: absent :: rejected  #2353: the fixture's demands differ in name, v2's slot by route and v1's by its level marker; v2 re-roots a parameter's slot by every route
+#
+# A front item that the prepend itself computes (§2.3.4, When a prepend may re-cons, #2325).
+tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 58:13 #0 :: List.push top :: rejected :: accepted  v2 accepts where v1 refused: a front that the prepend itself computes is no element of the base's array, so the result is a new list (§2.3.4, When a prepend may re-cons, #2325); the sanitised run prints the plain run's output
+tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 60:12 #0 :: List.push made :: rejected :: accepted  v2 accepts where v1 refused: a front that the prepend itself computes is no element of the base's array, so the result is a new list (§2.3.4, When a prepend may re-cons, #2325); the sanitised run prints the plain run's output
+tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 71:13 #0 :: List.push top :: rejected :: accepted  v2 accepts where v1 refused: a front that the prepend itself computes is no element of the base's array, so the result is a new list (§2.3.4, When a prepend may re-cons, #2325); the sanitised run prints the plain run's output
+tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 81:15 #0 :: SanitiserPrependFront.record <literal> :: accepted :: absent  v1's demand at the caller of a function whose push v1 puts on its parameter; v2 accepts that push as fresh, so the function writes no parameter (§2.3.4, #2325)
+tests/corpus/run/SanitiserPrependFront.beni SanitiserPrependFront 82:15 #0 :: SanitiserPrependFront.tuple <literal> :: accepted :: absent  v1's demand at the caller of a function whose push v1 puts on its parameter; v2 accepts that push as fresh, so the function writes no parameter (§2.3.4, #2325)

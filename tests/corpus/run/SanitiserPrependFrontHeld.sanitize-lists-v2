@@ -1,0 +1,3 @@
+A prepend whose front item something else holds may answer its base's own array (ownership-v2.md §2.3.4, A deferred
+storage; #2325): built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each edit of the result;
+were one accepted, the base's holder would read the edited array, and the sanitised run traps.
