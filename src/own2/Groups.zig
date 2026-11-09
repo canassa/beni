@@ -1492,6 +1492,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         var i: usize = 0;
         while (i < rest.items.len) {
             const x = rest.items[i];
+            charging(mod, &rs[owner.items[x]].account);
             if (tried[x] or !try Peel.peelable(mod, codes.items, &index_of, settled, x)) {
                 i += 1;
                 continue;
