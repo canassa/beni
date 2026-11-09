@@ -42,6 +42,7 @@ const Family = @import("Family.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
+const VarOpen = @import("VarOpen.zig");
 const Rows = @import("Rows.zig");
 const Worded = @import("Worded.zig");
 const Prepass = @import("Prepass.zig");
@@ -1629,6 +1630,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                 }
             };
             try CondsOff.condsOff(e, ra, got.verdicts, Answers.groupRecurses(evals, ids));
+            if (std.debug.runtime_safety) VarOpen.check(&drafts[i].res, &mod.slots, &mod.places, mod.codes.items[id].result);
             const c = try mod.contracts.commit(gpa, &r.account, &mod.slots, &drafts[i]);
             const code = &mod.codes.items[id];
             if (validating) {
