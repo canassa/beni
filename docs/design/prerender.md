@@ -176,9 +176,11 @@ by the causes §3.3 names, none of which is in the program.
      the walk is in, a record field's value, a derived function (`==` on a type that declares no
      `eq`, whose derived row calls a field type's `eq`), another module's derived function, a
      codec, and a function of core (`List.compare` passed an element type's `compare`), whose code
-     is answered at its calls. Each is a limit of the build, not a rule. One is a defect today:
-     the checker does not answer a derived function's site impure when the row calls a field
-     type's impure `eq`, so the build accepts such a `==` (#2115).
+     is answered at its calls. Each is a limit of the build, not a rule. *Amended 2026-11-09
+     (#2115).* Until then one was a defect: the checker did not answer a derived function's site
+     impure when the row calls a field type's impure `eq`, so the build accepted such a `==`. The
+     checker now answers it impure (`checker-v2.md` §26, amended 2026-11-09), so the build refuses
+     it at the operator (`build/bad/prerender/DerivedEqImpure`).
 
    No program that built before builds differently: the walk only decides whether the build
    refuses, and a method call it now follows was refused before. The fixtures are

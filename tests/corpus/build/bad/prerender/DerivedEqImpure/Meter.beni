@@ -1,0 +1,11 @@
+--! A distance whose own `eq` reads the clock.
+
+import Clock
+
+
+pub type Meter
+    = Meter Int
+
+
+pub eq : Meter, Meter → Bool
+eq (Meter a) (Meter b) = a - Clock.now ⊤ == b

@@ -723,6 +723,11 @@ pub const Derived = struct {
     /// An `extra` range of `1 + 3 × entries` words when `status == .present`,
     /// else `no_terms`.
     context: u32 = no_terms,
+    /// A `present` row only: the derived function may be `impure`, because
+    /// a position's method is (checker-v2.md §26, amended 2026-11-09). An
+    /// importer seeds the use's method type with it. An evidence
+    /// parameter's effect is the use's own argument, never this bit.
+    impure: bool = false,
 
     pub const Status = enum(u8) {
         /// Not filled: the module was never checked.

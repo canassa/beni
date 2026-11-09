@@ -186,6 +186,9 @@ fn writeContext(w: *std.Io.Writer, iface: *const Interface, interner: *const Int
         const what = if (d.status == .private_method) "private" else "requirement";
         return w.print("  {s} {s} type_ref={d} method={s}\n", .{ what, kind, @backingInt(p.type_ref), interner.slice(iface.symbol(p.method)) });
     }
+    // The row's own positions may be impure (checker-v2.md §26, amended
+    // 2026-11-09).
+    if (d.impure) try w.print("  impure {s}\n", .{kind});
     const scheme = iface.contextScheme(d.context);
     if (scheme != .none) try w.print("  context {s} scheme={d}\n", .{ kind, @backingInt(scheme) });
     var k: usize = 0;

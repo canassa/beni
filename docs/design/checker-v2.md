@@ -5669,6 +5669,21 @@ section says only where it sits in this checker.
   flow into them; `refresh` raises the copies of a class whose rung rose after its summary was
   applied. `EffectPlan` never makes a fixed class sensitive. No format moves: an importer reads a
   fixed class as any other class (#2126).
+- *Amended 2026-11-09 (#2115).* **A derived row's positions.** A derived answer's arguments are
+  only its context entries. A position that P5 (`Eager`) resolved to a method — a field type's own
+  `eq`, another derived row, `List.eq` at a ground type — is in the row's body, not in the
+  answer, so before this amendment the `==` site never saw its effect: `--release` dropped an
+  unread binding that the development build ran (`backend.md` §9 item 1), and a prerendered
+  `view` accepted a clock read (`prerender.md` §3.1). Now, before the solve, a derived answer of
+  this module's type also takes each answered position of its row, `position ⊑ wanted`, as it
+  takes its arguments. After the solve, a row whose answered position is above `pure` is
+  `impure`, and P8 publishes that bit on the row (`Interface.Derived.impure`, through `Publish.Input.derived_impure`). An importer seeds
+  the use's method type with the bit when it answers the wanted from the row (`Instances`).
+  Only `pure` and `impure` occur: a well-known method is `sync` (§15.2 item 6). The bit is a fact
+  of the row, so the interface hash covers it. Versions: `iface_bytes.format_version` 23 → 24
+  (a type row's byte 31 and a hidden row's byte 23, `eq` in bit 0 and `compare` in bit 1). The
+  raw interface dump prints `impure eq` or `impure compare` under the row. Fixtures:
+  `run/DerivedEqImpureField`, `build/bad/prerender/DerivedEqImpure`.
 
 ### 26.1 Declaration totality (owner, 2026-10-21; #618)
 
