@@ -719,14 +719,18 @@ queues, runs before the next chunk arrives
 **A step's page is the page once all the work core's scheduler queued for
 the step has run, in both DOMs.** The driver does not wait for work a page
 starts outside that scheduler: a `window.postMessage`, a
-`BroadcastChannel`, a worker's reply or a `requestIdleCallback`. A page has
-settled once its microtasks have run and a turn of the event loop has
-passed with no continuation of core's scheduler left to run. The scheduler
-runs 64 tasks a turn and goes on in a `setImmediate` under happy-dom, and
-in a message to a `MessagePort` in Chrome, which has no `setImmediate`; so
-the driver takes more turns while a `setImmediate` is pending, or while a
-message the page posted to a `MessagePort` is not yet delivered, which the
-driver counts from the post to the delivery. A step that starts more
+`BroadcastChannel`, a worker's reply or a `requestIdleCallback`. It does
+wait, 2 ms at a time and 10 s at most, for a host promise it counts from
+its call to its settling: an image's `decode()` and `createImageBitmap()`
+(`browser/tea/WebGpuInputs`), and under `--webgpu` Chrome's own WebGPU
+(`docs/design/webgpu.md` §10). One still pending after 10 s fails the
+step. A page has settled once its microtasks have run and a turn of the
+event loop has passed with no continuation of core's scheduler left to
+run. The scheduler runs 64 tasks a turn and goes on in a `setImmediate`
+under happy-dom, and in a message to a `MessagePort` in Chrome, which has
+no `setImmediate`; so the driver takes more turns while a `setImmediate` is
+pending, or while a message the page posted to a `MessagePort` is not yet
+delivered, which the driver counts from the post to the delivery. A step that starts more
 fibers than 64 therefore shows them all run
 (`browser/tea/SettlesManyFibers`).
 
