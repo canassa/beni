@@ -29,6 +29,7 @@ const LabelChain = @import("LabelChain.zig");
 const Across = @import("Across.zig");
 const Stored = @import("Stored.zig");
 const Loans = @import("Loans.zig");
+const AltCodes = @import("AltCodes.zig");
 const Captures = @import("Captures.zig");
 const AnswerRead = @import("AnswerRead.zig");
 const FnRun = @import("FnRun.zig");
@@ -48,7 +49,6 @@ const Context = W.Context;
 const Demand = W.Demand;
 pub const Escape = W.Escape;
 const CallSite = W.CallSite;
-const fixed_bit = W.fixed_bit;
 
 // ===========================================================================
 // An evaluation (§2.10 *Read-off*, §2.11, §2.12)
@@ -97,7 +97,7 @@ pub const Evaluation = struct {
         return &e.w.f;
     }
     pub fn chain(e: *Evaluation) LabelChain.Chain {
-        return .{ .f = &e.w.f, .known = &e.ev.known, .applied = &e.ev.applied, .contracts = e.contracts, .arena = e.ev.arena };
+        return .{ .f = &e.w.f, .known = &e.ev.known, .alts = &e.ev.alts, .applied = &e.ev.applied, .contracts = e.contracts, .arena = e.ev.arena };
     }
     /// Frame label `cb` passes on call `q`'s callee's label `li`.
     fn pass(e: *Evaluation, cb: u32, q: u32, li: u32) Error!void {
@@ -196,9 +196,16 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             fv = cv;
             x = f.val(cv);
         };
-        if (x.kind == .built and x.form == .closure and x.head & fixed_bit == 0) {
-            // A known code: a virtual call of it on the label's supplies.
-            const vi = try virtualCall(e, q, l, x.head, fv);
+        // A known code, or an `alt` of them that no cell supplies: a virtual call of each on the label's supplies (#2322).
+        var vs: std.ArrayList(u32) = .empty;
+        defer vs.deinit(gpa);
+        if (try AltCodes.of(f, fv, arg, f.slots.relWords(l.slot), &vs) and vs.items.len != 0 and (vs.items.len == 1 or try Loans.supply(f, e.contracts, l) == null)) {
+            const vi: u32 = @intCast(f.calls.items.len);
+            for (vs.items, 0..) |v, i| std.debug.assert(try virtualCall(e, q, l, f.val(v).head, v) == vi + i);
+            if (vs.items.len > 1) {
+                try e.ev.alts.put(gpa, &e.ev.applied, q, @intCast(li), vi, @intCast(vs.items.len));
+                continue;
+            }
             try e.ev.apply(q, @intCast(li), vi);
             // A label supplied one cell's contents may store what it answers there, passed on or not (#1955).
             if (try Loans.supply(f, e.contracts, l)) |cs| try cellAnswer(e, q, @intCast(li), h.flags.words and l.origin[2] == 1, cs, vi);

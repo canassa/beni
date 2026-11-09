@@ -33,9 +33,9 @@ pub fn at(e: *Eval, call: u32, o: u64, instCond: anytype, comptime F: type, plai
             try fed.append(e.arena, AnsOcc.occ(cb.j, cb.slot, k));
             continue;
         }
-        const vi = e.known.get(.{ call, @intCast(li) }) orelse return false;
+        const r = e.alts.codes(&e.known, call, @intCast(li)) orelse return false;
         var handed = false;
-        if (!try known(e, vi, k, instCond, F, own, fed, &handed)) return false;
+        for (r[0]..r[0] + r[1]) |vi| if (!try known(e, @intCast(vi), k, instCond, F, own, fed, &handed)) return false; // Each of an `alt`'s too (#2322).
         if (!handed) continue;
         for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == k) {
             // Handed a value the callee could not say holds each object once.
@@ -85,9 +85,9 @@ fn known(e: *Eval, vi: u32, k: u32, instCond: anytype, comptime F: type, own: *C
                     const cb = e.f.cbs.items[fc];
                     try fed.append(e.arena, AnsOcc.occ(cb.j, cb.slot, k2));
                 } else {
-                    const v2 = e.known.get(.{ vi, a.j }) orelse return false;
+                    const r2 = e.alts.codes(&e.known, vi, a.j) orelse return false;
                     var h2 = false;
-                    if (!try known(e, v2, k2, instCond, F, own, fed, &h2)) return false;
+                    for (r2[0]..r2[0] + r2[1]) |v2| if (!try known(e, @intCast(v2), k2, instCond, F, own, fed, &h2)) return false;
                 }
             },
             else => return false,

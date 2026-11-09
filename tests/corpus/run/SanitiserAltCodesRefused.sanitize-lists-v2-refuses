@@ -1,0 +1,9 @@
+# v2 applies a label to each code of an `alt` and judges each as a known code: an answer the frame reads after, a capture written by a code run twice, a shared argument written or kept (§2.11.3, #2322).
+68:22 list_still_used List.push
+80:22 list_still_used List.push
+91:16 list_still_used SanitiserAltCodesRefused.two
+91:16 list_still_used SanitiserAltCodesRefused.two
+100:20 list_still_used SanitiserAltCodesRefused.runAll
+109:9 list_still_used SanitiserAltCodesRefused.appTo
+117:10 list_still_used List.push
+129:9 list_still_used SanitiserAltCodesRefused.editAns

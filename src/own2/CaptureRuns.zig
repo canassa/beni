@@ -81,10 +81,9 @@ fn reaches(c: LabelChain.Chain, o: u32, own: usize, a: anytype, depth: u32, agai
         .param => if (a.j >= own) (LabelChain.outwardMany(c, o) or handed(c, o, again)) else try outward(c, o, a.j, depth + 1, again),
         .fresh => false,
         .cb => blk: {
-            const vm = c.known.get(.{ o, a.j }) orelse break :blk (LabelChain.outwardMany(c, o) or handed(c, o, again));
-            const h, const own_m = .{ c.contracts.head(c.f.calls.items[vm].contract), ownOf(c, vm) };
-            for ((try LabelChain.entriesOf(c, h.res_root)).items.items) |rs| for (rs.arrivals) |b| {
-                if (try reaches(c, vm, own_m, b, depth + 1, again)) break :blk true;
+            const r = c.alts.codes(c.known, o, a.j) orelse break :blk (LabelChain.outwardMany(c, o) or handed(c, o, again));
+            for (r[0]..r[0] + r[1]) |vm| for ((try LabelChain.entriesOf(c, c.contracts.head(c.f.calls.items[vm].contract).res_root)).items.items) |rs| for (rs.arrivals) |b| {
+                if (try reaches(c, @intCast(vm), ownOf(c, @intCast(vm)), b, depth + 1, again)) break :blk true;
             };
             break :blk false;
         },

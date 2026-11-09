@@ -1,0 +1,3 @@
+A label whose function value is an `alt` of known codes, each run on lists nothing else holds
+(ownership-v2.md §2.11.3): built again under --ownership=v2 and the list stale-read sanitiser. v2
+applies the label to each code and accepts each edit; the sanitised run prints the same.

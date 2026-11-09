@@ -39,6 +39,7 @@ const Forest = @import("Forest.zig");
 const KeySets = @import("KeySets.zig");
 const Value = @import("Value.zig");
 const Pairs = @import("Pairs.zig");
+const AltCodes = @import("AltCodes.zig");
 pub const Dests = @import("Dests.zig");
 
 pub const Error = Ids.ChargeError;
@@ -141,6 +142,8 @@ pub const Eval = struct {
     label_map: Ids.FixedDict(2) = .{},
     /// Per `(call, callee label)`: the virtual call that applies a known code.
     known: Ids.FixedDict(2) = .{},
+    /// Per `(call, callee label)`: the virtual calls that apply an `alt`'s known codes, one each (`AltCodes`).
+    alts: AltCodes.Table = .{},
     /// Per call of the frame: the `(call, callee label)` it applies, as a
     /// virtual call of this evaluation; `none` in a call's first word else.
     applied: std.ArrayList([2]u32) = .empty,
@@ -208,6 +211,7 @@ pub const Eval = struct {
         e.pairs.deinit(g);
         e.label_map.deinit(g);
         e.known.deinit(g);
+        e.alts.deinit(g);
         e.applied.deinit(g);
         e.passed.deinit(g);
         e.lent.deinit(g);
@@ -1103,7 +1107,9 @@ pub const Eval = struct {
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {
-                if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep, words.items, out) else {
+                if (e.alts.codes(&e.known, call, a.j)) |r| {
+                    for (r[0]..r[0] + r[1]) |vc| try e.knownAnswer(@intCast(vc), a.deep, words.items, out);
+                } else {
                     const fl = e.label_map.get(.{ call, a.j }) orelse return if (@import("Mutate.zig").on(.arrival_no_label_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                     try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items), .whole = a.deep }));
                 }

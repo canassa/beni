@@ -1,0 +1,4 @@
+A label whose function value is an `alt` of known codes, where one alternative would make an edit in place
+change a list something else still reads (ownership-v2.md §2.11.3): built again under --ownership=v2 and
+the list stale-read sanitiser. v2 refuses the program; were it to accept it, the sanitised run would show
+the stale read of each pushed list.
