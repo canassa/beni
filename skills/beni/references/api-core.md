@@ -217,6 +217,46 @@ module Binary.Atomics
     Words
   value access : View, Int, Operation → Result Error Value  -- impure
   value isLockFree : Int → Bool  -- impure
+module Binary.Region
+  type AccessError
+    Detached
+    OutOfBounds
+  type Float16Error
+    Float16Access
+    NoFloat16
+  type ReadOnly
+    ReadOnly
+  type ReadWrite
+    ReadWrite
+  opaque type Region a
+  type WriteError
+    WriteAccess
+    InvalidValue
+  value byteLength : Region mode → Result AccessError Int  -- impure
+  value readF16 : Region mode, Int, Endian → Result Float16Error Float  -- impure
+  value readF32 : Region mode, Int, Endian → Result AccessError Float  -- impure
+  value readF64 : Region mode, Int, Endian → Result AccessError Float  -- impure
+  value readI16 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readI32 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readI8 : Region mode, Int → Result AccessError Int  -- impure
+  value readOnly : Region mode → Region ReadOnly
+  value readU16 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readU32 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readU8 : Region mode, Int → Result AccessError Int  -- impure
+  value readWord64 : Region mode, Int, Endian → Result AccessError Word64  -- impure
+  value region : View → Result BackingError (Region ReadWrite)  -- impure
+  value sourceInfo : Region mode → Result AccessError SourceInfo  -- impure
+  value view : Region mode → View
+  value writeF16 : Region ReadWrite, Int, Endian, Float → Result Float16Error ⊤  -- impure
+  value writeF32 : Region ReadWrite, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeF64 : Region ReadWrite, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeI16 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI32 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI8 : Region ReadWrite, Int, Int → Result WriteError ⊤  -- impure
+  value writeU16 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU32 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU8 : Region ReadWrite, Int, Int → Result WriteError ⊤  -- impure
+  value writeWord64 : Region ReadWrite, Int, Endian, Word64 → Result AccessError ⊤  -- impure
 module Binary.Wgsl
   type CodecError
     ValueShape

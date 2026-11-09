@@ -1,0 +1,141 @@
+-- Checked regions (binary.md §6): a region addresses its view's bytes, round
+-- trips every width in both byte orders, refuses what Binary refuses, and,
+-- once its storage is detached, gives `Detached` from every operation — never
+-- a value. Every expected line is worked out by hand from ECMA-262's encodings.
+import Binary exposing (Big, Data, F32, Little, U8)
+import Binary.Region as Region
+import Node exposing (Program)
+
+
+main : Program
+main = Node.printLines [ …placement ⊤, …widths ⊤, …failures ⊤, …detachment ⊤, …sharing ⊤ ]
+
+
+-- Setup that must succeed; a failure here is a broken fixture, not a result.
+ok : Result e a → a
+ok result =
+    case result of
+        Ok value →
+            value
+        Err error →
+            Debug.todo (Debug.toString error)
+
+
+-- A Float32Array over bytes 8 to 15 of 16: region offset 0 is storage byte 8.
+placement : ⊤ → List String
+placement ⊤ =
+    buffer = ok (Binary.allocate 16)
+    floats = ok (Binary.view (Binary.Local buffer) F32 { byteOffset = 8, byteLength = Nothing })
+    region = ok (Region.region floats)
+    -- 1.0 is 0x3F800000.
+    ok (Region.writeF32 region 0 Little 1)
+    ok (Region.writeU8 region 7 255)
+    [ Debug.toString (Binary.toList (Binary.WholeBuffer buffer))
+    , Debug.toString (Region.readF32 region 0 Little)
+    , Debug.toString (Region.byteLength region)
+    , Debug.toString (Binary.kind (Region.view region))
+    , Debug.toString (Region.sourceInfo region)
+    ]
+
+
+widths : ⊤ → List String
+widths ⊤ =
+    buffer = ok (Binary.allocate 16)
+    region = ok (Region.region (ok (Binary.view (Binary.Local buffer) U8 Binary.whole)))
+    ok (Region.writeI8 region 0 (-128))
+    i8 = ( Region.readI8 region 0, Region.readU8 region 0 )
+    ok (Region.writeI16 region 1 Big (-2))
+    i16 = ( Region.readI16 region 1 Big, Region.readU16 region 1 Little )
+    ok (Region.writeU32 region 3 Little 3735928559)
+    u32 =
+        ( Region.readU32 region 3 Little
+        , Region.readU32 region 3 Big
+        , Region.readI32 region 3 Little
+        )
+    ok (Region.writeI32 region 3 Big (-2147483648))
+    i32 = Region.readU32 region 3 Big
+    ok (Region.writeF64 region 8 Little (-1.5))
+    f64 =
+        ( Region.readF64 region 8 Little
+        , Result.map (Region.readWord64 region 8 Little) Binary.words
+        )
+    ok (Region.writeWord64 region 8 Big (ok (Binary.word64 1 2)))
+    word = Result.map (Region.readWord64 region 8 Big) Binary.words
+    -- 65504 is the largest finite half; its bits are 0x7BFF.
+    f16 =
+        ( Region.writeF16 region 0 Little 65504
+        , Region.readF16 region 0 Little
+        , Region.readU16 region 0 Little
+        )
+    ok (Region.writeF32 region 4 Big 0.1)
+    f32 = Region.readF32 region 4 Big
+    ok (Region.writeU16 region 14 Big 258)
+    u16 = Region.readU16 region 14 Little
+    [ Debug.toString i8
+    , Debug.toString i16
+    , Debug.toString u32
+    , Debug.toString i32
+    , Debug.toString f64
+    , Debug.toString word
+    , Debug.toString f16
+    , Debug.toString f32
+    , Debug.toString u16
+    ]
+
+
+failures : ⊤ → List String
+failures ⊤ =
+    region = ok (Region.region (ok (Binary.dataView (Binary.Local (ok (Binary.allocate 8))))))
+    [ Debug.toString (Region.readU32 region 5 Little)
+    , Debug.toString (Region.readU8 region (-1))
+    , Debug.toString (Region.readF64 region 1 Big)
+    , Debug.toString (Region.writeU8 region 0 256)
+    , Debug.toString (Region.writeI16 region 0 Little (-32769))
+    , Debug.toString (Region.writeU32 region 6 Little 1)
+    , Debug.toString (Region.writeWord64 region 1 Little (ok (Binary.word64 0 0)))
+    , Debug.toString (Region.readF16 region 7 Little)
+    ]
+
+
+-- `transfer` detaches the storage under a live region and under a read-only
+-- one made from it; a region of storage already detached is refused.
+detachment : ⊤ → List String
+detachment ⊤ =
+    buffer = ok (Binary.allocate 8)
+    region =
+        ok
+            (Region.region
+                (ok
+                    (Binary.view (Binary.Local buffer) Data { byteOffset = 4, byteLength = Nothing }
+                    )
+                )
+            )
+    reader = Region.readOnly region
+    late = ok (Binary.view (Binary.Local buffer) U8 Binary.whole)
+    ok (Region.writeU8 region 0 7)
+    moved = ok (Binary.transfer buffer)
+    [ Debug.toString ( Region.readU8 region 0, Region.readU8 reader 0, Region.readU8 region 9 )
+    , Debug.toString
+        ( Region.writeU8 region 0 1
+        , Region.writeF32 region 0 Little 1
+        , Region.writeF16 region 0 Little 1
+        )
+    , Debug.toString
+        ( Region.readWord64 reader 0 Little
+        , Region.byteLength region
+        , Region.sourceInfo reader
+        )
+    , Debug.toString (Region.region late ▷ Result.map λ_ → ⊤)
+    , Debug.toString (Binary.toList (Binary.WholeBuffer moved))
+    ]
+
+
+-- Shared storage is decided once, when the region is made; it never detaches.
+sharing : ⊤ → List String
+sharing ⊤ =
+    storage = ok (Binary.shared 8)
+    region = ok (Region.region (ok (Binary.dataView (Binary.Shared storage))))
+    ok (Region.writeU16 region 6 Little 513)
+    [ Debug.toString (Region.sourceInfo region)
+    , Debug.toString (Region.readU16 region 6 Big)
+    ]

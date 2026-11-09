@@ -51,6 +51,68 @@ bytes buffer exact =
     Result.mapError (Binary.toList (Binary.ViewOf view)) Binary.AccessBacking
 ```
 
+## Regions
+
+`Binary.Region` makes a view that is checked once. Use a region in a loop that
+reads or writes many values.
+
+- `Region.region view` checks the storage. Detached storage is `Detached`.
+  Resizable or growable storage is `ResizableBacking`.
+- After that, a read or a write checks only the bounds and the value. The read
+  and write functions have the same names as in `Binary` (`readU8`, `writeF32`,
+  `readWord64`, …). Offsets are bytes from the start of the view. Give the
+  `Endian` for a value wider than one byte.
+- A region whose storage is detached later gives `Err Detached`. It never gives
+  a wrong value.
+- `Region.readOnly` makes a `Region ReadOnly`. It has no write functions. A write
+  to it is a type error.
+- `Region.view`, `Region.byteLength` and `Region.sourceInfo` read the region.
+- The errors are `Region.AccessError`, `Region.WriteError` and
+  `Region.Float16Error`. They do not have `ResizableBacking`.
+
+```beni platform=node
+import Binary
+import Binary.Region as Region exposing (ReadWrite, Region)
+import Node exposing (Program)
+
+
+main : Program
+main =
+    case Binary.allocate 16 of
+        Ok buffer →
+            Node.print (Debug.toString (sum buffer))
+        Err _ →
+            Node.print "no storage"
+
+
+sum : Binary.Buffer → Result String Float
+sum buffer =
+    view = Result.mapError (Binary.dataView (Binary.Local buffer)) Debug.toString?
+    region = Result.mapError (Region.region view) Debug.toString?
+    fill region 0?
+    Result.mapError (total region 0 0) Debug.toString
+
+
+fill : Region ReadWrite, Int → Result String ⊤
+fill region index =
+    if index == 4 then
+        Ok ⊤
+    else
+        Result.mapError
+            (Region.writeF32 region (index * 4) Binary.Little (toFloat index))
+            Debug.toString?
+        fill region (index + 1)
+
+
+total : Region ReadWrite, Int, Float → Result Region.AccessError Float
+total region index acc =
+    if index == 4 then
+        Ok acc
+    else
+        value = Region.readF32 region (index * 4) Binary.Little?
+        total region (index + 1) (acc + value)
+```
+
 ## Exact 64-bit words
 
 `Word64` keeps two exact unsigned 32-bit words. `word64ToInt` and
@@ -101,7 +163,7 @@ Each failure that the host documents for an operation is one typed error. An
 unexpected host failure stops the program; do not catch it. `Binary.shared` gives
 `Err IsolationRequired` in a page that is not cross-origin isolated.
 
-Sources: `docs/design/binary.md` §1–§5; `docs/design/browser-sources.md`;
+Sources: `docs/design/binary.md` §1–§6, §8; `docs/design/browser-sources.md`;
 `docs/design/webgpu.md` §3.1, §3.2; `core/Binary.beni`; `core/Binary/Atomics.beni`;
-`core/Binary/Wgsl.beni`; `platforms/browser/Browser/Image.beni`, `Video.beni`,
-`Canvas.beni`, `Source.beni`.
+`core/Binary/Wgsl.beni`; `core/Binary/Region.beni`;
+`platforms/browser/Browser/Image.beni`, `Video.beni`, `Canvas.beni`, `Source.beni`.
