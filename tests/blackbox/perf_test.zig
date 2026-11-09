@@ -420,6 +420,35 @@ fn sharedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
+// A static page whose model is an n-long chain `v_k = if c then v_(k-1)
+// else { a = k }`, BUILT for the browser platform. The DOM root proof of
+// #2026, on the deleted `workers-hostfree` branch, ran with no site cap and
+// kept that for the final solve, so this page cost 1.6 / 7.1 / 44 s at 8 000
+// / 16 000 / 32 000 links, a ratio of 4.4 and 6.2 (issue #2089). That proof
+// never reached master; the scenario guards the build when a root proof
+// lands. Calibration (ReleaseFast, wall, master 9d5a878494): 4 000 / 8 000
+// / 16 000 / 32 000 links build in 45 / 75 / 141 / 258 ms. n = 8 000.
+test "building a static page whose model is a long conditional chain is linear in its length" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("Chain.beni", try staticPageChain(s.arena(), 8_000));
+    try s.w.write("Chain2.beni", try staticPageChain(s.arena(), 16_000));
+    const build: []const []const u8 = &.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=browser", "--out=out" };
+    try s.finish("building a static page over a conditional chain", try s.ratioOf(build, "Chain.beni", "Chain2.beni", 8_000, &.{}));
+}
+
+/// A `browser` program whose `view` is static markup and whose `init` is
+/// `pick True`: `v0 = { a = 0 }`, then `vk = if c then v(k-1) else { a = k }`
+/// to `count`.
+fn staticPageChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "import Browser\nimport Html exposing (Html)\n\n\ntype alias R =\n    a : Int\n\n\npick : Bool → R\npick c =\n    v0 = { a = 0 }\n");
+    for (1..count + 1) |k| try out.print(arena, "    v{d} = if c then v{d} else {{ a = {d} }}\n", .{ k, k - 1, k });
+    try out.print(arena, "    v{d}\n\n\nview : R → Html ⊤\nview r =\n    <p>Hello</p>\n\n\n", .{count});
+    try out.appendSlice(arena, "main : Browser.Program\nmain = Browser.program { init = λ⊤ → pick True, update = λ_ m → m, view = view }\n");
+    return out.items;
+}
+
 // An alias DAG must not be expanded as a tree. `A0 = Int`,
 // `A{i} = ( A{i-1}, A{i-1} )` and one `f : A{n} -> A{n}`: reading each
 // alias's body once per USE is 2^n expansions for n declarations.
