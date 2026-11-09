@@ -2,9 +2,9 @@
 -- something else still reads (`ownership-v2.md` §2.11.3, §2.11.4): `ident`'s
 -- writer called twice on one list, a capture writer called twice, folds over
 -- a composition that keeps the accumulator in a cell, keeps the list it is
--- handed or answers a capture, and a writer applied to a capture of a code
--- run twice (`two λ⊤ → f y`, also through a returned closure, which trapped
--- on master). Each is refused; were it accepted, the sanitised run would read
+-- handed or answers a capture, and a writer applied to a capture (or to a
+-- label's answer that is one) of a code run twice (`two λ⊤ → f y`, which
+-- trapped on master). Each is refused; were it accepted, the sanitised run would read
 -- the list a later call had pushed onto in place (#2395).
 import Node exposing (Program)
 import Ref
@@ -110,7 +110,27 @@ laterTwice n =
     "${show a} ${show b}"
 
 
+thunkOf : (⊤ → List Int), (List Int → List Int) → (⊤ → List Int)
+thunkOf y g = λ⊤ → g (y ⊤)
+
+
+answeredTwice : Int → String
+answeredTwice n =
+    y = [ n ]
+    g = λ⊤ → y
+    f = push1
+    ( a, b ) = two λ⊤ → f (g ⊤)
+    "${show a} ${show b}"
+
+
+thunkTwice : Int → String
+thunkTwice n =
+    l = [ n ]
+    ( a, b ) = two (thunkOf (λ⊤ → l) push1)
+    "${show a} ${show b}"
+
+
 main : Program
 main =
     Node.print
-        "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0} ${capturedTwice 0} ${laterTwice 0}"
+        "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0} ${capturedTwice 0} ${laterTwice 0} ${answeredTwice 0} ${thunkTwice 0}"
