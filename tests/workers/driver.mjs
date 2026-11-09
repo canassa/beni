@@ -72,10 +72,26 @@ for (const binding of config.durable_objects?.bindings ?? []) {
 // ---- The script -------------------------------------------------------------
 
 const steps = [];
+// `{"hooks": false}`, written exactly so and as the first step, says the
+// harness built the Worker without `--test-hooks` (tests/blackbox/
+// corpus_test.zig, `runWorker`): the build a user makes, which reuses the
+// binary's emit rows (#2019). Such a Worker has no `/__beni/mark` hook, so
+// the driver sends no mark and prints the console once, at the end.
+const noHooksLine = '{"hooks": false}';
+let hooks = true;
 for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
   const line = raw.trim();
   if (line.length === 0 || line.startsWith("#")) continue;
-  steps.push(JSON.parse(line));
+  const step = JSON.parse(line);
+  if (step.hooks !== undefined) {
+    if (line !== noHooksLine || steps.length !== 0 || !hooks) {
+      process.stderr.write(`workers driver: script error: ${noHooksLine} is written exactly so, once, as the first step: ${line}\n`);
+      process.exit(2);
+    }
+    hooks = false;
+    continue;
+  }
+  steps.push(step);
 }
 
 // A step the script wrote wrong: the run cannot mean anything, so the
@@ -462,8 +478,12 @@ for (const step of steps) {
   }
   // The Worker's console lines arrive on a stream of their own: the mark
   // says every line of this step has landed.
-  await awaitConsole();
-  flushConsole();
+  // A Worker built without the hooks has no mark: its lines are printed
+  // after the last step.
+  if (hooks) {
+    await awaitConsole();
+    flushConsole();
+  }
 }
 for (const [name, pending] of detached) {
   say(`> (answer ${name}, at the end)`);

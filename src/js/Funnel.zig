@@ -77,6 +77,12 @@ pub const UnitRecord = struct {
     /// and all — `needName` dedupes the module's list, not the record.
     asks_start: u32,
     asks_end: u32 = 0,
+    /// The `Js.module` specifiers the unit's text names (`Lowerer.hostModule`):
+    /// a range of `Recorder.hosts`, in ask order, repeats and all. The join
+    /// rebuilds the module's head, so a unit must carry the namespace
+    /// imports its text reads, as it carries `asks` (#2019).
+    hosts_start: u32,
+    hosts_end: u32 = 0,
     /// The runtime exports the unit reached, OR'd at each use
     /// (`EmitPack.runtime_*`), never inferred from the module's flags: a
     /// unit must carry its own, or a join that takes it would drop the
@@ -97,6 +103,10 @@ pub const UnitRecord = struct {
     pub fn asks(u: *const UnitRecord, r: *const Recorder) []const Ask {
         return r.asks.items[u.asks_start..u.asks_end];
     }
+
+    pub fn hosts(u: *const UnitRecord, r: *const Recorder) []const []const u8 {
+        return r.hosts.items[u.hosts_start..u.hosts_end];
+    }
 };
 
 /// One lowering's record, owned by the caller that set `Input.record`.
@@ -106,6 +116,9 @@ pub const Recorder = struct {
     /// ask is infallible and a record's range cannot move.
     facts: std.ArrayListUnmanaged(Fact) = .empty,
     asks: std.ArrayListUnmanaged(Ask) = .empty,
+    /// Every `Js.module` specifier asked, in ask order; each slice is the
+    /// BIR's bytes, stable for the lowering.
+    hosts: std.ArrayListUnmanaged([]const u8) = .empty,
     units: std.ArrayListUnmanaged(UnitRecord) = .empty,
     /// Whether a unit is open: `recBegin` without its `recEnd`. One at a
     /// time; the reset of a build's units are drawn by closing one before
@@ -133,6 +146,7 @@ pub const Recorder = struct {
     pub fn reserve(r: *Recorder, scratch: Allocator, insts: usize) Allocator.Error!void {
         try r.facts.ensureTotalCapacity(scratch, 8 * insts + 64);
         try r.asks.ensureTotalCapacity(scratch, 2 * insts + 64);
+        try r.hosts.ensureTotalCapacity(scratch, insts + 64);
     }
 
     /// Opens a unit: the asks from here to `end` are its own.
@@ -143,6 +157,7 @@ pub const Recorder = struct {
             .selector = selector,
             .facts_start = @intCast(r.facts.items.len),
             .asks_start = @intCast(r.asks.items.len),
+            .hosts_start = @intCast(r.hosts.items.len),
         });
         r.open = true;
         return i;
@@ -157,6 +172,7 @@ pub const Recorder = struct {
         const u = &r.units.items[record];
         u.facts_end = @intCast(r.facts.items.len);
         u.asks_end = @intCast(r.asks.items.len);
+        u.hosts_end = @intCast(r.hosts.items.len);
     }
 
     /// One answered question, in the open unit's range or — before the
@@ -180,6 +196,17 @@ pub const Recorder = struct {
         r.asks.appendAssumeCapacity(entry);
     }
 
+    /// One `Js.module` specifier (`Lowerer.hostModule`), at each call: a
+    /// unit's record must hold every namespace its text reads even when
+    /// another unit asked for it first.
+    pub fn askHost(r: *Recorder, specifier: []const u8) void {
+        if (r.hosts.items.len == r.hosts.capacity) {
+            r.overflow = true;
+            return;
+        }
+        r.hosts.appendAssumeCapacity(specifier);
+    }
+
     /// One runtime export the open unit reached.
     pub fn orRuntime(r: *Recorder, bit: u8) void {
         if (!r.open) return;
@@ -200,6 +227,7 @@ test "a unit's record is its own run of asks, and a prep ask is no unit's" {
     const one = try r.begin(scratch, .{ .kind = .decl, .a = 3, .b = Selector.direct });
     r.ask(.{ .question = .decl, .answer = true, .index = 3 });
     r.askNeed(.{ .module = 7, .value = 1 });
+    r.askHost("cloudflare:workers");
     r.orRuntime(runtime_deep);
     try r.end(one);
 
@@ -215,11 +243,14 @@ test "a unit's record is its own run of asks, and a prep ask is no unit's" {
     try std.testing.expectEqual(@as(usize, 1), first.facts(&r).len);
     try std.testing.expectEqual(Fact.Question.decl, first.facts(&r)[0].question);
     try std.testing.expectEqual(@as(usize, 1), first.asks(&r).len);
+    try std.testing.expectEqual(@as(usize, 1), first.hosts(&r).len);
+    try std.testing.expectEqualStrings("cloudflare:workers", first.hosts(&r)[0]);
     try std.testing.expectEqual(@as(u8, runtime_deep), first.runtime);
     const second = &r.units.items[1];
     try std.testing.expectEqual(@as(usize, 1), second.facts(&r).len);
     try std.testing.expectEqual(Fact.Question.nullary, second.facts(&r)[0].question);
     try std.testing.expectEqual(@as(usize, 1), second.asks(&r).len);
+    try std.testing.expectEqual(@as(usize, 0), second.hosts(&r).len);
     try std.testing.expectEqual(@as(u8, 0), second.runtime);
     // The prep ask is in neither range, and the second unit's start is the
     // first unit's end: the ranges tile the run.

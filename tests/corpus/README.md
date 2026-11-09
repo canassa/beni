@@ -429,6 +429,14 @@ either: `/__beni/host-alarm` is its firing (204), and `/__beni/alarms`
 answers `host <none|program|wake>, program <none|set>`. Each of the two
 cases starts Miniflare once.
 
+A script whose first step is `{"hooks": false}`, written exactly so, is
+built without `--test-hooks`, both cases, as a user builds it. A
+`--test-hooks` build lowers afresh every unit that reads the flag, so only
+a build without it takes the binary's emit rows as a user's development
+build does (`backend.md` §9, *The join*; #2019). Such a Worker has no
+hooks: the driver asks no mark, and prints the console's lines after the
+last step. The line anywhere else, or spelled otherwise, is a script error.
+
 ### `browser/`: a program in a page
 
 A `browser/` fixture is built like a `run/` one, twice, for the `page`

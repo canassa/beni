@@ -3067,8 +3067,9 @@ pub const Lowerer = struct {
         return fact.index < l.in.interfaces[module.int()].ctors.len;
     }
 
-    /// Replays the row's import and nullary asks for a declaration taken
-    /// whole, in the row's order, where `declarationPart` would have asked.
+    /// Replays the row's import, namespace and nullary asks for a
+    /// declaration taken whole, in the row's order, where
+    /// `declarationPart` would have asked.
     fn replayReuse(l: *Lowerer, re: *const Reuse, decl: u32) !void {
         for (re.units[decl].items) |ui| {
             for (re.row.units[ui].needed) |needed| {
@@ -3083,6 +3084,9 @@ pub const Lowerer = struct {
                 }
                 try l.needName(entry);
             }
+            // The `Js.module` namespaces the unit's text reads: the head is
+            // rebuilt, so their imports come from the row (#2019).
+            for (re.row.units[ui].hosts) |host| try l.hostImport(re.row.strings[host]);
         }
     }
 
@@ -11165,10 +11169,19 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const specifier = l.bir.bytes(args[0]);
-        var known = false;
-        for (l.host_imports.items) |s| known = known or std.mem.eql(u8, s, specifier);
-        if (!known) try l.host_imports.append(l.scratch, specifier);
+        // At the call, not at the deduplicated list: a unit taken from the
+        // row brings the import with it (`replayReuse`, #2019).
+        if (l.in.record) |r| r.askHost(specifier);
+        try l.hostImport(specifier);
         return l.ident(try l.hostModuleName(specifier), p);
+    }
+
+    /// Adds `specifier` to `host_imports` on its first use.
+    fn hostImport(l: *Lowerer, specifier: []const u8) !void {
+        for (l.host_imports.items) |known| {
+            if (std.mem.eql(u8, known, specifier)) return;
+        }
+        try l.host_imports.append(l.scratch, specifier);
     }
 
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {

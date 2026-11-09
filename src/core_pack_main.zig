@@ -574,6 +574,8 @@ const Maker = struct {
                 .base = if (ask.base.unwrap()) |symbol| try mk.text(builder, overlay.slice(symbol)) else EmitPack.no_string,
             };
         }
+        const hosts = try scratch.alloc(u32, record.hosts_end - record.hosts_start);
+        for (hosts, record.hosts(recorder)) |*host, specifier| host.* = try mk.text(builder, specifier);
         const facts = try scratch.alloc(EmitPack.Fact, record.facts_end - record.facts_start);
         for (facts, record.facts(recorder)) |*fact, asked| {
             fact.* = asked;
@@ -584,6 +586,7 @@ const Maker = struct {
             .marks = marks,
             .introduced = introduced,
             .needed = needed,
+            .hosts = hosts,
             .facts = facts,
             .runtime = record.runtime,
             .edges = record.edges,
