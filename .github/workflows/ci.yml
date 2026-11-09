@@ -28,6 +28,10 @@ on:
         type: choice
         options: [full, managed]
         default: full
+      lean:
+        description: Check the Lean ownership proofs
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -200,7 +204,8 @@ jobs:
   # The Lean ownership proofs (proofs/ownership/README.md):
   # `scripts/audit.sh`, the independent audit, then `lake build`, the
   # kernel check and the in-build axiom audit. `check` needs this job, so
-  # a proof that breaks, or a new `sorry` or `axiom`, blocks a merge.
+  # on a manual run with `lean`, a proof that breaks, or a new `sorry` or
+  # `axiom`, fails the run.
   #
   # The job runs the audit files of the pull request itself: Axioms.lean,
   # Audit.lean, scripts/audit.sh, the lakefile, flake.nix and this
@@ -223,17 +228,11 @@ jobs:
   # after the build fails when the build changed or added a file that git
   # does not ignore.
   #
-  # The job always runs, because `check` fails when a job is skipped. Its
-  # first step decides if the other steps run. On a push to master, and on
-  # a pull request whose base is not master, they always run: a stacked
-  # pull request can move to master later, and then no new run starts. On
-  # a pull request to master, they run only when the pull request changes
-  # proofs/ownership, flake.nix, flake.lock, this workflow or a
-  # .gitattributes file, whose `export-ignore` changes the export of the
-  # audit (#262). The checkout of a pull request is its merge commit, and
-  # the first parent of that commit is the base branch, so `git diff
-  # HEAD^1 HEAD` lists every file that the merge changes. That diff fails
-  # when HEAD is not a merge commit: a wrong diff must not skip the proofs.
+  # The proofs are checked only on demand (the owner, 2026-11-09): a manual
+  # run of this workflow with the input `lean` set to true. On a push, a
+  # pull request or the nightly run, the steps are skipped. The job always
+  # runs, because `check` fails when a job is skipped; its first step
+  # decides if the other steps run.
   #
   # Lean, 2.7 GB, comes from cache.nixos.org into azathoth's Nix store,
   # where it stays between runs.
@@ -244,37 +243,24 @@ jobs:
       contents: read
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 2
-
-      - name: do the proofs change
+      - name: were the proofs asked for
         id: changes
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          LEAN: ${{ inputs.lean }}
         run: |
-          if [ "$EVENT" != pull_request ]; then
-            echo "a push: check the proofs"
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "$BASE_REF" != master ]; then
-            echo "the base branch is not master: check the proofs"
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git rev-parse --verify --quiet HEAD^2 > /dev/null || { echo "HEAD is not a merge commit"; exit 1; }
-          changed=$(git diff --name-only HEAD^1 HEAD -- proofs/ownership flake.nix flake.lock .github/workflows/ci.yml ':(glob)**/.gitattributes')
-          if [ -n "$changed" ]; then
-            echo "the pull request changes:"
-            echo "$changed"
+          if [ "$EVENT" = workflow_dispatch ] && [ "$LEAN" = true ]; then
+            echo "a manual run with lean: check the proofs"
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "the pull request changes no file of the proofs: the next steps are skipped"
+            echo "the proofs run only on a manual run with lean: the next steps are skipped"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        with:
+          persist-credentials: false
 
       - name: dev shell
         if: ${{ steps.changes.outputs.run == 'true' }}
