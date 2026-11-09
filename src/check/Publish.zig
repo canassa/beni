@@ -46,6 +46,10 @@ pub const Input = struct {
     types: *Types,
     /// The derived contexts, settled in P5 (§11.2): the rows publish them.
     contexts: *Contexts,
+    /// Per local type × method (`Contexts.final`'s index): the derived row
+    /// may be `impure`, read off the solved effect graph (checker-v2.md §26,
+    /// amended 2026-11-09), published as `Interface.Derived.impure`.
+    derived_impure: []const bool = &.{},
     /// The dispatch table P6 wrote: each value's identity parameters are
     /// published as its quantifiers' identity bit (checker-v2.md §33).
     dispatch: ?*const Dispatch = null,
@@ -136,7 +140,7 @@ pub fn fill(in: Input) Error!u32 {
 
     try vocabTables(&p, in, iface);
     try ctorTerms(&p, prov, iface);
-    try typeFacts(&p, prov, iface, in.contexts, in.report);
+    try typeFacts(&p, prov, iface, in.contexts, in.derived_impure, in.report);
     try writer.attach(iface);
 
     // `--roundtrip-interfaces` goes HERE (§5): the record is complete and no
@@ -310,11 +314,11 @@ fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
 /// row for every other nominal type of this module a published term names,
 /// found by closing over the writer's type references, which the
 /// context entries' own schemes can extend.
-fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface, contexts: *Contexts, report: *Report) Error!void {
+fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface, contexts: *Contexts, derived_impure: []const bool, report: *Report) Error!void {
     const cx = p.cx;
     const writer = p.writer;
     const gpa = cx.gpa;
-    var facts: Facts = .{ .cx = cx, .publisher = p, .writer = writer, .contexts = contexts, .report = report };
+    var facts: Facts = .{ .cx = cx, .publisher = p, .writer = writer, .contexts = contexts, .derived_impure = derived_impure, .report = report };
     defer facts.deinit();
     if (iface.types.len != 0) {
         const out = try gpa.dupe(Interface.Type, iface.types);
@@ -447,6 +451,7 @@ const Facts = struct {
     report: *Report,
     writer: *Schemes.Writer,
     contexts: *Contexts,
+    derived_impure: []const bool,
     words: std.ArrayList(u32) = .empty,
     slots: InternPool.Symbol.Map(u32) = .empty,
 
@@ -531,7 +536,12 @@ const Facts = struct {
             words.appendAssumeCapacity(try f.slot(e.method));
             words.appendAssumeCapacity(e.slot);
         }
-        return .{ .status = .present, .context = try f.writer.addRange(words.items) };
+        return .{ .status = .present, .context = try f.writer.addRange(words.items), .impure = rowImpure(f.derived_impure, t, kind) };
+    }
+
+    fn rowImpure(bits: []const bool, t: u32, kind: Contexts.Kind) bool {
+        const i = t * 2 + @backingInt(kind);
+        return i < bits.len and bits[i];
     }
 
     /// A `private_method` row: `(type_ref, method)`, the type whose module

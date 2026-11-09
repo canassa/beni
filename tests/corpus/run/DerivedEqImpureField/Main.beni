@@ -1,0 +1,54 @@
+-- run: a derived `eq` or `compare` whose position calls an impure method is
+-- impure at its site (checker-v2.md §26, amended 2026-11-09; issue #2115).
+--
+-- `Meter.eq` and `Meter.compare` write a line with `Debug.log`. Nothing
+-- reads the bindings in `check`, so the release optimiser keeps each one
+-- only while its right-hand side may be impure (`backend.md` §9 item 1).
+-- Until the fix, each `==`, `≠` and `<` below took its derived row as pure,
+-- and the release build printed only `2`. The paths:
+--
+--   - `equal`, `other`, `less`: this module's derived row of `Pair`;
+--   - `boxed`: `Box`'s derived row, of another module (its published bit);
+--   - `wrapped`: `Wrap`'s row reaches `Pair`'s, through a function call;
+--   - `held`: this module's row of `Holder` reaches `Box`'s;
+--   - `through`: `Pair`'s row as the evidence of a `where` clause.
+import Box exposing (Box)
+import Meter exposing (Meter)
+import Node exposing (Program)
+
+
+type Pair
+    = Pair Meter Int
+
+
+type Wrap
+    = Wrap Pair
+
+
+type Holder
+    = Holder Box
+
+
+same : a, a → Bool
+    where a.eq : a, a → Bool
+same x y = x == y
+
+
+nested : Int → Bool
+nested n = Wrap (Pair (Meter.Meter n) 2) == Wrap (Pair (Meter.Meter 6) 2)
+
+
+check : Int → Int
+check n =
+    equal = Pair (Meter.Meter n) 2 == Pair (Meter.Meter 1) 2
+    other = Pair (Meter.Meter n) 2 ≠ Pair (Meter.Meter 3) 2
+    less = Pair (Meter.Meter n) 2 < Pair (Meter.Meter 4) 2
+    boxed = Box.Box (Meter.Meter n) "a" == Box.Box (Meter.Meter 5) "a"
+    wrapped = nested n
+    held = Holder (Box.Box (Meter.Meter n) "b") == Holder (Box.Box (Meter.Meter 7) "b")
+    through = same (Pair (Meter.Meter n) 2) (Pair (Meter.Meter 8) 2)
+    n + 1
+
+
+main : Program
+main = Node.print "${check 1}"

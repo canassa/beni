@@ -103,7 +103,10 @@ pub const magic = "BENIIFC\x00";
 /// 22: realm-only dependencies may name unresolved scheme variables.
 /// 23: an effect class word carries `erased` in bits 10-11
 /// (transparent-effects-proposal.md §14.3 rule 6, amended 2026-11-08).
-pub const format_version: u32 = 23;
+/// 24: a type row's byte 31 and a hidden row's byte 23 carry the derived
+/// rows' `impure` bits, `eq` in bit 0 and `compare` in bit 1 (checker-v2.md
+/// §26, amended 2026-11-09).
+pub const format_version: u32 = 24;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -398,6 +401,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             row[28] = @backingInt(t.eq.status);
             row[29] = @backingInt(t.compare.status);
             row[30] = @backingInt(t.own_kind);
+            row[31] = impureBits(t.eq, t.compare);
         }
     }
     {
@@ -461,6 +465,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             row[20] = @backingInt(t.eq.status);
             row[21] = @backingInt(t.compare.status);
             row[22] = @backingInt(t.own_kind);
+            row[23] = impureBits(t.eq, t.compare);
         }
     }
     {
@@ -700,7 +705,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
             const row = in[i * 36 ..][0..36];
             // Flags past bit 1 and the padding are zero in every record a
             // writer produced (`checker.md` §7: padding is not a field).
-            if (row[15] & ~@as(u8, 7) != 0 or row[31] != 0) return error.BadRecord;
+            if (row[15] & ~@as(u8, 7) != 0 or row[31] & ~@as(u8, 3) != 0) return error.BadRecord;
             t.* = .{
                 .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .ctors_start = std.mem.readInt(u32, row[4..8], .little),
@@ -716,10 +721,12 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .eq = .{
                     .context = std.mem.readInt(u32, row[20..24], .little),
                     .status = std.enums.fromInt(Interface.Derived.Status, row[28]) orelse return error.BadRecord,
+                    .impure = row[31] & 1 != 0,
                 },
                 .compare = .{
                     .context = std.mem.readInt(u32, row[24..28], .little),
                     .status = std.enums.fromInt(Interface.Derived.Status, row[29]) orelse return error.BadRecord,
+                    .impure = row[31] & 2 != 0,
                 },
             };
         }
@@ -804,7 +811,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         iface.hidden_types = hidden;
         for (hidden, 0..) |*t, i| {
             const row = in[i * 28 ..][0..28];
-            if (row[7] & ~@as(u8, 3) != 0 or row[23] != 0) return error.BadRecord;
+            if (row[7] & ~@as(u8, 3) != 0 or row[23] & ~@as(u8, 3) != 0) return error.BadRecord;
             t.* = .{
                 .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .arity = std.mem.readInt(u16, row[4..6], .little),
@@ -817,10 +824,12 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .eq = .{
                     .context = std.mem.readInt(u32, row[12..16], .little),
                     .status = std.enums.fromInt(Interface.Derived.Status, row[20]) orelse return error.BadRecord,
+                    .impure = row[23] & 1 != 0,
                 },
                 .compare = .{
                     .context = std.mem.readInt(u32, row[16..20], .little),
                     .status = std.enums.fromInt(Interface.Derived.Status, row[21]) orelse return error.BadRecord,
+                    .impure = row[23] & 2 != 0,
                 },
             };
         }
@@ -1132,6 +1141,11 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
 /// `(param, symbol slot, scheme or none)` triples, parameters below the
 /// arity, strictly increasing by `(param, method text)`, or absent with
 /// `no_terms`.
+/// A type row's derived `impure` bits: `eq` in bit 0, `compare` in bit 1.
+fn impureBits(eq: Interface.Derived, compare: Interface.Derived) u8 {
+    return @as(u8, @intFromBool(eq.impure)) | (@as(u8, @intFromBool(compare.impure)) << 1);
+}
+
 fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arity: u16, payload_params: u32, key_kinds: u32, eq: Interface.Derived, compare: Interface.Derived) bool {
     const symbols = iface.symbols.len;
     if (key_kinds != Interface.no_terms) {
@@ -1147,6 +1161,8 @@ fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arit
     }
     const n = Interface.context_words;
     for ([_]Interface.Derived{ eq, compare }) |d| {
+        // Only a derived function has an effect.
+        if (d.impure and d.status != .present) return false;
         // A private method's row (§14.2): `(type_ref, method)`, a type
         // this record names and a symbol.
         if (d.status == .private_method or d.status == .requirement) {
@@ -1550,7 +1566,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
         .ctors_end = 0,
         .own_kind = .cell,
         .payload_params = 3,
-        .eq = .{ .status = .present, .context = 14 },
+        .eq = .{ .status = .present, .context = 14, .impure = true },
         .compare = .{ .status = .function },
     }, .{
         .name = @fromBackingInt(@intCast(0)),
@@ -1813,7 +1829,8 @@ test "each check the reader makes refuses the one mutation aimed at it" {
         .{ .what = "a term_lhs column shorter than the term tags", .column = .term_lhs, .table = .one_short },
         .{ .what = "a term_rhs column shorter than the term tags", .column = .term_rhs, .table = .one_short },
         .{ .what = "a type's flags past bit 2", .column = .types, .byte = 15, .value = 0x08 },
-        .{ .what = "a type's padding", .column = .types, .byte = 31, .value = 1 },
+        .{ .what = "a type's impure bits past bit 1", .column = .types, .byte = 31, .value = 4 },
+        .{ .what = "an impure bit on a derived row that is not present", .column = .types, .byte = 31, .value = 2 },
         .{ .what = "a type word no version defines", .column = .types, .byte = 30, .value = 0xff },
         .{ .what = "a type kind no version defines", .column = .types, .byte = 14, .value = 0xff },
         .{ .what = "an eq status no version defines", .column = .types, .byte = 28, .value = 0xff },

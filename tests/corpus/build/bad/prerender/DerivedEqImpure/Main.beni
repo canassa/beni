@@ -1,0 +1,50 @@
+-- An impure `eq` reached through a derived one (docs/design/prerender.md
+-- §3.1; checker-v2.md §26, amended 2026-11-09; issue #2115): `Pair` declares
+-- no `eq`, so `model.pair == …` calls its derived row, and the row calls
+-- `Meter.eq`, which reads the clock. The walk does not follow a derived
+-- function, so the `==` site itself must be impure. Until the fix it was
+-- taken as pure, and the build wrote the page with the answer the build
+-- machine's clock gave.
+import Browser
+import Html exposing (Html)
+import Meter exposing (Meter)
+import Tea
+
+
+type Pair
+    = Pair Meter Int
+
+
+type alias Model =
+    pair : Pair
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            { model | pair = Pair (Meter.Meter 0) 2 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{if model.pair == Pair (Meter.Meter 1) 2 then "same" else "other"}</output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { pair = Pair (Meter.Meter 0) 2 }, update = update, view = view }
+            )
+            "root"
+        )
+        [ "/" ]

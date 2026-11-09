@@ -355,7 +355,8 @@ pub fn check(in: Input) Error!Check.Counters {
     // edges: the summaries now (§14.4), before P6 and P8 read them.
     try @import("Realms.zig").seed(&effects, &cx, decl_scheme, &report);
     const effects_token = if (in.profile) |p| p.begin() else null;
-    const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
+    var derived_impure: []const bool = &.{};
+    const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence, &eager, &solver.contexts, &derived_impure);
     // What the lowering reads of the bits (transparent-effects-proposal.md
     // §16.2), before P8 publishes the sensitive classes it finds.
     const effect_plan = try EffectPlan.build(&effects, .{
@@ -520,6 +521,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .roundtrip = in.roundtrip_interfaces,
         .types = in.types,
         .contexts = &solver.contexts,
+        .derived_impure = derived_impure,
         .dispatch = in.dispatch,
         .crossing = if (type_keys) |t| t.crossing else &.{},
         .wire = wire_quantifiers,
@@ -588,8 +590,13 @@ pub fn check(in: Input) Error!Check.Counters {
 /// declaration's binding group, so the members of one are solved together,
 /// and what every answered wanted means for the bits — a derived answer's
 /// arguments flow into it (§14.3 rule 7), a joined one is the wanted it
-/// names.
-fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, groups: *Groups, evidence: *const Evidence) Error![]const u32 {
+/// names. A derived answer of this module's type also takes its row's
+/// positions (P5's body wanteds), whose methods the derived function calls
+/// (checker-v2.md §26, amended 2026-11-09); one of another module's type
+/// was seeded from the row's published bit when it was answered. After the
+/// solve, each row's bit is written to `derived_impure` (per local type ×
+/// method) for P8.
+fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, groups: *Groups, evidence: *const Evidence, eager: *const Eager, contexts: *const Contexts, derived_impure: *[]const bool) Error![]const u32 {
     // Each declaration's binding group, kept in `scratch` for `EffectPlan`.
     const unit = try scratch.alloc(u32, bir.decls.len);
     for (unit, 0..) |*u, d| {
@@ -600,11 +607,30 @@ fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_sch
     defer edges.deinit(scratch);
     var joins: std.ArrayList(Effects.Pair) = .empty;
     defer joins.deinit(scratch);
+    // Per local type × method, its eager row, or none.
+    const row_of = try scratch.alloc(u32, contexts.count * 2);
+    @memset(row_of, Contexts.none);
+    for (eager.rows.items, 0..) |row, i| {
+        const t = contexts.local(row.type_id) orelse continue;
+        row_of[t * 2 + @backingInt(row.kind)] = @intCast(i);
+    }
     for (evidence.wanteds.items, evidence.answers.items) |w, answer| {
         if (w.state != .answered) continue;
         switch (answer) {
-            .derived => |a| for (evidence.argsOf(a.args)) |sub| {
-                try edges.append(scratch, .{ .a = evidence.get(sub).method_type, .b = w.method_type });
+            .derived => |a| {
+                for (evidence.argsOf(a.args)) |sub| {
+                    try edges.append(scratch, .{ .a = evidence.get(sub).method_type, .b = w.method_type });
+                }
+                const t = contexts.local(a.type_id) orelse continue;
+                const r = row_of[t * 2 + @backingInt(Contexts.kindOf(w.method))];
+                if (r == Contexts.none) continue;
+                for (evidence.argsOf(eager.rows.items[r].body)) |position| {
+                    const p = evidence.get(position);
+                    // A position open on a marker is a context entry: the
+                    // use's own argument, above.
+                    if (p.state != .answered) continue;
+                    try edges.append(scratch, .{ .a = p.method_type, .b = w.method_type });
+                }
             },
             .codec => |a| for (evidence.argsOf(a.args)) |sub| {
                 try edges.append(scratch, .{ .a = evidence.get(sub).method_type, .b = w.method_type });
@@ -621,6 +647,19 @@ fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_sch
         .wanted_edges = edges.items,
         .wanted_joins = joins.items,
     });
+    const impure = try scratch.alloc(bool, contexts.count * 2);
+    @memset(impure, false);
+    derived_impure.* = impure;
+    for (eager.rows.items) |row| {
+        const t = contexts.local(row.type_id) orelse continue;
+        for (evidence.argsOf(row.body)) |position| {
+            const p = evidence.get(position);
+            if (p.state != .answered) continue;
+            const node = effects.nodeOf(p.method_type) orelse continue;
+            if (effects.levelOf(node) == .pure) continue;
+            impure[t * 2 + @backingInt(row.kind)] = true;
+        }
+    }
     return unit;
 }
 

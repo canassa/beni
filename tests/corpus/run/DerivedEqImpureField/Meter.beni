@@ -1,0 +1,10 @@
+pub type Meter
+    = Meter Int
+
+
+pub eq : Meter, Meter → Bool
+eq (Meter a) (Meter b) = Debug.log "Meter.eq" (a == b)
+
+
+pub compare : Meter, Meter → Order
+compare (Meter a) (Meter b) = Debug.log "Meter.compare" (Basics.compare a b)

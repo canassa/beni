@@ -1,0 +1,8 @@
+Meter.eq: True
+Meter.eq: False
+Meter.compare: LT
+Meter.eq: False
+Meter.eq: False
+Meter.eq: False
+Meter.eq: False
+2

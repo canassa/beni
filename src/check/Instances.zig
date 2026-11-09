@@ -1037,6 +1037,10 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
     } else &.{};
     Resolve.answer(s, id, .{ .derived = .{ .type_id = a.type, .args = .{} } });
     try Resolve.remember(s, id, root);
+    // What the row's own positions do, as its module published it
+    // (checker-v2.md §26, amended 2026-11-09); its context entries' effects
+    // flow in from the sub-wanteds below.
+    if (row.impure) if (s.cx.effects) |e| try e.seed(w.method_type, .impure);
     const n = iface.contextLen(row.context);
     const subs = try s.cx.scratch.alloc(WantedId, n);
     defer s.cx.scratch.free(subs);
