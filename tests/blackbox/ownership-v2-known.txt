@@ -6829,8 +6829,10 @@ tests/corpus/run/SanitiserFamilyDepthRunApart.beni SanitiserFamilyDepthRunApart 
 tests/corpus/run/SanitiserFamilyDepthRunApart.beni SanitiserFamilyDepthRunApart 51:23 #0 :: List.push <call> :: rejected :: accepted  a family's one place graph (#2214): the write is a parameter's or fresh slot, judged at the caller, no longer unknown
 tests/corpus/run/SanitiserFamilyDepthRunApart.beni SanitiserFamilyDepthRunApart 51:34 #0 :: SanitiserFamilyDepthRunApart.rRec <literal> :: accepted :: absent  a family's one place graph (#2214): the demand's path text
 tests/corpus/run/SanitiserFamilyDepthRunApart.beni SanitiserFamilyDepthRunApart 51:34 #0 :: SanitiserFamilyDepthRunApart.rRec w :: accepted :: absent  a family's one place graph (#2214): the demand's path text
-tests/corpus/ownership/FamilyFunctionRun.beni [node+everywhere] FamilyFunctionRun 27:33 #0 :: List.push v :: pending :: accepted  a family's one place graph (#2214): the demand's path text
-tests/corpus/ownership/FamilyFunctionRun.beni [node+everywhere] FamilyFunctionRun 27:9 #0 :: FamilyFunctionRun.run <lambda> :: absent :: rejected  a family's one place graph (ownership-v2.md §2.1, A family, #2214): v2 names the write at the caller
+tests/corpus/run/FamilyFunctionRun.beni FamilyFunctionRun 27:33 #0 :: List.push v :: pending :: accepted  a family's one place graph (#2214): the demand's path text
+tests/corpus/run/NonRegularMatchRelease.beni NonRegularMatchRelease 30:58 #0 :: List.push v :: pending :: accepted  a family's one place graph (#2214): the demand's path text
+tests/corpus/run/FamilyFunctionRun.beni FamilyFunctionRun 27:9 #0 :: FamilyFunctionRun.run <lambda> :: absent :: rejected  a family's one place graph (ownership-v2.md §2.1, A family, #2214): v2 names the write at the caller
+tests/corpus/run/NonRegularMatchRelease.beni NonRegularMatchRelease 30:36 #0 :: NonRegularMatchRelease.f <lambda> :: absent :: rejected  a family's one place graph (ownership-v2.md §2.1, A family, #2214): v2 names the write at the caller
 tests/corpus/browser/gpu/CanvasPage Main 126:5 #0 :: entry <update> model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 
 tests/corpus/run/SanitiserRowConvergesShared.beni SanitiserRowConvergesShared 36:37 #0 :: List.push s.b :: rejected :: accepted  v1 refuses at the callback; v2 accepts it there and refuses at the call

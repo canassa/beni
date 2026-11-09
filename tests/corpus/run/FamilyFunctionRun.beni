@@ -1,6 +1,6 @@
--- A function read at a family's payload runs on `a`, and the read is a subtree held whole
--- (`ownership-v2.md` §2.1, *The exit rule*). A run keeps a symbol that may hold a `var`, so what
--- it is given escapes and the call is refused. Here and not in `run/`, for #2225: `--release` hangs on it.
+-- A function read at a family's payload runs on `a`: `T` recurs with larger arguments
+-- (`Wrap (T (List a))`). The call does not change `k`, so the program prints 2 in development
+-- and in release. It was in `ownership/` until #2225, because `--release` did not end on it.
 import List
 import Node exposing (Program)
 import String

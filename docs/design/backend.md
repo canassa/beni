@@ -10029,7 +10029,12 @@ them in the artifact's wild set (checker-v2.md Â§36), and the merge closes the
 record endpoint a written type names is canonicalised from its plan's term, as the checker expands
 it. Where the closure would have to go through a type this file cannot canonicalise as the checker
 does, every key is wild (`all_wild`), since a key no checker key equals would be a filter that drops
-a site of its own type. Three things the specification did not
+a site of its own type. **Amended 2026-11-08 (#1763):** a type that recurs with larger arguments,
+such as `Nest a = Done a | Deeper (Nest (List a))`, has no finite closure: each wild application
+makes the next one wild. The closure counts the applications of each named type that it closes
+through, and past 1024 of one type every key is wild (`all_wild`). A finite closure meets finitely
+many applications. An infinite one meets infinitely many of one type, because the closure adds only
+parts and constructor fields (`RepKeys.max_closed_applications`). Three things the specification did not
 foresee:
 
 - **A name is a `NameIndex`, not a local.** Lowering numbers a local's disambiguator within its
