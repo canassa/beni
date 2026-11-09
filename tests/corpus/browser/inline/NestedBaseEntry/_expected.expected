@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <p id="n">"0"</p>
+  </main>
+</body>
+-- detail window base-entry 1
+console.log: read: 1
+console.log: read: 2
+console.log: reader returned: 2
+console.log: reader returned: 1
+console.log: update: 2
+console.log: update: 1
+<body>
+  <main>
+    <p id="n">"21"</p>
+  </main>
+</body>

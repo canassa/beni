@@ -1,7 +1,7 @@
 {
   "platform": true,
   "name": "browser-inline",
-  "platforms": ["html"],
+  "platforms": ["browser-base"],
   "program": "Browser.Program",
   "html": "index.html",
   "entryHost": "window",

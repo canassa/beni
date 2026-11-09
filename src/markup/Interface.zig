@@ -75,7 +75,9 @@ const std = @import("std");
 /// Version 1.25 adds `Program.Subscription.whole`, a declaration whose key's
 /// handler takes the message itself (`browser-inline.md` §3, amended
 /// 2026-11-09, #2258).
-pub const version: Version = .{ .major = 1, .minor = 25 };
+/// Version 1.26 adds the lowering's entry-capture dependency and the
+/// subscription fact that says whether that dependency is reachable.
+pub const version: Version = .{ .major = 1, .minor = 26 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -183,7 +185,13 @@ pub const Lowering = struct {
     /// refused.
     prerenders: bool = false,
 
-    pub const Effects = struct { sub: []const u8, cmd: []const u8 };
+    pub const Effects = struct {
+        sub: []const u8,
+        cmd: []const u8,
+        /// 1.26: the platform helper that captures a subscription's entry.
+        /// When unreachable, registration needs no renderer context.
+        entry_capture: ?struct { module: []const u8, name: []const u8 } = null,
+    };
 };
 
 /// 1.6: a value of a module of the platform chain, by the module's name and
@@ -606,6 +614,10 @@ pub const Program = struct {
         /// (`Context.programSubscriptionMessage`), not as the fields
         /// (`browser-inline.md` §3, amended 2026-11-09, #2258).
         whole: bool = false,
+        /// 1.26: a native callback can capture the renderer entry in this
+        /// build. False only when the lowering's capture helper is absent
+        /// from source reachability; timer-only builds pay no context cost.
+        entry: bool = true,
     };
 
     /// 1.14: what `Context.programSubscriptions` says of the set.

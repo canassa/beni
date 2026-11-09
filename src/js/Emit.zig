@@ -4767,6 +4767,24 @@ const Emitter = struct {
             }
         }
     }
+    /// A lowering names its own entry-capture helper. If source
+    /// reachability cannot reach it, no subscription can retain the entry
+    /// and the registration context is unnecessary. This is build-wide:
+    /// uncertain or mixed starts keep the context, never lose a guard.
+    fn subscriptionEntryNeeded(e: *Emitter) bool {
+        const lowering = findLowering(e.options.platform.lowering orelse return true) orelse return true;
+        const effects = lowering.effects orelse return true;
+        const capture = effects.entry_capture orelse return true;
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            if (e.session.store.package(e.graph().moduleFile(m)) != .platform) continue;
+            if (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), capture.module)) continue;
+            const decl = e.moduleValue(m, capture.name) orelse return true;
+            return e.live.decl(m, decl);
+        }
+        return false;
+    }
+
     fn buildDirect(e: *Emitter) !void {
         const a = e.scratch;
         const w = e.writes.?;
@@ -4776,6 +4794,7 @@ const Emitter = struct {
         }
         const calls = e.writes_calls;
         const effects = e.writes_effects;
+        const subscription_entry = e.subscriptionEntryNeeded();
         const birs = e.writes_birs;
         const programs = try a.alloc(Lower.Direct.Program, calls.len);
         // Per program, its read sets and its keys' writes, for the root plan.
@@ -4862,7 +4881,7 @@ const Emitter = struct {
                         const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
                         const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
                         for (subs.decls, set, starts) |dcl, *s, *st| {
-                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message, .whole = dcl.whole };
+                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message, .whole = dcl.whole, .entry = subscription_entry };
                             const info = try w.funInfo(dcl.start);
                             st.* = .{
                                 .kind = switch (info.kind) {

@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "nested-entry",
+  "platforms": ["browser-inline"],
+  "reexports": ["Browser", "Cmd", "Html", "Sub", "Tea"]
+}

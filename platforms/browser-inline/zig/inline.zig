@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 25 },
+    .targets = .{ .major = 1, .minor = 26 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -47,6 +47,8 @@ pub const lowering: m.Lowering = .{
         .{ .name = "send", .arity = 3 },
         // `(f)`: what undoes the mount, run once by `stop`.
         .{ .name = "own", .arity = 1 },
+        // Install a subscription with the renderer's captured event entry.
+        .{ .name = "subscribe", .arity = 1 },
         // `(id)`: the element a program mounts at.
         .{ .name = "root", .arity = 1 },
         // `(⊤)`: the page's unmount (`boundary.md` §9.4.5).
@@ -158,7 +160,7 @@ pub const lowering: m.Lowering = .{
     .places = true,
     .constructs = true,
     .arm_fields = true,
-    .effects = .{ .sub = "Sub", .cmd = "Cmd" },
+    .effects = .{ .sub = "Sub", .cmd = "Cmd", .entry_capture = .{ .module = "Listen", .name = "callback" } },
     .no_markup_values = no_markup_values,
     .prerenders = true,
 };
@@ -1901,8 +1903,13 @@ const Page = struct {
             }
             const send = try js.arrow(if (s.fields == 0) &.{} else &.{v}, sends);
             // What the start returns, the remover, is owned where it is made.
-            const start = try cx.programSubscriptionStart(body, @intCast(i), send);
-            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{start}));
+            const install = if (s.entry) try js.block() else body;
+            const start = try cx.programSubscriptionStart(install, @intCast(i), send);
+            const registered = if (s.entry) blk: {
+                try js.@"return"(install, start);
+                break :blk try js.call(try js.name(try cx.runtime("subscribe")), &.{try js.arrow(&.{}, install)});
+            } else start;
+            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{registered}));
         }
         // A hydrating application's own address, once `onUrlChange` listens:
         // sent when it is not the route `init` was handed (`prerender.md`

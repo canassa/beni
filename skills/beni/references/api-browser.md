@@ -2066,10 +2066,6 @@ module Http
   value stringBody : String, String → Body
   value stringPart : String, String → Part
   value track : String, (Progress → msg) → Sub msg  -- impure
-module Listen
-  value each : ((a → ⊤) → ⊤ → ⊤), (a → ⊤) → ⊤  -- suspends
-  value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
-  value on2 : String, String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
 module Random
   alias Generator a
   alias Seed
