@@ -122,10 +122,9 @@ Open the file your task needs.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
   `misplaced_ownership_word`, and `@ownership_summary_size`.
 - `references/cli.md` — every command and flag of `beni help`, the exit codes, `--diagnostics=json`.
-- `references/api-core.md` — every core module's public interface, generated.
+- `references/api-core.md` — generated core interfaces.
 - `references/api-node.md`, `references/api-browser.md`, `references/api-browser-tea.md`,
-  `references/api-browser-inline.md`, `references/api-html.md`, `references/api-cloudflare.md` — each platform's public interface,
-  generated. `api-html.md` lists the markup vocabulary.
+  `references/api-browser-inline.md`, `references/api-browser-base.md`, `references/api-html.md`, `references/api-cloudflare.md` — generated platform interfaces. `api-html.md` lists the markup vocabulary.
 
 A generated file writes each signature in beni's notation: `List a, (a → b) → List b`. Effects are
 inferred and never written. A value whose result reaches the host ends in the comment `-- impure`; one

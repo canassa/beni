@@ -1,0 +1,115 @@
+--! Renderer-independent listeners (`browser-capability-base.md` §4.1).
+--! A renderer binds an entry while it installs listeners. Each listener
+--! keeps that entry and decodes its event inside it, synchronously. Direct
+--! fiber listeners use the calling task's defect boundary instead.
+
+import Js
+import Task
+
+
+--| A synchronous entry into a renderer's dispatch guard.
+pub type alias Entry =
+    (⊤ → ⊤) → ⊤
+
+
+registration : Js.Ref Js.Value
+registration = Js.ref (Js.from direct)
+
+
+direct : sync (⊤ → ⊤) → ⊤
+direct work = work ⊤
+
+
+--| Install listeners with `entry`, restoring the enclosing registration
+--| even when installation throws. Neither callback may wait. Each listener
+--| captures the entry when installed, not when its event arrives.
+pub withEntry : sync ((⊤ → ⊤) → ⊤), sync (⊤ → a) → a
+withEntry entry install =
+    previous = Js.read registration
+    Js.write registration (Js.from entry)
+    Js.finally install λ⊤ → Js.write registration previous
+
+
+--| Wrap one native callback in the entry selected at installation. The
+--| reader and sender must both be inside `body`; the entry runs them
+--| synchronously, or drops them when its program has stopped.
+pub callback : sync (a → ⊤) → (a → ⊤)
+callback body =
+    entry = Js.read registration
+    λvalue → Js.to (Js.apply entry [ Js.from λ⊤ → body value ])
+
+
+--| Add a listener for every event named `name` on `target` (`"window"` or
+--| `"document"`) that calls `send (read event)` while the event is
+--| dispatched, and return what removes it.
+pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
+on target name read send =
+    host = Js.global target
+    handler = Js.from (callback λevent → send (read event))
+    _ = Js.call host "addEventListener" [ Js.from name, handler ]
+    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
+
+
+--| The same over the events of two names on one target: one listener, so
+--| an event of one name never overtakes an earlier one of the other.
+pub on2 : String, String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
+on2 target name other read send =
+    host = Js.global target
+    handler = Js.from (callback λevent → send (read event))
+    _ = Js.call host "addEventListener" [ Js.from name, handler ]
+    _ = Js.call host "addEventListener" [ Js.from other, handler ]
+
+    λ⊤ →
+        _ = Js.call host "removeEventListener" [ Js.from name, handler ]
+        Js.to (Js.call host "removeEventListener" [ Js.from other, handler ])
+
+
+--| Call `f` with each value `listener` sends, in order, for as long as the
+--| calling fiber runs: the listener is added when the call starts and
+--| removed however it ends. Values sent while `f` runs, or before the
+--| fiber takes them, are queued, so none is lost and none overtakes
+--| another.
+pub each : sync ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤
+each listener f = Task.bracket (λ⊤ → open listener) (λl _ → close l) λl → pump l f
+
+
+open : sync ((a → ⊤) → (⊤ → ⊤)) → Js.Value
+open listener =
+    l = Js.array [ Js.array [], Js.null, Js.null ]
+
+    handler =
+        λv →
+            waiting = Js.at l 1
+            if Js.isNull waiting then
+                Js.to (Js.call (Js.at l 0) "push" [ Js.from v ])
+            else
+                Js.setAt l 1 Js.null
+                Js.to (Js.apply waiting [ Js.from v ])
+    Js.setAt l 2 (Js.from (listener handler))
+    l
+
+
+close : Js.Value → ⊤
+close l = Js.to (Js.apply (Js.at l 2) [ Js.null ])
+
+
+pump : Js.Value, (a → ⊤) → ⊤
+pump l f =
+    f (next l)
+    pump l f
+
+
+-- The oldest value not yet taken, waiting for one when there is none.
+next : Js.Value → a
+next l = Task.callback λresume → take l resume
+
+
+take : Js.Value, Task.Resume a → (⊤ → ⊤)
+take l resume =
+    queue = Js.at l 0
+    if Js.to (Js.get queue "length") > 0 then
+        _ = Js.apply (Js.from resume) [ Js.call queue "shift" [] ]
+        Js.to Js.null
+    else
+        Js.setAt l 1 (Js.from resume)
+        λ⊤ → Js.setAt l 1 Js.null

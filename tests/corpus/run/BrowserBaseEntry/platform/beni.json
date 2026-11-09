@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "entry-probe",
+  "platforms": ["node", "browser-base"],
+  "reexports": ["Node"]
+}

@@ -337,3 +337,10 @@ platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition b95f3e5501c78
 core/Js.beni                    Js.entryWindow      08f81b7e42b0d7af28376e83e95549f17491d5fbb371fed98aaad2adeba2900b
 src/js/Lower.zig                Js.entryWindow      a706f857621de12a7bf8c9485e34a314c7533d3ddc404c494b5e7f87d07dc209
 platforms/browser/Gpu/Engine.beni Gpu.Engine.watchUncaptured d72686cccd1ae9c195ba873e5847380f985004b272d073913f4dc49bd72f7df7
+
+# Renderer-independent guarded listener entry (browser-capability-base.md §4.1).
+platforms/browser-base/Listen.beni               Listen.on                       883bc0127d0e2b1c72b2766d947d12632b230cd41182ab6da45b9e49e78a11dd
+platforms/browser-base/Listen.beni               Listen.on2                      b309938673fb2dfb99b8e1f13b1da21b4913d101143fa23ea9d6752315d5c51e
+platforms/browser-base/Listen.beni               Listen.callback                 0b409ff4f300866bdfe5d600108b346cb4929afa5632f9b8c32195f7a805729d
+platforms/browser-base/Listen.beni               Listen.withEntry                fe6c5ada5b705db0620c9144887ea829546a23040305eaec7b45e423154c6cbd
+platforms/browser-base/Listen.beni               Listen.direct                   40db7e59b6b53586657d04de30d3dc693bd1a941deb7db245b2d8a3028806af7
