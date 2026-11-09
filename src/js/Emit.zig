@@ -3546,10 +3546,18 @@ const Emitter = struct {
 
     /// The exports `--release` keeps of the markup runtime: what the
     /// modules import, and, when it is the program runtime too, `run` and
-    /// `start`, which the entry file imports — and which a build with no
-    /// entry file keeps as well, for the page's own entry (issue #1877).
-    /// `copyAssets` cuts the file to these, and `programUses` reads the
-    /// imports of the same kept part, so the two cannot disagree.
+    /// `start`. A build with an entry file imports them there; a build with
+    /// no entry file (`--library`) keeps them all the same, as it keeps the
+    /// file's other exports whole (issue #1877). `copyAssets` cuts the file
+    /// to these, and `programUses` reads the imports of the same kept part,
+    /// so the two cannot disagree.
+    ///
+    /// The names are the file's OWN exports to keep, never imports: when the
+    /// module supplies `run` or `start`, keeping a file export of that name
+    /// is a no-op if the file has none, and if it has one, `copyAssets`
+    /// writes it, so its imports must be listed. `rewriteProgramImports`
+    /// writes only names of the file's own `import … from "beni:<Module>"`,
+    /// so a name the file declares never enters an import.
     fn markupRuntimeKeep(e: *Emitter) ![]const []const u8 {
         var keep: std.ArrayList([]const u8) = .empty;
         if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, &.{ "run", "start" });
