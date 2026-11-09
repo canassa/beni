@@ -1,0 +1,397 @@
+--! A view checked once, when it is made: binary.md §6. The backing's facts
+--! that cannot change afterwards are checked then; a read or a write checks
+--! only the current length, the bounds and the value. A region over storage
+--! that is detached later gives `Detached`, found on the failure path with
+--! nothing thrown.
+
+import Binary exposing (Endian, View)
+import Js
+
+
+--| A checked view. `mode` is `ReadWrite` or `ReadOnly`; a `Region ReadOnly`
+--| has no write.
+pub opaque type Region mode
+    = Region Fields
+
+
+--| The mode of a region that can be written.
+pub type ReadWrite
+    = ReadWrite
+
+
+--| The mode of a region that can only be read.
+pub type ReadOnly
+    = ReadOnly
+
+
+--| A region's read or copy failure. Ranges are bytes: offset, length, bytes
+--| available. A region refused resizable storage when it was made, so this
+--| has only what can happen afterwards.
+pub type AccessError
+    = Detached
+    | OutOfBounds Int Int Int
+
+
+--| An integer write: the access failed, or the value is outside value, minimum, maximum.
+pub type WriteError
+    = WriteAccess AccessError
+    | InvalidValue Int Int Int
+
+
+--| A Float16 access: the access failed, or the host has no DataView Float16 methods.
+pub type Float16Error
+    = Float16Access AccessError
+    | NoFloat16
+
+
+-- `data` is a DataView over exactly the view's bytes (the view itself when it
+-- is one); `probe` a Uint8Array over the same bytes, whose `byteLength` reads
+-- 0, without a throw, once the storage is detached.
+type alias Fields =
+    source : View
+    backing : Binary.Backing
+    data : Js.Value
+    probe : Js.Value
+
+
+--| Check a view once: detached storage is `Detached`, resizable or growable
+--| storage `ResizableBacking`.
+pub region : View → Result Binary.BackingError (Region ReadWrite)
+region source =
+    storage = Binary.backing source?
+    handle = native source
+    buffer = Js.get handle "buffer"
+    offset = Js.get handle "byteOffset"
+    length = Js.get handle "byteLength"
+    data =
+        case source of
+            Binary.DataView own →
+                Js.from own
+            _ →
+                Js.construct (Js.global "DataView") [ buffer, offset, length ]
+    probe = Js.construct (Js.global "Uint8Array") [ buffer, offset, length ]
+    Ok (Region { source = source, backing = storage, data = data, probe = probe })
+
+
+--| The same region, without its writes.
+pub readOnly : Region mode → Region ReadOnly
+readOnly (Region fields) = Region fields
+
+
+--| The view the region was made from. No copy is made.
+pub view : Region mode → View
+view (Region fields) = fields.source
+
+
+--| The region's byte length now.
+pub byteLength : Region mode → Result AccessError Int
+byteLength (Region fields) =
+    total : Int
+    total = Js.to (Js.get fields.probe "byteLength")
+    if total == 0 && detached fields then Err Detached else Ok total
+
+
+--| The region's dimensions now, as `Binary.sourceInfo` gives a view's.
+--| Whether the storage is shared was decided when the region was made.
+pub sourceInfo : Region mode → Result AccessError Binary.SourceInfo
+sourceInfo (Region fields) =
+    if detached fields then
+        Err Detached
+    else
+        bytes : Int
+        bytes = Js.to (Js.get fields.probe "byteLength")
+        stride = Binary.elementSize (Binary.kind fields.source)
+        Ok
+            { byteLength = bytes
+            , byteOffset = Js.to (Js.get fields.probe "byteOffset")
+            , elementLength = bytes // stride
+            , bytesPerElement = stride
+            , shared =
+                case fields.backing of
+                    Binary.Local _ →
+                        False
+                    Binary.Shared _ →
+                        True
+            }
+
+
+--| Read an exact 64-bit word pair.
+pub readWord64 : Region mode, Int, Endian → Result AccessError Binary.Word64
+readWord64 (Region fields) offset endian =
+    checked fields offset 8?
+    Result.mapError (Binary.readWord64 (asView fields) offset endian) fromBinary
+
+
+--| Write an exact 64-bit word pair.
+pub writeWord64 : Region ReadWrite, Int, Endian, Binary.Word64 → Result AccessError ⊤
+writeWord64 (Region fields) offset endian word =
+    checked fields offset 8?
+    Result.mapError (Binary.writeWord64 (asView fields) offset endian word) fromBinary
+
+
+--| Read Int8 at a byte offset.
+pub readI8 : Region mode, Int → Result AccessError Int
+readI8 (Region fields) offset =
+    checked fields offset 1?
+    Ok (Js.to (Js.call fields.data "getInt8" [ Js.from offset ]))
+
+
+--| Write Int8 at a byte offset.
+pub writeI8 : Region ReadWrite, Int, Int → Result WriteError ⊤
+writeI8 (Region fields) offset number =
+    validValue number (-128) 127?
+    Result.mapError (checked fields offset 1) WriteAccess?
+    _ = Js.call fields.data "setInt8" [ Js.from offset, Js.from number ]
+    Ok ⊤
+
+
+--| Read Uint8 at a byte offset.
+pub readU8 : Region mode, Int → Result AccessError Int
+readU8 (Region fields) offset =
+    checked fields offset 1?
+    Ok (Js.to (Js.call fields.data "getUint8" [ Js.from offset ]))
+
+
+--| Write Uint8 at a byte offset.
+pub writeU8 : Region ReadWrite, Int, Int → Result WriteError ⊤
+writeU8 (Region fields) offset number =
+    validValue number 0 255?
+    Result.mapError (checked fields offset 1) WriteAccess?
+    _ = Js.call fields.data "setUint8" [ Js.from offset, Js.from number ]
+    Ok ⊤
+
+
+--| Read Int16 at a byte offset.
+pub readI16 : Region mode, Int, Endian → Result AccessError Int
+readI16 (Region fields) offset endian =
+    checked fields offset 2?
+    Ok
+        (Js.to
+            (Js.call fields.data "getInt16" [ Js.from offset, Js.from (endian == Binary.Little) ])
+        )
+
+
+--| Write Int16 at a byte offset.
+pub writeI16 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤
+writeI16 (Region fields) offset endian number =
+    validValue number (-32768) 32767?
+    Result.mapError (checked fields offset 2) WriteAccess?
+    _ =
+        Js.call fields.data "setInt16"
+            [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+    Ok ⊤
+
+
+--| Read Uint16 at a byte offset.
+pub readU16 : Region mode, Int, Endian → Result AccessError Int
+readU16 (Region fields) offset endian =
+    checked fields offset 2?
+    Ok
+        (Js.to
+            (Js.call fields.data "getUint16" [ Js.from offset, Js.from (endian == Binary.Little) ])
+        )
+
+
+--| Write Uint16 at a byte offset.
+pub writeU16 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤
+writeU16 (Region fields) offset endian number =
+    validValue number 0 65535?
+    Result.mapError (checked fields offset 2) WriteAccess?
+    _ =
+        Js.call fields.data "setUint16"
+            [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+    Ok ⊤
+
+
+--| Read Int32 at a byte offset.
+pub readI32 : Region mode, Int, Endian → Result AccessError Int
+readI32 (Region fields) offset endian =
+    checked fields offset 4?
+    Ok
+        (Js.to
+            (Js.call fields.data "getInt32" [ Js.from offset, Js.from (endian == Binary.Little) ])
+        )
+
+
+--| Write Int32 at a byte offset.
+pub writeI32 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤
+writeI32 (Region fields) offset endian number =
+    validValue number (-2147483648) 2147483647?
+    Result.mapError (checked fields offset 4) WriteAccess?
+    _ =
+        Js.call fields.data "setInt32"
+            [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+    Ok ⊤
+
+
+--| Read Uint32 at a byte offset.
+pub readU32 : Region mode, Int, Endian → Result AccessError Int
+readU32 (Region fields) offset endian =
+    checked fields offset 4?
+    Ok
+        (Js.to
+            (Js.call fields.data "getUint32" [ Js.from offset, Js.from (endian == Binary.Little) ])
+        )
+
+
+--| Write Uint32 at a byte offset.
+pub writeU32 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤
+writeU32 (Region fields) offset endian number =
+    validValue number 0 4294967295?
+    Result.mapError (checked fields offset 4) WriteAccess?
+    _ =
+        Js.call fields.data "setUint32"
+            [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+    Ok ⊤
+
+
+--| Read Float16 at a byte offset. A host without DataView.getFloat16 is NoFloat16.
+pub readF16 : Region mode, Int, Endian → Result Float16Error Float
+readF16 (Region fields) offset endian =
+    Result.mapError (checked fields offset 2) Float16Access?
+    if not (Js.typeIs (Js.get fields.data "getFloat16") "function") then
+        Err NoFloat16
+    else
+        Ok
+            (Js.to
+                (Js.call fields.data "getFloat16"
+                    [ Js.from offset, Js.from (endian == Binary.Little) ]
+                )
+            )
+
+
+--| Write Float16 at a byte offset, rounding to the nearest half-precision value.
+pub writeF16 : Region ReadWrite, Int, Endian, Float → Result Float16Error ⊤
+writeF16 (Region fields) offset endian number =
+    Result.mapError (checked fields offset 2) Float16Access?
+    if not (Js.typeIs (Js.get fields.data "setFloat16") "function") then
+        Err NoFloat16
+    else
+        _ =
+            Js.call fields.data "setFloat16"
+                [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+        Ok ⊤
+
+
+--| Read Float32 at a byte offset.
+pub readF32 : Region mode, Int, Endian → Result AccessError Float
+readF32 (Region fields) offset endian =
+    checked fields offset 4?
+    Ok
+        (Js.to
+            (Js.call fields.data "getFloat32" [ Js.from offset, Js.from (endian == Binary.Little) ])
+        )
+
+
+--| Write Float32 at a byte offset, rounding to the nearest single-precision value.
+pub writeF32 : Region ReadWrite, Int, Endian, Float → Result AccessError ⊤
+writeF32 (Region fields) offset endian number =
+    checked fields offset 4?
+    _ =
+        Js.call fields.data "setFloat32"
+            [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+    Ok ⊤
+
+
+--| Read Float64 at a byte offset.
+pub readF64 : Region mode, Int, Endian → Result AccessError Float
+readF64 (Region fields) offset endian =
+    checked fields offset 8?
+    Ok
+        (Js.to
+            (Js.call fields.data "getFloat64" [ Js.from offset, Js.from (endian == Binary.Little) ])
+        )
+
+
+--| Write Float64 at a byte offset.
+pub writeF64 : Region ReadWrite, Int, Endian, Float → Result AccessError ⊤
+writeF64 (Region fields) offset endian number =
+    checked fields offset 8?
+    _ =
+        Js.call fields.data "setFloat64"
+            [ Js.from offset, Js.from number, Js.from (endian == Binary.Little) ]
+    Ok ⊤
+
+
+-- The one check per access: the current length, read from the probe, and the
+-- range. An Int is integral, and NaN or an infinity fails both comparisons.
+-- Detachment makes that length 0, so a detached region fails here before any
+-- host call; only then is `detached` read, to name the failure.
+checked : Fields, Int, Int → Result AccessError ⊤
+checked fields offset size =
+    total : Int
+    total = Js.to (Js.get fields.probe "byteLength")
+    if offset ≥ 0 && offset ≤ total - size then
+        Ok ⊤
+    else if detached fields then
+        Err Detached
+    else
+        Err (OutOfBounds offset size total)
+
+
+-- The region's DataView as a `Binary.View`, for the operations Binary already
+-- has: they check the backing once more, which a region refused resizable for.
+asView : Fields → View
+asView fields = Binary.DataView (Js.to fields.data)
+
+
+fromBinary : Binary.AccessError → AccessError
+fromBinary error =
+    case error of
+        Binary.AccessBacking _ →
+            Detached
+        Binary.OutOfBounds offset length available →
+            OutOfBounds offset length available
+
+
+-- Shared storage never detaches.
+detached : Fields → Bool
+detached fields =
+    case fields.backing of
+        Binary.Local buffer →
+            Binary.detached buffer
+        Binary.Shared _ →
+            False
+
+
+validValue : Int, Int, Int → Result WriteError ⊤
+validValue value lower upper =
+    if
+        value < lower
+            || value > upper
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+    then
+        Err (InvalidValue value lower upper)
+    else
+        Ok ⊤
+
+
+native : View → Js.Value
+native value =
+    case value of
+        Binary.Int8Array handle →
+            Js.from handle
+        Binary.Uint8Array handle →
+            Js.from handle
+        Binary.Uint8ClampedArray handle →
+            Js.from handle
+        Binary.Int16Array handle →
+            Js.from handle
+        Binary.Uint16Array handle →
+            Js.from handle
+        Binary.Int32Array handle →
+            Js.from handle
+        Binary.Uint32Array handle →
+            Js.from handle
+        Binary.BigInt64Array handle →
+            Js.from handle
+        Binary.BigUint64Array handle →
+            Js.from handle
+        Binary.Float16Array handle →
+            Js.from handle
+        Binary.Float32Array handle →
+            Js.from handle
+        Binary.Float64Array handle →
+            Js.from handle
+        Binary.DataView handle →
+            Js.from handle

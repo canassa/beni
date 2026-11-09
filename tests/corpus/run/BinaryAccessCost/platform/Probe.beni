@@ -4,6 +4,7 @@
 --! `detached` and `growable` getters still tells the kinds apart.
 
 import Binary
+import Binary.Region as Region
 import Js
 
 
@@ -83,9 +84,78 @@ counted body =
               )
             ]
     Js.set (Js.global "globalThis") "DataView" (Js.construct (Js.global "Proxy") [ original, trap ])
-    Js.finally (λ⊤ → { value = body ⊤, brand = Js.read brand, views = Js.read views }) λ⊤ →
-        _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", descriptor ]
-        Js.set (Js.global "globalThis") "DataView" original
+    -- A tuple, not a record: a release build evaluates the fields of
+    -- `{ value = body ⊤, brand = Js.read brand }` in key order, reading the
+    -- count before the body runs (a compiler defect, reported 2026-11-09).
+    ( value, brandCount, viewCount ) =
+        Js.finally (λ⊤ → ( body ⊤, Js.read brand, Js.read views )) λ⊤ →
+            _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", descriptor ]
+            Js.set (Js.global "globalThis") "DataView" original
+    { value = value, brand = brandCount, views = viewCount }
+
+
+--| A region (binary.md §6) of a Uint8Array view, made before counting: a
+--| thousand byte writes and a thousand float reads read neither `detached`
+--| nor a brand getter and make no DataView. Detachment is then found on the
+--| failure path only.
+pub regionAccess : ⊤ → List String
+regionAccess ⊤ =
+    case
+        Binary.allocate 4096
+            ▷ Result.mapError λ_ → ⊤
+            ▷ Result.andThen λbuffer →
+                Binary.view (Binary.Local buffer) Binary.U8 Binary.whole
+                    ▷ Result.andThen λview → Result.mapError (Region.region view) Binary.ViewBacking
+                    ▷ Result.mapError λ_ → ⊤
+                    ▷ Result.map λregion → ( buffer, region )
+    of
+        Ok ( buffer, region ) →
+            live = detachedReads λ⊤ → counted λ⊤ → "${Debug.toString (regionAccesses region 0 0)}"
+            _ = Binary.transfer buffer
+            gone = detachedReads λ⊤ → counted λ⊤ → "${Debug.toString (regionAccesses region 0 0)}"
+            [ line "region of Uint8Array" live, line "detached region" gone ]
+        Err _ →
+            [ "no region" ]
+
+
+line : String, { value : { value : String, brand : Int, views : Int }, reads : Int } → String
+line name counts =
+    "${name}: ${counts.value.value}, brand checks ${String.fromInt counts.value.brand}, DataViews ${String.fromInt counts.value.views}, detached reads ${String.fromInt counts.reads}"
+
+
+regionAccesses : Region.Region Region.ReadWrite, Int, Float → Result String Float
+regionAccesses region index total =
+    if index == 1000 then
+        Ok total
+    else
+        Result.mapError (Region.writeU8 region index (Int.rem index 256)) Debug.toString?
+        number = Result.mapError (Region.readF32 region (index * 4) Binary.Little) Debug.toString?
+        regionAccesses region (index + 1) (total + number)
+
+
+-- The body's value with the calls of ArrayBuffer.prototype's `detached`
+-- getter it caused; the getter is put back however the body ends.
+detachedReads : (⊤ → a) → { value : a, reads : Int }
+detachedReads body =
+    reads = Js.ref 0
+    object = Js.global "Object"
+    prototype = Js.get (Js.global "ArrayBuffer") "prototype"
+    descriptor = Js.call object "getOwnPropertyDescriptor" [ prototype, Js.from "detached" ]
+    getter = Js.get descriptor "get"
+    spy =
+        Js.object
+            [ ( "configurable", Js.from True )
+            , ( "get"
+              , Js.method λself →
+                  Js.write reads (Js.read reads + 1)
+                  Js.call getter "call" [ self ]
+              )
+            ]
+    _ = Js.call object "defineProperty" [ prototype, Js.from "detached", spy ]
+    ( value, count ) = Js.finally (λ⊤ → ( body ⊤, Js.read reads )) λ⊤ →
+        _ = Js.call object "defineProperty" [ prototype, Js.from "detached", descriptor ]
+        ⊤
+    { value = value, reads = count }
 
 
 --| With ArrayBuffer.prototype.detached and SharedArrayBuffer.prototype.growable

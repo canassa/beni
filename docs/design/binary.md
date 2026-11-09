@@ -176,10 +176,14 @@ RequiredAlignOf(T, uniform), array strides, and the structure-gap rule;
 WGSL 12.1 exempts the uniform address space from the `` multiple rule,
 so a member's `` is checked only as a power of two at least AlignOf(T).
 
-## 6. Checked regions — PROPOSED 2026-11-09, awaiting the owner
+## 6. Checked regions
 
-**Status: proposed, not built.** The open choices are §8; nothing here is
-built until the owner settles them.
+**Status: decided 2026-11-09** — the owner took every §8 choice as proposed.
+Built: `core/Binary/Region.beni` (fixtures `run/BinaryRegion`,
+`check/bad/BinaryRegionReadOnlyWrite`, the region lines of
+`run/BinaryNative` and `run/BinaryAccessCost`). `MappedRange.region` and
+`Wgsl`'s internal region are later slices; until each lands, the text below
+that names it is the contract still to build.
 
 §1 makes every scalar access validate the backing again because a `View` or
 a `Source` can be built from any native handle. After §1's 2026-11-09 change a
@@ -200,6 +204,7 @@ region   : View → Result BackingError (Region ReadWrite)
 readOnly : Region mode → Region ReadOnly
 view     : Region mode → View          -- the View it was made from, no copy
 byteLength : Region mode → Result AccessError Int   -- Detached when detached
+sourceInfo : Region mode → Result AccessError SourceInfo
 ```
 
 What a region holds and checks:
@@ -211,7 +216,9 @@ What a region holds and checks:
   it from there). It holds a DataView over exactly the view's bytes (the view
   itself when it is one) and a Uint8Array over the same bytes, the *probe*.
 - **Per access**: read the probe's `byteLength`, check the offset and width
-  against it, check the value (integer writes), call the DataView method. A
+  against it (`offset ≥ 0` and `offset ≤ length − width`: an `Int` is
+  integral, and NaN or an infinity fails both), check the value (integer
+  writes), call the DataView method. A
   typed array's `byteLength` is 0, with no throw, once its storage is
   detached, so a detached region fails the bounds check before any host call
   can throw. Only on that failure path does the access read `detached`
@@ -253,9 +260,9 @@ past it gets `Detached`, which the range's own functions report as
 `ResourceExpired`; a fake host used by tests must detach on unmap the same way
 (`tests/platforms/gpu`). `MappedRange`'s existing per-access functions stay.
 
-## 7. Bulk operations — PROPOSED 2026-11-09, awaiting the owner
+## 7. Bulk operations
 
-**Status: proposed, not built** (§8). Each call checks once — backing (or the
+**Status: decided 2026-11-09** (§8), not built yet. Each call checks once — backing (or the
 region's length), the whole byte range, every value — and then runs at host
 speed. A call that fails writes nothing: values are validated before the
 first byte is written.
@@ -286,7 +293,15 @@ host's, the implementation uses a typed array's `set`/`slice` (one host call);
 otherwise a DataView loop after the single check. Both give the same bytes;
 the choice is not observable.
 
-## 8. Open choices for §6–§7 (the owner's)
+## 8. Choices for §6–§7 — decided 2026-11-09
+
+The owner took every choice below as proposed (2026-11-09): a new
+`Binary.Region` module; read-only as the phantom mode; the names `Region`,
+`region`, `readOnly`; Float16 availability checked per call; a bulk integer
+failure names its index (`InvalidValueAt index value minimum maximum` in a
+`BulkWriteError`); a `List` in and out; no element-indexed access; `Wgsl`
+makes one region per call internally and `Atomics` stays on `View`. The
+questions as they were put:
 
 1. **A region type, or change `View`'s scalar functions?** Proposed: a new
    `Binary.Region` module beside them, so no caller changes and a hot loop

@@ -1,0 +1,1 @@
+[{"code":"type_mismatch","severity":"error","span":{"file":"tests/corpus/check/bad/BinaryRegionReadOnlyWrite.beni","start":{"line":8,"col":30},"end":{"line":8,"col":36}},"title":"TYPE MISMATCH","message":"The 1st argument to `writeU8` is not what I expect:\n\nThis argument is:\n\n    Region ReadOnly\n\nBut `writeU8` needs the 1st argument to be:\n\n    Region ReadWrite\n"}]

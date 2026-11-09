@@ -1,0 +1,8 @@
+-- A read-only region has no write: `Region.writeU8` takes `Region ReadWrite`
+-- (binary.md §6).
+import Binary
+import Binary.Region as Region exposing (ReadOnly, Region)
+
+
+poke : Region ReadOnly → Result Region.WriteError ⊤
+poke region = Region.writeU8 region 0 1
