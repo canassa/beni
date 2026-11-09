@@ -17,12 +17,16 @@ const Trees = @import("Trees.zig");
 /// non-deep `π_j·s` at `p` among `all` (entries with `slot`, `open`, `a`).
 /// Never a level's copy: a read of every slot skips it (`Relation.feedAt`).
 pub fn saidAbove(slots: *const Slots.Table, all: anytype, x: anytype) bool {
-    if (x.a.kind != .param or x.a.deep) return false;
-    const wq, const ws = .{ slots.relWords(x.slot), slots.relWords(x.a.slot) };
-    for (all) |o| if (o.open and o.a.kind == .param and !o.a.deep and o.a.j == x.a.j and o.a.path != Trees.Arrival.level_copy) {
-        const wp, const wo = .{ slots.relWords(o.slot), slots.relWords(o.a.slot) };
-        if (wp.len >= wq.len or !SlotWords.startsAt(wq, wp) or ws.len != wo.len + wq.len - wp.len) continue;
-        if (SlotWords.startsAt(ws, wo) and SlotWords.same(ws[wo.len..], wq[wp.len..])) return true;
-    };
+    for (all) |o| if (o.open and o.a.path != Trees.Arrival.level_copy and says(slots, o.slot, o.a, x.slot, x.a)) return true;
     return false;
+}
+
+/// Whether arrival `o`, open at slot `op`, says arrival `x` at slot `xq` by structure:
+/// `o` is a non-deep `π_j·s`, `xq` is `op·r` with `r` not empty, and `x` is `π_j·(s·r)`.
+pub fn says(slots: *const Slots.Table, op: Slots.Rel, o: Trees.Arrival, xq: Slots.Rel, x: Trees.Arrival) bool {
+    if (x.kind != .param or x.deep or o.kind != .param or o.deep or o.j != x.j) return false;
+    const wq, const ws = .{ slots.relWords(xq), slots.relWords(x.slot) };
+    const wp, const wo = .{ slots.relWords(op), slots.relWords(o.slot) };
+    if (wp.len >= wq.len or !SlotWords.startsAt(wq, wp) or ws.len != wo.len + wq.len - wp.len) return false;
+    return SlotWords.startsAt(ws, wo) and SlotWords.same(ws[wo.len..], wq[wp.len..]);
 }
