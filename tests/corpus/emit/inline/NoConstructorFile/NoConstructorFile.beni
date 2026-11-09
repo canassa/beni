@@ -1,0 +1,26 @@
+-- A development build of an inline page writes no `_platform/Tea.mjs`:
+-- the lowering compiles `Tea.sandbox`'s call as the program's mount and
+-- names the constructor not at all (`boundary.md` §9.4.6, version 1.14),
+-- so nothing imports the file (`browser-inline.md` §10.5, #2106).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Increment
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Increment →
+            model + 1
+
+
+view : Int → Html Msg
+view model = <button onClick={Increment}>{model}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }

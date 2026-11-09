@@ -2131,6 +2131,16 @@ amendment. No module imports that file (#2106). It, its source map and their two
 `_manifest.txt` are the only bytes of a development tree that change.
 `build/bad/inline/ConstructorsAsValues` pins the refusal of all four as values.
 
+*Amended 2026-11-09 (#2106): a development build writes no `_platform/Tea.mjs`.* The lowering
+writes no callee for a constructor's call, so reachability does not follow the callee either: for
+a lowering that sets `constructs`, `Emit` cuts the callee instruction of each call that
+`Lower.findPrograms` finds (`Reach.Input.cuts`). A constructor that only such calls name is not
+reached, and a development build writes no module for it. A page that names only `Tea` ships
+`_platform/Inline.mjs` and no `_platform/Tea.mjs`, its source map or their lines of
+`_manifest.txt`. A project with its own `platform/` writes no
+`_platform/_browser-inline/Tea.mjs`. A release build did not change. No other byte of a
+development tree changes. `emit/inline/NoConstructorFile` pins that the file is absent.
+
 *Amended 2026-11-05 (#1169): a URL that changes, and a constant the build cannot decide.* The
 runtime holds `safeUrl` and its pattern, `scriptUrl`, as code of `Inline.beni`: the code of
 `browser`'s `Rt.beni` (`backend.md` §15.11, *`safeUrl` is written in beni*), copied and not
