@@ -329,7 +329,7 @@ const layers = [_]Entry{
     .{ .file = "CodeCaps.zig", .layer = 12, .max_lines = 90 },
     // A parameter annotated with a type variable, split from `Groups` (#2028).
     .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
-    // A group.s codes solved on their own and its local cycles, split from `Groups` (§2.12, #2035).
+    // A group's codes solved on their own and its local cycles, split from `Groups` (§2.12, #2035).
     .{ .file = "Peel.zig", .layer = 12, .max_lines = 110 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
