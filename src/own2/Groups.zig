@@ -68,6 +68,7 @@ const Within = @import("Within.zig");
 const Peel = @import("Peel.zig");
 const Outward = @import("Outward.zig");
 const Needs = @import("Needs.zig");
+const HandedWrites = @import("HandedWrites.zig");
 const NeedLeaves = @import("NeedLeaves.zig");
 const ComparisonWalks = @import("ComparisonWalks.zig");
 const EntryHeld = @import("EntryHeld.zig");
@@ -119,10 +120,9 @@ pub const Input = struct {
     }
 };
 
-/// How a module reads another's contracts (§3.6): module `m`'s block
-/// decoded into `mod`'s tables, per declaration of `m` its contract or
-/// `none`; null when `m` publishes no block, or one that does not decode
-/// (R-5.7.4: an unknown summary).
+/// How a module reads another's contracts (§3.6): module `m`'s block decoded into `mod`'s tables, per declaration of
+/// `m` its contract or `none`; null when `m` publishes no block, or one that does not decode (R-5.7.4: an unknown
+/// summary).
 pub const Imports = struct {
     ctx: *anyopaque,
     read: *const fn (ctx: *anyopaque, mod: *Module, m: u32) Error!?[]u32,
@@ -1608,6 +1608,7 @@ fn solveRounds(mod: *Module, rs: []DeclResult, codes: []const u32, owner: []cons
             for (order, 0..) |x, i| {
                 charging(mod, &rs[owner[x]].account);
                 mod.cur_locals = in.bir.decls[rs[owner[x]].decl].locals_start;
+                if (try HandedWrites.pass(&needs, &evals[i], @intCast(i), &regions[owner[x]])) more = true;
                 if (try Needs.pass(&needs, &evals[i], @intCast(i))) more = true;
                 if (sv) |v| try v.pump();
             }

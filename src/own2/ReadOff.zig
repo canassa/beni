@@ -800,7 +800,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
         if ((try s.effected.getOrPut(gpa, .{ x, @intFromBool(deep), @backingInt(out) })).found_existing) continue;
         const l = f.leafAt(x);
-        if (l.kind == .answer and out == .writes) _ = try Needs.publish(s, l.atom, l.extra, deep or l.whole);
+        if (l.kind == .answer and out == .writes) _ = try Needs.publish(s, l.atom, 0, l.extra, deep or l.whole);
         if (l.kind == .answer and out == .escapes) _ = try Contract.Draft.addEffect(Put.effList(s, out), s.arena, .{ .j = f.cbs.items[l.atom].j, .slot = f.cbs.items[l.atom].slot, .deep = true });
         if (out == .escapes and try Made.selfEscape(s, l)) continue;
         if (out == .escapes and l.kind == .top and l.root != Value.none) try Origin.leaves(&e.ev, l, &stack);
@@ -830,7 +830,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
             } else if (out == .writes) for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
                 // Deep where a step names no level (a payload's `var`), and whole where no slot names it.
                 const rel = try f.slots.relUnder(gpa, f.account, f.places, r.path, .from(sl));
-                _ = try Needs.publish(s, r.a, rel orelse Slots.root, deep or rel == null or f.places.kind(f.places.pathPlace(.from(sl))) == .@"var");
+                _ = try Needs.publish(s, r.a, 0, rel orelse Slots.root, deep or rel == null or f.places.kind(f.places.pathPlace(.from(sl))) == .@"var");
             },
         }
     }

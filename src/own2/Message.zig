@@ -248,7 +248,7 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
             },
             .captured => w.print("{s}, a closure holding it, is used at {d}:{d}", .{ localName(f, l.holder.?.who), up.line, up.col }),
             .once => w.writeAll("it is written by a closure that may run more than once"),
-            .need => if (d.kept) w.print("{s} runs a function that edits what another returns, and nothing checks that yet", .{op_name}) else w.print("{s} edits what it returns, which may be a list it does not own", .{if (op_name.len != 0) op_name else "a closure that leaves"}),
+            .need => if (d.kept) w.print("{s} runs a function that edits what another returns, and nothing checks that yet", .{op_name}) else if (d.supplied) w.print("{s} edits a list after it hands it to this function, which may keep it", .{op_name}) else w.print("{s} edits what it returns, which may be a list it does not own", .{if (op_name.len != 0) op_name else "a closure that leaves"}),
             .call => w.print("{s} still holds it when it runs the function", .{op_name}),
             .held_operand => blk: {
                 const pp = f.names.position(f.names.ctx, f.module, l.holder.?.token);

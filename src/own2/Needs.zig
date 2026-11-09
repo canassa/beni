@@ -1,12 +1,9 @@
-//! L11: a label's need (`docs/design/ownership-v2.md` §2.11.3, *a need*). A
-//! callee that writes a label's answer cannot judge the write: it publishes
-//! the answer's slot on the label, and each caller discharges it against the
-//! code it hands. Read after a round's deliveries and again until nothing is
-//! new, so a member of the group is read as its facts stand.
+//! L11: a label's need (`docs/design/ownership-v2.md` §2.11.3, *a need*). A callee that writes a label's answer cannot
+//! judge the write: it publishes the answer's slot on the label, and each caller discharges it against the code it
+//! hands. Read after a round's deliveries and again until nothing is new, so a group member is read as its facts stand.
 //!
-//! Obligations kept here: O1 (a function no caller can name answers nothing
-//! a need can rely on), O14's need half (a need holds at each call that
-//! applies the label, outward).
+//! Obligations kept here: O1 (a function no caller can name answers nothing a need can rely on), O14's need half (a
+//! need holds at each call that applies the label, outward).
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
@@ -17,6 +14,8 @@ const LabelChain = @import("LabelChain.zig");
 const NeedArrivals = @import("NeedArrivals.zig");
 const NeedFolds = @import("NeedFolds.zig");
 const NeedCarry = @import("NeedCarry.zig");
+const KeepsNot = @import("KeepsNot.zig");
+const RunKeeps = @import("RunKeeps.zig");
 const CallFolds = @import("CallFolds.zig");
 const SlotWords = @import("SlotWords.zig");
 const Graft = @import("Graft.zig");
@@ -34,9 +33,12 @@ const none: u32 = Ids.none_int;
 /// What was discharged already, across a round's passes, by evaluation.
 pub const State = struct {
     seen: Ids.FixedDict(6) = .{},
+    /// Per evaluation, the demands `HandedWrites.pass` has read.
+    handed: std.ArrayList(u32) = .empty,
 
     pub fn deinit(s: *State, gpa: Allocator) void {
         s.seen.deinit(gpa);
+        s.handed.deinit(gpa);
     }
 
     fn first(s: *State, gpa: Allocator, key: [6]u32) Error!bool {
@@ -44,10 +46,42 @@ pub const State = struct {
     }
 };
 
-/// Label `cb`'s answer is written at `slot`: said on the frame's label.
-pub fn publish(s: *Sink, cb: u32, slot: Slots.Rel, deep: bool) Error!bool {
+/// Label `cb`'s answer is written at `slot` (`j` 0), or what it is handed as its argument `j - 1` is, after
+/// it was handed (§2.11.3, *a need on a supply*): said on the frame's label.
+pub fn publish(s: *Sink, cb: u32, j: u32, slot: Slots.Rel, deep: bool) Error!bool {
     const at = try s.labelIndex(cb);
-    return Contract.Draft.addEffect(&s.d.labels.items[at].need, s.arena, .{ .j = 0, .slot = slot, .deep = deep });
+    return Contract.Draft.addEffect(&s.d.labels.items[at].need, s.arena, .{ .j = j, .slot = slot, .deep = deep });
+}
+
+/// Where a need on a supply passes on: the frame's label, argument `k`, whole.
+const Pub = struct {
+    e: *Evaluation,
+    new: bool = false,
+    pub fn on(p: *Pub, cb: u32, k: u32) Error!void {
+        p.new = try publish(&p.e.sink, cb, k + 1, Slots.root, true) or p.new;
+    }
+};
+
+/// Known code `v` keeps nothing of what need `n` covers of its argument `n.j - 1`, or refused (§2.11.3).
+fn keeps(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u32, n: Effect) Error!bool {
+    var p: Pub = .{ .e = e };
+    const c = e.fr().calls.items[v].contract;
+    if (c != none and try KeepsNot.nothing(&e.ev, c, v, n.j - 1, e.fr().slots.relWords(n.slot), n.deep, &p)) return p.new;
+    try refuseOnce(st, e, x, q, l, true);
+    return true;
+}
+
+/// A fold's run hands its accumulator to a label that passes on (#2386): `RunKeeps` relies on the need this
+/// publishes on the frame's label, for each call `q` whose label hands a known code its own answer back.
+fn fedOn(e: *Evaluation, q: u32) Error!bool {
+    const call = e.fr().calls.items[q];
+    var p: Pub = .{ .e = e };
+    for (e.contracts.labelsOf(e.contracts.head(call.contract).labels), 0..) |l, li| if (e.ev.known.get(.{ q, @as(u32, @intCast(li)) })) |v| {
+        for (e.contracts.suppliesOf(l.supplies)) |su| if (try KeepsNot.selfFed(&e.ev, q, @intCast(li), su.k)) {
+            _ = try RunKeeps.nothing(&e.ev, v, su.k, true, &p);
+        };
+    };
+    return p.new;
 }
 
 /// One pass over evaluation `x`'s calls; true when something new was made.
@@ -59,6 +93,7 @@ pub fn pass(st: *State, e: *Evaluation, x: u32) Error!bool {
         if (!e.inLast(q)) continue;
         const call = f.calls.items[q];
         if (call.contract == none) continue;
+        new = try fedOn(e, q) or new;
         if (memberOf(e, call)) |m| {
             var i: usize = 0;
             while (i < m.draft.labels.items.len) : (i += 1) {
@@ -90,19 +125,19 @@ fn atLabel(st: *State, e: *Evaluation, x: u32, q: u32, li: u32, n: Effect) Error
     const f = e.fr();
     const call = f.calls.items[q];
     const l = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[li];
-    if (l.j >= call.args.len or !try st.first(e.gpa(), .{ x, q, li, n.slot, @intFromBool(n.deep), none })) return false;
+    if (l.j >= call.args.len or !try st.first(e.gpa(), .{ x, q, li, n.slot, @intFromBool(n.deep), none - n.j })) return false;
     // Each known code the label is applied to, one or an `alt`'s (#2322).
     if (e.ev.alts.codes(&e.ev.known, q, li)) |r| {
         var new = false;
-        for (r[0]..r[0] + r[1]) |v| new = try discharge(st, e, x, q, l, @intCast(v), n) or new;
+        for (r[0]..r[0] + r[1]) |v| new = try (if (n.j == 0) discharge(st, e, x, q, l, @intCast(v), n) else keeps(st, e, x, q, l, @intCast(v), n)) or new;
         return new;
     }
-    if (e.ev.label_map.get(.{ q, li })) |c| return publish(&e.sink, c, n.slot, n.deep);
+    if (e.ev.label_map.get(.{ q, li })) |c| return publish(&e.sink, c, n.j, n.slot, n.deep);
     const v = f.val(try e.ev.valueAt(call.args[l.j], f.slots.relWords(l.slot)));
     // A fixed contract, read as `wants` reads one. A code's closure is applied
     // (`known`) and a fixed one is never an argument, so no walk reaches this today.
-    if (v.kind == .built and v.form == .closure) if (NeedCarry.contractOf(e.ctx, v.head)) |c| if (try allFresh(e, c)) return false;
-    try refuseOnce(st, e, x, q, l);
+    if (n.j == 0 and v.kind == .built and v.form == .closure) if (NeedCarry.contractOf(e.ctx, v.head)) |c| if (try allFresh(e, c)) return false;
+    try refuseOnce(st, e, x, q, l, n.j != 0);
     return true;
 }
 
@@ -129,7 +164,7 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
     if (m == null) for (try CallFolds.of(&e.ev, v, none)) |s| if (SlotWords.startsAt(words, s.words) or (n.deep and SlotWords.startsAt(s.words, words)))
         try hs.append(e.ev.arena, .{ .a = s.a, .rest = &.{}, .whole = true });
     if (!met and hs.items.len == 0) {
-        try refuseOnce(st, e, x, q, l);
+        try refuseOnce(st, e, x, q, l, false);
         return true;
     }
     const own = vc.args.len - f.kidsOf(f.val(vc.callee_val)).len;
@@ -140,6 +175,7 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
         if (!try st.first(e.gpa(), .{ x, v, @backingInt(a.kind), a.j, rel, @intFromBool(n.deep or a.deep or h.whole) })) continue;
         new = true;
         const from = e.demands.items.len;
+        var kept: ?Effect = null;
         switch (a.kind) {
             .fresh => {
                 var ls: std.ArrayList(u32) = .empty;
@@ -151,26 +187,30 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
                 d.fresh_answer = true;
                 try Eval.addDemand(e, d);
             },
-            .param => if (a.j < own) try Eval.callWrite(e, v, .{ .j = a.j, .slot = rel, .deep = n.deep or a.deep or h.whole }) else try refuseOnce(st, e, x, q, l),
+            // The answer is what the code was handed: it keeps nothing of it, or the write is seen by what kept it (#2393).
+            .param => if (a.j < own) {
+                try Eval.callWrite(e, v, .{ .j = a.j, .slot = rel, .deep = n.deep or a.deep or h.whole });
+                kept = .{ .j = a.j + 1, .slot = rel, .deep = n.deep or a.deep or h.whole };
+            } else try refuseOnce(st, e, x, q, l, false),
             .cb => {
                 const li = if (m != null) e.ev.live.?.labelIn(e.ev.live.?.ctx, vc.code, a.j, vc.contract) else a.j;
                 if (li) |i| {
                     _ = try atLabel(st, e, x, v, i, .{ .j = 0, .slot = rel, .deep = n.deep or a.deep or h.whole });
-                } else try refuseOnce(st, e, x, q, l);
+                } else try refuseOnce(st, e, x, q, l, false);
             },
-            else => try refuseOnce(st, e, x, q, l),
+            else => try refuseOnce(st, e, x, q, l, false),
         }
         for (e.demands.items[from..]) |*d| {
             d.quiet = true;
             if (words.len != 0) d.res_of = v;
         }
+        if (kept) |k| _ = try keeps(st, e, x, q, l, v, k);
     }
     return new;
 }
 
-/// A comparison has no caller to discharge a need (§2.13.13 item 13): with one
-/// on a label of its draft, after the fixed point, each call that makes it is
-/// refused. A write of the answer itself has a line of its own.
+/// A comparison has no caller to discharge a need (§2.13.13 item 13): with one on a label of its draft, after the fixed
+/// point, each call that makes it is refused. A write of the answer itself has a line of its own.
 pub fn compared(e: *Evaluation, d: *const Contract.Draft) Error!void {
     for (d.labels.items) |l| {
         if (l.need.items.len != 0) break;
@@ -179,7 +219,7 @@ pub fn compared(e: *Evaluation, d: *const Contract.Draft) Error!void {
     for (f.calls.items, 0..) |call, q| {
         if (call.contract == none or call.virtual) continue;
         for (e.contracts.labelsOf(e.contracts.head(call.contract).labels)) |l| if (l.need.len != 0) {
-            try refuse(e, @intCast(q), l);
+            try refuse(e, @intCast(q), l, false);
             break;
         };
     }
@@ -199,13 +239,13 @@ fn base(e: *Evaluation, q: u32, l: Contract.Label) Error!W.Demand {
 }
 
 /// One refusal per call and label, however many of its needs fail.
-fn refuseOnce(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label) Error!void {
-    if (try st.first(e.gpa(), .{ x, q, l.slot, l.origin[2], none, none - 1 })) try refuse(e, q, l);
+fn refuseOnce(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, supplied: bool) Error!void {
+    if (try st.first(e.gpa(), .{ x, q, l.slot, l.origin[2], none, none - 1 })) try refuse(e, q, l, supplied);
 }
 
-fn refuse(e: *Evaluation, q: u32, l: Contract.Label) Error!void {
+fn refuse(e: *Evaluation, q: u32, l: Contract.Label, supplied: bool) Error!void {
     var d = try base(e, q, l);
-    d.need = true;
+    d.need, d.supplied = .{ true, supplied };
     try Eval.addDemand(e, d);
 }
 

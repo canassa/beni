@@ -76,7 +76,7 @@ pub const Label = struct {
     /// The callee lets its answer go: a value that holds it escapes (§2.11.3).
     answer_left: bool = false,
     supplies: Range = .{},
-    /// The slots of its answer the callee writes (§2.11.3, *a need*); each `j` 0.
+    /// The slots of its answer the callee writes (`j` 0, §2.11.3, *a need*), and of its argument `j - 1` the code must keep nothing of (*a need on a supply*).
     need: Range = .{},
 };
 

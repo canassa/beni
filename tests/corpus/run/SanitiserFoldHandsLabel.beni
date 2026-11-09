@@ -1,0 +1,37 @@
+-- A fold's callback hands its accumulator to a function, then pushes onto it (`ownership-v2.md` §2.11.3, *a
+-- need on a supply*, #2386): a predicate the caller gives, discharged where the caller names it (a core function
+-- and a declaration), and a local lambda. None keeps what it is handed, so each fold is accepted, and the
+-- sanitised run prints the same. `SanitiserFoldHandsLabelKeeps` is the predicate that keeps it.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+dedupe : (List Int, Int → Bool), List Int → List Int
+dedupe has xs = List.foldl xs [] λx acc → if has acc x then acc else List.push acc x
+
+
+short : List Int, Int → Bool
+short l _ = List.length l > 1
+
+
+grow : List Int → List Int
+grow xs =
+    full = λl → List.length l > 1
+    List.foldl xs [] λx acc → if full acc then acc else List.push acc x
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ show (dedupe List.member [ 1, 2, 1, 3 ])
+            , show (dedupe short [ 1, 2, 3 ])
+            , show (grow [ 4, 5, 6 ])
+            ]
+            " "
+        )

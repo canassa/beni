@@ -1,0 +1,131 @@
+-- A function hands a list to a function its caller gives, then edits that list in place (`ownership-v2.md`
+-- §2.11.3, *a need on a supply*). The caller's function keeps what it is handed: in a task, a fiber, a view a
+-- task reads, or a closure it stores in a cell. The later edit changes what it kept. The edit is in the frame,
+-- in a callee the frame passes the function on to, in a `List.map` lambda, in a hand-written loop one frame
+-- down, after a callee that hands the list over and returns it, and on the answer of a function that keeps it.
+-- v2 refuses each call in `main` that hands a keeping function; accepted, the sanitised run reads a stale list.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+keep : List Int → ⊤
+keep v =
+    _ = Task.soon λ⊤ → say ("soon " ++ show v)
+    ⊤
+
+
+spawned : List Int → ⊤
+spawned v =
+    _ = Task.spawn λ⊤ → say ("spawn " ++ show v)
+    ⊤
+
+
+viewed : List Int → ⊤
+viewed v =
+    w = List.drop v 0
+    _ = Task.soon λ⊤ → say ("view " ++ show w)
+    ⊤
+
+
+stored : Ref (⊤ → String), List Int → ⊤
+stored r v = Ref.set r λ⊤ → "stored " ++ show v
+
+
+-- The frame edits what it handed `g`.
+direct : (List Int → ⊤) → ⊤
+direct g =
+    b = List.push [ 0 ] 1
+    g b
+    say ("direct " ++ show (List.push b 2))
+
+
+-- A callee edits it, the frame passes `g` on.
+twice : (List Int → ⊤), List Int → List Int
+twice g a =
+    g a
+    List.push a 2
+
+
+passed : (List Int → ⊤) → ⊤
+passed g = say ("passed " ++ show (twice g [ 0 ]))
+
+
+-- A `List.map` lambda hands its element to `g` and edits it.
+mapped : (List Int → ⊤) → ⊤
+mapped g =
+    out = List.map [ List.push [ 0 ] 1 ] λa →
+        g a
+        List.push a 2
+    say ("mapped " ++ String.join (List.map out show) ";")
+
+
+-- A callee hands it over and returns it; the frame edits it.
+tap : (List Int → ⊤), List Int → List Int
+tap g a =
+    g a
+    a
+
+
+after : (List Int → ⊤) → ⊤
+after g =
+    b = tap g (List.push [ 0 ] 1)
+    say ("after " ++ show (List.push b 2))
+
+
+-- A hand-written loop hands its accumulator over and edits it the next round.
+loop : (List Int → ⊤), List Int, List Int → List Int
+loop g xs acc =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            b = List.push acc x
+            g b
+            loop g rest b
+
+
+looped : (List Int → ⊤) → ⊤
+looped g = say ("looped " ++ show (loop g [ 1, 2 ] [ 0 ]))
+
+
+-- The function hands back what it is handed, and the frame edits that answer.
+keepBack : List Int → List Int
+keepBack v =
+    _ = Task.soon λ⊤ → say ("back " ++ show v)
+    v
+
+
+answered : (List Int → List Int) → ⊤
+answered g =
+    c = g (List.push [ 0 ] 1)
+    say ("answered " ++ show (List.push c 2))
+
+
+main : Program
+main = Io.run λ⊤ →
+    direct keep
+    direct spawned
+    direct viewed
+    r = Ref.make λ⊤ → "-"
+    direct (stored r _)
+    passed keep
+    mapped keep
+    after keep
+    looped keep
+    answered keepBack
+    Io.sleep 1
+    say ((Ref.get r) ⊤)
+    Node.done

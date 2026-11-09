@@ -1,0 +1,3 @@
+A fold's callback hands its accumulator to a predicate that keeps it in a task (ownership-v2.md §2.11.3, a
+need on a supply, #2386): built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses the
+call that gives the predicate; accepted, the sanitised run reads a stale list.

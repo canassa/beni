@@ -1,0 +1,2 @@
+# v2 refuses the call that gives a fold's callback a predicate that keeps the accumulator (§2.11.3, a need on a supply, #2386).
+32:29 list_still_used value
