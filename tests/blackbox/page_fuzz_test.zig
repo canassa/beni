@@ -253,6 +253,12 @@ fn breakAfterMount(w: *World, path: []const u8, needle: []const u8) !void {
 /// The fuzz of `f`, expected to end with `code` and print `stdout`, unless
 /// the cache holds this exact run (`run_hash.checkDigested`).
 fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !void {
+    return expectFuzzReport(w, given, code, stdout, null);
+}
+
+/// `expectFuzz`, and with `stderr` not null, the fuzz prints that on
+/// stderr too.
+fn expectFuzzReport(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8, stderr: ?[]const u8) !void {
     const arena = w.arena.allocator();
     // Two seeds of fifteen steps, whatever the gates' corpus fuzz runs.
     var f = given;
@@ -260,18 +266,24 @@ fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !voi
     f.steps = 15;
     const h = try browser.harness(testing.io);
     const fuzz_digest = try browser.fuzzDigest(arena, w, h, f);
-    const digest = try run_hash.digestOf(arena, &.{ fuzz_digest, &.{code}, stdout });
+    const digest = if (stderr) |e|
+        try run_hash.digestOf(arena, &.{ fuzz_digest, &.{code}, stdout, "stderr", e })
+    else
+        try run_hash.digestOf(arena, &.{ fuzz_digest, &.{code}, stdout });
     const Run = struct {
         w: *World,
         h: browser.Harness,
         f: browser.Fuzz,
         code: u8,
         stdout: []const u8,
+        stderr: ?[]const u8,
         fn go(r: @This()) anyerror!bool {
             const got = try browser.fuzz(r.w, r.h, null, r.f, world.default_timeout_ms);
-            if (got.exit_code == r.code and std.mem.eql(u8, got.stdout, r.stdout)) return true;
+            const stderr_ok = if (r.stderr) |e| std.mem.eql(u8, got.stderr, e) else true;
+            if (got.exit_code == r.code and std.mem.eql(u8, got.stdout, r.stdout) and stderr_ok) return true;
             std.debug.print("the fuzz did not do what the test expects\n--- stdout ---\n{s}--- stderr ---\n{s}--- code {d} ---\n", .{ got.stdout, got.stderr, got.exit_code });
             try testing.expectEqualStrings(r.stdout, got.stdout);
+            if (r.stderr) |e| try testing.expectEqualStrings(e, got.stderr);
             try testing.expectEqual(r.code, got.exit_code);
             return false;
         }
@@ -279,7 +291,7 @@ fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !voi
     // A verdict that may be recorded proves the page replays itself.
     var replayed = f;
     replayed.replay = true;
-    if (try run_hash.checkDigested(w, digest, Run{ .w = w, .h = h, .f = replayed, .code = code, .stdout = stdout }, Run.go)) |ok| {
+    if (try run_hash.checkDigested(w, digest, Run{ .w = w, .h = h, .f = replayed, .code = code, .stdout = stdout, .stderr = stderr }, Run.go)) |ok| {
         if (!ok) return error.FuzzMismatch;
     }
 }
@@ -600,6 +612,40 @@ test "a page that stopped hands nothing to the next: a message that throws in up
         \\the program: 2 constructors sent
         \\seed 1: both threw at step 6, message Boom, so 6 of 15 steps ran (2 view events, 2 messages, 2 host steps): Error: TODO: update threw
         \\seed 2: both threw at step 5, message Boom, so 5 of 15 steps ran (3 view events, 2 messages, 0 host steps): Error: TODO: update threw
+        \\
+    );
+}
+
+test "a page that does not replay itself is a fault of the fuzzer, reported with the steps and both plays" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try setUp(&w, program);
+    // Every page of one run shares happy-dom's classes, so a count kept on
+    // `Node.prototype` tells a page how many loads came before it: the first play of
+    // `a/` shows the title "1", its replay "2". The gates once saw such a
+    // fault with only its seed, step and part (#2144); a replay of it
+    // needs the actions and what each play showed.
+    const arena = w.arena.allocator();
+    const js = try w.read("a/Main.mjs");
+    try w.write("a/Main.mjs", try std.mem.concat(arena, u8, &.{ js, "Node.prototype.beniLoads = (Node.prototype.beniLoads ?? 0) + 1;\ndocument.title = `load ${Node.prototype.beniLoads}`;\n" }));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectFuzzReport(&w, .{ .a = "a", .b = "b", .label_a = "development", .label_b = "again", .types = "types.jsonl" }, 2,
+        \\the program: 8 constructors sent
+        \\
+    ,
+        \\fuzz: development does not replay itself: seed 1, step 0 of 15 (the load)
+        \\  (none: the pages differ once loaded)
+        \\once loaded, document.title differs:
+        \\--- development, first play ---
+        \\load 1
+        \\--- development, replay ---
+        \\load 2
         \\
     );
 }
