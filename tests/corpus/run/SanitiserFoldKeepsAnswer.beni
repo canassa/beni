@@ -1,0 +1,94 @@
+-- A fold whose callback writes its accumulator in place and keeps its own
+-- answer past its run (`ownership-v2.md` §2.11.3, *a label's answer handed
+-- back to it*): in a task (`Task.soon`, `Task.spawn`), as a view of it
+-- (`List.drop`, a pattern's rest), or by handing it to a function the fold's
+-- caller gives. The next run is handed that answer and writes it in place,
+-- so what the task holds changes before the task reads it. v2 refuses each
+-- fold; accepted, the sanitised run reads a stale list.
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+soon : ⊤ → List (List Int)
+soon ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+    _ = Task.soon λ⊤ → say ("soon " ++ shows a)
+    a
+
+
+set : ⊤ → List (List Int)
+set ⊤ = List.foldl [ 1, 2 ] [ [ 0 ], [ 9 ] ] λx acc →
+    a = List.set acc 1 [ x ]
+    _ = Task.soon λ⊤ → say ("set " ++ shows a)
+    a
+
+
+spawn : ⊤ → List (List Int)
+spawn ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+    _ = Task.spawn λ⊤ → say ("spawn " ++ shows a)
+    a
+
+
+drop : ⊤ → List (List Int)
+drop ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+    v = List.drop a 1
+    _ = Task.soon λ⊤ → say ("drop " ++ shows v)
+    a
+
+
+rest : ⊤ → List (List Int)
+rest ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+
+    _ =
+        case a of
+            [ _, …more ] →
+                Task.soon λ⊤ → say ("rest " ++ shows more)
+
+            [] →
+                Task.soon λ⊤ → ⊤
+
+    a
+
+
+keep : List (List Int) → ⊤
+keep a =
+    _ = Task.soon λ⊤ → say ("handed " ++ shows a)
+    ⊤
+
+
+-- The fold's callback hands its answer to `g`, which `main` gives.
+handed : (List (List Int) → ⊤) → List (List Int)
+handed g = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+    g a
+    a
+
+
+main : Program
+main = Io.run λ⊤ →
+    say (shows (soon ⊤))
+    say (shows (set ⊤))
+    say (shows (spawn ⊤))
+    say (shows (drop ⊤))
+    say (shows (rest ⊤))
+    say (shows (handed keep))
+    Io.sleep 1
+    Node.done

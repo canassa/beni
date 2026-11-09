@@ -1,0 +1,4 @@
+A fold whose callback writes its accumulator in place and keeps its own answer in a task, as a view, or
+through a function it is handed (ownership-v2.md §2.11.3, a label's answer handed back to it): built again
+under --ownership=v2 and the list stale-read sanitiser. v2 refuses each fold; accepted, the sanitised run
+reads a stale list.

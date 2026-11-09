@@ -16,8 +16,6 @@ const Ids = @import("Ids.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
-const Place = @import("Place.zig");
-const SlotWords = @import("SlotWords.zig");
 
 const Error = Relation.Error;
 const Eval = Relation.Eval;
@@ -30,7 +28,8 @@ pub const Twin = struct { k: u32, args: []const u32 };
 /// The twin of virtual call `v`, or null: `v`'s label hands its own answer
 /// back as argument `k`, at `k`'s root only; the known code answers `k` at
 /// each slot it held it at, or fresh objects (`F.at`'s `fed`), and keeps
-/// nothing (`keepsNothing`); no other argument of the label holds it.
+/// nothing (`RunKeeps.nothing`, which `F.at` asks); no other argument of
+/// the label holds it.
 pub fn of(e: *Eval, v: u32, comptime F: type) Error!?Twin {
     if (v >= e.applied.items.len or e.applied.items[v][0] == none) return null;
     const q, const li = e.applied.items[v];
@@ -48,7 +47,6 @@ pub fn of(e: *Eval, v: u32, comptime F: type) Error!?Twin {
         };
     }
     const k = got orelse return null;
-    if (!try keepsNothing(e, kc, k)) return null;
     const vc = e.f.calls.items[v];
     if (k >= vc.args.len) return null;
     try es.of(&e.contracts.trees, e.gpa(), e.places(), e.contracts.head(kc).res_root, &.{});
@@ -57,31 +55,6 @@ pub fn of(e: *Eval, v: u32, comptime F: type) Error!?Twin {
     const args = try e.arena.dupe(u32, vc.args);
     args[k] = try twinOf(e, e.f.val(vc.args[k]).root, li);
     return .{ .k = k, .args = args };
-}
-
-/// Whether known code `kc` keeps nothing a later run writes (§2.11.3): no
-/// store, cell write or label handed anything or letting its answer go; no
-/// escape but of argument `k`, none at or above a slot of `k` it writes, or
-/// below one it writes open. Else a cell or a capture may hold an object of
-/// a run's answer that a later run edits in place through the accumulator.
-fn keepsNothing(e: *Eval, kc: Contract.Id, k: u32) Error!bool {
-    if (@import("Mutate.zig").on(.self_fed_keeps_ok)) return true;
-    const h = e.contracts.head(kc);
-    if (h.stores.len != 0) return false;
-    for (e.contracts.labelsOf(h.labels)) |l| if (l.answer_left or l.supplies.len != 0) return false;
-    var ws: std.ArrayList(Contract.Effect) = .empty;
-    defer ws.deinit(e.gpa());
-    try e.contracts.writesFlat(e.gpa(), e.gpa(), e.account(), e.f.slots, e.places(), h.writes, &ws);
-    for (ws.items) |x| for (e.f.slots.relWords(x.slot)) |w| if (Place.Step.fromWord(w).kind == .contents) return false;
-    for (e.contracts.effectsOf(h.escapes)) |x| {
-        if (x.j != k) return false;
-        const at = e.f.slots.relWords(x.slot);
-        for (ws.items) |w| if (w.j == k) {
-            const ww = e.f.slots.relWords(w.slot);
-            if (SlotWords.under(e.places(), at, ww) != null or w.deep and SlotWords.under(e.places(), ww, at) != null) return false;
-        };
-    }
-    return true;
 }
 
 /// The twin of supply root `r`, made once: a root of its own that reads

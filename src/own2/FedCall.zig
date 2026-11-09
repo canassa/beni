@@ -7,13 +7,10 @@
 //! Obligations kept here: none of §2.14's directly (`Distinct.instSelFeed`
 //! asks it; `Resolve` judges the part).
 
-const std = @import("std");
-const Ids = @import("Ids.zig");
-const Slots = @import("Slots.zig");
-const Replay = @import("Replay.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
+const RunKeeps = @import("RunKeeps.zig");
 
 const Error = Relation.Error;
 const Eval = Relation.Eval;
@@ -38,10 +35,10 @@ pub fn supplyOf(e: *Eval, call: u32, label: u32, j: u32) Error!?u32 {
 
 pub const Got = union(enum) { yes, no, occ: u64 };
 
-/// A callee's `fed` occurrence `o` at call `call`: the caller's own when
-/// the callee's function slot is one of the caller's parameters (the
-/// label passes on), `yes` when it is a known code whose answer holds only
-/// its argument `k` and fresh objects, else `no`.
+/// A callee's `fed` occurrence `o` at call `call`: the caller's own when the callee's function slot is one
+/// of the caller's parameters (the label passes on), `yes` when it is a known code whose answer holds only
+/// its argument `k` and fresh objects and that keeps nothing of `k` a later run writes (`RunKeeps`, #2367),
+/// else `no`.
 pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
     if (@import("Mutate.zig").on(.fed_call_no)) return .no;
     const c = e.contractOf(call) orelse return .no;
@@ -86,6 +83,7 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
                 else => return .no,
             };
         }
+        if (k != Contract.fresh_arg and !try RunKeeps.nothing(e, vi, k)) return .no;
         if (through) |t| return .{ .occ = t };
         return .yes;
     }
@@ -93,11 +91,4 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
 }
 
 /// Whether the place `words` below `root` may hold an object.
-pub fn holdsAt(e: *Eval, root: Ids.PathId, words: []const u32) Error!bool {
-    var ps: std.ArrayList(u32) = .empty;
-    defer ps.deinit(e.gpa());
-    try Replay.replay(e.gpa(), e.account(), e.places(), root, words, &ps);
-    if (ps.items.len == 0) return true;
-    for (ps.items) |p| if (Slots.holdsAny(e.places(), .from(p))) return true;
-    return false;
-}
+pub const holdsAt = RunKeeps.holdsAt;
