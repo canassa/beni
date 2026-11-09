@@ -59,27 +59,28 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
     return wideLevels(s, q, a, out);
 }
 
-/// An arrival at `q` by structure, the levels above it and its `levelNames`, whatever is described.
+/// An arrival at `q` by structure, the levels above it and its `levelNames` (those a fold does not say).
 pub fn wideLevels(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
-    if (!try wideOne(s, q, a, out)) return;
-    if (a.kind == .fresh) return;
-    for (try levelNames(s, q)) |p| _ = try wideOne(s, .from(p), try LevelWide.renamed(s.e.fr(), s.e.gpa(), a, q, .from(p)), out);
+    var said: std.ArrayList(LevelWide.Said) = .empty;
+    if (!try wideOne(s, q, a, out, &said) or a.kind == .fresh) return;
+    for (try levelNames(s, q)) |p| {
+        const x = try LevelWide.renamed(s.e.fr(), s.e.gpa(), a, q, .from(p));
+        if (!try LevelWide.saysAt(s.e.fr(), s.e.gpa(), said.items, .from(p), x)) _ = try wideOne(s, .from(p), x, out, &said);
+    }
 }
 
-/// Arrival `a`, wide at `q`, and at the levels above it (`LevelWide.of`); false when `q` had it.
-fn wideOne(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!bool {
+/// Arrival `a`, wide at `q`, and at the levels above it (`LevelWide.of`, appended to `said`); false when `q` had it.
+fn wideOne(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList, said: *std.ArrayList(LevelWide.Said)) Error!bool {
     if (!try addAt(s, try SupplyKey.relAt(s, q, out.key), a, true, true, out)) return false;
-    var said: std.ArrayList(LevelWide.Said) = .empty;
-    try LevelWide.of(s.e.fr(), s.e.gpa(), s.arena, q, a, &said);
-    for (said.items) |x| _ = try addAt(s, try SupplyKey.relAt(s, x.at, out.key), x.a, true, true, out);
+    const from = said.items.len;
+    try LevelWide.of(s.e.fr(), s.e.gpa(), s.arena, q, a, said);
+    for (said.items[from..]) |x| _ = try addAt(s, try SupplyKey.relAt(s, x.at, out.key), x.a, true, true, out);
     return true;
 }
 
-/// The level paths `q` stands for when a `⟲` on it is a join (§2.1, *one position, one name*):
-/// what is said at the join is said at each. A caller leaves out `fresh`: no entry reads fresh.
+/// The level paths of `q` when a `⟲` on it is a join (§2.1, *one position, one name*), each said what `q` is.
 pub fn levelNames(s: *Sink, q: PathId) Error![]const u32 {
-    const f = s.e.fr();
-    return f.slots.joinNames(s.e.gpa(), s.arena, f.account, f.places, q);
+    return s.e.fr().slots.joinNames(s.e.gpa(), s.arena, s.e.fr().account, s.e.fr().places, q);
 }
 
 /// Arrival `a` at slot `r` of `out` (by structure when `wide`): when new, a fact of a member

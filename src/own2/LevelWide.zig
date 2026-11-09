@@ -12,6 +12,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Trees = @import("Trees.zig");
 const LevelTargets = @import("LevelTargets.zig");
+const Normal = @import("Normal.zig");
 
 const PathId = Ids.PathId;
 
@@ -63,4 +64,13 @@ pub fn renamed(f: anytype, g: std.mem.Allocator, a: Trees.Arrival, q: PathId, p:
     x.slot = try f.slots.relOf(g, f.account, f.places, p);
     x.path = p.int();
     return x;
+}
+
+/// Whether an open arrival in `said` says `x` at level path `p` by structure (`Normal.says`), a copy
+/// too: a walk to `p` meets it first, and a read of every slot that skips a copy reads the arrival
+/// it was said for, whose slots below are `p`'s by their canonical names (§2.1, #2342).
+pub fn saysAt(f: anytype, g: std.mem.Allocator, said: []const Said, p: PathId, x: Trees.Arrival) Ids.ChargeError!bool {
+    const pr = try f.slots.relOf(g, f.account, f.places, p);
+    for (said) |o| if (Normal.says(f.slots, try f.slots.relOf(g, f.account, f.places, o.at), o.a, pr, x)) return true;
+    return false;
 }
