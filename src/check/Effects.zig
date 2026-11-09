@@ -1286,6 +1286,26 @@ fn solveComponent(e: *Effects, in: Input, members: []const u32, scheme_decl: Sch
     }
 }
 
+/// A class of a summary by its node, for `applyRecord`'s lookups.
+const NodeClass = struct {
+    node: u32,
+    class: u32,
+
+    fn lessThan(_: void, a: NodeClass, b: NodeClass) bool {
+        return a.node < b.node or (a.node == b.node and a.class < b.class);
+    }
+
+    /// The first class of `node`, as `Solved.classIndex` finds it.
+    fn find(sorted: []const NodeClass, node: u32) ?u32 {
+        const at = std.sort.lowerBound(NodeClass, sorted, node, struct {
+            fn order(n: u32, x: NodeClass) std.math.Order {
+                return std.math.order(n, x.node);
+            }
+        }.order);
+        return if (at < sorted.len and sorted[at].node == node) sorted[at].class else null;
+    }
+};
+
 /// A copy of `target`'s scheme gets `target`'s summary (§14.3 rule 3): its
 /// copies of one class are one class, each gets the class's rung, and the
 /// copy of each class it depends on flows into it.
@@ -1302,17 +1322,15 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
     const of_pair = try scratch.alloc(u32, r.len);
     defer scratch.free(of_pair);
     @memset(of_pair, none);
-    // `Solved.classIndex` by a map: a scan per pair costs pairs × classes.
-    var index: std.AutoHashMapUnmanaged(u32, u32) = .empty;
-    defer index.deinit(scratch);
-    try index.ensureTotalCapacity(scratch, @intCast(classes.len));
-    for (classes, 0..) |c, ci| {
-        const slot = index.getOrPutAssumeCapacity(c.node);
-        if (!slot.found_existing) slot.value_ptr.* = @intCast(ci);
-    }
+    // `Solved.classIndex` by a binary search of the classes sorted by node:
+    // a scan per pair costs pairs × classes.
+    const by_node = try scratch.alloc(NodeClass, classes.len);
+    defer scratch.free(by_node);
+    for (classes, by_node, 0..) |c, *slot, ci| slot.* = .{ .node = c.node, .class = @intCast(ci) };
+    std.mem.sort(NodeClass, by_node, {}, NodeClass.lessThan);
     for (e.pairs.items[r.start..][0..r.len], of_pair) |p, *pc| {
         const sn = try e.nodeFor(p.a);
-        const c = index.get(sn) orelse continue;
+        const c = NodeClass.find(by_node, sn) orelse continue;
         pc.* = c;
         const i = try e.nodeFor(p.b);
         if (reps[c] == none) {

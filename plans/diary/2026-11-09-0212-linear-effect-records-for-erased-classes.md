@@ -7,8 +7,8 @@ at depth 12 took 45 s, at depth 10 under 1 s. A bisect at 5 s put the jump at
 `Solved.classIndex`: for each erased class it scanned every pair of the record
 and looked each one's class up by a scan, classes × pairs × classes.
 `Realms.applyCopy` (2026-11-06) did the same per realm dependency.
-`Effects.applyRecord` now looks a pair's class up in a map once and buckets the
-pairs by class; both callees get their class's pairs in the same order. Depth
+`Effects.applyRecord` now finds a pair's class once, by a binary search, and buckets
+the pairs by class; both callees get their class's pairs in the same order. Depth
 12 dumps in 233 ms with the same output; the test takes about a second (#2329).
 
 **What I learned.** A gates test that asserts a ratio of records can still hide
