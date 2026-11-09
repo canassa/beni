@@ -37,7 +37,8 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
     defer out.deinit(gpa);
     if (e.w.result != none) try e.ev.leavesOf(e.w.result, 0, &out);
     // A closure a known code hands back to the callee whose label runs it is run by code the frame does not see (§2.11.3);
-    // one a walked call hands back is followed where the frame runs it, and escapes where the result goes (`FnSite`, #2395).
+    // one a walked code hands back is followed where the frame runs it, and escapes where the result goes (`FnSite`, #2395);
+    // one a worded row or a fixed contract hands back escapes at the call, as its labels may not say what it runs.
     var back: std.ArrayList(Eval.Escape) = .empty;
     defer back.deinit(gpa);
     var back_done = false;
@@ -109,13 +110,14 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
 }
 
 /// The objects each virtual call hands back to the callee through its
-/// code's result: its `res` arrivals of the arguments, projected, as
+/// code's result, and each call of a worded row or a fixed contract hands back to the frame: its `res` arrivals of the arguments, projected, as
 /// escapes at the call.
 fn handedBack(e: *Eval.Evaluation, out: *std.ArrayList(Eval.Escape)) Eval.Error!void {
     const f = e.fr();
     const gpa = e.gpa();
-    for (f.calls.items[e.w.walk_calls..], e.w.walk_calls..) |call, q| {
-        if (call.contract == none) continue;
+    for (f.calls.items, 0..) |call, q| {
+        // A walked code's labels say what it runs; a worded row or a fixed contract's may not (`Task.raceOk`).
+        if (call.contract == none or q < e.w.walk_calls and call.code != none and !e.contracts.head(call.contract).flags.words) continue;
         var es: Forest.Entries = .{};
         defer es.deinit(gpa);
         try es.of(&e.contracts.trees, gpa, f.places, e.contracts.head(call.contract).res_root, &.{});

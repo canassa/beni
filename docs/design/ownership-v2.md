@@ -2473,7 +2473,9 @@ answers it, so the escape is now where the value goes, not where it comes back:
   its parameter writes are demands on `⊤`, refused `unknown`, and a capture write `once`, as at any escape. A returned
   one is named by the call that hands it back.
 - **A known code's answer** to a callee's label still escapes every closure it hands back, at the virtual call: the
-  callee runs it out of the frame's sight (§2.11.4).
+  callee runs it out of the frame's sight (§2.11.4). So does a **worded row or a fixed contract** that hands one back
+  (`Task.raceOk`, `Dict.singleton`), at its call: its labels need not say what it runs, and a fiber starter runs what
+  it is handed in fibers no label names (§2.11.4, #1734). Only a walked code's contract is read as complete.
 
 Sound because every use of a value a walked call answers is the frame's own, and each is judged: called (a code call
 when followed; otherwise unknown code, which escapes it by the rule above), handed to a label (applied, passed on, or

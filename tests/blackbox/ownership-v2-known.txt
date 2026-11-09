@@ -5449,8 +5449,6 @@ tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 64:11 #0
 tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 69:22 #0 :: List.push l :: pending :: accepted  v1 holds the callback a returned record holds pending; v2 follows the field to it (§2.11.3, a closure handed back)
 tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 70:14 #0 :: <lambda> <literal> :: accepted :: absent  v1 names the call of the field by its lambda; v2 names the call
 tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 70:14 #0 :: <literal> :: absent :: accepted  as above: v2's name for the same call of a fresh list
-tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 78:19 #0 :: <lambda> <literal> :: accepted :: absent  v1 names the call of the callback a dictionary hands back by its lambda; v2 follows the value through `Dict.get` and names the call
-tests/corpus/run/SanitiserHandedBackApart.beni SanitiserHandedBackApart 78:19 #0 :: g <literal> :: absent :: accepted  as above: v2's name for the same call of a fresh list
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 38:9 #0 :: <lambda> xs :: rejected :: absent  both refuse the second call on one list; v1 names it by the lambda, v2 by the call it follows (§2.11.3, a closure handed back)
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 39:9 #0 :: <lambda> xs :: rejected :: absent  as above
 tests/corpus/run/SanitiserHandedBackKept.beni SanitiserHandedBackKept 38:9 #0 :: f xs :: absent :: rejected  as above: v2's name
