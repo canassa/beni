@@ -75,7 +75,9 @@
 // the step, the action and what differs, after shrinking the sequence to
 // fewer actions that differ in the same way. Code 0: every seed agreed, a
 // line per seed. Code 2: a fault of the fuzzer, or of a page that does not
-// replay itself, on stderr. `Math.random`, `new Date()`, `Date.now` and
+// replay itself, on stderr — the latter with the seed, the step, the
+// actions up to it and what each of the two plays showed, as a difference
+// is reported. `Math.random`, `new Date()`, `Date.now` and
 // `performance.now` are pinned on every page; with `replay` — whenever a
 // verdict may be recorded, or a sweep runs — the first seed is also
 // played twice on build `a`, and the two must agree.
@@ -654,6 +656,28 @@ function firstDifference(a, b, crash) {
   return null;
 }
 
+// The lines that show difference `found` (`firstDifference` of two plays,
+// `a` and `b`) after `sequence`: the actions, a line each, then what each
+// play showed of the part that differs.
+function difference(sequence, found, labelA, labelB) {
+  const out = [];
+  for (const action of sequence) out.push(`  ${action.line}`);
+  if (sequence.length === 0) out.push("  (none: the pages differ once loaded)");
+  else if (sequence.some((x) => x.message !== undefined)) out.push("(a `message` line is a value sent to the program; the others are `.steps` lines)");
+  const x = found.a.shown[found.at];
+  const y = found.b.shown[found.at];
+  out.push(`${found.at === 0 ? "once loaded" : `after ${sequence[found.at - 1].line}`}, ${parts.find(([p]) => p === found.kind)?.[1] ?? "the steps differ"}:`);
+  if (found.kind === "dom") {
+    const s = smallestDifference(x.dom, y.dom);
+    out.push(`--- ${labelA} ---`, s.a, `--- ${labelB} ---`, s.b);
+  } else if (found.kind === "steps") {
+    out.push(`--- ${labelA} ---`, x === undefined ? "(ended)" : "(went on)", `--- ${labelB} ---`, y === undefined ? "(ended)" : "(went on)");
+  } else {
+    out.push(`--- ${labelA} ---`, x[found.kind] || "(nothing)", `--- ${labelB} ---`, y[found.kind] || "(nothing)");
+  }
+  return out;
+}
+
 // The smallest element of two DOM texts (the driver's `serialise`) that
 // holds every line where they differ, from each.
 function smallestDifference(x, y) {
@@ -921,11 +945,12 @@ export async function fuzz(spec, host) {
         const again = await play(spec.a, a.taken);
         const d = firstDifference(a, again, "same");
         if (d !== null) {
-          return {
-            code: 2,
-            stdout: `${lines.join("\n")}\n`,
-            stderr: `fuzz: ${spec.labelA} does not replay itself: seed ${seed}, step ${d.at}, ${parts.find(([p]) => p === d.kind)?.[1] ?? `${d.kind} differ`}\n`,
-          };
+          // Everything a replay of the fault needs: the spec's seed and
+          // steps name the sequence, and the actions and the two views
+          // show it without one.
+          const out = [`fuzz: ${spec.labelA} does not replay itself: seed ${seed}, step ${d.at} of ${spec.steps}${d.at === 0 ? " (the load)" : `, ${a.taken[d.at - 1].line}`}`];
+          out.push(...difference(a.taken.slice(0, d.at), { a, b: again, ...d }, `${spec.labelA}, first play`, `${spec.labelA}, replay`));
+          return { code: 2, stdout: `${lines.join("\n")}\n`, stderr: `${out.join("\n")}\n` };
         }
       }
       const b = await play(spec.b, a.taken);
@@ -960,20 +985,7 @@ export async function fuzz(spec, host) {
         const note = shrunk.done ? "" : ` (shrinking stopped at its budget of ${budget} tries)`;
         out.push(sequence.length === d.at ? `the sequence (no shorter one differs in the same way${note}):` : `shrunk from ${d.at} steps to ${sequence.length}${note}:`);
       }
-      for (const action of sequence) out.push(`  ${action.line}`);
-      if (sequence.length === 0) out.push("  (none: the pages differ once loaded)");
-      else if (sequence.some((x) => x.message !== undefined)) out.push("(a `message` line is a value sent to the program; the others are `.steps` lines)");
-      const x = found.a.shown[found.at];
-      const y = found.b.shown[found.at];
-      out.push(`${found.at === 0 ? "once loaded" : `after ${sequence[found.at - 1].line}`}, ${parts.find(([p]) => p === found.kind)?.[1] ?? "the steps differ"}:`);
-      if (found.kind === "dom") {
-        const s = smallestDifference(x.dom, y.dom);
-        out.push(`--- ${spec.labelA} ---`, s.a, `--- ${spec.labelB} ---`, s.b);
-      } else if (found.kind === "steps") {
-        out.push(`--- ${spec.labelA} ---`, x === undefined ? "(ended)" : "(went on)", `--- ${spec.labelB} ---`, y === undefined ? "(ended)" : "(went on)");
-      } else {
-        out.push(`--- ${spec.labelA} ---`, x[found.kind] || "(nothing)", `--- ${spec.labelB} ---`, y[found.kind] || "(nothing)");
-      }
+      out.push(...difference(sequence, found, spec.labelA, spec.labelB));
       lines.push(...out);
       return { code: 1, stdout: `${lines.join("\n")}\n`, stderr: "" };
     }
