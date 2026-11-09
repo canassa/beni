@@ -1,0 +1,44 @@
+-- `SanitiserLevelCaller` in a lambda handed a supply (`ownership-v2.md` §2.1, #2223): the lambda writes `hg`'s result at a fold
+-- `G R` adds, so it writes its parameter deep at a type variable's slot. `app3`'s supply is read below that slot, at the folds
+-- above it too. `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GZ (List Int)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+hg : G a, G a → Maybe (G a)
+hg t d =
+    case t of
+        GP (GL m) _ →
+            Just (GP (GL m) 0)
+        _ →
+            Just d
+
+
+app3 : G R, (G R → Int) → Int
+app3 x f = f x
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (RW (GL (RL k)))) 0
+    a = app3 v λt →
+        case hg t (GZ [ 5 ]) of
+            Just (GP (GL (RW (GL (RL xs)))) _) →
+                List.length (List.push xs 1)
+            _ →
+                0
+    Node.print (String.fromInt (a + List.length k))

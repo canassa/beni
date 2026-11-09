@@ -16,6 +16,8 @@ const Distinct = @import("Distinct.zig");
 const LabelChain = @import("LabelChain.zig");
 const NeedArrivals = @import("NeedArrivals.zig");
 const NeedCarry = @import("NeedCarry.zig");
+const CallFolds = @import("CallFolds.zig");
+const SlotWords = @import("SlotWords.zig");
 const Graft = @import("Graft.zig");
 const Value = @import("Value.zig");
 const Eval = @import("Eval.zig");
@@ -114,7 +116,11 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
     const words = f.slots.relWords(n.slot);
     const m = memberOf(e, vc);
     var hs: std.ArrayList(NeedArrivals.At) = .empty;
-    if (!try NeedArrivals.of(e, if (m) |mm| &mm.draft.res else null, vc.contract, f.roots.items[vc.root].place, words, n.deep, &hs)) {
+    const met = try NeedArrivals.of(e, if (m) |mm| &mm.draft.res else null, vc.contract, f.roots.items[vc.root].place, words, n.deep, &hs);
+    // A contract's tree also says each fold the caller's instance adds, read whole (§2.1, #2223).
+    if (m == null) for (try CallFolds.of(&e.ev, v, none)) |s| if (SlotWords.startsAt(words, s.words) or (n.deep and SlotWords.startsAt(s.words, words)))
+        try hs.append(e.ev.arena, .{ .a = s.a, .rest = &.{}, .whole = true });
+    if (!met and hs.items.len == 0) {
         try refuseOnce(st, e, x, q, l);
         return true;
     }

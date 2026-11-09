@@ -176,6 +176,8 @@ pub const Name = enum {
     level_wide_off,
     /// O6: an open arrival is not said at a caller's folds its callee's graph has not.
     caller_folds_off,
+    /// O6: a read below a call's slot misses the folds above it a walk below it reaches.
+    below_folds_off,
     /// O8 H1 H6: `Resolve.judge` skips Unescaped.
     unescaped_off,
     /// O8: an escape of unknown keys reaches no target.

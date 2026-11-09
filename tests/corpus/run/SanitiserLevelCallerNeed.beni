@@ -1,0 +1,43 @@
+-- `SanitiserLevelCaller` through a need (`ownership-v2.md` §2.1, §2.11.3 *a need*, #2223): `app2` writes the list
+-- its callback answers, and `hg`, handed as that callback, answers `t` at a fold of `G R` its own type has not. `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GZ (List Int)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+hg : G a, G a → Maybe (G a)
+hg t d =
+    case t of
+        GP (GL m) _ →
+            Just (GP (GL m) 0)
+        _ →
+            Just d
+
+
+app2 : (G R, G R → Maybe (G R)), G R, G R → Int
+app2 f x y =
+    case f x y of
+        Just (GP (GL (RW (GL (RL xs)))) _) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (RW (GL (RL k)))) 0
+    a = app2 hg v (GZ [ 5 ])
+    Node.print (String.fromInt (a + List.length k))

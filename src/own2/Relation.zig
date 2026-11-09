@@ -31,6 +31,7 @@ const LevelCycle = @import("LevelCycle.zig");
 const PastPayload = @import("PastPayload.zig");
 const ArriveAt = @import("ArriveAt.zig");
 const CallFolds = @import("CallFolds.zig");
+const LevelTargets = @import("LevelTargets.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -1192,7 +1193,7 @@ pub const Eval = struct {
             if (e.contractOf(vc)) |vcc| {
                 var hits: std.ArrayList(Contract.Hit) = .empty;
                 defer hits.deinit(e.gpa());
-                try e.hitsAt(e.contracts.head(vcc).res_root, words, &hits);
+                try CallFolds.hits(e, vc, vcc, none, words, &hits);
                 for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, Subtree.inRow(e.f.slots, va, words[hit.depth..]), words[hit.depth..], out);
             }
             if (out.items.len == start and !@import("Mutate.zig").on(.known_answer_empty)) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -1213,15 +1214,17 @@ pub const Eval = struct {
     }
 
     /// Every arrival of call `call`'s callee at and below caller slot
-    /// `prefix`, through one key below it, widened, with `tags`.
+    /// `prefix`, through one key below it and one below each fold above it
+    /// that a walk below it reaches (`↓p` is `Subtree.belowAll`, §2.1), widened, with `tags`.
     fn wholeItems(e: *Eval, call: u32, which: u32, prefix: PathId, tags: u32, out: *std.ArrayList(u32)) Error!void {
-        const ki = try e.instBelow(call, prefix, which);
-        var i: usize = 0;
-        while (i < e.keys.items[ki].leaves.items.len) : (i += 1) {
-            const k = e.keys.items[ki];
-            const x = try e.widen(k.leaves.items[i], k.at.items[i]);
-            if (try e.f.withTags(x, tags)) |y| try out.append(e.gpa(), y);
-        }
+        var ps: std.ArrayList(PathId) = .empty; // the arena's
+        try ps.append(e.arena, prefix);
+        if (LevelTargets.hasMiddle(e.places(), e.places().pathPlace(prefix)) and !@import("Mutate.zig").on(.below_folds_off)) try LevelTargets.of(e.f, e.gpa(), e.arena, prefix, &ps);
+        for (ps.items) |p| if (!LevelTargets.coveredBy(e.places(), ps.items, p)) {
+            const ki = try e.instBelow(call, p, which);
+            var i: usize = 0;
+            while (i < e.keys.items[ki].leaves.items.len) : (i += 1) if (try e.f.withTags(try e.widen(e.keys.items[ki].leaves.items[i], e.keys.items[ki].at.items[i]), tags)) |y| try out.append(e.gpa(), y);
+        };
     }
 
     /// `expandRouted`, each leaf's route set written out (§2.3.5, *a key's leaf*): one leaf a route.
