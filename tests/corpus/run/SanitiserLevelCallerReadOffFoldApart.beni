@@ -1,0 +1,47 @@
+-- `SanitiserLevelCallerReadOffFold` with `k` dead after the edit (`ownership-v2.md` §2.1, *One below*, #2359):
+-- the edit is in place.
+import List
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GZ (List Int)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+hc : G R → Maybe (G R)
+hc t =
+    case t of
+        GP x n →
+            Just (GP x n)
+        _ →
+            Nothing
+
+
+outer : G R → G R
+outer t =
+    case hc t of
+        Just (GP (GL (RW g)) _) →
+            g
+        _ →
+            GZ []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (RW (GL (RW (GL (RL k)))))) 0
+    a =
+        case outer v of
+            GL (RW (GL (RL ys))) →
+                List.length (List.push ys 1)
+            _ →
+                0
+    Node.print (String.fromInt a)

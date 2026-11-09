@@ -281,7 +281,7 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
         return err;
     };
     e.ev.cur_sub = saved;
-    for (anchors.items) |an| if (an.at == prefix) try describeKey(s, an.key, prefix, tags, q, out) else try describeFold(s, an.key, tags, q, out);
+    for (anchors.items) |an| if (an.at == prefix and !BelowAnchors.isFold(f, prefix)) try describeKey(s, an.key, prefix, tags, q, out) else try describeFold(s, an.key, tags, q, out);
 }
 
 /// The items of a fold's key `ki`, each all of it at result slot `q` and below it (`describeEach`).

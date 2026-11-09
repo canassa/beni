@@ -103,7 +103,7 @@ const layers = [_]Entry{
     .{ .file = "AnsOcc.zig", .layer = 4, .max_lines = 35 },
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
     // The anchors of a read below a caller slot (§2.1, *One below*, #2359).
-    .{ .file = "BelowAnchors.zig", .layer = 4, .max_lines = 50 },
+    .{ .file = "BelowAnchors.zig", .layer = 4, .max_lines = 60 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
     // What an open arrival says at the `⟲`s above it (#2195).
