@@ -435,12 +435,12 @@ test "an annotation over a doubling alias DAG is linear in its depth" {
     try s.finish("an annotation over an alias DAG", try s.ratio("D9.beni", "D18.beni", 9));
 }
 
-/// `type alias A0 = Int`, `type alias A{i} = ( A{i-1}, A{i-1} )` up to
-/// `depth`, and `f : A{depth} -> A{depth}`.
+/// `type alias A0 = Int`, `type alias A{i} = A{i-1} × A{i-1}` up to
+/// `depth`, and `f : A{depth} → A{depth}`.
 fn aliasDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "type alias A0 =\n    Int\n\n\n");
-    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} =\n    ( A{d}, A{d} )\n\n\n", .{ i, i - 1, i - 1 });
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} =\n    A{d} × A{d}\n\n\n", .{ i, i - 1, i - 1 });
     try out.print(arena, "f : A{d} → A{d}\nf x =\n    x\n", .{ depth, depth });
     return out.items;
 }
@@ -534,12 +534,12 @@ fn diamondMain(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     );
 }
 
-/// `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1}
-/// (List a) )` up to `depth`, and `f : A{depth} Int -> Int`.
+/// `type alias A0 a = Maybe a`, `type alias A{i} a = A{i-1} a × A{i-1}
+/// (List a)` up to `depth`, and `f : A{depth} Int → Int`.
 fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "type alias A0 a =\n    Maybe a\n\n\n");
-    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    ( A{d} a, A{d} (List a) )\n\n\n", .{ i, i - 1, i - 1 });
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    A{d} a × A{d} (List a)\n\n\n", .{ i, i - 1, i - 1 });
     try out.print(arena, "f : A{d} Int → Int\nf _ =\n    1\n", .{depth});
     return out.items;
 }
