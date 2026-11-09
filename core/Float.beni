@@ -24,25 +24,30 @@ pub log : Float, Float → Float
 log x base =
     top = ln x
     bottom = ln base
-    -- The answers are IEEE 754's `top / bottom`. `ln 0` is `-Infinity` and `ln`
-    -- of a negative number is `NaN`, so a non-finite side is answered here and
-    -- never divided. Base 1 makes `bottom` 0, a finite operand.
+    -- The answers are IEEE 754's `top / bottom`. `ln 0` is `-Infinity`, `ln`
+    -- of `Infinity` is `Infinity` and `ln` of a negative number is `NaN`, so a
+    -- non-finite side is answered here and never divided. Base 1 makes
+    -- `bottom` 0, a finite operand.
     if isNaN top then
         top
     else if isNaN bottom then
         bottom
     else if isInfinite top then
-        -- `top` is `-Infinity`: the number is 0.
+        -- An infinity whose sign is the product of the two signs. `bottom` is
+        -- never `-0`.
         if isInfinite bottom then
             0 / 0
         else if bottom < 0 then
-            1 / 0
+            if top < 0 then
+                1 / 0
+            else
+                (-1) / 0
         else
             top
     else if isInfinite bottom then
-        -- `bottom` is `-Infinity`: the base is 0, and the answer is a zero
-        -- whose sign is the opposite of `top`'s.
-        if top < 0 then
+        -- A zero whose sign is the product of the two signs. `top` is never
+        -- `-0`.
+        if (top < 0) == (bottom < 0) then
             0
         else
             0 / (-1)

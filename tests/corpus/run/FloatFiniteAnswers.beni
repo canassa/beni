@@ -6,6 +6,8 @@
 -- functions are here at the edge of the range too. `Float.log` keeps the IEEE
 -- answers, non-finite ones included, which its doc comment names: `log 0` is
 -- `-Infinity`, a negative number or base gives `NaN`, base 1 divides by 0.
+-- An `Infinity` argument gives IEEE's answer too; `1 / …` shows the sign of a
+-- zero answer, which `String.fromFloat` does not print.
 import Node exposing (Program)
 import String
 
@@ -44,4 +46,11 @@ main =
         , String.fromFloat (Float.log 0.5 1)
         , String.fromFloat (Float.log 2 1)
         , String.fromFloat (Float.log 1 1)
+        , String.fromFloat (Float.log 1e999 0.5)
+        , String.fromFloat (Float.log 1e999 10)
+        , String.fromFloat (1 / Float.log 0.5 1e999)
+        , String.fromFloat (1 / Float.log 2 1e999)
+        , String.fromFloat (1 / Float.log 10 0)
+        , String.fromFloat (1 / Float.log 0.5 0)
+        , String.fromFloat (Float.log 1e999 0)
         ]
