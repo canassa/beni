@@ -30,6 +30,8 @@
 
 const std = @import("std");
 const world = @import("world.zig");
+const own2_generated = @import("own2_generated.zig");
+const abuse_support = @import("abuse_support.zig");
 const World = world.World;
 const Io = std.Io;
 const testing = std.testing;
@@ -221,6 +223,66 @@ test "a cyclic receiver in a `let` reports infinite_type within 500 ms" {
     );
     const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Cyclic.beni" }, 500, "infinite_type");
     try s.finish("a cyclic receiver", verdict);
+}
+
+// §7.6 item 6 (`ownership-v2.md` §7): each default-limit generated module
+// stops in at most 2 s of ownership-pass wall time on the ReleaseFast
+// compiler, after type checking, with no process start-up. The modules are
+// the ones `build_test.zig` checks the dumps of (`own2_generated.timed`),
+// which held this bound on the whole `dump` process in the gates until
+// #2272 moved it here: a wall clock in the gates measured how busy the
+// machine was. The time is the `ownership2_module` event of `Main.beni`, the
+// best of 3, so the scenario runs alone.
+test "each generated module of §7.6 item 6 is walked within 2 s of ownership-pass wall time" {
+    var s = try Perf.init(.alone);
+    defer s.deinit();
+    for (own2_generated.timed) |module| {
+        try s.w.write("Main.beni", try own2_generated.source(s.arena(), module));
+        const id = try std.fmt.allocPrint(s.arena(), "the generated module {any}", .{module});
+        const verdict = try s.eventBound(&.{ "dump", "--stage=ownership", "--ownership=v2", "--self-profile=trace.json", "Main.beni" }, "Main.beni", "ownership2_module", own2_generated_bound_ms);
+        try s.finish(id, verdict);
+    }
+}
+
+/// §7.6 item 6's bound, in milliseconds of the `ownership2_module` event.
+const own2_generated_bound_ms: f64 = 2_000;
+
+// `abuse_test.zig`'s recursive aliases (`A = A × A`, and `A` met again
+// through `B`) are one RECURSIVE ALIAS each. The builder refuses an alias met
+// inside its own expansion and reads one already expanded as one variable,
+// so nothing doubles per level: the check takes milliseconds. Without both
+// it does not finish. The gates bounded it at 3 s of wall time until #2272;
+// here it is 3 s of CPU time.
+test "a recursive alias in an annotation is refused within 3 s" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    for (abuse_support.recursive_alias_sources) |source| {
+        try s.w.write("Main.beni", source);
+        const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, 3_000, "recursive_alias");
+        try s.finish("a recursive alias", verdict);
+    }
+}
+
+// `abuse_test.zig`'s case over a 2 000-constructor type: every constructor,
+// all but the last (one `missing_patterns`), one redundant branch more (one
+// `redundant_pattern`), and literal arguments with a default. A constructor
+// with arguments is a key of the lookup table, so none of the four
+// specialises the whole matrix per branch. The gates bounded each at 20 s
+// of wall time until #2272; here it is 20 s of CPU time.
+test "a case over 2 000 constructors is checked within 20 s in every variant" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    for (std.enums.values(abuse_support.WideCaseVariant)) |variant| {
+        try s.w.write("Main.beni", try abuse_support.wideCaseSource(s.arena(), variant, 2_000));
+        const code: ?[]const u8 = switch (variant) {
+            .every, .literals_then_default => null,
+            .missing_last => "missing_patterns",
+            .redundant => "redundant_pattern",
+        };
+        const id = try std.fmt.allocPrint(s.arena(), "a 2 000-constructor case, {t}", .{variant});
+        const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, 20_000, code);
+        try s.finish(id, verdict);
+    }
 }
 
 // n declarations, each comparing its own nominal type with `==`. The checker
@@ -813,21 +875,40 @@ const Perf = struct {
     }
 
     /// One run under `bound_ms` of CPU time, the best of 3, that exits 1 and
-    /// reports `code`: `pending_test.zig`'s `bounded`, a failed compile an
-    /// expected outcome here.
-    fn bounded(s: *Perf, args: []const []const u8, bound_ms: i64, code: []const u8) !Verdict {
+    /// reports `code`, or exits 0 when `code` is null: `pending_test.zig`'s
+    /// `bounded`, a failed compile an expected outcome here.
+    fn bounded(s: *Perf, args: []const []const u8, bound_ms: i64, code: ?[]const u8) !Verdict {
         for (0..3) |_| {
             // Killed at twice the bound of WALL time, judged on CPU time.
             const run = try s.timed(args, bound_ms * 2) orelse continue;
             if (run.ms > bound_ms) continue;
-            const quoted = try std.fmt.allocPrint(s.arena(), "\"code\":\"{s}\"", .{code});
-            if (run.result.exit_code != 1 or std.mem.indexOf(u8, run.result.stderr, quoted) == null) {
+            const answered = if (code) |c| run.result.exit_code == 1 and
+                std.mem.indexOf(u8, run.result.stderr, try std.fmt.allocPrint(s.arena(), "\"code\":\"{s}\"", .{c})) != null else run.result.exit_code == 0;
+            if (!answered) {
                 std.debug.print("a bounded run exited {d}:\n{s}\n", .{ run.result.exit_code, run.result.stderr[0..@min(run.result.stderr.len, 400)] });
                 return error.PerfRunFailed;
             }
-            return .{ .green = true, .detail = try std.fmt.allocPrint(s.arena(), "{s} in {d} ms, CPU time", .{ code, run.ms }) };
+            return .{ .green = true, .detail = try std.fmt.allocPrint(s.arena(), "{s} in {d} ms, CPU time", .{ code orelse "clean", run.ms }) };
         }
         return .{ .green = false, .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms of CPU time", .{bound_ms}) };
+    }
+
+    /// The summed duration of `file`'s `event` in a `--self-profile=trace.json`
+    /// run of `args` (the trace path is the caller's), against `bound_ms`. The
+    /// event's duration is wall time, so the best of up to 3, and the
+    /// scenario runs `.alone`; every run must exit 0.
+    fn eventBound(s: *Perf, args: []const []const u8, file: []const u8, event: []const u8, bound_ms: f64) !Verdict {
+        var best: f64 = std.math.inf(f64);
+        for (0..3) |_| {
+            const run = try s.timed(args, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
+            try expectClean(run.result);
+            best = @min(best, try s.fileEvent("trace.json", event, file));
+            if (best <= bound_ms) break;
+        }
+        return .{
+            .green = best <= bound_ms,
+            .detail = try std.fmt.allocPrint(s.arena(), "{d:.1} ms of the `{s}` event, bound {d:.0} ms", .{ best, event, bound_ms }),
+        };
     }
     /// `ratioWith` on one `--self-profile` event of the file's own module
     /// rather than the process: for a claim about one phase whose program

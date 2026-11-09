@@ -53,3 +53,36 @@ pub fn nested(gpa: Allocator, open: []const u8, middle: []const u8, close: []con
     out.appendSliceAssumeCapacity("\n");
     return out.toOwnedSlice(gpa);
 }
+
+/// The two recursive aliases `abuse_test.zig`'s RECURSIVE ALIAS scenario
+/// checks: met directly inside itself, and met again through a second alias.
+/// `perf_test.zig` bounds their check at 3 s (#2272).
+pub const recursive_alias_sources = [_][]const u8{
+    "type alias A =\n    A × A\n\n\nf : A → Int\nf p =\n    0\n",
+    "type alias A =\n    B × B\n\n\ntype alias B =\n    { p : A }\n\n\nf : A → Int\nf p =\n    0\n",
+};
+
+pub const WideCaseVariant = enum { every, missing_last, redundant, literals_then_default };
+
+/// `type T = C0 Int | … | C(n-1) Int` and `f t = case t of` a branch per
+/// constructor, as `variant` says: every one (`C{i} x`), all but the last,
+/// every one and a redundant `C7 y`, or `C{i} 0` for each and a default.
+/// `perf_test.zig` bounds the check of n = 2 000 at 20 s (#2272).
+pub fn wideCaseSource(gpa: Allocator, variant: WideCaseVariant, n: usize) ![]u8 {
+    var src: std.ArrayList(u8) = .empty;
+    errdefer src.deinit(gpa);
+    try src.appendSlice(gpa, "type T\n    = C0 Int\n");
+    for (1..n) |i| try src.print(gpa, "    | C{d} Int\n", .{i});
+    try src.appendSlice(gpa, "\n\nf : T → Int\nf t =\n    case t of\n");
+    const listed: usize = if (variant == .missing_last) n - 1 else n;
+    for (0..listed) |i| switch (variant) {
+        .literals_then_default => try src.print(gpa, "        C{d} 0 →\n            0\n\n", .{i}),
+        else => try src.print(gpa, "        C{d} x →\n            x\n\n", .{i}),
+    };
+    switch (variant) {
+        .redundant => try src.appendSlice(gpa, "        C7 y →\n            y\n"),
+        .literals_then_default => try src.appendSlice(gpa, "        _ →\n            1\n"),
+        .every, .missing_last => {},
+    }
+    return src.toOwnedSlice(gpa);
+}

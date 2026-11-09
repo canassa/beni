@@ -14,6 +14,7 @@
 const std = @import("std");
 const diagnostic = @import("diagnostic");
 const world = @import("world.zig");
+const own2_generated = @import("own2_generated.zig");
 const World = world.World;
 const testing = std.testing;
 
@@ -14616,19 +14617,14 @@ fn expectBoundedOrLimit(dump: []const u8, owner: []const u8, max_total: u64) !bo
     return false;
 }
 
-/// §7.6 item 6: each default-limit generated module stops in at most two
-/// seconds of ownership-pass wall time. The whole process is timed here, on
-/// the ReleaseSafe compiler the gates run, so the bound is looser than the
-/// spec's (a ReleaseFast pass) in the process's start and the front end and
-/// tighter in nothing; the generators run in well under a quarter of it.
-const generated_wall_ms: i64 = 2_000;
-
-/// A generated module's v2 dump at the default allowance.
-fn dumpGenerated(w: *World, src: []const u8) ![]const u8 {
-    try w.write("Main.beni", src);
-    const start = std.Io.Timestamp.now(testing.io, .awake);
+/// A generated module's v2 dump at the default allowance. Only its
+/// structure is checked here. §7.6 item 6's two seconds of ownership-pass
+/// wall time are `perf_test.zig`'s, on the same modules
+/// (`own2_generated.timed`) and the ReleaseFast compiler: a wall-clock bound
+/// in the gates measured how busy the machine was (#2272).
+fn dumpGenerated(w: *World, module: own2_generated.Module) ![]const u8 {
+    try w.write("Main.beni", try own2_generated.source(w.arena.allocator(), module));
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
-    try testing.expect(start.durationTo(std.Io.Timestamp.now(testing.io, .awake)).toMilliseconds() <= generated_wall_ms);
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     return dump.stdout;
 }
@@ -14695,21 +14691,12 @@ test "the checker v2 walks CallbackWrapperDag's doubling wrappers in records tha
     // records per wrapper, growth 0, at every depth.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const a = testing.allocator;
-    var tuples: std.ArrayList(u8) = .empty;
-    defer tuples.deinit(a);
-    try tuples.appendSlice(a, "w0 f = ( f ⊤, f ⊤ )\n");
-    for (1..11) |k| try tuples.print(a, "\n\nw{d} f = ( w{d} f, w{d} f )\n", .{ k, k - 1, k - 1 });
-    var lists: std.ArrayList(u8) = .empty;
-    defer lists.deinit(a);
-    try lists.appendSlice(a, "w0 f = f ⊤ ++ f ⊤\n");
-    for (1..25) |k| try lists.print(a, "\n\nw{d} f = w{d} f ++ w{d} f\n", .{ k, k - 1, k - 1 });
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const tuple_dump = try dumpGenerated(&w, tuples.items);
-    const list_dump = try dumpGenerated(&w, lists.items);
+    const tuple_dump = try dumpGenerated(&w, .{ .wrapper_tuples = 10 });
+    const list_dump = try dumpGenerated(&w, .{ .wrapper_lists = 24 });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -14736,16 +14723,11 @@ test "the checker v2 walks ClosureTower at depths 8, 16 and 24 in a flat number 
     // spend past the allowance or run on silently.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const a = testing.allocator;
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    try src.appendSlice(a, "w0 : ⊤ → (Bool → List Int)\nw0 ⊤ =\n    xs = [ 0 ]\n    λ_ → xs\n");
-    for (1..25) |k| try src.print(a, "\n\nw{d} : ⊤ → (Bool → List Int)\nw{d} ⊤ =\n    a = w{d} ⊤\n    b = w{d} ⊤\n    λflag → if flag then a flag else b flag\n", .{ k, k, k - 1, k - 1 });
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try dumpGenerated(&w, src.items);
+    const dump = try dumpGenerated(&w, .{ .closure_tower = 24 });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -14756,28 +14738,6 @@ test "the checker v2 walks ClosureTower at depths 8, 16 and 24 in a flat number 
         if (!stopped) totals[i] = try accountTotal(dump, owner);
     }
     if (totals[0] != 0 and totals[2] != 0) try testing.expect(totals[2] <= 2 * totals[0]);
-}
-
-const WideLeaf = enum { scalar, fresh, supplied };
-
-/// §7.6 item 6's WideCallbackResult: `h f` builds an `n`-field record of
-/// `f ⊤`; each answer is an `m`-field record of lists (or of `Int`s for
-/// `.scalar`, which has `h` alone). `use` hands `h` a lambda answering `[]`
-/// in every field (`.fresh`) or the parameter `x` (`.supplied`). `demo`
-/// writes one list of the answer while a list of another field is read.
-fn wideSource(a: std.mem.Allocator, src: *std.ArrayList(u8), n: u32, m: u32, leaf: WideLeaf) !void {
-    const field = if (leaf == .scalar) "Int" else "List Int";
-    try src.appendSlice(a, "type alias R = { ");
-    for (0..m) |j| try src.print(a, "{s}b{d} : {s}", .{ if (j == 0) "" else ", ", j, field });
-    try src.appendSlice(a, " }\n\n\ntype alias H = { ");
-    for (0..n) |i| try src.print(a, "{s}a{d} : R", .{ if (i == 0) "" else ", ", i });
-    try src.appendSlice(a, " }\n\n\npub h : (⊤ → R) → H\nh f = { ");
-    for (0..n) |i| try src.print(a, "{s}a{d} = f ⊤", .{ if (i == 0) "" else ", ", i });
-    try src.appendSlice(a, " }\n");
-    if (leaf == .scalar) return;
-    try src.appendSlice(a, "\n\npub use : List Int → H\nuse x =\n    h λ⊤ → { ");
-    for (0..m) |j| try src.print(a, "{s}b{d} = {s}", .{ if (j == 0) "" else ", ", j, if (leaf == .fresh) "[]" else "x" });
-    try src.appendSlice(a, " }\n\n\npub demo : List Int → List Int × List Int\ndemo x =\n    r = use x\n    ( List.push r.a0.b0 1, r.a1.b1 )\n");
 }
 
 test "the checker v2 keeps a direct N-field wrapper of scalar answers at baseline for any written width" {
@@ -14792,19 +14752,11 @@ test "the checker v2 keeps a direct N-field wrapper of scalar answers at baselin
     for ([_]u32{ 64, 512 }, 0..) |n, i| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
-        var src: std.ArrayList(u8) = .empty;
-        defer src.deinit(testing.allocator);
-        const a = testing.allocator;
-        try src.appendSlice(a, "type alias H = { ");
-        for (0..n) |k| try src.print(a, "{s}a{d} : Int", .{ if (k == 0) "" else ", ", k });
-        try src.appendSlice(a, " }\n\n\npub h : (⊤ → Int) → H\nh f = { ");
-        for (0..n) |k| try src.print(a, "{s}a{d} = f ⊤", .{ if (k == 0) "" else ", ", k });
-        try src.appendSlice(a, " }\n");
 
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const dump = try dumpGenerated(&w, src.items);
+        const dump = try dumpGenerated(&w, .{ .scalar_wrapper = n });
 
         // ┌─────────────────────────────────────────┐
         // │ VERIFY OUTPUT                           │
@@ -14832,14 +14784,11 @@ test "the checker v2 answers a 16-wide callback product exactly and a 32-wide on
     for ([_]u32{ 16, 32 }, 0..) |n, i| {
         var w = try World.init(a, testing.io);
         defer w.deinit();
-        var src: std.ArrayList(u8) = .empty;
-        defer src.deinit(a);
-        try wideSource(a, &src, n, n, .supplied);
 
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const dump = try dumpGenerated(&w, src.items);
+        const dump = try dumpGenerated(&w, .{ .wide = .{ .n = n, .m = n, .leaf = .supplied } });
 
         // ┌─────────────────────────────────────────┐
         // │ VERIFY OUTPUT                           │
@@ -14867,7 +14816,7 @@ test "the checker v2 stops a 64-wide callback product loudly with ownership_limi
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(testing.allocator);
-    try wideSource(testing.allocator, &src, 64, 64, .supplied);
+    try own2_generated.wideSource(testing.allocator, &src, 64, 64, .supplied);
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -14905,21 +14854,11 @@ test "the checker v2 composes N-way and M-way callback unions exactly, in record
     for ([_]u32{ 16, 64, 256 }, 0..) |n, i| {
         var w = try World.init(a, testing.io);
         defer w.deinit();
-        var src: std.ArrayList(u8) = .empty;
-        defer src.deinit(a);
-        for ([_][]const u8{ "pickN", "pickM" }) |name| {
-            try src.print(a, "{s} : Int, (⊤ → List Int) → List Int\n{s} k f =\n    case k of\n", .{ name, name });
-            for (0..n - 1) |k| try src.print(a, "        {d} → f ⊤\n\n", .{k});
-            try src.appendSlice(a, "        _ → f ⊤\n\n\n");
-        }
-        try src.appendSlice(a, "pub both : Int, Int, (⊤ → List Int) → List Int × List Int\nboth i j f = ( pickN i f, pickM j f )\n\n\n");
-        try src.appendSlice(a, "pub fresh : Int, Int → List Int × List Int\nfresh i j =\n    ( p, q ) = both i j λ⊤ → [ 1 ]\n    ( List.push p 1, q )\n\n\n");
-        try src.appendSlice(a, "pub shared : Int, Int, List Int → List Int × List Int\nshared i j x =\n    ( p, q ) = both i j λ⊤ → x\n    ( List.push p 1, q )\n");
 
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const dump = try dumpGenerated(&w, src.items);
+        const dump = try dumpGenerated(&w, .{ .union_composition = n });
 
         // ┌─────────────────────────────────────────┐
         // │ VERIFY OUTPUT                           │
@@ -14944,40 +14883,14 @@ test "the checker v2 walks mutual carried lambdas in no growth and answers exact
     // `ping` and `pong` hand each other a lambda that calls the one they were
     // given. The group terminates with growth 0 and no limit, a fresh actual
     // is accepted, and one that answers the caller's `x` is refused.
+    // The program is `own2_generated.Module.mutual_lambdas`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const src =
-        \\ping : Int, (⊤ → List Int) → List Int
-        \\ping n f =
-        \\    if n == 0 then
-        \\        f ⊤
-        \\
-        \\    else
-        \\        pong (n - 1) λ⊤ → f ⊤
-        \\
-        \\
-        \\pong : Int, (⊤ → List Int) → List Int
-        \\pong n f =
-        \\    if n == 0 then
-        \\        f ⊤
-        \\
-        \\    else
-        \\        ping (n - 1) λ⊤ → f ⊤
-        \\
-        \\
-        \\pub fresh : Int → List Int
-        \\fresh n = List.push (ping n λ⊤ → [ 1 ]) 2
-        \\
-        \\
-        \\pub shared : Int, List Int → List Int × List Int
-        \\shared n x = ( List.push (ping n λ⊤ → x) 2, x )
-        \\
-    ;
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try dumpGenerated(&w, src);
+    const dump = try dumpGenerated(&w, .mutual_lambdas);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -15002,17 +14915,11 @@ test "the checker v2 walks a chain of folds that feed each other in records line
     for ([_]u32{ 40, 80 }, 0..) |n, i| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
-        const a = testing.allocator;
-        var src: std.ArrayList(u8) = .empty;
-        defer src.deinit(a);
-        try src.appendSlice(a, "pub chain : List Int → List Int\nchain xs =\n    r0 = List.foldl xs [] λx acc → List.push acc x\n");
-        for (1..n + 1) |k| try src.print(a, "    r{d} = List.foldl r{d} [] λx acc → List.push acc x\n", .{ k, k - 1 });
-        try src.print(a, "    r{d}\n", .{n});
 
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const dump = try dumpGenerated(&w, src.items);
+        const dump = try dumpGenerated(&w, .{ .fold_chain = n });
 
         // ┌─────────────────────────────────────────┐
         // │ VERIFY OUTPUT                           │
