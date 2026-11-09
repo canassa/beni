@@ -130,6 +130,14 @@ pub type WriteError
     | InvalidValue Int Int Int
 
 
+--| A bulk integer write: the access failed, or the element at an index is
+--| outside value, minimum, maximum (index, value, minimum, maximum). A call that
+--| fails writes nothing.
+pub type BulkWriteError
+    = BulkAccess AccessError
+    | InvalidValueAt Int Int Int Int
+
+
 --| A Float16 access: the access failed, or the host has no DataView Float16 methods.
 pub type Float16Error
     = Float16Access AccessError
@@ -380,6 +388,177 @@ copyInto destination offset source =
     inRange offset length (Js.to (Js.get target "byteLength"))?
     _ = Js.call target "set" [ bytes, Js.from offset ]
     Ok ⊤
+
+
+--| Set every byte of a range of the view to one byte value. The range is in
+--| bytes from the start of the view; Nothing as the length is the rest of it.
+pub fill : View, ByteRange, Int → Result WriteError ⊤
+fill value range byte =
+    validValue byte 0 255?
+    bytes =
+        Result.mapError
+            (sourceBytes (ViewOf value))
+            (λproblem → WriteAccess (AccessBacking problem))?
+    ( start, length ) = Result.mapError (byteRange bytes range) WriteAccess?
+    _ = Js.call bytes "fill" [ Js.from byte, Js.from start, Js.from (start + length) ]
+    Ok ⊤
+
+
+--| Copy a byte range of the view to a byte offset of the same view.
+--| Overlapping ranges copy as if through a temporary, as native `copyWithin` does.
+pub copyWithin : View, Int, ByteRange → Result AccessError ⊤
+copyWithin value target range =
+    bytes = Result.mapError (sourceBytes (ViewOf value)) AccessBacking?
+    ( start, length ) = byteRange bytes range?
+    inRange target length (Js.to (Js.get bytes "byteLength"))?
+    _ = Js.call bytes "copyWithin" [ Js.from target, Js.from start, Js.from (start + length) ]
+    Ok ⊤
+
+
+--| Write Uint8 values from a byte offset, one per byte.
+pub writeU8s : View, Int, List Int → Result BulkWriteError ⊤
+writeU8s value offset numbers = writeIntegers value offset Little numbers U8 "setUint8" 0 255
+
+
+--| Write Int8 values from a byte offset, one per byte.
+pub writeI8s : View, Int, List Int → Result BulkWriteError ⊤
+writeI8s value offset numbers = writeIntegers value offset Little numbers I8 "setInt8" (-128) 127
+
+
+--| Write Uint16 values from a byte offset.
+pub writeU16s : View, Int, Endian, List Int → Result BulkWriteError ⊤
+writeU16s value offset endian numbers =
+    writeIntegers value offset endian numbers U16 "setUint16" 0 65535
+
+
+--| Write Int16 values from a byte offset.
+pub writeI16s : View, Int, Endian, List Int → Result BulkWriteError ⊤
+writeI16s value offset endian numbers =
+    writeIntegers value offset endian numbers I16 "setInt16" (-32768) 32767
+
+
+--| Write Uint32 values from a byte offset.
+pub writeU32s : View, Int, Endian, List Int → Result BulkWriteError ⊤
+writeU32s value offset endian numbers =
+    writeIntegers value offset endian numbers U32 "setUint32" 0 4294967295
+
+
+--| Write Int32 values from a byte offset.
+pub writeI32s : View, Int, Endian, List Int → Result BulkWriteError ⊤
+writeI32s value offset endian numbers =
+    writeIntegers value offset endian numbers I32 "setInt32" (-2147483648) 2147483647
+
+
+--| Write Float16 values from a byte offset, each rounded to the nearest half.
+pub writeF16s : View, Int, Endian, List Float → Result Float16Error ⊤
+writeF16s value offset endian numbers =
+    items = plain (Js.from numbers)
+    target = Result.mapError (bulkTarget value offset (itemCount items * 2)) Float16Access?
+    if not (Js.typeIs (Js.get target.data "setFloat16") "function") then
+        Err NoFloat16
+    else
+        store target offset endian items F16 "setFloat16"
+        Ok ⊤
+
+
+--| Write Float32 values from a byte offset, each rounded to single precision.
+pub writeF32s : View, Int, Endian, List Float → Result AccessError ⊤
+writeF32s value offset endian numbers = writeFloats value offset endian numbers F32 "setFloat32"
+
+
+--| Write Float64 values from a byte offset.
+pub writeF64s : View, Int, Endian, List Float → Result AccessError ⊤
+writeF64s value offset endian numbers = writeFloats value offset endian numbers F64 "setFloat64"
+
+
+--| Write exact 64-bit word pairs from a byte offset.
+pub writeWord64s : View, Int, Endian, List Word64 → Result AccessError ⊤
+writeWord64s value offset endian numbers =
+    target = bulkTarget value offset (List.length numbers * 8)?
+    little = endian == Little
+    _ = List.foldl numbers offset λ(Words high low) at →
+        _ =
+            Js.call target.data "setUint32"
+                [ Js.from (if little then at else at + 4), Js.from low, Js.from little ]
+        _ =
+            Js.call target.data "setUint32"
+                [ Js.from (if little then at + 4 else at), Js.from high, Js.from little ]
+        at + 8
+    Ok ⊤
+
+
+--| Read a count of Uint8 values from a byte offset.
+pub readU8s : View, Int, Int → Result AccessError (List Int)
+readU8s value offset number = readMany value offset number Little U8 "getUint8"
+
+
+--| Read a count of Int8 values from a byte offset.
+pub readI8s : View, Int, Int → Result AccessError (List Int)
+readI8s value offset number = readMany value offset number Little I8 "getInt8"
+
+
+--| Read a count of Uint16 values from a byte offset.
+pub readU16s : View, Int, Int, Endian → Result AccessError (List Int)
+readU16s value offset number endian = readMany value offset number endian U16 "getUint16"
+
+
+--| Read a count of Int16 values from a byte offset.
+pub readI16s : View, Int, Int, Endian → Result AccessError (List Int)
+readI16s value offset number endian = readMany value offset number endian I16 "getInt16"
+
+
+--| Read a count of Uint32 values from a byte offset.
+pub readU32s : View, Int, Int, Endian → Result AccessError (List Int)
+readU32s value offset number endian = readMany value offset number endian U32 "getUint32"
+
+
+--| Read a count of Int32 values from a byte offset.
+pub readI32s : View, Int, Int, Endian → Result AccessError (List Int)
+readI32s value offset number endian = readMany value offset number endian I32 "getInt32"
+
+
+--| Read a count of Float16 values from a byte offset.
+pub readF16s : View, Int, Int, Endian → Result Float16Error (List Float)
+readF16s value offset number endian =
+    target = Result.mapError (bulkTarget value offset (number * 2)) Float16Access?
+    if not (Js.typeIs (Js.get target.data "getFloat16") "function") then
+        Err NoFloat16
+    else
+        Ok (load target offset number endian F16 "getFloat16")
+
+
+--| Read a count of Float32 values from a byte offset.
+pub readF32s : View, Int, Int, Endian → Result AccessError (List Float)
+readF32s value offset number endian = readMany value offset number endian F32 "getFloat32"
+
+
+--| Read a count of Float64 values from a byte offset.
+pub readF64s : View, Int, Int, Endian → Result AccessError (List Float)
+readF64s value offset number endian = readMany value offset number endian F64 "getFloat64"
+
+
+--| Read a count of exact 64-bit word pairs from a byte offset.
+pub readWord64s : View, Int, Int, Endian → Result AccessError (List Word64)
+readWord64s value offset number endian =
+    target = bulkTarget value offset (number * 8)?
+    little = endian == Little
+    Ok
+        (List.map (List.range 0 (number - 1)) λindex →
+            at = offset + index * 8
+            low : Int
+            low =
+                Js.to
+                    (Js.call target.data "getUint32"
+                        [ Js.from (if little then at else at + 4), Js.from little ]
+                    )
+            high : Int
+            high =
+                Js.to
+                    (Js.call target.data "getUint32"
+                        [ Js.from (if little then at + 4 else at), Js.from little ]
+                    )
+            Words high low
+        )
 
 
 --| Move the storage to a new fixed buffer of the same length; the original and
@@ -890,6 +1069,179 @@ scalarView value offset size =
                 (Js.construct (Js.global "DataView")
                     [ buffer, Js.get handle "byteOffset", Js.from total ]
                 )
+
+
+-- A byte range of a Uint8Array over a view's bytes: its start and length.
+byteRange : Js.Value, ByteRange → Result AccessError (Int × Int)
+byteRange bytes range =
+    total : Int
+    total = Js.to (Js.get bytes "byteLength")
+    length = Maybe.withDefault range.byteLength (max 0 (total - range.byteOffset))
+    inRange range.byteOffset length total?
+    Ok ( range.byteOffset, length )
+
+
+-- The one check of a bulk access: the backing, then the whole byte range.
+-- `data` addresses the view's bytes from 0; `buffer` and `start` the same
+-- bytes in the storage, for a typed array over them.
+bulkTarget : View, Int, Int → Result AccessError { buffer : Js.Value, start : Int, data : Js.Value }
+bulkTarget value offset size =
+    data = scalarView value offset size?
+    Ok
+        { buffer = Js.get data "buffer"
+        , start = Js.to (Js.get data "byteOffset") + offset
+        , data = data
+        }
+
+
+-- A list's elements as a plain array, which the caller must not write.
+plain : Js.Value → Js.Value
+plain xs =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
+        xs
+    else
+        Js.call xs "$plain" []
+
+
+itemCount : Js.Value → Int
+itemCount items = Js.to (Js.get items "length")
+
+
+-- Whether a host typed array of this kind, over these bytes, writes and reads
+-- exactly what the DataView methods would: the kind exists, the start is
+-- aligned, and the byte order is the host's (one byte has none).
+hostOrder : ViewKind, Int, Endian → Bool
+hostOrder which start endian =
+    stride = elementSize which
+    Int.rem start stride == 0
+        && Js.typeIs (constructorOf which) "function"
+        && (stride == 1 || (endian == Little) == hostLittle ⊤)
+
+
+hostLittle : ⊤ → Bool
+hostLittle ⊤ =
+    probe = Js.construct (Js.global "Uint16Array") [ Js.array [ Js.from 1 ] ]
+    Js.same (Js.at (Js.construct (Js.global "Uint8Array") [ Js.get probe "buffer" ]) 0) (Js.from 1)
+
+
+writeIntegers : View, Int, Endian, List Int, ViewKind, String, Int, Int → Result BulkWriteError ⊤
+writeIntegers value offset endian numbers which setter lower upper =
+    items = plain (Js.from numbers)
+    validValues items 0 (itemCount items) lower upper?
+    target =
+        Result.mapError (bulkTarget value offset (itemCount items * elementSize which)) BulkAccess?
+    store target offset endian items which setter
+    Ok ⊤
+
+
+validValues : Js.Value, Int, Int, Int, Int → Result BulkWriteError ⊤
+validValues items index total lower upper =
+    if index == total then
+        Ok ⊤
+    else
+        number : Int
+        number = Js.to (Js.at items index)
+        if number < lower || number > upper || not (integer number) then
+            Err (InvalidValueAt index number lower upper)
+        else
+            validValues items (index + 1) total lower upper
+
+
+writeFloats : View, Int, Endian, List Float, ViewKind, String → Result AccessError ⊤
+writeFloats value offset endian numbers which setter =
+    items = plain (Js.from numbers)
+    target = bulkTarget value offset (itemCount items * elementSize which)?
+    store target offset endian items which setter
+    Ok ⊤
+
+
+-- Checked items into checked bytes: one `set` where a typed array writes the
+-- same bytes, else one DataView call per item.
+store :
+      { buffer : Js.Value, start : Int, data : Js.Value }
+    , Int
+    , Endian
+    , Js.Value
+    , ViewKind
+    , String
+    → ⊤
+store target offset endian items which setter =
+    if hostOrder which target.start endian then
+        array =
+            Js.construct (constructorOf which)
+                [ target.buffer, Js.from target.start, Js.from (itemCount items) ]
+        _ = Js.call array "set" [ items ]
+        ⊤
+    else
+        storeEach
+            target.data
+            offset
+            (elementSize which)
+            (endian == Little)
+            items
+            setter
+            0
+            (itemCount items)
+
+
+storeEach : Js.Value, Int, Int, Bool, Js.Value, String, Int, Int → ⊤
+storeEach data offset stride little items setter index total =
+    if index < total then
+        _ =
+            Js.call data setter
+                [ Js.from (offset + index * stride), Js.at items index, Js.from little ]
+        storeEach data offset stride little items setter (index + 1) total
+
+
+readMany : View, Int, Int, Endian, ViewKind, String → Result AccessError (List a)
+readMany value offset number endian which getter =
+    target = bulkTarget value offset (number * elementSize which)?
+    Ok (load target offset number endian which getter)
+
+
+-- Checked bytes into a new plain array, which is the list. The array is made
+-- at its length and filled by index: `Array.from` over a typed array took
+-- eight times as long for a million floats (2026-11-09).
+load :
+      { buffer : Js.Value, start : Int, data : Js.Value }
+    , Int
+    , Int
+    , Endian
+    , ViewKind
+    , String
+    → List a
+load target offset number endian which getter =
+    output = Js.construct (Js.global "Array") [ Js.from number ]
+    if hostOrder which target.start endian then
+        typed =
+            Js.construct (constructorOf which)
+                [ target.buffer, Js.from target.start, Js.from number ]
+        copyEach output typed 0 number
+    else
+        loadEach
+            output
+            target.data
+            offset
+            (elementSize which)
+            (Js.from (endian == Little))
+            getter
+            0
+            number
+    Js.to output
+
+
+copyEach : Js.Value, Js.Value, Int, Int → ⊤
+copyEach output typed index total =
+    if index < total then
+        Js.setAt output index (Js.at typed index)
+        copyEach output typed (index + 1) total
+
+
+loadEach : Js.Value, Js.Value, Int, Int, Js.Value, String, Int, Int → ⊤
+loadEach output data offset stride little getter index total =
+    if index < total then
+        Js.setAt output index (Js.call data getter [ Js.from (offset + index * stride), little ])
+        loadEach output data offset stride little getter (index + 1) total
 
 
 isRangeError : Js.Value → Bool

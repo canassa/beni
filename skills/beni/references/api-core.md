@@ -83,6 +83,9 @@ module Binary
     Detached
     ResizableBacking
   alias Buffer
+  type BulkWriteError
+    BulkAccess
+    InvalidValueAt
   alias ByteRange
     ByteRange
   type CopyError
@@ -158,21 +161,33 @@ module Binary
   value byteLength : Backing → Result BackingError Int  -- impure
   value copy : Source → Result CopyError Buffer  -- impure
   value copyInto : View, Int, Source → Result AccessError ⊤  -- impure
+  value copyWithin : View, Int, ByteRange → Result AccessError ⊤  -- impure
   value dataView : Backing → Result BackingError View  -- impure
   value detached : Buffer → Bool  -- impure
   value elementSize : ViewKind → Int
+  value fill : View, ByteRange, Int → Result WriteError ⊤  -- impure
   value fromList : List Int → Result ListError Buffer  -- impure
   value kind : View → ViewKind
   value readF16 : View, Int, Endian → Result Float16Error Float  -- impure
+  value readF16s : View, Int, Int, Endian → Result Float16Error (List Float)  -- impure
   value readF32 : View, Int, Endian → Result AccessError Float  -- impure
+  value readF32s : View, Int, Int, Endian → Result AccessError (List Float)  -- impure
   value readF64 : View, Int, Endian → Result AccessError Float  -- impure
+  value readF64s : View, Int, Int, Endian → Result AccessError (List Float)  -- impure
   value readI16 : View, Int, Endian → Result AccessError Int  -- impure
+  value readI16s : View, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readI32 : View, Int, Endian → Result AccessError Int  -- impure
+  value readI32s : View, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readI8 : View, Int → Result AccessError Int  -- impure
+  value readI8s : View, Int, Int → Result AccessError (List Int)  -- impure
   value readU16 : View, Int, Endian → Result AccessError Int  -- impure
+  value readU16s : View, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readU32 : View, Int, Endian → Result AccessError Int  -- impure
+  value readU32s : View, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readU8 : View, Int → Result AccessError Int  -- impure
+  value readU8s : View, Int, Int → Result AccessError (List Int)  -- impure
   value readWord64 : View, Int, Endian → Result AccessError Word64  -- impure
+  value readWord64s : View, Int, Int, Endian → Result AccessError (List Word64)  -- impure
   value shared : Int → Result SharedError SharedBuffer  -- impure
   value sourceInfo : Source → Result BackingError SourceInfo  -- impure
   value toList : Source → Result BackingError (List Int)  -- impure
@@ -186,15 +201,25 @@ module Binary
   value word64ToSignedInt : Word64 → Result WordError Int  -- impure
   value words : Word64 → { high : Int, low : Int }
   value writeF16 : View, Int, Endian, Float → Result Float16Error ⊤  -- impure
+  value writeF16s : View, Int, Endian, List Float → Result Float16Error ⊤  -- impure
   value writeF32 : View, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeF32s : View, Int, Endian, List Float → Result AccessError ⊤  -- impure
   value writeF64 : View, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeF64s : View, Int, Endian, List Float → Result AccessError ⊤  -- impure
   value writeI16 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI16s : View, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeI32 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI32s : View, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeI8 : View, Int, Int → Result WriteError ⊤  -- impure
+  value writeI8s : View, Int, List Int → Result BulkWriteError ⊤  -- impure
   value writeU16 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU16s : View, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeU32 : View, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU32s : View, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeU8 : View, Int, Int → Result WriteError ⊤  -- impure
+  value writeU8s : View, Int, List Int → Result BulkWriteError ⊤  -- impure
   value writeWord64 : View, Int, Endian, Word64 → Result AccessError ⊤  -- impure
+  value writeWord64s : View, Int, Endian, List Word64 → Result AccessError ⊤  -- impure
 module Binary.Atomics
   type Error
     Backing
@@ -221,6 +246,9 @@ module Binary.Region
   type AccessError
     Detached
     OutOfBounds
+  type BulkWriteError
+    BulkAccess
+    InvalidValueAt
   type Float16Error
     Float16Access
     NoFloat16
@@ -233,30 +261,53 @@ module Binary.Region
     WriteAccess
     InvalidValue
   value byteLength : Region mode → Result AccessError Int  -- impure
+  value copyInto : Region ReadWrite, Int, Source → Result AccessError ⊤  -- impure
+  value copyWithin : Region ReadWrite, Int, ByteRange → Result AccessError ⊤  -- impure
+  value fill : Region ReadWrite, ByteRange, Int → Result WriteError ⊤  -- impure
   value readF16 : Region mode, Int, Endian → Result Float16Error Float  -- impure
+  value readF16s : Region mode, Int, Int, Endian → Result Float16Error (List Float)  -- impure
   value readF32 : Region mode, Int, Endian → Result AccessError Float  -- impure
+  value readF32s : Region mode, Int, Int, Endian → Result AccessError (List Float)  -- impure
   value readF64 : Region mode, Int, Endian → Result AccessError Float  -- impure
+  value readF64s : Region mode, Int, Int, Endian → Result AccessError (List Float)  -- impure
   value readI16 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readI16s : Region mode, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readI32 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readI32s : Region mode, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readI8 : Region mode, Int → Result AccessError Int  -- impure
+  value readI8s : Region mode, Int, Int → Result AccessError (List Int)  -- impure
   value readOnly : Region mode → Region ReadOnly
   value readU16 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readU16s : Region mode, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readU32 : Region mode, Int, Endian → Result AccessError Int  -- impure
+  value readU32s : Region mode, Int, Int, Endian → Result AccessError (List Int)  -- impure
   value readU8 : Region mode, Int → Result AccessError Int  -- impure
+  value readU8s : Region mode, Int, Int → Result AccessError (List Int)  -- impure
   value readWord64 : Region mode, Int, Endian → Result AccessError Word64  -- impure
+  value readWord64s : Region mode, Int, Int, Endian → Result AccessError (List Word64)  -- impure
   value region : View → Result BackingError (Region ReadWrite)  -- impure
   value sourceInfo : Region mode → Result AccessError SourceInfo  -- impure
   value view : Region mode → View
   value writeF16 : Region ReadWrite, Int, Endian, Float → Result Float16Error ⊤  -- impure
+  value writeF16s : Region ReadWrite, Int, Endian, List Float → Result Float16Error ⊤  -- impure
   value writeF32 : Region ReadWrite, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeF32s : Region ReadWrite, Int, Endian, List Float → Result AccessError ⊤  -- impure
   value writeF64 : Region ReadWrite, Int, Endian, Float → Result AccessError ⊤  -- impure
+  value writeF64s : Region ReadWrite, Int, Endian, List Float → Result AccessError ⊤  -- impure
   value writeI16 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI16s : Region ReadWrite, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeI32 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeI32s : Region ReadWrite, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeI8 : Region ReadWrite, Int, Int → Result WriteError ⊤  -- impure
+  value writeI8s : Region ReadWrite, Int, List Int → Result BulkWriteError ⊤  -- impure
   value writeU16 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU16s : Region ReadWrite, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeU32 : Region ReadWrite, Int, Endian, Int → Result WriteError ⊤  -- impure
+  value writeU32s : Region ReadWrite, Int, Endian, List Int → Result BulkWriteError ⊤  -- impure
   value writeU8 : Region ReadWrite, Int, Int → Result WriteError ⊤  -- impure
+  value writeU8s : Region ReadWrite, Int, List Int → Result BulkWriteError ⊤  -- impure
   value writeWord64 : Region ReadWrite, Int, Endian, Word64 → Result AccessError ⊤  -- impure
+  value writeWord64s : Region ReadWrite, Int, Endian, List Word64 → Result AccessError ⊤  -- impure
 module Binary.Wgsl
   type CodecError
     ValueShape

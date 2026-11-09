@@ -134,6 +134,29 @@ regionAccesses region index total =
         regionAccesses region (index + 1) (total + number)
 
 
+--| A thousand floats written and read back by `writeF32s` and `readF32s`
+--| (binary.md §7) through a Uint8Array view: one check per call, not one
+--| per element.
+pub bulkAccess : ⊤ → List String
+bulkAccess ⊤ =
+    floats = List.map (List.range 1 1000) toFloat
+    case
+        Binary.allocate 4096
+            ▷ Result.andThen λbuffer →
+                Binary.view (Binary.Local buffer) Binary.U8 Binary.whole
+                    ▷ Result.mapError λ_ → Binary.InvalidSize 0
+    of
+        Ok view →
+            counts = detachedReads λ⊤ →
+                counted λ⊤ →
+                    written = Binary.writeF32s view 0 Binary.Little floats
+                    back = Binary.readF32s view 0 1000 Binary.Little
+                    "${Debug.toString written}, read back ${Debug.toString (back == Ok floats)}"
+            [ line "bulk f32 x1000 on Uint8Array" counts ]
+        Err _ →
+            [ "no view" ]
+
+
 --| `Wgsl.encode` and `Wgsl.decode` of an array of 256 f32 check the
 --| backing once per call, through one region, not once per element.
 pub wgslAccess : ⊤ → List String
