@@ -3393,7 +3393,10 @@ and no contract of a group code that is not settled (`Groups`'s reads, the same 
 check reads); one that did is put back to ⊥ and is a member of the rounds with the rest, never tried again.
 A settled code's contract is final, since everything it read was; the rest are solved as above, reading it as
 a callee outside the group. Recursive codes are never settled this way: their walk calls themselves. The
-verdicts are those of the validation round before (it read the same contracts); the rounds are fewer.
+rounds are fewer. The verdicts are as sound as before, not always the same: the validation round read the
+joined candidates, so a refusal may land elsewhere or go (a nested `List.foldl` whose inner callback pushes
+onto its accumulator is refused once, at the inner call, as with a top-level callback). Each scan of a code is
+charged (`inspection`), since a pass may scan every code again.
 
 **Termination.** The vocabulary is finite: the slots are fixed by the types, the arrivals by the parameters'
 slots and the labels by the instructions. Every delivered fact is added once; every condition moves at most

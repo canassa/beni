@@ -95,6 +95,8 @@ pub fn peelable(mod: anytype, codes: []const u32, index_of: *const Ids.FixedDict
     const c = mod.codes.items[codes[x]];
     if (c.kind != .lambda and c.kind != .local) return false;
     const w = c.walk orelse return false;
+    // The scan is charged: a pass may scan every code again (§4.1).
+    try mod.account.reserve(.inspection, @intCast(1 + w.f.calls.items.len + w.closures.items.len));
     for (w.f.calls.items) |cl| if (cl.code != none) if (index_of.get(.{cl.code})) |y| if (!settled[y]) return false;
     for (w.closures.items) |cl| if (cl.code & Walk.fixed_bit == 0) if (index_of.get(.{cl.code})) |y| if (!settled[y]) return false;
     return true;
