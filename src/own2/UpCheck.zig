@@ -4,24 +4,18 @@
 //!
 //! Obligations kept here: O6 (`⟲` covers every level: no fold above a slot is missed).
 
-const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 
 const PathId = Ids.PathId;
 
-/// Whether `ts` holds every path of `Up(q)`; a panic otherwise. On an account of its own:
-/// a memo's reader pays its fill cost however it was filled (§4.1), so no charge moves.
-pub fn agrees(pl: *Place.Table, g: std.mem.Allocator, q: PathId, ts: []const PathId) Ids.ChargeError!void {
-    var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
-    defer scratch.deinit(g);
-    const r = pl.foldsUp(g, .growth(&scratch), q) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => return,
-    };
-    var n: u32 = 0;
-    while (n < r.len) : (n += 1) {
-        const u = pl.foldPath(r.start + n);
+/// Panics where `ts` misses a path of `Up(q)`, when `Up(q)` is made already. A pure read: it
+/// fills no memo and makes no path, so a build with runtime safety names every path as one
+/// without it does, and charges the same.
+pub fn agrees(pl: *const Place.Table, q: PathId, ts: []const PathId) void {
+    const i = pl.up_memo.get(q) orelse return;
+    const r = pl.fold_runs.items[i];
+    for (pl.fold_paths.items[r[0]..][0..r[1]]) |u| {
         for (ts) |t| {
             if (t == u) break;
         } else @panic("a fold above a slot that LevelTargets.of misses");

@@ -725,12 +725,12 @@ pub const Eval = struct {
 
     /// Every arrival of call `call`'s callee at and below caller slot `prefix`: one key below
     /// each anchor (`BelowAnchors.of`, §2.1 *One below*), in `out`. A fold's key holds slots no
-    /// steps from the prefix name. While a group is solved the prefix's key delivers to `cur_sub`.
+    /// steps from the prefix name. While a group is solved the prefix's key, not a fold, delivers to `cur_sub`.
     pub fn instBelow(e: *Eval, call: u32, prefix: PathId, which: u32, fold_sub: ?Sub, out: *std.ArrayList(BelowAnchors.Anchor)) Error!void {
         const saved = e.cur_sub;
         defer e.cur_sub = saved;
         for (try BelowAnchors.of(e.f, e.gpa(), e.arena, prefix)) |p| {
-            e.cur_sub = if (p == prefix) saved else fold_sub;
+            e.cur_sub = if (p == prefix and !BelowAnchors.isFold(e.f, p)) saved else fold_sub;
             try out.append(e.gpa(), .{ .at = p, .key = try e.keyBelow(call, p, which) });
         }
     }

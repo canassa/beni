@@ -1,0 +1,1 @@
+v2 keeps a list in place below the fold a result is read off at when it is not live (§2.1, One below, #2359): built again under --ownership=v2 and the sanitiser.

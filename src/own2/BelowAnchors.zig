@@ -26,9 +26,18 @@ pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId)
     return out.items;
 }
 
-/// Whether `q` has an anchor other than itself: a reader that concludes something of every
-/// slot below `q` from `q`'s words alone leaves such a slot to a reader of every anchor.
+/// Whether `q` is a fold on a cycle with a middle: its words name every level below it, so
+/// its key is read as a fold's is, all of it at each result slot, never by its steps.
+pub fn isFold(f: anytype, q: PathId) bool {
+    const pl = f.places;
+    if (@import("Mutate.zig").on(.below_folds_off) or pl.pathParent(q) == .none) return false;
+    return pl.pathStep(q).kind == .level and LevelTargets.hasMiddle(pl, pl.pathPlace(q));
+}
+
+/// Whether `q` is a fold or has an anchor other than itself: a reader that concludes something
+/// of every slot below `q` from `q`'s words alone leaves such a slot to a reader of every anchor.
 pub fn foldsAbove(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId) Error!bool {
+    if (isFold(f, q)) return true;
     const as = try of(f, g, arena, q);
     return as.len != 1 or as[0] != q;
 }
