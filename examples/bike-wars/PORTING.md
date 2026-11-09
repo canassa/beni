@@ -74,9 +74,8 @@ These capabilities come from beni's platform, not from a port:
 3. **No `>>` / `<<` (§6.5): the argument is named instead.**
    - Point-free definitions get their argument:
      - `turnLeft dir = turnRight (turnRight (turnRight dir))`;
-     - `Explosion.view`, `Explosion.update` and `linesToTrail`.
+     - `Explosion.view` and `Explosion.update`.
    - Composed function arguments become lambdas:
-     - `List.reverse << recurse []` in `trailToLines`;
      - the polyline builder in `Bike.view`;
      - `keyParser >> KeyDown`;
      - `.ticksLeft >> (/=) 0`, which is `λexplosion → 0 ≠ explosion.ticksLeft`.
@@ -97,8 +96,7 @@ These capabilities come from beni's platform, not from a port:
    - The author's parameter orders are kept.
 5. **Lists use brackets and `…` (§6.8).**
    - `x :: xs` and `x :: rest ->` become `[ x, …xs ]` and `[ x, …rest ] →`.
-   - `_ :: []` becomes `[ _ ]`, and `(head :: tail) :: rest` becomes
-     `[ [ head, …tail ], …rest ]`.
+   - `_ :: []` becomes `[ _ ]`.
    - `frontWall other :: omitLastSections current.trail ++ …` becomes
      `[ frontWall other, …omitLastSections current.trail ] ++ …`.
 6. **Unicode notation (§12.7–§12.10).**
@@ -158,6 +156,18 @@ These capabilities come from beni's platform, not from a port:
       of the red bike, `{ current = Record.copy red, … }`. Each call writes its
       `current` bike, and the green bike's call reads the red one as `other`
       as it was before red's call (§31.15).
+
+13. **A list grows at its end (§6.8, `prepend_in_loop`).** A list is an
+    array, so a loop that puts elements in front of its accumulator copies
+    the accumulator at each step.
+    - `trailToLines` pairs each point with the next one with
+      `List.map2 points (List.drop points 1) toLine`. The original built the
+      lines in reverse order and then reversed them.
+    - `linesToTrail` reads the lines from the first to the last with the
+      local function `joinLines`. It adds a point at the end of the current
+      trail, or adds the current trail at the end of the result. The
+      original folded from the right and put each line in front.
+    - The two functions give the same results as the original.
 
 ## What differs on the page
 

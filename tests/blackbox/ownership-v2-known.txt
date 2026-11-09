@@ -620,6 +620,7 @@ core List 1850:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds th
 core Result 271:21 #1 :: Result.partitionHelp <literal> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 # Slice 4d: a group solved since its port keeps no round that its last round covers.
 tests/corpus/run/TailModConsMerge.beni TailModConsMerge 27:18 #1 :: TailModConsMerge.split <literal> :: absent :: accepted  v2 finds the second accumulator written too (`split` swaps the two); v1's summary writes only the first
+tests/corpus/browser/tea/BikeWars Helpers 27:13 #1 :: Helpers.joinLines <literal> :: absent :: accepted  v2 finds the second accumulator written too (`joinLines` writes `done` and `current`); v1's summary writes only the first
 # WriteOneLevel (R-4.7.8, moved from tests/pending by slice 4a).
 tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 28:10 #0 :: WriteOneLevel.f <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
 tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 34:5 #0 :: WriteOneLevel.f <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)

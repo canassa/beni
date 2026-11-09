@@ -17,40 +17,46 @@ sortPoints ( a, b ) =
 
 
 pub linesToTrail : List Line → Trail
-linesToTrail lines = List.foldr lines [] λline acc →
-    ( start, end ) =
-        case line of
-            Horizontal points →
-                points
-
-            Vertical points →
-                points
-    case acc of
+linesToTrail lines =
+    case lines of
         [] →
-            [ [ start, end ] ]
+            []
 
-        [ accHead, …accTail ] →
-            if List.head accHead == Just end then
-                [ [ start, …accHead ], …accTail ]
+        [ first, …rest ] →
+            ( start, end ) = lineEnds first
+            joinLines [] [ start, end ] rest
+
+
+--| Join each line to the line before it when it starts where that one ends.
+--| `current` is the trail being built; `done` holds the trails before it.
+joinLines : Trail, List Vec2, List Line → Trail
+joinLines done current lines =
+    case lines of
+        [] →
+            List.push done current
+
+        [ line, …rest ] →
+            ( start, end ) = lineEnds line
+            if List.last current == Just start then
+                joinLines done (List.push current end) rest
             else
-                [ [ start, end ], …acc ]
+                joinLines (List.push done current) [ start, end ] rest
+
+
+lineEnds : Line → Vec2 × Vec2
+lineEnds line =
+    case line of
+        Horizontal points →
+            points
+
+        Vertical points →
+            points
 
 
 pub trailToLines : Trail → List Line
 trailToLines trail =
-    recurse : List (Maybe Line), List Vec2 → List (Maybe Line)
-    recurse acc list =
-        case list of
-            [] →
-                acc
-
-            [ _ ] →
-                acc
-
-            [ a, b, …tail ] →
-                recurse [ toLine a b, …acc ] [ b, …tail ]
     trail
-        ▷ List.map λl → List.reverse (recurse [] l)
+        ▷ List.map λl → List.map2 l (List.drop l 1) toLine
         ▷ List.concat
         ▷ List.filterMap identity
 
