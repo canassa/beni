@@ -24,6 +24,9 @@
 - Each operation checks the storage first. Detached storage is `Detached`.
   Resizable or growable storage is `ResizableBacking`, also when it is in bounds
   (`BackingError`, inside the other error types).
+- Shared storage is found in every realm, also storage from another realm. On a
+  host with the ES2024 `detached` and `growable` properties, this check reads two
+  properties and throws nothing.
 - `transfer` moves the storage to a new buffer in the same realm. After it, the old
   buffer and all its views are detached. Moving storage to a worker is not available.
 
