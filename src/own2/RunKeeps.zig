@@ -6,13 +6,11 @@
 //! Obligations kept here: none of §2.14's directly (`FedCall.at`'s O14).
 
 const std = @import("std");
-const Ids = @import("Ids.zig");
-const Slots = @import("Slots.zig");
-const Replay = @import("Replay.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Place = @import("Place.zig");
 const SlotWords = @import("SlotWords.zig");
+const FedThrough = @import("FedThrough.zig");
 
 /// Whether the code of virtual call `vi` keeps nothing of its argument `k` a later run writes: no store or cell
 /// write that may hold an object, no label that lets its answer go (a label's code may keep what it is handed),
@@ -59,17 +57,6 @@ fn reaches(e: anytype, ws: []const Contract.Effect, k: u32, at: []const u32) boo
     return false;
 }
 
-/// Whether argument `j` of virtual call `vi` may hold an object at `slot`.
-fn objectAt(e: anytype, vi: u32, j: u32, slot: Contract.Rel) !bool {
-    const x = if (j < e.f.calls.items[vi].args.len) e.f.val(e.f.calls.items[vi].args[j]) else return true;
-    return x.kind != .ref or try holdsAt(e, e.f.pos.items[x.pos].slot, e.f.slots.relWords(slot));
-}
-
+const objectAt = FedThrough.objectAt;
 /// Whether the place `words` below `root` may hold an object.
-pub fn holdsAt(e: anytype, root: Ids.PathId, words: []const u32) !bool {
-    var ps: std.ArrayList(u32) = .empty;
-    defer ps.deinit(e.gpa());
-    try Replay.replay(e.gpa(), e.account(), e.places(), root, words, &ps);
-    for (ps.items) |p| if (Slots.holdsAny(e.places(), .from(p))) return true;
-    return ps.items.len == 0;
-}
+pub const holdsAt = FedThrough.holdsAt;

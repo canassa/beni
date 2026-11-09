@@ -1,0 +1,87 @@
+-- A callback that writes its own parameter and that a callee hands back to
+-- its caller, run on a list nothing else holds (`ownership-v2.md` §2.11.3,
+-- *a function value goes where a value goes*; §2.11.4): as itself (`ident`),
+-- through a fold, a map and a dictionary, captured by a closure the callee
+-- returns (`later`, `comp`), and in a record (`mkOps`). The caller follows
+-- the value it gets back to the callback's code, so each write is judged at
+-- the call that runs it, and each is accepted in place (#2395).
+import Dict
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Ops =
+    run : List Int → List Int
+
+
+ident : a → a
+ident f = f
+
+
+later : (a → b) → (a → b)
+later f = λx → f x
+
+
+comp : (x, a → b), (x, b → c) → (x, a → c)
+comp f g = λx a → g x (f x a)
+
+
+mkOps : (List Int → List Int) → Ops
+mkOps f = { run = f }
+
+
+viaIdent : Int → String
+viaIdent n =
+    f = ident λa → List.push a 1
+    show (f [ n ])
+
+
+viaFold : Int → String
+viaFold n = show (List.foldl [ 1, 2 ] [ n ] (ident λx a → List.push a x))
+
+
+viaComp : Int → String
+viaComp n = show (List.foldl [ 1, 2 ] [ n ] (comp (λx a → List.push a x) λ_ v → v))
+
+
+viaCompCall : Int → String
+viaCompCall n =
+    h = comp (λx a → List.push a x) λ_ v → v
+    show (h 3 [ n ])
+
+
+viaMap : Int → String
+viaMap n = String.join (List.map (List.map [ [ n ] ] (ident λa → List.push a 4)) show) ";"
+
+
+viaLater : Int → String
+viaLater n =
+    h = later λl → List.push l 5
+    show (h [ n ])
+
+
+viaRecord : Int → String
+viaRecord n =
+    ops = mkOps λl → List.push l 6
+    show (ops.run [ n ])
+
+
+viaDict : Int → String
+viaDict n =
+    d = Dict.singleton 1 (ident λa → List.push a 7)
+    case Dict.get d 1 of
+        Just g →
+            show (g [ n ])
+
+        Nothing →
+            "-"
+
+
+main : Program
+main =
+    Node.print
+        "${viaIdent 0} ${viaFold 0} ${viaComp 0} ${viaCompCall 0} ${viaMap 0} ${viaLater 0} ${viaRecord 0} ${viaDict 0}"

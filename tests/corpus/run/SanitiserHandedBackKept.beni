@@ -1,0 +1,88 @@
+-- A callback that a callee hands back, where an edit in place would change
+-- a list something else still reads (`ownership-v2.md` §2.11.3, *a function
+-- value goes where a value goes*, *a `fed` answer keeps nothing*; §2.11.4):
+-- the writer handed back by `ident` called twice on one list, a capture
+-- writer called twice, and folds over a composition whose second function
+-- keeps the accumulator in a cell, keeps the list it is handed beside it, or
+-- answers a capture. Each is refused; were it accepted, the sanitised run
+-- would read the list a later call had pushed onto in place (#2395).
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+ident : a → a
+ident f = f
+
+
+comp : (x, a → b), (x, b → c) → (x, a → c)
+comp f g = λx a → g x (f x a)
+
+
+comp2 : (x, a → b), (a, b → c) → (x, a → c)
+comp2 f g = λx a → g a (f x a)
+
+
+twice : Int → String
+twice n =
+    f = ident λl → List.push l 1
+    xs = [ n ]
+    p = f xs
+    q = f xs
+    "${show p} ${show q}"
+
+
+captureTwice : Int → String
+captureTwice n =
+    k = [ n ]
+    f = ident λ⊤ → List.push k 1
+    a = f ⊤
+    b = f ⊤
+    "${show a} ${show b}"
+
+
+keptInCell : Int → String
+keptInCell n =
+    r = Ref.make []
+    acc =
+        List.foldl
+            [ 1, 2 ]
+            [ [ n ] ]
+            (comp (λx a → List.push a [ x ]) λ_ v →
+                Ref.set r v
+                v
+            )
+    "${shows acc} ${shows (Ref.get r)}"
+
+
+keptBeside : Int → String
+keptBeside n =
+    r = Ref.make []
+    acc =
+        List.foldl
+            [ 1, 2 ]
+            [ [ n ] ]
+            (comp2 (λx a → List.push a [ x ]) λa v →
+                Ref.set r a
+                v
+            )
+    "${shows acc} ${shows (Ref.get r)}"
+
+
+answersCapture : Int → String
+answersCapture n =
+    k = [ 9 ]
+    acc = List.foldl [ 1, 2 ] [ n ] (comp (λx a → List.push a x) λ_ v → k)
+    "${show acc} ${show k}"
+
+
+main : Program
+main = Node.print "${twice 0} ${captureTwice 0} ${keptInCell 0} ${keptBeside 0} ${answersCapture 0}"

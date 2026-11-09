@@ -1,12 +1,12 @@
 -- A runtime catch for a callback that writes its own parameter and that a
 -- callee hands back to its caller (`ownership-v2.md` §2.11.3, §2.11.4): as
 -- itself (`same`), captured by a closure the callee returns (`later`,
--- `defer`), or in a record (`mkOps`). The caller calls a function value a
--- callee returns as unknown code, so the callback's callers are unknown
--- there. v2 accepted each `List.push l` as `param`, relying on callers it
--- could not see, and the sanitised run trapped on the read of the list the
--- later call had pushed onto in place. Each write is refused at the call
--- that hands the callback back.
+-- `defer`), or in a record (`mkOps`). v2 once accepted each `List.push l`
+-- as `param`, relying on callers it could not see, and the sanitised run
+-- trapped on the read of the list the later call had pushed onto in place.
+-- The caller follows the value it gets back to the callback's code, so
+-- each write is refused at the call that runs it, where the list is read
+-- again (#2395).
 import Node exposing (Program)
 import String
 

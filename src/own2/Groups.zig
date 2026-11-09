@@ -1095,7 +1095,7 @@ pub const Module = struct {
         return siteSig(ctx, bir.instData(@fromBackingInt(i)).lhs, params);
     }
 
-    fn settledParam(ctx: *anyopaque, f: *Value.Frame, v: u32) Error!?[2]u32 {
+    fn settledFn(ctx: *anyopaque, f: *Value.Frame, v: u32) Error!?Walk.Followed {
         return FnRun.settled(f, &self(ctx).contracts, self(ctx).context(), v);
     }
 
@@ -1133,7 +1133,7 @@ pub const Module = struct {
             .codeSig = codeSig,
             .siteSig = siteSig,
             .originSig = originSig,
-            .settledParam = settledParam,
+            .settledFn = settledFn,
             .pessimistic = pessimistic,
             .tryShape = tryShape,
         };

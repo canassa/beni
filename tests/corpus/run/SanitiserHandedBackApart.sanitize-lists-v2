@@ -1,0 +1,3 @@
+A callback that writes its own parameter and that a callee hands back, run on a list nothing else holds
+(ownership-v2.md §2.11.3, §2.11.4): built again under --ownership=v2 and the list stale-read sanitiser. v2
+follows each value back to the callback's code and accepts each edit; the sanitised run prints the same.

@@ -11,6 +11,7 @@ const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const RunKeeps = @import("RunKeeps.zig");
+const FedThrough = @import("FedThrough.zig");
 
 const Error = Relation.Error;
 const Eval = Relation.Eval;
@@ -62,6 +63,9 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
         // frame's, handed `k` whole (`λx acc → step x acc`): fed where that
         // label is, at the argument it is handed `k` as (#1721).
         var through: ?u64 = null;
+        // An answer of a label `K` applies to a known code: fed where that code's is, label by label (#2395).
+        const ks = if (k == Contract.fresh_arg) 0 else FedThrough.bit(k);
+        var composed = false;
         for (es.items.items) |rs| {
             if (!try holdsAt(e, root, es.wordsOf(rs))) continue;
             if (@TypeOf(written) != @TypeOf(null) and !written.reaches(e.places(), es.wordsOf(rs))) continue;
@@ -73,7 +77,11 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
                 .fresh => {},
                 .cb => {
                     if (es.wordsOf(rs).len != 0) return .no;
-                    const fc = e.label_map.get(.{ vi, a.j }) orelse return .no;
+                    const fc = e.label_map.get(.{ vi, a.j }) orelse {
+                        if (k != Contract.fresh_arg and ks == 0 or !try FedThrough.answers(e, vi, a.j, ks, written, 0)) return .no;
+                        composed = true;
+                        continue;
+                    };
                     const k2 = if (k == Contract.fresh_arg) k else (try supplyOf(e, vi, a.j, k)) orelse return .no;
                     const cb = e.f.cbs.items[fc];
                     const occ = Contract.occFed(cb.j, cb.slot, k2);
@@ -83,7 +91,8 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
                 else => return .no,
             };
         }
-        if (k != Contract.fresh_arg and !try RunKeeps.nothing(e, vi, k)) return .no;
+        if (composed and through != null) return .no;
+        if (k != Contract.fresh_arg and !try if (composed) FedThrough.keepsNone(e, vi, ks, 0) else RunKeeps.nothing(e, vi, k)) return .no;
         if (through) |t| return .{ .occ = t };
         return .yes;
     }

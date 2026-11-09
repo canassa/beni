@@ -156,6 +156,8 @@ const layers = [_]Entry{
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
+    // A `fed` answer through the known codes a code's labels run (#2395).
+    .{ .file = "FedThrough.zig", .layer = 6, .max_lines = 150 },
     // What a known code's run keeps of an argument a later run is handed, split from `SelfFed` (#2367).
     .{ .file = "RunKeeps.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "HeldBy.zig", .layer = 7, .max_lines = 50 },
@@ -224,6 +226,8 @@ const layers = [_]Entry{
     .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
     // A function value in a result: its called code (#2028).
     .{ .file = "Called.zig", .layer = 8, .max_lines = 70 },
+    // A function value that is one closure of the frame through callees' results (#2395).
+    .{ .file = "FnSite.zig", .layer = 8, .max_lines = 110 },
     // A construction over its base, split from `Walk` (#2028).
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A demand says whether it is a cell operation (#1727).
@@ -868,7 +872,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 160), layers.len);
+    try testing.expectEqual(@as(usize, 162), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

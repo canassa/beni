@@ -1,10 +1,6 @@
-# v2 refuses a writing callback that a callee hands back: the caller calls it as unknown code (§2.11.4).
+# v2 follows a writing callback that a callee hands back to the call that runs it (§2.11.3, #2395).
 # A called contract also names the write at the call (§2.11.3).
-47:9 list_may_be_shared SanitiserHandedBackCallback.same
 48:9 list_still_used h
-55:9 list_may_be_shared SanitiserHandedBackCallback.later
 56:9 list_still_used h
-63:11 list_may_be_shared SanitiserHandedBackCallback.mkOps
 64:12 list_still_used call
-70:17 list_may_be_shared SanitiserHandedBackCallback.defer
 71:9 list_still_used th

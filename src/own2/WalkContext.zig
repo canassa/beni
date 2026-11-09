@@ -17,6 +17,8 @@ const Error = Ids.ChargeError;
 const PlaceId = Ids.PlaceId;
 
 pub const Callee = Contract.Callee;
+/// What a function value is by every arrival: a parameter's function slot `(j, rel)`, or a closure's site (#2395).
+pub const Followed = union(enum) { param: [2]u32, site: u32 };
 
 /// The module's services a walk reads (`Groups` implements them).
 pub const Context = struct {
@@ -56,9 +58,9 @@ pub const Context = struct {
     /// The same of a label's origin: the function type its callback call's
     /// head has there; null when it has none to hand.
     originSig: *const fn (ctx: *anyopaque, origin: [3]u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
-    /// The one parameter function slot `(j, rel)` a value of frame `f` is,
+    /// The one parameter function slot `(j, rel)` or closure site a value of frame `f` is,
     /// read through the contracts settled at the walk (`FnRun.settled`).
-    settledParam: *const fn (ctx: *anyopaque, f: *Value.Frame, v: u32) Error!?[2]u32,
+    settledFn: *const fn (ctx: *anyopaque, f: *Value.Frame, v: u32) Error!?Followed,
     /// The pessimistic contract of a call of `arity` arguments.
     pessimistic: *const fn (ctx: *anyopaque, arity: u32) Error!Contract.Id,
     /// A `try`'s shape: `(success ordinal, failure ordinal, failure arity)` of its
