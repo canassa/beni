@@ -1,15 +1,15 @@
 # A browser capability base for `browser-inline`
 
 *Architecture approved by the owner, 2026-11-09, through the manager.
-Guarded-entry and log-context contracts in §4.1–§4.3 await manager review
-before implementation depends on them. No implementation has landed.*
+Guarded-entry and fixture contracts (§4.1, §4.3) approved by the manager,
+2026-11-09. The owner approved §4.2’s staged init proof the same day.
+Implementation follows in local slices; no GitHub publication is authorized.*
 
 This specifies the approved renderer-free browser base required by
 [`direct-rewrite.md`](../../plans/direct-rewrite.md) §5, §9, under the work
 tracked by #302 and #966. It includes WebGPU's later capability modules.
-The owner approved the architecture and sequencing in §8. The proposed
-phase-aware init check in §4.2 is an explicit amendment for manager review;
-until accepted, the existing prerender purity contract remains normative.
+The owner approved the architecture and sequencing in §8. The phase-aware init check in §4.2 is approved and amends
+`prerender.md` §3.1; every host read remains refused.
 Work is committed locally on `browser-base`, slice by slice. No push, PR,
 issue or GitHub comment is authorized.
 
@@ -143,7 +143,7 @@ commands/listeners directly, and does not ship a generic TEA renderer.
 
 ### 4.1 Guarded entry: scoped registration, captured event entry
 
-*Proposed concrete contract, 2026-11-09; review required before use.*
+*Approved by the manager, 2026-11-09.*
 
 The base owns `Listen` and a private synchronous registration context. A
 renderer supplies an `Entry = sync ((⊤ → ⊤) → ⊤)` function. The operation
@@ -190,8 +190,8 @@ No new task slot or Task dependency is required for a synchronous listener.
 
 ### 4.2 Log context: retain effectful capture; stage init command metadata
 
-*Proposed concrete contract, 2026-11-09; includes a prerender amendment
-requiring review. Do not implement this as a purity exemption.*
+*Approved by the owner, 2026-11-09. The staged init proof amends
+`prerender.md` §3.1. Do not implement this as a purity exemption.*
 
 Keep browser's existing command creation semantics: `Hosted.job` captures
 `Task.keepLogContext` **where the command is made**, within the dynamic
@@ -215,7 +215,7 @@ through its context capture. The original assertion that a shared browser
 constructor is inert and pure is false. This cannot be solved by merely
 moving files or ignoring the inferred effect.
 
-Proposed amendment: a prerendered `Tea.element` / `document` /
+Approved amendment: a prerendered `Tea.element` / `document` /
 `application` init has a pure initial-model computation and a staged
 command result. The compiler proves the split before emitting either tree:
 
@@ -245,10 +245,9 @@ command result. The compiler proves the split before emitting either tree:
   field does not make it client-only.
 
 This introduces an explicit phase-aware init proof, not a change to the
-checker's effect bits. It must be reflected in `prerender.md` §3.1 and the
-lowering interface before code is written. If the manager does not approve
-this amendment, keep the existing purity rule and report shared effectful
-init construction as blocked; do not invent a pure capture annotation.
+checker's effect bits. It is reflected in `prerender.md` §3.1. Extend the lowering interface
+where the staged proof needs to cross it, before dependent lowering code.
+Do not invent a pure capture annotation.
 
 ### 4.3 Focused fixture contracts for the two boundaries
 
@@ -308,8 +307,8 @@ adapter, rather than pass solely on absence.
 ## 6. Evidence required before and after implementation
 
 No measurements or new test results are claimed by this document. The
-architecture is approved for local slices; the §4 contracts must first be
-shown to the manager. The zorg prerequisite remains stopped. Baseline and
+architecture and §4 contracts are approved for local slices. The previously recorded zorg build prerequisite is being repaired locally
+so these slices can be validated. Baseline and
 after measurements are required before an implementation slice is complete.
 
 Use the same compiler mode, Node version and compression procedure for
@@ -354,9 +353,9 @@ in logs, not a rerun to discover the failure text.
 
 ## 7. Approved sequencing and local review boundaries
 
-1. Record the approved architecture and show the concrete guarded-entry
-   and log-context contracts, including focused fixtures, to the manager.
-   Do not build dependent implementation before that review.
+1. Record the approved architecture and guarded-entry/log-context
+   contracts, including focused fixtures. This review completed on
+   2026-11-09; dependent implementation is authorized locally.
 2. Extract the renderer-free base and capabilities, retaining today's
    inline subscription limits as explicit compiler limits. Compile shared
    synchronous commands/listeners and scoped suspended command work where
@@ -381,7 +380,8 @@ The manager relayed the owner's answers on 2026-11-09:
 2. **Yes:** one shared `Cmd`/`Sub`. Settle guarded-entry and log-context
    contracts in this document with focused fixtures, and show the manager
    before building on those contracts. §4.1–§4.3 are that review submission;
-   the architecture approval is not approval of the new init phase proof.
+   the owner subsequently approved the init phase proof, and the manager
+   approved the entry and fixture contracts, on 2026-11-09.
 3. **Sequence it:** first move capabilities with today's subscription
    limits stated as compiler limits. Model-dependent subscription sets and
    full keyed policies are the next slice, before the site depends on
