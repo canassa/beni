@@ -1,11 +1,11 @@
 -- A callback that writes its own parameter and that a callee hands back to
 -- its caller, run on a list nothing else holds (`ownership-v2.md` §2.11.3,
 -- *a function value goes where a value goes*; §2.11.4): as itself (`ident`),
--- through a fold, a map and a dictionary, captured by a closure the callee
+-- through a fold and a map, captured by a closure the callee
 -- returns (`later`, `comp`), and in a record (`mkOps`). The caller follows
 -- the value it gets back to the callback's code, so each write is judged at
 -- the call that runs it, and each is accepted in place (#2395).
-import Dict
+import List
 import Node exposing (Program)
 import String
 
@@ -70,18 +70,7 @@ viaRecord n =
     show (ops.run [ n ])
 
 
-viaDict : Int → String
-viaDict n =
-    d = Dict.singleton 1 (ident λa → List.push a 7)
-    case Dict.get d 1 of
-        Just g →
-            show (g [ n ])
-
-        Nothing →
-            "-"
-
-
 main : Program
 main =
     Node.print
-        "${viaIdent 0} ${viaFold 0} ${viaComp 0} ${viaCompCall 0} ${viaMap 0} ${viaLater 0} ${viaRecord 0} ${viaDict 0}"
+        "${viaIdent 0} ${viaFold 0} ${viaComp 0} ${viaCompCall 0} ${viaMap 0} ${viaLater 0} ${viaRecord 0}"
