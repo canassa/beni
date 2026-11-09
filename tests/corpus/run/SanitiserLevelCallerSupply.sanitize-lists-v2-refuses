@@ -1,0 +1,2 @@
+# v2 refuses a write below a lambda's fold above a supply's arrival (§2.1, #2223)
+63:9 list_still_used SanitiserLevelCallerSupply.app

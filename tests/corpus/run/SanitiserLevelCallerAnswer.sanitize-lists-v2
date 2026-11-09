@@ -1,0 +1,1 @@
+v2 refuses a write below a caller's fold above a callback's answer at a type variable's slot (§2.1, #2223): built again under --ownership=v2 and the sanitiser.

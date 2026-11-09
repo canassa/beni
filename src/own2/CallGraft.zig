@@ -62,7 +62,7 @@ fn settled(ev: *Relation.Eval, call: u32) Error!?Relation.Sig {
 /// is made already, is not read at all.
 pub fn slotArrivals(ev: *Relation.Eval, call: u32, sl: Ids.PathId, out: *std.ArrayList(Contract.Arrival)) Error!bool {
     // A slot instantiated already is read as its key holds it.
-    if (ev.inst_memo.get(.{ call, sl.int(), none }) != null) return false;
+    if (ev.inst_memo.get(.{ call, sl.int(), none }) != null or (try @import("CallFolds.zig").of(ev, call, none)).len != 0) return false;
     const sig = (try settled(ev, call)) orelse return false;
     for (0..sig.params.len) |j| {
         if (argParam(ev, call, sig.params, @intCast(j)) != null) break;

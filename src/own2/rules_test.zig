@@ -143,6 +143,8 @@ const layers = [_]Entry{
     .{ .file = "Pairs.zig", .layer = 6, .max_lines = 215 },
     // A reference read by steps, by every route of a `⟲`, split from `Relation` (#2192).
     .{ .file = "RefRead.zig", .layer = 6, .max_lines = 90 },
+    // What a callee's open arrival says at a caller's folds above it (#2223).
+    .{ .file = "CallFolds.zig", .layer = 6, .max_lines = 110 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },

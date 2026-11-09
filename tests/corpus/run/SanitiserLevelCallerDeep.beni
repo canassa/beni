@@ -1,0 +1,64 @@
+-- `SanitiserLevelCaller` at a deeper instance (`ownership-v2.md` §2.1, #2223): the cycle the type variable closes
+-- at `G (B R)` passes `B R` and `R` before it folds above the arrival, and `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+
+
+type B r
+    = B r
+
+
+type R
+    = RL (List Int)
+    | RW (G (B R))
+
+
+wrG : G (B R) → Int
+wrG t =
+    case t of
+        GL (B r) →
+            wrR r
+        GP u _ →
+            wrG u
+
+
+wrR : R → Int
+wrR t =
+    case t of
+        RL xs →
+            List.length (List.push xs 1)
+        RW u →
+            wrG u
+
+
+wrM : Maybe (G (B R)) → Int
+wrM t =
+    case t of
+        Just u →
+            wrG u
+        Nothing →
+            0
+
+
+hg : G a → Maybe (G a)
+hg t =
+    case t of
+        GP (GL m) _ →
+            Just (GP (GL m) 0)
+        _ →
+            Nothing
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (B (RW (GL (B (RL k)))))) 0
+    a = wrM (hg v)
+    Node.print (String.fromInt (a + List.length k))

@@ -1,0 +1,2 @@
+# v2 refuses a write below a fold one of two type variables closes at the caller (§2.1, #2223)
+62:9 list_still_used SanitiserLevelCallerTwoVars.wrM

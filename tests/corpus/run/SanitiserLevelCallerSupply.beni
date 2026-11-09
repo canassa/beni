@@ -1,0 +1,64 @@
+-- `SanitiserLevelCaller` in a supply (`ownership-v2.md` §2.1, #2223): `app` hands its callback `hg`'s result, and the
+-- lambda at `Maybe (G R)` reads the supply at a fold `app`'s own type has not. `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+wrG : G R → Int
+wrG t =
+    case t of
+        GL r →
+            wrR r
+        GP u _ →
+            wrG u
+
+
+wrR : R → Int
+wrR t =
+    case t of
+        RL xs →
+            List.length (List.push xs 1)
+        RW u →
+            wrG u
+
+
+wrM : Maybe (G R) → Int
+wrM t =
+    case t of
+        Just u →
+            wrG u
+        Nothing →
+            0
+
+
+hg : G a → Maybe (G a)
+hg t =
+    case t of
+        GP (GL m) _ →
+            Just (GP (GL m) 0)
+        _ →
+            Nothing
+
+
+app : G a, (Maybe (G a) → Int) → Int
+app t f = f (hg t)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (RW (GL (RL k)))) 0
+    a = app v λm → wrM m
+    Node.print (String.fromInt (a + List.length k))

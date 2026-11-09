@@ -37,6 +37,7 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
     const h = e.contracts.head(c);
     const full = try e.contracts.resCond(e.arena, c, e.read_mode == .reading);
     if (full.no or full.sel.len == 0) return full;
+    if ((try @import("CallFolds.zig").of(e, call, @import("Ids.zig").none_int)).len != 0) return instSel(e, full, call); // read whole, through its keys
     // The plain slots of the check, as words from the call's root.
     var plain: std.ArrayList(u32) = .empty;
     defer plain.deinit(g);
