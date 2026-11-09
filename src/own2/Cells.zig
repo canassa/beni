@@ -75,13 +75,19 @@ pub fn targets(ev: *Relation.Eval, arg: u32, words: []const u32, out: *std.Array
             for (f.slots.elems(l.slots)) |el| {
                 if (Slots.isNot(el)) continue;
                 if (Slots.isSub(el)) break;
-                const below = (try f.slots.relBelow(gpa, f.account, f.places, f.pos.items[l.pos].slot, Slots.pathOf(el))) orelse break;
-                const cp = (blk: {
-                    var at = l.pos;
-                    for (f.slots.relWords(below)) |wd| at = (try f.child(at, .plain, wd, 0)) orelse break :blk null;
-                    break :blk try f.child(at, .plain, Step.contents.word(), 0);
-                }) orelse break;
-                try cs.append(gpa, cp);
+                // The cell at every route to the slot (§2.1, *Every name*); one
+                // a position cannot name is the whole leaf.
+                const rels = try f.slots.relsBelow(gpa, f.account, f.places, f.pos.items[l.pos].slot, Slots.pathOf(el), f.arena);
+                if (rels.len == 0) break;
+                const named = for (rels) |below| {
+                    const cp = (blk: {
+                        var at = l.pos;
+                        for (f.slots.relWords(below)) |wd| at = (try f.child(at, .plain, wd, 0)) orelse break :blk null;
+                        break :blk try f.child(at, .plain, Step.contents.word(), 0);
+                    }) orelse break false;
+                    try cs.append(gpa, cp);
+                } else true;
+                if (!named) break;
             } else if (cs.items.len != 0) {
                 for (cs.items) |cp| try out.append(gpa, try atPos(f, l, cp));
                 continue :each;

@@ -98,7 +98,8 @@ pub fn addPath(env: Env, c: *Column, from: PathId, q: PathId, slot: u32) Error!v
     var base: std.ArrayList(u32) = .empty;
     defer base.deinit(env.gpa);
     var p: PathId = .from(slot);
-    const textual = while (true) {
+    // Below a `from` inside a level a route around the cycle meets a slot again (`routes`).
+    const textual = if (from != q and env.places.paths.col.info[from.int()].levels) false else while (true) {
         if (p == from) {
             try base.append(env.gpa, q.int());
             break true;
@@ -177,8 +178,23 @@ pub fn replay(env: Env, from: PathId, slot: PathId, q: PathId, out: *std.ArrayLi
         const sw = env.slots.relWords(try env.slots.relOf(env.gpa, env.account, env.places, slot));
         if (SlotWords.startsAt(sw, qw)) try out.append(env.gpa, slot.int());
     }
-    if (out.items.len == start) {
-        const rel = (try env.slots.relBelow(env.gpa, env.account, env.places, from, slot)) orelse Slots.root;
-        try Replay.replay(env.gpa, env.account, env.places, q, env.slots.relWords(rel), out);
-    }
+    if (out.items.len == start and !try routes(env, from, slot, q, out)) try out.append(env.gpa, q.int());
+}
+
+/// `slot` below `from` at `q` by every route to it (§2.1, *Every name*: a
+/// slot in a fold above `from` is every level there), each result slot
+/// once, appended to `out`; false where no route reaches it.
+pub fn routes(env: Env, from: PathId, slot: PathId, q: PathId, out: *std.ArrayList(u32)) Error!bool {
+    const start = out.items.len;
+    const rels = try env.slots.relsBelow(env.gpa, env.account, env.places, from, slot, env.gpa);
+    defer env.gpa.free(rels);
+    for (rels) |rel| try Replay.replay(env.gpa, env.account, env.places, q, env.slots.relWords(rel), out);
+    std.mem.sort(u32, out.items[start..], {}, std.sort.asc(u32));
+    var n = start;
+    for (out.items[start..]) |x| if (n == start or out.items[n - 1] != x) {
+        out.items[n] = x;
+        n += 1;
+    };
+    out.shrinkRetainingCapacity(n);
+    return rels.len != 0;
 }

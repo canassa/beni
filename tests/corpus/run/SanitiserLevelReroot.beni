@@ -1,0 +1,38 @@
+-- A parameter's slot in a fold above the slot it is read at, re-rooted into a result (`ownership-v2.md` §2.1, *Every name*,
+-- #2353): `cut` hands back `m` of `W (W m, _)` under one `W`, so `m`'s levels from the second down land at the
+-- result's first level and at its own fold. The shortest route named the first alone, `rd` read the deeper one fresh,
+-- and `k`, still live, was edited in place; it is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = L (List Int)
+    | W (T × Int)
+    | E
+
+
+cut : T → T
+cut t0 =
+    case t0 of
+        W ( W m, _ ) →
+            W m
+        _ →
+            E
+
+
+rd : T → Int
+rd t =
+    case t of
+        W ( W ( L xs, _ ), _ ) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = rd (cut (W ( W ( W ( L k, 0 ), 0 ), 0 )))
+    Node.print (String.fromInt (a + List.length k))

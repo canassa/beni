@@ -113,8 +113,7 @@ fn keptAt(s: *Sink, li: u32, at: Slots.Rel, out: *std.ArrayList(Contract.Effect)
     const pslot = f.pos.items[l.pos].slot;
     for (f.slots.elems(l.slots)) |el| {
         if (Slots.isNot(el)) continue;
-        const rel = (try f.slots.relBelow(gpa, f.account, f.places, pslot, Slots.pathOf(el))) orelse Slots.root;
-        const ws = try std.mem.concat(s.arena, u32, &.{ f.slots.relWords(at), f.slots.relWords(rel) });
-        _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = try f.slots.relOfWords(gpa, f.account, f.places, ws), .deep = Slots.isSub(el) });
+        // At every route to the slot from `pslot` (§2.1, *Every name*).
+        for (try f.slots.relsAt(gpa, f.account, f.places, at, pslot, Slots.pathOf(el), s.arena)) |r| _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = r, .deep = Slots.isSub(el) });
     }
 }

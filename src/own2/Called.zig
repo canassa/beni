@@ -42,7 +42,7 @@ pub fn value(f: *Value.Frame, ctx: anytype, contracts: *const Contract.Table, fv
     const r = f.roots.items[x.root];
     if (r.kind != .call or f.places.kind(f.places.pathPlace(f.pos.items[x.pos].slot)) != .closure) return null;
     const c = f.calls.items[r.a];
-    const rel = (try f.slots.relBelow(f.gpa, f.account, f.places, r.path, f.pos.items[x.pos].slot)) orelse return null;
+    const rel = (try f.slots.relUnder(f.gpa, f.account, f.places, r.path, f.pos.items[x.pos].slot)) orelse return null;
     const head = if (c.code != none)
         ctx.calledOf(ctx.ctx, c.code, rel) orelse return null
     else if (c.contract != none)

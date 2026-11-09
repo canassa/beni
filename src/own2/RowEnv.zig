@@ -9,7 +9,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
-const Replay = @import("Replay.zig");
+const Dests = @import("Dests.zig");
 const SlotWords = @import("SlotWords.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
@@ -80,10 +80,10 @@ pub const Env = struct {
         // A contract names each result slot (§2.10): a whole subtree is
         // written out (`belowAll`, §2.3.1, charged).
         for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, from))) |s| {
-            const below = (try env.slots.relBelow(env.gpa, env.account, env.places, from, .from(s))) orelse continue;
+            // Every route to `s` from `from`, each from `prefix` (§2.1, *Every name*).
             var at: std.ArrayList(u32) = .empty;
             defer at.deinit(env.gpa);
-            try Replay.replay(env.gpa, env.account, env.places, prefix, env.slots.relWords(below), &at);
+            if (!try Dests.routes(.{ .gpa = env.gpa, .account = env.account, .places = env.places, .slots = env.slots }, from, .from(s), prefix, &at)) continue;
             // An opaque or a type variable's slot holds anything (a cast's
             // inner, §2.13.9): every object of it, at every result slot
             // below where it lands.

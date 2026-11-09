@@ -123,12 +123,18 @@ pub const Uses = struct {
         if (u.feet) |l| try l.append(fr.gpa, foot);
         if (call.contract == none) return true;
         const h = u.contracts.head(call.contract);
-        const rem = (try fr.slots.relBelow(fr.gpa, fr.account, fr.places, x.path, q)) orelse return true;
-        // The callee's read and write trees a parameter (§2.7), charged.
-        const rw = fr.slots.relWords(rem);
-        try fr.charge(.inspection, @intCast(rw.len + 1));
-        for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw)) return true;
-        for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw)) return true;
+        // Each route from the argument to the hold is a slot of the
+        // callee's parameter (§2.1, *Every name*): a read at any reads it.
+        const rems = try fr.slots.relsBelow(fr.gpa, fr.account, fr.places, x.path, q, fr.gpa);
+        defer fr.gpa.free(rems);
+        if (rems.len == 0) return true;
+        for (rems) |rem| {
+            // The callee's read and write trees a parameter (§2.7), charged.
+            const rw = fr.slots.relWords(rem);
+            try fr.charge(.inspection, @intCast(rw.len + 1));
+            for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw)) return true;
+            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw)) return true;
+        }
         return false;
     }
 };

@@ -180,6 +180,8 @@ pub const Name = enum {
     below_folds_off,
     /// O6: an arrival at a join is said at the join only, not at its level paths.
     level_join_kept,
+    /// O6: a slot re-rooted under another root is one route's, not every route's (`Slots.relsBelow`).
+    reroot_one_route,
     /// O8 H1 H6: `Resolve.judge` skips Unescaped.
     unescaped_off,
     /// O8: an escape of unknown keys reaches no target.

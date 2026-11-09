@@ -1,0 +1,41 @@
+-- The twin of `SanitiserLevelRerootGeneric`: `k` is not read after the write, so the edit in place is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+    | GZ (List Int)
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+rd : G R → Int
+rd t =
+    case t of
+        GL (RW (GL (RW (GL (RL xs))))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+cut : G R → G R
+cut t0 =
+    case t0 of
+        GL (RW (GL m)) →
+            GL m
+        _ →
+            GZ []
+
+
+main : Program
+main =
+    k = [ 1, 2 ]
+    v = cut (GL (RW (GL (RW (GL (RW (GL (RL k))))))))
+    a = rd (v)
+    Node.print (String.fromInt a)
