@@ -1,0 +1,8 @@
+-- load
+<body>
+  <button>"x"</button>
+</body>
+-- click button
+<body>
+  <button>"xy"</button>
+</body>
