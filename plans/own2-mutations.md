@@ -16,6 +16,7 @@ Measured on master `2f7bf74216`; the seven mutants of what `Pairs` changed on `f
 candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#2214) on that branch.
 *Since #2344:* the three mutants of a fold handed its own answer (`SelfFed`, `Distinct.reqOn`) are killed
 (`--only=self_fed_slot_off,self_fed_keeps_ok,self_fed_answer_free`, 222 s), so 174 mutations, 125 killed.
+*Since #2354:* `below_join_one_name` is killed by `run/SanitiserFamilyJoinBelow` (`--only=below_join_one_name`, 96 s).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -119,6 +120,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `level_wide_off` | O6 | an open arrival is not said at the folds above it | killed | | 3: SanitiserLevelResult | | |
 | `caller_folds_off` | O6 | an open arrival is not said at a caller's folds its callee's graph has not | killed | | 10: SanitiserLevelCaller | | |
 | `below_folds_off` | O6 | a read below a call's slot misses the folds above it a walk below it reaches | killed | | 2: SanitiserLevelCallerBelow | | |
+| `below_join_one_name` | O6 | a read below a call's slot named through a join reads the join's key alone, not each level path's | killed | | 1: SanitiserFamilyJoinBelow | | |
 | `level_join_kept` | O6 | an arrival at a join is said at the join only, not at its level paths | killed | | 5: SanitiserLevelSlots | | |
 | `unescaped_off` | O8 H1 H6 | `Resolve.judge` skips Unescaped | killed | | 9: SanitiserAnswerLeft (ProgramFailed), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_unknown_off` | O8 | an escape of unknown keys reaches no target | v1 only | | 0 | 0 | 0 | 3 parity |
