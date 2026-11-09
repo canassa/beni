@@ -357,26 +357,31 @@ function prelude() {
   // has failed, and every later settle of the page waits one turn.
   const record = { log: [], errors: [], unsettled: false };
   globalThis.__beniHarness = record;
-  // Under `--webgpu` the page has Chrome's own WebGPU, whose promises
-  // settle in real time, after work in the GPU process: each one the page
-  // is waiting for is counted from its call to its settling, for `settle`
-  // (docs/design/webgpu.md §10). The count sees the promise, never changes
-  // it: the page's own reactions get what the host gave.
+  // A native host promise settles in real time, after work outside the
+  // page: each one the page is waiting for is counted from its call to its
+  // settling, for `settle`. In either DOM, an image's `decode` and
+  // `createImageBitmap` (`Browser.Image`); under `--webgpu`, Chrome's own
+  // WebGPU (docs/design/webgpu.md §10). The count sees the promise, never
+  // changes it: the page's own reactions get what the host gave. The
+  // count is `gpu` because WebGPU's promises were its first, and the test
+  // host's media loads add to it (tests/platforms/gpu/GpuHost.js).
   record.gpu = { pending: 0 };
-  if (globalThis.__beniWebGpuNative === true) {
-    const count = (proto, name) => {
-      if (proto === undefined || typeof proto[name] !== "function") return;
-      const original = proto[name];
-      proto[name] = function (...args) {
-        const promise = original.apply(this, args);
-        record.gpu.pending += 1;
-        const done = () => {
-          record.gpu.pending -= 1;
-        };
-        promise.then(done, done);
-        return promise;
+  const count = (owner, name) => {
+    if (owner === undefined || typeof owner[name] !== "function") return;
+    const original = owner[name];
+    owner[name] = function (...args) {
+      const promise = original.apply(this, args);
+      record.gpu.pending += 1;
+      const done = () => {
+        record.gpu.pending -= 1;
       };
+      promise.then(done, done);
+      return promise;
     };
+  };
+  count(globalThis.HTMLImageElement?.prototype, "decode");
+  count(globalThis, "createImageBitmap");
+  if (globalThis.__beniWebGpuNative === true) {
     count(globalThis.GPU?.prototype, "requestAdapter");
     count(globalThis.GPUAdapter?.prototype, "requestDevice");
     count(globalThis.GPUDevice?.prototype, "popErrorScope");
@@ -1773,9 +1778,9 @@ async function settle() {
   const turn = record.turn;
   const node = typeof process === "object";
   const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : record.ports.pending > 0);
-  // A native WebGPU promise (`--webgpu`) settles in real time: while one is
-  // pending and nothing else is, the settle waits 2 ms at a time, 10 s at
-  // most, and then goes on as after any turn.
+  // A native host promise (`prelude`'s count) settles in real time: while
+  // one is pending and nothing else is, the settle waits 2 ms at a time,
+  // 10 s at most, and then goes on as after any turn.
   const gpu = () => (record.gpu?.pending ?? 0) > 0;
   let waited = 0;
   await turn();
@@ -1784,7 +1789,7 @@ async function settle() {
     if (!busy()) {
       if (waited === 5000) {
         record.unsettled = true;
-        record.errors.push("Error: a native WebGPU promise was still pending after 10 s, so the step cannot end");
+        record.errors.push("Error: a native host promise (WebGPU, an image decode or createImageBitmap) was still pending after 10 s, so the step cannot end");
         return false;
       }
       waited += 1;
