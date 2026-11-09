@@ -61,9 +61,9 @@ pub const Table = struct {
     nodes: Runs = .{},
     /// Per node: its entries at and below it (saturating).
     counts: std.ArrayList(u32) = .empty,
-    /// Per node: whether every arrival at and below it is an atom (fresh,
-    /// `⊤`, a shared value), made with the node (`AtomGraft`).
-    atoms: std.ArrayList(bool) = .empty,
+    /// Per node, made with it: bit 0, every arrival at and below it is an atom (fresh,
+    /// `⊤`, a shared value; `AtomGraft`); bit 1, every one is `fresh` (§7.6 item 6).
+    atoms: std.ArrayList(u2) = .empty,
     /// Arrival runs by content (four words an arrival), each with its
     /// range of `arrivals`; run 0 is the empty run.
     arr_runs: Runs = .{},
@@ -111,13 +111,16 @@ pub const Table = struct {
         for (ks) |k| try words.appendSlice(gpa, &k);
         const id = try t.nodes.intern(gpa, words.items);
         if (t.counts.items.len == 0) try t.counts.append(gpa, 0);
-        if (t.atoms.items.len == 0) try t.atoms.append(gpa, true);
+        if (t.atoms.items.len == 0) try t.atoms.append(gpa, 3);
         if (id == t.counts.items.len) {
             var n: u64 = @intFromBool(h != 0) + @as(u64, @intFromBool(o != 0));
-            var a = allAtoms(plain) and allAtoms(wide);
+            var a: u2 = 3;
+            for ([_][]const Arrival{ plain, wide }) |run| for (run) |x| {
+                a &= if (x.kind == .param or x.kind == .cb) 0 else if (x.kind == .fresh) 3 else 1;
+            };
             for (ks) |k| {
                 n += t.counts.items[k[1]];
-                a = a and t.atoms.items[k[1]];
+                a &= t.atoms.items[k[1]];
             }
             try t.counts.append(gpa, @intCast(@min(n, std.math.maxInt(u32))));
             try t.atoms.append(gpa, a);
@@ -161,14 +164,9 @@ pub const Table = struct {
         const w = t.nodes.get(n)[2..];
         return @as([*]const [2]u32, @ptrCast(w.ptr))[0 .. w.len / 2];
     }
-    /// Whether every arrival at and below `n` is an atom.
-    pub fn atomsOnly(t: *const Table, n: Node) bool {
-        return n == 0 or t.atoms.items[n];
-    }
-
-    fn allAtoms(run: []const Arrival) bool {
-        for (run) |a| if (a.kind == .param or a.kind == .cb) return false;
-        return true;
+    /// Whether every arrival at and below `n` is an atom (`bit` 1) or `fresh` (`bit` 2).
+    pub fn only(t: *const Table, n: Node, bit: u2) bool {
+        return n == 0 or t.atoms.items[n] & bit != 0;
     }
 
     /// `j` when `n` is `ε… π_j·ε` and nothing else: the whole subtree of

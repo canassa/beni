@@ -6175,6 +6175,7 @@ L0  Ids  Counters  Scratch
 | `ReadCols.zig` | 11 | the read-off's columns: the result slots each slot a read meets reaches, split from `ReadOff` (§2.10) | Ids, Dests, Eval |
 | `CodeCaps.zig` | 12 | nested codes' captures, split from `Groups` (§2.11.4) | Ids |
 | `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |
+| `Peel.zig` | 12 | which lambda or local function of a group is solved on its own, before the codes that make it, and whether a group's local functions form a cycle, split from `Groups` (§2.12, #2035) | Ids, Walk |
 | `Callees.zig` | 12 | what a call runs and what a function reference is, the one reading of a block for a call, split from `Groups` (§2.11.1, §2.11.4) | Ids, Slots, Rows, Prepass, Walk |
 | `Family.zig` | 12 | which types share one place graph, from their declarations (§2.1, *A family*) | Bir |
 | `Groups.zig` | 10 | the module: adapters, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, VarOpen, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |

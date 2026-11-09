@@ -22,14 +22,14 @@ const Node = Trees.Node;
 /// The node of tree `root` at slot `words` (0 for none), with the hits
 /// that reach the slot in `hits`, when every arrival there, below it and
 /// open above it is an atom; null otherwise. The node's own bit says what
-/// is below it (`Trees.Table.atomsOnly`); at the root nothing is walked, a
+/// is below it (`Trees.Table.only`); at the root nothing is walked, a
 /// record a node on the way to a deeper slot.
 pub fn atomsAt(f: *Value.Frame, t: *const Trees.Table, root: Node, words: []const u32, hits: *std.ArrayList(Trees.Hit)) Error!?Node {
-    if (words.len == 0 and !t.atomsOnly(root)) return null;
+    if (words.len == 0 and !t.only(root, 1)) return null;
     try f.charge(.inspection, try Forest.atSlot(t, f.places, f.slots, f.gpa, root, words, hits));
     for (hits.items) |h| for (h.arrivals) |a| if (a.kind == .param or a.kind == .cb) return null;
     const n = Forest.at(t, root, words) orelse return 0;
-    return if (t.atomsOnly(n)) n else null;
+    return if (t.only(n, 1)) n else null;
 }
 
 /// Whether no place on `dest`'s path above it is reachable from `dest`'s

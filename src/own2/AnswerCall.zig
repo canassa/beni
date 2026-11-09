@@ -61,6 +61,8 @@ fn known(e: *Eval, vi: u32, k: u32, instCond: anytype, comptime F: type, own: *C
     const kc = try instCond(e, vi);
     if (kc.no) return false;
     own.* = try Cond.conj(e.arena, e.account(), own.*, kc);
+    // A fresh-only answer asks nothing at any slot (§7.6 item 6).
+    if (e.contracts.trees.only(kh.res_root, 2)) return true;
     const vc = e.f.calls.items[vi];
     const root = e.f.roots.items[vc.root].path;
     var es: Forest.Entries = .{};

@@ -61,6 +61,8 @@ pub fn answers(e: anytype, vi: u32, m: u32, ks: u64, depth: u32) Ids.ChargeError
 pub fn code(e: anytype, vi: u32, ks: u64, depth: u32) Ids.ChargeError!bool {
     const kh = e.contracts.head(e.contractOf(vi) orelse return false);
     if (kh.flags.pessimistic) return false;
+    // Fresh objects only: none of `ks` nor any other (§7.6 item 6).
+    if (e.contracts.trees.only(kh.res_root, 2)) return true;
     const root = e.f.roots.items[e.f.calls.items[vi].root].path;
     var es: Forest.Entries = .{};
     defer es.deinit(e.gpa());
