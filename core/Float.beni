@@ -14,7 +14,41 @@ import Js
 --| base.
 --|
 --|     Float.log 100 10 == 2
+--|
+--| The answer is IEEE 754's `ln x / ln base`, and some answers are not
+--| finite: the logarithm of 0 is `-Infinity` (`Infinity` for a base under 1),
+--| a negative number or base gives `NaN`, and base 1 divides by `ln 1 = 0`,
+--| so `Float.log 2 1` is `Infinity` and `Float.log 1 1` is `NaN`. No
+--| non-finite value is an operand on the way to an answer.
 pub log : Float, Float → Float
-log x base = Js.pure λ⊤ →
-    Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
-        / Js.to (Js.call (Js.global "Math") "log" [ Js.from base ])
+log x base =
+    top = ln x
+    bottom = ln base
+    -- The answers are IEEE 754's `top / bottom`. `ln 0` is `-Infinity` and `ln`
+    -- of a negative number is `NaN`, so a non-finite side is answered here and
+    -- never divided. Base 1 makes `bottom` 0, a finite operand.
+    if isNaN top then
+        top
+    else if isNaN bottom then
+        bottom
+    else if isInfinite top then
+        -- `top` is `-Infinity`: the number is 0.
+        if isInfinite bottom then
+            0 / 0
+        else if bottom < 0 then
+            1 / 0
+        else
+            top
+    else if isInfinite bottom then
+        -- `bottom` is `-Infinity`: the base is 0, and the answer is a zero
+        -- whose sign is the opposite of `top`'s.
+        if top < 0 then
+            0
+        else
+            0 / (-1)
+    else
+        top / bottom
+
+
+ln : Float → Float
+ln x = Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
