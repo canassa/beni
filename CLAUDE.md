@@ -484,16 +484,18 @@ reach in `zig-out/coverage/summary.md` and `lcov.info`
 only ran — no test necessarily checked it. Details: `tests/coverage.zig`.
 
 **The Lean ownership proofs** (`proofs/ownership/`, Lean 4.29.1, `nix develop
-.#ownership`) are outside the gates. CI's `lean` job checks them, and `check`
-needs it: `scripts/audit.sh HEAD` (the independent audit of a clean export),
+.#ownership`) are outside the gates. **CI checks them only on demand** (the
+owner, 2026-11-09): no push, pull request or nightly run checks them. To check
+them, run the `ci` workflow by hand with the `lean` input:
+`gh workflow run ci.yml --ref <branch> -f lean=true`. Do this for any change to
+`proofs/ownership/`, `flake.nix`, `flake.lock` or a `.gitattributes` file, and
+say in the pull request that you did. CI's `lean` job then runs
+`scripts/audit.sh HEAD` (the independent audit of a clean export),
 then `lake build` (the kernel check and the in-build axiom audit). The audit
 runs first, because an `#eval` in an audited module runs during `lake build`
 and can rewrite the audit files; after the build, the job fails when the build
-changed or added a file that git does not ignore. On a push to `master`, and
-on a pull request whose base is not `master`, it runs both. On a pull request
-to `master` it runs them only when the pull request changes
-`proofs/ownership/`, `flake.nix`, `flake.lock`, `.github/workflows/ci.yml` or
-a `.gitattributes` file; otherwise it skips them and passes. The job runs the
+changed or added a file that git does not ignore. Otherwise the job skips its
+steps and passes, because `check` needs it. The job runs the
 pull request's own audit files, so it does not catch a pull request that
 weakens them: #263 adds `.github/CODEOWNERS`, which names the owner for them,
 and when the ruleset on `master` requires a review from code owners, such a

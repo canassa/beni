@@ -96,17 +96,18 @@ macOS requires `zorg` on PATH).
 
 ## CI
 
-The job `lean` of `.github/workflows/ci.yml` checks the proofs.
-The guard `check` needs this job, so a failed proof blocks a merge.
+The job `lean` of `.github/workflows/ci.yml` checks the proofs, but only on demand (the owner, 2026-11-09).
+No push, pull request or nightly run checks them; there the job skips its steps and passes.
+To check them, run the workflow by hand: `gh workflow run ci.yml --ref <branch> -f lean=true`.
+Do this for every change to `proofs/ownership/`, `flake.nix`, `flake.lock` or a `.gitattributes` file.
+The guard `check` needs this job, so a failed proof fails that run.
 
 - The job runs `scripts/audit.sh HEAD .lake`, then `lake build`, in `nix develop .#ownership`.
   The audit runs first. Its source scan rejects `#eval` and the other banned commands before any audited code runs.
   An `#eval` in an audited module runs during `lake build` and can rewrite the audit files.
   After `lake build`, the job fails when the build changed or added a file that git does not ignore.
-- On a push to `master`, and on a pull request whose base is not `master`, the job always runs these steps.
-- On a pull request to `master`, the job runs them only when the pull request changes `proofs/ownership/`, `flake.nix`, `flake.lock`, `.github/workflows/ci.yml` or a `.gitattributes` file.
-  For another pull request, the job skips the steps and passes.
-- The job runs the audit files of the pull request itself: `Axioms.lean`, `Audit.lean`, `scripts/audit.sh`, `lakefile.toml`, `flake.nix` and the workflow.
+- Until 2026-11-09, every push to `master` ran these steps, and so did every pull request that changed a file of the proofs.
+- The job runs the audit files of the branch itself: `Axioms.lean`, `Audit.lean`, `scripts/audit.sh`, `lakefile.toml`, `flake.nix` and the workflow.
   Thus a pull request that weakens them passes its own weaker audit, and the job does not catch it.
   #263 adds `.github/CODEOWNERS`, which names `@canassa` for these files.
   When the ruleset on `master` requires a review from code owners, a change to them needs the owner's review.
