@@ -1,0 +1,47 @@
+-- A core Float function whose answer is finite gives that answer for finite
+-- input, with no non-finite value on the way to it (issue #2021). `degrees`
+-- multiplied before it divided, so `degrees 1e308` was `Infinity`; `toPolar`
+-- squared its sides, so a side past about 1e154 overflowed to `Infinity` and a
+-- side under about 1e-162 underflowed to 0. The other angle and polar
+-- functions are here at the edge of the range too. `Float.log` keeps the IEEE
+-- answers, non-finite ones included, which its doc comment names: `log 0` is
+-- `-Infinity`, a negative number or base gives `NaN`, base 1 divides by 0.
+import Node exposing (Program)
+import String
+
+
+showPair : Float × Float → String
+showPair pair = String.fromFloat pair.0 ++ "," ++ String.fromFloat pair.1
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromFloat (degrees 1e308)
+        , String.fromFloat (degrees (-1e308))
+        , String.fromFloat (degrees 180)
+        , String.fromFloat (degrees 90)
+        , String.fromFloat (turns 2.8e307)
+        , String.fromFloat (turns 0.5)
+        , showPair (toPolar ( 1e200, 0 ))
+        , showPair (toPolar ( 3e200, 4e200 ))
+        , showPair (toPolar ( -1e300, -1e300 ))
+        , showPair (toPolar ( 1.7e308, 1.7e307 ))
+        , showPair (toPolar ( 1e-200, 1e-200 ))
+        , showPair (toPolar ( 3e-320, 4e-320 ))
+        , showPair (toPolar ( 3, 4 ))
+        , showPair (toPolar ( 0, 0 ))
+        , showPair (fromPolar ( 1e308, 0 ))
+        , showPair (fromPolar ( 1.7e308, pi ))
+        , String.fromFloat (Float.log 1e308 10)
+        , String.fromFloat (Float.log 0 10)
+        , String.fromFloat (Float.log 0 0.5)
+        , String.fromFloat (Float.log 10 0)
+        , String.fromFloat (Float.log 0.5 0)
+        , String.fromFloat (Float.log 0 0)
+        , String.fromFloat (Float.log (-1) 10)
+        , String.fromFloat (Float.log 10 (-2))
+        , String.fromFloat (Float.log 0.5 1)
+        , String.fromFloat (Float.log 2 1)
+        , String.fromFloat (Float.log 1 1)
+        ]

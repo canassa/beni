@@ -530,8 +530,13 @@ never (JustOneMore nvr) = never nvr
 --| Convert degrees to the standard angle unit, radians.
 --|
 --|     degrees 180 == 3.141592653589793
+--|
+--| A finite answer comes out finite: `degrees 1e308` is `1.7453292519943295e306`.
 pub degrees : Float → Float
-degrees angle = angle * pi / 180
+degrees angle =
+    -- `angle * pi / 180` multiplies first, and that product overflows for an
+    -- angle past about 5.7e307 whose answer is finite.
+    angle * (pi / 180)
 
 
 --| Convert radians to the standard angle unit, radians. This is `identity`,
@@ -552,8 +557,35 @@ turns angle = 2 * pi * angle
 --| Convert Cartesian coordinates to polar coordinates.
 --|
 --|     toPolar ( 0, 1 ) == ( 1, 1.5707963267948966 )
+--|
+--| The radius does not overflow or underflow on the way: `toPolar ( 1e200, 0 )`
+--| is `( 1e200, 0 )`, and `toPolar ( 1e-200, 0 )` is `( 1e-200, 0 )`.
 pub toPolar : Float × Float → Float × Float
-toPolar ( x, y ) = ( sqrt (x * x + y * y), atan2 y x )
+toPolar ( x, y ) = ( hypotenuse x y, atan2 y x )
+
+
+-- The length of the hypotenuse, `sqrt (x * x + y * y)`, with no overflow or
+-- underflow in the squares. A side past 2^500 or under 2^-500 is scaled by
+-- 2^∓600 first. A power of two scales exactly, so in the middle of the range
+-- the answer is the unscaled formula's, bit for bit, and outside it the answer
+-- is as exact. `Math.hypot` would do the same, but its rounding is the
+-- engine's choice, and this answer is the same on every engine.
+hypotenuse : Float, Float → Float
+hypotenuse x y =
+    side = max (abs x) (abs y)
+    -- 2^600 and 2^-600, each written exactly. The bounds are 2^500 and 2^-500.
+    up = 4.149515568880993e180
+    down = 2.409919865102884e-181
+    if side > 3.273390607896142e150 then
+        up * squaresRoot (x * down) (y * down)
+    else if side < 3.054936363499605e-151 then
+        down * squaresRoot (x * up) (y * up)
+    else
+        squaresRoot x y
+
+
+squaresRoot : Float, Float → Float
+squaresRoot x y = sqrt (x * x + y * y)
 
 
 --| Convert polar coordinates to Cartesian coordinates.
