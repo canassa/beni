@@ -65,6 +65,7 @@ const CondsOff = @import("CondsOff.zig");
 const Answers = @import("Answers.zig");
 const Contents = @import("Contents.zig");
 const Within = @import("Within.zig");
+const Peel = @import("Peel.zig");
 const Outward = @import("Outward.zig");
 const Needs = @import("Needs.zig");
 const NeedLeaves = @import("NeedLeaves.zig");
@@ -1409,79 +1410,6 @@ fn walkCode(mod: *Module, id: u32) Error!Walk.Code {
     return .{ .decl = d, .decl_index = c.decl, .inst = c.inst, .params = params, .param_places = places, .captures = mod.code_caps.items[c.captures.start..][0..c.captures.len], .body = body, .result_place = c.result };
 }
 
-/// Whether some local function of the group's declarations calls itself or
-/// another through a cycle of local functions (§2.12: a block's local
-/// functions that call each other are a group). The prepass's `recursive`
-/// bit is per top-level declaration and misses these. A reference to a local
-/// function inside a code, or inside a lambda nested in it, is an edge.
-fn localCycle(mod: *Module, rs: []DeclResult, codes: []const u32) Error!bool {
-    const gpa = mod.gpa;
-    const bir = mod.in.bir;
-    const fr = mod.prepass.enclosing_frame;
-    var locals: std.ArrayList(u32) = .empty;
-    defer locals.deinit(gpa);
-    for (codes) |id| if (mod.codes.items[id].kind == .local) try locals.append(gpa, id);
-    if (locals.items.len == 0) return false;
-    const n = locals.items.len;
-    const adj = try gpa.alloc(std.ArrayList(u32), n);
-    defer {
-        for (adj) |*a| a.deinit(gpa);
-        gpa.free(adj);
-    }
-    for (adj) |*a| a.* = .empty;
-    for (rs) |r| {
-        const d = bir.decls[r.decl];
-        var i = d.inst_start.int();
-        while (i < d.inst_end.int()) : (i += 1) {
-            if (bir.instTag(@fromBackingInt(i)) != .local) continue;
-            const l = bir.instData(@fromBackingInt(i)).lhs;
-            if (l >= d.locals_end - d.locals_start) continue;
-            const binding = bir.locals[d.locals_start + l].inst.int();
-            const target = for (locals.items, 0..) |id, k| {
-                if (mod.codes.items[id].decl == r.decl and mod.codes.items[id].inst == binding) break k;
-            } else continue;
-            var f = fr[i];
-            var hops: u32 = 0;
-            while (f != none and hops < 100_000) : ({
-                f = fr[f];
-                hops += 1;
-            }) {
-                for (locals.items, 0..) |id, k| {
-                    if (mod.codes.items[id].decl == r.decl and mod.codes.items[id].inst == f) try adj[k].append(gpa, @intCast(target));
-                }
-            }
-        }
-    }
-    // Depth-first search for a cycle: 0 unseen, 1 on the stack, 2 done.
-    const color = try gpa.alloc(u8, n);
-    defer gpa.free(color);
-    @memset(color, 0);
-    const Frame = struct { node: u32, next: u32 };
-    var stack: std.ArrayList(Frame) = .empty;
-    defer stack.deinit(gpa);
-    for (0..n) |root| {
-        if (color[root] != 0) continue;
-        color[root] = 1;
-        try stack.append(gpa, .{ .node = @intCast(root), .next = 0 });
-        while (stack.items.len > 0) {
-            const top = &stack.items[stack.items.len - 1];
-            if (top.next == adj[top.node].items.len) {
-                color[top.node] = 2;
-                _ = stack.pop();
-                continue;
-            }
-            const to = adj[top.node].items[top.next];
-            top.next += 1;
-            if (color[to] == 1) return true;
-            if (color[to] == 0) {
-                color[to] = 1;
-                try stack.append(gpa, .{ .node = to, .next = 0 });
-            }
-        }
-    }
-    return false;
-}
-
 /// Solve one group (§2.12): walk every code of its members once, evaluate
 /// them until no evaluation read a candidate that moved after it, and keep
 /// the last round's verdicts.
@@ -1537,6 +1465,83 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         bot.arity = c.params.len;
         c.contract = try mod.contracts.commit(gpa, &rs[0].account, &mod.slots, &bot);
     }
+    // A lambda or local function that reads no unsettled code is solved alone first: a non-recursive
+    // code is walked once (§2.12), so a code running it reads its settled contract, never a draft
+    // (§7.6 item 6). One that reads a code not settled is put back to ⊥ and solved with the rest.
+    var lines: std.ArrayList(std.ArrayList(Resolve.Line)) = .empty;
+    defer {
+        for (lines.items) |*l| l.deinit(gpa);
+        lines.deinit(gpa);
+    }
+    for (rs) |_| try lines.append(gpa, .empty);
+    var index_of: Ids.FixedDict(1) = .{};
+    defer index_of.deinit(gpa);
+    for (codes.items, 0..) |id, x| try index_of.put(gpa, .{id}, @intCast(x));
+    const settled = try gpa.alloc(bool, codes.items.len);
+    defer gpa.free(settled);
+    @memset(settled, false);
+    var rest: std.ArrayList(u32) = .empty;
+    defer rest.deinit(gpa);
+    try rest.appendSlice(gpa, order.items);
+    const tried = try gpa.alloc(bool, codes.items.len);
+    defer gpa.free(tried);
+    @memset(tried, false);
+    var more = true;
+    while (more) {
+        more = false;
+        var i: usize = 0;
+        while (i < rest.items.len) {
+            const x = rest.items[i];
+            if (tried[x] or !try Peel.peelable(mod, codes.items, &index_of, settled, x)) {
+                i += 1;
+                continue;
+            }
+            tried[x] = true;
+            if (!try solveRounds(mod, rs, codes.items, owner.items, regions.items, &.{x}, lines.items, .{ .settled = settled, .index_of = &index_of })) continue;
+            settled[x] = true;
+            _ = rest.orderedRemove(i);
+            more = true;
+        }
+    }
+    if (rest.items.len != 0) _ = try solveRounds(mod, rs, codes.items, owner.items, regions.items, rest.items, lines.items, null);
+    for (codes.items) |id| if (mod.codes.items[id].kind == .called) {
+        const c = mod.codes.items[id];
+        try mod.contracts.putCalled(gpa, mod.codes.items[c.of].contract, c.slot, c.contract);
+    };
+    for (rs) |r| if (mod.in.bir.decls[r.decl].params == 0) if (mod.lambdaBody(r.decl)) |c| {
+        try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, mod.codes.items[c].contract);
+    };
+    for (rs) |*r| if (mod.in.bir.decls[r.decl].params == 0 and mod.lambdaBody(r.decl) == null) {
+        const b = mod.in.bir.decls[r.decl].body.unwrap() orelse continue;
+        var acc: u32 = none;
+        var n: u32 = 0;
+        var pa: std.heap.ArenaAllocator = .init(gpa);
+        defer pa.deinit();
+        if (!try Callees.armContracts(mod, mod.in.bir.decls[r.decl].locals_start, b.int(), &acc, &n, pa.allocator(), &r.account) or acc == none or n == 0) continue;
+        try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, acc);
+    };
+    for (rs, lines.items) |*r, *l| {
+        r.contract = mod.codes.items[mod.body_code[r.decl]].contract;
+        // The lines outlive the walks: the demands' texts read the BIR only.
+        r.lines = try arena.dupe(Resolve.Line, l.items);
+        std.mem.sort(Resolve.Line, r.lines, {}, struct {
+            fn lt(_: void, a: Resolve.Line, b: Resolve.Line) bool {
+                if (a.demand.point != b.demand.point) return a.demand.point < b.demand.point;
+                return a.demand.base_inst < b.demand.base_inst;
+            }
+        }.lt);
+    }
+}
+
+/// Rounds of evaluations of the codes `order` (indices into `codes`), until
+/// nothing moved after it was read (§2.12); their lines into `out`, by
+/// declaration. With `peel`, one code solved on its own: false, and the
+/// code back at ⊥, when it read a draft or a code not settled.
+fn solveRounds(mod: *Module, rs: []DeclResult, codes: []const u32, owner: []const u32, regions: []Regions.Tree, order: []const u32, out: []std.ArrayList(Resolve.Line), peel: ?Peel.Settled) Error!bool {
+    const gpa = mod.gpa;
+    const in = mod.in;
+    const arena = mod.walk_arena.allocator();
+    _ = arena;
     // Rounds of evaluations, until nothing moved after it was read.
     var round: u32 = 0;
     var lines: std.ArrayList(std.ArrayList(Resolve.Line)) = .empty;
@@ -1545,13 +1550,16 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         lines.deinit(gpa);
     }
     for (rs) |_| try lines.append(gpa, .empty);
+    var sub_ids: std.ArrayList(u32) = .empty;
+    defer sub_ids.deinit(gpa);
+    for (order) |x| try sub_ids.append(gpa, codes[x]);
     // Inference rounds deliver facts between the members (§2.12 step 2), their judgements
     // kept across rounds; then a validation round evaluates each code once more, plainly,
     // under the candidates, and its verdicts are the lines (step 3).
     // Short on purpose, the test's switch: the candidates stay ⊥ and the
     // validation round alone must reach the fixed point (§8 S4).
-    var validating = in.short_candidates and (mod.prepass.recursive[mod.prepass.group_of[rs[0].decl]] or try localCycle(mod, rs, codes.items));
-    var kg = try Kept.Group.init(gpa, order.items.len);
+    var validating = peel == null and in.short_candidates and (mod.prepass.recursive[mod.prepass.group_of[rs[0].decl]] or try Peel.localCycle(mod, rs, sub_ids.items));
+    var kg = try Kept.Group.init(gpa, order.len);
     defer kg.deinit(gpa);
     while (true) : (round += 1) {
         for (lines.items) |*l| l.clearRetainingCapacity();
@@ -1562,11 +1570,11 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         const ra = round_arena.allocator();
         // One evaluation per code, all open at once: a member's facts are
         // delivered to the codes that read them as they come (§2.12 step 2).
-        const n = order.items.len;
+        const n = order.len;
         const evals = try ra.alloc(Eval.Evaluation, n);
         const drafts = try ra.alloc(Contract.Draft, n);
         const ids = try ra.alloc(u32, n);
-        for (order.items, 0..) |x, i| ids[i] = codes.items[x];
+        for (order, 0..) |x, i| ids[i] = codes[x];
         for (drafts, ids) |*d, id| d.* = .{ .arity = mod.codes.items[id].params.len };
         var solver: Deliver.Solver = undefined;
         try solver.init(gpa, ids, evals, drafts);
@@ -1574,16 +1582,16 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         const sv: ?*Deliver.Solver = if (validating) null else &solver;
         var opened: usize = 0;
         defer for (evals[0..opened]) |*e| e.deinit();
-        for (order.items, 0..) |x, i| {
-            const r = &rs[owner.items[x]];
+        for (order, 0..) |x, i| {
+            const r = &rs[owner[x]];
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             try Eval.evaluate(mod.codes.items[ids[i]].walk.?, &mod.contracts, mod.context(), ra, if (sv) |v| &v.group else null, @intCast(i), &evals[i]);
             opened += 1;
             try Once.demands(&evals[i]);
         }
-        for (order.items, 0..) |x, i| {
-            const r = &rs[owner.items[x]];
+        for (order, 0..) |x, i| {
+            const r = &rs[owner[x]];
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             try ReadOff.factsOff(&evals[i], ra, &drafts[i]);
@@ -1596,17 +1604,17 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         var more = true;
         while (more) {
             more = false;
-            for (order.items, 0..) |x, i| {
-                charging(mod, &rs[owner.items[x]].account);
-                mod.cur_locals = in.bir.decls[rs[owner.items[x]].decl].locals_start;
+            for (order, 0..) |x, i| {
+                charging(mod, &rs[owner[x]].account);
+                mod.cur_locals = in.bir.decls[rs[owner[x]].decl].locals_start;
                 if (try Needs.pass(&needs, &evals[i], @intCast(i))) more = true;
                 if (sv) |v| try v.pump();
             }
         }
         if (!validating and solver.used) try kg.round(gpa, &rs[0].account, &mod.contracts, mod.codes.items, ids, drafts, evals);
-        for (order.items, 0..) |x, i| {
+        for (order, 0..) |x, i| {
             const id = ids[i];
-            const k = owner.items[x];
+            const k = owner[x];
             const r = &rs[k];
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
@@ -1619,7 +1627,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             try NeedLeaves.stored(e);
             if (mod.comparison[r.decl]) try Needs.compared(e, &drafts[i]);
             if (!called) for ([_]bool{ false, true }) |w| if (w) try Closures.escapedWrites(e) else try @import("ClosureRuns.zig").labels(e);
-            const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
+            const got = try Resolve.resolve(e, &regions[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
             // R-5.13.1: in a comparison's walk, a write of what arrived or of a function's answer is
             // `comparison_changes_value`; a write of a fresh value stays accepted, and the contract
             // keeps its writes (§2.13.13 item 13, §2.11.3).
@@ -1661,6 +1669,22 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         for (mod.reads.items) |rd| if (mod.codes.items[rd[0]].version != rd[1]) {
             stale = true;
         };
+        // Solved on its own: a read of its own draft, or of a code of the
+        // group not settled yet, puts it back to ⊥ for the rest.
+        if (peel) |pl| {
+            const unsettled = for (mod.reads.items) |rd| {
+                if (pl.index_of.get(.{rd[0]})) |y| if (!pl.settled[y]) break true;
+            } else false;
+            if (solver.used or unsettled) {
+                for (order) |x| {
+                    const c = &mod.codes.items[codes[x]];
+                    var bot: Contract.Draft = .{ .arity = c.params.len };
+                    c.contract = try mod.contracts.commit(gpa, &rs[owner[x]].account, &mod.slots, &bot);
+                    c.version += 1;
+                }
+                return false;
+            }
+        }
         if (validating) {
             if (!moved) break;
         } else if (!stale or !moved) {
@@ -1671,34 +1695,11 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         }
         if (round > 4096) return error.OwnershipLimit;
     }
-    for (codes.items) |id| if (mod.codes.items[id].kind == .called) {
-        const c = mod.codes.items[id];
-        try mod.contracts.putCalled(gpa, mod.codes.items[c.of].contract, c.slot, c.contract);
-    };
-    for (rs) |r| if (mod.in.bir.decls[r.decl].params == 0) if (mod.lambdaBody(r.decl)) |c| {
-        try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, mod.codes.items[c].contract);
-    };
-    for (rs) |*r| if (mod.in.bir.decls[r.decl].params == 0 and mod.lambdaBody(r.decl) == null) {
-        const b = mod.in.bir.decls[r.decl].body.unwrap() orelse continue;
-        var acc: u32 = none;
-        var n: u32 = 0;
-        var pa: std.heap.ArenaAllocator = .init(gpa);
-        defer pa.deinit();
-        if (!try Callees.armContracts(mod, mod.in.bir.decls[r.decl].locals_start, b.int(), &acc, &n, pa.allocator(), &r.account) or acc == none or n == 0) continue;
-        try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, acc);
-    };
-    for (rs, lines.items) |*r, *l| {
-        r.rounds = round + 1;
-        r.contract = mod.codes.items[mod.body_code[r.decl]].contract;
-        // The lines outlive the walks: the demands' texts read the BIR only.
-        r.lines = try arena.dupe(Resolve.Line, l.items);
-        std.mem.sort(Resolve.Line, r.lines, {}, struct {
-            fn lt(_: void, a: Resolve.Line, b: Resolve.Line) bool {
-                if (a.demand.point != b.demand.point) return a.demand.point < b.demand.point;
-                return a.demand.base_inst < b.demand.base_inst;
-            }
-        }.lt);
+    for (rs, lines.items, out) |*r, l, *o| {
+        r.rounds = @max(r.rounds, round + 1);
+        try o.appendSlice(gpa, l.items);
     }
+    return true;
 }
 
 /// The contract a declaration of this module publishes (§3.6): its body's,

@@ -38,6 +38,7 @@ pub const timed = [_]Module{
     .{ .scalar_wrapper = 512 },
     .{ .wide = .{ .n = 16, .m = 16, .leaf = .supplied } },
     .{ .wide = .{ .n = 32, .m = 32, .leaf = .supplied } },
+    .{ .wide = .{ .n = 512, .m = 512, .leaf = .fresh } },
     .{ .union_composition = 16 },
     .{ .union_composition = 64 },
     .{ .union_composition = 256 },

@@ -14855,9 +14855,8 @@ test "the checker v2 answers a 16-wide callback product exactly and a 32-wide on
     // holds, so reading and writing the N×M descendants is the product the
     // allowance bounds. At 16 the answer is exact: `demo` writes
     // `r.a0.b0` while `r.a1.b1` is read, and both fields are `x`, so it is
-    // refused. At 32 the product spends 48 105 of the 65 536 growth
-    // records. The fresh actual is the shortcut that does not exist yet
-    // (#2035).
+    // refused. At 32 the product is walked within the allowance. The fresh
+    // actual is the next test's.
     const a = testing.allocator;
     var seen_demo: u32 = 0;
     for ([_]u32{ 16, 32 }, 0..) |n, i| {
@@ -14879,6 +14878,42 @@ test "the checker v2 answers a 16-wide callback product exactly and a 32-wide on
         }
     }
     try testing.expectEqual(@as(u32, 1), seen_demo);
+}
+
+test "the checker v2 walks a fresh M-field actual of an N-field wrapper in no growth, linear in N + M" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, the fresh-only shortcut, tested apart from the product:
+    // `use` hands `h` a lambda that answers M fresh lists. `h` says each of
+    // its N fields is its label's whole answer, one open arrival (§2.10);
+    // the lambda is solved before `use` (§2.12), and its answer, fresh at
+    // every slot, is grafted once per field (`AtomGraft`) and asks nothing
+    // of the distinct check (`Trees.Table.only`). So `h` and `use` spend no
+    // growth, and their records grow with N + M, not N × M: `use` 3 396 at
+    // 64 and 28 278 at 512, `h` 4 244 and 36 942 (Debug, 2026-11-10).
+    const a = testing.allocator;
+    var totals: [2][2]u64 = undefined;
+    for ([_]u32{ 64, 512 }, 0..) |n, i| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, .{ .wide = .{ .n = n, .m = n, .leaf = .fresh } });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for ([_][]const u8{ "h", "use" }, 0..) |owner, k| {
+            try testing.expect(!try expectBoundedOrLimit(dump, owner, 60_000));
+            try testing.expectEqual(@as(u64, 0), try accountField(dump, owner, "growth"));
+            totals[i][k] = try accountTotal(dump, owner);
+        }
+    }
+    // Eight times N and M cost at most ten times the records, never 64.
+    for (0..2) |k| try testing.expect(totals[1][k] <= 10 * totals[0][k]);
 }
 
 test "the checker v2 stops a 64-wide callback product loudly with ownership_limit and nothing else but its dependents" {
