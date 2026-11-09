@@ -409,10 +409,10 @@ isInfinite x =
 --|
 --|     negate 42 == -42
 --|
---| This is what the prefix `-` desugars to, which is why it is written as a
---| subtraction from zero rather than as `-n`.
+--| This is what the prefix `-` desugars to. It keeps the sign of zero, as
+--| IEEE 754 does: `1 / negate 0.0` is `-Infinity`.
 pub negate : number → number
-negate n = 0 - n
+negate n = -n
 
 
 --| Get the absolute value of a number.

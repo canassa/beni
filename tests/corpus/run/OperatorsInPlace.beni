@@ -4,9 +4,9 @@
 --
 --   `^` is right-associative, and `**` is too: `2 ^ 3 ^ 2` is 512, and the
 --   bracketed `(2 ^ 3) ^ 2` is 64
---   `negate` is `0 - n` and not `-n`: `1 / negate 0` is `Infinity`, where
---   `1 / -0` would be `-Infinity`
---   a negation raised to a power is bracketed (`(0 - 2) ** 3`, since
+--   `negate` is `-n` and not `0 - n`: `1 / negate 0` is `-Infinity`, where
+--   `0 - 0` would make it `Infinity` (#2247)
+--   a negation raised to a power is bracketed (`(-2) ** 3`, since
 --   `-2 ** 3` is a JavaScript syntax error)
 --   `Int32.add` still wraps, `Int32.shiftRightZero` still answers signed,
 --   and `toUnsignedInt` is `>>> 0`
