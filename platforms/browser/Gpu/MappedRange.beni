@@ -13,6 +13,7 @@
 --! they run under a diagnostic session's lease (§6.4).
 
 import Binary
+import Binary.Region as Region exposing (ReadOnly, ReadWrite, Region)
 import Gpu.Engine as Engine
 import Gpu.Error as Error exposing (InputError)
 import Gpu.Handle as Handle
@@ -44,6 +45,34 @@ view range writing =
         Err (Error.ReadOnlyMapping { path = "range" })
     else
         Ok (Binary.DataView (Js.to (Js.get r "view")))
+
+
+--| The range as a region (binary.md §6), checked once: the mapping is live
+--| (`ResourceExpired`) and writable (`ReadOnlyMapping`). A read or a write
+--| through it then checks only the bounds and the value; once the mapping
+--| ends its memory is detached, and the region gives `Detached`.
+pub region : Handle.MappedRange → Result InputError (Region ReadWrite)
+region range =
+    v = view range True?
+    checked v
+
+
+--| The range as a read-only region, for a mapping of either mode.
+pub readRegion : Handle.MappedRange → Result InputError (Region ReadOnly)
+readRegion range =
+    v = view range False?
+    Result.map (checked v) Region.readOnly
+
+
+-- Live mapped memory is fixed and attached, so a region of it is never refused.
+checked : Binary.View → Result InputError (Region ReadWrite)
+checked v =
+    case Region.region v of
+        Ok made →
+            Ok made
+
+        Err _ →
+            Engine.defect "live mapped storage refused a region"
 
 
 read : Handle.MappedRange, (Binary.View → Result Binary.AccessError a) → Result InputError a

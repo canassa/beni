@@ -5,6 +5,7 @@
 
 import Binary
 import Binary.Region as Region
+import Binary.Wgsl as Wgsl
 import Js
 
 
@@ -131,6 +132,30 @@ regionAccesses region index total =
         Result.mapError (Region.writeU8 region index (Int.rem index 256)) Debug.toString?
         number = Result.mapError (Region.readF32 region (index * 4) Binary.Little) Debug.toString?
         regionAccesses region (index + 1) (total + number)
+
+
+--| `Wgsl.encode` and `Wgsl.decode` of an array of 256 f32 check the
+--| backing once per call, through one region, not once per element.
+pub wgslAccess : ⊤ → List String
+wgslAccess ⊤ =
+    case Wgsl.array (Wgsl.scalar Wgsl.Float32) 256 of
+        Ok layout →
+            value = Wgsl.Composite (List.map (List.range 1 256) λi → Wgsl.Floating (toFloat i))
+            encoded = detachedReads λ⊤ → Wgsl.encode layout value
+            case
+                Result.andThen encoded.value λbuffer →
+                    Binary.dataView (Binary.Local buffer)
+                        ▷ Result.mapError λproblem → Wgsl.Access (Binary.AccessBacking problem)
+            of
+                Ok view →
+                    decoded = detachedReads λ⊤ → Wgsl.decode view 0 layout
+                    [ "Wgsl encode of 256 f32: detached reads ${String.fromInt encoded.reads}"
+                    , "Wgsl decode of 256 f32: ${Debug.toString (decoded.value == Ok value)}, detached reads ${String.fromInt decoded.reads}"
+                    ]
+                Err _ →
+                    [ "no encoding" ]
+        Err _ →
+            [ "no layout" ]
 
 
 -- The body's value with the calls of ArrayBuffer.prototype's `detached`

@@ -1,0 +1,61 @@
+-- A mapped range as a checked region (binary.md §6, webgpu.md §7): a
+-- region of a mapping from creation writes the mapped memory in place, as
+-- the range's own functions see it; a read mapping gives a read-only
+-- region and refuses a writable one; once the mapping ends, the region
+-- kept from it gives `Detached` and the range `ResourceExpired`.
+import Binary
+import Binary.Region as Region
+import Gpu.Buffer
+import Gpu.Device
+import Gpu.Flags exposing (CopyDst, MapRead)
+import Gpu.Handle exposing (Device)
+import Gpu.MappedRange as MappedRange
+import GpuKit exposing (buffer, must)
+import GpuPage
+import GpuShow
+import Tea
+
+
+creation : ⊤ → List String
+creation ⊤ = GpuKit.with "none" creationOn
+
+
+creationOn : Device → List String
+creationOn d =
+    made = must (Gpu.Device.createMappedBuffer d (buffer 8 [ CopyDst ]))
+    range = must (Gpu.Buffer.getMappedRange made.mapping Gpu.Buffer.whole)
+    region = must (MappedRange.region range)
+    -- 0xDEADBEEF, little-endian.
+    written = Region.writeU32 region 0 Binary.Little 3735928559
+    outside = Region.writeU32 region 6 Binary.Little 1
+    seen = GpuShow.inputResult (MappedRange.readU32 range 0) String.fromInt
+    Gpu.Buffer.unmap made.buffer
+    [ "written through the region: " ++ Debug.toString written ++ ", the range reads " ++ seen
+    , "outside the range: " ++ Debug.toString outside
+    , "after unmap, the region: " ++ Debug.toString (Region.readU32 region 0 Binary.Little)
+    , "after unmap, the range: " ++ GpuShow.inputResult (MappedRange.readU32 range 0) String.fromInt
+    , "a region of it after unmap: " ++ GpuShow.inputResult (MappedRange.region range) λ_ → "region"
+    ]
+
+
+reading : ⊤ → List String
+reading ⊤ = GpuKit.with "none" readingOn
+
+
+readingOn : Device → List String
+readingOn d =
+    b = must (Gpu.Device.createBuffer d (buffer 8 [ MapRead, CopyDst ]))
+    m = must (Gpu.Buffer.map b Gpu.Buffer.mapRead)
+    range = must (Gpu.Buffer.getMappedRange m Gpu.Buffer.whole)
+    writable = GpuShow.inputResult (MappedRange.region range) λ_ → "region"
+    reader = must (MappedRange.readRegion range)
+    first = Debug.toString (Region.readU32 reader 4 Binary.Big)
+    Gpu.Buffer.destroy b
+    [ "a writable region of a read mapping: " ++ writable
+    , "the read-only region reads " ++ first
+    , "after destroy: " ++ Debug.toString (Region.readU8 reader 0)
+    ]
+
+
+main : Tea.Program
+main = GpuPage.program [ ( "creation", creation ), ( "reading", reading ) ]

@@ -1060,10 +1060,12 @@ module Gpu.MappedRange
   value readI16 : MappedRange, Int → Result InputError Int  -- impure
   value readI32 : MappedRange, Int → Result InputError Int  -- impure
   value readI8 : MappedRange, Int → Result InputError Int  -- impure
+  value readRegion : MappedRange → Result InputError (Region ReadOnly)  -- impure
   value readU16 : MappedRange, Int → Result InputError Int  -- impure
   value readU32 : MappedRange, Int → Result InputError Int  -- impure
   value readU8 : MappedRange, Int → Result InputError Int  -- impure
   value readWord64 : MappedRange, Int → Result InputError Word64  -- impure
+  value region : MappedRange → Result InputError (Region ReadWrite)  -- impure
   value size : MappedRange → Int  -- impure
   value writeBytes : MappedRange, Int, Source → Result InputError ⊤  -- impure
   value writeF16 : MappedRange, Int, Float → Result Error ⊤  -- impure

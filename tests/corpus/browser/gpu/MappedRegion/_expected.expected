@@ -1,0 +1,39 @@
+-- load
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="reading">"reading"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #creation
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="reading">"reading"</button>
+    <ol>
+      <li>"written through the region: Ok ⊤, the range reads Ok 3735928559"</li>
+      <li>"outside the range: Err (WriteAccess (OutOfBounds 6 4 8))"</li>
+      <li>"after unmap, the region: Err Detached"</li>
+      <li>"after unmap, the range: Err ResourceExpired range"</li>
+      <li>"a region of it after unmap: Err ResourceExpired range"</li>
+    </ol>
+  </main>
+</body>
+-- click #reading
+<body>
+  <main>
+    <button id="creation">"creation"</button>
+    <button id="reading">"reading"</button>
+    <ol>
+      <li>"written through the region: Ok ⊤, the range reads Ok 3735928559"</li>
+      <li>"outside the range: Err (WriteAccess (OutOfBounds 6 4 8))"</li>
+      <li>"after unmap, the region: Err Detached"</li>
+      <li>"after unmap, the range: Err ResourceExpired range"</li>
+      <li>"a region of it after unmap: Err ResourceExpired range"</li>
+      <li>"a writable region of a read mapping: Err ReadOnlyMapping range"</li>
+      <li>"the read-only region reads Ok 0"</li>
+      <li>"after destroy: Err Detached"</li>
+    </ol>
+  </main>
+</body>

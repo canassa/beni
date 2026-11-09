@@ -67,6 +67,8 @@ reads or writes many values.
 - `Region.readOnly` makes a `Region ReadOnly`. It has no write functions. A write
   to it is a type error.
 - `Region.view`, `Region.byteLength` and `Region.sourceInfo` read the region.
+- `Gpu.MappedRange.region` and `readRegion` make a region of mapped GPU memory.
+  `region` of a read mapping is `ReadOnlyMapping`.
 - The errors are `Region.AccessError`, `Region.WriteError` and
   `Region.Float16Error`. They do not have `ResizableBacking`.
 

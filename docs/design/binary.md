@@ -181,9 +181,10 @@ so a member's `` is checked only as a power of two at least AlignOf(T).
 **Status: decided 2026-11-09** — the owner took every §8 choice as proposed.
 Built: `core/Binary/Region.beni` (fixtures `run/BinaryRegion`,
 `check/bad/BinaryRegionReadOnlyWrite`, the region lines of
-`run/BinaryNative` and `run/BinaryAccessCost`). `MappedRange.region` and
-`Wgsl`'s internal region are later slices; until each lands, the text below
-that names it is the contract still to build.
+`run/BinaryNative` and `run/BinaryAccessCost`); `MappedRange.region` and
+`readRegion` (`browser/gpu/MappedRegion`); and `Wgsl.encode`, `write` and
+`decode` on one region per call (§8, choice 8; `run/BinaryAccessCost` counts
+the `detached` reads of a 256-element array: 257 and 772 before, 3 and 2).
 
 §1 makes every scalar access validate the backing again because a `View` or
 a `Source` can be built from any native handle. After §1's 2026-11-09 change a
