@@ -450,3 +450,68 @@ mismatch remains. The separate driver settle repair makes HttpDefect
 pass. No golden or timing budget changed. Exact comparisons and logs are
 under `zig-out/scratch/foundation-final-*-comparison.json` and
 `foundation-{repair,master}-{gates,browser}.log`.
+
+
+### Shared listener selection and inline guarded registration
+
+Both renderer manifests now depend on `browser-base`; their duplicate
+`Listen` modules are removed in the same slice. Legacy browser listeners
+retain the base's direct entry and their existing fiber/relay queue rules.
+Inline's mount installs each subscription inside `Inline.subscribe`, which
+selects the entry through `Listen.withEntry`. Each listener retains that
+entry after installation. Stopped callbacks do nothing; nested callbacks
+run their readers synchronously inside the active guard. An outer event
+enters the guard and drains queued sends after its reader returns.
+
+`browser/inline/NestedBaseEntry` dispatches a second native event while
+reading the first. Its unchanged expected transcript requires both readers
+to return before updates, retaining the sends' actual order (2, then 1).
+It first failed against the old inline listener, then failed behaviorally
+with shared listeners but no entry binding: updates preceded reader returns.
+With the binding it passes development and release. Existing inline
+throwing-reader and stop fixtures pass, as do the targeted inline and TEA
+Node corpora. Ownership helper bodies are pinned, and generated interfaces
+point readers to the shared package. Final full validation and accepted
+byte measurements are recorded below.
+
+No command, capability family, navigation or GPU module moves in this
+slice. The shared Cmd/Sub and full subscription-policy work remain ahead;
+the capability APIs are incomplete.
+
+
+The manager required the timer-only builds to pay no unused registration
+context before the owner reviews listener growth (2026-11-09). The lowering
+names its platform's capture helper in `Lowering.Effects.entry_capture`;
+source reachability supplies `Program.Subscription.entry`. When the helper
+is unreachable in the build, subscription starts are emitted without the
+registration wrapper, and its context is eliminated. This proof is
+build-wide and conservative: mixed or uncertain starts keep the guard.
+It does not special-case timer names, fixture paths or host APIs. The
+existing MainOwnedKeys and RootClosures emit goldens are the red-before
+fixtures and must match unchanged after this refinement.
+
+
+The owner accepted the listener growth on 2026-11-09, relayed by the
+manager: guarded pages add 36–52 Brotli bytes; empty and timer-only pages
+must remain byte-identical to master. Fresh post-refinement captures of all
+16 fixtures confirm the 14 guarded outputs are unchanged from the reviewed
+build and the two timer-only outputs exactly match their original goldens.
+Only those 14 accepted emit goldens were regenerated from the fresh real
+runs. The manager authorized final same-toolchain gates/Chrome comparison
+and a local commit if no new failures remain. Captures, commands, hashes
+and the exact regenerated-file manifest are in
+`zig-out/scratch/listener-approved-review/`.
+
+
+Final validation on zorg 0.17.1+zorg.3 and Node 24.19.0 used the same
+default mode against clean master 620c322a45. Gates have exactly the same
+known failure identities, with no new failures. Chrome has no new lane
+failure: lane passes 745/746 (only `tea/DomCapabilities`); master passes
+742/745 (that case plus baseline-only `dom/ScriptedFetch` and
+`managed/Network`). Neither final gate run hit the earlier runner timeout.
+All four empty-page variants and both timer-only fixtures remain
+byte-identical to master. The 14 guarded fixtures retain their reviewed
+outputs (+39–52 Brotli bytes after timer-only costs are removed).
+`zig-out/scratch/listener-accepted-report.md` holds the complete size table,
+commands, original logs and exact comparisons. Only the 14 accepted emit
+goldens were regenerated from real runs; no other golden or budget changed.

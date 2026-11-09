@@ -2,14 +2,14 @@
 
 A program is built for one platform. It owns `Program`, the type of `main`, and supplies the host modules.
 A type of your own with the same name is not the platform's Program. Name the platform in
-`beni.json` (`"build": { "platform": "…" }`) or with `--platform=<name>`. Six ship in the compiler.
+`beni.json` (`"build": { "platform": "…" }`) or with `--platform=<name>`. Seven ship in the compiler.
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
 | `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, the `Gpu` modules, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
-| `browser-base` | none | a dependency or library | renderer-independent listener capabilities; no runnable entry |
+| `browser-base` | none | a dependency or library | shared listener base for both browser engines; no runnable entry |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
 | `html` | none | — | the markup vocabulary the four above share |
 | `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |

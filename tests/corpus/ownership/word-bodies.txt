@@ -313,14 +313,11 @@ platforms/browser/Rt.beni                        Rt.delegated                   
 platforms/browser/Rt.beni                        Rt.listen                        1243d5a6e6b5b6928bfbebcc25820de2d99427d260a5ac9563114de5d5d2ca47
 platforms/browser/Rt.beni                        Rt.watchEdits                    20e5623383338d389c4ae2c01bd7d04cf7623ef5d8d2ed568c8e13455c07916d
 platforms/browser/Rt.beni                        Rt.crashScreen                   d52beb68c9c80b7f461581a9321cf9eb120b7d364baffe4f97c39e787016f29a
-platforms/browser/Listen.beni                    Listen.on                        7100b474c9ef24ffcf5362b500fc24dd053bd1795651f2e65fa56f72ed492785
-platforms/browser/Listen.beni                    Listen.on2                       59bceb206e717ce4b3fa393c440c0abc4f74b4b50ab47d22d1b20939841f6e56
 platforms/browser/WebSocket.beni                 WebSocket.attach                 a9b8c1f44e84e971bc4c84e4bc969a6c2645fea2e280d524859382d7553bbfe6
 platforms/browser-inline/Inline.beni             Inline.on                        4db2e435823c8c64884b9194e762dda3287615a57b165a58200a8d77177d3085
 platforms/browser-inline/Inline.beni             Inline.onArm                     877b5d232990df7d722a976671c148d74fa0899becb4105b249dd4e486098986
 platforms/browser-inline/Inline.beni             Inline.listen                    02eb3db387e7d4343ff4dd3e68e9d459deb6bd86c0ee6c7efacfb0eb8adb216a
 platforms/browser-inline/Inline.beni             Inline.crashScreen               5110cae95a585c2d779d3966bb8a9f34892b237f7e7e75a569d25e1c74c6ee3f
-platforms/browser-inline/Listen.beni             Listen.on                        40f348e09de5f706a8afe36416725a4da12f6843ef4fd9c5ef91534f680bffcc
 platforms/browser-inline/Browser/Navigation.beni Browser.Navigation.listen        820c62297195fbdb4ee4b9328e8a2f98d511a51ef0bd38307d377ed48f3b9268
 platforms/browser-inline/Browser/Navigation.beni Browser.Navigation.listenOne     2f1113b901986deeebe9aaa54056bad80de223581546533695c0bc8b21628029
 platforms/cloudflare/Worker.beni                 Worker.listenForAbort            506b64fb3c116ce234e4324503beac1b5e544b14c5cd5e09fde0f5df4cbab422
@@ -344,3 +341,5 @@ platforms/browser-base/Listen.beni               Listen.on2                     
 platforms/browser-base/Listen.beni               Listen.callback                 0b409ff4f300866bdfe5d600108b346cb4929afa5632f9b8c32195f7a805729d
 platforms/browser-base/Listen.beni               Listen.withEntry                fe6c5ada5b705db0620c9144887ea829546a23040305eaec7b45e423154c6cbd
 platforms/browser-base/Listen.beni               Listen.direct                   40db7e59b6b53586657d04de30d3dc693bd1a941deb7db245b2d8a3028806af7
+platforms/browser-inline/Inline.beni             Inline.subscribe d9c7373da3d53fd382c54a683fdc3b25130741477f7793d0be275db3253d7462
+platforms/browser-inline/Inline.beni             Inline.eventEntry e037867648728040ff8f1bfa1f5b542496749da2f23981b54cde6a3cbe90f56e

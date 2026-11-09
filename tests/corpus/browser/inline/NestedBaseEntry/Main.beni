@@ -1,0 +1,37 @@
+-- Nested native events read their payloads during dispatch. Both readers
+-- return before queued updates run, and sends retain their actual order.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub
+import Tea
+
+
+type Msg
+    = Pushed Int
+
+
+type Key
+    = Push
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Pushed value →
+            _ = Debug.log "update" value
+            ( n * 10 + value, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><p id="n">{n}</p></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.on Push Probe.pushes Pushed
+        }

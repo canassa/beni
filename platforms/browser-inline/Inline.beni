@@ -8,6 +8,7 @@
 
 import Cmd exposing (Cmd)
 import Js
+import Listen
 import Schema exposing (Field, Index, Issue, PathSegment, Schema)
 import Url exposing (Url)
 
@@ -33,6 +34,22 @@ running = Js.ref False
 -- order they were made; null until the first.
 queue : Js.Ref V
 queue = Js.ref Js.null
+
+
+--| Install a subscription with this program's synchronous event entry.
+--| The listener captures the entry; nested registrations restore it.
+pub subscribe : sync (⊤ → a) → a
+subscribe install = Listen.withEntry eventEntry install
+
+
+eventEntry : sync (⊤ → ⊤) → ⊤
+eventEntry work =
+    if Js.read dead then
+        ⊤
+    else if Js.read running then
+        work ⊤
+    else
+        send (Js.from work) Js.null Js.undefined
 
 
 --| `(f, x, read)`: one entry into program code — a listener with its

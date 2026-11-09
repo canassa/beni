@@ -1,0 +1,28 @@
+--! A nested host dispatch, through the shared base's captured entry.
+
+import Js
+import Listen
+
+
+pub pushes : sync (Int → ⊤) → (⊤ → ⊤)
+pushes send =
+    host = Js.global "window"
+    handler =
+        Js.from
+            (Listen.callback λevent →
+                value : Int
+                value = Js.to (Js.get event "detail")
+                _ = Debug.log "read" value
+                if value == 1 then
+                    _ =
+                        Js.call host "dispatchEvent"
+                            [ Js.construct (Js.global "CustomEvent")
+                                [ Js.from "base-entry", Js.object [ ( "detail", Js.from 2 ) ] ]
+                            ]
+                    ⊤
+                send value
+                _ = Debug.log "reader returned" value
+                ⊤
+            )
+    _ = Js.call host "addEventListener" [ Js.from "base-entry", handler ]
+    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from "base-entry", handler ])
