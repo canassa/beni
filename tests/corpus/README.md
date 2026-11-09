@@ -732,7 +732,8 @@ the step has run, in both DOMs.** The driver does not wait for work a page
 starts outside that scheduler: a `window.postMessage`, a
 `BroadcastChannel`, a worker's reply or a `requestIdleCallback`. It does
 wait, 2 ms at a time and 10 s at most, for a host promise it counts from
-its call to its settling: an image's `decode()` and `createImageBitmap()`
+its call to its settling: a `data:` fetch and its finite response-body
+reads, an image's `decode()` and `createImageBitmap()`
 (`browser/tea/WebGpuInputs`), and under `--webgpu` Chrome's own WebGPU
 (`docs/design/webgpu.md` §10). One still pending after 10 s fails the
 step. A page has settled once its microtasks have run and a turn of the
@@ -801,8 +802,13 @@ abort of a pending request (or of a body still streaming) rejects it with
 the signal's reason, as the host's `fetch` does, and logs `(fetch <n>
 aborted: <the reason's name>)`, so a cancelled `Restart` and a timeout are
 both visible. A `data:` URL goes to the host's own `fetch` and is neither
-numbered nor logged. A request still pending when the script ends fails the
-case, so no fixture forgets one.
+numbered nor logged. The driver waits for that fetch and its finite body
+consumption methods (`text`, `json`, `arrayBuffer`, `bytes`, `blob`,
+`formData`) before it takes the snapshot. It observes the original
+promises and preserves their results and rejections. Scripted requests
+remain pending for their explicit `respond` or `fail` steps. A scripted
+request still pending when the script ends fails the case, so no fixture
+forgets one.
 
 **The page's `WebSocket` is scripted** (`boundary.md` §9.11 (l)), as its
 `fetch` is, in both DOMs. Each `new WebSocket` is logged as it is made —

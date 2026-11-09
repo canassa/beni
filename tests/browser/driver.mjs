@@ -266,8 +266,10 @@
 // stays pending until a `respond` or `fail` step answers it. Aborting it
 // rejects it with the signal's reason, as the host's `fetch` does, and logs
 // `(fetch <n> aborted: <the reason's name>)`. A `data:` URL is the host's
-// own `fetch`, not numbered or logged. A request still pending when the
-// script ends fails the run, as an uncaught exception does.
+// own `fetch`, not numbered or logged. Its native promise and finite
+// response-body reads are counted until they settle, so a snapshot cannot
+// precede their replies. A scripted request still pending when the script
+// ends fails the run, as an uncaught exception does.
 //
 // The page's `WebSocket` is scripted too (docs/design/boundary.md §9.11
 // (l)): each socket is logged as it is made, `(socket <n>: <path>
@@ -360,8 +362,9 @@ function prelude() {
   globalThis.__beniHarness = record;
   // A native host promise settles in real time, after work outside the
   // page: each one the page is waiting for is counted from its call to its
-  // settling, for `settle`. In either DOM, an image's `decode` and
-  // `createImageBitmap` (`Browser.Image`); under `--webgpu`, Chrome's own
+  // settling, for `settle`. In either DOM, data: fetches and their finite
+  // body reads, an image's `decode` and `createImageBitmap` (`Browser.Image`);
+  // under `--webgpu`, Chrome's own
   // WebGPU (docs/design/webgpu.md §10). The count sees the promise, never
   // changes it: the page's own reactions get what the host gave. The
   // count is `gpu` because WebGPU's promises were its first, and the test
@@ -551,7 +554,22 @@ function prelude() {
       // The host's `fetch` rejects what `new Request` throws.
       return Promise.reject(error);
     }
-    if (request.url.startsWith("data:")) return hostFetch.call(globalThis, input, init);
+    if (request.url.startsWith("data:")) {
+      const promise = hostFetch.call(globalThis, input, init);
+      record.gpu.pending += 1;
+      const done = () => { record.gpu.pending -= 1; };
+      // Register before the page's reaction: it must see counted body
+      // methods even when it reads the response immediately. Return the
+      // original fetch promise, and preserve its result or rejection.
+      promise.then((response) => {
+        try {
+          for (const method of ["arrayBuffer", "blob", "bytes", "formData", "json", "text"]) count(response, method);
+        } finally {
+          done();
+        }
+      }, done);
+      return promise;
+    }
     const entry = { n: requests.length + 1, request, signal: init?.signal ?? null, settled: false, resolve: null, reject: null };
     requests.push(entry);
     const headers = {};
@@ -1799,7 +1817,7 @@ async function settle() {
     if (!busy()) {
       if (waited === 5000) {
         record.unsettled = true;
-        record.errors.push("Error: a native host promise (WebGPU, an image decode or createImageBitmap) was still pending after 10 s, so the step cannot end");
+        record.errors.push("Error: a native host promise (WebGPU, media or a data: fetch/body) was still pending after 10 s, so the step cannot end");
         return false;
       }
       waited += 1;

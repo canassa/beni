@@ -648,6 +648,85 @@ test "a library build's page delivers the events its markup delegates, with no p
     try testing.expect(!w.exists("out/_main.mjs"));
 }
 
+test "the driver waits for a finite data fetch and its body outside the scheduler queue" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The host completes fetch on turn two and its body on turn
+    // four, through MessagePorts instead of the tracked Immediate queue.
+    // There is no elapsed-time threshold and no fixed sleep.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    for ([_][2][]const u8{
+        .{ "tests/browser/driver.mjs", "tests/browser/driver.mjs" },
+        .{ "tests/browser/compile-cache.mjs", "tests/browser/compile-cache.mjs" },
+        .{ "tests/browser/happy-dom.mjs", "dom.mjs" },
+    }) |file| {
+        const bytes = try Io.Dir.cwd().readFileAlloc(testing.io, file[0], arena, .limited(world.max_stream_bytes));
+        try w.write(try std.fmt.allocPrint(arena, "run/{s}", .{file[1]}), bytes);
+    }
+    try w.write("run/host.mjs",
+        \\import { GlobalWindow as HostWindow } from "./dom.mjs";
+        \\import { MessageChannel } from "node:worker_threads";
+        \\
+        \\export class GlobalWindow extends HostWindow {
+        \\  constructor(options) {
+        \\    super(options);
+        \\    let turn = 0;
+        \\    let fetched;
+        \\    let consumed;
+        \\    const response = new this.Response("hello");
+        \\    response.text = () => new Promise((done) => { consumed = done; });
+        \\    this.fetch = () => new Promise((done) => { fetched = done; });
+        \\    // Deliver native host work outside Node's Immediate queue. Each turn
+        \\    // is a real MessagePort task; no timer or fixed sleep controls it.
+        \\    this.setImmediate = (done) => {
+        \\      const channel = new MessageChannel();
+        \\      channel.port1.once("message", () => {
+        \\        channel.port1.close();
+        \\        channel.port2.close();
+        \\        turn += 1;
+        \\        if (turn === 2) fetched(response);
+        \\        if (turn === 4) consumed("hello");
+        \\        done();
+        \\      });
+        \\      channel.port2.postMessage(null);
+        \\    };
+        \\  }
+        \\}
+        \\
+    );
+    try w.write("run/out/_main.mjs",
+        \\document.body.innerHTML = "<output>loading</output>";
+        \\fetch("data:text/plain,hello").then((response) => response.text()).then((text) => {
+        \\  document.querySelector("output").textContent = text;
+        \\});
+        \\
+    );
+    try w.write("run/check.mjs",
+        \\import { resolve } from "node:path";
+        \\import { fileURLToPath, pathToFileURL } from "node:url";
+        \\process.chdir(fileURLToPath(new URL(".", import.meta.url)));
+        \\process.argv = [process.argv[0], resolve("tests/browser/driver.mjs"), "--dom=" + resolve("host.mjs"), resolve("out/_main.mjs")];
+        \\await import(pathToFileURL(resolve("tests/browser/driver.mjs")).href);
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE AND VERIFY OUTPUT                │
+    // └─────────────────────────────────────────┘
+    // The first snapshot includes both completed
+    // native promises, rather than the initial loading placeholder.
+    try w.expectProgram("run/check.mjs", .{ .stdout =
+        \\-- load
+        \\<body>
+        \\  <output>"hello"</output>
+        \\</body>
+        \\
+    });
+}
+
 /// Fills `cache/v1` with `argv[3]` entries, `argv[4]` seconds old, prunes it
 /// as the driver does, and prints how many entries are left.
 const prune_script =
