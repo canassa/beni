@@ -5196,6 +5196,12 @@ declaration in the middle and compare a neighbour's bytes, tags included.
   index â and the join resolves each name in its own graph and replays the surviving units'
   entries in that order, which is also the order a release build's own head must keep: `Rename`
   numbers short names by first use.
+- **Its `Js.module` specifiers**, in ask order (`Lowerer.hostModule`; `boundary.md` §4.2): each
+  namespace its text reads, as the literal, repeats and all. The head writes one `import * as` per
+  specifier in first-use order (`importStatements`), so the join replays a taken unit's specifiers
+  where its `Needed` entries are replayed. *Added 2026-11-09* (#2019): rows of format 3 had no such
+  list, so a development build that took `cloudflare`'s `Rt.instanceClass` from its row wrote
+  `Rt$$cloudflare_workers` with no import, and the Worker did not start.
 - **Its runtime flags**: whether it reaches `_derived`'s `deep`, `listEq` or `listCompare`
   (`runtimeValue`; `uses_runtime` is the or of them). The runtime import's spec list comes from
   the flags rather than from `Needed`.

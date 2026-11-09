@@ -54,6 +54,7 @@
 //!   introduced: u32, then per    ident: u32
 //!   needed: u32, then per need   module: u32, value: u32 (or `no_value`),
 //!                                base: u32 (a string or `no_string`)
+//!   hosts: u32, then per host    specifier: u32 (a string)
 //!   facts: u32, then per fact    question: u8, where: u8, module: u32,
 //!                                index: u32, answer: u8
 //!   runtime: u8
@@ -75,8 +76,8 @@ const Key = @import("../cache/Key.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 
 pub const magic = "BENIEMIT";
-/// 1: the first.
-pub const version: u32 = 3;
+/// 1: the first. 4: a unit's `hosts` (#2019).
+pub const version: u32 = 4;
 
 /// The build options a row depends on beyond its module key.
 pub const Options = struct {};
@@ -317,6 +318,10 @@ pub const Unit = struct {
     introduced: []const u32 = &.{},
     /// In ask order.
     needed: []const Needed = &.{},
+    /// The `Js.module` specifiers the unit's text reads, as strings, in
+    /// ask order: the join rebuilds the head, so a taken unit brings its
+    /// namespace imports (`boundary.md` §4.2, #2019).
+    hosts: []const u32 = &.{},
     /// Sorted and deduplicated.
     facts: []const Fact = &.{},
     /// Which runtime exports the unit reaches: bit 0 `deep`, bit 1
@@ -506,6 +511,8 @@ pub const Builder = struct {
                 try appendU32(gpa, &out, need.value);
                 try appendU32(gpa, &out, need.base);
             }
+            try appendU32(gpa, &out, @intCast(unit.hosts.len));
+            for (unit.hosts) |host| try appendU32(gpa, &out, host);
             try appendU32(gpa, &out, @intCast(unit.facts.len));
             for (unit.facts) |fact| {
                 try out.append(gpa, @backingInt(fact.question));
@@ -575,7 +582,7 @@ pub fn decode(arena: Allocator, bytes: []const u8) Allocator.Error!?Row {
     const text = r.take(text_len) orelse return null;
 
     const unit_count = r.word() orelse return null;
-    if (@as(u64, unit_count) * 29 > r.rest()) return null;
+    if (@as(u64, unit_count) * 33 > r.rest()) return null;
     const units = try arena.alloc(Unit, unit_count);
     var at: u32 = 0;
     for (units) |*unit| {
@@ -628,6 +635,15 @@ pub fn decode(arena: Allocator, bytes: []const u8) Allocator.Error!?Row {
             if (need.base != no_string and need.base >= string_count) return null;
         }
         unit.needed = needed;
+
+        const host_count = r.word() orelse return null;
+        if (@as(u64, host_count) * 4 > r.rest()) return null;
+        const hosts = try arena.alloc(u32, host_count);
+        for (hosts) |*host| {
+            host.* = r.word() orelse return null;
+            if (host.* >= string_count) return null;
+        }
+        unit.hosts = hosts;
 
         const fact_count = r.word() orelse return null;
         if (@as(u64, fact_count) * 11 > r.rest()) return null;
@@ -702,6 +718,7 @@ fn testRow(b: *Builder) !void {
     b.flags = .{ .deep = true, .eq_prim = true };
     const module_text = try b.internString("List");
     const base_text = try b.internString("foldl");
+    const host_text = try b.internString("cloudflare:workers");
     const other = try b.internModule(.core, module_text);
     const ident = try b.internIdent(.{ .module = module_text, .base = base_text, .tag = 1 });
     try b.addUnit(.{
@@ -712,6 +729,7 @@ fn testRow(b: *Builder) !void {
         },
         .introduced = &.{ident},
         .needed = &.{.{ .module = other + 1, .value = 2 }},
+        .hosts = &.{host_text},
         .facts = &.{
             .{ .question = .arm_dead, .index = 9, .answer = true },
             .{ .question = .decl, .index = 1, .answer = true },
@@ -759,6 +777,8 @@ test "a row round-trips through its bytes" {
     try testing.expectEqualSlices(u32, &.{0}, first.introduced);
     try testing.expectEqual(@as(u32, 1), first.needed[0].module);
     try testing.expectEqual(@as(u32, 2), first.needed[0].value);
+    try testing.expectEqual(@as(usize, 1), first.hosts.len);
+    try testing.expectEqualStrings("cloudflare:workers", row.strings[first.hosts[0]]);
     // Sorted and deduplicated: one `decl(1)` is one fact, the group order
     // is the question's, the two modules in slot order inside it.
     try testing.expectEqual(@as(usize, 3), first.facts.len);
@@ -780,6 +800,7 @@ test "a row round-trips through its bytes" {
     try testing.expectEqual(@as(u32, @backingInt(Selector.Synth.primitive)), second.selector.a);
     try testing.expectEqual(runtime_deep | runtime_list_eq, second.runtime);
     try testing.expectEqual(@as(usize, 0), second.edges.len);
+    try testing.expectEqual(@as(usize, 0), second.hosts.len);
 
     // A re-encode of the decoded row is the same bytes.
     var again: Builder = .init(testing.allocator);
@@ -793,6 +814,7 @@ test "a row round-trips through its bytes" {
             .marks = u.marks,
             .introduced = u.introduced,
             .needed = u.needed,
+            .hosts = u.hosts,
             .facts = u.facts,
             .runtime = u.runtime,
             .edges = u.edges,

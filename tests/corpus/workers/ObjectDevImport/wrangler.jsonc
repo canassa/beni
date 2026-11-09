@@ -1,0 +1,7 @@
+{
+  "name": "object-dev-import",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": { "bindings": [{ "name": "ALARMS", "class_name": "Alarm" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Alarm"] }],
+}

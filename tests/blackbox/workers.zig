@@ -63,3 +63,26 @@ pub fn inputs(arena: Allocator, h: Harness, steps: []const u8, config: []const u
         .{ .name = "wrangler", .bytes = config },
     }) };
 }
+
+/// Whether the script's first step is `{"hooks": false}`, written exactly
+/// so (`driver.mjs` checks the same): the fixture is built without
+/// `--test-hooks`, as a user builds it. A `--test-hooks` build lowers
+/// every unit that reads the flag afresh, so only a build without it takes
+/// the binary's emit rows as a user's build does (#2019). The driver sends
+/// no `/__beni/mark` to such a Worker.
+pub fn withoutHooks(steps: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, steps, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        return std.mem.eql(u8, line, "{\"hooks\": false}");
+    }
+    return false;
+}
+
+test withoutHooks {
+    try std.testing.expect(withoutHooks("# a comment\n\n{\"hooks\": false}\n{\"path\": \"/\"}\n"));
+    try std.testing.expect(!withoutHooks("{\"path\": \"/\"}\n{\"hooks\": false}\n"));
+    try std.testing.expect(!withoutHooks("{\"hooks\":false}\n"));
+    try std.testing.expect(!withoutHooks(""));
+}

@@ -1,0 +1,6 @@
+# Built as a user builds it, with no `--test-hooks`: the development build
+# takes the platform's runtime from the binary's emit rows (#2019).
+{"hooks": false}
+# The Worker starts, answers, and forwards a request to its object.
+{"path": "/"}
+{"path": "/alarm/a"}

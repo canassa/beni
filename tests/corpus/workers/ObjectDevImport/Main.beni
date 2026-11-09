@@ -1,0 +1,44 @@
+-- workers: the smallest Worker with a Durable Object (boundary.md §9.12
+-- (e), #2019). The platform's runtime reads `DurableObject` through
+-- `Js.module "cloudflare:workers"` (boundary.md §4.2). A development
+-- build takes that declaration's text from the binary's emit row
+-- (backend.md §9, *The join*), and the row must carry the specifier, or
+-- the module has no `import` of it and the Worker does not start.
+import Schema
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ alarm ] }
+
+
+alarm : Worker.Definition
+alarm = Object.define "Alarm" Schema.string (λ_ → ⊤) { Object.none | request = serve }
+
+
+serve : Object.Context String, ⊤, Request → ⊤ × Response
+serve _ state _ = ( state, Worker.text 200 "from the object" )
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "ALARMS" Schema.string
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just alarms, [ "", "alarm", name ] ) →
+            case Worker.forward (Worker.byName alarms name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the object is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no ALARMS binding"
+
+        _ →
+            Worker.text 200 "from the worker"

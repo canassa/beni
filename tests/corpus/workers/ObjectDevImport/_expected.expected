@@ -1,0 +1,10 @@
+> GET /
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< from the worker
+> GET /alarm/a
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< from the object
