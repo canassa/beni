@@ -22,6 +22,10 @@ pub const Name = enum {
     walker_project_scalar,
     /// O1 O10: `Walker.project` gives a scalar for a row step of a tuple or constructor.
     walker_row_scalar,
+    /// O1: a prepend never answers its base's array (`Recons.may`).
+    recons_never,
+    /// O1: a prepend whose front is a call never answers its base's array, whatever the call hands back.
+    recons_front_any,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

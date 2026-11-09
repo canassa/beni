@@ -155,6 +155,8 @@ const layers = [_]Entry{
     .{ .file = "NeedFolds.zig", .layer = 6, .max_lines = 35 },
     // A `fed` answer through the known codes a code's labels run (#2395).
     .{ .file = "FedThrough.zig", .layer = 6, .max_lines = 150 },
+    // Whether a prepend may answer its base's array, split from `Relation` (§2.3.4, #2325).
+    .{ .file = "Recons.zig", .layer = 6, .max_lines = 135 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
@@ -874,7 +876,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 163), layers.len);
+    try testing.expectEqual(@as(usize, 164), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

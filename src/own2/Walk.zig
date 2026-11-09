@@ -1037,8 +1037,9 @@ const Walker = struct {
         const flags = try k.f().arena.alloc(u32, ks.items.len);
         @memset(flags, 0);
         flags[flags.len - 1] = 1;
-        // Its storage is fresh, or `xs`'s base re-consed (§2.13.6, `prepended`).
-        return k.built(i, .list, xs + 1, i, ks.items, flags);
+        // Its storage is fresh, or `xs`'s base re-consed (§2.13.6, `prepended`); a front the prepend itself computes is `Recons.front`'s.
+        const last: ?u32 = if (fronts.len == 0) null else fronts[fronts.len - 1];
+        return k.built(i, .list, @import("Recons.zig").front(if (last) |l| k.tag(l) else .unit, last orelse 0, flags, xs + 1), i, ks.items, flags);
     }
 };
 

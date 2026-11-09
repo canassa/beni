@@ -17,6 +17,8 @@ candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#22
 *Since #2344:* the three mutants of a fold handed its own answer (`SelfFed`, `Distinct.reqOn`) are killed
 (`--only=self_fed_slot_off,self_fed_keeps_ok,self_fed_answer_free`, 222 s), so 174 mutations, 125 killed.
 *Since #2354:* `below_join_one_name` is killed by `run/SanitiserFamilyJoinBelow` (`--only=below_join_one_name`, 96 s).
+*Since #2325:* `recons_never` and `recons_front_any` (when a prepend may answer its base's array, `Recons.zig`) are killed by
+`run/SanitiserPrependFrontHeld`, the first also by `ownership/Prepend` and `PrependFresh` (`--only=recons_never,recons_front_any`, 205 s).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -44,6 +46,8 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `unnamed_step_empty` | O1 O10 G4 | a step no place names reads as nothing, not as what it lies inside or `⊤` | killed | | 2: SanitiserCastTwin (SanitisedRefusalDiffers), … | 7: CastAcross [node] (OwnershipV2Differs), … | 0 | |
 | `walker_project_scalar` | O1 O10 | `Walker.project` gives a scalar for a step a place cannot name | killed | | 4: SanitiserFoldFunction (SanitisedRefusalDiffers), … | 10: OneListTwoLevels (OwnershipV2Differs), … | 0 | |
 | `walker_row_scalar` | O1 O10 | `Walker.project` gives a scalar for a row step of a tuple or constructor | SURVIVED | dead | 0 | 0 | 0 | 0 |
+| `recons_never` | O1 | a prepend never answers its base's array (`Recons.may`) | killed | | SanitiserPrependFrontHeld (ProgramFailed) | 2: Prepend (OwnershipV2Differs), … | 0 | |
+| `recons_front_any` | O1 | a prepend whose front is a call never answers its base's array, whatever the call hands back | killed | | SanitiserPrependFrontHeld (SanitisedRefusalDiffers) | 0 | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

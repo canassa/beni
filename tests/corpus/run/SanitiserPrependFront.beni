@@ -1,0 +1,85 @@
+-- A prepend whose front item the prepend itself computes cannot answer its
+-- base's own array (`ownership-v2.md` §2.3.4, *A deferred storage*; §2.13.2;
+-- #2325). Core's `cons` answers the base's array only by a re-cons: when the
+-- item put in front is `Js.same` as the element stored just before the
+-- base's view. A front that is a call's fresh list or record, or a literal,
+-- is an object that nothing but the prepend holds, so it is no element of
+-- any array, also when the base is computed after it. So the result is a
+-- new list, and extending it in place while the base is read is accepted:
+-- `called` (research 82's `Bike.update` line 56), `literal`, `record` and
+-- `tuple`. Each line prints the extended list's length and then the base's.
+import List
+import Node exposing (Program)
+import String
+
+
+make : Int → List Int
+make x = [ x, x ]
+
+
+omitLast : List (List Int) → List (List Int)
+omitLast trail =
+    case trail of
+        [ first, …rest ] →
+            [ List.drop first 2, …rest ]
+
+        other →
+            other
+
+
+called : Int, List (List Int), List (List Int) → String
+called x trail other =
+    walls = [ make x, …omitLast trail ] ++ other
+    "called ${String.fromInt (List.length walls)} ${String.fromInt (List.length trail)}"
+
+
+literal : Int, List (List Int) → String
+literal x trail =
+    top = [ [ x ], …omitLast trail ]
+    grown = List.push top [ x ]
+    "literal ${String.fromInt (List.length grown)} ${String.fromInt (List.length trail)}"
+
+
+type alias Box =
+    n : Int
+
+
+boxes : List Box → List Box
+boxes bs = List.drop bs 1
+
+
+boxOf : Int → Box
+boxOf x = { n = x }
+
+
+record : Int, List Box → String
+record x bs =
+    top = [ { n = x }, …boxes bs ]
+    grown = List.push top (boxOf x)
+    made = [ boxOf x, …boxes bs ]
+    more = List.push made (boxOf x)
+    "record ${String.fromInt (List.length grown)} ${String.fromInt (List.length more)} ${String.fromInt (List.length bs)}"
+
+
+pairs : List (Int × Int) → List (Int × Int)
+pairs ps = List.drop ps 1
+
+
+tuple : Int, List (Int × Int) → String
+tuple x ps =
+    top = [ ( x, x ), …pairs ps ]
+    grown = List.push top ( x, x )
+    "tuple ${String.fromInt (List.length grown)} ${String.fromInt (List.length ps)}"
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ called 1 [ [ 1, 2, 3 ], [ 4 ] ] [ [ 5 ] ]
+            , literal 1 [ [ 1, 2, 3 ], [ 4 ] ]
+            , record 1 [ { n = 1 }, { n = 2 } ]
+            , tuple 1 [ ( 1, 1 ), ( 2, 2 ) ]
+            ]
+            "\n"
+        )

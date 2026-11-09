@@ -25,6 +25,7 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
 const RefRead = @import("RefRead.zig");
+const Recons = @import("Recons.zig");
 const SlotWords = @import("SlotWords.zig");
 const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
@@ -270,7 +271,7 @@ pub const Eval = struct {
                 if (l.kind == .recons) {
                     // A prepend's own storage: its base's on a re-cons (§2.13.6).
                     const x = e.f.val(l.atom);
-                    if (try e.mayRecons(x)) try e.readSet(e.f.shallow.items[x.head - 1], t, pass, out);
+                    if (try Recons.may(e, x)) try e.readSet(e.f.shallow.items[x.head - 1], t, pass, out);
                     continue;
                 }
                 if (l.kind == .ref and l.extra != 0) l = (try e.f.resolveRef(l)) orelse continue;
@@ -301,59 +302,6 @@ pub const Eval = struct {
     /// a built list's or record's site, a reference's position itself.
     pub fn storageOf(e: *Eval, v: u32, tags: u32, out: *std.ArrayList(u32)) Error!void {
         try e.readSet(e.f.shallow.items[v], tags, 0, out);
-    }
-
-    /// Whether prepend `x` may answer its base's own array: a re-cons, when
-    /// the item put in front is `Js.same` as the element stored just before
-    /// the base's view. An object made after the base (a literal, a call's
-    /// fresh objects) is none of the base's, so it cannot be (`PrependFresh`).
-    fn mayRecons(e: *Eval, x: Value.Val) Error!bool {
-        const saved = e.pass;
-        e.pass = 0;
-        defer e.pass = saved;
-        const ks = e.f.kidsOf(x);
-        if (ks.len < 2) return true;
-        const birth = e.bornAt(x.head - 1);
-        var ls: std.ArrayList(u32) = .empty;
-        defer ls.deinit(e.gpa());
-        try e.leavesOf(ks[ks.len - 2], 0, &ls);
-        if (ls.items.len == 0) return true;
-        var depth: u32 = 0;
-        while (ls.items.len != 0) : (depth += 1) {
-            if (depth > 4) return true;
-            var next: std.ArrayList(u32) = .empty;
-            defer next.deinit(e.gpa());
-            for (ls.items) |li| {
-                const l = e.f.leafAt(li);
-                switch (l.kind) {
-                    .site => if (birth == none or l.atom <= birth) return true,
-                    .fresh => if (birth == none or e.f.calls.items[l.atom].point <= birth) return true,
-                    .ref => {
-                        if (!e.expandable(l) or e.f.roots.items[l.root].kind != .call) return true;
-                        if (birth == none or e.f.calls.items[e.f.roots.items[l.root].a].point <= birth) return true;
-                        try e.expand(li, &next);
-                    },
-                    else => return true,
-                }
-            }
-            std.mem.swap(std.ArrayList(u32), &ls, &next);
-        }
-        return false;
-    }
-
-    /// The point value `v` was made at: a parameter's before every point,
-    /// a call's at the call, a built one at its instruction; `none` unknown.
-    fn bornAt(e: *Eval, v: u32) u32 {
-        const x = e.f.val(v);
-        return switch (x.kind) {
-            .ref => switch (e.f.roots.items[x.root].kind) {
-                .param => 0,
-                .call => e.f.calls.items[e.f.roots.items[x.root].a].point,
-                else => none,
-            },
-            .built => if (x.site != none) x.site else none,
-            else => none,
-        };
     }
 
     // ---- projection of an arrival onto a value -------------------------------
@@ -1267,7 +1215,7 @@ pub const Eval = struct {
             return;
         }
         const got = try e.expanding.getOrPut(e.gpa(), .{li});
-        // A fill expands only in `mayRecons`, an item older than its list,
+        // A fill expands only in `Recons.may`, an item older than its list,
         // so outside a group points fall and no leaf is met while it
         // expands. Reaching one would keep a key that read nothing of it.
         if (got.found_existing and got.value_ptr.* == 1) {
