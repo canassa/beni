@@ -239,10 +239,11 @@
 //                               `(threw: <its first line>)` instead of the
 //                               end of the run, and none is a failure
 //
-// The page's clock is virtual from the start: `Date.now()` is 0 until an
-// `advance` or `frame` step moves it, a `setTimeout` callback runs only when
-// such a step reaches its time, and a `requestAnimationFrame` callback only
-// when a `frame` step draws a frame — in Chrome as in happy-dom.
+// The page's clock is virtual from the start: `Date.now()` and
+// `performance.now()` are 0 until an `advance` or `frame` step moves them,
+// a `setTimeout` callback runs only when such a step reaches its time, and
+// a `requestAnimationFrame` callback only when a `frame` step draws a
+// frame — in Chrome as in happy-dom.
 //
 // A step's page is the page once all the work core's scheduler queued for
 // the step has run, in both DOMs: its microtasks, then turns of the event
@@ -426,6 +427,14 @@ function prelude() {
   };
   globalThis.clearInterval = globalThis.clearTimeout;
   Date.now = () => clock.now;
+  // So is `performance.now()`, which `Clock.elapsed` reads on the real
+  // clock: it reads the same virtual time, as the fuzzer's pin does. It is
+  // the page's own property, which shadows the host's `Performance`
+  // method; a happy-dom page shares Node's `performance` with the driver,
+  // and its `close` deletes the property again. The driver keeps the
+  // host's reading for itself, for a real deadline.
+  clock.realNow = globalThis.performance.now.bind(globalThis.performance);
+  Object.defineProperty(globalThis.performance, "now", { configurable: true, writable: true, value: () => clock.now });
   // The page's frames are virtual too: a `requestAnimationFrame` callback
   // runs only when a `frame` step draws a frame, in both DOMs, so how many
   // frames a page asks for, and what each sends, is the script's and not
@@ -1144,13 +1153,14 @@ function step(s) {
   if (s.command === "click-wait") {
     const clicked = step({ ...s, command: "click" });
     if (clicked !== null) return clicked;
-    const now = globalThis.performance.now();
+    const realNow = globalThis.__beniHarness.clock.realNow;
+    const now = realNow();
     return new Promise((resolve) => {
       const poll = () => {
         if (globalThis.__beniHarness.errors.length !== 0) return resolve(null);
         const target = document.querySelector(s.target);
         if (target !== null && target.textContent === s.text) return resolve(null);
-        if (globalThis.performance.now() - now >= 5000) return resolve(`click-wait: ${s.target} did not become ${JSON.stringify(s.text)}`);
+        if (realNow() - now >= 5000) return resolve(`click-wait: ${s.target} did not become ${JSON.stringify(s.text)}`);
         globalThis.__beniHarness.clock.real(poll, 5);
       };
       poll();
@@ -2713,6 +2723,7 @@ async function happyDomPage(domPath) {
       globalThis.clearTimeout = nodeTimers.clearTimeout;
       globalThis.setInterval = nodeTimers.setInterval;
       globalThis.clearInterval = nodeTimers.clearInterval;
+      delete globalThis.performance.now;
       // Every page shares Node's global object, and a browser gives each
       // page a fresh one: so every global the page's own code set there —
       // a `--fuzz` build's `__beniFuzzSend` — goes with it. A program that

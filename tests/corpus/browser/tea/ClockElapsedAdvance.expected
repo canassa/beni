@@ -1,0 +1,23 @@
+-- load
+<body>
+  <main>
+    <p id="elapsed">"read 0: -1 ms"</p>
+    <button id="read">"read"</button>
+  </main>
+</body>
+-- click #read
+<body>
+  <main>
+    <p id="elapsed">"read 1: 0 ms"</p>
+    <button id="read">"read"</button>
+  </main>
+</body>
+-- advance 250
+(the DOM did not change)
+-- click #read
+<body>
+  <main>
+    <p id="elapsed">"read 2: 250 ms"</p>
+    <button id="read">"read"</button>
+  </main>
+</body>
