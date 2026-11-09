@@ -50,6 +50,7 @@ pub fn operands(c: LabelChain.Chain, q: u32, answer: bool, out: *std.ArrayList(u
             if (it[i] != o[0] or it[i + 1] == o[1]) continue;
             try out.append(gpa, try f.refRoot(f.calls.items[c.known.values.items[i / 2]].root));
         }
+        try c.alts.beside(f, o[0], cur, out); // An `alt`'s known codes (#2322).
         cur = o[0];
     }
 }

@@ -91,7 +91,12 @@ fn atLabel(st: *State, e: *Evaluation, x: u32, q: u32, li: u32, n: Effect) Error
     const call = f.calls.items[q];
     const l = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[li];
     if (l.j >= call.args.len or !try st.first(e.gpa(), .{ x, q, li, n.slot, @intFromBool(n.deep), none })) return false;
-    if (e.ev.known.get(.{ q, li })) |v| return discharge(st, e, x, q, l, v, n);
+    // Each known code the label is applied to, one or an `alt`'s (#2322).
+    if (e.ev.alts.codes(&e.ev.known, q, li)) |r| {
+        var new = false;
+        for (r[0]..r[0] + r[1]) |v| new = try discharge(st, e, x, q, l, @intCast(v), n) or new;
+        return new;
+    }
     if (e.ev.label_map.get(.{ q, li })) |c| return publish(&e.sink, c, n.slot, n.deep);
     const v = f.val(try e.ev.valueAt(call.args[l.j], f.slots.relWords(l.slot)));
     // A fixed contract, read as `wants` reads one. A code's closure is applied

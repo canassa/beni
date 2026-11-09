@@ -1,0 +1,136 @@
+-- A label whose function value is an `alt` of known codes, where one alternative would make an edit in place
+-- change a list something else still reads (`ownership-v2.md` §2.11.3): it answers a list the frame reads after (as
+-- an `if`'s arm and as a list literal's element), writes its capture under a label run twice or by a map over both,
+-- writes the argument the frame reads after, keeps its argument in its answer while the frame edits the argument, or answers its
+-- argument for the callee to edit. Each is refused; were it accepted, the sanitised run would read the list a write
+-- had pushed onto in place (#2322).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type V
+    = Ok
+    | Bad (List Int)
+
+
+pick : List (⊤ → V) → V
+pick ws =
+    case ws of
+        [] →
+            Ok
+
+        [ w, …_ ] →
+            w ⊤
+
+
+app : (⊤ → V) → V
+app g = g ⊤
+
+
+two : (⊤ → a) → a × a
+two h = ( h ⊤, h ⊤ )
+
+
+appTo : (List Int → Int), List Int → Int
+appTo g xs = g xs
+
+
+handBoth : (List Int → V), List Int → V × List Int
+handBoth g xs = ( g xs, xs )
+
+
+runAll : List (⊤ → Int) → List Int
+runAll ws = List.map ws λw → w ⊤
+
+
+vshow : V → String
+vshow v =
+    case v of
+        Ok →
+            "ok"
+
+        Bad l →
+            show l
+
+
+-- One alternative answers a list the frame still reads.
+answersShared : Bool → String
+answersShared b =
+    shared = [ 1 ]
+    f = if b then λ⊤ → Bad [ 0 ] else λ⊤ → Bad shared
+    case app f of
+        Bad xs →
+            "${show (List.push xs 2)} ${show shared}"
+
+        Ok →
+            show shared
+
+
+-- The same through a list literal's elements.
+answersSharedList : Int → String
+answersSharedList n =
+    shared = [ n ]
+    case pick [ λ⊤ → Ok, λ⊤ → Bad shared ] of
+        Bad xs →
+            "${show (List.push xs 2)} ${show shared}"
+
+        Ok →
+            show shared
+
+
+-- One alternative writes its capture, and the code runs twice.
+runsTwice : Bool → String
+runsTwice b =
+    ys = [ 1 ]
+    f = if b then λ⊤ → List.length ys else λ⊤ → List.length (List.push ys 1)
+    ( p, q ) = two f
+    "${String.fromInt p} ${String.fromInt q}"
+
+
+-- One alternative writes its capture, run by a map over both.
+runsEach : Int → String
+runsEach n =
+    ys = [ n ]
+    String.join
+        (List.map (runAll [ λ⊤ → List.length ys, λ⊤ → List.length (List.push ys 1) ]) String.fromInt
+        )
+        ","
+
+
+-- One alternative writes a list the frame still reads.
+writesShared : Bool → String
+writesShared b =
+    xs = [ 1 ]
+    r = appTo (if b then λl → List.length l else λl → List.length (List.push l 2)) xs
+    "${String.fromInt r} ${show xs}"
+
+
+-- One alternative keeps its argument in its answer, which the frame reads after editing the argument.
+keepsArg : Bool → String
+keepsArg b =
+    ( v, ys ) = handBoth (if b then λ_ → Ok else λl → Bad l) [ 1 ]
+    zs = List.push ys 9
+    "${vshow v} ${show zs}"
+
+
+editAns : (List Int → List Int), List Int → List Int
+editAns g xs = List.push (g xs) 1
+
+
+-- One alternative answers its argument, which the frame still reads; the callee edits the answer.
+answersArg : Bool → String
+answersArg b =
+    xs = [ 1 ]
+    r = editAns (if b then λ_ → [ 0 ] else λl → l) xs
+    "${show r} ${show xs}"
+
+
+main : Program
+main =
+    Node.print
+        "${answersShared False} ${answersSharedList 1} ${runsTwice False} ${runsEach 1} ${writesShared False} ${keepsArg False} ${answersArg False}"

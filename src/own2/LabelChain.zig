@@ -13,6 +13,7 @@ const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const RowEnv = @import("RowEnv.zig");
 const Value = @import("Value.zig");
+const AltCodes = @import("AltCodes.zig");
 
 const Allocator = std.mem.Allocator;
 const Error = Value.Error;
@@ -24,6 +25,7 @@ const Error = Value.Error;
 pub const Chain = struct {
     f: *Value.Frame,
     known: *const Ids.FixedDict(2),
+    alts: *const AltCodes.Table,
     applied: *const std.ArrayList([2]u32),
     contracts: *Contract.Table,
     arena: Allocator,

@@ -1,0 +1,149 @@
+-- A label whose function value is an `alt` of known codes (`ownership-v2.md` §2.11.3, *At a caller where the
+-- label's function value is known*): an `if` or a `case` that chooses the code, a list literal of codes picked, a
+-- recursive walker that returns the code it runs (`RecursiveFunctions`), an alternative that edits its own argument,
+-- one that writes its capture and runs once, and one whose argument the callee edits as its answer. The label is
+-- applied to each code, and each edit is accepted in place; the sanitised run prints the same (#2322).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type V
+    = Ok
+    | Bad (List Int)
+
+
+pick : List (⊤ → V) → V
+pick ws =
+    case ws of
+        [] →
+            Ok
+
+        [ w, …_ ] →
+            w ⊤
+
+
+firstOf : List (⊤ → V) → (⊤ → V)
+firstOf works =
+    λ⊤ →
+        case works of
+            [] →
+                Ok
+
+            [ work, …rest ] →
+                case work ⊤ of
+                    Ok →
+                        (firstOf rest) ⊤
+
+                    bad →
+                        bad
+
+
+app : (⊤ → V) → V
+app g = g ⊤
+
+
+appTo : (List Int → Int), List Int → Int
+appTo g xs = g xs
+
+
+editAns : (List Int → List Int), List Int → List Int
+editAns g xs = List.push (g xs) 1
+
+
+vshow : V → String
+vshow v =
+    case v of
+        Ok →
+            "ok"
+
+        Bad l →
+            show l
+
+
+-- An `if` chooses between two codes; each answers nothing the frame holds.
+chosen : Bool → String
+chosen b =
+    f = if b then λ⊤ → Ok else λ⊤ → Bad [ 1 ]
+    case app f of
+        Bad xs →
+            show (List.push xs 2)
+
+        Ok →
+            "ok"
+
+
+-- A case chooses among three codes, one of them a capture's fresh copy.
+cased : Int → String
+cased n =
+    k = [ n ]
+    f =
+        case n of
+            0 →
+                λ⊤ → Ok
+
+            1 →
+                λ⊤ → Bad [ 7 ]
+
+            _ →
+                λ⊤ → Bad (List.copy k)
+    case app f of
+        Bad xs →
+            "${show (List.push xs 2)} ${show k}"
+
+        Ok →
+            show k
+
+
+-- A list literal's elements, picked.
+picked : Int → String
+picked n =
+    case pick [ λ⊤ → Ok, λ⊤ → Bad [ n ] ] of
+        Bad xs →
+            show (List.push xs 2)
+
+        Ok →
+            "ok"
+
+
+-- A recursive walker of the list returns the code it runs (RecursiveFunctions).
+walked : Int → String
+walked n =
+    case (firstOf [ λ⊤ → Ok, λ⊤ → Bad [ n ] ]) ⊤ of
+        Bad xs →
+            show (List.push xs 2)
+
+        Ok →
+            "ok"
+
+
+-- One alternative edits its argument, a list nothing else holds.
+writesOwn : Bool → String
+writesOwn b =
+    r = appTo (if b then λl → List.length l else λl → List.length (List.push l 2)) [ 1 ]
+    String.fromInt r
+
+
+-- One alternative writes its capture, and the code runs once.
+captureOnce : Bool → String
+captureOnce b =
+    ys = [ 1 ]
+    f = if b then λ⊤ → Ok else λ⊤ → Bad (List.push ys 3)
+    vshow (app f)
+
+
+-- One alternative answers its argument, which nothing else reads; the callee edits the answer.
+answersDead : Bool → String
+answersDead b =
+    r = editAns (if b then λ_ → [ 0 ] else λl → l) [ 1 ]
+    show r
+
+
+main : Program
+main =
+    Node.print
+        "${chosen False} ${chosen True} ${cased 0} ${cased 1} ${cased 2} ${picked 4} ${walked 5} ${writesOwn False} ${writesOwn True} ${captureOnce False} ${captureOnce True} ${answersDead False} ${answersDead True}"
