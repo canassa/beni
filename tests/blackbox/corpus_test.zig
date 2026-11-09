@@ -97,7 +97,9 @@
 //! `BENI_BROWSER=chrome` (`zig build test-browser`) walks `browser/` alone
 //! and runs every page in one headless Chrome instead of happy-dom, against
 //! the same goldens — or a fixture's `.chrome-expected`, where the two DOMs
-//! are known to differ — never skipping a page and never recording.
+//! are known to differ — never skipping a page and never recording. It runs
+//! no page fuzz and no value-fuzz case: those run under happy-dom in the
+//! gates alone (the owner, 2026-11-09, #2340).
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -837,9 +839,11 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         // build, both with `--fuzz`, messages as values. The page case
         // keeps its own fuzz of view events. `no-value-fuzz.txt` names the
         // pages that are not, each with its reason, and fails closed: a
-        // line that names no page is stale and fails the walk.
+        // line that names no page is stale and fails the walk. Chrome has
+        // no value-fuzz cases: the fuzz runs under happy-dom in the gates
+        // alone (the owner, 2026-11-09, #2340).
         const end = fixtures.items.len;
-        if (cfg.mode == .strict) {
+        if (cfg.mode == .strict and cfg.chrome == null) {
             var excluded = try noValueFuzz(arena, tea_dir);
             for (start..end) |i| {
                 const fixture = fixtures.items[i];
@@ -3547,7 +3551,12 @@ const Case = struct {
     /// the pair is two more builds made with it, and the message types are
     /// dumped; until then it is two development builds, and the fuzz is
     /// view and host events.
+    ///
+    /// Null under Chrome (`zig build test-browser`), which fuzzes nothing.
     fn fuzzPair(c: Case, pages: [3]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8) !?browser.Fuzz {
+        // Chrome runs a page case's pages and no fuzz: the fuzz runs under
+        // happy-dom in the gates alone (the owner, 2026-11-09, #2340).
+        if (c.cfg.chrome != null) return null;
         const platform = c.fixture.platform orelse return null;
         if (!std.mem.eql(u8, platform, "browser-tea")) return null;
         // A page case fuzzes the two pages it built; a value-fuzz case
