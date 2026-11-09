@@ -23,6 +23,7 @@ const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
 const FnSite = @import("FnSite.zig");
+const CaptureRuns = @import("CaptureRuns.zig");
 
 const none: u32 = Ids.none_int;
 
@@ -100,21 +101,10 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
             });
         }
     }
-    // A known code's capture write at a label that may call it again.
+    // A known code's capture write at a label that may call it again, also one made through a label it applies (#2395).
     for (e.demands.items) |*d| {
-        if (d.call == none or d.call >= f.calls.items.len) continue;
-        const call = f.calls.items[d.call];
-        if (!call.virtual or call.callee_val == none or d.arg == none) continue;
-        const own = call.args.len - f.kidsOf(f.val(call.callee_val)).len;
-        if (d.arg < own or d.cell) continue;
-        const outer = @import("LabelChain.zig").virtualOuter(e.chain(), d.call) orelse continue;
-        const labels = e.contracts.labelsOf(e.contracts.head(f.calls.items[outer[0]].contract).labels);
-        const lab = labels[outer[1]];
-        var same: u32 = 0;
-        for (labels) |l| {
-            if (l.j == lab.j and l.slot == lab.slot) same += 1;
-        }
-        if (lab.calls == .many or same > 1) d.many = true;
+        if (d.call == none or d.call >= f.calls.items.len or d.arg == none or d.cell) continue;
+        if (try CaptureRuns.many(e.chain(), d.call, d.arg)) d.many = true;
     }
 }
 

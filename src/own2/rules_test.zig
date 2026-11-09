@@ -153,11 +153,11 @@ const layers = [_]Entry{
     .{ .file = "CallFolds.zig", .layer = 6, .max_lines = 150 },
     // A deep need read at the folds above its slot, split from `Needs` (§2.1, *One below*).
     .{ .file = "NeedFolds.zig", .layer = 6, .max_lines = 35 },
+    // A `fed` answer through the known codes a code's labels run (#2395).
+    .{ .file = "FedThrough.zig", .layer = 6, .max_lines = 150 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
-    // A `fed` answer through the known codes a code's labels run (#2395).
-    .{ .file = "FedThrough.zig", .layer = 6, .max_lines = 150 },
     // What a known code's run keeps of an argument a later run is handed, split from `SelfFed` (#2367).
     .{ .file = "RunKeeps.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "HeldBy.zig", .layer = 7, .max_lines = 50 },
@@ -247,6 +247,8 @@ const layers = [_]Entry{
     .{ .file = "Virtual.zig", .layer = 9, .max_lines = 70 },
     // What a callee holds across a run of a known code it is handed (#1955).
     .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
+    // A known code's capture written through a label it applies, split from `Closures` (#2395).
+    .{ .file = "CaptureRuns.zig", .layer = 9, .max_lines = 80 },
     // What a cell callback's write-back makes escape, from `Eval` (#1729, #1955).
     .{ .file = "Stored.zig", .layer = 9, .max_lines = 65 },
     // A cell callback's label, and what it answers: a loan of the cell or
@@ -872,7 +874,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 162), layers.len);
+    try testing.expectEqual(@as(usize, 163), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
