@@ -1,0 +1,68 @@
+-- `SanitiserLevelCaller` in a group (`ownership-v2.md` §2.1, §2.12, #2223): `go` and `hg` call each other, so `go` reads
+-- `hg`'s draft while the group is solved; the validation round reads `hg`'s candidate as a contract, says the
+-- fold a type variable closes at `G R`, and `go` writes its parameter there. `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a
+    = GL a
+    | GP (G a) Int
+
+
+type R
+    = RL (List Int)
+    | RW (G R)
+
+
+wrG : G R → Int
+wrG t =
+    case t of
+        GL r →
+            wrR r
+        GP u _ →
+            wrG u
+
+
+wrR : R → Int
+wrR t =
+    case t of
+        RL xs →
+            List.length (List.push xs 1)
+        RW u →
+            wrG u
+
+
+wrM : Maybe (G R) → Int
+wrM t =
+    case t of
+        Just u →
+            wrG u
+        Nothing →
+            0
+
+
+go : G R, Int → Int
+go v n = wrM (hg v n)
+
+
+hg : G a, Int → Maybe (G a)
+hg t n =
+    case t of
+        GP (GL m) _ →
+            if n > 100 then
+                if go (GP (GL (RL [])) 0) (n - 1) > 0 then Nothing else Just (GP (GL m) 0)
+            else
+                Just (GP (GL m) 0)
+        _ →
+            Nothing
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GL (RW (GL (RL k)))) 0
+    a = go v 1
+    Node.print (String.fromInt (a + List.length k))

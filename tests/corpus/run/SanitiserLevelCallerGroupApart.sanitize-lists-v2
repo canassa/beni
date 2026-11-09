@@ -1,0 +1,1 @@
+v2 keeps a list below a caller's fold in a group in place when it is not live (§2.1, §2.12, #2223): built again under --ownership=v2 and the sanitiser.
