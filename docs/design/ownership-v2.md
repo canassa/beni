@@ -2250,7 +2250,7 @@ cut*). Every `List.foldl xs [ [ 0 ] ] λk acc → List.update acc 0 λl → List
 the fold, and so was the same fold through `List.map acc …`, a helper, `foldr` and a hand-written fold. A run is handed
 the first value **or** an earlier run's answer, one of them, never both. So where the call's own arguments do not give
 the condition, it is asked again (`SelfFed.zig`) with supply `k` read through its **twin**: a root of its own that reads
-every arrival of the supply but `cb L` (`Relation.Eval.selfAnswer`). `v`'s separation is `K`'s `res_cond` on the twin,
+every arrival of the supply but `cb L` (`Value.Frame.selfAnswer`). `v`'s separation is `K`'s `res_cond` on the twin,
 and `K`'s `req` is the `req` on the twin conjoined with the distinct check of `v`'s answer, deep, which reads that
 separation. The twin is made only where:
 

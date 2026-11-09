@@ -24,6 +24,7 @@ pub const SetId = Slots.SetId;
 pub const Error = Ids.ChargeError;
 pub const Step = Place.Step;
 const Steps = @import("Steps.zig");
+const Trees = @import("Trees.zig");
 pub const PKind = Steps.PKind;
 pub const Pos = Steps.Pos;
 pub const Rel = Steps.Rel;
@@ -285,6 +286,16 @@ pub const Frame = struct {
     }
 
     // ---- roots and positions -------------------------------------------------
+
+    /// The root call `call`'s result (`which` none) or its supply `which` is read at.
+    pub fn rootOf(f: *const Frame, call: u32, which: u32) u32 {
+        return if (which == none) f.calls.items[call].root else f.supplies.items[which].root;
+    }
+
+    /// A twin supply's arrival of its label's own answer, which it never reads (`SelfFed`).
+    pub fn selfAnswer(f: *const Frame, which: u32, a: Trees.Arrival) bool {
+        return which != none and a.kind == .cb and a.j == f.supplies.items[which].no_self;
+    }
 
     pub fn addRoot(f: *Frame, kind: RootKind, a: u32, place: PlaceId) Error!u32 {
         const path = try f.places.rootPath(f.gpa, place);

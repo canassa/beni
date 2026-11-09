@@ -85,7 +85,7 @@ fn keepsNothing(e: *Eval, kc: Contract.Id, k: u32) Error!bool {
 }
 
 /// The twin of supply root `r`, made once: a root of its own that reads
-/// every arrival but label `li`'s answer (`Relation.Eval.selfAnswer`).
+/// every arrival but label `li`'s answer (`Value.Frame.selfAnswer`).
 fn twinOf(e: *Eval, r: u32, li: u32) Error!u32 {
     const si = e.f.roots.items[r].a;
     if (e.f.supplies.items[si].twin != none) return e.f.supplies.items[si].twin;
