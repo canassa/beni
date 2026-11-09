@@ -1,0 +1,63 @@
+-- The twin of `SanitiserLevelCallerTwoVars`: the list below the caller's fold is not `k`, so the edit in place is accepted.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a b
+    = GL a
+    | GR b
+    | GP (G a b) Int
+
+
+type R
+    = RL (List Int)
+    | RW (G Int R)
+
+
+wrG : G Int R → Int
+wrG t =
+    case t of
+        GL n →
+            n
+        GR r →
+            wrR r
+        GP u _ →
+            wrG u
+
+
+wrR : R → Int
+wrR t =
+    case t of
+        RL xs →
+            List.length (List.push xs 1)
+        RW u →
+            wrG u
+
+
+wrM : Maybe (G Int R) → Int
+wrM t =
+    case t of
+        Just u →
+            wrG u
+        Nothing →
+            0
+
+
+hg : G a b → Maybe (G a b)
+hg t =
+    case t of
+        GP (GR m) _ →
+            Just (GP (GR m) 0)
+        _ →
+            Nothing
+
+
+main : Program
+main =
+    k = [ 1 ]
+    j = [ 2 ]
+    v = GP (GR (RW (GR (RL j)))) 0
+    a = wrM (hg v)
+    Node.print (String.fromInt (a + List.length k))

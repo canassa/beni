@@ -1,0 +1,63 @@
+-- `SanitiserLevelCaller` with two type variables (`ownership-v2.md` §2.1, #2223): `b` closes the cycle at
+-- `G Int R`, and `a` does not; the arrival at `b` is said at the caller's fold, and `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type G a b
+    = GL a
+    | GR b
+    | GP (G a b) Int
+
+
+type R
+    = RL (List Int)
+    | RW (G Int R)
+
+
+wrG : G Int R → Int
+wrG t =
+    case t of
+        GL n →
+            n
+        GR r →
+            wrR r
+        GP u _ →
+            wrG u
+
+
+wrR : R → Int
+wrR t =
+    case t of
+        RL xs →
+            List.length (List.push xs 1)
+        RW u →
+            wrG u
+
+
+wrM : Maybe (G Int R) → Int
+wrM t =
+    case t of
+        Just u →
+            wrG u
+        Nothing →
+            0
+
+
+hg : G a b → Maybe (G a b)
+hg t =
+    case t of
+        GP (GR m) _ →
+            Just (GP (GR m) 0)
+        _ →
+            Nothing
+
+
+main : Program
+main =
+    k = [ 1 ]
+    v = GP (GR (RW (GR (RL k)))) 0
+    a = wrM (hg v)
+    Node.print (String.fromInt (a + List.length k))

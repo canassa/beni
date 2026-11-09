@@ -565,7 +565,7 @@ fn wholeAtoms(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: Put.ResLis
     const r = f.roots.items[l.root];
     if (r.kind != .call or l.tags != 0 or out.label != none or e.w.code.called != null) return false;
     const cl = f.calls.items[r.a];
-    if (cl.contract == none) return false;
+    if (cl.contract == none or (try @import("CallFolds.zig").of(&e.ev, r.a, none)).len != 0) return false;
     if (e.ev.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
     const pk = f.places.kind(f.places.pathPlace(sl));
     if (pk == .@"var" or pk == .@"opaque" or f.places.pathPlace(sl) != f.places.pathPlace(dest)) return false;

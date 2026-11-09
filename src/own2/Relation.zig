@@ -30,6 +30,7 @@ const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const PastPayload = @import("PastPayload.zig");
 const ArriveAt = @import("ArriveAt.zig");
+const CallFolds = @import("CallFolds.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -177,6 +178,7 @@ pub const Eval = struct {
     below_has: Ids.FixedDict(3) = .{},
     /// Per call root's path: the caller slots of its callee's entries.
     slot_cols: Dests.Reads(1) = .{},
+    call_folds: CallFolds.Memo = .{}, // What a callee's open arrivals say at this caller's folds.
     inst_depth: u32 = 0,
     /// A read-off pass (§2.3.4 *Reading*): 0 when none.
     pass: u32 = 0,
@@ -227,6 +229,7 @@ pub const Eval = struct {
         e.below_memo.deinit(g);
         e.below_has.deinit(g);
         e.slot_cols.deinit(g);
+        e.call_folds.deinit(g);
     }
 
     pub fn charge(e: *Eval, cat: Ids.Category, n: u32) Error!void {
@@ -471,6 +474,7 @@ pub const Eval = struct {
         const call = e.f.calls.items[r.a];
         if (call.contract == none) return false;
         if (e.live) |lv| if (call.code != none and lv.draftRes(lv.ctx, call.code) != null) return false;
+        if ((try CallFolds.of(e, r.a, none)).len != 0) return false; // read whole, through its key
         const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), t));
         var arrs: std.ArrayList(struct { a: Contract.Arrival, n: usize }) = .empty;
         defer arrs.deinit(e.gpa());
@@ -644,7 +648,7 @@ pub const Eval = struct {
             const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), slot));
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
-            try e.hitsAt(e.resRoot(c, which), words, &hits);
+            try CallFolds.hits(e, call, c, which, words, &hits);
             for (hits.items) |hit| for (hit.arrivals) |a| if (!e.selfAnswer(which, a)) try ArriveAt.at(e, call, c, a, slot, hit.open, words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
@@ -711,7 +715,7 @@ pub const Eval = struct {
         } else if (e.contractOf(call)) |c| {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
-            try e.hitsAt(e.resRoot(c, which), words, &hits);
+            try CallFolds.hits(e, call, c, which, words, &hits);
             for (hits.items) |hit| for (hit.arrivals) |a| if (!e.selfAnswer(which, a)) try e.feed(ki, a, hit.depth, hit.open);
         } else if (!@import("Mutate.zig").on(.inst_live_no_contract_empty)) try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
         e.cur_sub = sub;
@@ -785,6 +789,7 @@ pub const Eval = struct {
                 };
                 n = on orelse break;
             }
+            try CallFolds.below(e, ki, call, which, pw);
         } else if (!@import("Mutate.zig").on(.inst_below_no_contract_empty)) try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
         e.keys.items[ki].filling = false;
         e.inst_depth -= 1;
@@ -977,6 +982,7 @@ pub const Eval = struct {
         const cl = e.f.calls.items[r.a];
         if (cl.contract == none) return false;
         if (e.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
+        if ((try CallFolds.of(e, r.a, none)).len != 0) return false;
         const xw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sls[0])));
         const root = e.contracts.head(cl.contract).res_root;
         // Nothing may be said below the slot, nor plainly at it.

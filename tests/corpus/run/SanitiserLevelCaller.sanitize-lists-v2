@@ -1,0 +1,1 @@
+v2 refuses a write below a fold a type variable closes at the caller, above a result's arrival (§2.1, #2223): built again under --ownership=v2 and the sanitiser.
