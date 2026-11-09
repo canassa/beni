@@ -1052,21 +1052,18 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     // (`Types.Builder.aliases`) — either alone keeps it linear, and without
     // both the check does not finish. So every form is one message at
     // once: the alias met directly inside itself, and met again through a
-    // second alias further out. The 3 s limit is the assertion that nothing
-    // grew: the check takes milliseconds.
+    // second alias further out. That nothing grew is `perf_test.zig`'s 3 s
+    // bound on the same sources (#2272): the check takes milliseconds.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const sources = [_][]const u8{
-        "type alias A =\n    A × A\n\n\nf : A → Int\nf p =\n    0\n",
-        "type alias A =\n    B × B\n\n\ntype alias B =\n    { p : A }\n\n\nf : A → Int\nf p =\n    0\n",
-    };
+    const sources = support.recursive_alias_sources;
     for (sources) |source| {
         try w.write("Main.beni", source);
 
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const r = try w.runWith(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" }, .{ .timeout_ms = 3_000 });
+        const r = try w.run(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" });
 
         // ┌─────────────────────────────────────────┐
         // │ VERIFY OUTPUT                           │
@@ -1323,7 +1320,8 @@ test "a row of glued siblings past the line's width formats to output linear in 
 // `ColumnIndex` answers "which rows share this head" in one pass. The same
 // width must also answer a MISSING constructor, a REDUNDANT branch and
 // branches the table cannot take (`C{i} 0`) in linear time: one scenario
-// each.
+// each. The time bound is `perf_test.zig`'s 20 s on the same
+// sources (#2272).
 test "a case over every constructor of a 2 000-constructor type checks" {
     try wideConstructorCase(.every);
 }
@@ -1340,7 +1338,7 @@ test "a case over 2 000 constructors with literal arguments and a default checks
     try wideConstructorCase(.literals_then_default);
 }
 
-const WideCaseVariant = enum { every, missing_last, redundant, literals_then_default };
+const WideCaseVariant = support.WideCaseVariant;
 
 fn wideConstructorCase(variant: WideCaseVariant) !void {
     // ┌─────────────────────────────────────────┐
@@ -1351,27 +1349,14 @@ fn wideConstructorCase(variant: WideCaseVariant) !void {
     const gpa = testing.allocator;
     const n = 2_000;
     {
-        var src: std.ArrayList(u8) = .empty;
-        defer src.deinit(gpa);
-        try src.appendSlice(gpa, "type T\n    = C0 Int\n");
-        for (1..n) |i| try src.print(gpa, "    | C{d} Int\n", .{i});
-        try src.appendSlice(gpa, "\n\nf : T → Int\nf t =\n    case t of\n");
-        const listed: usize = if (variant == .missing_last) n - 1 else n;
-        for (0..listed) |i| switch (variant) {
-            .literals_then_default => try src.print(gpa, "        C{d} 0 →\n            0\n\n", .{i}),
-            else => try src.print(gpa, "        C{d} x →\n            x\n\n", .{i}),
-        };
-        switch (variant) {
-            .redundant => try src.appendSlice(gpa, "        C7 y →\n            y\n"),
-            .literals_then_default => try src.appendSlice(gpa, "        _ →\n            1\n"),
-            .every, .missing_last => {},
-        }
-        try w.write("Main.beni", src.items);
+        const src = try support.wideCaseSource(gpa, variant, n);
+        defer gpa.free(src);
+        try w.write("Main.beni", src);
 
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const r = try w.runWith(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" }, .{ .timeout_ms = 20_000 });
+        const r = try w.run(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
