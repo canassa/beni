@@ -4,8 +4,8 @@
 -- `len` check traps it. v2 refuses the fold; a compiler that accepted it
 -- printed `4;0,1,2,3` here, with no trap, instead of `3;0,1,2,3`.
 import List
-import Ref exposing (Ref)
 import Node exposing (Program)
+import Ref exposing (Ref)
 import String
 
 
