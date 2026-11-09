@@ -13,6 +13,10 @@
   a label a known code applies, in a code run twice (`two (mk [ 1 ] push1)`, `mk y g = λ⊤ → g y`). The same shape with a
   local closure (`two λ⊤ → f y`) trapped on master too. `CaptureRuns.many` follows an own-parameter write outward and
   refuses it `once` where it reaches a capture of a code run more than once.
+- The final review found the same class through another label's answer (`λ⊤ → f (g ⊤)`, `g = λ⊤ → y`), trapping on
+  master as well: `CaptureRuns` now reads such an arrival through the known code that label applies. The s6m movers then
+  showed `Task.raceOk` thunks: a worded row hands its argument back and runs it in fibers no label names, so the
+  hand-back escape stays for worded rows and fixed contracts.
 - #2394: stopped at a spec decision. Its cause is §2.11.3's own rule ("a returned writer stays refused at the return"),
   not an indexing fault. The recommendation (a carried-writer invariant beside `NeedCarry`) is on the issue.
 - Filed #2407: a let-bound lambda handed through a composition to a fold is still refused (its nested virtual call is
