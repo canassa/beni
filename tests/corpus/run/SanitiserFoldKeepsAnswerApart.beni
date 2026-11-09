@@ -1,0 +1,97 @@
+-- The safe twins of SanitiserFoldKeepsAnswer (`ownership-v2.md` §2.11.3, *a
+-- label's answer handed back to it*): a fold whose callback writes its
+-- accumulator in place and keeps something past its run that no later run
+-- writes: an `Int`, a copy of its answer, a count in a cell of `Int`, an
+-- element it is handed and never puts in the answer, or a fresh list it hands
+-- to a function the fold's caller gives, or another such function's answer;
+-- and one that keeps its accumulator and writes nothing. v2 accepts each
+-- fold; the sanitised run prints the same.
+import Io
+import List
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+scalar : ⊤ → List (List Int)
+scalar ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+    _ = Task.soon λ⊤ → say ("scalar " ++ String.fromInt x)
+    a
+
+
+copied : ⊤ → List (List Int)
+copied ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    a = List.push acc [ x ]
+    c = List.copy a
+    _ = Task.soon λ⊤ → say ("copied " ++ shows c)
+    a
+
+
+counted : ⊤ → List (List Int)
+counted ⊤ =
+    n = Ref.make 0
+
+    r = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+        Ref.update n λi → i + 1
+        List.push acc [ x ]
+
+    say ("counted " ++ String.fromInt (Ref.get n))
+    r
+
+
+element : ⊤ → List (List Int)
+element ⊤ = List.foldl [ [ 1 ], [ 2 ] ] [ [ 0 ] ] λx acc →
+    _ = Task.soon λ⊤ → say ("element " ++ show x)
+    List.update acc 0 λm → List.push m 5
+
+
+unwritten : ⊤ → List (List Int)
+unwritten ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λ_ acc →
+    _ = Task.soon λ⊤ → say ("unwritten " ++ shows acc)
+    acc
+
+
+keep : List Int → ⊤
+keep a =
+    _ = Task.soon λ⊤ → say ("handed " ++ show a)
+    ⊤
+
+
+-- The fold's callback hands `g`, which `main` gives, a list of its own.
+handed : (List Int → ⊤) → List (List Int)
+handed g = List.foldl [ 1, 2 ] [ [ 0 ] ] λx acc →
+    g [ x ]
+    List.push acc [ x ]
+
+
+-- The callback hands `g` what `f` answers; the answer holds `g`'s answer
+-- only below the slot the push writes.
+chained : List Int, (List Int → List Int), (List Int → List Int) → List (List Int)
+chained x f g = List.foldl [ 1, 2 ] [] λ_ acc → List.push acc (g (f x))
+
+
+main : Program
+main = Io.run λ⊤ →
+    say (shows (scalar ⊤))
+    say (shows (copied ⊤))
+    say (shows (counted ⊤))
+    say (shows (element ⊤))
+    say (shows (unwritten ⊤))
+    say (shows (handed keep))
+    say (shows (chained [ 7 ] (λw → List.copy w) λl → List.push l 3))
+    Io.sleep 1
+    Node.done

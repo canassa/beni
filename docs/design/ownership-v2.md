@@ -2263,7 +2263,7 @@ separation. The twin is made only where:
   (`( b, List.push a … )`), a record's fields swapped and a tree's depth 1 lifted to its root each move the first value's
   object at one slot to a slot whose pairs the twin read for another object (`run/SanitiserFoldAnswerFedSlot`,
   `self_fed_slot_off`);
-- and `K` keeps nothing a later run writes (`SelfFed.keepsNothing`): it has no store, writes no cell's `◆`, and no label
+- and `K` keeps nothing a later run writes (`RunKeeps.nothing`, amended by #2367 below): it has no store, writes no cell's `◆`, and no label
   of it is handed anything or lets its answer go; it has no escape (a cell's contents, a send, a closure that is kept) but
   of its argument `k`, and none of those at or above a slot of `k` it writes, or below a slot it writes open. Otherwise a
   part of a run's answer may also be held by a cell or a capture, and a later run edits that part in place through the
@@ -2290,6 +2290,42 @@ value (`run/SanitiserFoldAnswerFed`, `run/SanitiserFoldAnswerFedRefused`, `run/S
 `run/SanitiserFoldAnswerFedSlot`, `ownership/FoldAnswerFed`). Not by this rule: a
 fold whose first value is another fold's result, whose separation is not read at a family (#2339), and a hand-written
 recursion that hands `List.update`'s answer back as its own accumulator (#2338), both refused, sound.
+
+*Amended 2026-11-09 (#2367): **a `fed` answer keeps nothing.*** The `fed` occurrence above, decided at a known code `K`
+(`FedCall.at`), asked only what `K`'s answer holds: its argument `k`'s objects or fresh ones. The induction it rests on also
+needs that no run keeps an object of its answer that a later run writes, and only the twin asked that. So a fold whose
+callback writes its accumulator in place and keeps its answer past its run was accepted on the plain path: `List.foldl [ 1, 2 ]
+[ [ 0 ] ] λx acc → (a = List.push acc [ x ]; _ = Task.soon λ⊤ → say (shows a); a)`, the same with `List.set`, `Task.spawn`, a
+view (`List.drop a 1`, a pattern's rest) or a function the caller gives (`g a`). The next run is handed `a` and edits it in
+place before the task reads it; the sanitised runs read a stale list. The same keep in a hand-written loop is refused
+`escaped`, since the loop's own call is handed what escaped. Now `FedCall.at` answers `yes` at a known code only where `K`
+also keeps nothing a later run writes (`RunKeeps.nothing`, the condition the twin asked before, which the twin now reads
+through `FedCall.at`), for every `k` but `fresh`, which no fold's storage asks (`FedWrite` asks `fed` of the written supply's own
+argument):
+
+- no store and no write of a cell's `◆` whose contents may hold an object (a cell of `Int` holds none: `Ref.update n λi → i + 1`
+  in the callback keeps nothing);
+- no escape of `k` at or above a slot of `k` it writes, or below one it writes open. An escape of another argument or a capture
+  keeps nothing a later run writes: where `K`'s answer holds such an object at a slot a later run writes, the `fed` occurrence is
+  `no` already;
+- no label that lets its answer go; and no label handed `k` at or above a slot of `k` `K` writes (or below one it writes open),
+  or any object that is not a parameter's or a shared one (a fresh object, another label's answer) where `K`'s answer holds
+  such an object at a slot of `k` it writes. A label's code is the caller's, so what it is handed it may keep; an object
+  handed that is not `k`'s reaches a later run's write only through the answer, at a written slot (a label's answer holds
+  `k`'s objects only where that label is handed them, which the first half asks).
+
+Sound because the induction's step (an earlier answer's objects at a written slot are the first value's or a run's own) now
+also has that no other holder outlives the run that made them: an escape, a store, a cell or a label's code holds no object
+of `k` a later run writes, and no object a label is handed sits at a written slot. The precision moves both ways, on the twin too: the
+conditions on stores, cell writes, other arguments' escapes and labels were the twin's whole-code tests before, and are now
+asked of the objects a later run writes, so `List.foldl [ [ 1 ], [ 2 ] ] [ [ 0 ] ] λx acc → (_ = Task.soon … x …; List.update acc
+0 λm → List.push m 5)` is accepted, sound. Refused that a perfect checker accepts: a callback that hands a label a fresh object (or a label's answer)
+while its answer holds another fresh object at a slot it writes. Fixtures `run/SanitiserFoldKeepsAnswer` (each fold refused;
+accepted, the sanitised run traps) and `run/SanitiserFoldKeepsAnswerApart` (each accepted, the sanitised run prints the same);
+the folds of `ownership/FoldKeepsInnerRefused` whose callback keeps `acc` in a task (25:12, 29:15, 32:16, 33:5, 36:17, 46:16, 64:18)
+and `ownership/FoldAccumulators`' 36:18 are refused at the fold too, as well as inside the callback, where they were refused
+already. Measured (2026-11-09, Debug): the corpus and core ledger moves only these positions and the fixtures' own; the
+probe lists' 8 229 programs that fold move no verdict but refusal positions in programs refused already.
 
 Where the function value is **unknown** (`⊤`, a call's result, a value stored in a cell), the answer is `⊤`,
 every supply escapes, and a supplied object can no longer be written.
@@ -4821,7 +4857,7 @@ Mutated: every row. Unmoved, and so unpinned here: `Supplied.mayBeHeld`, `Distin
 | O11 | *No bound accepts:* reserve before expansion, terminal error on exhaustion, no partial summary or lowering channel | `Ids.Account.reserve`, `Ownership`, `Hoists.Builder.finish` | `ownership/WideModelArms` and the limit unit tests **mutated** (`reserve_off`); `hoists_of_refused`: a unit test alone | kept |
 | O12 | *Hoisted reads are this frame's own* (§2.7, §3.7). Nothing hoists until S5; `Liveness` already reports `field` uses, and `Hoists` publishes the list half only | `Liveness.Index.build`, `Hoists` | `hoists_drop_write` **mutated** (47 fixtures, the site lists). The rest waits for S5: no mutation is possible while nothing hoists | waits for S5 |
 | O13 | *Constructions keep I-κ.* A value's `Sep` is the distinct check: two entries of one atom that coexist, related positions whose slots meet, or a `⊤` or `shared` entry make it `no` | `Distinct.sepOf`, `Distinct.distinct`, `Entries`, `Distinct.resConds` | `ownership/NestedLambdaSend` **mutated** (`sep_top_ok`, no `run/Sanitiser*` fixture); `atom_twice_off`, `within_group_off`, `sep_family_off`, `made_meets_own_off`, `answer_meets_off` **mutated**; `distinct_yes`, `res_conds_off` crash on core. `sep_answer_supply_off` **survives** (#2188) | no file names it |
-| O14 | *Instantiation keeps I-κ.* A callee's selection at a call asks every projected object; `yes` only when the entries hold of the actual arguments. A label's half: a supply's condition holds at every call that applies the label, outward. An answer's half: `fed`, `fresh`, `answers` are decided at a known code from its contract | `Distinct.instSel`, `Distinct.instSelFeed`, `CallGraft.sel`, `Graft.movedReq`, `SupplyCond.publish`, `Outward.finishDemands`, `Traversal`, `FedCall`, `AnswerCall`, `Answers`, `SelfFed`, `Distinct.reqOn` | `relies_off`, `moved_req_yes`, `repeated_off`, `each_takes_true`, `fed_relies_off`, `fed_call_no`, `answer_call_no`, `all_made_true`, `self_fed_answer_free`, `self_fed_slot_off`, `self_fed_keeps_ok` **mutated**; `inst_sel_yes`, `inst_cond_yes`, `below_direct_off`, `below_pass_off` crash on core. **Survive** (#2188): `below_outer_off`, the four gates of `each`, `fed_covered_true` | §2.14.5's F2 |
+| O14 | *Instantiation keeps I-κ.* A callee's selection at a call asks every projected object; `yes` only when the entries hold of the actual arguments. A label's half: a supply's condition holds at every call that applies the label, outward. An answer's half: `fed`, `fresh`, `answers` are decided at a known code from its contract | `Distinct.instSel`, `Distinct.instSelFeed`, `CallGraft.sel`, `Graft.movedReq`, `SupplyCond.publish`, `Outward.finishDemands`, `Traversal`, `FedCall`, `RunKeeps`, `AnswerCall`, `Answers`, `SelfFed`, `Distinct.reqOn` | `relies_off`, `moved_req_yes`, `repeated_off`, `each_takes_true`, `fed_relies_off`, `fed_call_no`, `answer_call_no`, `all_made_true`, `self_fed_answer_free`, `self_fed_slot_off`, `self_fed_keeps_ok` **mutated**; `inst_sel_yes`, `inst_cond_yes`, `below_direct_off`, `below_pass_off` crash on core. **Survive** (#2188): `below_outer_off`, the four gates of `each`, `fed_covered_true` | §2.14.5's F2 |
 | O15 | *A join only weakens.* An `alt` keeps its arms, routes are exact (§2.3.5), `many` is the arms' maximum, a condition only weakens, and `no` is never made a selection. Replaces the widen rule | `Leaves.Table.alt`, `Routes`, `Coexist.setsMeet`, `Cond.conj`, `Contract.Table.join` | `join_once_off`, `sets_meet_never` **mutated**; `conj_drop_right`, `conj_forgets_no` crash on core. `join_calls_second`, `weaker_always` **survive** (#2188) | no file names it |
 
 **The headers, checked 2026-11-06.** 79 of the 121 files of `src/own2` say `none`. O5, O7, O8, O13 and O15 are cited by none. A file
@@ -5944,8 +5980,9 @@ L0  Ids  Counters  Scratch
 | `CallGraft.zig` | 8 | a call whose arguments are the caller's parameters whole: the callee's arrivals at a call slot and its condition renamed, never projected; a demand's written path replayed when its line is printed (§2.10 *a parameter's path grafted*, §2.11.2, #1225, #1714) | Ids, Place, Slots, Contract, Relation |
 | `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
+| `RunKeeps.zig` | 7 | whether a known code's run keeps nothing of its fed argument a later run writes, which `FedCall` asks of every `fed` occurrence it decides at a known code (§2.11.3, #2367); split from `SelfFed` | Ids, Slots, Replay, Forest, Contract, Place, SlotWords |
 | `Fed.zig` | 8 | a label's answer handed back to it: what a pass reads and judges for that answer (§2.11.3, #1713); below `Distinct` | Ids, Slots, Contract, Relation |
-| `FedCall.zig` | 8 | a callee's `fed` occurrence at a call, renamed or decided, and the label argument a callee's parameter arrives at whole (§2.11.3, #1713, #1721); below `Distinct` | Ids, Slots, Forest, Contract, Relation |
+| `FedCall.zig` | 8 | a callee's `fed` occurrence at a call, renamed or decided, and the label argument a callee's parameter arrives at whole (§2.11.3, #1713, #1721); below `Distinct` | Forest, Contract, Relation, RunKeeps |
 | `SelfFed.zig` | 8 | a known code's run handed its own answer back: the twin of the fed supply, which reads every arrival but that answer (§2.11.3, #1713); below `Distinct` | Ids, Forest, Contract, Relation |
 | `WalkContext.zig` | 8 | the module's services a walk reads; `Groups` implements them (§2.6, §2.11.3) | Ids, Contract, Relation, Value |
 | `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |

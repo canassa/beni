@@ -1,0 +1,8 @@
+# v2 refuses each fold whose callback keeps its answer past its run and writes the accumulator the next run
+# is handed: a task, a view, a handed function (§2.11.3, a label's answer handed back to it, #2367).
+28:10 list_may_be_shared List.foldl
+35:9 list_may_be_shared List.foldl
+42:11 list_may_be_shared List.foldl
+49:10 list_may_be_shared List.foldl
+57:10 list_may_be_shared List.foldl
+79:12 list_may_be_shared List.foldl

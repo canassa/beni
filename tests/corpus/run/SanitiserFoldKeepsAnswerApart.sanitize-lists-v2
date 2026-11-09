@@ -1,0 +1,3 @@
+The safe twins of SanitiserFoldKeepsAnswer (ownership-v2.md §2.11.3, a label's answer handed back to it):
+built again under --ownership=v2 and the list stale-read sanitiser. A fold's callback that keeps nothing a
+later run writes is accepted; the sanitised run prints the same.
