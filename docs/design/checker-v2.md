@@ -1511,6 +1511,8 @@ levels.
 *Restated 2026-09-24. "Provided everything reachable through `owned` is young"
 was not what `adjustRank` computes.*
 
+*Amended 2026-11-09 (#2034).* Before step 5 quantifies, equal young nodes become one node: §38.
+
 Until 2026-09-27 a **`let_constrained_monomorphic` switch** kept rule (a)'s behaviour, so the
 pre-cut-over corpus compared like with like.
 
@@ -6644,3 +6646,47 @@ in place so the published schemes retain the domain. This is a formation check,
 not recursive membership in a key kind. Each membership check still inspects
 only the scalar head. A schema used with Bool outside a Dict remains valid when
 only a separate wrapper's use of that endpoint requires a scalar key.
+
+## 38. Amendment of 2026-11-09: equal young nodes share (#2034)
+
+**The defect.** `Instantiate.copy` copies a scheme once per use. A type that holds two uses of
+one scheme thus holds two copies of it. Appendix B's `CallbackWrapperDag` in its tuple form is
+`w0 f = ( f ⊤, f ⊤ )` and `wk f = ( w(k-1) f, w(k-1) f )`. The type of `wk` had 2^(k+1) − 1
+tuple nodes, and every walk over it paid for each node. The walks are instantiation, rank
+adjustment (§8.1 step 2), occurs (§8.2), the type keys (§36) and the effect summaries. Each walk
+keeps a mark per root and visits a root once. Thus the walks were linear in the node count, and
+the node count was exponential in the program. Depth 20 took 8.4 s and 776 MB on a Debug build.
+
+**The rule.** Step 5 of §8.1 starts with `Generalize.share`. The pass makes every two young nodes
+of the frame's pool that are one type into one node. Two nodes are one type when they have the
+same head and the same child roots (`Walk.shareHash`, `Walk.shareEql`). The head is the tag, the
+type of an application or alias, the arity of a tuple and the field names of a record. The pass
+goes children first, so equal subtrees become one node from the leaves up. After the pass, the
+scheme of `wk` has k + 1 tuple nodes, and each instantiation copies k + 1 nodes.
+
+**What the pass does not share.**
+
+- A variable (`flex`, `rigid`). A variable is its own identity.
+- An `err`.
+- A function, and an application of a type whose body holds a function
+  (`Effects.carriesContent`). Effect inference keys an effect class by the node of the type
+  that carries it (§26). Two function nodes of one shape can have two different classes.
+- A node on a cycle. Its key is not final when the pass reaches it.
+
+A parent of a node that the pass does not share has that node as a child root. Thus two parents
+of two distinct functions have two keys, and stay two nodes.
+
+**The link.** `TypeStore.share(drop, keep)` puts `drop` in the class of `keep`. The link is
+directed, not by size (§4.1's `merge`): a root that the pass keyed stays a root, so its key does
+not change during the pass. No edge is added, because the successors of `keep` are the
+successors of `drop`. Thus an acyclicity proof (§8.2) of `drop` holds for `keep`, and the link
+keeps it. The pass runs where nothing speculates (§7.5), so nothing undoes a link.
+
+**Cost.** One hash and one probe per young node that is not a variable, a function or an `err`,
+at every boundary. With fewer than two such nodes in the pool, the pass does nothing. The
+counter `generalisations` counts the roots that step 5 quantifies, so a shared node counts once.
+
+**Not in this amendment.** The type dump (`dump --stage=types`) prints a type as a tree with no
+node budget (`Render.Namer.unlimited`). Its text is the size of the tree, so at depth 24 it is
+hundreds of megabytes. A diagnostic keeps its budget of 4 096 nodes. The ownership pass of
+`src/own/` on a `pub` wrapper is outside the checker: #2356 holds it.
