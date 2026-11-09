@@ -1,0 +1,126 @@
+--! What one scalar access costs the host (binary.md §1): it validates
+--! detachment and bounds, and nothing in it throws, asks whether storage is
+--! shared, or makes a DataView the view already is. A host without ES2024's
+--! `detached` and `growable` getters still tells the kinds apart.
+
+import Binary
+import Js
+
+
+--| A thousand byte writes and a thousand float reads through each kind of
+--| view, counting calls of SharedArrayBuffer.prototype's byteLength getter
+--| (the brand check, which throws for anything else) and DataViews made.
+pub perAccess : ⊤ → List String
+perAccess ⊤ =
+    [ cost "local DataView" λ⊤ → Binary.allocate 4096 ▷ Result.map Binary.Local ▷ dataViewOf
+    , cost "shared DataView" λ⊤ →
+        Binary.shared 4096 ▷ Result.mapError (λ_ → ⊤) ▷ Result.map Binary.Shared ▷ dataViewOf
+    , cost "local Uint8Array" λ⊤ →
+        Binary.allocate 4096
+            ▷ Result.mapError λ_ → ⊤
+            ▷ Result.andThen λbuffer →
+                Binary.view (Binary.Local buffer) Binary.U8 Binary.whole ▷ Result.mapError λ_ → ⊤
+    ]
+
+
+dataViewOf : Result e Binary.Backing → Result ⊤ Binary.View
+dataViewOf storage =
+    case storage of
+        Ok backing →
+            Binary.dataView backing ▷ Result.mapError λ_ → ⊤
+        Err _ →
+            Err ⊤
+
+
+cost : String, (⊤ → Result ⊤ Binary.View) → String
+cost name make =
+    counts = counted λ⊤ →
+        case make ⊤ of
+            Ok view →
+                "${Debug.toString (accesses view 0 0)}"
+            Err _ →
+                "no view"
+    "${name}: ${counts.value}, brand checks ${String.fromInt counts.brand}, DataViews ${String.fromInt counts.views}"
+
+
+accesses : Binary.View, Int, Float → Result String Float
+accesses view index total =
+    if index == 1000 then
+        Ok total
+    else
+        Result.mapError (Binary.writeU8 view index (Int.rem index 256)) Debug.toString?
+        number = Result.mapError (Binary.readF32 view (index * 4) Binary.Little) Debug.toString?
+        accesses view (index + 1) (total + number)
+
+
+-- The body's value, with the brand getter's calls and DataView constructions
+-- it caused; both are put back however the body ends.
+counted : (⊤ → String) → { value : String, brand : Int, views : Int }
+counted body =
+    brand = Js.ref 0
+    views = Js.ref 0
+    object = Js.global "Object"
+    prototype = Js.get (Js.global "SharedArrayBuffer") "prototype"
+    descriptor = Js.call object "getOwnPropertyDescriptor" [ prototype, Js.from "byteLength" ]
+    getter = Js.get descriptor "get"
+    original = Js.global "DataView"
+    spy =
+        Js.object
+            [ ( "configurable", Js.from True )
+            , ( "get"
+              , Js.method λself →
+                  Js.write brand (Js.read brand + 1)
+                  Js.call getter "call" [ self ]
+              )
+            ]
+    _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", spy ]
+    trap =
+        Js.object
+            [ ( "construct"
+              , Js.method λself target args newTarget →
+                  Js.write views (Js.read views + 1)
+                  Js.call (Js.global "Reflect") "construct" [ target, args, newTarget ]
+              )
+            ]
+    Js.set (Js.global "globalThis") "DataView" (Js.construct (Js.global "Proxy") [ original, trap ])
+    Js.finally (λ⊤ → { value = body ⊤, brand = Js.read brand, views = Js.read views }) λ⊤ →
+        _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", descriptor ]
+        Js.set (Js.global "globalThis") "DataView" original
+
+
+--| With ArrayBuffer.prototype.detached and SharedArrayBuffer.prototype.growable
+--| removed, as on a host before ES2024: local, shared, detached and
+--| other-realm storage are still told apart.
+pub olderHost : ⊤ → List String
+olderHost ⊤ =
+    object = Js.global "Object"
+    reflect = Js.global "Reflect"
+    local = Js.get (Js.global "ArrayBuffer") "prototype"
+    shared = Js.get (Js.global "SharedArrayBuffer") "prototype"
+    detached = Js.call object "getOwnPropertyDescriptor" [ local, Js.from "detached" ]
+    growable = Js.call object "getOwnPropertyDescriptor" [ shared, Js.from "growable" ]
+    _ = Js.call reflect "deleteProperty" [ local, Js.from "detached" ]
+    _ = Js.call reflect "deleteProperty" [ shared, Js.from "growable" ]
+    Js.finally (λ⊤ → kinds ⊤) λ⊤ →
+        _ = Js.call object "defineProperty" [ local, Js.from "detached", detached ]
+        _ = Js.call object "defineProperty" [ shared, Js.from "growable", growable ]
+        ⊤
+
+
+kinds : ⊤ → List String
+kinds ⊤ =
+    vm = Js.module "node:vm"
+    foreignLocal = Js.call vm "runInNewContext" [ Js.from "new ArrayBuffer(8)" ]
+    foreignShared = Js.call vm "runInNewContext" [ Js.from "new SharedArrayBuffer(8)" ]
+    info = λsource → Debug.toString (Result.map (Binary.sourceInfo source) λi → i.shared)
+    case ( Binary.allocate 8, Binary.shared 8 ) of
+        ( Ok buffer, Ok storage ) →
+            before = info (Binary.WholeBuffer buffer)
+            moved = Binary.transfer buffer
+            after = info (Binary.WholeBuffer buffer)
+            [ "older host: local ${before}, after transfer ${after}, moved ${Debug.toString (Result.map moved λb → Binary.detached b)}"
+            , "older host: shared ${info (Binary.WholeShared storage)}"
+            , "older host: other realm local ${info (Binary.WholeBuffer (Js.to foreignLocal))}, shared ${info (Binary.WholeShared (Js.to foreignShared))}"
+            ]
+        _ →
+            [ "older host: no storage" ]

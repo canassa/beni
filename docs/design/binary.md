@@ -52,9 +52,16 @@ handle, every operation that takes one checks its backing then:
 `sourceInfo`, `toList`, `copy`, `copyInto` and each scalar access. No
 detached view can be mistaken for an empty live view.
 
-Shared storage is recognised by a brand check that works across realms (the
-SharedArrayBuffer.prototype `byteLength` getter, which throws a TypeError for
-anything else; only that TypeError is caught), never by `instanceof`.
+Shared storage is recognised in a way that works across realms, never by
+`instanceof`. ES2024 gives a genuine ArrayBuffer of any realm a `detached`
+getter and shared storage a `growable` one, and neither has the other's, so
+on a current host two property reads decide and nothing throws. A host with
+neither falls back to a brand check: the SharedArrayBuffer.prototype
+`byteLength` getter, which throws a TypeError for anything else; only that
+TypeError is caught. A scalar access does not ask at all: its checks
+(detachment, fixed backing, bounds) do not depend on the answer, and a DataView
+view is used as it is, with no second DataView or record made per access
+(2026-11-09; `run/BinaryAccessCost` counts both).
 
 Every native constructor is named by a literal `Js.global` per view kind, so
 a worker build proves each name on its realm's global object (workers.md §4,

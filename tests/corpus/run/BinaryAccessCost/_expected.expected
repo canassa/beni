@@ -1,0 +1,6 @@
+local DataView: Ok (-0.0), brand checks 0, DataViews 1
+shared DataView: Ok (-0.0), brand checks 0, DataViews 1
+local Uint8Array: Ok (-0.0), brand checks 0, DataViews 2000
+older host: local Ok False, after transfer Err Detached, moved Ok False
+older host: shared Ok True
+older host: other realm local Ok False, shared Ok True
