@@ -1,0 +1,83 @@
+-- `SanitiserFamilyJoinBelow` with `k` dead after the edit (`ownership-v2.md` §2.1, *One below* and *Every name*,
+-- #2354): the edit is in place.
+import List
+import Node exposing (Program)
+import String
+
+
+type A0 a
+    = L0 a
+    | A03 (A3 a)
+    | A01 (A1 a)
+    | E0
+
+
+type A3 a
+    = A32 (A2 a)
+    | A30 (A0 (List a))
+
+
+type A2 a
+    = L2 a
+    | A20 (A0 a)
+
+
+type A1 a
+    = A11 (A1 a)
+    | A12 (A2 a)
+
+
+w0 : A0 (List Int) → Int
+w0 t =
+    case t of
+        L0 _ →
+            0
+        A03 x →
+            w3 x
+        A01 x →
+            w1 x
+        E0 →
+            0
+
+
+w3 : A3 (List Int) → Int
+w3 t =
+    case t of
+        A32 x →
+            w2 x
+        A30 _ →
+            0
+
+
+w2 : A2 (List Int) → Int
+w2 t =
+    case t of
+        L2 xs →
+            List.length (List.push xs 1)
+        A20 x →
+            w0 x
+
+
+w1 : A1 (List Int) → Int
+w1 t =
+    case t of
+        A11 x →
+            w1 x
+        A12 x →
+            w2 x
+
+
+hg : A0 a → A0 a
+hg t0 =
+    case t0 of
+        A01 (A11 (A12 (A20 m))) →
+            A03 (A32 (A20 (A01 (A11 (A12 (A20 m))))))
+        _ →
+            E0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = w0 (hg (A01 (A11 (A12 (A20 (A03 (A32 (L2 k))))))))
+    Node.print (String.fromInt a)

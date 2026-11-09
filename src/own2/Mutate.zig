@@ -178,6 +178,8 @@ pub const Name = enum {
     caller_folds_off,
     /// O6: a read below a call's slot misses the folds above it a walk below it reaches.
     below_folds_off,
+    /// O6: a read below a call's slot named through a join reads the join's key alone, not each level path's.
+    below_join_one_name,
     /// O6: an arrival at a join is said at the join only, not at its level paths.
     level_join_kept,
     /// O6: a slot re-rooted under another root is one route's, not every route's (`Slots.relsBelow`).
