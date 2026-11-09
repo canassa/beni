@@ -2758,6 +2758,11 @@ async function chromePage(endpoint) {
   // its promises and before the test platform's host reads it.
   if (options.webgpu) await send("Page.addScriptToEvaluateOnNewDocument", { source: "globalThis.__beniWebGpuNative = true;" }, sessionId);
   await send("Page.addScriptToEvaluateOnNewDocument", { source: `(${prelude})();` }, sessionId);
+  // Helpers belong to the document, just like the prelude. Reuse their
+  // compiled functions on every call; navigation installs a fresh set.
+  const helpers = `const webgpuProbe = ${webgpuProbe}; const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
+  const pageHelpers = { webgpuProbe, step, settle, drain, serialise, load, pendingRequests, fiberSubscriptions, openPage, markPage, takenOver, editPage, arrived };
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: `globalThis.__beniHelpers = (() => { ${helpers} return { webgpuProbe, step, settle, drain, serialise, load, pendingRequests, fiberSubscriptions, openPage, markPage, takenOver, editPage, arrived }; })();` }, sessionId);
   const loaded = new Promise((done) => {
     events.push((m) => {
       if (m.sessionId === sessionId && m.method === "Page.loadEventFired") done();
@@ -2768,10 +2773,14 @@ async function chromePage(endpoint) {
   // The target opened at `about:blank`: its history begins at the page, as
   // happy-dom's does, so no traversal leaves the page's document.
   await send("Page.resetNavigationHistory", {}, sessionId);
-  const helpers = `const webgpuProbe = ${webgpuProbe}; const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage}; const arrived = ${arrived};`;
   return {
     run: async (fn, arg) => {
-      const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
+      const argument = JSON.stringify(arg) ?? "";
+      // The fuzzer also passes source expressions via inPage, rather than
+      // one of the driver's own functions: those keep the original path.
+      const expression = Object.hasOwn(pageHelpers, fn.name) && pageHelpers[fn.name] === fn
+        ? `globalThis.__beniHelpers.${fn.name}(${argument})`
+        : `(() => { ${helpers} return (${fn.name})(${argument}); })()`;
       const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId);
       if (r.exceptionDetails) throw new Error(`${fn.name} failed in Chrome: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
       return r.result.value;
