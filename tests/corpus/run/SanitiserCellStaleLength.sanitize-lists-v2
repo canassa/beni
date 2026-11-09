@@ -1,0 +1,1 @@
+A stale length read through Ref.update's old (#2347): built again under --ownership=v2 and the sanitiser; the fold is refused.

@@ -298,7 +298,7 @@ tests/platforms/entry-shape/Start.beni   Start.launch        31d697f6b3153998a89
 # The code generator's inlined forms of List's `at`, `traverseAt`, `put`,
 # `half` and `length`: the code that runs in place of their siblings.
 src/Operator.zig                Operator.listPrimitives cd2e9bc2299beeb212262732d4d6420c0f265b5d4900a2a7282a8b0732cdd18a
-src/js/Lower.zig                Lower.listPrimitives 9c32196b6dd091c0fe5414feb3528e8e03f7d6b7f30b11f568fbba1f24599f77
+src/js/Lower.zig                Lower.listPrimitives e16137ea06ccdba2747ddd9b61a7affb1cdb3121aad4e5541e1421b3c768e186
 # The code generator's forms of `List.cons`: the re-cons of a scalar view and
 # the cons steps of a loop that builds, which run in place of its body.
 src/js/Lower.zig                Lower.listRecons     426b66d3ae9f008c345e1b6a837c3c417ca577210d5c6ccbcc95ada036eafb91
