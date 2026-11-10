@@ -208,11 +208,13 @@ pub const Common = struct {
     /// given it says so and exits 2 (`main.zig`). On `Common` for
     /// `--ownership-everywhere`'s reason: the whole-corpus diff dumps every
     /// root under both. Absent from `usage`. Deleted with v1 (§8.3).
+    /// `v3` is the step 0 prototype of research report 110 (`src/own3/`,
+    /// research report 111): lists only, hidden and test-only as `v2` is.
     ownership: OwnershipChecker = .v1,
 };
 
-/// The two ownership checkers (`Common.ownership`).
-pub const OwnershipChecker = enum { v1, v2 };
+/// The ownership checkers (`Common.ownership`).
+pub const OwnershipChecker = enum { v1, v2, v3 };
 
 /// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
 ///
@@ -769,8 +771,8 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     }
     // Hidden and test-only (see `Common.ownership`).
     if (std.mem.eql(u8, name, "--ownership")) {
-        const v = value orelse return needsValue(name, "v1|v2");
-        common.ownership = std.meta.stringToEnum(OwnershipChecker, v) orelse return needsValue(name, "v1|v2");
+        const v = value orelse return needsValue(name, "v1|v2|v3");
+        common.ownership = std.meta.stringToEnum(OwnershipChecker, v) orelse return needsValue(name, "v1|v2|v3");
         return null;
     }
     if (std.mem.eql(u8, name, "--core-root")) {
@@ -1447,7 +1449,8 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.ownership_below and stage != .ownership) return .{ .usage = .init("beni: --ownership-below applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_short_candidates and (stage != .ownership or s.common.ownership != .v2)) return .{ .usage = .init("beni: --ownership-short-candidates applies to --stage=ownership --ownership=v2 only", .{}) };
     if (s.specific.ownership_both and stage != .ownership) return .{ .usage = .init("beni: --ownership-both applies to --stage=ownership only", .{}) };
-    if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership == .v2)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", .{}) };
+    if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership != .v1)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", .{}) };
+    if (s.common.ownership == .v3 and (s.specific.ownership_flips != null or s.specific.ownership_skew_sites or s.specific.ownership_below)) return .{ .usage = .init("beni: --ownership=v3 takes --ownership-totals only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
         .stage = stage,
@@ -1859,8 +1862,13 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
         .{ .check = .{ .common = .{ .ownership = .v1 }, .platform = "node", .paths = &.{"src"} } },
         &.{ "check", "--ownership=v1", "--platform=node", "src" },
     );
-    try expectUsage("beni: option '--ownership' needs a value: --ownership=v1|v2", &.{ "check", "--ownership=v3", "src" });
-    try expectUsage("beni: option '--ownership' needs a value: --ownership=v1|v2", &.{ "check", "--ownership", "src" });
+    try expectCommand(
+        .{ .dump = .{ .common = .{ .ownership = .v3 }, .stage = .ownership, .file = "M.beni" } },
+        &.{ "dump", "--stage=ownership", "--ownership=v3", "M.beni" },
+    );
+    try expectUsage("beni: --ownership=v3 takes --ownership-totals only", &.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-below", "M.beni" });
+    try expectUsage("beni: option '--ownership' needs a value: --ownership=v1|v2|v3", &.{ "check", "--ownership=v4", "src" });
+    try expectUsage("beni: option '--ownership' needs a value: --ownership=v1|v2|v3", &.{ "check", "--ownership", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "--ownership") == null);
 
     // The two differential switches of a build (ownership-v2.md §7.3),

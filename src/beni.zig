@@ -220,6 +220,15 @@ pub const own2 = struct {
     pub const Within = @import("own2/Within.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
+/// The step 0 prototype of research report 110 (`docs/design/research/111-ownership-step0-prototype.md`),
+/// behind the hidden `--ownership=v3`.
+pub const own3 = struct {
+    pub const Loc = @import("own3/Loc.zig");
+    pub const Contract = @import("own3/Contract.zig");
+    pub const Frame = @import("own3/Frame.zig");
+    pub const Check = @import("own3/Check.zig");
+    pub const Enforce = @import("own3/Enforce.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");

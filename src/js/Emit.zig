@@ -7402,7 +7402,7 @@ const Emitter = struct {
                 },
                 // v2's channel (`own2/Hoists.zig`): the list writes v2
                 // accepted, in a build that enforces, for the sanitiser.
-                .list_writes = if (e.session.options.ownership_v2 and e.session.enforce_ownership and m.int() < e.session.checked.channels.len)
+                .list_writes = if ((e.session.options.ownership_v2 or e.session.options.ownership_v3) and e.session.enforce_ownership and m.int() < e.session.checked.channels.len)
                     &e.session.checked.channels[m.int()]
                 else
                     null,
