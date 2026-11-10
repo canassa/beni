@@ -1270,6 +1270,14 @@ was pending at, compatible with, not read one by one for, and answers `under` fo
 each push met every earlier push as a pending operand: sib n = 10 / 80 cost 1 990 / 73 040 demands' records, now
 1 526 / 13 803.
 
+*Amended 2026-11-10 (#2449): a block's result.* A block `let … in e` has `e`'s value. The walk put `e` on the
+stack for its consumer, the block, and the block took the value and left the operand there. So the result of
+an `if` arm that has a `let` of its own stayed pending to the end of the frame, and every later write of what
+it held was refused `held-operand`: `( first, s2 ) = if t then ( ( shake, s ) = roll seed; ( List.push xs
+shake, s ) ) else …` followed by `List.push first 0`. Now the block removes its body's operand when it takes
+the value (`Walk`, `.let`), as a `case` removes each arm's. From there on the block's own instruction is the
+operand, while its consumer waits. Fixture `ownership/ArmLetResult`; mutant `block_result_pending`.
+
 **The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
 every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
 tree of the least `rank₂` over each range of it. For an escape `x` before `p`, `x` is compatible with `p`
