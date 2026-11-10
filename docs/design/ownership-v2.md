@@ -1132,6 +1132,20 @@ storage write, the base's own storage at the written position (`at_position`); f
    - the caller's demand covers more routes than its own (`Graft.Group.also`): each route has its fields.
    Two writes of one slot name the union of their fields.
 
+   *Amended 2026-11-10 (#1018; R-4.8.2, R-4.8.5): a later callee's writes, by field.* A later call that
+   hands the old record on was a whole use where the callee writes anything at or below the record
+   (`Later.writeMeets`: its write tree is not empty there), though its reads were asked by field. So
+   `( { model | atOnce = n }, knob model f )` was refused where `knob` reads `model.machine` and writes a cell
+   below it. Now an update asks the callee's write tree by field too (`FieldMark.writes`). The call is a
+   whole use where the tree has: a deep write at or above the record; any write of the record's own object,
+   whole or of a field (another update of the old record, R-4.8.2 (c), also of a field not in `F`); or a
+   write below a step that is a field of `F` or is no field's (the callee reads the written field to reach
+   it). A write below a field that is not in `F` is nothing: the callee reaches it through an untouched
+   field. With `pokeB m = List.push m.b 1`: `n = { m | a = 1 }` followed by `pokeB m` is accepted,
+   `n = { m | b = [] }` followed by it is refused, and `n = { m | a = 1 }` followed by `setC m`,
+   `setC m = { m | c = … }`, is refused. Fixture `ownership/RecordCalleeWritesBelow`; mutant
+   `callee_write_whole`.
+
    *A once closure's write happens at its call* (R-4.8.2). The demand of a once closure that writes a
    captured record is at the closure's creation, and the write runs when the closure is called, at a point
    that the lowering cannot name. So for a `once` record demand a **read** event of a field in `F` after the
@@ -6612,7 +6626,7 @@ L0  Ids  Counters  Scratch
 | `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
 | `FieldReads.zig` | 8 | a record's fields read and written, in a contract's `reads` and `writes`: the frame's field events as marks at the record's slot, a callee's marks read at a caller, and a record demand's written fields as marks (§2.8, *Dead, by field*, §2.10, R-4.8.5, R-4.8.7), for `ReadOff` | Ids, Place, Slots, Contract |
 | `FieldCapture.zig` | 8 | a closure's field captures, read off the frame's text: the read events and uses at the creation, and the closure's kid of field values (§2.11.4, *a field capture*, R-5.4.6), for `Walk` | Ids, Place |
-| `FieldMark.zig` | 3 | the mark of a field in an effect tree, whether a read tree reads a field of a set, and the fields that a write tree names (§2.10, *a read's fields*, *a write's fields*; §2.8), for `Contract`, `Later`, `FieldReads`, `Update` | Place, Trees |
+| `FieldMark.zig` | 3 | the mark of a field in an effect tree, whether a read tree reads a field of a set, whether a write tree writes the record or below a field of a set, and the fields that a write tree names (§2.10, *a read's fields*, *a write's fields*; §2.8), for `Contract`, `Later`, `FieldReads`, `Update` | Place, Trees |
 | `ByStructure.zig` | 10 | a value at a supply's key, by its own structure (§2.1, *An arrival's level*) | Ids, Contract, Relation, Slots, Value |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
 | `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
