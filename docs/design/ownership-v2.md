@@ -1390,6 +1390,20 @@ reference's slots lose the plain ones' at its route by `Subtree.without`. Withou
 (§2.3.1) read a family more coarsely than its slots written out: the deep projection gave the object at
 `[*]#0.0` apart and the plain one gave it again, and the check refused `incLabels [ Rose [] [], Rose [] [] ]`.
 
+*Amended 2026-11-10 (#2418): a call's mixed condition is instantiated once.* Where a check holds apart and
+plain entries of one call, it asks the callee's `res_cond` with the occurrences that arrive at no plain slot
+marked apart (`PlainReach.instCondMixed`). The check asked it again at each round in which the call's group
+gained entries, and each asking instantiated the condition on the call's arguments again, which is a check of
+the call before it. So a chain `s_k = keep s_(k-1) v_k`, where `keep` answers a record of its argument's
+fields with one list field pushed, cost 2ⁿ checks: 4 324 records at 4 calls, 48 571 at 8, and
+`ownership_summary_size` at 12, with no write refused. The value is now kept by call, mode, `keeping` and the
+marked selection for the evaluation (`CondOnce`), as `instCond` keeps the unmarked one by call and mode. A
+strict check that hoped hopes again when its value is taken, and a value computed under a cycle's cut is kept
+as `instCond`'s is (§2.9.2, *A value under another cut*). The chain is 10 731 records at 8 calls, 38 264 at
+16 and 147 163 at 32, growth 0: the growth of the chain that pushes onto a plain list. Fixtures:
+`ownership/StateChain` (12 calls, checked at the default allowance) and a counted test at 8, 16 and 32 calls;
+mutant `mixed_memo_off`.
+
 #### 2.9.2 The one relation
 
 `overlap(x, t)` of a holder's leaf `x` (deep) and a target leaf `t` answers **no**, **under** a condition, or
@@ -6190,6 +6204,7 @@ L0  Ids  Counters  Scratch
 | `PathsTo.zig` | 3 | the first arrivals of a walk at a place, by slots and not routes (§2.1, #2192), for `StepsTo` | Ids, Place |
 | `RefRead.zig` | 6 | a reference read by steps, and a `⟲` through it by every route (§2.1, #2192), from `Relation` | Ids, Place, Replay, Slots, SlotWords, Subtree, PastPayload |
 | `Recons.zig` | 6 | whether a prepend may answer its base's own array (§2.3.4, *When a prepend may re-cons*, #2325), from `Relation` | Ids |
+| `CondOnce.zig` | 6 | a call's mixed condition instantiated once an evaluation (§2.9.1, #2418), for `PlainReach` | Ids, Contract |
 | `CallFolds.zig` | 6 | what a callee's open arrival says at a caller's folds its own type has not, read whole (§2.1, #2223), for `Relation`, `CallGraft`, `PlainReach`, `ReadOff`, `Needs` | Ids, Replay, SlotWords, Trees, Place, LevelTargets |
 | `ArriveAt.zig` | 5 | an arrival read at a caller slot: whole at a family's payload, an open parameter's slots below each by its own words (§2.1, §2.10, #2195), from `Relation` | Ids, Contract, SlotWords, Subtree |
 | `ValueTypes.zig` | 5 | the records of a walk's value tables (§2.3, §3.3), from `Value` | Ids, Place, Slots, Steps |
