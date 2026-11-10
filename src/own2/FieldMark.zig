@@ -37,3 +37,16 @@ pub fn reads(t: *const Trees.Table, places: *const Place.Table, slots: anytype, 
 fn among(fields: []const u32, st: Place.Step) bool {
     return st.kind != .field or fields.len == 0 or std.mem.indexOfScalar(u32, fields, st.payload) != null;
 }
+
+/// The fields that write tree `n0` names at the record `words` below its root: the marks' ranks, in `arena`.
+/// None, which is every field: the plain mark is there, no mark is, or the walk leaves the tree.
+pub fn written(t: *const Trees.Table, slots: anytype, arena: std.mem.Allocator, n0: Node, words: []const u32) std.mem.Allocator.Error![]const u32 {
+    var n = n0;
+    for (words) |w| n = t.kidAt(n, w) orelse return &.{};
+    const run = t.here(n);
+    for (run) |a| if (a.kind != .param) return &.{};
+    const out = try arena.alloc(u32, run.len);
+    for (run, out) |a, *r| r.* = Place.Step.fromWord(slots.relWords(a.slot)[0]).payload;
+    std.mem.sort(u32, out, {}, std.sort.asc(u32));
+    return out;
+}

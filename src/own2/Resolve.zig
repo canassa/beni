@@ -342,7 +342,7 @@ const Resolver = struct {
         const fr = r.f();
         const g = r.gpa();
         try fr.charge(.demand, 1);
-        r.uses.clear(if (d.record) d.fields else null);
+        r.uses.clear(if (d.record) d.fields else null, d.kind == .once);
         var line: Line = .{ .demand = d, .outcome = .{} };
         const o = &line.outcome;
         const targets = w.leavesOfRun(d.targets);

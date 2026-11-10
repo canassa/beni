@@ -1,0 +1,4 @@
+A callee's write of a record says its fields (ownership-v2.md §2.8, a callee's write says its fields; R-4.8.5,
+R-4.8.7; #1018): a caller's later read of an untouched field is no use, and a once closure's demand knows the
+fields of its code. v1 gives the same verdict on every line. One hoist differs: a function that calls itself
+writes every field in v2 (`afterWalk`), and v2 prints the once closure's demand apart from the update's.

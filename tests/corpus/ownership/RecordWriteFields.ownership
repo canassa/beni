@@ -1,0 +1,42 @@
+module RecordWriteFields
+  23:14 update p: accepted param
+  36:13 update origin: accepted param (RecordWriteFields.shift writes it) [hoisted 1]
+  42:13 update origin: accepted param (RecordWriteFields.shift writes it)
+  48:13 update origin: rejected later-use: origin is read again at 49:14 (RecordWriteFields.shift writes it) [copy]
+  54:13 update origin: accepted param (RecordWriteFields.shift writes it)
+  60:13 update origin: rejected later-use: origin is read again at 61:15 (RecordWriteFields.shift writes it) [copy]
+  61:15 update origin: rejected alias: moved holds it and is read at 61:5 (RecordWriteFields.shift writes it) [copy]
+  66:13 update origin: rejected later-use: origin is read again at 67:5 (RecordWriteFields.shift writes it) [copy]
+  71:14 update p: accepted param (RecordWriteFields.shift writes it)
+  76:13 update origin: accepted param (RecordWriteFields.outer writes it)
+  81:22 update p: accepted param
+  81:41 update p: accepted param
+  86:13 update origin: accepted param (RecordWriteFields.both writes it) [hoisted 1]
+  91:33 update <record>: accepted param (RecordWriteFields.walk writes it)
+  91:46 update p: accepted param
+  96:13 update origin: accepted param (RecordWriteFields.walk writes it)
+  102:9 update p: accepted once
+  108:9 update p: rejected later-use: p is read again at 109:23 [copy]
+  hoist origin.x: read 37:20; before 36:13
+  hoist origin.y: read 87:20; before 86:13
+  summary shift: π2 W{x}, π2.x R; res π2◦
+  summary readX: π1.x R
+  summary readY: π1.y R
+  summary thenWritten: π1 RW{x}, π1.x R; res .0 π1◦
+  summary thenUntouched: π1 RW{x}, π1.x R, π1.y R; res .0 π1◦
+  summary thenCalleeWritten: π1 RW{x}, π1.x R; res .0 π1◦
+  summary thenCalleeUntouched: π1 RW{x}, π1.x R, π1.y R; res .0 π1◦
+  summary thenAgain: π1 RW{x}, π1.x R; res .0 π1◦
+  summary thenWhole: π1 RW{x}, π1.x R; res .0 π1◦, .1 π1, condition(fresh1){shared}r{shared}
+  summary outer: π2 W{x}, π2.x R; res π2◦
+  summary throughOuter: π1 RW{x}, π1.x R, π1.y R; res .0 π1◦
+  summary both: π2 W{x, y}; res π2◦
+  summary afterBoth: π2 RW{x, y}, π2.y R, π2.z R; res .0 π2◦
+  summary walk: π2 RW{x}, π2.x R; res π2 π2◦
+  summary afterWalk: π1 RW{x}, π1.x R, π1.y R; res .0 π1 π1◦
+  summary onceUntouched: π2 RW{x}, π2.y R; res .0#Just.0 π2◦
+  summary onceWritten: π2 RW{x}, π2.x R; res .0#Just.0 π2◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 18: accepted 13, pending 0, rejected 5 (copy 5, restructure 0); hoisted 2, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 18: accepted 13, pending 0, rejected 5 (copy 5, restructure 0); hoisted 2, eager reads 0

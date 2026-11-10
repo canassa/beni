@@ -449,7 +449,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         for (call.args, 0..) |a, k| if (k != x.j) try e.w.value_runs.append(gpa, a);
         d.operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) };
     }
-    try @import("Update.zig").atCall(e, &d, call, x, arg, words, base); // Its token, and whether it writes a record (§2.8).
+    try @import("Update.zig").atCall(e, &d, call, x, arg, words, base, also_at.len == 0); // Its token, and whether it writes a record (§2.8).
     if (call.virtual) {
         // A known code writes what a label supplies (§2.11.3): the
         // supply's distinctness condition is relied on too; a kept slot

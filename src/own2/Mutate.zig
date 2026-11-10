@@ -50,6 +50,10 @@ pub const Name = enum {
     field_reads_whole,
     /// §2.11.4, *A field capture* (R-5.4.6): a closure that reads only fields of a captured record holds the record whole.
     field_capture_whole,
+    /// §2.10, *a write's fields* (R-4.8.2): a callee's write of a record names no field, so a caller reads it as every field.
+    write_fields_all,
+    /// §2.8, *Dead, by field* (R-4.8.2): a read of a written field after a once closure is made is a hoist, as after an update.
+    once_read_hoists,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

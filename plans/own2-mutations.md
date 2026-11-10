@@ -31,6 +31,10 @@ mutant: it is killed by `ownership/StateChain`, which reaches `ownership_summary
 `ownership/RecordCalleeFields` and `RecordDemands` (`--only=field_reads_whole`, 255 s, control green).
 `field_capture_whole` (a closure that reads only fields of a captured record holds the record whole, `FieldCapture.zig`) is
 killed by `ownership/RecordFieldCapture`, `RecordDemands` and one more (`--only=field_capture_whole`, 255 s, control green).
+`write_fields_all` (a callee's write of a record names no field, `FieldReads.zig`) and `once_read_hoists` (a read of a
+written field after a once closure is made is a hoist, `Later.zig`) are each killed by `ownership/RecordWriteFields` and
+`RecordOnce` (`--only=write_fields_all,once_read_hoists`, 396 s, control green). A first run had both as survivors: the two
+fixtures had a `.v2.ownership` and no `.v2` file, and a `.v2.ownership` is read only beside a `.v2`.
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -72,6 +76,8 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `pending_arg_whole` | §2.8, R-4.8.5 | an argument that waits for its call holds its whole value, whatever the callee reads | killed | | 0 | RecordWriteOnlyCall (OwnershipV2Differs) | 0 | |
 | `field_reads_whole` | §2.8, R-4.8.5 | a callee's read of one field of a parameter's record is said as a read of the record whole | killed | | 0 | 2: RecordCalleeFields (OwnershipV2Differs), … | 0 | |
 | `field_capture_whole` | §2.11.4, R-5.4.6 | a closure that reads only fields of a captured record holds the record whole | killed | | 0 | 3: RecordDemands (OwnershipV2Differs), … | 0 | |
+| `write_fields_all` | §2.10, R-4.8.2 | a callee's write of a record names no field, so a caller reads it as every field | killed | | 0 | 2: RecordOnce (OwnershipV2Differs), … | 0 | |
+| `once_read_hoists` | §2.8, R-4.8.2 | a read of a written field after a once closure is made is a hoist, as after an update | killed | | 0 | 2: RecordOnce (OwnershipV2Differs), … | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

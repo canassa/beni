@@ -1,0 +1,4 @@
+A once closure's write of a captured record happens at its call (ownership-v2.md §2.8, A once closure's write
+happens at its call; R-4.8.2; #1018): a read of a written field after the closure is made is a whole use, and a
+read of an untouched field is none. v1 gives the same verdicts; v2 prints the closure's demand apart from the
+update's, and names the holder (`alias`) where v1 says `later-use`.
