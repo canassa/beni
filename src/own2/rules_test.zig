@@ -250,6 +250,8 @@ const layers = [_]Entry{
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
+    // What a pending argument holds for its consumer, in the record pass (§2.8, R-4.8.5).
+    .{ .file = "PendingArg.zig", .layer = 9, .max_lines = 70 },
     .{ .file = "MovedReq.zig", .layer = 9, .max_lines = 75 },
     // A call's writes projected by the walk, and a set written out (#1714).
     .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
@@ -423,6 +425,8 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "Walk.zig", .needle = "items.items, c" },
     // A record's kid ranks, and a row's names: these read one name, no slot.
     .{ .file = "Update.zig", .needle = "ranks.items, st.kidWord()" },
+    // A call's argument instructions, no slot words.
+    .{ .file = "PendingArg.zig", .needle = "cl.arg_insts, inst" },
     .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
     // Tarjan's stack of places.
     .{ .file = "Place.zig", .needle = "stack.items" },
@@ -895,7 +899,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 171), layers.len);
+    try testing.expectEqual(@as(usize, 172), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

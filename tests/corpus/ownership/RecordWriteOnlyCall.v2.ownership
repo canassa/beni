@@ -1,0 +1,18 @@
+module RecordWriteOnlyCall
+  21:23 update model: accepted param
+  25:16 update model: accepted param
+  25:31 update model.todos[*]: accepted callback-param
+  25:57 update t: accepted param
+  29:20 update model: accepted param
+  33:20 update model: accepted param
+  33:32 update model.todos[*]: accepted callback-param
+  33:58 update t: accepted param
+  40:13 update model: accepted param
+  42:13 update model: accepted param
+  46:21 update model: accepted param
+  46:38 update model.todos[*]: rejected held-operand: the value at 46:31, evaluated before it, holds it until its consumer runs
+  46:64 update t: accepted param
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 13: accepted 12, rejected 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 13: accepted 12, rejected 1

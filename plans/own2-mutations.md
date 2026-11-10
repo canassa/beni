@@ -25,6 +25,8 @@ mutant: it is killed by `ownership/StateChain`, which reaches `ownership_summary
 `.v2.ownership` golden, `record_pass_lists` also by `run/SanitiserRowKept` and `run/SanitiserRowKeptApart`
 (`--only=update_fresh_site,update_no_events,update_reads_off,list_req_whole,record_refusal_lost,cell_record_edit`, 845 s;
 `--only=record_pass_lists`, 354 s; `--only=record_pass_off`, 280 s). Each control is green.
+`pending_arg_whole` (an argument that waits for its call holds its whole value, `PendingArg.zig`) is killed by
+`ownership/RecordWriteOnlyCall` (`--only=pending_arg_whole`, 239 s, control green).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -63,6 +65,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `record_pass_off` | §2.11.5, *Two passes* | the record pass never runs, so no update has a line and a block says that both passes agree | killed | | 0 | 10: HolderRestApart (OwnershipV2Differs), … | 0 | |
 | `record_refusal_lost` | §2.11.5 | a refusal that only the record pass has, on a demand that is no record demand, is dropped | killed | | 0 | RecordPassOnly (OwnershipV2Differs) | 0 | |
 | `cell_record_edit` | §2.11.5, §2.13.7 | a cell callback's update of the contents' own record is an edit in place, as a list's is | killed | | 0 | RecordCellEdit (OwnershipV2Differs) | 0 | |
+| `pending_arg_whole` | §2.8, R-4.8.5 | an argument that waits for its call holds its whole value, whatever the callee reads | killed | | 0 | RecordWriteOnlyCall (OwnershipV2Differs) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |
