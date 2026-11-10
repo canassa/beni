@@ -591,7 +591,7 @@ const Walker = struct {
                 if (target.local != none) {
                     if (fr.records and st.kind == .field and target.path != .none) try k.w.events.append(k.gpa, .{ .local = target.local, .path = target.path, .point = i, .value = of, .rank = st.payload });
                     if (try fr.places.extend(k.gpa, fr.gc(), target.path, st)) |p| return .{ .v = v, .local = target.local, .path = p };
-                    try k.use(d.lhs, i, .whole, .{ none, none }, .{ none, none, none });
+                    try k.use(d.lhs, i, Update.readKind(fr, st), .{ none, none }, .{ none, none, none });
                 }
                 return .{ .v = v };
             },

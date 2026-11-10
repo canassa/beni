@@ -62,6 +62,10 @@ pub const Name = enum {
     record_deep_whole,
     /// §2.8, *a later callee's writes, by field* (R-4.8.5): a later callee's write below any field is a whole use of the old record.
     callee_write_whole,
+    /// §2.8, *a hold that is not the written record* (#2443): an update reads every hold by the written record's fields.
+    sibling_holds_by_field,
+    /// §2.7, *the kind `read`* (#2443): a read of a field no path names is a `whole` use that an update's filter tells by its point.
+    field_read_by_point,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

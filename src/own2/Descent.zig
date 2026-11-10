@@ -128,7 +128,7 @@ pub fn descend(uses: *Later.Uses, live: *const Sweep.Live, hi: u32, met: []const
             if (it.flat or c == it.q) {
                 kid = .{ .n = e.node, .q = c, .flat = it.flat, .use = it.use };
             } else if (try flatAt(uses, h.local, c, point)) {
-                const u = try uses.liveOnce(h.local, c, point);
+                const u = try uses.liveOnce(h.local, c, point, true);
                 if (u == null and !visit.dead) continue;
                 kid = .{ .n = e.node, .q = c, .flat = true, .use = if (u) |x| x.int() else none };
             }
@@ -162,7 +162,7 @@ pub fn descend(uses: *Later.Uses, live: *const Sweep.Live, hi: u32, met: []const
                 hs.clearRetainingCapacity();
                 try HoldAt.holdsAt(ev, .{ .leaf = l, .q = it.q, .refine = hd0.refine }, t, &hs);
                 for (hs.items) |x| {
-                    const u = if (it.flat) use else try uses.liveOnce(h.local, x[0], point);
+                    const u = if (it.flat) use else try uses.liveOnce(h.local, x[0], point, x[2]);
                     if (u != null or visit.dead) try visit.each(visit.ctx, @intCast(k), x[0], x[1], u);
                 }
             }

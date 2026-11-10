@@ -1,0 +1,12 @@
+module RecordSiblingHolds
+  25:9 update c: rejected alias: acc.cur holds it and is read at 26:5
+  32:9 update c: accepted param
+  39:9 update c: accepted param
+  46:9 update c: rejected alias: acc.cur holds it and is read at 47:5
+  51:18 update <record>.cur: rejected disjoint: another path of the same argument reaches it (approx)
+  55:22 update <record>.cur: rejected disjoint: another path of the same argument reaches it (approx)
+  59:23 update <record>.cur: accepted param
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 3, rejected 4
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 3, rejected 4

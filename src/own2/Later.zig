@@ -42,6 +42,8 @@ pub const Uses = struct {
     hoists: u32 = 0,
     /// The judged update is a once closure's (`once`): its write happens at a call, so no read of a written field is a hoist.
     no_hoist: bool = false,
+    /// The hold that is asked now is the written record itself (`HoldAt.Held`): only then are its later uses by field.
+    own: bool = true,
 
     fn f(u: *Uses) *Value.Frame {
         return &u.w.f;
@@ -59,13 +61,21 @@ pub const Uses = struct {
         u.no_hoist = no_hoist and !@import("Mutate.zig").on(.once_read_hoists);
     }
 
-    /// `liveAt`, each `(holder, path, point)` asked once a judgement.
-    pub fn liveOnce(u: *Uses, h: u32, q: PathId, point: u32) Error!?Liveness.UseId {
+    /// `liveAt`, each `(holder, path, point)` asked once a judgement. `own`: the hold at `q` is the judged
+    /// target itself. An update reads only such a hold by field; any other hold as a list demand does (#2443).
+    pub fn liveOnce(u: *Uses, h: u32, q: PathId, point: u32, own: bool) Error!?Liveness.UseId {
         try u.f().charge(.inspection, 1);
-        if (u.asked.get(.{ h, q.int(), point })) |x| return if (x == 0) null else .from(x - 1);
+        u.own = own or u.update == null or @import("Mutate.zig").on(.sibling_holds_by_field);
+        const key: [3]u32 = .{ h, q.int(), point | (@as(u32, @intFromBool(!u.own)) << 31) };
+        if (u.asked.get(key)) |x| return if (x == 0) null else .from(x - 1);
         const got = try u.liveAt(h, q, point);
-        try u.asked.put(u.f().gpa, .{ h, q.int(), point }, if (got) |x| x.int() + 1 else 0);
+        try u.asked.put(u.f().gpa, key, if (got) |x| x.int() + 1 else 0);
         return got;
+    }
+
+    /// The judged update's written fields, where the hold that is asked is the written record; else none.
+    fn byField(u: *const Uses) ?[]const u32 {
+        return if (u.own) u.update else null;
     }
 
     /// The first use of local `h` after `point`, compatible with it, that
@@ -87,7 +97,7 @@ pub const Uses = struct {
         const charge: Ids.Charge = .growth(fr.account);
         var best: ?Liveness.UseId = try w.index.useAfter(g, charge, fr.places, u.regions, h, q, point, filter);
         // Below a record an update writes, only the frame's field events count (`Update.after`).
-        if (if (u.update) |fs| try Update.after(w, u.regions, h, q, point, fs, if (u.no_hoist) null else &u.hoists) else try w.index.useUnder(g, charge, fr.places, u.regions, h, q, point, filter)) |x| {
+        if (if (u.byField()) |fs| try Update.after(w, u.regions, h, q, point, fs, if (u.no_hoist) null else &u.hoists) else try w.index.useUnder(g, charge, fr.places, u.regions, h, q, point, filter)) |x| {
             if (best == null or Update.pointOf(w, x) < Update.pointOf(w, best.?)) best = x;
         }
         // A deep read whose levels fold above it (§2.7, a read on a cycle).
@@ -126,8 +136,9 @@ pub const Uses = struct {
     /// a call use does where its callee's footprint reaches `q`.
     fn footprintReads(u: *Uses, x: Facts.Use, q: PathId) Error!bool {
         if (@import("Mutate.zig").on(.later_footprint_none)) return false;
-        // A read of a field no path names is an event of the record (`Update.Event`), which an update asks by field.
-        if (u.update != null and x.kind == .whole and u.w.bir.instTag(@fromBackingInt(x.point)) == .field_access) return false;
+        // A read of a field no path names is an event of the record (`Update.Event`), which an update of that record asks by field.
+        if (u.byField() != null and x.kind == .read) return false;
+        if (@import("Mutate.zig").on(.field_read_by_point) and u.byField() != null and x.kind == .whole and u.w.bir.instTag(@fromBackingInt(x.point)) == .field_access) return false;
         if (x.kind != .call or x.use_node == .none) return true;
         const fr = u.f();
         const foot = u.w.foots.items[x.use_node.int()];
@@ -145,11 +156,11 @@ pub const Uses = struct {
             const rw = fr.slots.relWords(rem);
             try fr.charge(.inspection, @intCast(rw.len + 1));
             // An update asks a callee's reads of its record by field (`FieldMark.reads`, R-4.8.5).
-            for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and (if (u.update) |fs| @import("FieldMark.zig").reads(&u.contracts.trees, fr.places, fr.slots, r[1], rw, fs) else Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw))) return true;
+            for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and (if (u.byField()) |fs| @import("FieldMark.zig").reads(&u.contracts.trees, fr.places, fr.slots, r[1], rw, fs) else Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw))) return true;
             // An update asks the callee's writes by field too: a write below an untouched field is none (`FieldMark.writes`).
             const at: Ids.PlaceId = if (fr.records) fr.places.pathPlace(x.path) else .none;
-            const by_field = u.update != null and !@import("Mutate.zig").on(.callee_write_whole);
-            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and (if (by_field) @import("FieldMark.zig").writes(&u.contracts.trees, fr.places, r[1], rw, at, u.update.?) else writeMeets(&u.contracts.trees, fr.places, r[1], rw, at))) return true;
+            const by_field = u.byField() != null and !@import("Mutate.zig").on(.callee_write_whole);
+            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and (if (by_field) @import("FieldMark.zig").writes(&u.contracts.trees, fr.places, r[1], rw, at, u.byField().?) else writeMeets(&u.contracts.trees, fr.places, r[1], rw, at))) return true;
         }
         return false;
     }

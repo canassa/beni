@@ -243,7 +243,7 @@ const layers = [_]Entry{
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A record update over its base and the frame's field events, split from `Walk` (§2.6, §2.7).
     // The kind of a slot, for `CallReq` (a list's storage beside a record's object).
-    .{ .file = "Update.zig", .layer = 8, .max_lines = 270 },
+    .{ .file = "Update.zig", .layer = 8, .max_lines = 275 },
     // A closure's field captures, read off the text (§2.11.4, R-5.4.6).
     .{ .file = "FieldCapture.zig", .layer = 8, .max_lines = 70 },
     // A record's fields read, in a contract's reads (§2.8, R-4.8.5).
@@ -285,7 +285,8 @@ const layers = [_]Entry{
     // The holder index and its sweep, split from `Holders` (#1714): holds
     // listed once a holder, buckets by next use, the aggregated holders.
     // A holder's later uses, split from `Resolve` for the best-hold descent (#1714).
-    .{ .file = "Later.zig", .layer = 10, .max_lines = 180 },
+    // The hold that is asked is the written record, or another object (#2443).
+    .{ .file = "Later.zig", .layer = 10, .max_lines = 190 },
     .{ .file = "Sweep.zig", .layer = 10, .max_lines = 720 },
     // The paths at which a hold holds a target, split from `Descent` (#1714).
     .{ .file = "HoldAt.zig", .layer = 10, .max_lines = 140 },

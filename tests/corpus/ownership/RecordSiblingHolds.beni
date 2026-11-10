@@ -1,0 +1,59 @@
+-- ownership: an update of a record at a field of a parameter, and the
+-- parameter's other slots (`ownership-v2.md` §2.8, *Dead, by field*,
+-- *a hold that is not the written record*; R-4.8.2, R-4.8.8; #2443).
+-- `c = acc.cur` is the record at the field `cur`. After its update, a
+-- read of `acc.cur` is the old record whole again: refused (`sameField`).
+-- A read of another field that can hold the same record is allowed only
+-- where the caller keeps the two apart: `listField` and `otherField` ask
+-- it of their callers, `shared` and `sharedTwin` hand one record at both
+-- and are refused, `apart` is accepted. The whole record used later is
+-- refused (`wholeAfter`).
+type alias D =
+    tag : String
+    count : Int
+
+
+type alias Acc =
+    cur : D
+    hist : List D
+    twin : D
+
+
+pub sameField : Int, Acc → D × D
+sameField n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.cur )
+
+
+listField : Int, Acc → D × List D
+listField n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.hist )
+
+
+otherField : Int, Acc → D × D
+otherField n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.twin )
+
+
+pub wholeAfter : Int, Acc → D × Acc
+wholeAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc )
+
+
+pub shared : D, D → D × List D
+shared d other = listField 1 { cur = d, hist = [ d ], twin = other }
+
+
+pub sharedTwin : D, D → D × D
+sharedTwin d other = otherField 1 { cur = d, hist = [ other ], twin = d }
+
+
+pub apart : D, D, D → D × List D
+apart d other third = listField 1 { cur = d, hist = [ other ], twin = third }
