@@ -1,0 +1,113 @@
+--! Written order under a counter (language.md §6, *Evaluation order*, #2430):
+--! each case writes a call that bumps a `Js.Ref` and a read of that ref,
+--! the call first. Every expected count is 1 — the read comes after the
+--! call — except the control, which reads first (0). The record cases are
+--! the ones whose keys sort the other way (`reads` before `value`). Each
+--! case makes its own ref, so the ref stays a local `let` (a ref that
+--! escapes is an object, whose reads already keep their place).
+
+import Js
+
+
+type alias Counted =
+    value : Int
+    reads : Int
+
+
+type Pair
+    = Pair Int Int
+
+
+pub cases : ⊤ → List String
+cases ⊤ =
+    [ "record literal: " ++ show (literal ⊤)
+    , "field bound first: " ++ show (bound ⊤)
+    , "record update: " ++ show (updated ⊤)
+    , "read written first (control): " ++ show (control ⊤)
+    , "constructor: " ++ constructor ⊤
+    , "tuple: " ++ tuple ⊤
+    , "list: " ++ list ⊤
+    ]
+
+
+show : Counted → String
+show c = "value ${String.fromInt c.value}, reads ${String.fromInt c.reads}"
+
+
+literal : ⊤ → Counted
+literal ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    { value = bump ⊤, reads = Js.read r }
+
+
+bound : ⊤ → Counted
+bound ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    v = bump ⊤
+    { value = v, reads = Js.read r }
+
+
+updated : ⊤ → Counted
+updated ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    base = { value = 0, reads = 0 }
+    { base | value = bump ⊤, reads = Js.read r }
+
+
+control : ⊤ → Counted
+control ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    { reads = Js.read r, value = bump ⊤ }
+
+
+constructor : ⊤ → String
+constructor ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    case Pair (bump ⊤) (Js.read r) of
+        Pair value reads →
+            "value ${String.fromInt value}, reads ${String.fromInt reads}"
+
+
+tuple : ⊤ → String
+tuple ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    ( value, reads ) = ( bump ⊤, Js.read r )
+    "value ${String.fromInt value}, reads ${String.fromInt reads}"
+
+
+list : ⊤ → String
+list ⊤ =
+    r = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write r (Js.read r + 1)
+            5
+    case [ bump ⊤, Js.read r ] of
+        [ value, reads ] →
+            "value ${String.fromInt value}, reads ${String.fromInt reads}"
+        _ →
+            "not two"
