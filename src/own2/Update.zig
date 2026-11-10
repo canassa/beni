@@ -171,7 +171,9 @@ pub fn of(k: anytype, i: u32, fields: anytype, base: u32) Error!u32 {
             try k.w.uses.append(k.gpa, .{ .local = r.local, .path = p, .point = i, .kind = .field, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
         };
     }
-    if (fr.records and r.local != none and r.path != .none) try k.w.events.append(k.gpa, .{ .local = r.local, .path = r.path, .point = i, .value = bv, .fields = written });
+    // An update that keeps no field reads nothing of its record: no event (R-4.8.2).
+    const keeps = ranks.items.len != written.len or @import("Mutate.zig").on(.full_update_reads);
+    if (fr.records and keeps and r.local != none and r.path != .none) try k.w.events.append(k.gpa, .{ .local = r.local, .path = r.path, .point = i, .value = bv, .fields = written });
     k.pop(base);
     // The list pass (R-8.6): a new record that holds the base's fields, and no demand.
     if (!fr.records) return k.recordOf(i, ranks.items, ks.items, 0, i);

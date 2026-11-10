@@ -1,0 +1,30 @@
+-- ownership: a later update that keeps no field reads nothing of the old
+-- record (`ownership-v2.md` §2.7, *Field events*; R-4.8.2). After
+-- `next = { model | count = n }`, the update `{ model | items = …,
+-- count = n }` replaces every field of the old record: it is no use of
+-- it, also where the frame reads `model.count` between the two, which is
+-- a hoist (`compared`). A later update that keeps a field reads the old
+-- record whole, and the first update is refused (`keeps`). The second
+-- update is judged apart: where `next` is still used, it is refused
+-- (`bothLive`).
+type alias Model =
+    items : List Int
+    count : Int
+
+
+pub compared : Int, Model → Model
+compared n model =
+    next = { model | count = n }
+    if next.count == model.count then next else { model | items = [ n ], count = n }
+
+
+pub keeps : Int, Model → Model
+keeps n model =
+    next = { model | count = n }
+    if next.count == model.count then next else { model | items = [ n ] }
+
+
+pub bothLive : Int, Model → Model × Model
+bothLive n model =
+    next = { model | count = n }
+    ( next, { model | items = [ n ], count = n } )

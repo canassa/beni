@@ -1,0 +1,14 @@
+module RecordFieldAfterWrite
+  24:9 update c: rejected alias: acc.cur holds it and is read at 25:12 [copy]
+  32:9 update c: accepted param [hoisted 1]
+  39:9 update c: accepted param
+  47:9 update c: rejected alias: p.hist[*] holds it and is read at 48:11 [copy]
+  hoist acc.cur.count: read 33:17; after operands 32:9
+  summary boundAfter: π2.cur RW{count}, π2.cur.count R; res .0 π2.cur◦, .1 π2.cur, condition(fresh1){shared}r{shared}
+  summary writtenAfter: π2.cur RW{count}, π2.cur.count R; res .0 π2.cur◦
+  summary untouchedAfter: π2.cur RW{count}, π2.cur.count R, π2.cur.tag R; res .0 π2.cur◦
+  summary localRecord: π2 RW{count}, π2.count R; res .0 π2◦, .1 fresh1r{excl π2}, .1[*] π2, condition(fresh2){shared}r{shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 2, pending 0, rejected 2 (copy 2, restructure 0); hoisted 1, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 2, pending 0, rejected 2 (copy 2, restructure 0); hoisted 1, eager reads 0

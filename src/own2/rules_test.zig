@@ -51,7 +51,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // Its lines are its table: a line for each rule broken, and its comment.
-    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 455 },
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 460 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -243,7 +243,7 @@ const layers = [_]Entry{
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A record update over its base and the frame's field events, split from `Walk` (§2.6, §2.7).
     // The kind of a slot, for `CallReq` (a list's storage beside a record's object).
-    .{ .file = "Update.zig", .layer = 8, .max_lines = 275 },
+    .{ .file = "Update.zig", .layer = 8, .max_lines = 280 },
     // A closure's field captures, read off the text (§2.11.4, R-5.4.6).
     .{ .file = "FieldCapture.zig", .layer = 8, .max_lines = 70 },
     // A record's fields read, in a contract's reads (§2.8, R-4.8.5).

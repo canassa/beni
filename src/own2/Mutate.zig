@@ -66,6 +66,8 @@ pub const Name = enum {
     sibling_holds_by_field,
     /// §2.7, *the kind `read`* (#2443): a read of a field no path names is a `whole` use that an update's filter tells by its point.
     field_read_by_point,
+    /// §2.7, *Field events* (R-4.8.2): an update that keeps no field makes an event, as an update that reads its record does.
+    full_update_reads,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

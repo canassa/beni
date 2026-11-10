@@ -921,6 +921,14 @@ only an `update` demand reads it, so no list verdict depends on it (R-8.6). An e
   before a write: a **hoist**.
 - an **update** of the record at that path through that local: a read by the update itself of every field it
   keeps, which nothing can move. A later update of the old record is a whole use of it (R-4.8.2 (c)).
+  *Amended 2026-11-10 (#1018; R-4.8.2): an update that keeps no field makes no event.* An update that
+  replaces every field of its record reads none of them (`ownership-checker.md` §31.4 item 5), so it is no
+  use of the old record. Until this amendment it made an event as every update does, and was no witness only
+  where the holder had no later use at all: with a read of a field between the two updates,
+  `next = { model | count = n }` followed by `if next.count == model.count then next else { model | items =
+  [ n ], count = n }` refused the first update. Now `Update.of` makes the event only where the update keeps
+  a field or a row. The later update is still a demand of its own, judged at its own point: it is refused
+  where `next` is still used. Fixture `ownership/RecordFullUpdateLater`; mutant `full_update_reads`.
 
 The uses are the list pass's, with one change in the record pass: a record pattern in a `let` reads the fields
 it binds, each a `whole` use at the field's path, and not its record whole. The kind `field` is, as built,
