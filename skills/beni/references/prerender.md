@@ -1,7 +1,6 @@
 # Prerendered pages
 
-On `browser-inline`, `Browser.prerender` writes one HTML page per route. Each page holds the
-program's first render for its route. A static host serves the pages as files. When the page
+On `browser-inline`, `Browser.prerender` writes one HTML page per route. Each page holds the program's first render for its route. A static host serves the pages as files. When the page
 loads, the program takes it over: it does not render the page again.
 
 ```beni platform=browser-inline
@@ -136,10 +135,10 @@ main =
 
 ## What must be pure
 
-`init`, `view` and the route list must be pure: the build computes each page, and the browser
-computes the same first render again. A call that may read the clock, randomness or the host is
-`prerender_impure`, at the call. `Debug.log` is allowed, also in another module. A render that
-throws fails the build (`prerender_failed`), with the route.
+`init`, `view` and routes must be pure: the build and browser compute the same first render. Host, clock and random reads are `prerender_impure`, at the call.
+`Debug.log` is allowed, also in another module. A render that throws fails the build (`prerender_failed`), with the route.
+- An inline or local named init may return a pure model with `Cmd.none`, `Cmd.perform`, or a literal `Cmd.batch`. Only the client makes the command metadata and runs the body.
+  Eager arguments and captures must be pure. Opaque helpers and metadata selecting the model remain compiler limits; host reads remain refused.
 - The build reads all the code that they can run, in each module of the program and its
   platforms. `init` can name a function of another module: `init = Counter.init`.
 - A constant is computed when its module loads. A read of a constant whose code may be impure

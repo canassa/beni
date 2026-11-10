@@ -1,0 +1,40 @@
+-- Approved contract fixture: body's context belongs to its creator;
+-- the reply update's context belongs to the program.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Reply
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λsend →
+                    Time.sleep (Time.millis 5)
+                    Log.info "body"
+                    send Reply
+                )
+
+        Reply →
+            Log.info "reply update"
+            ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button id="go" onClick={Go}>go</button><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -1,0 +1,8 @@
+click #start
+timers
+throws detail window rr-push 1
+timers
+advance 100
+detail window rr-push 2
+stop
+timers

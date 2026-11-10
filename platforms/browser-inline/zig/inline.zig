@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 26 },
+    .targets = .{ .major = 1, .minor = 28 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -49,6 +49,8 @@ pub const lowering: m.Lowering = .{
         .{ .name = "own", .arity = 1 },
         // Install a subscription with the renderer's captured event entry.
         .{ .name = "subscribe", .arity = 1 },
+        .{ .name = "startWork", .arity = 2 },
+        .{ .name = "update", .arity = 1 },
         // `(id)`: the element a program mounts at.
         .{ .name = "root", .arity = 1 },
         // `(⊤)`: the page's unmount (`boundary.md` §9.4.5).
@@ -160,7 +162,19 @@ pub const lowering: m.Lowering = .{
     .places = true,
     .constructs = true,
     .arm_fields = true,
-    .effects = .{ .sub = "Sub", .cmd = "Cmd", .entry_capture = .{ .module = "Listen", .name = "callback" } },
+    .effects = .{
+        .sub = "Sub",
+        .cmd = "Cmd",
+        .entry_capture = .{ .module = "Listen", .name = "callback" },
+        .command_context = true,
+        .update_writers = &.{
+            .{ .package = .core, .module = "Task", .name = "withClock" },
+            .{ .package = .core, .module = "Task", .name = "withLogContext" },
+            .{ .package = .core, .module = "Task", .name = "withScheduler" },
+            .{ .package = .core, .module = "Task", .name = "addFinalizer" },
+            .{ .package = .core, .module = "Task", .name = "cleanupFiber" },
+        },
+    },
     .no_markup_values = no_markup_values,
     .prerenders = true,
 };
@@ -1411,12 +1425,11 @@ const Page = struct {
                 continue;
             }
             if (s.handler >= keys.len) return cx.programReport(.call, .not_implemented, "A limit of the compiler: a subscription's key has no handler.");
-            if (keys[s.handler].fields != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
+            if (s.fields != 0 and keys[s.handler].fields != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
                 \\A limit of the compiler: `browser-inline` does not compile the subscription at {s} yet:
-                \\its message's constructor takes the value in more than one field
-                \\(`docs/design/browser-inline.md` §5, class 1). Give the constructor one field for the
-                \\value.
-            , .{s.where}));
+                \\its tagger supplies {d} constructor fields, but the selected handler expects {d}
+                \\(`docs/design/browser-inline.md` §5, class 1). This field mapping is not supported yet.
+            , .{ s.where, s.fields, keys[s.handler].fields }));
             _ = try pg.handler(s.handler);
         }
         // A command that runs sends messages of any key: every key is then
@@ -1870,6 +1883,20 @@ const Page = struct {
         // Each subscription started: the first declaration of each key
         // starts it, and each value goes through every declaration of that
         // key in order, each a dispatch of its own.
+        // A program with scoped subscriptions but no commands needs no
+        // whole-message dispatcher. Give its task root a private identity
+        // instead of reaching a dispatcher that the plan never created.
+        var work_owner: ?m.Expr = null;
+        for (subs) |s| if (s.waits) {
+            if (pg.dispatch) |dispatch| {
+                work_owner = try js.name(dispatch);
+            } else {
+                const owner = try cx.fresh("workOwner");
+                try js.constant(body, owner, try js.object(&.{}));
+                work_owner = try js.name(owner);
+            }
+            break;
+        };
         for (subs, 0..) |s, i| {
             if (s.first != i) continue;
             const v = try cx.fresh("v");
@@ -1903,9 +1930,12 @@ const Page = struct {
             }
             const send = try js.arrow(if (s.fields == 0) &.{} else &.{v}, sends);
             // What the start returns, the remover, is owned where it is made.
-            const install = if (s.entry) try js.block() else body;
+            const install = if (s.entry or s.waits) try js.block() else body;
             const start = try cx.programSubscriptionStart(install, @intCast(i), send);
-            const registered = if (s.entry) blk: {
+            const registered = if (s.waits) blk: {
+                try js.@"return"(install, start);
+                break :blk try js.call(try js.name(try cx.runtime("startWork")), &.{ work_owner.?, try js.arrow(&.{}, install) });
+            } else if (s.entry) blk: {
                 try js.@"return"(install, start);
                 break :blk try js.call(try js.name(try cx.runtime("subscribe")), &.{try js.arrow(&.{}, install)});
             } else start;
@@ -1916,7 +1946,7 @@ const Page = struct {
         // §7.3).
         if (pg.route_url) |u| try js.expression(body, try js.call(try js.name(try cx.runtime("arrived")), &.{try js.name(u)}));
         // `init`'s command, after the mount's writes.
-        if (element_ and cx.programCommand(null) == .runs) {
+        if (element_ and (cx.programCommand(null) == .runs or cx.programCommand(null) == .suspends)) {
             try js.expression(body, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(init, "b"), try js.name(pg.dispatch.?) }));
         }
         // The input made before the takeover, handed to its listeners last
@@ -2136,14 +2166,7 @@ const Page = struct {
         const cx = pg.cx;
         switch (cx.programCommand(key)) {
             .none => return false,
-            .runs => return true,
-            .suspends => |where| return cx.programReport(if (key == null) .init else .update, .not_implemented, try std.fmt.allocPrint(cx.arena,
-                \\A limit of the compiler: the command whose body is at {s} may suspend, and a body that
-                \\suspends needs the task kernel, which `browser-inline` does not have yet
-                \\(`docs/design/browser-inline.md` §4; §5, class 2).
-                \\Write the body so that it does not wait, or build this program with
-                \\`--platform=browser-tea`.
-            , .{where})),
+            .runs, .suspends => return true,
             else => return cx.programReport(if (key == null) .init else .update, .not_implemented,
                 \\A limit of the compiler: the write-set pass could not read this command as
                 \\`Cmd.none`, `Cmd.batch` or `Cmd.perform` (`docs/design/browser-inline.md` §4; §5,
@@ -3191,6 +3214,14 @@ const Page = struct {
     /// writes reach — and those of a control the key's events show — each
     /// entry once, in document order, then the key's command is queued.
     fn handlerBody(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr, pass: []const m.Program.BucketRef) m.Error!void {
+        if (!pg.p.update_context) return pg.handlerBodyIn(blk, k, params, update, pass);
+        const js = pg.cx.js;
+        const body = try js.block();
+        try pg.handlerBodyIn(body, k, params, update, pass);
+        try js.expression(blk, try js.call(try js.name(try pg.cx.runtime("update")), &.{try js.arrow(&.{}, body)}));
+    }
+
+    fn handlerBodyIn(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr, pass: []const m.Program.BucketRef) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
         const element_ = pg.p.constructor >= 1;
@@ -3205,7 +3236,7 @@ const Page = struct {
         // dropped whole by release (`Opt`), and its writes with it — and an
         // element's pair is kept only for its command.
         const kept = cx.programModelKept();
-        const commands = element_ and cx.programCommand(k) == .runs;
+        const commands = element_ and (cx.programCommand(k) == .runs or cx.programCommand(k) == .suspends);
         if (kept and !commands) {
             if (next != before) try js.expression(blk, next);
             try pg.writePass(blk, pass);
@@ -3229,7 +3260,7 @@ const Page = struct {
         try pg.writePass(blk, pass);
         if (pg.retitle) |r| try js.expression(blk, try js.call(try js.name(r), &.{}));
         if (element_) switch (cx.programCommand(k)) {
-            .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
+            .runs, .suspends => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
         };
     }

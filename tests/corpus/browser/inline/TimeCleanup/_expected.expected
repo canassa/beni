@@ -1,0 +1,22 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <output>"0"</output>
+  </main>
+</body>
+-- click #start
+console.log: started: ⊤
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- stop
+(stopped)
+console.log: released: ⊤
+<body></body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

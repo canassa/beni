@@ -7,9 +7,11 @@
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
 import Cmd exposing (Cmd)
+import Hosted
 import Js
 import Listen
 import Schema exposing (Field, Index, Issue, PathSegment, Schema)
+import Task
 import Url exposing (Url)
 
 
@@ -117,6 +119,8 @@ defect ⊤ =
     wasDead = Js.read dead
     Js.write dead True
     Js.write queue Js.null
+    if not (Js.isNull (Js.read taskStop)) then
+        Js.to (Js.apply (Js.read taskStop) [])
     if Js.development ⊤ && not wasDead then
         crashScreen ⊤
 
@@ -210,8 +214,92 @@ fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
 --| same dispatch — each message a body sends queued in turn and handed to
 --| `dispatch`, the program's.
 pub commands : Cmd V, V → ⊤
-commands cmd dispatch = List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
-    send (Js.from λ_ → body λmsg → send dispatch (Js.from msg) Js.undefined) Js.null Js.undefined
+commands cmd dispatch = List.foldl (Cmd.items cmd) ⊤ λitem _ →
+    case item of
+        Cmd.Now job →
+            send
+                (Js.from λ_ → Hosted.callJob job λmsg → send dispatch msg Js.undefined)
+                Js.null
+                Js.undefined
+
+        Cmd.Perform job →
+            send
+                (Js.from λ_ →
+                    _ = Task.spawnIn (taskScope dispatch) λ⊤ →
+                        Hosted.runJob job λmsg → send dispatch msg Js.undefined
+                    ⊤
+                )
+                Js.null
+                Js.undefined
+
+        _ →
+            fault "a command the inline compiler did not compile"
+
+
+-- A page reaches this map and the task kernel only when work can wait.
+-- Each program dispatcher owns one root, closed by its mount's teardown.
+taskScopes : Js.Ref V
+taskScopes = Js.ref Js.null
+
+
+-- A task-free page's defect path reaches no task kernel. Install cleanup
+-- only when the first root is made; null needs no cleanup.
+taskStop : Js.Ref V
+taskStop = Js.ref Js.null
+
+
+-- A stopped page still lets its cancelled fibers run their finalizers.
+-- Their sends are already closed by `dead`; dropping the scheduler turn
+-- itself would strand teardown after a stop or a native-reader defect.
+taskTurn : sync (⊤ → ⊤) → ⊤
+taskTurn body = if Js.read dead then body ⊤ else eventEntry body
+
+
+taskScope : V → Task.Scope
+taskScope dispatch =
+    if Js.isNull (Js.read taskScopes) then
+        Js.write taskScopes (Js.construct (Js.global "Map") [])
+        Js.write taskStop (Js.from closeTasks)
+        Task.onTurn taskTurn
+        Task.onDefect defect
+    scopes = Js.read taskScopes
+    previous = Js.call scopes "get" [ dispatch ]
+    if Js.isUndefined previous then
+        scope = Task.openRoot ⊤
+        _ = Js.call scopes "set" [ dispatch, Js.from scope ]
+        own
+            (Js.from λ⊤ →
+                Task.closeRoot scope
+                Js.to (Js.call scopes "delete" [ dispatch ])
+            )
+        scope
+    else
+        Js.to previous
+
+
+closeTasks : ⊤ → ⊤
+closeTasks ⊤ =
+    if not (Js.isNull (Js.read taskScopes)) then
+        scopes = Js.read taskScopes
+        Js.each (Js.call scopes "values" []) λscope → Task.closeRoot (Js.to scope)
+        Js.to (Js.call scopes "clear" [])
+
+
+--| Start a statically declared subscription body in its program's scope.
+--| Dynamic subscription sets remain a compiler limit; the mount closes
+--| this scope when its fixed set ends, after stopping message delivery.
+pub startWork : V, V → V
+startWork dispatch body =
+    _ = Task.spawnIn (taskScope dispatch) λ⊤ → Js.suspending λ⊤ → Js.to (Js.apply body [])
+    Js.from nothing
+
+
+--| One message update with the program's log context. Restore the caller
+--| even when the update throws through a native event dispatch.
+pub update : sync (⊤ → ⊤) → ⊤
+update body =
+    mark = Task.beginUpdate ⊤
+    Js.finally body λ⊤ → Task.endUpdate mark
 
 
 -- ---- Documents and applications (`browser-inline.md` §10) ---------------

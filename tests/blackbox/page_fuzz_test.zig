@@ -545,7 +545,7 @@ test "a missed title write is caught though the body is the same" {
     defer w.deinit();
     try setUp(&w, document);
     // The title is written by the platform (`Hosted.title`), not the program.
-    try breakAfterMount(&w, "b/_platform/_browser/Hosted.mjs", ".title = ");
+    try breakAfterMount(&w, "b/_platform/_browser-base/Hosted.mjs", ".title = ");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │

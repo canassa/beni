@@ -638,6 +638,7 @@ pub const Direct = struct {
     };
 
     pub const Program = struct {
+        update_context: bool = true,
         module: u32,
         inst: u32,
         keys: []const beni_markup.Program.Key,
@@ -1432,6 +1433,9 @@ pub const Lowerer = struct {
     wanted: []bool = &.{},
     /// The program call whose hook is running (`cx.programInit`).
     program_now: ?*ProgramCall = null,
+    /// The proved command half of an init, erased only in its prerender
+    /// evaluation. Arguments retain their ordinary eager effects.
+    staged_command_now: ?Inst.Index = null,
     /// Inside `cx.programViewEnter` (version 1.7): the `view` root whose
     /// inputs are bound, and the declaration context to return to.
     program_view: ?struct { root: ?beni_markup.Root.Index, saved: DeclCtx } = null,
@@ -3915,6 +3919,9 @@ pub const Lowerer = struct {
     /// this one shows them: such a value is exported and its result read.
     fn emitterCalled(l: *Lowerer, index: u32) bool {
         const d = l.bir.decls[index];
+        if (l.in.direct) |direct| for (direct.programs) |program| for (program.starts) |start| {
+            if (start.kind == .top and start.module == l.in.module.int() and start.decl == index) return true;
+        };
         if (l.in.worker_host_client and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "installHostStop")) return true;
         if (l.in.worker_host) {
             const spelling = l.text(l.bir.symbol(d.name));
@@ -6716,6 +6723,7 @@ pub const Lowerer = struct {
         const saved = l.evidence_out;
         l.evidence_out = out;
         defer l.evidence_out = saved;
+        if (l.staged_command_now) |command| if (command == inst) return l.eraseStagedCommand(out, inst);
         // `expr_height` is the running maximum of the expressions lowered
         // inside this one — each nested `expr` raises it on the way out — so
         // it is this expression's height without one frame per node.
@@ -15306,6 +15314,7 @@ pub const Lowerer = struct {
         l.program_now = saved_shape;
         const update, _ = l.programShape(pc.update);
         const program: beni_markup.Program = .{
+            .update_context = if (pc.direct) |direct| direct.update_context else true,
             .constructor = pc.constructor,
             .record = pc.record,
             .view = if (pc.record) view else .computed,
@@ -15388,15 +15397,24 @@ pub const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(false);
         defer l.leaveFunction(outer);
-        const saved = try l.enterDecl(pc.record_decl);
+        const staged_function = if (pc.staged_command != null) l.fieldFunction(pc, init) else null;
+        const saved = try l.enterDecl(if (staged_function) |function| function.decl else pc.record_decl);
         defer l.leaveDecl(saved);
         // A function of `⊤` takes no JavaScript argument (`backend.md` §6, *A
         // parameter of type `()`*).
         // A lambda evaluated as its body: what the ownership pass hoists at
         // the lambda — a read of a record it captures, a page's value
         // (`prerender.md` §8.4) — is bound first (§31.14).
+        const saved_command = l.staged_command_now;
+        l.staged_command_now = pc.staged_command;
+        defer l.staged_command_now = saved_command;
         if (body != null) try l.placeHoistsOnce(&stmts, init);
-        const value = if (body) |b| try l.expr(&stmts, b) else try l.call(try l.expr(&stmts, init), args, p);
+        const value = if (staged_function != null and l.bir.instTag(init) == .top) blk: {
+            const function = staged_function.?;
+            const record = try l.functionOf(0, .none, function.params, function.body, false);
+            const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
+            break :blk try l.call(arrow, args, p);
+        } else if (body) |b| try l.expr(&stmts, b) else try l.call(try l.expr(&stmts, init), args, p);
         // Bound to a name, which `--release` keeps though nothing reads it
         // when `init` may have an effect — a throw that stops the page, a
         // `Debug.log` — as it keeps any such binding (`backend.md` §9). A
@@ -15595,19 +15613,33 @@ pub const Lowerer = struct {
             else => return true,
         };
         var verdicts = try l.newVerdicts();
-        const at: At = .{ .m = l.in.module, .inst = field };
-        const found: Effect = switch (l.bir.instTag(field)) {
-            .lambda => try l.effectOf(l.ownFrame(), @fromBackingInt(@intCast(l.bir.instData(field).rhs)), &verdicts),
-            .top => try l.namedEffect(l.ownFrame(), l.bir.instData(field).lhs, at, &verdicts),
-            .ext_value => blk: {
-                const d = l.bir.instData(field);
-                const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
-                const f = l.followed(m) orelse break :blk .{ .unread = at };
-                const decl = l.in.provenance[m.int()].valueDecl(d.rhs) orelse break :blk .{ .unread = at };
-                break :blk try l.namedEffect(f, decl.int(), at, &verdicts);
-            },
-            else => .{ .unread = at },
-        };
+        var found = try l.fieldEffect(field, &verdicts);
+        if (part == .init and pc.constructor != 0 and found != .none and found != .debug) {
+            const proof = try l.stagedInitEffect(field, &verdicts);
+            if (proof != null and (proof.? == .none or proof.? == .debug)) {
+                found = proof.?;
+            } else {
+                // This second walk is diagnostic only: ignoring recognized
+                // construction never makes an unproved init acceptable.
+                var eager = try l.newVerdicts();
+                eager.command_diagnostic = true;
+                found = try l.fieldEffect(field, &eager);
+                if (found == .none or found == .debug) {
+                    if (try l.constantRead(l.ownFrame(), field, &eager)) |read| {
+                        found = .{ .site = read };
+                    } else {
+                        try l.report(.not_implemented, field,
+                            \\A limit of the compiler: this init constructs a command, but the build cannot
+                            \\prove that its client-only metadata is separate from the initial model.
+                            \\Write an inline init or a local named init returning a pair of a pure model
+                            \\and Cmd.none, Cmd.perform, or Cmd.batch of a literal list. Command metadata
+                            \\must not be inspected to choose the model (`docs/design/prerender.md` §3.1).
+                        , .{});
+                        return false;
+                    }
+                }
+            }
+        }
         switch (found) {
             .none, .debug => {
                 const read = try l.constantRead(l.ownFrame(), field, &verdicts) orelse return true;
@@ -15647,13 +15679,148 @@ pub const Lowerer = struct {
     /// value whose code the build cannot read.
     const Effect = union(enum) { none, debug, site: At, unread: At };
 
+    fn fieldEffect(l: *Lowerer, field: Inst.Index, verdicts: *Verdicts) Allocator.Error!Effect {
+        const at: At = .{ .m = l.in.module, .inst = field };
+        return switch (l.bir.instTag(field)) {
+            .lambda => l.effectOf(l.ownFrame(), @fromBackingInt(@intCast(l.bir.instData(field).rhs)), verdicts),
+            .top => l.namedEffect(l.ownFrame(), l.bir.instData(field).lhs, at, verdicts),
+            .ext_value => blk: {
+                const d = l.bir.instData(field);
+                const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                const frame = l.followed(m) orelse break :blk .{ .unread = at };
+                const decl = l.in.provenance[m.int()].valueDecl(d.rhs) orelse break :blk .{ .unread = at };
+                break :blk try l.namedEffect(frame, decl.int(), at, verdicts);
+            },
+            else => .{ .unread = at },
+        };
+    }
+
     /// A declaration's `Effect`, once walked: `visiting` while its body is,
     /// so a recursive call finds no effect the walk has not met already.
     const Purity = union(enum) { unknown, visiting, done: Effect };
 
     /// Per module, its declarations' `Purity`, each module's made the first
     /// time the walk enters it.
-    const Verdicts = struct { per: [][]Purity };
+    const Verdicts = struct { per: [][]Purity, command_diagnostic: bool = false };
+
+    const StagedConstructor = enum { none, perform, batch };
+
+    /// Resolve against the selected lowering's actual platform module and
+    /// declaration. An app module or alias merely spelled Cmd is no proof.
+    fn stagedConstructor(l: *Lowerer, inst: Inst.Index) Allocator.Error!?StagedConstructor {
+        return l.stagedConstructorIn(l.ownFrame(), inst);
+    }
+
+    fn stagedConstructorIn(l: *Lowerer, frame: CodeFrame, inst: Inst.Index) Allocator.Error!?StagedConstructor {
+        const effects = l.mk.?.lowering.effects orelse return null;
+        if (!effects.command_context) return null;
+        const module = l.in.graph.find(.platform, try l.interner.getOrPut(l.gpa, effects.cmd)) orelse return null;
+        const d = frame.b.instData(inst);
+        const decl = switch (frame.b.instTag(inst)) {
+            .top => if (module == frame.m) d.lhs else return null,
+            .ext_value => if (d.lhs == module.int())
+                (l.in.provenance[module.int()].valueDecl(d.rhs) orelse return null).int()
+            else
+                return null,
+            else => return null,
+        };
+        const bir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
+        const value_name = l.text(bir.symbol(bir.decls[decl].name));
+        if (std.mem.eql(u8, value_name, "none")) return .none;
+        if (std.mem.eql(u8, value_name, "perform")) return .perform;
+        if (std.mem.eql(u8, value_name, "batch")) return .batch;
+        return null;
+    }
+
+    /// Only these construction shapes introduce client-only metadata.
+    /// Every eager argument is checked normally; a lambda's body stays
+    /// deferred, while its captured constants are checked by constantRead.
+    fn stagedCommandEffect(l: *Lowerer, root: Inst.Index, verdicts: *Verdicts, depth: u32) Allocator.Error!?Effect {
+        if (depth == 0) return null;
+        if (try l.stagedConstructor(root)) |kind| {
+            if (kind == .none) return @as(Effect, .none);
+            return null;
+        }
+        if (l.bir.instTag(root) != .call) return null;
+        const d = l.bir.instData(root);
+        const kind = (try l.stagedConstructor(@fromBackingInt(@intCast(d.lhs)))) orelse return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (args.len != 1) return null;
+        switch (kind) {
+            .none => return null,
+            .perform => return try l.effectOf(l.ownFrame(), args[0], verdicts),
+            .batch => {
+                if (l.bir.instTag(args[0]) != .list) return null;
+                var debug = false;
+                for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Inst.Index)) |command| {
+                    const effect = (try l.stagedCommandEffect(command, verdicts, depth - 1)) orelse return null;
+                    switch (effect) {
+                        .none => {},
+                        .debug => debug = true,
+                        else => return effect,
+                    }
+                }
+                return if (debug) .debug else .none;
+            },
+        }
+    }
+
+    /// A structural phase split: pure eager lets and model, followed by
+    /// a recognized command in the pair's second slot. Nothing can inspect
+    /// its metadata to select the model. Other shapes retain the ordinary
+    /// refusal; this never exempts an arbitrary function returning Cmd.
+    fn stagedInitEffect(l: *Lowerer, field: Inst.Index, verdicts: *Verdicts) Allocator.Error!?Effect {
+        const pc = l.program_now.?;
+        const function = l.fieldFunction(pc, field) orelse return null;
+        if (l.bir.instTag(field) == .top and Convention.ofDecl(l.in.dispatch, l.bir, function.decl).evidence != 0) return null;
+        var root = function.body;
+        while (l.bir.instTag(root) == .let) {
+            const d = l.bir.instData(root);
+            for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                const dd = l.bir.instData(def);
+                if (l.bir.instTag(def) == .let_def) {
+                    const ld = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
+                    if (ld.params_start != ld.params_end) continue;
+                }
+                switch (l.bir.instTag(def)) {
+                    .let_def, .let_pattern, .let_stmt => switch (try l.effectOf(l.ownFrame(), @fromBackingInt(@intCast(dd.rhs)), verdicts)) {
+                        .none, .debug => {},
+                        else => |effect| return effect,
+                    },
+                    else => {},
+                }
+            }
+            root = @fromBackingInt(@intCast(d.rhs));
+        }
+        if (l.bir.instTag(root) != .tuple) return null;
+        const pair = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(root)), Inst.Index);
+        if (pair.len != 2) return null;
+        switch (try l.effectOf(l.ownFrame(), pair[0], verdicts)) {
+            .none, .debug => {},
+            else => |effect| return effect,
+        }
+        const command = (try l.stagedCommandEffect(pair[1], verdicts, 64)) orelse return null;
+        if (command != .none and command != .debug) return command;
+        l.program_now.?.staged_command = pair[1];
+        return command;
+    }
+
+    /// Eliminate the proved metadata construction while preserving eager
+    /// argument evaluation (including Debug), in its written order.
+    fn eraseStagedCommand(l: *Lowerer, out: *StmtList, root: Inst.Index) Allocator.Error!Node.Index {
+        const p = l.pos(root);
+        if (l.bir.instTag(root) == .call) {
+            const d = l.bir.instData(root);
+            const kind = (try l.stagedConstructor(@fromBackingInt(@intCast(d.lhs)))).?;
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+            if (kind == .perform) {
+                try l.discard(out, args[0], p);
+            } else if (kind == .batch) {
+                for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Inst.Index)) |command| _ = try l.eraseStagedCommand(out, command);
+            }
+        }
+        return l.nullNode(p);
+    }
 
     /// A module the walk reads code in: its `Bir` and the checker's table.
     const CodeFrame = struct { m: Graph.Index, b: *const Bir, dispatch: *const Dispatch };
@@ -15745,7 +15912,7 @@ pub const Lowerer = struct {
     fn calleeEffect(l: *Lowerer, f: CodeFrame, d: u32, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
         if (d >= f.b.decls.len or f.b.decls[d].body.unwrap() == null or !callRunsBody(f, d)) return .{ .site = at };
         return switch (try l.declEffect(f, d, verdicts)) {
-            .none => .{ .site = at },
+            .none => if (verdicts.command_diagnostic) .none else .{ .site = at },
             .debug => .debug,
             else => |e| e,
         };
@@ -15810,7 +15977,12 @@ pub const Lowerer = struct {
             switch (b.instTag(at)) {
                 .lambda => continue,
                 .let => {
-                    for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                    try stack.append(l.scratch, @fromBackingInt(@intCast(d.rhs)));
+                    const definitions = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
+                    var next_definition = definitions.len;
+                    while (next_definition != 0) {
+                        next_definition -= 1;
+                        const def = definitions[next_definition];
                         const dd = b.instData(def);
                         switch (b.instTag(def)) {
                             .let_def => {
@@ -15822,14 +15994,14 @@ pub const Lowerer = struct {
                             else => {},
                         }
                     }
-                    try stack.append(l.scratch, @fromBackingInt(@intCast(d.rhs)));
                     continue;
                 },
                 .call => {
+                    const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                    const construction = if (verdicts.command_diagnostic) try l.stagedConstructorIn(f, callee) else null;
                     const site = f.dispatch.effectAt(at);
-                    if (site.impure or site.own != .no) {
+                    if (construction == null and (site.impure or site.own != .no)) {
                         if (site.own != .no) return .{ .site = here_at };
-                        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                         const cd = b.instData(callee);
                         const e: Effect = switch (b.instTag(callee)) {
                             .ext_value => if (debug != null and cd.lhs == debug.?.int())
@@ -16070,11 +16242,23 @@ pub const Lowerer = struct {
         // A top-level function: this module's, by its name, or another
         // module's that its interface exports, imported as any reference to
         // it is.
-        if (start.kind == .top and (here or start.value != std.math.maxInt(u32))) {
+        if (start.kind == .top) {
             const f = if (here)
                 try l.ident(try l.topNameChoosing(start.decl, .no), p)
-            else
-                try l.ident(try l.externalNameChoosing(@fromBackingInt(@intCast(start.module)), start.value, .no), p);
+            else if (start.value != std.math.maxInt(u32))
+                try l.ident(try l.externalNameChoosing(@fromBackingInt(@intCast(start.module)), start.value, .no), p)
+            else blk: {
+                const module: Graph.Index = @fromBackingInt(@intCast(start.module));
+                const bir = l.in.birs[start.module];
+                const base = bir.symbol(bir.decls[start.decl].name);
+                if (l.in.live) |live| try l.requireLive(live.decl(module, start.decl), l.text(base));
+                break :blk try l.ident(try l.neededName(.{ .module = module, .base = base.toOptional() }), p);
+            };
+            if (!here and start.value == std.math.maxInt(u32)) {
+                const module: Graph.Index = @fromBackingInt(@intCast(start.module));
+                const bir = l.in.birs[start.module];
+                try l.needName(.{ .module = module, .base = bir.symbol(bir.decls[start.decl].name).toOptional() });
+            }
             return try l.call(f, &.{send}, p);
         }
         // A lambda of another module, which that module lifts
@@ -20188,6 +20372,7 @@ const ProgramCall = struct {
     refused: bool = false,
     /// `cx.programInit` has evaluated `init`.
     init_used: bool = false,
+    staged_command: ?Inst.Index = null,
     /// Version 1.14: the element a placement around the call mounts it at
     /// (`findPlaced`).
     placed: beni_markup.Program.Placed = .unknown,

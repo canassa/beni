@@ -8231,3 +8231,15 @@ callback, a replaced slot, a fiber, a record accumulator, `map`,
 `indexedMap` and a kept grandchild. `FoldKeepsInnerRefused` pins the
 twins. Its three writes after the traversal were accepted at `rows[*]`
 before this amendment. Summary blocks advance to version 38.
+
+
+**Browser base amendment (2026-11-09).** The shared `Hosted` definitions
+and the asserted send rows above now belong to `browser-base`. Both browser
+renderers use these same rows through shared Cmd/Sub. The old inline-only
+Cmd.perform/Sub.on assertions are superseded by Hosted.job/tap; a reexport
+does not change the declaration's package. The implementations cited as
+`platforms/browser/Hosted.beni` above now live at
+`platforms/browser-base/Hosted.beni`, with the same fan-out and ownership
+contract. TaskWords' timeout/raceOk mutation checks first missed both
+mutations after the move while clean master detected them; selecting the
+new defining package restores the checks. No ownership word is weakened.

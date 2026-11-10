@@ -1,9 +1,9 @@
 -- An `update` arm written inside `Log.annotate`, `Log.span` or
 -- `Log.minimum` is read through it (#751): its model is written and its
 -- own lines carry the arm's context. Until then `browser-inline` refused
--- every such arm, a limit of the compiler. A command with a body made
--- inside a scope is still refused (`build/bad/inline/CommandInLogScope`,
--- #1003). The transcript is browser-tea's for the same program.
+-- every such arm, a limit of the compiler. Shared commands now also keep
+-- their creation context; CommandInLogScope covers bodies and replies.
+-- This transcript remains browser-tea's for the same program.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log

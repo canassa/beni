@@ -9,6 +9,7 @@
 --! model once, on one microtask after the messages of a task, writing only
 --! the holes whose values changed.
 
+import Hosted
 import Html exposing (Html)
 import Js
 import Task
@@ -113,7 +114,8 @@ pub type alias Send msg =
 --| `settle` are handed it: where its messages go, and its after-render
 --| queue. What an architecture layered on `browser` is built from, with
 --| the `Hosted` module; a program never meets one.
-pub foreign type Host msg
+pub type alias Host msg =
+    Hosted.Host msg
 
 
 --| A program that is handed its `Host`: `init` makes the first model once

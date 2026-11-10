@@ -77,7 +77,10 @@ const std = @import("std");
 /// 2026-11-09, #2258).
 /// Version 1.26 adds the lowering's entry-capture dependency and the
 /// subscription fact that says whether that dependency is reachable.
-pub const version: Version = .{ .major = 1, .minor = 26 };
+/// Version 1.27 distinguishes scoped subscription bodies from native
+/// listener installation (`Program.Subscription.waits`).
+/// Version 1.28 adds the update-context writer dependencies and absence fact.
+pub const version: Version = .{ .major = 1, .minor = 28 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -190,7 +193,19 @@ pub const Lowering = struct {
         cmd: []const u8,
         /// 1.26: the platform helper that captures a subscription's entry.
         /// When unreachable, registration needs no renderer context.
-        entry_capture: ?struct { module: []const u8, name: []const u8 } = null,
+        entry_capture: ?Dependency = null,
+        /// 1.27: command construction preserves its creator's log context.
+        command_context: bool = false,
+        /// 1.28: every function that can write context/finalizer state.
+        /// No reachable writer proves updates need no context wrapper.
+        /// Null or an unresolved declaration keeps the wrapper.
+        update_writers: ?[]const Dependency = null,
+
+        pub const Dependency = struct {
+            module: []const u8,
+            name: []const u8,
+            package: enum { core, platform } = .platform,
+        };
     };
 };
 
@@ -294,6 +309,8 @@ pub const Ctor = struct {
 };
 
 pub const Program = struct {
+    /// 1.28: false only if no declared context/finalizer writer is reachable.
+    update_context: bool = true,
     /// Which of `Lowering.programs` is called.
     constructor: u32,
     /// The argument is a record literal written at the call, whose fields
@@ -618,6 +635,9 @@ pub const Program = struct {
         /// build. False only when the lowering's capture helper is absent
         /// from source reachability; timer-only builds pay no context cost.
         entry: bool = true,
+        /// 1.27: the start is a body run in the program's task scope,
+        /// rather than an installer returning its own remover.
+        waits: bool = false,
     };
 
     /// 1.14: what `Context.programSubscriptions` says of the set.
