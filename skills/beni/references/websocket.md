@@ -1,8 +1,10 @@
 # WebSocket
 
 A WebSocket carries text messages in both directions on one connection. The `node` platform has
-the server side. The `browser` and `browser-tea` platforms have the page side. Each has a module
-`WebSocket`.
+the server side. The `browser-base` platform has the page side, and `browser`, `browser-tea` and
+`browser-inline` re-export it. Each side has a module `WebSocket`. On `browser-inline`, call
+`WebSocket.connect` in a command's fiber (`Cmd.perform`); a prerendered page connects after the
+takeover.
 
 ## The operations that every platform has
 

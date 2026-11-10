@@ -1,0 +1,2 @@
+socket 1 open
+socket 1 message "hi"

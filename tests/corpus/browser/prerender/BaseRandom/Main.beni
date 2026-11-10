@@ -1,0 +1,56 @@
+-- The base's Random on a prerendered `browser-inline` page
+-- (browser-capability-base.md §9, *Storage, WebSocket, Random*).
+--
+-- `init`'s command draws a die from the page's seed after the takeover;
+-- the build draws nothing. "roll" draws again through `Random.generate`.
+-- A draw differs on each run, so the page shows only that it is a die.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Random
+import Sub
+import Tea
+
+
+type Msg
+    = Roll
+    | Note String
+
+
+die : Random.Generator Int
+die = Random.int 1 6
+
+
+shown : Int → String
+shown n = if n ≥ 1 && n ≤ 6 then "a die" else "not a die"
+
+
+update : Msg, String → String × Cmd Msg
+update msg log =
+    case msg of
+        Roll →
+            ( log, Random.generate die λn → Note (shown n) )
+
+        Note line →
+            ( if log == "" then line else log ++ " / " ++ line, Cmd.none )
+
+
+view : String → Html Msg
+view log =
+    <main>
+        <button id="roll" onClick={Roll}>roll</button>
+        <output id="log">{log}</output>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = λ⊤ → ( "", Cmd.perform λsend → send (Note (shown (Random.value die))) )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

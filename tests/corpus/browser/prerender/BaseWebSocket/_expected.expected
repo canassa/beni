@@ -1,0 +1,17 @@
+-- load
+(socket 1: /chat)
+<body>
+  <main>
+    <output id="log"></output>
+  </main>
+</body>
+-- socket 1 open
+(socket 1 sent: "hello")
+(the DOM did not change)
+-- socket 1 message "hi"
+(socket 1 close: 1000 "done")
+<body>
+  <main>
+    <output id="log">"heard hi"</output>
+  </main>
+</body>
