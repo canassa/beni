@@ -1,0 +1,29 @@
+module RecordBesideLists
+  21:11 update p: accepted param
+  21:23 construction p.a: accepted param
+  25:18 update b: accepted param
+  25:39 List.push xs: accepted param
+  29:14 update p: accepted param
+  33:17 update p: accepted param
+  37:11 call RecordBesideLists.pushA <record>.a: rejected disjoint: another operand of the same operation reaches it (RecordBesideLists.pushA writes π1.a)
+  37:11 update <record>: accepted fresh (RecordBesideLists.pushA writes it)
+  41:14 call RecordBesideLists.both xs: rejected disjoint: another operand of the same operation reaches it (RecordBesideLists.both writes π2)
+  41:14 update b: accepted param (RecordBesideLists.both writes it)
+  45:10 update b: rejected disjoint: another operand of the same operation reaches it (RecordBesideLists.pair writes it) [copy]
+  49:12 update b: rejected disjoint: another operand of the same operation reaches it (RecordBesideLists.keepIn writes it) [copy]
+  53:17 call RecordBesideLists.both xs: accepted param (RecordBesideLists.both writes π2)
+  53:17 update b: accepted param (RecordBesideLists.both writes it)
+  summary pushA: π1 W{a}, π1.a RAW, π1.b RA; res .a condition(fresh1) π1.a, .b condition(fresh2) π1.b, π1◦
+  summary both: π1 W{x}, π1.x R, π2 RAW[storage], π2[*] A, π3 RA; res .0 π1◦, .1 condition(fresh2) π2, .1[*] ~condition(fresh3) ~π2[*], .2 ~condition(fresh4) π3, condition(fresh1){sep π2 π3, sep π2[*] π3}r{sep π1 π2[*]}
+  summary pair: π1 W{x}, π1.x R, π2 R; res .0 π1◦, .1 π2, condition(fresh1)r{sep π1 π2}
+  summary keepIn: π1 W{x}, π1.x R, π2 RA; res .0 π1◦, .1 π2, condition(fresh1)r{sep π1 π2}
+  summary twin: π1 RAW; res .a condition(fresh1) π1, .b condition(fresh2) π1, fresh501◦
+  summary twice: π1 W{x}, π1.x R, π2 RAW[storage], π2[*] RA; res .0 π1◦, .1 condition(fresh2) π2, .1[*] ~condition(fresh3) ~π2[*], .2 ~condition(fresh4) π2, condition(fresh1){shared}r{sep π1 π2[*]}
+  summary same: π1 RW{x}, π1.x R; res .0 π1◦, .1 π1, condition(fresh1)r{shared}
+  summary inList: π1 RW{x}, π1.x R; res .0 π1◦, .1 fresh1r{excl π1}, .1[*] π1, condition(fresh2)r{shared}
+  summary apart: π1 W{x}, π1.x R, π2 RAW[storage], π2[*] RA, π3 RA; res .0 π1◦, .1 condition(fresh2) π2, .1[*] ~condition(fresh3) ~π2[*], .2 ~condition(fresh4) π3, condition(fresh1){sep π2 π3, sep π2[*] π3}r{sep π1 π2[*]}
+  demands 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+  records 9: accepted 7, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+records 9: accepted 7, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+cause disjoint 2

@@ -1,3 +1,4 @@
 A list's write beside a record's write of one call (ownership-v2.md §2.11.5, Two passes; R-8.6): the list lines are the
 list pass's, where an update builds a new record, so the push onto the accumulator is accepted. The record pass refuses
 the update of the element, because the accumulator holds earlier elements of the same list. v1 accepts that update.
+In `twice` the record pass accepts the update of `b`, as v1 does: a record's write asks no pair of two lists.

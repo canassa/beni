@@ -1,0 +1,20 @@
+module RecordBesideLists
+  21:11 update p: accepted param
+  21:23 construction p.a: accepted param
+  25:18 update b: accepted param
+  25:39 List.push xs: accepted param
+  29:14 update p: accepted param
+  33:17 update p: accepted param
+  37:11 RecordBesideLists.pushA <record>.a: rejected disjoint: another path of the same argument reaches it (approx)
+  37:11 update <record>: accepted fresh
+  41:14 RecordBesideLists.both xs: rejected disjoint: another path of the same argument reaches it (approx)
+  41:14 update b: accepted param
+  45:10 update b: rejected disjoint: another path of the same argument reaches it (approx)
+  49:12 update b: rejected disjoint: another path of the same argument reaches it (approx)
+  53:17 RecordBesideLists.both xs: accepted param
+  53:17 update b: accepted param
+  demands 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+  records 9: accepted 7, rejected 2
+total 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+records 9: accepted 7, rejected 2
+cause disjoint 2

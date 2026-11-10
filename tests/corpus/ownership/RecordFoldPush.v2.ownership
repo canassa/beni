@@ -7,9 +7,9 @@ module RecordFoldPush
   24:18 update b: accepted param
   24:39 List.push xs: accepted param
   28:14 RecordFoldPush.both xs: rejected disjoint: another path of the same argument reaches it (approx)
-  28:14 update b: rejected disjoint: another path of the same argument reaches it (approx)
+  28:14 update b: accepted param
   demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
-  records 5: accepted 3, rejected 2
+  records 5: accepted 4, rejected 1
 total 4: accepted 3 (fresh 0, call 0, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
-records 5: accepted 3, rejected 2
+records 5: accepted 4, rejected 1
 cause disjoint 1

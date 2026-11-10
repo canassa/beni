@@ -1,0 +1,53 @@
+-- ownership: a record's write beside a list's write of one call
+-- (`ownership-v2.md` §2.11.2 item 4, *a record's write beside a list's*;
+-- R-8.6, R-4.8.8). A callee's requirement is one selection for all of its
+-- writes. `twin` hands `pushA` a new record whose two fields are one list:
+-- the write of the list `a` is refused, and the write of the record's own
+-- object is accepted, because no pair that it asks meets. `twice` hands
+-- `both` one list twice: the push is refused, the update of `b` is
+-- accepted. A record that meets another record stays refused: one record
+-- handed twice (`same`), and a record in a list that the callee returns
+-- (`inList`). Apart arguments are accepted (`apart`).
+type alias B =
+    x : Int
+
+
+type alias Pair =
+    a : List Int
+    b : List Int
+
+
+pushA : Pair → Pair
+pushA p = { p | a = [ …p.a, 1 ] }
+
+
+both : B, List Int, List Int → B × List Int × List Int
+both b xs ys = ( { b | x = b.x + 1 }, List.push xs 1, ys )
+
+
+pair : B, B → B × B
+pair p q = ( { p | x = p.x + 1 }, q )
+
+
+keepIn : B, List B → B × List B
+keepIn p qs = ( { p | x = p.x + 1 }, qs )
+
+
+pub twin : List Int → Pair
+twin xs = pushA { a = xs, b = xs }
+
+
+pub twice : B, List Int → B × List Int × List Int
+twice b xs = both b xs xs
+
+
+pub same : B → B × B
+same b = pair b b
+
+
+pub inList : B → B × List B
+inList b = keepIn b [ b ]
+
+
+pub apart : B, List Int, List Int → B × List Int × List Int
+apart b xs ys = both b xs ys

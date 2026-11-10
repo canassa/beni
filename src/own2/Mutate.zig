@@ -54,6 +54,8 @@ pub const Name = enum {
     write_fields_all,
     /// §2.8, *Dead, by field* (R-4.8.2): a read of a written field after a once closure is made is a hoist, as after an update.
     once_read_hoists,
+    /// §2.11.2 item 4, *a record's write beside a list's*: a record's write relies on the callee's whole `req`.
+    record_req_whole,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.
