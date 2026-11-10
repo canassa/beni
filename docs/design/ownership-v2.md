@@ -1525,6 +1525,13 @@ its own (`Relation.Eval.readAt`), so it is a second entry, as the kids it came f
   `PlaceBelow.countable`). Before this, a call that answered 16 slots or more was `no` outright: §7.6 item
   6's WideCallbackResult with fresh leaves refused `demo`'s push from N × (M + 1) = 16 (`run/WideCallbackFresh`;
   its supplied twin, `run/WideCallbackSupplied`, is refused, the parameter met at two fields).
+  The caller's places are not enough: the expansion reads the callee's tree, and an arrival the callee says
+  open (by structure, at a slot no step below names in the callee, §2.10) is one item for every slot below it,
+  one entry, which nothing counts. So the call's tree must say nothing open at, below or above `p` but a
+  label's answer, and nothing at a caller's fold (`Eval.countsBelow`, one `inspection` a node): a label's
+  answer is a call's leaf the check reads again, by this rule. `ownership/core/WideCastSubtree`: `castG`
+  answers one list at all 16 fields through `Js` (`ε…` open, `nondup no`), and a reader of `↓ε` that counted
+  the caller's slots claimed `nondup yes` and edited a list another field still held.
 - *Amended 2026-11-02 (#1711):* **a callback's answer** (a `cb` leaf, or a passed-on label's answer) is the
   unknown code's: any object its caller reaches — what the label was supplied, the code's captures, the caller's
   other arguments, another answer of the same code. It is apart from no other entry but an alternative to it or
