@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="again">"again"</button>
+    <output id="log">"gpu: unavailable"</output>
+  </main>
+</body>
+-- click #again
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="again">"again"</button>
+    <output id="log">"gpu: unavailable / gpu: unavailable"</output>
+  </main>
+</body>

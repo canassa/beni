@@ -1,0 +1,18 @@
+-- The WebGPU engine is not part of the public surface of a direct `browser`
+-- program either (docs/design/webgpu.md §2.1; #2256): since 2026-11-10 the
+-- `Gpu` modules are `browser-base`'s, which `browser` re-exports public
+-- modules only, so `Gpu.Engine` is `unknown_module` here, as on
+-- `browser-tea` (`build/bad/tea/GpuEngineHidden`) and `browser-inline`
+-- (`build/bad/inline/GpuEngineHidden`). Until then a direct program could
+-- import it (`browser/dom/GpuEngineReachable`, removed).
+import Browser
+import Gpu.Engine
+import Html exposing (Html)
+
+
+view : ⊤ → Html msg
+view _ = <p>open channels {String.fromInt (Gpu.Engine.openChannelCount ⊤)}</p>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → ⊤, update = λ_ m → m, view = view }

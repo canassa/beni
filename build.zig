@@ -773,7 +773,7 @@ pub fn build(b: *std.Build) void {
     // and the summary keeps passed, unsupported (no adapter) and skipped
     // (`.webgpu-skip`) apart and names the adapter. A heavy job: run it under
     // the shared lock, as `test-browser`. Takes `-Dcorpus`; not a gate.
-    const webgpu_step = b.step("test-webgpu", "Run the browser/gpu/ corpus in a headless Chrome with a real WebGPU adapter (nix develop .#browser)");
+    const webgpu_step = b.step("test-webgpu", "Run the browser/gpu/ corpus and the browser/prerender/ pages marked _expected.webgpu in a headless Chrome with a real WebGPU adapter (nix develop .#browser)");
     webgpu_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "webgpu" }).step);
 
     // `workers/`: the `cloudflare` platform's fixtures, each build run under

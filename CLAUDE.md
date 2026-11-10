@@ -316,7 +316,7 @@ zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
 zig build test-own2-mutations  # each rule of ownership v2 broken on purpose (`src/own2/Mutate.zig`): which fixture catches it; not a gate
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
 zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#workers); not a gate, CI runs it
-zig build test-webgpu     # the browser/gpu/ corpus in headless Chrome on a real WebGPU adapter (nix develop .#browser); not a gate
+zig build test-webgpu     # the browser/gpu/ corpus and browser/prerender/ pages marked _expected.webgpu, in headless Chrome on a real WebGPU adapter (nix develop .#browser); not a gate
 zig build gpu-bindings    # write the generated WebGPU modules from the pinned IDL; their staleness check is in test-blackbox
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
 zig build test-playground # that wasm against the native beni, byte for byte, on the corpus; not a gate, CI runs it

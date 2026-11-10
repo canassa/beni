@@ -692,3 +692,69 @@ slice changes no checker code, and both tests pass alone afterwards. The
 manager accepted the four `browser-tea` release goldens above, and they
 were recorded from a real build. Comparisons:
 `zig-out/scratch/dom-final-{gates,browser}-comparison.json`.
+
+
+### Gpu and media — built 2026-11-10
+
+The whole WebGPU family moves to `browser-base`, with its private
+dependencies: `Gpu`, every `Gpu.*` module (`Gpu.Engine`, `Native`, `Memory`,
+`Make`, `Session`, `Commands` and `Formats` included), and `Browser.Canvas`,
+`Browser.Image`, `Browser.Video` and `Browser.Source`. They are removed from
+`browser` in the same slice. None of them imported a renderer, so no source
+changed. The base, `browser` and `browser-inline` re-export the public list
+that `browser-tea` already published. `src/native/Gpu.zig` writes the
+generated modules to `platforms/browser-base/Gpu`. The binding staleness
+check, the public-signature check, the coverage gate, `fmt-exempt.txt`, the
+P-sync list and the word-body pins follow the files. The typed host bindings
+stay in core.
+
+Private engine modules are now private to every renderer. A direct `browser`
+program could import `Gpu.Engine` before, as the debt of #2256 recorded
+(`browser/dom/GpuEngineReachable`). That page is replaced by the refusals
+`build/bad/managed/GpuEngineHidden` and `build/bad/inline/GpuEngineHidden`,
+beside the existing `tea` one.
+
+Fixtures. `browser/prerender/BaseGpu` is a prerendered inline page. Its
+`init` returns a command that finds the hydrated canvas, configures it,
+presents one frame, reads the pixel back, unconfigures the canvas and
+destroys the device, then reports the loss. "again" repeats it on the same
+canvas node. With no adapter (happy-dom, Chrome under `--disable-gpu`) it
+says "unavailable": this is the gates' transcript, `_expected.expected`, in
+all four builds. The precise absence stays covered by `browser/gpu/Availability`.
+`build/bad/prerender/BaseGpuInView` (`Gpu.available` in `view`) and
+`BaseGpuInInit` (an eager `Gpu.preferredCanvasFormat` in `init`) are
+`prerender_impure` at the host read in `Gpu.Engine`. All three failed before
+the slice with an unknown module `Gpu` (`zig-out/scratch/gpu-before/`).
+
+`_expected.webgpu`, the marker added for this page, puts a `browser/prerender/`
+project into the `test-webgpu` walk. There all four builds compare against
+`_expected.webgpu-expected`, which a blessing `test-webgpu` run writes from
+the first build. `test-webgpu` cannot run on this Mac, so that golden does
+not exist yet; it is owed to a run on dagon. An exploratory run outside the
+harness in Chrome 157 with `--enable-unsafe-webgpu` on Apple's Metal adapter
+gave, in development and release: configure Ok, one receipt, the pixel
+4294901760 (blue, as `browser/gpu/CanvasPage`), loss `Destroyed`, twice. It is
+evidence, not a golden.
+
+`Gpu.Device.onEvent` keeps inline's existing limit: the device is part of the
+model, so the subscription set depends on the model (`not_implemented`, class
+1). `eachEvent` in a command works.
+
+Sizes (release JavaScript): the four empty-page variants and both timer
+controls are SHA-identical to master. The eight inline pages of the earlier
+families (BaseDom included) are byte-identical to the Dom commit 2cabfd1426.
+No emit golden changed. BaseGpu's release page is 58258 raw / 16815 brotli /
+18958 gzip.
+
+Final validation (2026-11-10, zorg 0.17.1+zorg.3, default mode, run one
+after another against clean master 620c322a45). The gates fail the same set
+on both sides. Chrome: the lane failed `managed/Network` once, with an
+`ECONNRESET` in the Node test server. Master failed `tea/HttpResults`, and
+it failed `managed/Network` in an earlier slot. Run alone with no run-hash
+cache, `managed/Network` passes three times in three on the lane. Otherwise
+both sides fail only `tea/DomCapabilities`. Comparisons:
+`zig-out/scratch/gpu-final-{gates,browser}-comparison.json`.
+Still owed on dagon (`test-webgpu`): the first real run of BaseGpu, which
+writes `_expected.webgpu-expected` and checks all four builds against it;
+the `_expected.webgpu` walk and golden path itself; and the 134
+`browser/gpu/` pages on a real adapter after the move.

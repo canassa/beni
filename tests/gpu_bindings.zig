@@ -334,7 +334,7 @@ test "no public signature of the public Gpu modules names Js, and browser-tea hi
     // name `Js.Value`, and `browser-tea` re-exports neither.
     const internal = [_][]const u8{ "Engine.beni", "Native.beni" };
     var files: std.ArrayList([]const u8) = .empty;
-    try files.append(a, "platforms/browser/Gpu.beni");
+    try files.append(a, "platforms/browser-base/Gpu.beni");
     var dir = try std.Io.Dir.cwd().openDir(std.testing.io, Gpu.platform_dir, .{ .iterate = true });
     defer dir.close(std.testing.io);
     var it = dir.iterate();
