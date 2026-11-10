@@ -1295,6 +1295,20 @@ at its other fields, refused `grow at model.root`'s deep writes (`browser/tea/Va
 had a contract) although the top write was accepted. The relation is now under the selection, and the
 caller's `req` gains the deep occurrences (`ownership/HolderRestApart`).
 
+*A pending argument, in the record pass* (2026-11-10, #1018; R-4.8.5). Step 5 says "a path its consumer
+touches". Two consumers have that path built. An update's base holds every field but the written ones
+(`Walker.pendingRun`). In the record pass (§2.11.5) an argument that waits for a walked call holds what the
+callee's contract reaches of it: each read and each write at its slot (a plain one its own storage, an open one
+everything at and below it), and each escape (`PendingArg.leaves`, read when the pending index is built). The
+contract must be settled: an argument of a virtual call, of a pessimistic contract or of a member of the group
+being solved is held whole. So `changed model (List.map model.todos λt → { t | done = True })`, with
+`changed model todos = { model | todos = todos }`, edits the todos in place: `changed` reads `π1ε`, its
+record's own object, and nothing below it. `both`, which also takes `List.length model.todos`, reads
+`π1.todos` plain, the list's own array, so the edit of its elements is accepted too, where v1 refuses it.
+`firstDone` reads an element, `π1.todos*`, and the edit is refused `held-operand`. The list pass holds every
+argument whole, as before, so no list line reads this rule (R-8.6). Fixture `ownership/RecordWriteOnlyCall`;
+mutant `pending_arg_whole`.
+
 *Pending operands* (2026-11-03). The walk no longer copies its operand stack at every call: each operand on the
 stack is one entry, made once (its values, a record update's base by the fields its consumer keeps), with the
 walk's clock at its push and at its removal (the clock ticks at a removal); a call, a label's call and a demand
@@ -6498,6 +6512,7 @@ L0  Ids  Counters  Scratch
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6); the two passes' blocks as one (`both`, `part`) | Ids, Place, Slots, Contract, Groups |
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
 | `CallReq.zig` | 10 | a callee's `req` at a call, as a record's write relies on it and, in the record pass, as a list's does (§2.11.2 item 4, *A list's write beside a record's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
+| `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
 | `ByStructure.zig` | 10 | a value at a supply's key, by its own structure (§2.1, *An arrival's level*) | Ids, Contract, Relation, Slots, Value |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
 | `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
