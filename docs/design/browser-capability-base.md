@@ -876,3 +876,51 @@ had two lane-only failures. One was the list-column CPU budget (1050 ms
 against 1000), which passes alone. The other was the `platform_test` naming
 above, now updated and passing. Comparisons:
 `zig-out/scratch/nav-final-{gates,browser}-comparison.json`.
+
+
+### Storage, WebSocket, Random — built 2026-11-10
+
+The last capability family moves whole: `Storage`, `WebSocket` and
+`Random` go to `browser-base` and are removed from `browser` in the same
+slice. None imported a renderer, so no source changed. `Random` keeps
+using core's `Random.Pcg`. The base, `browser` and `browser-inline`
+re-export the three, and `browser-tea` does through `browser`. The P-sync
+row and the word-body pin of `WebSocket.attach` follow the file.
+
+Fixtures, all prerendered inline pages, failed before the slice with an
+unknown module (`zig-out/scratch/last-before/`). All four builds of each
+share one transcript:
+
+- `browser/prerender/BaseStorage`: `init`'s command reads and increments a
+  visit count, and "again" saves through `Storage.save`.
+- `browser/prerender/BaseWebSocket`: `init`'s command connects to the
+  driver's socket after the takeover, writes, reads the server's message,
+  and closes with 1000.
+- `browser/prerender/BaseRandom`: `init` draws a die with `Random.value`
+  in a command, and "roll" uses `Random.generate`. The page shows only
+  that each draw is a die, since a draw differs from run to run.
+
+`build/bad/prerender/BaseStorageInView` and `BaseRandomInInit` are
+`prerender_impure` at the host read inside `Storage` and `Random`.
+
+Sizes: the four empty-page variants and both timer controls are identical
+to master, and no emit golden changed. TodoMVC: with Dom and Storage both
+in the base, `tests/corpus/browser/tea/TodoMVC.beni` no longer stops at an
+unknown capability module. On `browser-inline` it stops at three markup
+limits of the compiler, none of this design's: two "has no markup value
+yet" (markup held by a helper) and one "a `view` whose body is markup
+written in place" (`zig-out/scratch/last-todo-inline.log`). An inline
+TodoMVC comparison waits for a TodoMVC source written within inline's
+markup rules, or for those limits to go.
+
+Every capability family of §7 step 2 has now moved. The capability APIs
+remain incomplete until §7 step 3: full keyed policies and model-dependent
+subscription sets. Owed to that slice: inline stale-reply cancellation
+(`Cmd.keyed`/`Cmd.cancel`), an inline `Http.track` fixture, and
+`Gpu.Device.onEvent`, which depends on the model.
+
+Final validation (zorg 0.17.1+zorg.3, default mode, run one after another
+against clean master 620c322a45). Neither the gates nor Chrome show a new
+failure on the lane. The lane fails only the known set; master also failed
+the list-column CPU budget and `tea/HttpResults`. Comparisons:
+`zig-out/scratch/last-final-{gates,browser}-comparison.json`.
