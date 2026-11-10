@@ -930,6 +930,19 @@ only an update's kept field whose place holds an object (a use at `r.g`): a list
 it, so an update demand does not read it. A `whole` use whose point is a field access is that access's own
 (a field no path names): its read event stands for it too.
 
+*Amended 2026-11-10 (#2443): the kind `read`.* The use that a field access makes of its base record, for a
+field that no path names (`r.n`, `n` a number), and the one that a record pattern makes for such a field, has
+a kind of its own in the record pass: **`read`** (`Facts.UseKind.read`). Until this amendment it was a `whole`
+use, and an update demand told it apart by its point: "a `whole` use whose point is a field access". That
+test is wrong twice. A use whose point is a field access is also the use of a field's VALUE that a `let`
+binds (`d = acc.cur` is consumed at its own point), which is a whole use of the record at `acc.cur`. And the
+use index asks a filter once for each group of uses of one path and kind (§3.4a, #1214), with the group's
+first use: a filter that reads a use's point answers for the whole group by one member, so
+`c = acc.cur; r = { c | … }; ( r, acc.cur )` lost the later use of `acc.cur` behind the earlier binding.
+With its own kind a `read` use is its own group, and a filter reads kind, callee use node and path only, as
+the index says. The list pass keeps `whole` for it, so no group of the list pass changes. Everywhere but at
+the written record's own hold (§2.8), a `read` use is read as a `whole` use is.
+
 A **use** is `(atom, local, PathId, point, kind, callee-use-node?)`, where `atom` is the use occurrence: unique in
 its declaration and deterministic, not the operand instruction, so one instruction reading a local twice has two
 uses and the transfer rules of §2.6 need no change. Kinds: `field` (this frame's own field chain,
@@ -1145,6 +1158,23 @@ storage write, the base's own storage at the written position (`at_position`); f
    `n = { m | b = [] }` followed by it is refused, and `n = { m | a = 1 }` followed by `setC m`,
    `setC m = { m | c = … }`, is refused. Fixture `ownership/RecordCalleeWritesBelow`; mutant
    `callee_write_whole`.
+
+   *Amended 2026-11-10 (#2443): a hold that is not the written record.* The rules above are for a hold
+   `(h, q)` that IS the written record: uses strictly below `q` are nothing, the frame's field events at
+   `(h, q)` are asked by `F`, a `read` use at `q` is its event, and a later callee's reads and writes are
+   asked by field. Until this amendment every hold that a judgement asked was read that way. But a
+   judgement also asks holds that are OTHER objects: the rest of a parameter's slots, which may be the
+   written record only where the caller hands one record twice (`HoldAt.holdsAt`: held at the holder's
+   path, under that condition), and a value that only overlaps the record (a call's result that may be it).
+   For such a hold a use below its path is a real use, and `F` names another record's fields. So
+   `c = acc.cur; r = { c | count = … }; ( r, acc.hist )` asked nothing of the parameter's other slots: its
+   contract had `req yes` where the same function over lists has `req ⇐ sel π2{ε~,.cur,.hist~,.hist[*]~,.twin~}`,
+   and a caller that hands `{ cur = d, hist = [ d ] }` was accepted. Now `HoldAt.holdsAt` says of each path
+   whether the hold there is the target itself: the target's own slot path under a parameter's leaf, a slot
+   that a route to the target reaches, or a hold whose leaf is the target's leaf. Only such a hold is read
+   by field (`Later.Uses.own`). Every other hold is read as a list demand reads it: a use at, above or below
+   its path, a callee's footprint whole. Fixture `ownership/RecordSiblingHolds`; mutants
+   `sibling_holds_by_field` and `field_read_by_point`.
 
    *A once closure's write happens at its call* (R-4.8.2). The demand of a once closure that writes a
    captured record is at the closure's creation, and the write runs when the closure is called, at a point
