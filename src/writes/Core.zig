@@ -103,11 +103,11 @@ pub const Row = enum {
     /// `Log.annotate key value work`, `Log.span label work`, `Log.minimum
     /// level work`, `Log.withSink f work`: `work ⊤` itself — each runs its
     /// last argument once, in a log context, and returns what it returns
-    /// (`core/Log.beni`, `within`). So an `update` arm written inside one
-    /// has its model and its command read through it (`boundary.md`
-    /// §9.8.16 (b), #751). A command with a body made inside one is not
-    /// read yet (`unscopedCommands` in `Writes.zig`; #1003). Pinned:
-    /// `browser/inline/LogScopeInUpdate`, `build/bad/inline/CommandInLogScope`.
+    /// (`core/Log.beni`, `within`). An update inside the scope has these
+    /// writes. A lowering that keeps command creation context also keeps
+    /// commands returned from it; other consumers remain conservative.
+    /// Pinned: `browser/inline/LogScopeInUpdate`, `CommandInLogScope` and
+    /// its Async/Record/Swapped variants (`browser-capability-base.md` §4.2).
     log_scope,
     /// A value nothing relates to the old model: the scalars and the other
     /// folds of `List`, every other `Dict` and every `Set` function,

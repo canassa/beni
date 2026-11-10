@@ -1,0 +1,44 @@
+-- Stopping the page closes scoped work and runs its finalizer, while a
+-- late reply cannot update a stopped program.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Start
+    | Finished
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Start →
+            ( n
+            , Cmd.perform λsend →
+                Task.onExit
+                    (λ⊤ →
+                        Debug.log "started" ⊤
+                        Time.sleep (Time.millis 100)
+                        send Finished
+                    )
+                    λ_ →
+                        Debug.log "released" ⊤
+                        ⊤
+            )
+
+        Finished →
+            ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button id="start" onClick={Start}>start</button><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

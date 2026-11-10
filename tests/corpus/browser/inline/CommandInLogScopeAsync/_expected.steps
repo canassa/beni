@@ -1,0 +1,5 @@
+click #go
+timers
+advance 5
+timers
+stop

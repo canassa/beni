@@ -5147,18 +5147,19 @@ a fiber: the child copies its parent's context (`internal/effect.ts:5463`).
   of these commands is `impure`, and the command that it returns depends on the log context where
   it is made. The command is still a value that does nothing until the page runs it. Proposal
   §6.6 has a note.
-- **Not covered:** `browser-inline`'s `Cmd.perform`, which runs its body in the same dispatch after
-  `update` returns. #751 tracks it. *Amended 2026-10-25 (#751):* in part. The write-set pass reads an `update` arm through
-  `Log.annotate`, `span`, `minimum` and `withSink` (a core row, `src/writes/Core.zig`), where it
-  refused the arm before (a limit of the compiler): its model is written and its own lines carry
-  the arm's context (`browser/inline/LogScopeInUpdate`). A command with a body made inside one
-  is still refused, as before (`build/bad/inline/CommandInLogScope`): `Cmd.perform` does not yet
-  give its body to `Task.keepLogContext`, because the write-set pass would then read every body
-  as one that may suspend, the checker's `poly` answer taken for `yes` (#1003). One gap is
-  the ownership checker's, not this one's: a record update written inside the scope's lambda
-  (`Log.annotate "k" "v" λ⊤ → ( { model | n = … }, … )`) is refused as shared on every platform,
-  because it does not know that the four scopes call `work` once (#996); a record update made
-  before the scope is accepted.
+- **`browser-inline` (amended 2026-11-10; owner approved).** The shared `Cmd.perform`
+  captures creation context through `Hosted.job` and `Task.keepLogContext`. Commands made
+  inside `Log.annotate`, `span`, `minimum` or `withSink` are supported; the #1003 refusal is
+  removed. The body retains that scope and a reply update uses program context, including
+  when the body waits. `browser/inline/CommandInLogScope`, its Async/Record/Swapped variants,
+  and `LogScopeInUpdate` exercise this. Update context restoration stays protected by
+  `Js.finally`; a build with no reachable context/finalizer writer omits that boundary
+  (`browser-capability-base.md` §4.2). The owner accepted LogScopeInUpdate's +205 Brotli
+  bytes in release for this contract; pages without these capabilities retain no cost.
+  The 2026-10-25 amendment also recorded a separate ownership gap (#996): a record update
+  made inside a scope's lambda was refused as shared, while one made before it was accepted.
+  That historical ownership finding is separate from command-context support.
+
 
 *Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`): a message's `update` has the
 program's log context, whoever sends the message.* A context stops at the body. This decides the

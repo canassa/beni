@@ -1,27 +1,23 @@
 # Platforms
 
-A program is built for one platform. It owns `Program`, the type of `main`, and supplies the host modules.
-A type of your own with the same name is not the platform's Program. Name the platform in
-`beni.json` (`"build": { "platform": "…" }`) or with `--platform=<name>`. Seven ship in the compiler.
+A platform owns `Program`, the type of `main`, and supplies the host modules. A type of your own with that name is distinct.
+Name the platform in `beni.json` (`"build": { "platform": "…" }`) or with `--platform=<name>`. Seven ship in the compiler.
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
 | `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, the `Gpu` modules, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
-| `browser-base` | none | a dependency or library | shared listener base for both browser engines; no runnable entry |
-| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
+| `browser-base` | none | a dependency or library | shared commands, subscriptions, timers and window events; no runnable entry |
+| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Time`, `Browser.Events`, `Html`; compiled views |
 | `html` | none | — | the markup vocabulary the four above share |
 | `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |
 
-`api-<platform>.md` lists each module's public interface. `websocket.md` tells how to use a
-WebSocket on a server and in a page. `webgpu.md` tells how to use WebGPU in a page.
+`api-<platform>.md` lists public interfaces. See `websocket.md` for WebSocket and `webgpu.md` for WebGPU.
 
 ## `node`
 
-- `main : Program` is a value: `Node.print text`, `Node.printLines lines`, `Node.exitWith message
-  code`, or `Node.done`. A `node` program writes its standard output only through the `Program` it
-  ends with.
+- `main : Program` is a value: `Node.print text`, `Node.printLines lines`, `Node.exitWith message code`, or `Node.done`. A `node` program writes standard output through its `Program`.
 - `main = Io.run λ⊤ → …` runs a fiber that can wait: `Io.sleep ms`, `Io.readFile path`, `Io.readDir path`
   (entries sorted by name; `prerender.md`), `Deferred.wait`, `Task.sleep`; both reads give `Result FileError _`.
 - `Http.Server.listen { host, port } handler` starts a server; the handler is `Request → Response`
@@ -288,6 +284,9 @@ The same `Tea` programs as `browser-tea`, `document` and `application` included,
 builds on both. The program is compiled, not run: each constructor is recognised where it is called,
 and the page ships only what it reaches. Lists are edited in place here, so the ownership checker's
 errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`. Pages: `prerender.md`.
+
+`Time` and `Browser.Events` use the shared base. Stop cancels waiting work. `Cmd.perform` in a log scope is supported: bodies keep creation log context; updates use program context.
+Zero-field taggers (`λ_ → Tick`) are supported. Compiler limits: static, model-independent sets and unkeyed commands; full keyed policies remain unavailable.
 
 ## `html`
 

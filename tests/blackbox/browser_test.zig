@@ -976,6 +976,86 @@ test "a prerendering build refuses a relative base, which a page below the root 
     try testing.expect(!w.exists("out"));
 }
 
+test "staged init builds with a Node host-read guard" {
+    // browser-capability-base.md §4.2–4.3: metadata and body are client-only.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Cmd exposing (Cmd)
+        \\import Html exposing (Html)
+        \\import Sub
+        \\import Tea
+        \\import Time
+        \\
+        \\
+        \\init : ⊤ → Int × Cmd Int
+        \\init ⊤ = ( 7, Cmd.perform λsend → send (Time.toMillis (Time.now ⊤)) )
+        \\
+        \\
+        \\update : Int, Int → Int × Cmd Int
+        \\update stamp _ = ( stamp, Cmd.none )
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{n}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Browser.prerender (Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }) [ "/" ]
+    );
+    try w.write("guard.mjs",
+        \\const fail=()=>{throw Error("prerender host read")};
+        \\Date.now=fail;
+        \\for(const name of ["window","document","requestAnimationFrame"])
+        \\  Object.defineProperty(globalThis,name,{get:fail});
+    );
+    try w.write("guard-bin/node", try std.fmt.allocPrint(
+        a,
+        "#!/bin/sh\n: > '{s}'\nexec '{s}' --import '{s}' \"$@\"\n",
+        .{ try w.projectSubPath(a, "node-started"), w.node_exe.?, try w.projectSubPath(a, "guard.mjs") },
+    ));
+    try w.makeExecutable("guard-bin/node");
+    const path = try w.projectSubPath(a, "guard-bin");
+    for ([_]bool{ false, true }) |release| {
+        const args: []const []const u8 = if (release)
+            &.{ "build", "--release", "--platform=browser-inline", "--out=release", "Main.beni" }
+        else
+            &.{ "build", "--platform=browser-inline", "--out=out", "Main.beni" };
+        const r = try w.runWith(args, .{ .path = path });
+        try expectExit(0, r);
+        try testing.expect(w.exists("node-started"));
+        try w.tmp.dir.deleteFile(w.io, "node-started");
+        try testing.expectEqualStrings("", r.stderr);
+        const html = try w.read(if (release) "release/index.html" else "out/index.html");
+        try testing.expectEqualStrings("<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><p data-beni=\"/\">7</p></body>\n", html);
+    }
+    // Both eager host reads are refused before Node or any output starts,
+    // even with a working Node available. Reuse the captured exact refusal.
+    const diagnostic = @import("diagnostic");
+    for ([_][]const u8{ "BaseInitEagerClock", "BaseInitOpaqueCommand" }) |fixture| {
+        const base = try std.fmt.allocPrint(a, "tests/corpus/build/bad/prerender/{s}", .{fixture});
+        const source = try Io.Dir.cwd().readFileAlloc(w.io, try std.fmt.allocPrint(a, "{s}/Main.beni", .{base}), a, .limited(1 << 20));
+        try w.write("Main.beni", source);
+        const expected = try std.json.parseFromSlice([]const diagnostic.Diagnostic, a, try Io.Dir.cwd().readFileAlloc(w.io, try std.fmt.allocPrint(a, "{s}/_expected.diag", .{base}), a, .limited(1 << 20)), .{});
+        defer expected.deinit();
+        for ([_]bool{ false, true }) |release| {
+            const args: []const []const u8 = if (release)
+                &.{ "build", "--release", "--platform=browser-inline", "--out=refused", "Main.beni" }
+            else
+                &.{ "build", "--platform=browser-inline", "--out=refused", "Main.beni" };
+            const r = try w.runWith(args, .{ .path = path });
+            try expectExit(1, r);
+            try testing.expectEqualDeep(expected.value, r.diagnostics);
+            try testing.expect(!w.exists("node-started"));
+            try testing.expect(!w.exists("refused") and !w.exists(".refused.prerender"));
+        }
+    }
+}
+
 test "a Debug.log in a prerendered view is allowed, and what Node wrote reaches stderr as text" {
     // `docs/design/prerender.md` §3.1: `Debug.log` is the one exempt call,
     // directly and in a function of the program's module; its line goes to

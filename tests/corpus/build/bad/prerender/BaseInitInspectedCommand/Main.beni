@@ -1,0 +1,38 @@
+-- Command metadata cannot select the prerendered model.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Loaded Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg _ =
+    case msg of
+        Loaded stamp →
+            ( stamp, Cmd.none )
+
+
+view : Int → Html Msg
+view stamp = <main><output id="stamp">{stamp}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init =
+                λ⊤ →
+                    command = Cmd.perform λsend → send (Loaded 1)
+                    ( List.length (Cmd.items command), command )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

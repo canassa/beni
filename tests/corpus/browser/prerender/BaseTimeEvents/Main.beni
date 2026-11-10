@@ -1,0 +1,91 @@
+-- Shared Time and Browser.Events on an inline prerendered page. Timers
+-- and frames start only after the first write pass and stop with the page.
+import Browser
+import Browser.Events as Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type alias Model =
+    ticks : Int
+    frames : Int
+    elapsed : Float
+    resizes : Int
+    keys : Int
+    awake : Bool
+
+
+type Msg
+    = Tick Time.Posix
+    | Frame Float
+    | Resized Events.Size
+    | KeyPressed
+    | Sleep
+    | Awake
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Tick _ →
+            ( { model | ticks = model.ticks + 1 }, Cmd.none )
+
+        Frame delta →
+            ( { model | frames = model.frames + 1, elapsed = model.elapsed + delta }, Cmd.none )
+
+        Resized _ →
+            ( { model | resizes = model.resizes + 1 }, Cmd.none )
+
+        KeyPressed →
+            ( { model | keys = model.keys + 1 }, Cmd.none )
+
+        Sleep →
+            ( model
+            , Cmd.perform λsend →
+                Time.sleep (Time.millis 5)
+                send Awake
+            )
+
+        Awake →
+            ( { model | awake = True }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ =
+    Sub.batch
+        [ Time.every (Time.millis 10) Tick
+        , Events.onAnimationFrameDelta Frame
+        , Events.onResize Resized
+        , Events.onKeyDown λ_ → KeyPressed
+        ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="sleep" onClick={Sleep}>sleep</button>
+        <p>{model.ticks} ticks, {model.frames} frames, {String.fromFloat model.elapsed} ms</p>
+        <p>
+            {model.resizes} resizes, {model.keys} keys, {if model.awake then "awake" else "asleep"}
+        </p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init =
+                λ⊤ →
+                    ( { ticks = 0, frames = 0, elapsed = 0, resizes = 0, keys = 0, awake = False }
+                    , Cmd.none
+                    )
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+        )
+        [ "/" ]

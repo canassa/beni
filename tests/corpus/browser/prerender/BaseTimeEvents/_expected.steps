@@ -1,0 +1,13 @@
+timers
+frames
+advance 10
+frame 1
+event window resize
+key #sleep x
+click #sleep
+advance 4
+advance 1
+stop
+timers
+frames
+advance 100
