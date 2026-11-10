@@ -1,0 +1,61 @@
+-- An arm that branches on the `Bool` its checkbox sends
+-- (docs/design/browser-inline.md §8.3, amended 2026-11-05; issue #1216):
+-- `onCheck={SetAgree}` reads `target.checked`, and the arm's `if on` makes
+-- the handler choose between the write of each value. `SetNews` has the
+-- same `if` in a helper. Each box is checked and then cleared, so both
+-- branches of each arm run: the log grows by " agree", " disagree",
+-- " news" and " no-news" in that order, and each box shows its model.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    agree : Bool
+    news : Bool
+    log : String
+
+
+type Msg
+    = SetAgree Bool
+    | SetNews Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SetAgree on →
+            { model | agree = on, log = model.log ++ (if on then " agree" else " disagree") }
+
+        SetNews on →
+            { model | news = on, log = model.log ++ subscription on }
+
+
+subscription : Bool → String
+subscription on =
+    if on then
+        " news"
+    else
+        " no-news"
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="app">
+        <input type="checkbox" data-role="agree" checked={model.agree} onCheck={SetAgree} />
+        <input type="checkbox" data-role="news" checked={model.news} onCheck={SetNews} />
+        <output data-role="agreed">{if model.agree then "yes" else "no"}</output>
+        <output data-role="log">{model.log}</output>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { agree = False, news = False, log = "" }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
