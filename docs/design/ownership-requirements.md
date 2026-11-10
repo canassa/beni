@@ -343,7 +343,7 @@ requirement or section number.
 - R-4.8.7 `shift dx p = { p | x = p.x + dx }`: `shift 3 origin` followed only by reads of `origin.x` is accepted
   (hoisted before the call). `shift 3 origin` is refused when a later call hands `origin` whole to a callee that
   reads a written field (`(shift 3 origin).x` after it); fix `shift 3 (Record.copy origin)`. (oc §31.7, l.7153;
-  run/Records pins the fixed form only; the refusal has no fixture)
+  run/Records pins the fixed form only; o/RecordWriteFields pins the hoist and the refusal since 2026-11-10)
 - R-4.8.8 `[ { item | doc = l }, { item | doc = r }, …rest ]`: refuse `held-operand`, fix `{ Record.copy item | … }`.
   One record passed twice to one call: `disjoint`; one record at two result paths: `alias`. (oc §31.5;
   o/RecordDemands.twice 89:16 and 89:34, o/RecordSameCall, o/RecordAliasResult)
