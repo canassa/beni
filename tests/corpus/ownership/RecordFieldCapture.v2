@@ -1,0 +1,2 @@
+A closure that reads one field of a captured record holds that field's value, read when the closure is made
+(ownership-v2.md §2.11.4, a field capture; R-5.4.6; #1018). v1 gives the same six verdicts and the same hoist.

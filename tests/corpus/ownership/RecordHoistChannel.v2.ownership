@@ -1,14 +1,14 @@
 module RecordHoistChannel
-  4:9 update p: accepted param
-  11:21 update p: accepted param
+  4:9 update p: accepted param [hoisted 1]
+  11:21 update p: accepted param [hoisted 1]
   17:13 update p: accepted param
-  22:9 update p: accepted param
-  30:9 update p: accepted param
-  38:9 update p: rejected later-use: p is read again at 39:11
-  46:9 update p: accepted param
-  47:12 update q: accepted param
-  55:9 update p: rejected captured: get, a closure holding it, is used at 56:29
+  22:9 update p: accepted param [hoisted 1]
+  30:9 update p: accepted param [hoisted 1]
+  38:9 update p: accepted param [hoisted 1]
+  46:9 update p: accepted param [hoisted 1]
+  47:12 update q: accepted param [hoisted 1]
+  55:9 update p: accepted param
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 9: accepted 7, rejected 2
+  records 9: accepted 9, rejected 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 9: accepted 7, rejected 2
+records 9: accepted 9, rejected 0

@@ -1,6 +1,6 @@
 module RecordDemands
   55:9 update p: accepted param
-  61:9 update p: accepted param
+  61:9 update p: accepted param [hoisted 1]
   66:13 update p: rejected later-use: p is read again at 66:11
   72:9 update p: rejected alias: old holds it and is read at 73:5
   78:12 update model: rejected later-use: model is read again at 79:29
@@ -12,18 +12,18 @@ module RecordDemands
   93:13 update link: rejected disjoint: another operand of the same operation reaches it
   97:11 update RecordDemands.origin: rejected top-level: RecordDemands.origin is a top-level value
   103:5 update p: rejected escaped: it was given to JavaScript, or kept by a callee
-  114:9 update p: rejected later-use: p is read again at 115:9
-  121:9 update p: rejected later-use: p is read again at 122:9
-  129:9 update p: accepted param
-  136:9 update p: accepted param
+  114:9 update p: accepted param [hoisted 1]
+  121:9 update p: accepted param [hoisted 1]
+  129:9 update p: accepted param [hoisted 1]
+  136:9 update p: accepted param [hoisted 1]
   150:9 update p: rejected later-use: p is read again at 151:11
   162:9 update p: accepted param
   175:13 update RecordDemands.originAlias: rejected top-level: RecordDemands.originAlias is a top-level value
   181:5 update answer: accepted call
-  209:9 update r: accepted param
-  215:9 update r: accepted param
-  226:9 update r: accepted fresh
+  209:9 update r: accepted param [hoisted 1]
+  215:9 update r: accepted param [hoisted 1]
+  226:9 update r: accepted fresh [hoisted 1]
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 24: accepted 12, rejected 12
+  records 24: accepted 14, rejected 10
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 24: accepted 12, rejected 12
+records 24: accepted 14, rejected 10

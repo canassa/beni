@@ -104,6 +104,7 @@ fn lineLess(_: void, a: Line, b: Line) bool {
 pub fn writeLine(w: *std.Io.Writer, l: Line) Error!void {
     try w.print("  {d}:{d} {s} {s}: ", .{ l.position.line, l.position.col, l.op, l.base });
     if (l.refused) try w.print("rejected {s}", .{Facts.causeText(l.cause)}) else try w.print("accepted {s}", .{Facts.acceptText(l.accepted)});
+    if (!l.refused and l.hoisted != 0) try w.print(" [hoisted {d}]", .{l.hoisted});
     if (l.refused and l.detail.len != 0) try w.print(": {s}", .{l.detail});
     if (l.approx) try w.writeAll(" (approx)");
     try w.writeByte('\n');

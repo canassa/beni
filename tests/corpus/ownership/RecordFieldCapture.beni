@@ -1,0 +1,55 @@
+-- ownership: a closure that reads one field of a captured record
+-- (`ownership-v2.md` §2.11.4, *a field capture*; R-5.4.6). Such a closure
+-- reads the field when it is made and holds the field's value. `after`
+-- makes it after the update: the read of `p.x` is hoisted before the
+-- write. `before` and `beforeWritten` make it before the update: the
+-- closure is no holder of `p`'s object, also when it read the written
+-- field. `nested` reads the field in a closure inside the closure, and
+-- `listField` reads a list. `wholeCapture` returns `p` from the closure:
+-- it holds the record, and the update is refused `captured`.
+type alias Point =
+    x : Int
+    y : Int
+    tags : List Int
+
+
+pub after : Point → Int
+after p =
+    q = { p | x = 1 }
+    g = λ⊤ → p.x
+    q.x + g ⊤
+
+
+pub before : Point → Int
+before p =
+    g = λ⊤ → p.y
+    q = { p | x = 1 }
+    q.x + g ⊤
+
+
+pub beforeWritten : Point → Int
+beforeWritten p =
+    g = λ⊤ → p.x
+    q = { p | x = 1 }
+    q.x + g ⊤
+
+
+pub wholeCapture : Point → Int
+wholeCapture p =
+    g = λ⊤ → p
+    q = { p | x = 1 }
+    q.x + (g ⊤).y
+
+
+pub nested : Point → Int
+nested p =
+    g = λ⊤ → (λ⊤ → p.y)
+    q = { p | x = 1 }
+    q.x + (g ⊤) ⊤
+
+
+pub listField : Point → Int
+listField p =
+    g = λ⊤ → List.length p.tags
+    q = { p | tags = [] }
+    List.length q.tags + g ⊤
