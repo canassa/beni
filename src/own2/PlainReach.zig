@@ -10,6 +10,7 @@ const SlotWords = @import("SlotWords.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
 const Subtree = @import("Subtree.zig");
+const CondOnce = @import("CondOnce.zig");
 
 const Allocator = std.mem.Allocator;
 const Eval = Relation.Eval;
@@ -37,7 +38,7 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
     const h = e.contracts.head(c);
     const full = try e.contracts.resCond(e.arena, c, e.read_mode == .reading);
     if (full.no or full.sel.len == 0) return full;
-    if ((try @import("CallFolds.zig").of(e, call, @import("Ids.zig").none_int)).len != 0) return instSel(e, full, call); // read whole, through its keys
+    if ((try @import("CallFolds.zig").of(e, call, @import("Ids.zig").none_int)).len != 0) return CondOnce.of(e, full, call, instSel); // read whole, through its keys
     // The plain slots of the check, as words from the call's root.
     var plain: std.ArrayList(u32) = .empty;
     defer plain.deinit(g);
@@ -45,7 +46,7 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
         if (Contract.isApart(ents[i].occ)) continue;
         // A whole subtree is plain at every slot below its top: every
         // occurrence may arrive there.
-        if (Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) return instSel(e, full, call);
+        if (Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) return CondOnce.of(e, full, call, instSel);
         try plain.appendSlice(g, e.f.slots.items(e.f.leafAt(ents[i].leaf).slots));
     }
     // What arrives at the plain slots, read once for every occurrence:
@@ -62,7 +63,7 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
         hits.clearRetainingCapacity();
         try e.hitsAt(h.res_root, words, &hits);
         // A slot the result tree does not name may hold anything.
-        if (hits.items.len == 0) return instSel(e, full, call);
+        if (hits.items.len == 0) return CondOnce.of(e, full, call, instSel);
         for (hits.items) |hit| for (hit.arrivals) |a| {
             if (a.kind != .param) continue;
             // The arrival's slot is its own steps, then what the plain
@@ -87,7 +88,7 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
         const ws = e.f.slots.relWords(Contract.occRel(o));
         if (!(if (row) SlotWords.meetsKey(e.places(), keys.items, Contract.occParam(o), ws) else try arrives(e, &reach, o))) out[k] = o | Contract.apart_bit;
     }
-    return instSel(e, try Cond.of(e.account(), out), call);
+    return CondOnce.of(e, try Cond.of(e.account(), out), call, instSel);
 }
 
 /// What arrives at a check's plain slots, by a callee's result tree: for

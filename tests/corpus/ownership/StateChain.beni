@@ -1,0 +1,55 @@
+-- ownership: a state record that goes through a chain of calls, each of which
+-- pushes onto one of its list fields (`ownership-v2.md` §2.9.1, *Apart
+-- occurrences*; §4.1; #2418). The checker v2 asked each call's condition again
+-- at each round of the check above it, and each asking instantiated the whole
+-- chain below it again: 4 324 records at 4 calls, 48 571 at 8, and at 12 calls
+-- `chain` reached `ownership_summary_size`, with no write refused. The
+-- condition is instantiated once per call now, and `chain` is checked at the
+-- default allowance: every push is accepted, and `twice`, which hands one
+-- version to two calls, keeps its refusal.
+type alias V =
+    list : List Int
+    model : List Int
+
+
+type alias S =
+    seed : Int
+    versions : List V
+    count : Int
+    bad : List String
+    checks : Int
+
+
+keep : S, V → S
+keep s v =
+    { seed = s.seed
+    , versions = List.push s.versions v
+    , count = s.count
+    , bad = s.bad
+    , checks = s.checks
+    }
+
+
+pub chain : S → S
+chain s0 =
+    s1 = keep s0 { list = [ 1 ], model = [] }
+    s2 = keep s1 { list = [ 2 ], model = [] }
+    s3 = keep s2 { list = [ 3 ], model = [] }
+    s4 = keep s3 { list = [ 4 ], model = [] }
+    s5 = keep s4 { list = [ 5 ], model = [] }
+    s6 = keep s5 { list = [ 6 ], model = [] }
+    s7 = keep s6 { list = [ 7 ], model = [] }
+    s8 = keep s7 { list = [ 8 ], model = [] }
+    s9 = keep s8 { list = [ 9 ], model = [] }
+    s10 = keep s9 { list = [ 10 ], model = [] }
+    s11 = keep s10 { list = [ 11 ], model = [] }
+    s12 = keep s11 { list = [ 12 ], model = [] }
+    s12
+
+
+pub twice : S, V → Int
+twice s0 v =
+    s1 = keep s0 v
+    s2 = keep s1 v
+    n = List.push v.list 1
+    List.length n + List.length s2.versions

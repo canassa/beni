@@ -19,6 +19,8 @@ candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#22
 *Since #2354:* `below_join_one_name` is killed by `run/SanitiserFamilyJoinBelow` (`--only=below_join_one_name`, 96 s).
 *Since #2325:* `recons_never` and `recons_front_any` (when a prepend may answer its base's array, `Recons.zig`) are killed by
 `run/SanitiserPrependFrontHeld`, the first also by `ownership/Prepend` and `PrependFresh` (`--only=recons_never,recons_front_any`, 205 s).
+*Since #2418:* `mixed_memo_off` (a call's mixed condition instantiated again at each asking, `CondOnce.zig`) is a cost-only
+mutant: it is killed by `ownership/StateChain`, which reaches `ownership_summary_size` under it (`--only=mixed_memo_off`, 261 s).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -48,6 +50,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `walker_row_scalar` | O1 O10 | `Walker.project` gives a scalar for a row step of a tuple or constructor | SURVIVED | dead | 0 | 0 | 0 | 0 |
 | `recons_never` | O1 | a prepend never answers its base's array (`Recons.may`) | killed | | SanitiserPrependFrontHeld (ProgramFailed) | 2: Prepend (OwnershipV2Differs), … | 0 | |
 | `recons_front_any` | O1 | a prepend whose front is a call never answers its base's array, whatever the call hands back | killed | | SanitiserPrependFrontHeld (SanitisedRefusalDiffers) | 0 | 0 | |
+| `mixed_memo_off` | cost (§4.1) | a call's mixed condition is instantiated again at each asking, not once (#2418) | killed | | 0 | StateChain (OwnershipV2Limit) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

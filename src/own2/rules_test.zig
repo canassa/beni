@@ -161,6 +161,8 @@ const layers = [_]Entry{
     .{ .file = "Recons.zig", .layer = 6, .max_lines = 135 },
     // What a known code keeps of what a label hands it (§2.11.3, *a need on a supply*, #2393).
     .{ .file = "KeepsNot.zig", .layer = 6, .max_lines = 110 },
+    // A call's mixed condition instantiated once, for `PlainReach` (§2.9.1, #2418).
+    .{ .file = "CondOnce.zig", .layer = 6, .max_lines = 50 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
@@ -432,6 +434,9 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "Traversal.zig", .needle = "src.?, pass.?" },
     // The keys are read only with no row among them: `SlotWords.meetsKey` reads the others (§2.1).
     .{ .file = "PlainReach.zig", .needle = "sliceAsBytes(key" },
+    // A call and its marked selection, compared as stored: an equal run is the same condition, and a
+    // miss only instantiates it again (#2418).
+    .{ .file = "CondOnce.zig", .needle = "sliceAsBytes(key)" },
 };
 /// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
 /// needed is in each (§2.1, *One rule per reader*). `Forest.at`'s nothing is no reading:
@@ -884,7 +889,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 168), layers.len);
+    try testing.expectEqual(@as(usize, 169), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
