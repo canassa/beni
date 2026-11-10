@@ -12,6 +12,9 @@
 //! (`run_hash.digestWith`) covers the driver's bytes, the script and the
 //! Wrangler configuration as well as the output tree, the golden and the
 //! Node version, so a change to any of them runs the Worker again.
+//!
+//! A fixture may hold a wrapper entry that makes a host call fail
+//! (`host_faults`).
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -24,6 +27,23 @@ pub const driver_path = "tests/workers/driver.mjs";
 
 /// The host's name in the digest, where a `browser/` digest has its DOM's.
 pub const id = "workers";
+
+/// A fixture's host faults (tests/corpus/README.md, *A host fault*;
+/// boundary.md §9.12 (k)): a wrapper entry module the fixture holds under
+/// this name. The build is the one a user makes, for `cloudflare`; the
+/// wrapper imports `./_worker.mjs`, replaces a host call so that it throws
+/// what the fixture names, and exports the build's default and its object
+/// classes again. With it a fixture sees the test of a `catch`
+/// (`CLAUDE.md` rule 9): a failure the platform does not name must stop
+/// the program, which no fixture can make the real host throw (#1263).
+pub const host_faults = "host-faults.mjs";
+
+/// The wrapper's name in the output directory, beside `_worker.mjs`, where
+/// the harness copies it after the build and the driver starts the Worker
+/// from it. The name begins with `_`, which no module's file does
+/// (`backend.md` §2), and is in the output tree, so a build's digest
+/// covers the wrapper with the tree.
+pub const host_faults_entry = "_host-faults.mjs";
 
 /// The harness's files, resolved once per process from the working
 /// directory, which is the repository root in every run the build makes.

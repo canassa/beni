@@ -9034,6 +9034,19 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   under `waitUntil` at the platform's deadline and after a client disconnect (#600). *2026-10-23:
   #593's and #600's facts are measured by the deployed probe ((e.5), (d)); #595 stays, and #593
   stays open for the corpus fixture.*
+- *Amended 2026-11-10 (#1263).* **A fixture's host faults.** The real host throws only the
+  failures the platform names, so no fixture saw the test of a `catch`: with each test of (d)'s
+  `new URL`, (e)'s `idFromString` and (h)'s `kv.put` changed to take every reason, the kind still
+  passed whole. A fixture may therefore hold a `host-faults.mjs`, a wrapper entry module. The
+  build is the one a user makes for `cloudflare`, and it does not change. The harness copies the
+  file into the output directory as `_host-faults.mjs`, beside `_worker.mjs`, after the build,
+  and the driver starts the Worker from it when it is there. The wrapper imports `./_worker.mjs`,
+  replaces a host call so that it throws what the fixture names for one argument, and exports the
+  build's default and its object classes again. The copy is in the output tree, so the case's
+  digest covers it. `workers/HostFaultPut`, `HostFaultFull`, `HostFaultId` and `HostFaultUrl` hold
+  the three tests: a thrown value the platform does not name stops the object or the request
+  (rule 9 of `CLAUDE.md`), and the named one is the typed failure. A new `catch` of this platform
+  gets such a fixture (`tests/corpus/README.md`, *A host fault*).
 
 **(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
 the part of the section it settles keeps its text.

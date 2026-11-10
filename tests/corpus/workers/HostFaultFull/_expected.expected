@@ -1,0 +1,27 @@
+> GET /put
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok
+> GET /put-full
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err Full
+> GET /keys
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< kept
+> GET /put-not-an-error
+< 500
+< content-length: 180
+< content-type: text/plain;charset=UTF-8
+<
+< Error: #<Object>
+| err: beni: a defect stopped the object Store; its next event starts a new instance
+> GET /keys
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< kept

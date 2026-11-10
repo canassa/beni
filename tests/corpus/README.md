@@ -29,7 +29,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
 | `browser/gpu/<Dir>/` | `build --platform=tests/platforms/gpu` (`gpu-test`, over `browser-tea`), then the page as above | `_expected.expected`, a defect's `_expected.release-expected` | WebGPU (`docs/design/webgpu.md` §10): the gates run each page on the platform's fake host, whose `GpuHost.inject` injects the faults the ledger names; `zig build test-webgpu` runs the same pages in Chrome on a real adapter (SwiftShader), with `_expected.webgpu-expected` where Chrome's page differs and `_expected.webgpu-skip` (its reason) for a page it cannot run, and counts `passed`, `unsupported` and `skipped` apart |
 | `browser/prerender/<Dir>/` | `build --platform=browser-inline`, with and without the hidden `--no-prerender`, each in both modes, then each page opened on the file it wrote that a host answers the script's address with | `_expected/<page>.html`, `_expected.expected` | a prerendered page (`prerender.md`): the page the build writes, and one transcript for the page with no view and the prerendered one (*Prerendered pages*) |
-| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug`, each with a digest of its own); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
+| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; a fixture's `host-faults.mjs` makes a host call fail (*A host fault*); projects only, two cases each (the development build, and `--release --allow-debug`, each with a digest of its own); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
 **Warnings on a fixture that compiles.** A `check/good/`, `writes/`,
@@ -437,6 +437,32 @@ a build without it takes the binary's emit rows as a user's development
 build does (`backend.md` §9, *The join*; #2019). Such a Worker has no
 hooks: the driver asks no mark, and prints the console's lines after the
 last step. The line anywhere else, or spelled otherwise, is a script error.
+
+**A host fault.** The real host throws only the failures the platform
+names. A fixture that must see another one — the test of a `catch`, which
+must let every other thrown value stop the program (`CLAUDE.md` rule 9) —
+holds a `host-faults.mjs` (`boundary.md` §9.12 (k), #1263). It is a wrapper
+entry module. The build does not change: it is the one a user makes. After
+the build, the harness copies the file into the output directory as
+`_host-faults.mjs`, and the driver starts the Worker from it in place of
+`_worker.mjs`. The copy is in the output tree, so the digest covers it. For
+a hand run, copy the file yourself. The wrapper
+
+- imports `./_worker.mjs` (`import * as built from "./_worker.mjs"`);
+- replaces a host call, so that it throws what the fixture names for one
+  argument and calls the host for every other: a method on the prototype of
+  a host object (`Object.getPrototypeOf(state.storage.kv).put`, in the
+  constructor of a class that extends the build's;
+  `Object.getPrototypeOf(env.ROOMS).idFromString`, in a `fetch` around the
+  build's), or a global (`globalThis.URL`);
+- exports the build's default and every object class again, since the host
+  reads them from the entry.
+
+The script then has a step that takes the host's own path through the
+replaced call, and a step that takes the fault. `workers/HostFaultPut`,
+`HostFaultFull`, `HostFaultId` and `HostFaultUrl` are the models. Give each
+new `catch` of the `cloudflare` platform such a fixture, and prove it: with
+the test of the `catch` changed to `λ_ → True` the fixture must fail.
 
 ### `browser/`: a program in a page
 

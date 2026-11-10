@@ -1,0 +1,7 @@
+# A target that resolves, and one the host refuses with its TypeError.
+{"path": "/redirect"}
+{"path": "/redirect-bad-target"}
+# The host throws a RangeError: a defect, not "does not resolve".
+{"path": "/redirect-fault"}
+# The next request is served.
+{"path": "/redirect"}

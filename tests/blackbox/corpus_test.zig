@@ -2955,7 +2955,9 @@ const Case = struct {
     /// A `workers/` fixture: a project with `wrangler.jsonc` and an
     /// `_expected.steps` script, built for `cloudflare` and run under
     /// Miniflare by `tests/workers/driver.mjs` (`workers.zig`); the
-    /// transcript is the golden. The case is one build — development, or
+    /// transcript is the golden. A fixture with a `host-faults.mjs` starts
+    /// from that wrapper entry, which makes a host call fail
+    /// (`worker_harness.host_faults`). The case is one build — development, or
     /// `--release --allow-debug` for `Fixture.release_case` — with a digest
     /// of its own.
     fn runWorker(case: Case) !void {
@@ -3011,6 +3013,17 @@ const Case = struct {
         if (!try c.warningsAccounted(built.stderr)) {
             detail("{s} [{s}]: a workers fixture must compile with no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
             return error.GoodFixtureHasDiagnostics;
+        }
+        // A fixture's host faults (`worker_harness.host_faults`): its
+        // wrapper entry goes into the output tree, where the driver finds
+        // it and the digest below covers it.
+        if (c.w.exists(worker_harness.host_faults)) {
+            const entry = try std.fs.path.join(c.arena, &.{ out_dir, worker_harness.host_faults_entry });
+            if (c.w.exists(entry)) {
+                detail("{s} [{s}]: the build wrote {s}, the name of a fixture's host faults\n", .{ c.fixture.name, out_dir, entry });
+                return error.HostFaultsEntryTaken;
+            }
+            try c.w.write(entry, try c.w.read(worker_harness.host_faults));
         }
         const golden = "expected";
         // Skip Miniflare when this exact output tree, golden, driver and
