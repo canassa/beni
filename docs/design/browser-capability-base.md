@@ -729,8 +729,12 @@ the slice with an unknown module `Gpu` (`zig-out/scratch/gpu-before/`).
 `_expected.webgpu`, the marker added for this page, puts a `browser/prerender/`
 project into the `test-webgpu` walk. There all four builds compare against
 `_expected.webgpu-expected`, which a blessing `test-webgpu` run writes from
-the first build. `test-webgpu` cannot run on this Mac, so that golden does
-not exist yet; it is owed to a run on dagon. An exploratory run outside the
+the first build. `test-webgpu` cannot run on this Mac. *Done 2026-11-10 on
+dagon:* a blessing `test-webgpu` run there recorded the golden, and a
+second run verified it in all four builds on Chrome 153's SwiftShader
+adapter. `browser/gpu/` gives 133 of 134 on the branch and on master, with
+the same `CancelledRequests` timing flake on both; it passes alone on both.
+The `_expected.webgpu` marker works. An exploratory run outside the
 harness in Chrome 157 with `--enable-unsafe-webgpu` on Apple's Metal adapter
 gave, in development and release: configure Ok, one receipt, the pixel
 4294901760 (blue, as `browser/gpu/CanvasPage`), loss `Destroyed`, twice. It is
