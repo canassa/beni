@@ -57,6 +57,10 @@ killed (`--only=record_supply_whole,record_deep_whole,record_req_whole,list_req_
 `ownership/RecordHoistChannel` and `RecordNeedHoist`; `hoist_rows_lost` (an accepted record write keeps no row) by ten
 `ownership/` fixtures; `need_record_quiet` (a need's accepted record write has no line, `Groups.zig`) by `RecordFieldSets` and
 `RecordNeedHoist` (`--only=hoist_at_write,hoist_rows_lost,need_record_quiet`, 430 s, control green).
+*The capture rows (#1018, S5b):* `capture_rows_lost` (a field capture has no row, `HoistPlace.zig`) is killed by
+`ownership/RecordFieldCapture`, `RecordHoistChannel` and `RecordLocalFunction`; `field_capture_local` (a local function captures
+a field as a lambda does, `FieldCapture.zig`) by `RecordLocalFunction`; `field_capture_whole` is still killed
+(`--only=capture_rows_lost,field_capture_local,field_capture_whole`, 386 s, control green).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -110,6 +114,8 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `hoist_at_write` | §2.8, the hoist rows | every hoisted read is bound at the write, also one in an arm that the write is not in | killed | | 0 | 2: RecordHoistChannel (OwnershipV2Differs), … | 0 | |
 | `hoist_rows_lost` | §2.8, the hoist rows | an accepted record write keeps no row of the reads that it hoists | killed | | 0 | 10: RecordCells (OwnershipV2Differs), … | 0 | |
 | `need_record_quiet` | §2.8, the hoist rows | a need's accepted record write has no line, so its rows are lost | killed | | 0 | 2: RecordFieldSets (OwnershipV2Differs), … | 0 | |
+| `capture_rows_lost` | §2.8, the capture rows | a field capture has no row | killed | | 0 | 3: RecordFieldCapture (OwnershipV2Differs), … | 0 | |
+| `field_capture_local` | §2.11.4, a field capture | a local function captures a field as a lambda does, where the lowering reads at its calls | killed | | 0 | RecordLocalFunction (OwnershipV2Differs) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

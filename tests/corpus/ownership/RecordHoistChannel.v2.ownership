@@ -14,6 +14,7 @@ module RecordHoistChannel
   hoist before.x: read 31:13; after operands 30:9
   hoist p.x: read 39:17; after operands 38:9
   hoist p.x: read 48:15; after operands 46:9
+  capture p.a.b.c.d.e.f.g.h.i.j: read 54:35; before 54:11
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 9: accepted 9, rejected 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

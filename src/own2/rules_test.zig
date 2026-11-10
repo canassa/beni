@@ -142,7 +142,7 @@ const layers = [_]Entry{
     // A label applied to an `alt` of known codes, one virtual call each (§2.11.3, #2322).
     .{ .file = "AltCodes.zig", .layer = 5, .max_lines = 115 },
     // Where a hoisted read is bound (§2.8, the hoist rows).
-    .{ .file = "HoistPlace.zig", .layer = 6, .max_lines = 80 },
+    .{ .file = "HoistPlace.zig", .layer = 6, .max_lines = 95 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
     // A code's summary lines, its called contracts' after it (#2028).
@@ -358,7 +358,7 @@ const layers = [_]Entry{
     // A group's codes solved on their own and its local cycles, split from `Groups` (§2.12, #2035).
     .{ .file = "Peel.zig", .layer = 12, .max_lines = 110 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
-    .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
+    .{ .file = "Codes.zig", .layer = 12, .max_lines = 60 },
     .{ .file = "BlockWords.zig", .layer = 12, .max_lines = 70 },
     .{ .file = "Callees.zig", .layer = 12, .max_lines = 290 },
     // Evidence terms as function values (#1708).

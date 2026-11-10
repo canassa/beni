@@ -1,0 +1,36 @@
+-- ownership: a local function that reads a field of a captured record
+-- (`ownership-v2.md` §2.11.4, *a field capture*; §2.8, *the capture
+-- rows*; #2455). A lambda that reads `p.x` holds that field's value, read
+-- when the lambda is made: its row is `capture p.x`, and an update of `p`
+-- afterwards is accepted (`lambda`). A local function reads `p.x` when it
+-- is called. So a call of it after an update of `p` reads the old record:
+-- checker v2 refuses the update, where the update writes `x` (`written`)
+-- and also where it does not (`untouched`, more than a perfect checker
+-- refuses). Checker v1 accepts both, and `written` then reads a stale
+-- field under `--records-in-place` (#2455).
+type alias P =
+    x : Int
+    y : Int
+
+
+pub untouched : P → P × Int
+untouched p =
+    scale : Int → Int
+    scale n = n * p.x
+    q = { p | y = 1 }
+    ( q, scale 2 )
+
+
+pub written : P → P × Int
+written p =
+    scale : Int → Int
+    scale n = n * p.x
+    q = { p | x = 1 }
+    ( q, scale 2 )
+
+
+pub lambda : P → P × Int
+lambda p =
+    scale = λn → n * p.x
+    q = { p | y = 1 }
+    ( q, scale 2 )

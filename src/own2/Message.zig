@@ -213,16 +213,16 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
 }
 
 /// The line of one resolved demand.
-/// A hoisted read's line of the report (R-7.15, v1's text): the holder's path through the written field,
-/// where the source reads it, and where the lowering binds it.
-pub fn hoistLine(f: Frame, a: Allocator, h: Facts.Hoist) Allocator.Error![]const u8 {
+/// A hoisted read's line of the report (R-7.15, v1's text): `word` (`hoist`, or `capture` for a field capture
+/// that no write hoists), the holder's path through the field, where the source reads it, and where the lowering binds it.
+pub fn hoistLine(f: Frame, a: Allocator, h: Facts.Hoist, word: []const u8) Allocator.Error![]const u8 {
     const bir = birOf(f);
     const toks = bir.insts.items(.main_token);
     const rp = f.names.position(f.names.ctx, f.module, toks[h.outer]);
     const pp = f.names.position(f.names.ctx, f.module, toks[h.placement]);
     const path = try baseText(f, a, h.read);
     const field: []const u8 = if (h.binding == none) "" else try std.fmt.allocPrint(a, ".{s}", .{localName(f, h.binding)});
-    return std.fmt.allocPrint(a, "hoist {s}{s}: read {d}:{d}; {s} {d}:{d}", .{ path, field, rp.line, rp.col, if (h.phase == 1) "after operands" else "before", pp.line, pp.col });
+    return std.fmt.allocPrint(a, "{s} {s}{s}: read {d}:{d}; {s} {d}:{d}", .{ word, path, field, rp.line, rp.col, if (h.phase == 1) "after operands" else "before", pp.line, pp.col });
 }
 
 pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Allocator.Error!Facts.Line {

@@ -1,0 +1,9 @@
+module RecordLocalFunction
+  20:9 update p: rejected later-use: p is read again at 21:10
+  28:9 update p: rejected later-use: p is read again at 29:10
+  35:9 update p: accepted param
+  capture p.x: read 34:23; before 34:13
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 3: accepted 1, rejected 2
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 3: accepted 1, rejected 2

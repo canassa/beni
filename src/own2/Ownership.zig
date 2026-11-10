@@ -127,6 +127,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 }
                 var frame = frame_base;
                 frame.decl = d;
+                // Its frames' field captures: a row each, unless an earlier write's row has the read (§2.8, the capture rows).
+                for (dr.captures) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, h.capture, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h, "capture"), .read = .{ h.read, h.binding, h.capture } });
                 for (dr.lines) |l| {
                     const op = if (l.demand.callee_inst != Ids.none_int) try Message.opName(frame, arena, l.demand.callee_inst) else "";
                     var ln = try Message.line(frame, arena, l, op);
@@ -148,7 +150,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     }
                     try lines.append(arena, ln);
                     // An accepted record write's hoisted reads, by the write's instruction (§2.8, the hoist rows).
-                    if (!ln.refused) for (l.hoists) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, l.demand.point, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h), .read = .{ h.read, h.binding, h.capture } });
+                    if (!ln.refused) for (l.hoists) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, l.demand.point, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h, "hoist"), .read = .{ h.read, h.binding, h.capture } });
                 }
                 if (in.format_summaries) {
                     const a = &dr.account;
