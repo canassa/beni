@@ -666,7 +666,10 @@ const Walker = struct {
                 const code = k.ctx.codeOf(k.ctx.ctx, i) orelse return .{ .v = try fr.top() };
                 return .{ .v = try k.closureOf(i, code, k.ctx.capturesOf(k.ctx.ctx, code)) };
             },
-            .let => return k.res[k.rel(d.rhs)],
+            .let => {
+                if (!@import("Mutate.zig").on(.block_result_pending)) k.pop(d.rhs); // The block takes its body's value (#2449).
+                return k.res[k.rel(d.rhs)];
+            },
             .let_def => {
                 const def = k.bir.extraData(@fromBackingInt(d.lhs), Bir.LetDef);
                 if (def.params_end != def.params_start) {
