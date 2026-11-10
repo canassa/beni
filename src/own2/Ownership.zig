@@ -52,8 +52,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         var limits: u32 = 0;
         var blocks: [2]?[]const u8 = .{ null, null };
         var word_errors: [][3]u32 = &.{};
-        // The list pass's summary lines and refusals: the record pass says only what it changes.
-        var said: std.StringHashMapUnmanaged(void) = .empty;
+        // The list pass's summary lines, and how often it refused each `L:C op base`: the record pass says only what it changes.
+        var said: std.StringHashMapUnmanaged(u32) = .empty;
         var needed = false;
         // A worded declaration's body is its pins' to check, not this run's.
         var channel: Hoists.Builder = .{ .unchecked = for (mi.bir.decls) |d| {
@@ -129,13 +129,19 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     var ln = try Message.line(frame, arena, l, op);
                     const key = try std.fmt.allocPrint(arena, "{d}:{d} {s} {s}", .{ ln.position.line, ln.position.col, ln.op, ln.base });
                     if (first) {
-                        if (ln.refused) try said.put(arena, key, {});
+                        if (ln.refused) (try said.getOrPutValue(arena, key, 0)).value_ptr.* += 1;
+                        // The list channel is the list pass's: a record line is no list write, and its refusal no list refusal.
+                        try channel.add(arena, l.demand.point, l.demand.kind, ln.refused, Hoists.reliesOnCallers(l.outcome.accepted));
                     } else if (!l.demand.record) {
-                        // A refusal that only the record pass has is a record's, whatever its demand: it is not lost, and it is no list line.
-                        if (!ln.refused or said.contains(key) or @import("Mutate.zig").on(.record_refusal_lost)) continue;
+                        // A refusal that only the record pass has is a record's, whatever its demand: it is not lost, and it is no
+                        // list line. Each refusal of the list pass stands for one of the same text here, and no more.
+                        if (!ln.refused or @import("Mutate.zig").on(.record_refusal_lost)) continue;
+                        if (said.getPtr(key)) |n| if (n.* != 0) {
+                            n.* -= 1;
+                            continue;
+                        };
                         if (!@import("Mutate.zig").on(.record_pass_lists)) ln.op = "update";
                     }
-                    try channel.add(arena, l.demand.point, if (records) .update else l.demand.kind, ln.refused and first, Hoists.reliesOnCallers(l.outcome.accepted));
                     try lines.append(arena, ln);
                 }
                 if (in.format_summaries) {
@@ -173,7 +179,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     // The record pass says a contract only where it is not the list pass's: `record-pass summary …`.
                     var keep = from;
                     for (others.items[from..]) |text| {
-                        if (first) try said.put(arena, text, {}) else if (!said.contains(text)) {
+                        if (first) try said.put(arena, text, 0) else if (!said.contains(text)) {
                             others.items[keep] = try std.fmt.allocPrint(arena, "record-pass {s}", .{text});
                             keep += 1;
                         }
@@ -188,7 +194,11 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             for (mod.imports_unknown.items) |m| try others.append(arena, try std.fmt.allocPrint(arena, "{s}unknown block {s}: its declarations read the pessimistic contract", .{ if (first) "" else "record-pass ", in.names.module_names[m] }));
             var unpublished: ?[]const u8 = null;
             blocks[@intFromBool(records)] = if ((in.publish or in.format_summaries) and limits == 0 and rlimits == 0) try publish(gpa, arena, in.names, mod, &unpublished) else null;
-            if (records) continue;
+            if (records) {
+                // Its block not written is said too (#1450): an importer's record pass reads the module as unknown.
+                if (unpublished) |why| if (in.format_summaries) try others.append(arena, try std.fmt.allocPrint(arena, "record-pass block not published: {s}", .{why}));
+                continue;
+            }
             needed = mod.record_facts or for (mi.bir.insts.items(.tag)) |t| {
                 if (t == .record_update or t == .pat_record) break true;
             } else false;

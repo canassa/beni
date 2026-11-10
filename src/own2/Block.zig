@@ -323,10 +323,8 @@ const Reader = struct {
     }
 };
 
-/// A module's two blocks as the one its interface holds (§3.6, *Two passes*): one word, the list
-/// pass's block, the record pass's. The word is the first block's length in words; its top bit says
-/// that the record pass's block has the same bytes and is not written. No record block and no top
-/// bit: the record pass published none, and an importer's record pass reads the module as unknown.
+/// A module's two blocks as the one its interface holds (§3.6): one word, the list pass's block, the record pass's. The word is the first block's length in
+/// words; its top bit says that the record pass's block has the same bytes and is not written. No record block and no top bit: an importer's record pass reads no block.
 pub fn both(arena: Allocator, lists: ?[]const u8, records: ?[]const u8) Allocator.Error!?[]const u8 {
     const a = lists orelse return null;
     const same = records != null and std.mem.eql(u8, a, records.?);
@@ -336,6 +334,11 @@ pub fn both(arena: Allocator, lists: ?[]const u8, records: ?[]const u8) Allocato
     @memcpy(out[4..][0..a.len], a);
     @memcpy(out[4 + a.len ..], b);
     return out;
+}
+
+/// Whether both passes read one part of `bytes`: the top bit, or bytes that are no block for either pass.
+pub fn passesAgree(bytes: []const u8) bool {
+    return part(bytes, false).len == 0 or std.mem.readInt(u32, bytes[0..4], .little) >> 31 != 0;
 }
 
 /// The part of `both`'s bytes that a pass reads; empty when it has none, or the bytes are not `both`'s.

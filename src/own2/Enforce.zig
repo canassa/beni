@@ -203,7 +203,7 @@ const ImportReader = struct {
         if (m >= r.interfaces.len) return null;
         const from_pack = if (m < r.ins.from_pack.len) r.ins.from_pack[m] else null;
         const all = if (r.blocks) |b| (b[m] orelse &.{}) else from_pack orelse r.interfaces[m].ownership;
-        mod.record_facts = mod.record_facts or Block.part(all, true).ptr != Block.part(all, false).ptr;
+        mod.record_facts = mod.record_facts or !Block.passesAgree(all);
         const bytes = Block.part(all, mod.in.records);
         if (bytes.len == 0 or bytes.len % 4 != 0) return null;
         const gpa = mod.gpa;

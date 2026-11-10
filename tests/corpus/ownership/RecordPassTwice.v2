@@ -1,0 +1,3 @@
+Two refusals with one text at one call (ownership-v2.md §2.11.5, Two passes; #1018): the list pass refuses `keep`'s own
+write of `shared.a`, and the record pass has a second refusal of `shared.a` there, for the callback's write. The record
+pass says the second one as `update shared.a: rejected call`. v1 refuses the callback's push itself (`supply`).

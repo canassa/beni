@@ -746,7 +746,7 @@ pub const Module = struct {
     /// The imports' blocks read, and the modules whose block was missing or did not round-trip (§3.6).
     imports_read: u32 = 0,
     imports_unknown: std.ArrayList(u32) = .empty,
-    /// An import read here has another block in its record pass (`Block.part`): this module's record pass is needed.
+    /// An import read here has another block in its record pass, or none (`Block.passesAgree`): this module's record pass is needed.
     record_facts: bool = false,
 
     pub fn deinit(mod: *Module) void {
