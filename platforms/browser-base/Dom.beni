@@ -25,10 +25,10 @@
 --!     GoFullscreen →
 --!         ( model, Cmd.perform λsend → send (Entered (Dom.requestFullscreen "arena")) )
 
-import Browser
 import Html
 import Js
 import Listen
+import Phase
 import Sub exposing (Sub)
 import Task
 
@@ -361,4 +361,4 @@ rejected error =
 --|     Dom.rendered ⊤
 --|     Dom.focus "edit-${id}"
 pub rendered : ⊤ → ⊤
-rendered ⊤ = Task.callback λresume → Browser.onRendered resume
+rendered ⊤ = Phase.rendered ⊤

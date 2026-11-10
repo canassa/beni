@@ -18,9 +18,7 @@ module Browser
     External
   value flush : ⊤ → ⊤  -- impure
   value hosted : { init : Host msg → model, settle : Host msg, model → model, update : Host msg, msg, model → model, view : model → Html msg } → Program  -- impure
-  value installRendered : Value → ⊤  -- impure
   value mountAt : Program, String → Program  -- impure
-  value onRendered : Resume ⊤ → ⊤ → ⊤  -- impure
   value prerender : Program, List String → Program
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
@@ -318,42 +316,6 @@ module Browser.WorkerStream
   value value : Chunk a → a
 module Browser.WorkerWire
   value normalize : V, Int, String, V → V  -- impure
-module Dom
-  type Align
-    Start
-    Center
-    End
-    Nearest
-  alias Alignment
-    Alignment
-  alias Box
-    Box
-  type Error
-    NotFound
-  type FullscreenError
-    NoElement
-    Unsupported
-    NotActivated
-    Refused
-  type SelectError
-    NoField
-    NotText
-  alias Viewport
-    Viewport
-  value blur : String → Result Error ⊤  -- impure
-  value box : String → Result Error Box  -- impure
-  value eachFullscreenChange : (Maybe String → ⊤) → ⊤  -- suspends
-  value exitFullscreen : ⊤ → ⊤  -- suspends
-  value focus : String → Result Error ⊤  -- impure
-  value fullscreenElement : ⊤ → Maybe String  -- impure
-  value onFullscreenChange : (Maybe String → msg) → Sub msg  -- impure
-  value rendered : ⊤ → ⊤  -- suspends
-  value requestFullscreen : String → Result FullscreenError ⊤  -- suspends
-  value scrollIntoView : String → Result Error ⊤  -- impure
-  value scrollIntoViewWith : String, Alignment → Result Error ⊤  -- impure
-  value scrollTo : String, Float, Float → Result Error ⊤  -- impure
-  value select : String, Selection → Result SelectError ⊤  -- impure
-  value viewport : ⊤ → Viewport  -- impure
 module Gpu
   type Availability
     Available

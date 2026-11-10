@@ -232,6 +232,12 @@ commands cmd dispatch = List.foldl (Cmd.items cmd) ⊤ λitem _ →
                 Js.null
                 Js.undefined
 
+        Cmd.After work →
+            send
+                (Js.from λ_ → Hosted.callLater work λmsg → send dispatch msg Js.undefined)
+                Js.null
+                Js.undefined
+
         _ →
             fault "a command the inline compiler did not compile"
 

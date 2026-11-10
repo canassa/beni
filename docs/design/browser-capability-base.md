@@ -619,3 +619,76 @@ remain; no budget/guard or chat golden changed. Exactly approved existing
 emit/ownership goldens were recorded from actual outputs. Full scoped-policy
 and model-dependent subscription APIs remain incomplete; next capability
 family is Dom. Evidence: zig-out/scratch/time-final-report.md.
+
+
+### Dom — built 2026-11-10
+
+`Dom` moves to `browser-base` whole, removed from `browser` in the same
+slice and re-exported by `browser`, `browser-inline` and (through `browser`)
+`browser-tea`. It imports no renderer. §3's render-phase boundary is the
+base's private `Phase` module. It owns the state `Browser` held for the
+hosted loop — the loop's flush, the after-render phase, its queued work,
+its waiting fibers and the busy latch — behind functions, so every cell
+stays module-local and a release build keeps it a `let` (`backend.md`,
+*A `Js.Ref` that does not escape is a `let`*). `Browser.hosted` hands its
+loop to `Phase.mount` and queues work through `Phase.after`; `Dom.rendered`
+and HTTP's after-render wait call `Phase.rendered` / `Phase.onRendered`.
+
+Inline installs nothing. It writes the page inside the dispatch, so its
+after-render point is the end of that dispatch. A fiber's turn runs in the
+scheduler's drain, which `Task.onTurn` wraps in one dispatch, so
+`yieldNow` would resume it before the page is written. With no hosted loop
+mounted, `Phase.rendered` therefore resumes from a microtask, after the
+drain has returned. This is the default when no renderer supplies a loop.
+A page that does not wait for a render reaches none of this code.
+
+Interface 1.29 adds `Lowering.Effects.after_render`: the write-set pass
+reads `Cmd.afterRender` as a body that cannot suspend. The inline runtime
+queues it after the write pass as such a `perform` is queued, through
+`Hosted.callLater`. A prerendered `init` may return it, staged as
+`perform` is (§4.2). Its body runs only on the client. Keyed commands
+remain a compiler limit.
+
+Before: `browser/prerender/BaseDom` and the refusals
+`build/bad/prerender/BaseDomInView` and `BaseDomInInit` failed with an
+unknown module `Dom` (`zig-out/scratch/dom-before/`). After: BaseDom passes
+in all four builds (development and release, prerendered and not) under
+happy-dom. Its load step focuses and measures the hydrated input from
+`init`'s `Cmd.afterRender`. "edit" focuses an input its update showed.
+"open" waits with `Dom.rendered` in a fiber, then focuses. "missing" is
+`Err (NotFound id)`. The first `Dom.rendered` attempt, a scheduler yield,
+failed "open" with `NotFound second`; that failure fixed the microtask
+wait. Both refusals are `prerender_impure` at the host read inside `Dom`,
+with no output written.
+
+Sizes (release JavaScript, Node 24.19.0, brotli 11, gzip 9): the four
+empty-page variants are SHA-identical to master 620c322a45 (498/271/331 and
+1882/881/981), and so are both timer controls (MainOwnedKeys, RootClosures).
+The seven inline command and time pages — CommandInLogScope(+Async),
+SuspendingCommand, BaseInitCommand, BaseInitBatchCommand, TimeCleanup,
+BaseTimeEvents — are byte-identical to the Time commit e9996a71ca. Inline
+emit goldens are unchanged. Four `browser-tea` release goldens move by
+module order and short-name assignment only, pending manager review:
+
+| Golden | Before raw/brotli/gzip | After |
+|---|---:|---:|
+| WindowSize | 3688/1551/1785 | 3694/1551/1784 |
+| DomCapabilities | 5064/2166/2440 | 5070/2169/2439 |
+| HttpSendTracked | 19098/7136/7886 | 19094/7141/7889 |
+| HttpSendUntracked | 12547/4868/5399 | 12553/4894/5410 |
+
+The inline TodoMVC still needs `Storage`, so it is not measured yet.
+Evidence: `zig-out/scratch/dom-*`.
+
+Final validation (2026-11-10, zorg 0.17.1+zorg.3, default mode, Node
+24.19.0, against clean master 620c322a45, run one after another). Chrome:
+the lane and master fail the same single case, `tea/DomCapabilities`. Gates:
+the same known failures on both (six ownership golden mismatches, the two
+APFS case-folding tests, the list-column CPU budget and two own2 tests).
+Two more CPU-budget overruns appeared only in the lane run:
+`obligations: equatable, interpolatable and tuple_index` (1135 ms) and
+`the arity rule of §8.3 …` (1048 ms), against a budget of 1000 ms. This
+slice changes no checker code, and both tests pass alone afterwards. The
+manager accepted the four `browser-tea` release goldens above, and they
+were recorded from a real build. Comparisons:
+`zig-out/scratch/dom-final-{gates,browser}-comparison.json`.

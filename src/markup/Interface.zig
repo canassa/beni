@@ -80,7 +80,9 @@ const std = @import("std");
 /// Version 1.27 distinguishes scoped subscription bodies from native
 /// listener installation (`Program.Subscription.waits`).
 /// Version 1.28 adds the update-context writer dependencies and absence fact.
-pub const version: Version = .{ .major = 1, .minor = 28 };
+/// Version 1.29 lets the write-set pass read `afterRender` commands
+/// (`Lowering.Effects.after_render`).
+pub const version: Version = .{ .major = 1, .minor = 29 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -196,6 +198,10 @@ pub const Lowering = struct {
         entry_capture: ?Dependency = null,
         /// 1.27: command construction preserves its creator's log context.
         command_context: bool = false,
+        /// 1.29: the runtime runs `cmd`'s `afterRender` work after the
+        /// write pass that shows its model, so the pass reads it as a body
+        /// that cannot suspend. False: an `afterRender` is unread.
+        after_render: bool = false,
         /// 1.28: every function that can write context/finalizer state.
         /// No reachable writer proves updates need no context wrapper.
         /// Null or an unresolved declaration keeps the wrapper.
