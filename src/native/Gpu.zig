@@ -18,7 +18,7 @@ pub const idl_file = "webgpu.idl";
 
 /// Where `zig build gpu-bindings` writes, relative to the repository root.
 pub const core_dir = "core/Browser/Host";
-pub const platform_dir = "platforms/browser/Gpu";
+pub const platform_dir = "platforms/browser-base/Gpu";
 
 pub const Output = struct { path: []const u8, bytes: []const u8 };
 pub const Code = enum { missing_input, exposure_mismatch, unsupported_type, name_collision, unmapped_name, invalid_member };
