@@ -168,9 +168,11 @@ pub const Place = struct {
 /// A subtree of more object slots than this is held whole, `↓p` (§2.3.1).
 pub const below_min: u8 = 16;
 
-/// A place's objects below it, saturating at `below_min + 1`, and whether a
-/// family is below it: one byte, so `Place` stays 24 bytes.
-pub const Below = packed struct(u8) { objects: u5 = 0, family: bool = false, _: u2 = 0 };
+/// A place's objects below it, saturating at `below_min + 1`, whether a
+/// family is below it, and whether a place no step below names is (`wild`:
+/// a `var`, an opaque or a function place, §2.9.1 *Deep occurrences*): one
+/// byte, so `Place` stays 24 bytes.
+pub const Below = packed struct(u8) { objects: u5 = 0, family: bool = false, wild: bool = false, _: u1 = 0 };
 
 pub const StepEntry = struct { step: Step, child: PlaceId };
 
@@ -605,8 +607,14 @@ pub const Table = struct {
                 var below: u32 = if (lone) @intFromBool(!t.places.col.kind[p].own().isEmpty()) else if (t.places.col.holds[p].isEmpty()) 0 else below_min + 1;
                 for (if (lone) kids else kids[0..0]) |c| below = @min(below + t.objectsBelow(c), below_min + 1);
                 var fam = false;
+                var wild = false;
                 for (stack.items[std.mem.lastIndexOfScalar(u32, stack.items, p).?..]) |m| {
                     const rg = ranges[m];
+                    wild = wild or switch (t.places.col.kind[m]) {
+                        .@"var", .@"opaque", .closure => true,
+                        else => false,
+                    };
+                    for (children[rg.start..][0..rg.len]) |c| wild = wild or ((c.int() < first or !on_stack[c.int() - first]) and t.places.col.below[c.int()].wild);
                     fam = fam or (!lone and (!t.places.col.holds[m].isEmpty() or !t.places.col.kind[m].own().isEmpty()));
                     for (children[rg.start..][0..rg.len], t.step_tab.col.step[rg.start..][0..rg.len]) |c, s| {
                         const held = !t.places.col.holds[c.int()].isEmpty() or !t.places.col.kind[c.int()].own().isEmpty();
@@ -619,7 +627,7 @@ pub const Table = struct {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
                     sccs[m] = p + 1;
-                    t.places.col.below[m] = .{ .objects = @intCast(below), .family = fam };
+                    t.places.col.below[m] = .{ .objects = @intCast(below), .family = fam, .wild = wild };
                     if (m == p) break;
                 }
                 var least: u32 = 0; // `lower`

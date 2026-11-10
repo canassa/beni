@@ -46,3 +46,12 @@ pub fn familyBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.T
     try account.reserve(.inspection, 1);
     return places.places.col.below[places.pathPlace(p).int()].family;
 }
+
+/// Whether `below(p)` can be written out slot by slot: no family below it (no `[*]`, no cycle,
+/// so finitely many slots) and no place no step below names (`Below.wild`). One record.
+pub fn countable(account: *Ids.Account, places: *const Place.Table, p: PathId) Error!bool {
+    if (places.isSummary(p)) return false;
+    try account.reserve(.inspection, 1);
+    const b = places.places.col.below[places.pathPlace(p).int()];
+    return !b.family and !b.wild;
+}

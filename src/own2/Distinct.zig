@@ -491,7 +491,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
                             // At a slot no step below can name, the arrivals
                             // are one set: `xs` twice inside a cast is one leaf
                             // there, so expansion cannot count it (#1710).
-                            if (idx.len == 1 and OneSet.of(f, ents[idx[0]])) return Cond.unprovable;
+                            if (idx.len == 1 and try OneSet.of(f, ents[idx[0]])) return Cond.unprovable;
                             gr.must = 1;
                         } else if (try Chains.gather(e, &occs, c)) return Cond.unprovable;
                     }
@@ -539,7 +539,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
             defer list.deinit(g);
             var rs: std.ArrayList(u32) = .empty;
             defer rs.deinit(g);
-            try EntryExpand.expand(e, en, &list, &rs);
+            try EntryExpand.expand(e, en, blk != none, &list, &rs);
             // One entry of its root expanding to one leaf: a chain of calls
             // that hand one object on is read to its end, each call's
             // group one entry of one object (it asks nothing of its own).

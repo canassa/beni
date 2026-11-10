@@ -918,6 +918,22 @@ pub const Eval = struct {
         try e.slotItems(ki, base);
     }
 
+    /// A call's leaf `l` as its one fresh atom, when its callee's settled result says only `fresh`
+    /// at and below every slot (`Trees.Table.only`, §7.6 item 6): every arrival anywhere in it, an
+    /// open one above a read's prefix and one said at a caller's fold too, is that atom (§2.8,
+    /// *Base keys*). Null otherwise: a supply, a draft, no tree, a pessimistic contract.
+    pub fn freshOnlyAtom(e: *Eval, l: Leaf) Error!?u32 {
+        if (l.kind != .ref or e.f.roots.items[l.root].kind != .call) return null;
+        const call = e.f.roots.items[l.root].a;
+        const c = e.contractOf(call) orelse return null;
+        const h = e.contracts.head(c);
+        if (h.flags.pessimistic or h.res_root == 0 or !e.contracts.trees.only(h.res_root, 2)) return null;
+        const code = e.f.calls.items[call].code;
+        if (e.live) |lv| if (code != none and lv.draftRes(lv.ctx, code) != null) return null;
+        try e.charge(.inspection, 1);
+        return try e.f.leaf(.{ .kind = .fresh, .atom = call, .tags = l.tags });
+    }
+
     /// The objects at every slot of leaf `x`'s subtree when they are the same
     /// atoms at each (`⊤`, a shared value, a call's fresh objects): a call's
     /// leaf whose callee says only that, open, above it and nothing below it
