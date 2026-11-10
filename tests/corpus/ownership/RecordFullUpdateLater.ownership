@@ -1,0 +1,15 @@
+module RecordFullUpdateLater
+  17:12 update model: accepted param [hoisted 1]
+  18:49 update model: accepted param
+  23:12 update model: rejected later-use: model is read again at 24:49 [copy]
+  24:49 update model: accepted param
+  29:12 update model: accepted param
+  30:13 update model: rejected alias: next holds it and is read at 30:5 [copy]
+  hoist model.count: read 18:27; after operands 17:12
+  summary compared: π2 RW{count, items}, π2.count R, π2.items RA; res .items fresh1 π2.items, π2◦
+  summary keeps: π2 RW{count, items}, π2.count R, π2.items RA; res .items fresh1 π2.items, π2◦
+  summary bothLive: π2 RW{count, items}, π2.items RA; res .0 π2◦, .0.items π2.items, .1 π2◦, .1.items fresh1, condition(fresh2){shared}r{shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 6: accepted 4, pending 0, rejected 2 (copy 2, restructure 0); hoisted 1, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 6: accepted 4, pending 0, rejected 2 (copy 2, restructure 0); hoisted 1, eager reads 0

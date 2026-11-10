@@ -1,0 +1,48 @@
+-- ownership: the record at a parameter's field, read again after its
+-- update (`ownership-v2.md` §2.7, *the kind `read`*; §2.8, *a hold that
+-- is not the written record*; #2443). `c = acc.cur` is updated. A `let`
+-- that binds `acc.cur` afterwards binds the old record whole: refused
+-- (`boundAfter`). A read of the written field through the parameter's
+-- path is a hoist (`writtenAfter`), and a read of an untouched field
+-- that way is nothing (`untouchedAfter`). A record literal that holds
+-- the record at a field and in a list of another field is a holder of
+-- its own: refused (`localRecord`).
+type alias D =
+    tag : String
+    count : Int
+
+
+type alias Acc =
+    cur : D
+    hist : List D
+    twin : D
+
+
+pub boundAfter : Int, Acc → D × D
+boundAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    d = acc.cur
+    ( r, d )
+
+
+pub writtenAfter : Int, Acc → D × Int
+writtenAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.cur.count )
+
+
+pub untouchedAfter : Int, Acc → D × String
+untouchedAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.cur.tag )
+
+
+pub localRecord : Int, D → D × List D
+localRecord n d =
+    p = { cur = d, hist = [ d ], twin = d }
+    c = p.cur
+    r = { c | count = c.count + n }
+    ( r, p.hist )

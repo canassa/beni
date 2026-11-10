@@ -50,6 +50,9 @@ killed (`--only=record_supply_whole,record_deep_whole,record_req_whole,list_req_
 `Later.zig`) are each killed by `ownership/RecordSiblingHolds`. Four mutants of the code around them are still killed
 (`--only=sibling_holds_by_field,field_read_by_point,update_no_events,once_read_hoists,callee_write_whole,field_reads_whole`,
 645 s, control green).
+`full_update_reads` (an update that keeps no field makes an event, `Update.zig`) is killed by
+`ownership/RecordFullUpdateLater`; `field_read_by_point` is also killed by the new `ownership/RecordFieldAfterWrite`
+(`--only=full_update_reads,field_read_by_point,sibling_holds_by_field`, 361 s, control green).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -98,7 +101,8 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `record_deep_whole` | §2.11.2 item 4 | for a record's write a deep occurrence stays every object at and below its slot | killed | | 0 | RecordBesideListsSupplied (OwnershipV2Differs) | 0 | |
 | `callee_write_whole` | §2.8, R-4.8.5 | a later callee's write below any field is a whole use of the old record, also below an untouched field | killed | | 0 | RecordCalleeWritesBelow (OwnershipV2Differs) | 0 | |
 | `sibling_holds_by_field` | §2.8, #2443 | an update reads every hold of its judgement by the written record's fields, also a hold that is another object | killed | | 0 | RecordSiblingHolds (OwnershipV2Differs) | 0 | |
-| `field_read_by_point` | §2.7, #2443 | a read of a field no path names is a `whole` use, and an update's filter tells it by its point | killed | | 0 | RecordSiblingHolds (OwnershipV2Differs) | 0 | |
+| `field_read_by_point` | §2.7, #2443 | a read of a field no path names is a `whole` use, and an update's filter tells it by its point | killed | | 0 | 2: RecordFieldAfterWrite (OwnershipV2Differs), … | 0 | |
+| `full_update_reads` | §2.7, R-4.8.2 | an update that keeps no field makes an event, as an update that reads its record does | killed | | 0 | RecordFullUpdateLater (OwnershipV2Differs) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |
