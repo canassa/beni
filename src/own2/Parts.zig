@@ -32,7 +32,7 @@ pub fn of(e: *Eval, v0: u32, at0: []const u32, out: *std.ArrayList(Part)) Error!
         switch (x.kind) {
             .built => {
                 if (x.site != none) try out.append(g, .{ .leaf = try f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .at = here });
-                if (x.form == .list and x.head != 0) {
+                if ((x.form == .list or x.form == .record) and x.head != 0) {
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(g);
                     try e.storageOf(x.head - 1, it.tags, &ls);

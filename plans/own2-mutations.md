@@ -21,6 +21,10 @@ candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#22
 `run/SanitiserPrependFrontHeld`, the first also by `ownership/Prepend` and `PrependFresh` (`--only=recons_never,recons_front_any`, 205 s).
 *Since #2418:* `mixed_memo_off` (a call's mixed condition instantiated again at each asking, `CondOnce.zig`) is a cost-only
 mutant: it is killed by `ownership/StateChain`, which reaches `ownership_summary_size` under it (`--only=mixed_memo_off`, 261 s).
+*Since #1018 (S5a):* the eight mutants of the record pass (§2.11.5, *Two passes*) are killed, each by an `ownership/` fixture's
+`.v2.ownership` golden, `record_pass_lists` also by `run/SanitiserRowKept` and `run/SanitiserRowKeptApart`
+(`--only=update_fresh_site,update_no_events,update_reads_off,list_req_whole,record_refusal_lost,cell_record_edit`, 845 s;
+`--only=record_pass_lists`, 354 s; `--only=record_pass_off`, 280 s). Each control is green.
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -51,6 +55,14 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `recons_never` | O1 | a prepend never answers its base's array (`Recons.may`) | killed | | SanitiserPrependFrontHeld (ProgramFailed) | 2: Prepend (OwnershipV2Differs), … | 0 | |
 | `recons_front_any` | O1 | a prepend whose front is a call never answers its base's array, whatever the call hands back | killed | | SanitiserPrependFrontHeld (SanitisedRefusalDiffers) | 0 | 0 | |
 | `mixed_memo_off` | cost (§4.1) | a call's mixed condition is instantiated again at each asking, not once (#2418) | killed | | 0 | StateChain (OwnershipV2Limit) | 0 | |
+| `update_fresh_site` | O7 | a record update's value is a new object, not its base's | killed | | 0 | 4: RecordDemands (OwnershipV2Differs), … | 0 | |
+| `update_no_events` | O7 | an update asks no field event: no later update and no read of a written field is found | killed | | 0 | RecordDemands (OwnershipV2Differs) | 0 | |
+| `update_reads_off` | O7 | a field read or an update of a parameter's record is no read of its object in the contract | killed | | 0 | RecordDemands (OwnershipV2Differs) | 0 | |
+| `list_req_whole` | §2.11.2 item 4 | a list's write relies on the callee's whole `req`, a record's pairs with it | killed | | 0 | RecordFoldPush (OwnershipV2Differs) | 0 | |
+| `record_pass_lists` | R-8.6 (§2.11.5, *Two passes*) | a refusal that only the record pass has stays a list line, so a list verdict reads the record pass | killed | | 3: SanitiserRowKept (SanitisedRefusalDiffers), … | 3: RecordContentsEntry [browser-tea+everywhere] (OwnershipV2Differs), … | 0 | |
+| `record_pass_off` | §2.11.5, *Two passes* | the record pass never runs, so no update has a line and a block says that both passes agree | killed | | 0 | 10: HolderRestApart (OwnershipV2Differs), … | 0 | |
+| `record_refusal_lost` | §2.11.5 | a refusal that only the record pass has, on a demand that is no record demand, is dropped | killed | | 0 | RecordPassOnly (OwnershipV2Differs) | 0 | |
+| `cell_record_edit` | §2.11.5, §2.13.7 | a cell callback's update of the contents' own record is an edit in place, as a list's is | killed | | 0 | RecordCellEdit (OwnershipV2Differs) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

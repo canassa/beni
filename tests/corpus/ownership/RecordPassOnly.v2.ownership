@@ -1,0 +1,12 @@
+module RecordPassOnly
+  15:9 update rec: rejected alias: rec holds it and is read at 17:5
+  15:16 update rec: accepted param
+  16:9 update <call>: rejected alias: rec holds it and is read at 17:5
+  21:11 RecordPassOnly.keep <call RecordPassOnly.keep>: accepted callback-param
+  21:11 update <record>: accepted fresh
+  21:11 update <record>.a: rejected call: RecordPassOnly.keep still holds it when it runs the function
+  21:39 List.push s.a: accepted param
+  demands 2: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 2, rejected 3
+total 2: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 2, rejected 3

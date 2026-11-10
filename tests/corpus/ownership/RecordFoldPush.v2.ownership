@@ -1,0 +1,15 @@
+module RecordFoldPush
+  16:10 update b: accepted param
+  20:13 List.foldl <literal>: accepted callback-param
+  20:13 update bs[*]: rejected disjoint: another operand of the same operation reaches it (approx)
+  20:39 List.push acc: accepted param
+  20:54 update b: accepted param
+  24:18 update b: accepted param
+  24:39 List.push xs: accepted param
+  28:14 RecordFoldPush.both xs: rejected disjoint: another path of the same argument reaches it (approx)
+  28:14 update b: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 5: accepted 3, rejected 2
+total 4: accepted 3 (fresh 0, call 0, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 5: accepted 3, rejected 2
+cause disjoint 1

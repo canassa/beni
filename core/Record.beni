@@ -16,4 +16,4 @@
 --| snapshot — wants.
 --|
 --| The fields are not copied: a record of lists copies the record only.
-pub foreign pure copy : { r | } → { r | }
+pub foreign pure copy : borrowed { r | } → copyof { r | }

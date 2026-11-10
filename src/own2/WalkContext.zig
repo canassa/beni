@@ -23,6 +23,8 @@ pub const Followed = union(enum) { param: [2]u32, site: u32 };
 /// The module's services a walk reads (`Groups` implements them).
 pub const Context = struct {
     ctx: *anyopaque,
+    /// The record pass (§2.11.5): an update writes its base's object. Off: the list pass, where it builds a new record.
+    records: bool = false,
     placeOfInst: *const fn (ctx: *anyopaque, inst: u32) Error!PlaceId,
     placeOfLocal: *const fn (ctx: *anyopaque, local: u32) Error!PlaceId,
     fieldRank: *const fn (ctx: *anyopaque, s: Bir.SymbolIndex) u32,

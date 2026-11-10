@@ -449,7 +449,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         for (call.args, 0..) |a, k| if (k != x.j) try e.w.value_runs.append(gpa, a);
         d.operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) };
     }
-    d.token = tokenOf(e, call.inst);
+    try @import("Update.zig").atCall(e, &d, call, x, arg, words, base); // Its token, and whether it writes a record (§2.8).
     if (call.virtual) {
         // A known code writes what a label supplies (§2.11.3): the
         // supply's distinctness condition is relied on too; a kept slot
@@ -464,11 +464,11 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             d.pending = if (wq < e.w.walk_calls) e.w.sites.items[wq].pending else none;
             const oc = f.calls.items[o[0]];
             const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
-            // A cell callback's write of the contents is deep at the cell's
-            // `◆`: an edit of what the cell holds, never a cell operation
-            // (`cellWrite`), for every caller (§2.13.7).
+            // A cell callback's write of the contents is deep at the cell's `◆`: an edit of what the cell holds, never a
+            // cell operation (`cellWrite`), for every caller (§2.13.7). Of the contents' own record it is refused: the cell
+            // holds it while the callback runs, so the update copies and the cell stores the copy, a cell operation (§2.11.5).
             for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) for ((try entriesOf(e, su.res_root)).items.items) |rs| for (rs.arrivals) |a| {
-                if (a.kind == .param and Cells.throughContents(f.slots, a.slot)) d.deep = true;
+                if (a.kind == .param and Cells.throughContents(f.slots, a.slot)) (if (d.record and !@import("Mutate.zig").on(.cell_record_edit)) &d.kept else &d.deep).* = true;
             };
             // Every label the write's supply comes through, outward: a
             // slot any of them keeps refuses (#1758).

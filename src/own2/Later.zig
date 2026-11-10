@@ -20,6 +20,7 @@ const Forest = @import("Forest.zig");
 const Trees = @import("Trees.zig");
 const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
+const Update = @import("Update.zig");
 const Regions = @import("Regions.zig");
 
 pub const Error = Ids.ChargeError;
@@ -36,6 +37,9 @@ pub const Uses = struct {
     asked: Ids.FixedDict(3) = .{},
     /// The `(call, parameter)` footprints read, for a kept judgement (§2.12).
     feet: ?*std.ArrayList([2]u32) = null,
+    /// The judged demand's written fields when it is an `update` (§2.8, *Dead* by field), and the reads it hoists.
+    update: ?[]const u32 = null,
+    hoists: u32 = 0,
 
     fn f(u: *Uses) *Value.Frame {
         return &u.w.f;
@@ -45,9 +49,11 @@ pub const Uses = struct {
         u.asked.deinit(u.f().gpa);
     }
 
-    /// Forget a judgement's answers (each judgement asks its own).
-    pub fn clear(u: *Uses) void {
+    /// Forget a judgement's answers (each judgement asks its own); `update`: the next one's written fields.
+    pub fn clear(u: *Uses, update: ?[]const u32) void {
         u.asked.clearRetainingCapacity();
+        u.update = update;
+        u.hoists = 0;
     }
 
     /// `liveAt`, each `(holder, path, point)` asked once a judgement.
@@ -77,8 +83,9 @@ pub const Uses = struct {
         }.accept, .below_all = !fr.places.onCycle(fr.places.pathPlace(q)) };
         const charge: Ids.Charge = .growth(fr.account);
         var best: ?Liveness.UseId = try w.index.useAfter(g, charge, fr.places, u.regions, h, q, point, filter);
-        if (try w.index.useUnder(g, charge, fr.places, u.regions, h, q, point, filter)) |x| {
-            if (best == null or w.index.get(x).point < w.index.get(best.?).point) best = x;
+        // Below a record an update writes, only the frame's field events count (`Update.after`).
+        if (if (u.update) |fs| try Update.after(w, u.regions, h, q, point, fs, &u.hoists) else try w.index.useUnder(g, charge, fr.places, u.regions, h, q, point, filter)) |x| {
+            if (best == null or Update.pointOf(w, x) < Update.pointOf(w, best.?)) best = x;
         }
         // A deep read whose levels fold above it (§2.7, a read on a cycle).
         if (fr.places.onCycle(fr.places.pathPlace(q)) or fr.places.pathParent(q) != .none) {
@@ -94,7 +101,7 @@ pub const Uses = struct {
                 while (k < ups.len) : (k += 1) {
                     const up = fr.places.foldPath(ups.start + k);
                     if (fr.places.isPrefix(up, q)) {
-                        if (best == null or x.point < w.index.get(best.?).point) best = .from(id);
+                        if (best == null or x.point < Update.pointOf(w, best.?)) best = .from(id);
                         break;
                     }
                 }
@@ -116,6 +123,8 @@ pub const Uses = struct {
     /// a call use does where its callee's footprint reaches `q`.
     fn footprintReads(u: *Uses, x: Facts.Use, q: PathId) Error!bool {
         if (@import("Mutate.zig").on(.later_footprint_none)) return false;
+        // A read of a field no path names is an event of the record (`Update.Event`), which an update asks by field.
+        if (u.update != null and x.kind == .whole and u.w.bir.instTag(@fromBackingInt(x.point)) == .field_access) return false;
         if (x.kind != .call or x.use_node == .none) return true;
         const fr = u.f();
         const foot = u.w.foots.items[x.use_node.int()];
@@ -133,7 +142,7 @@ pub const Uses = struct {
             const rw = fr.slots.relWords(rem);
             try fr.charge(.inspection, @intCast(rw.len + 1));
             for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw)) return true;
-            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw)) return true;
+            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw, if (fr.records) fr.places.pathPlace(x.path) else .none)) return true;
         }
         return false;
     }
@@ -142,11 +151,17 @@ pub const Uses = struct {
 /// Whether write tree `n0` meets the slot `words` below its root (§2.7, a
 /// footprint entry read at a path): a write at it or below it, or at a
 /// proper prefix of it. The walk down its steps, charged by the caller.
-pub fn writeMeets(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32) bool {
+/// `at0`: the place the tree's root is read at (the argument's), or `.none`. A plain write of a
+/// record's own storage replaces its fields' slots and reads none of what they held (R-4.8.5), so
+/// it meets no slot below the record.
+pub fn writeMeets(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32, at0: Ids.PlaceId) bool {
     var n = n0;
+    var at = at0;
     for (words) |w| {
-        if (t.here(n).len != 0 or t.open(n).len != 0) return true;
+        const record = at != .none and places.kind(at) == .record;
+        if ((t.here(n).len != 0 and !record) or t.open(n).len != 0) return true;
         n = t.kidAt(n, w) orelse return t.rowReaches(places, n, w);
+        if (at != .none) at = places.child(at, Place.Step.fromWord(w)) orelse .none;
     }
     return t.count(n) != 0;
 }

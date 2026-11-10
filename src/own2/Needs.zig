@@ -67,7 +67,7 @@ fn keeps(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u32, 
     var p: Pub = .{ .e = e };
     const c = e.fr().calls.items[v].contract;
     if (c != none and try KeepsNot.nothing(&e.ev, c, v, n.j - 1, e.fr().slots.relWords(n.slot), n.deep, &p)) return p.new;
-    try refuseOnce(st, e, x, q, l, true);
+    try refuseOnce(st, e, x, q, l, v, n);
     return true;
 }
 
@@ -137,7 +137,7 @@ fn atLabel(st: *State, e: *Evaluation, x: u32, q: u32, li: u32, n: Effect) Error
     // A fixed contract, read as `wants` reads one. A code's closure is applied
     // (`known`) and a fixed one is never an argument, so no walk reaches this today.
     if (n.j == 0 and v.kind == .built and v.form == .closure) if (NeedCarry.contractOf(e.ctx, v.head)) |c| if (try allFresh(e, c)) return false;
-    try refuseOnce(st, e, x, q, l, n.j != 0);
+    try refuseOnce(st, e, x, q, l, none, n);
     return true;
 }
 
@@ -164,7 +164,7 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
     if (m == null) for (try CallFolds.of(&e.ev, v, none)) |s| if (SlotWords.startsAt(words, s.words) or (n.deep and SlotWords.startsAt(s.words, words)))
         try hs.append(e.ev.arena, .{ .a = s.a, .rest = &.{}, .whole = true });
     if (!met and hs.items.len == 0) {
-        try refuseOnce(st, e, x, q, l, false);
+        try refuseOnce(st, e, x, q, l, v, n);
         return true;
     }
     const own = vc.args.len - f.kidsOf(f.val(vc.callee_val)).len;
@@ -184,21 +184,21 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
                 try e.w.leaf_runs.appendSlice(e.gpa(), ls.items);
                 var d = try base(e, q, l);
                 d.targets = .{ .start = t_start, .len = @intCast(ls.items.len) };
-                d.fresh_answer = true;
+                d.fresh_answer, d.record = .{ true, @import("Update.zig").ofNeed(f, vc, n) };
                 try Eval.addDemand(e, d);
             },
             // The answer is what the code was handed: it keeps nothing of it, or the write is seen by what kept it (#2393).
             .param => if (a.j < own) {
                 try Eval.callWrite(e, v, .{ .j = a.j, .slot = rel, .deep = n.deep or a.deep or h.whole });
                 kept = .{ .j = a.j + 1, .slot = rel, .deep = n.deep or a.deep or h.whole };
-            } else try refuseOnce(st, e, x, q, l, false),
+            } else try refuseOnce(st, e, x, q, l, v, n),
             .cb => {
                 const li = if (m != null) e.ev.live.?.labelIn(e.ev.live.?.ctx, vc.code, a.j, vc.contract) else a.j;
                 if (li) |i| {
                     _ = try atLabel(st, e, x, v, i, .{ .j = 0, .slot = rel, .deep = n.deep or a.deep or h.whole });
-                } else try refuseOnce(st, e, x, q, l, false);
+                } else try refuseOnce(st, e, x, q, l, v, n);
             },
-            else => try refuseOnce(st, e, x, q, l, false),
+            else => try refuseOnce(st, e, x, q, l, v, n),
         }
         for (e.demands.items[from..]) |*d| {
             d.quiet = true;
@@ -219,7 +219,9 @@ pub fn compared(e: *Evaluation, d: *const Contract.Draft) Error!void {
     for (f.calls.items, 0..) |call, q| {
         if (call.contract == none or call.virtual) continue;
         for (e.contracts.labelsOf(e.contracts.head(call.contract).labels)) |l| if (l.need.len != 0) {
-            try refuse(e, @intCast(q), l, false);
+            var nd = try base(e, @intCast(q), l);
+            nd.need = true;
+            try Eval.addDemand(e, nd);
             break;
         };
     }
@@ -238,14 +240,12 @@ fn base(e: *Evaluation, q: u32, l: Contract.Label) Error!W.Demand {
     return .{ .point = call.point, .kind = .callsite, .token = Eval.tokenOf(e, call.inst), .base_inst = inst, .callee_inst = if (walked) call.head else none, .pending = if (walked) e.w.sites.items[wq].pending else none, .callback = true };
 }
 
-/// One refusal per call and label, however many of its needs fail.
-fn refuseOnce(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, supplied: bool) Error!void {
-    if (try st.first(e.gpa(), .{ x, q, l.slot, l.origin[2], none, none - 1 })) try refuse(e, q, l, supplied);
-}
-
-fn refuse(e: *Evaluation, q: u32, l: Contract.Label, supplied: bool) Error!void {
+/// One refusal per call and label, however many of its needs fail, and one for a record's needs (`Update.ofNeed`, by known code `v`).
+fn refuseOnce(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u32, n: Effect) Error!void {
+    const rec = v != none and @import("Update.zig").ofNeed(e.fr(), e.fr().calls.items[v], n);
+    if (!try st.first(e.gpa(), .{ x, q, l.slot, l.origin[2], none, none - 1 - @intFromBool(rec) })) return;
     var d = try base(e, q, l);
-    d.need, d.supplied = .{ true, supplied };
+    d.need, d.supplied, d.record = .{ true, n.j != 0, rec };
     try Eval.addDemand(e, d);
 }
 

@@ -1,0 +1,15 @@
+module RecordCellEdit
+  21:14 Ref.update world◆: accepted param
+  21:14 update world◆: rejected call: Ref.update still holds it when it runs the function
+  21:36 update w: accepted param
+  25:26 cell world◆: accepted param
+  25:31 Ref.update world◆: accepted param
+  25:31 update world◆: rejected call: Ref.update still holds it when it runs the function
+  25:53 update w: accepted param
+  29:14 Ref.update world◆: accepted param
+  29:14 Ref.update world◆.xs: accepted callback-param
+  29:52 List.push w.xs: accepted param
+  demands 6: accepted 6 (fresh 0, call 0, param 5, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 2, rejected 2
+total 6: accepted 6 (fresh 0, call 0, param 5, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 2, rejected 2

@@ -112,6 +112,7 @@ pub fn writeLine(w: *std.Io.Writer, l: Line) Error!void {
 /// The report of `reports` (R-7.15). `lines` of each are sorted here.
 pub fn write(w: *std.Io.Writer, reports: []Module, module_names: []const []const u8, options: Options) Error!void {
     var total: Counts = .{};
+    var records: [2]u32 = .{ 0, 0 };
     var limits: u32 = 0;
     for (reports) |*r| {
         if (!options.totals_only) try w.print("module {s}", .{module_names[r.module]});
@@ -123,18 +124,23 @@ pub fn write(w: *std.Io.Writer, reports: []Module, module_names: []const []const
         const sorted = @constCast(r.lines);
         std.mem.sort(Line, sorted, {}, lineLess);
         var counts: Counts = .{};
+        // A record line (`update`) is counted apart, as v1 counts it: `demands`, `total` and `cause` are the lists'.
+        var recs: [2]u32 = .{ 0, 0 };
         for (sorted) |l| {
-            counts.add(l);
+            if (std.mem.eql(u8, l.op, "update")) recs[@intFromBool(l.refused)] += 1 else counts.add(l);
             if (!options.totals_only) try writeLine(w, l);
         }
         if (!options.totals_only) {
             for (r.others) |s| try w.print("  {s}\n", .{s});
             try counts.write(w, "  demands");
+            if (recs[0] + recs[1] != 0) try w.print("  records {d}: accepted {d}, rejected {d}\n", .{ recs[0] + recs[1], recs[0], recs[1] });
         }
         total.merge(counts);
+        for (&records, recs) |*x, n| x.* += n;
         limits += r.limits;
     }
     try total.write(w, "total");
+    if (records[0] + records[1] != 0) try w.print("records {d}: accepted {d}, rejected {d}\n", .{ records[0] + records[1], records[0], records[1] });
     if (limits != 0) try w.print("limits {d}\n", .{limits});
     for (total.rejected, 0..) |n, i| {
         if (n == 0) continue;

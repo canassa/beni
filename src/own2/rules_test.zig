@@ -51,7 +51,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // Its lines are its table: a line for each rule broken, and its comment.
-    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 420 },
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 440 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -238,6 +238,8 @@ const layers = [_]Entry{
     .{ .file = "FnSite.zig", .layer = 8, .max_lines = 110 },
     // A construction over its base, split from `Walk` (#2028).
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
+    // A record update over its base and the frame's field events, split from `Walk` (§2.6, §2.7).
+    .{ .file = "Update.zig", .layer = 8, .max_lines = 260 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
@@ -280,6 +282,8 @@ const layers = [_]Entry{
     .{ .file = "Stack.zig", .layer = 10, .max_lines = 380 },
     // A write of a fold's accumulator, by its slot (§2.11.3).
     .{ .file = "FedWrite.zig", .layer = 10, .max_lines = 100 },
+    // A callee's `req` at a call, read for a record's write and for a list's (§2.11.2 item 4, #1018).
+    .{ .file = "CallReq.zig", .layer = 10, .max_lines = 60 },
     .{ .file = "ByStructure.zig", .layer = 10, .max_lines = 70 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
@@ -344,7 +348,8 @@ const layers = [_]Entry{
     // Evidence terms as function values (#1708).
     // Which types share one place graph (§2.1, *A family*).
     .{ .file = "Family.zig", .layer = 12, .max_lines = 260 },
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    // The flag of the record pass (§2.11.5, R-8.6).
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1905 },
     // A refused loan's text, split from `Message` (#1991).
     .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
     // How a block names what is local to a module, split from `Block` (#1991).
@@ -356,7 +361,8 @@ const layers = [_]Entry{
     .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
     .{ .file = "Hoists.zig", .layer = 14, .max_lines = 170 },
-    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 340 },
+    // The facade runs the list pass and the record pass of each module (§2.11.5, R-8.6).
+    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 400 },
     .{ .file = "Enforce.zig", .layer = 16, .max_lines = 510 },
 };
 
@@ -416,7 +422,7 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "Contract.zig", .needle = "js.items, e.j" },
     .{ .file = "Walk.zig", .needle = "items.items, c" },
     // A record's kid ranks, and a row's names: these read one name, no slot.
-    .{ .file = "Walk.zig", .needle = "ranks.items, st.kidWord()" },
+    .{ .file = "Update.zig", .needle = "ranks.items, st.kidWord()" },
     .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
     // Tarjan's stack of places.
     .{ .file = "Place.zig", .needle = "stack.items" },
@@ -889,7 +895,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 169), layers.len);
+    try testing.expectEqual(@as(usize, 171), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -41,9 +41,10 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts, recursive: bool) 
     var arrs: std.ArrayList(Contract.Arrival) = .empty;
     for (d.res.items.items) |rs| {
         arrs.clearRetainingCapacity();
-        if (rs.node == 0) try arrs.append(arena, rs.a) else try Forest.arrivalsOf(&e.contracts.trees, arena, f.places, rs.node, &arrs);
-        for (arrs.items) |a| if (a.kind == .param) {
-            _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = true });
+        const plain = if (!f.records) 0 else try @import("Update.zig").arrivalsPlainFirst(&e.contracts.trees, arena, f.places, rs.node, rs.a, !d.res.isOpen(rs), &arrs); // the record pass: an update's base object arrives plain at a record's own slot and reads the record alone (§2.11.5, R-4.8.5)
+        if (!f.records) if (rs.node == 0) try arrs.append(arena, rs.a) else try Forest.arrivalsOf(&e.contracts.trees, arena, f.places, rs.node, &arrs);
+        for (arrs.items, 0..) |a, n| if (a.kind == .param) {
+            _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = n >= plain or !@import("Update.zig").ownRecord(f, a) });
         };
     }
     d.req = if (@import("Mutate.zig").on(.contract_no_req)) Contract.Cond.yes else try Graft.fold(&e.ev, v.req);

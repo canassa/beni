@@ -114,6 +114,8 @@ pub const Input = struct {
     /// its inference rounds and starts validating at ⊥, so each candidate is
     /// short on purpose and the validation round must catch it (§2.12 step 3).
     short_candidates: bool = false,
+    /// The record pass (§2.11.5, R-8.6): its `update` lines are the report's, and no list line is.
+    records: bool = false,
 
     pub fn isCore(in: *const Input, m: u32) bool {
         return m < in.core.len and in.core[m];
@@ -744,6 +746,8 @@ pub const Module = struct {
     /// The imports' blocks read, and the modules whose block was missing or did not round-trip (§3.6).
     imports_read: u32 = 0,
     imports_unknown: std.ArrayList(u32) = .empty,
+    /// An import read here has another block in its record pass (`Block.part`): this module's record pass is needed.
+    record_facts: bool = false,
 
     pub fn deinit(mod: *Module) void {
         const gpa = mod.gpa;
@@ -1117,6 +1121,7 @@ pub const Module = struct {
     pub fn context(mod: *Module) Walk.Context {
         return .{
             .ctx = mod,
+            .records = mod.in.records,
             .placeOfInst = placeOfInst,
             .placeOfLocal = placeOfLocal,
             .fieldRank = fieldRank,

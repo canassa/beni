@@ -1,0 +1,10 @@
+module RecordCells
+  30:19 construction box.items: accepted fresh
+  35:9 update b: accepted param
+  36:19 construction s.items: accepted fresh
+  41:9 update r: accepted param
+  42:19 construction s.items: accepted fresh
+  demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 2: accepted 2, rejected 0
+total 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 2: accepted 2, rejected 0

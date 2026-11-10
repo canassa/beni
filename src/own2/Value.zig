@@ -62,6 +62,8 @@ pub const Frame = struct {
     account: *Ids.Account,
     places: *Place.Table,
     slots: *Slots.Table,
+    /// The record pass (§2.11.5): an update's value is its base's object. Off: the list pass.
+    records: bool = false,
 
     roots: std.ArrayList(Root) = .empty,
     pos: std.ArrayList(Pos) = .empty,
@@ -158,7 +160,7 @@ pub const Frame = struct {
                 // Built over a base: its storage, read deep; a prepend's own
                 // storage is the base's only on a re-cons (deferred).
                 const own = if (v.site != none) try f.oneOf(.{ .kind = .site, .atom = v.site }) else Leaves.empty;
-                const over = v.form == .list and v.head != 0;
+                const over = (v.form == .list or v.form == .record) and v.head != 0;
                 const base = if (over) f.shallow.items[v.head - 1] else Leaves.empty;
                 const recons = if (over and v.site != none) try f.oneOf(.{ .kind = .recons, .atom = id }) else Leaves.empty;
                 return s.built(g, a, own, base, recons, f.deep.items, v.kids);

@@ -251,7 +251,9 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
             known_result = true;
         } else if (Env.has(rw, .copyof) and sig.params.len >= 1) {
             _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .fresh });
-            if (elem) |e| if (try env.places.extend(env.gpa, .growth(env.account), try env.root(sig.params[0].place), Place.Step.elem)) |pe| try env.identity(&d, e, 0, pe);
+            // What the copy holds is what `π1` holds, step by step: a list's elements, a record's fields and its row (`Record.copy`).
+            const from = try env.root(sig.params[0].place);
+            for (env.places.steps(env.places.pathPlace(r)).steps) |st| if (try env.places.extend(env.gpa, .growth(env.account), r, st)) |e| if (try env.places.extend(env.gpa, .growth(env.account), from, st)) |pe| try env.identity(&d, e, 0, pe);
             known_result = true;
         } else if (Env.has(rw, .concatenated) and sig.params.len >= 2) {
             _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .fresh });

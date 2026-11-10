@@ -1,0 +1,3 @@
+A refusal that only the record pass has (ownership-v2.md §2.11.5, Two passes; #1018): the list pass accepts the
+callback's push, and the record pass says `update <record>.a: rejected call`, so that no refusal of it is lost.
+v1 refuses the push itself (`supply`).

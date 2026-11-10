@@ -369,7 +369,7 @@ pub const Eval = struct {
                 .built => {
                     if (rest.len == 0 and deep and e.parts) {
                         if (x.site != none) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .route = it.route });
-                        if (x.form == .list and x.head != 0) {
+                        if ((x.form == .list or x.form == .record) and x.head != 0) {
                             try e.readAt(x.head - 1, false, it.tags, it.route, out);
                         }
                         for (e.f.kidsOf(x), 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = it.at, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });

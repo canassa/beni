@@ -1,0 +1,21 @@
+-- ownership: a refusal that only the record pass has
+-- (`ownership-v2.md` §2.11.5, *Two passes*). `keep` hands `f` an update of
+-- `rec` and returns `rec`. The update cannot edit `rec` in place, because
+-- `rec` is read again: it copies. In the list pass the callback pushes onto
+-- the new list of that copy: accepted. In the record pass every update is
+-- read as a write of its base, so the callback's push is a write of what
+-- `keep` still holds. No list line has that refusal. The record pass says
+-- it as an `update` line, so that no refusal of it is lost.
+type alias L =
+    List Int
+
+
+keep : { r | a : L }, ({ r | a : L } → x) → x × { r | a : L }
+keep rec f =
+    g = λ⊤ → f { rec | a = [] }
+    y = g ⊤
+    ( y, rec )
+
+
+pub twice : L → L × { a : L, b : L }
+twice k = keep { a = [], b = k } λs → List.push s.a 1

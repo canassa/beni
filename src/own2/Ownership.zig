@@ -47,136 +47,186 @@ const FieldNames = struct {
 pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report.Module {
     const out = try arena.alloc(Report.Module, in.modules.len);
     for (in.modules, out, 0..) |*mi, *r, at| {
-        const mod = try gpa.create(Groups.Module);
-        defer gpa.destroy(mod);
-        Counters.reset();
-        try Groups.checkModule(mi, mod);
-        defer mod.deinit();
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;
-        var belows: std.ArrayList(struct { []const u8, u32 }) = .empty;
         var others: std.ArrayList([]const u8) = .empty;
         var limits: u32 = 0;
+        var blocks: [2]?[]const u8 = .{ null, null };
+        var word_errors: [][3]u32 = &.{};
+        // The list pass's summary lines and refusals: the record pass says only what it changes.
+        var said: std.StringHashMapUnmanaged(void) = .empty;
+        var needed = false;
         // A worded declaration's body is its pins' to check, not this run's.
         var channel: Hoists.Builder = .{ .unchecked = for (mi.bir.decls) |d| {
             if (d.kind == .value and d.body != .none and mi.bir.ownSlotsV2(d).len != 0) break true;
         } else false };
-        const frame_base: Message.Frame = .{
-            .names = in.names,
-            .module = mi.module,
-            .decl = undefined,
-            .places = &mod.places,
-            .ctx = mod,
-            .decl_of = Groups.Module.declOfCtx,
-            .callee_of = Groups.Module.calleeOfCtx,
-            .ctor_of = Groups.Module.ctorIndexCtx,
-            .is_append = Groups.Module.isListAppend,
-        };
-        // A worded declaration's class is its words (an asserted row):
-        // its body is not checked here (§2.13.6's pins check it).
-        if (in.format_summaries) for (mi.bir.decls, 0..) |d, di| {
-            if (d.kind != .value or d.body == .none or mi.bir.ownSlotsV2(d).len == 0) continue;
-            const span = declLines(in.names, mi, d);
-            try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (row)", .{ in.names.declName(mi.module, @intCast(di)), span[0], span[1] }));
-        };
-        for (mod.results.items) |*dr| {
-            const d = mi.bir.decls[dr.decl];
-            const name = in.names.declName(mi.module, dr.decl);
-            // A declaration v2 does not check (a construct not built yet, a
-            // limit) names its lines, so a verdict diff can tell a demand it
-            // did not check from one it missed (`bench/ownership-everywhere.mjs`).
-            if (in.format_summaries and dr.failure != null) {
+        // Two passes (§2.11.5, R-8.6). The list pass reads an update as a new record: every list line
+        // is its line, and no record fact is in it. The record pass reads an update as a write of its
+        // base's object: only its record lines are taken, and its limit refuses them, no more.
+        for ([_]bool{ false, true }) |records| {
+            // No update, no record pattern, and no import whose passes differ: the record pass is the list pass.
+            if (records and (!needed or @import("Mutate.zig").on(.record_pass_off))) {
+                blocks[1] = blocks[0];
+                break;
+            }
+            var pass = mi.*;
+            pass.records = records;
+            const mod = try gpa.create(Groups.Module);
+            defer gpa.destroy(mod);
+            if (!records) Counters.reset();
+            try Groups.checkModule(&pass, mod);
+            defer mod.deinit();
+            const first = !records;
+            var belows: std.ArrayList(struct { []const u8, u32 }) = .empty;
+            const frame_base: Message.Frame = .{
+                .names = in.names,
+                .module = mi.module,
+                .decl = undefined,
+                .places = &mod.places,
+                .ctx = mod,
+                .decl_of = Groups.Module.declOfCtx,
+                .callee_of = Groups.Module.calleeOfCtx,
+                .ctor_of = Groups.Module.ctorIndexCtx,
+                .is_append = Groups.Module.isListAppend,
+            };
+            // A worded declaration's class is its words (an asserted row):
+            // its body is not checked here (§2.13.6's pins check it).
+            if (in.format_summaries and first) for (mi.bir.decls, 0..) |d, di| {
+                if (d.kind != .value or d.body == .none or mi.bir.ownSlotsV2(d).len == 0) continue;
                 const span = declLines(in.names, mi, d);
-                try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (limit)", .{ name, span[0], span[1] }));
-            }
-            if (dr.failure) |f| {
-                limits += 1;
-                try others.append(arena, switch (f) {
-                    .exhausted => try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size", .{name}),
-                    .limit => |l| try std.fmt.allocPrint(arena, "limit {s}: {t}", .{ name, l }),
-                    // The lane past its ceiling (§4.1): a defect, named for its fix.
-                    .invariant => |l| try std.fmt.allocPrint(arena, "limit {s}: ownership_accounting_invariant ({t} lane of atom {d}, {t})", .{ name, l.role, l.atom, l.phase }),
-                });
-                continue;
-            }
-            var frame = frame_base;
-            frame.decl = d;
-            for (dr.lines) |l| {
-                try channel.add(arena, l.demand.point, l.demand.kind, l.outcome.verdict == .refused, Hoists.reliesOnCallers(l.outcome.accepted));
-                const op = if (l.demand.callee_inst != Ids.none_int) try Message.opName(frame, arena, l.demand.callee_inst) else "";
-                try lines.append(arena, try Message.line(frame, arena, l, op));
-            }
-            if (in.format_summaries) {
-                const a = &dr.account;
-                var line: std.Io.Writer.Allocating = .init(arena);
-                line.writer.print("account {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}, continuation {d} of {d}", .{ name, a.source, a.baseline, a.growth, a.allowance, a.total(), a.continuation, a.continuationCap() }) catch return error.OutOfMemory;
-                // Demands' resolve apart: a call's share is the rest (§2.11).
-                line.writer.print(", demands {d}", .{a.demands}) catch return error.OutOfMemory;
-                if (a.hold_listings != 0) line.writer.print(", hold listings {d}", .{a.hold_listings}) catch return error.OutOfMemory;
-                // Its codes' walks and its group's rounds (§2.12).
-                line.writer.print(", walks {d}, rounds {d}", .{ dr.walks, dr.rounds }) catch return error.OutOfMemory;
-                if (dr.defects != 0) line.writer.print(", inference defects {d}", .{dr.defects}) catch return error.OutOfMemory;
-                // §4.4's category counts: the growth records by what they
-                // were reserved for, the nonzero ones in category order.
-                for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
-                // The lanes in use by role (§4.1): how many source atoms each kernel
-                // used; a path step's own lane (`Lane.step`, #1225) counts apart.
-                var roles: [@typeInfo(Ids.Role).@"enum".field_names.len]u32 = @splat(0);
-                var steps: u32 = 0;
-                for (0..a.lanes.count()) |li| {
-                    if (a.lanes.keys.items[li * 4 + 3] != 0) {
-                        steps += 1;
+                try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (row)", .{ in.names.declName(mi.module, @intCast(di)), span[0], span[1] }));
+            };
+            var rlimits: u32 = 0;
+            for (mod.results.items) |*dr| {
+                const d = mi.bir.decls[dr.decl];
+                const name = in.names.declName(mi.module, dr.decl);
+                // A declaration v2 does not check (a construct not built yet, a
+                // limit) names its lines, so a verdict diff can tell a demand it
+                // did not check from one it missed (`bench/ownership-everywhere.mjs`).
+                if (in.format_summaries and first and dr.failure != null) {
+                    const span = declLines(in.names, mi, d);
+                    try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (limit)", .{ name, span[0], span[1] }));
+                }
+                if (dr.failure) |f| {
+                    // The record pass past its limit: its updates copy (no line accepts one), and nothing is an error.
+                    if (records) {
+                        rlimits += 1;
+                        if (in.format_summaries) try others.append(arena, try std.fmt.allocPrint(arena, "record-pass unchecked {s}", .{name}));
                         continue;
                     }
-                    roles[a.lanes.keys.items[li * 4 + 1]] += 1;
+                    limits += 1;
+                    try others.append(arena, switch (f) {
+                        .exhausted => try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size", .{name}),
+                        .limit => |l| try std.fmt.allocPrint(arena, "limit {s}: {t}", .{ name, l }),
+                        // The lane past its ceiling (§4.1): a defect, named for its fix.
+                        .invariant => |l| try std.fmt.allocPrint(arena, "limit {s}: ownership_accounting_invariant ({t} lane of atom {d}, {t})", .{ name, l.role, l.atom, l.phase }),
+                    });
+                    continue;
                 }
-                for (roles, 0..) |n, ri| if (n != 0) line.writer.print(", {t} lanes {d}", .{ @as(Ids.Role, @fromBackingInt(@intCast(ri))), n }) catch return error.OutOfMemory;
-                if (steps != 0) line.writer.print(", step lanes {d}", .{steps}) catch return error.OutOfMemory;
-                try others.append(arena, line.written());
+                var frame = frame_base;
+                frame.decl = d;
+                for (dr.lines) |l| {
+                    const op = if (l.demand.callee_inst != Ids.none_int) try Message.opName(frame, arena, l.demand.callee_inst) else "";
+                    var ln = try Message.line(frame, arena, l, op);
+                    const key = try std.fmt.allocPrint(arena, "{d}:{d} {s} {s}", .{ ln.position.line, ln.position.col, ln.op, ln.base });
+                    if (first) {
+                        if (ln.refused) try said.put(arena, key, {});
+                    } else if (!l.demand.record) {
+                        // A refusal that only the record pass has is a record's, whatever its demand: it is not lost, and it is no list line.
+                        if (!ln.refused or said.contains(key) or @import("Mutate.zig").on(.record_refusal_lost)) continue;
+                        if (!@import("Mutate.zig").on(.record_pass_lists)) ln.op = "update";
+                    }
+                    try channel.add(arena, l.demand.point, if (records) .update else l.demand.kind, ln.refused and first, Hoists.reliesOnCallers(l.outcome.accepted));
+                    try lines.append(arena, ln);
+                }
+                if (in.format_summaries) {
+                    const a = &dr.account;
+                    var line: std.Io.Writer.Allocating = .init(arena);
+                    line.writer.print("{s} {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}, continuation {d} of {d}", .{ if (first) "account" else "record-pass account", name, a.source, a.baseline, a.growth, a.allowance, a.total(), a.continuation, a.continuationCap() }) catch return error.OutOfMemory;
+                    // Demands' resolve apart: a call's share is the rest (§2.11).
+                    line.writer.print(", demands {d}", .{a.demands}) catch return error.OutOfMemory;
+                    if (a.hold_listings != 0) line.writer.print(", hold listings {d}", .{a.hold_listings}) catch return error.OutOfMemory;
+                    // Its codes' walks and its group's rounds (§2.12).
+                    line.writer.print(", walks {d}, rounds {d}", .{ dr.walks, dr.rounds }) catch return error.OutOfMemory;
+                    if (dr.defects != 0) line.writer.print(", inference defects {d}", .{dr.defects}) catch return error.OutOfMemory;
+                    // §4.4's category counts: the growth records by what they
+                    // were reserved for, the nonzero ones in category order.
+                    for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
+                    // The lanes in use by role (§4.1): how many source atoms each kernel
+                    // used; a path step's own lane (`Lane.step`, #1225) counts apart.
+                    var roles: [@typeInfo(Ids.Role).@"enum".field_names.len]u32 = @splat(0);
+                    var steps: u32 = 0;
+                    for (0..a.lanes.count()) |li| {
+                        if (a.lanes.keys.items[li * 4 + 3] != 0) {
+                            steps += 1;
+                            continue;
+                        }
+                        roles[a.lanes.keys.items[li * 4 + 1]] += 1;
+                    }
+                    for (roles, 0..) |n, ri| if (n != 0) line.writer.print(", {t} lanes {d}", .{ @as(Ids.Role, @fromBackingInt(@intCast(ri))), n }) catch return error.OutOfMemory;
+                    if (steps != 0) line.writer.print(", step lanes {d}", .{steps}) catch return error.OutOfMemory;
+                    if (first or a.demands != 0) try others.append(arena, line.written());
+                }
+                if (in.format_summaries and dr.contract != Ids.none_int) {
+                    var fn_names: FieldNames = .{ .names = in.names };
+                    const from = others.items.len;
+                    try SummaryText.lines(&mod.contracts, gpa, arena, dr.contract, name, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &others);
+                    // The record pass says a contract only where it is not the list pass's: `record-pass summary …`.
+                    var keep = from;
+                    for (others.items[from..]) |text| {
+                        if (first) try said.put(arena, text, {}) else if (!said.contains(text)) {
+                            others.items[keep] = try std.fmt.allocPrint(arena, "record-pass {s}", .{text});
+                            keep += 1;
+                        }
+                    }
+                    if (records) others.shrinkRetainingCapacity(keep);
+                    if (first and in.below and dr.decl < mod.body_code.len and mod.body_code[dr.decl] != Ids.none_int) try belows.append(arena, .{ name, mod.body_code[dr.decl] });
+                }
             }
-            if (in.format_summaries and dr.contract != Ids.none_int) {
-                var fn_names: FieldNames = .{ .names = in.names };
-                try SummaryText.lines(&mod.contracts, gpa, arena, dr.contract, name, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &others);
-                if (in.below and dr.decl < mod.body_code.len and mod.body_code[dr.decl] != Ids.none_int) try belows.append(arena, .{ name, mod.body_code[dr.decl] });
+            // An import read as unknown is said, never silent (§3.6): its codes
+            // had the pessimistic contract here.
+            std.mem.sort(u32, mod.imports_unknown.items, {}, std.sort.asc(u32));
+            for (mod.imports_unknown.items) |m| try others.append(arena, try std.fmt.allocPrint(arena, "{s}unknown block {s}: its declarations read the pessimistic contract", .{ if (first) "" else "record-pass ", in.names.module_names[m] }));
+            var unpublished: ?[]const u8 = null;
+            blocks[@intFromBool(records)] = if ((in.publish or in.format_summaries) and limits == 0 and rlimits == 0) try publish(gpa, arena, in.names, mod, &unpublished) else null;
+            if (records) continue;
+            needed = mod.record_facts or for (mi.bir.insts.items(.tag)) |t| {
+                if (t == .record_update or t == .pat_record) break true;
+            } else false;
+            // A block not written for a limit is that limit, said (never a silent
+            // missing block, #1450): its importers read none of its classes.
+            if (unpublished) |why| {
+                limits += 1;
+                try others.append(arena, try std.fmt.allocPrint(arena, "limit block: {s} (the module's summaries are not published)", .{why}));
+            }
+            var fn_names: FieldNames = .{ .names = in.names };
+            for (belows.items) |b| {
+                var bl: std.Io.Writer.Allocating = .init(arena);
+                belowLine(mod, gpa, &bl.writer, .{ .ctx = &fn_names, .field = FieldNames.field }, b[0], b[1]) catch |err| switch (err) {
+                    error.OutOfMemory, error.WriteFailed => return error.OutOfMemory,
+                    else => bl.writer.writeAll(" ?") catch return error.OutOfMemory,
+                };
+                try others.append(arena, bl.written());
+            }
+            var errs: std.ArrayList(Groups.WordError) = .empty;
+            defer errs.deinit(gpa);
+            Groups.wordKindErrors(mod, &errs) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => {},
+            };
+            word_errors = try arena.alloc([3]u32, errs.items.len);
+            for (errs.items, word_errors) |e, *w| w.* = .{ e.decl, e.slot, @backingInt(e.word) };
+            // `-Downership-v2-counters`: the module's container counts and census.
+            if (Counters.enabled and in.format_summaries) {
+                var text: std.Io.Writer.Allocating = .init(arena);
+                Counters.write(&text.writer, mod) catch return error.OutOfMemory;
+                try others.append(arena, std.mem.trimEnd(u8, text.written(), "\n"));
             }
         }
-        // An import read as unknown is said, never silent (§3.6): its codes
-        // had the pessimistic contract here.
-        std.mem.sort(u32, mod.imports_unknown.items, {}, std.sort.asc(u32));
-        for (mod.imports_unknown.items) |m| try others.append(arena, try std.fmt.allocPrint(arena, "unknown block {s}: its declarations read the pessimistic contract", .{in.names.module_names[m]}));
-        var unpublished: ?[]const u8 = null;
-        const block: ?[]const u8 = if ((in.publish or in.format_summaries) and limits == 0) try publish(gpa, arena, in.names, mod, &unpublished) else null;
-        // A block not written for a limit is that limit, said (never a silent
-        // missing block, #1450): its importers read none of its classes.
-        if (unpublished) |why| {
-            limits += 1;
-            try others.append(arena, try std.fmt.allocPrint(arena, "limit block: {s} (the module's summaries are not published)", .{why}));
-        }
+        // One block for both passes (`Block.both`): an importer's pass reads its own part.
+        const block = try Block.both(arena, blocks[0], blocks[1]);
         // The dump names the block by its size and a hash of its bytes: what
         // the determinism tests compare across job counts (rule 5).
         if (in.format_summaries) if (block) |b| try others.append(arena, try std.fmt.allocPrint(arena, "block: {d} bytes, hash {x:0>16}", .{ b.len, std.hash.Wyhash.hash(0, b) }));
-        var fn_names: FieldNames = .{ .names = in.names };
-        for (belows.items) |b| {
-            var bl: std.Io.Writer.Allocating = .init(arena);
-            belowLine(mod, gpa, &bl.writer, .{ .ctx = &fn_names, .field = FieldNames.field }, b[0], b[1]) catch |err| switch (err) {
-                error.OutOfMemory, error.WriteFailed => return error.OutOfMemory,
-                else => bl.writer.writeAll(" ?") catch return error.OutOfMemory,
-            };
-            try others.append(arena, bl.written());
-        }
-        var errs: std.ArrayList(Groups.WordError) = .empty;
-        defer errs.deinit(gpa);
-        Groups.wordKindErrors(mod, &errs) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => {},
-        };
-        const word_errors = try arena.alloc([3]u32, errs.items.len);
-        for (errs.items, word_errors) |e, *w| w.* = .{ e.decl, e.slot, @backingInt(e.word) };
-        // `-Downership-v2-counters`: the module's container counts and census.
-        if (Counters.enabled and in.format_summaries) {
-            var text: std.Io.Writer.Allocating = .init(arena);
-            Counters.write(&text.writer, mod) catch return error.OutOfMemory;
-            try others.append(arena, std.mem.trimEnd(u8, text.written(), "\n"));
-        }
         if (in.channels) |c| c[at] = try channel.finish(arena, gpa, limits != 0);
         r.* = .{ .module = mi.module, .lines = lines.items, .others = others.items, .limits = limits, .block = block, .word_errors = word_errors };
     }

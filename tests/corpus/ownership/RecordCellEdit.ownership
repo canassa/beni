@@ -1,0 +1,12 @@
+module RecordCellEdit
+  21:36 update w: rejected supply: Ref.update supplies its parameter 1 borrowed (⊤) (approx) [copy]
+  25:53 update w: rejected supply: Ref.update supplies its parameter 1 borrowed (⊤) (approx) [copy]
+  29:52 List.push w.xs: rejected supply: Ref.update supplies its parameter 1 borrowed (⊤) (approx)
+  summary bump: π1#Ref.0 RE
+  summary handler: π1 RA; res .open λ?r{lost}, .open◇ π1, fresh501◦
+  summary grow: π1#Ref.0 RE
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 2: accepted 0, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 2: accepted 0, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+cause supply 1

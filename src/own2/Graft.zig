@@ -151,8 +151,9 @@ const Walk = struct {
         if (w.cyclic) return;
         if (w.t().open(n).len != 0) return w.target(state, 1, n, true, path);
         // A slot the frame names is read step by step, past one whole.
-        if (at == none and try w.fullAt(n, p)) return w.target(state, 0, n, true, path);
-        if (w.t().here(n).len != 0) try w.target(state, 0, n, false, path);
+        // A record's own storage is a demand of its own kind (2), judged by field (§2.8): never one with a list's below it.
+        if (at == none and !(w.ev.f.records and pl.kind(p) == .record) and try w.fullAt(n, p)) return w.target(state, 0, n, true, path);
+        if (w.t().here(n).len != 0) try w.target(state, if (w.ev.f.records and pl.kind(p) == .record) 2 else 0, n, false, path);
         var ks: std.ArrayList([2]u32) = .empty;
         defer ks.deinit(w.ev.gpa());
         try Forest.sortedKids(w.t(), w.ev.gpa(), pl, n, &ks);

@@ -1,0 +1,29 @@
+-- ownership: a record that a cell holds, updated by the cell's callback
+-- (`ownership-v2.md` §2.11.5, §2.13.7). `Ref.update` hands its callback the
+-- contents, and the cell holds them while the callback runs. So the update
+-- of the contents' own record is refused: it copies, and the cell stores
+-- the copy, which is a cell operation. `bump` therefore edits nothing in
+-- place, and the closure of `handler` may run more than once. `grow` edits
+-- a list that the contents hold: that edit is judged as before.
+import Ref exposing (Ref)
+
+
+type alias W =
+    n : Int
+    xs : List Int
+
+
+type alias H =
+    open : ⊤ → ⊤
+
+
+pub bump : Ref W → ⊤
+bump world = Ref.update world λw → { w | n = w.n + 1 }
+
+
+pub handler : Ref W → H
+handler world = { open = λ⊤ → Ref.update world λw → { w | n = w.n + 1 } }
+
+
+pub grow : Ref W → ⊤
+grow world = Ref.update world λw → { n = w.n, xs = List.push w.xs 1 }
