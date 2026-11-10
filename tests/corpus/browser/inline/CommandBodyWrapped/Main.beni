@@ -1,0 +1,60 @@
+-- A `Cmd.perform` body that passes through a higher-order function has the
+-- effect answer `poly`: it suspends only when what it is applied to does.
+-- The write-set pass reads such a body with its real synchronous sender,
+-- so each of these commands is accepted and runs (docs/design/browser-inline.md
+-- §4; transparent-effects-proposal.md §16.2; issue #1003). The same shapes
+-- with a callback that suspends stay refused:
+-- build/bad/inline/WrappedSuspendingCommand.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Through
+    | Helped
+    | Got String
+
+
+through : (a → b) → (a → b)
+through f = λx → f x
+
+
+helper : (⊤ → ⊤), String → Cmd Msg
+helper before text = Cmd.perform λsend →
+    before ⊤
+    send (Got text)
+
+
+update : Msg, String → String × Cmd Msg
+update msg model =
+    case msg of
+        Through →
+            ( model, Cmd.perform (through λsend → send (Got "t")) )
+
+        Helped →
+            ( model, helper (λ⊤ → Log.info "before") "h" )
+
+        Got text →
+            ( model ++ text, Cmd.none )
+
+
+view : String → Html Msg
+view model =
+    <main>
+        <button id="through" onClick={Through}>through</button>
+        <button id="helped" onClick={Helped}>helped</button>
+        <p>{model}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
