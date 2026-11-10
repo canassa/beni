@@ -1,0 +1,56 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <section data-role="app">
+      <input type="checkbox" data-role="agree" .value="on" .checked=false>
+      <input type="checkbox" data-role="news" .value="on" .checked=false>
+      <output data-role="agreed">"no"</output>
+      <output data-role="log"></output>
+    </section>
+  </div>
+</body>
+-- click [data-role=agree]
+<body>
+  <div id="root">
+    <section data-role="app">
+      <input type="checkbox" data-role="agree" .value="on" .checked=true>
+      <input type="checkbox" data-role="news" .value="on" .checked=false>
+      <output data-role="agreed">"yes"</output>
+      <output data-role="log">" agree"</output>
+    </section>
+  </div>
+</body>
+-- click [data-role=agree]
+<body>
+  <div id="root">
+    <section data-role="app">
+      <input type="checkbox" data-role="agree" .value="on" .checked=false>
+      <input type="checkbox" data-role="news" .value="on" .checked=false>
+      <output data-role="agreed">"no"</output>
+      <output data-role="log">" agree disagree"</output>
+    </section>
+  </div>
+</body>
+-- click [data-role=news]
+<body>
+  <div id="root">
+    <section data-role="app">
+      <input type="checkbox" data-role="agree" .value="on" .checked=false>
+      <input type="checkbox" data-role="news" .value="on" .checked=true>
+      <output data-role="agreed">"no"</output>
+      <output data-role="log">" agree disagree news"</output>
+    </section>
+  </div>
+</body>
+-- click [data-role=news]
+<body>
+  <div id="root">
+    <section data-role="app">
+      <input type="checkbox" data-role="agree" .value="on" .checked=false>
+      <input type="checkbox" data-role="news" .value="on" .checked=false>
+      <output data-role="agreed">"no"</output>
+      <output data-role="log">" agree disagree news no-news"</output>
+    </section>
+  </div>
+</body>

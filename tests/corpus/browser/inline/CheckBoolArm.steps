@@ -1,0 +1,5 @@
+element "root"
+click [data-role=agree]
+click [data-role=agree]
+click [data-role=news]
+click [data-role=news]
