@@ -5,20 +5,27 @@
 //! Obligations kept here: the half of O3 that a slot no expansion can count is
 //! never read as apart.
 
+const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const PlaceBelow = @import("PlaceBelow.zig");
 const Entries = @import("Entries.zig");
 const Value = @import("Value.zig");
 
 /// Whether an entry's arrivals are one set, so expansion cannot count them (#1710): a
-/// slot of a type variable's or an opaque place, or a subtree held whole. A record's row
+/// slot of a type variable's or an opaque place, or a subtree held whole that its slots
+/// written out would not count either (#2413): a family or a slot no step names below it. A
+/// call's other `↓p` is read slot by slot (`BelowAnchors.whole`), as its slots are. A record's row
 /// is not: a caller reads it at its own steps (§2.1), so what a cast put at two fields of
 /// a row is two entries there, and a row's arrival is counted where it is read.
-pub fn of(f: *Value.Frame, en: Entries.Ent) bool {
+pub fn of(f: *Value.Frame, en: Entries.Ent) Ids.ChargeError!bool {
     for (f.slots.elems(f.leafAt(en.leaf).slots)) |x| {
         if (Slots.isNot(x)) continue;
         const p = Slots.pathOf(x);
         if (f.places.pathParent(p) != .none and f.places.pathStep(p).isRow()) continue;
-        if (Slots.isSub(x)) return true;
+        if (Slots.isSub(x)) {
+            if (!try PlaceBelow.countable(f.account, f.places, p)) return true;
+            continue;
+        }
         switch (f.places.kind(f.places.pathPlace(p))) {
             .@"var", .@"opaque" => return true,
             else => {},

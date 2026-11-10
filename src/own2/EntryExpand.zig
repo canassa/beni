@@ -7,15 +7,17 @@ const std = @import("std");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
 
-/// An entry's expansion (§2.3.5, *a key's leaf*): each leaf without its
-/// route set, the set its entry's routes (`rs`), where the entry has none;
-/// else each leaf written out, under the entry's routes.
-pub fn expand(e: *Relation.Eval, en: Entries.Ent, list: *std.ArrayList(u32), rs: *std.ArrayList(u32)) Relation.Error!void {
+/// An entry's expansion (§2.3.5, *a key's leaf*): each leaf, its route set in `rs` (the entry's, written out,
+/// when it has one). In a `block` a fresh-only call is its one atom, which its every leaf is (§7.6 item 6).
+pub fn expand(e: *Relation.Eval, en: Entries.Ent, block: bool, list: *std.ArrayList(u32), rs: *std.ArrayList(u32)) Relation.Error!void {
     const g = e.gpa();
+    if (block) if (try e.freshOnlyAtom(e.f.leafAt(en.leaf))) |x| {
+        try list.append(g, x);
+        return rs.append(g, en.routes);
+    };
     if (en.routes != 0) {
         try e.expand(en.leaf, list);
-        for (list.items) |_| try rs.append(g, en.routes);
-        return;
+        return rs.appendNTimes(g, en.routes, list.items.len);
     }
     try e.expandRouted(en.leaf, list);
     for (list.items) |*x| {

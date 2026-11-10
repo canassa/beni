@@ -337,7 +337,15 @@ const Walker = struct {
         const start: u32 = @intCast(w.kids.items.len);
         const l = e.f.leafAt(li);
         // Each kid once under its route set (§2.3.5, *a key's leaf*): a key is not a route.
-        if (l.kind == .ref and e.expandable(l)) try e.expandRouted(li, &w.kids);
+        // A call that answers only fresh objects keys its subtree as its atom (§7.6 item 6), but at a
+        // slot behind a `◆`, which `close` reads when the expansion names nothing there.
+        if (l.kind == .ref and e.expandable(l)) {
+            var atom = try e.freshOnlyAtom(l);
+            for (e.f.slots.elems(l.slots)) |s| if (!Slots.isNot(s) and Cells.behindCell(e.f.places, Slots.pathOf(s))) {
+                atom = null;
+            };
+            if (atom) |x| try w.kids.append(g, x) else try e.expandRouted(li, &w.kids);
+        }
         try w.span.append(g, .{ start, @intCast(w.kids.items.len) });
         try k.grow(g, e.f.leaves.items.len);
         try w.frames.append(g, .{ .at = at, .next = start });
