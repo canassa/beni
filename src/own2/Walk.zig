@@ -145,7 +145,8 @@ pub const Binding = struct { value: u32 = none, point: u32 = none, token: u32 = 
 pub const Escape = struct { leaf: u32, point: u32, call: u32 = none, read: bool = false };
 
 /// An operand on the stack (§2.4), its values a run of `pending_runs`: pending at clock `T` when `push <= T < gone`.
-pub const Entry = struct { inst: u32, vals: Ids.Range, push: u32, gone: u32 = none };
+/// `call`: the instruction of the call that consumes it as an argument, else none (`PendingArg`).
+pub const Entry = struct { inst: u32, vals: Ids.Range, push: u32, gone: u32 = none, call: u32 = none };
 
 /// A call's walk-time facts beside `Value.Call`.
 pub const CallSite = struct {
@@ -333,12 +334,12 @@ const Walker = struct {
             const start: u32 = @intCast(k.w.pending_runs.items.len);
             x[2] = @intCast(k.w.entries.items.len);
             try k.w.entries.ensureUnusedCapacity(k.gpa, 1);
-            defer k.w.entries.appendAssumeCapacity(.{ .inst = i, .vals = .{ .start = start, .len = @intCast(k.w.pending_runs.items.len - start) }, .push = x[1] });
+            const c = k.consumer[k.rel(i)];
+            defer k.w.entries.appendAssumeCapacity(.{ .inst = i, .vals = .{ .start = start, .len = @intCast(k.w.pending_runs.items.len - start) }, .push = x[1], .call = if (c != none and k.tag(c) == .call) c else none });
             if (v == none) continue;
             // A record update's base waits for a consumer that touches it
             // at every field but the updated ones (§2.6's `record_update`
             // row, §2.8 *Dead*): it holds only those fields' values.
-            const c = k.consumer[k.rel(i)];
             if (c != none and k.bir.instTag(@fromBackingInt(c)) == .record_update and k.bir.instData(@fromBackingInt(c)).lhs == i) {
                 const fields = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.bir.instData(@fromBackingInt(c)).rhs)), Bir.Field);
                 for (k.f().places.steps(try k.placeOf(c)).steps) |st| {

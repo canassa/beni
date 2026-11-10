@@ -26,6 +26,7 @@ const Value = @import("Value.zig");
 const Steps = @import("Steps.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const PendingArg = @import("PendingArg.zig");
 const Walk = @import("Walk.zig");
 const Regions = @import("Regions.zig");
 
@@ -86,9 +87,14 @@ pub const Index = struct {
             per.deinit(g);
         }
         try per.appendNTimes(g, .empty, 3);
+        // The record pass: an argument that waits for a walked call holds what that call's callee reads of it (`PendingArg`).
+        var call_of: Ids.FixedDict(1) = .{};
+        defer call_of.deinit(g);
+        if (ev.f.records) for (ev.f.calls.items[0..w.walk_calls], 0..) |cl, q| try call_of.put(g, .{cl.inst}, @intCast(q));
         for (w.entries.items, 0..) |en, ei| for (w.pendingOfRun(en.vals)) |v| {
             ls.clearRetainingCapacity();
-            try ev.leavesOf(v, 0, &ls);
+            const narrowed = if (call_of.get(.{en.call})) |q| try PendingArg.leaves(ev, q, en.inst, v, &ls) else false;
+            if (!narrowed) try ev.leavesOf(v, 0, &ls);
             for (ls.items) |l| {
                 try ev.f.charge(.inspection, 1);
                 const ks = try keys.of(ev, l);

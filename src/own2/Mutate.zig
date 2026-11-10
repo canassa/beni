@@ -44,6 +44,8 @@ pub const Name = enum {
     record_pass_off,
     /// §2.11.5, §2.13.7: a cell callback's update of the contents' own record is an edit in place, as a list's is.
     cell_record_edit,
+    /// §2.8, *A pending argument* (R-4.8.5): an argument that waits for its call holds its whole value, whatever the callee reads.
+    pending_arg_whole,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.
