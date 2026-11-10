@@ -1,0 +1,37 @@
+-- A prerendered `init` may not make a request, even when only its command
+-- uses the answer: `Http.get` reaches the host where `init` runs, so the
+-- build refuses it at the call (`prerender.md` §3.1;
+-- browser-capability-base.md §4.2, §5).
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Got (Result Http.Error String)
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ =
+    answer = Http.get { url = "/api/greeting", expect = Http.expectString }
+    ( 0, Cmd.perform λsend → send (Got answer) )
+
+
+view : Int → Html Msg
+view n = <main><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = init
+            , update = λ_ n → ( n, Cmd.none )
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]
