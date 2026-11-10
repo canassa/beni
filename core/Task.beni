@@ -2600,20 +2600,30 @@ hasEnded : V → Bool
 hasEnded s = not (Js.isNull s) && Js.to (Js.get s "phase") == 3
 
 
--- Whether the deadline of the fiber's scheduler has passed.
+-- Whether the deadline of the scheduler `s` (null for the program's) has
+-- passed.
+expiredOf : V → Bool
+expiredOf s = if Js.isNull s then Js.read expired else Js.to (Js.get s "expired")
+
+
+-- Whether a deadline that cuts the fiber has passed: the one of the
+-- scheduler it belongs to, or the one of the scheduler it is lent to
+-- (transparent-effects-proposal.md §17.5, amended 2026-11-10).
 expiredFor : V → Bool
 expiredFor fiber =
     if Js.read many then
-        s = schedulerOf fiber
-        if Js.isNull s then Js.read expired else Js.to (Js.get s "expired")
+        expiredOf (memberOf fiber) || expiredOf (schedulerOf fiber)
     else
         Js.read expired
 
 
--- A cleanup cut short counts against the fiber's scheduler.
+-- A cleanup cut short counts against the scheduler the fiber belongs to
+-- once its deadline has passed, and otherwise against the one its slot
+-- names.
 countCut : V → ⊤
 countCut fiber =
-    s = schedulerOf fiber
+    m = memberOf fiber
+    s = if not (Js.isNull m) && expiredOf m then m else schedulerOf fiber
     if Js.isNull s then
         Js.write abandoned (Js.read abandoned + 1)
     else
@@ -2807,7 +2817,7 @@ sweepS s =
 
 
 -- `expire`, for a scheduler: of the fibers inside a finaliser, those
--- whose slot names it.
+-- that belong to it or whose slot names it.
 expireS : V → ⊤
 expireS s =
     Js.set s "timer" Js.null
@@ -2821,7 +2831,10 @@ expireS s =
             (λ⊤ →
                 Js.each (copy c) λfiber →
                     w = Js.get fiber "parked"
-                    if Js.isNull w || not (Js.same (schedulerOf fiber) s) then
+                    if
+                        Js.isNull w
+                            || not (Js.same (schedulerOf fiber) s || Js.same (memberOf fiber) s)
+                    then
                         ⊤
                     else
                         Js.set fiber "parked" Js.null

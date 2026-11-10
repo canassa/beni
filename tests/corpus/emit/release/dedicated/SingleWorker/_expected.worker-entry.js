@@ -1,4 +1,4 @@
-globalThis.__beniWorkerFingerprint = "e4720e2ab4329c07-1c1928caf485efcb";
+globalThis.__beniWorkerFingerprint = "1e00c566a9455ac9-1c1928caf485efcb";
 const report = event => {
   const cause = event.error ?? event.reason;
   globalThis.postMessage({worker: 1, kind: "Defect", payload: {
