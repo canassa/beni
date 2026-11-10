@@ -9,6 +9,22 @@ one arrow: `List a, (a → b) → List b`. A `where` clause names the methods a 
 needs. Effects are inferred and never written; a value whose result reaches the host or may
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
+module Browser.Address
+  alias Faults a
+    Faults
+  type Link
+    Internal
+    External
+  value announcement : String
+  value currentUrl : ⊤ → Maybe Url  -- impure
+  value follow : (Url → ⊤) → ⊤ → ⊤  -- impure
+  value go : Faults e, Int → Result e ⊤  -- impure
+  value link : Value → Maybe Link  -- impure
+  value load : Faults e, String → Result e ⊤  -- impure
+  value push : Faults e, String → Result e ⊤  -- impure
+  value reload : ⊤ → ⊤  -- impure
+  value replace : Faults e, String → Result e ⊤  -- impure
+  value requests : (Link → ⊤) → ⊤ → ⊤  -- impure
 module Browser.Canvas
   alias BitmapRenderer
   alias Canvas

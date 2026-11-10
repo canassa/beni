@@ -1,0 +1,92 @@
+-- The base's navigation host operations on a prerendered `browser-inline`
+-- page (browser-capability-base.md §3, §9 *Navigation*).
+--
+--   - load: `init`'s commands start two fibers after the takeover: one
+--     follows the address with `eachUrlChange`, one hears link clicks with
+--     `eachUrlRequest`. The build starts neither.
+--   - "push": `pushUrl` changes the address; the follower hears it.
+--   - "link": a click on an internal link is a request, `Internal`, and the
+--     host does not follow it.
+--   - "away": a push to another origin is refused, `CrossOrigin`, a value.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Push
+    | Away
+    | Note String
+
+
+problem : Navigation.Error → String
+problem error =
+    case error of
+        Navigation.BadUrl url →
+            "bad url ${url}"
+
+        Navigation.CrossOrigin url →
+            "cross origin ${url}"
+
+        Navigation.Throttled →
+            "throttled"
+
+
+described : Browser.UrlRequest → String
+described request =
+    case request of
+        Browser.Internal url →
+            "internal ${url.path}"
+
+        Browser.External href →
+            "external ${href}"
+
+
+update : Msg, String → String × Cmd Msg
+update msg log =
+    case msg of
+        Push →
+            ( log, Navigation.pushUrl (Navigation.key ⊤) "/pushed" λwhy → Note (problem why) )
+
+        Away →
+            ( log
+            , Navigation.pushUrl (Navigation.key ⊤) "https://example.org/" λwhy → Note (problem why)
+            )
+
+        Note line →
+            ( if log == "" then line else log ++ " / " ++ line, Cmd.none )
+
+
+view : String → Html Msg
+view log =
+    <main>
+        <button id="push" onClick={Push}>push</button>
+        <button id="away" onClick={Away}>away</button>
+        <a id="link" href="/linked">linked</a>
+        <output id="log">{log}</output>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init =
+                λ⊤ →
+                    ( ""
+                    , Cmd.batch
+                        [ Cmd.perform λsend →
+                            Navigation.eachUrlChange λurl → send (Note "address ${url.path}")
+                        , Cmd.perform λsend →
+                            Navigation.eachUrlRequest λrequest → send (Note (described request))
+                        ]
+                    )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

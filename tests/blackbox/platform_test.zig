@@ -2162,10 +2162,14 @@ test "worker realm obligations survive generic imported writers and warm interfa
 }
 
 test "worker kept-code globals refuse raw page access through indirect routes" {
+    // A refusal names the declaration that holds the raw access: since
+    // 2026-11-10 the navigation host operations are `browser-base`'s private
+    // `Browser.Address` (browser-capability-base.md §9, *Navigation*). Naming
+    // the public function the program called instead is #2448.
     const scenarios = [_]struct { body: []const u8, owner: []const u8, global: []const u8 }{
         .{ .body = "pub read _ = Js.to (Js.get (Js.global \"document\") \"title\")", .owner = "Probe.read", .global = "document" },
-        .{ .body = "pub read _ =\n    Navigation.reloadPage ⊤\n    \"ok\"", .owner = "Browser.Navigation.reloadPage", .global = "location.reload" },
-        .{ .body = "pub read _ =\n    _ = Navigation.loadPage \"/worker\"\n    \"ok\"", .owner = "Browser.Navigation.loadPage", .global = "location.assign" },
+        .{ .body = "pub read _ =\n    Navigation.reloadPage ⊤\n    \"ok\"", .owner = "Browser.Address.reload", .global = "location.reload" },
+        .{ .body = "pub read _ =\n    _ = Navigation.loadPage \"/worker\"\n    \"ok\"", .owner = "Browser.Address.load", .global = "location.assign" },
         .{ .body = "page _ = Js.to (Js.get (Js.global \"document\") \"title\")\ninvoke f = f 0\npub read n = invoke page", .owner = "Probe.page", .global = "document" },
         .{ .body = "page _ = Js.to (Js.get (Js.global \"document\") \"title\")\npub read n =\n    pair = { good = λ_ → \"ok\", bad = page }\n    pair.bad n", .owner = "Probe.page", .global = "document" },
         .{ .body = "page _ = Js.to (Js.get (Js.global \"document\") \"title\")\npub read n = Task.join (Task.spawn (λ⊤ → page n))", .owner = "Probe.page", .global = "document" },
