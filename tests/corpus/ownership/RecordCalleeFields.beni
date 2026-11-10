@@ -1,0 +1,61 @@
+-- ownership: a callee's read of one field of a record that an update wrote
+-- before (`ownership-v2.md` §2.8, *Dead, by field*; R-4.8.2, R-4.8.5). The
+-- update of `p` writes `x`. A later call that hands `p` to a callee is a
+-- whole use of the old record only where that callee reads a written
+-- field. `getY` and `tagCount` read an untouched field: accepted, also
+-- through `outer`, which only hands its record on. `sum` reads `x`, and
+-- `same` returns the record whole: refused.
+type alias Point =
+    x : Int
+    y : Int
+    tags : List Int
+
+
+getY : Point → Int
+getY p = p.y
+
+
+tagCount : Point → Int
+tagCount p = List.length p.tags
+
+
+outer : Point → Int
+outer p = getY p + tagCount p
+
+
+sum : Point → Int
+sum p = p.x + p.y
+
+
+same : Point → Point
+same p = p
+
+
+pub untouched : Point → Int
+untouched p =
+    q = { p | x = 1 }
+    q.x + getY p
+
+
+pub untouchedList : Point → Int
+untouchedList p =
+    q = { p | x = 1 }
+    q.x + tagCount p
+
+
+pub through : Point → Int
+through p =
+    q = { p | x = 1 }
+    q.x + outer p
+
+
+pub written : Point → Int
+written p =
+    q = { p | x = 1 }
+    q.x + sum p
+
+
+pub whole : Point → Int
+whole p =
+    q = { p | x = 1 }
+    q.x + (same p).y

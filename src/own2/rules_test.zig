@@ -97,11 +97,14 @@ const layers = [_]Entry{
     // The identity tree's one normal form, below `Contract` (#1714).
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
+    // The mark of a field read in an effect tree (§2.10, R-4.8.5).
+    .{ .file = "FieldMark.zig", .layer = 3, .max_lines = 45 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
     // The answers occurrence (§2.11.3).
     .{ .file = "AnsOcc.zig", .layer = 4, .max_lines = 35 },
-    .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
+    // A read effect names its field (§2.10, *a read's fields*).
+    .{ .file = "Contract.zig", .layer = 4, .max_lines = 805 },
     // The anchors of a read below a caller slot (§2.1, *One below*, #2359).
     .{ .file = "BelowAnchors.zig", .layer = 4, .max_lines = 60 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
@@ -240,6 +243,8 @@ const layers = [_]Entry{
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A record update over its base and the frame's field events, split from `Walk` (§2.6, §2.7).
     .{ .file = "Update.zig", .layer = 8, .max_lines = 260 },
+    // A record's fields read, in a contract's reads (§2.8, R-4.8.5).
+    .{ .file = "FieldReads.zig", .layer = 8, .max_lines = 70 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
@@ -425,6 +430,8 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "Walk.zig", .needle = "items.items, c" },
     // A record's kid ranks, and a row's names: these read one name, no slot.
     .{ .file = "Update.zig", .needle = "ranks.items, st.kidWord()" },
+    // An update's written field ranks, no slot words.
+    .{ .file = "FieldMark.zig", .needle = "fields, st.payload" },
     // A call's argument instructions, no slot words.
     .{ .file = "PendingArg.zig", .needle = "cl.arg_insts, inst" },
     .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
@@ -451,7 +458,7 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
 /// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
 /// needed is in each (§2.1, *One rule per reader*). `Forest.at`'s nothing is no reading:
 /// `AtomGraft` and `Relation` read the row by `Forest.atSlot` and `rowKid` beside it.
-const kid_readers = [_][]const u8{ "AtomGraft.zig", "Deliver.zig", "Descent.zig", "Eval.zig", "Forest.zig", "Graft.zig", "Later.zig", "ReadOff.zig", "Relation.zig", "Trees.zig", "Within.zig" };
+const kid_readers = [_][]const u8{ "AtomGraft.zig", "Deliver.zig", "Descent.zig", "Eval.zig", "FieldMark.zig", "Forest.zig", "Graft.zig", "Later.zig", "ReadOff.zig", "Relation.zig", "Trees.zig", "Within.zig" };
 
 fn lineAround(text: []const u8, at: usize) []const u8 {
     const start = if (std.mem.lastIndexOfScalar(u8, text[0..at], '\n')) |nl| nl + 1 else 0;
@@ -899,7 +906,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 172), layers.len);
+    try testing.expectEqual(@as(usize, 174), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

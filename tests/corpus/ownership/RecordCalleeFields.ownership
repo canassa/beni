@@ -1,0 +1,20 @@
+module RecordCalleeFields
+  36:9 update p: accepted param
+  42:9 update p: accepted param
+  48:9 update p: accepted param
+  54:9 update p: rejected later-use: p is read again at 55:11 [copy]
+  60:9 update p: rejected later-use: p is read again at 61:12 [copy]
+  summary getY: π1.y R
+  summary tagCount: π1.tags R
+  summary outer: π1.tags R, π1.y R
+  summary sum: π1.x R, π1.y R
+  summary same: π1 RA; res π1
+  summary untouched: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary untouchedList: π1 W{x}, π1.tags R, π1.x R
+  summary through: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary written: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary whole: π1 RW{x}, π1.tags R, π1.x R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 3, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 3, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

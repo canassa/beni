@@ -46,6 +46,8 @@ pub const Name = enum {
     cell_record_edit,
     /// §2.8, *A pending argument* (R-4.8.5): an argument that waits for its call holds its whole value, whatever the callee reads.
     pending_arg_whole,
+    /// §2.8, *Dead, by field* (R-4.8.5): a callee's read of one field of a parameter's record is said as a read of the record whole.
+    field_reads_whole,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

@@ -65,6 +65,15 @@ const Res = struct {
             try w.print(" π{d}", .{j + 1});
             try wordsText(r.places, r.names, w, path);
             if (as != null) try w.print(" = π{d}", .{j + 1});
+            // A record's fields read, where no mark reads it whole (`FieldMark.of`): `π1ε{.y}`.
+            const fields = as == null and !open and run.len != 0 and for (run) |a| {
+                if (a.kind != .param) break false;
+            } else true;
+            if (fields) for (run, 0..) |a, i| {
+                try w.writeAll(if (i == 0) "{" else ",");
+                try relText(r.slots, r.places, r.names, w, a.slot);
+                if (i + 1 == run.len) try w.writeAll("}");
+            };
             return if (as) |o| wordsText(r.places, r.names, w, o) else if (open) w.writeAll("*");
         }
         try w.writeAll(if (r.first) " " else ", ");

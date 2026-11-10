@@ -53,6 +53,7 @@ pub const Effect = struct {
     j: u32,
     slot: Rel,
     deep: bool = false,
+    field: Rel = 0, // a read of one field of the record at `slot`: that field's one-step slot (`FieldMark`); 0: none named
     /// A read: the reads of a tree below `slot` (§2.10, *Effects as trees*).
     node: Node = 0,
 };
@@ -253,7 +254,7 @@ pub const Draft = struct {
     }
 
     pub fn addEffect(list: *std.ArrayList(Effect), arena: Allocator, e: Effect) Allocator.Error!bool {
-        for (list.items) |*x| if (x.j == e.j and x.slot == e.slot and x.node == e.node) {
+        for (list.items) |*x| if (x.j == e.j and x.slot == e.slot and x.node == e.node and x.field == e.field) {
             if (e.deep and !x.deep) {
                 x.deep = true;
                 return true;
@@ -502,7 +503,7 @@ pub const Table = struct {
             }
             for (list) |e| {
                 if (e.j != j) continue;
-                _ = if (e.node != 0) try Draft.addNode(&r, gpa, e.slot, e.node) else if (e.deep) try Draft.addWide(&r, gpa, e.slot, Forest.mark) else try Draft.addArrival(&r, gpa, e.slot, Forest.mark);
+                _ = if (e.node != 0) try Draft.addNode(&r, gpa, e.slot, e.node) else if (e.deep) try Draft.addWide(&r, gpa, e.slot, Forest.mark) else try Draft.addArrival(&r, gpa, e.slot, if (e.field != 0) @import("FieldMark.zig").of(e.field) else Forest.mark);
             }
             const n = try Forest.foldDeep(&t.trees, gpa, &memo, try t.putRes(gpa, slots, &r, &.{}));
             if (n != 0) try t.eroots.append(gpa, .{ j, n });
