@@ -1,7 +1,7 @@
 # WebGPU
 
-The `browser` platform has the `Gpu` modules. `browser-tea` re-exports them. They give the
-browser's WebGPU API with types. Only the main thread has them now.
+The `browser-base` platform has the `Gpu` modules. `browser`, `browser-tea` and `browser-inline`
+re-export them. They give the browser's WebGPU API with types. Only the main thread has them now.
 
 ## What exists now
 
@@ -89,7 +89,8 @@ browser's WebGPU API with types. Only the main thread has them now.
 7. **A device can be lost.** `Gpu.Device.loss` gives the latched loss. `Gpu.Device.awaitLost`
    waits for it. `Gpu.Device.destroy` latches `Destroyed` immediately. To recover, request a new
    adapter and a new device.
-8. **These functions can suspend.** Call them in a fiber: in `browser-tea`, in `Cmd.task`.
+8. **These functions can suspend.** Call them in a fiber: in `browser-tea` and `browser-inline`,
+   in `Cmd.task` or `Cmd.perform`.
 
 ## Buffers and mapping
 
@@ -141,10 +142,13 @@ Encoding, batches, compute and render passes are in `references/webgpu-render.md
    its views, and command buffers, bundles and bind groups that use them give
    `ResourceExpired`. Do not keep them.
 5. **Set the backing size with `Browser.Canvas.resize`.** It is separate from the CSS size.
-6. **Keep the canvas node in the view.** In `browser-tea`, put the `<canvas>` in `view` and draw
-   from a command (`Cmd.task`). A render keeps the node, so `fromElement` gives the same
-   surface again.
-7. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
+6. **Keep the canvas node in the view.** In `browser-tea` and `browser-inline`, put the
+   `<canvas>` in `view` and draw from a command (`Cmd.task`). A render keeps the node, so
+   `fromElement` gives the same surface again.
+7. **A prerendered page draws after the takeover.** `init` can return the command that draws
+   (`Cmd.perform`). The build does not run it. A call of `Gpu` in `init` or `view` itself is
+   `prerender_impure`.
+8. **`Gpu.Surface.getConfiguration` returns a `Result`.** A browser without the method gives
    `UnsupportedCapability`. A field the browser does not report is `Default`.
 
 ## Images, videos and canvases
@@ -211,7 +215,9 @@ refuses device descriptor =
 1. **`Gpu.Device.eachEvent device handler` calls `handler` with each event of the device.** It
    returns after the `Lost` event. A listener that starts after the loss gets `Lost` at once.
    Cancel the fiber to stop it.
-2. **`Gpu.Device.onEvent device tag` is the same as a subscription** in `browser-tea`.
+2. **`Gpu.Device.onEvent device tag` is the same as a subscription** in `browser-tea`. In
+   `browser-inline` it is a compiler limit: the device is in the model, and inline compiles only
+   subscriptions that do not depend on the model. Use `eachEvent` in a command there.
 3. **An `Uncaptured` event is a defect.** The engine runs every call under an error scope, so an
    error that no scope took is a fault in beni or in the browser. The listeners get the event,
    and then the program that made the device stops. Do not use events to find errors: each
@@ -288,5 +294,5 @@ An error scope keeps one error for each scope. A lost device does not report usu
 fault in a running shader can stay unseen. A success means that the checks the operation waited
 for reported no failure. It does not mean that the device stays healthy.
 
-Sources: `docs/design/webgpu.md` §2–§5, §6.2, §6.4, §7, §7.1, §8, §8.1, §8.2, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
+Sources: `docs/design/browser-capability-base.md` §5, §9; `docs/design/webgpu.md` §2–§5, §6.2, §6.4, §7, §7.1, §8, §8.1, §8.2, §8.3, §10; `docs/design/research/webgpu-errors.md`; the
 modules' doc comments.

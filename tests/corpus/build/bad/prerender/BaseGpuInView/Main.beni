@@ -1,0 +1,25 @@
+-- A prerendered `view` may not ask whether the page has WebGPU:
+-- `Gpu.available` reads the host, so the build refuses it at the call
+-- (`prerender.md` §3.1; browser-capability-base.md §5).
+import Browser
+import Gpu
+import Html exposing (Html)
+import Tea
+
+
+label : ⊤ → String
+label ⊤ =
+    case Gpu.available ⊤ of
+        Gpu.Available →
+            "gpu"
+
+        Gpu.Unavailable _ →
+            "none"
+
+
+view : Int → Html Int
+view n = <main><output>{n}</output><output>{label ⊤}</output></main>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]

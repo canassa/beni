@@ -1080,7 +1080,11 @@ it wrote that a static host answers the script's address with — its first
 happy-dom, its module and `src` scripts left out and its inline scripts run — and runs `_expected.steps` against the one
 `_expected.expected`, so the page from the shell with no view and the
 prerendered page give one transcript. No build may leave its prerender tree,
-`.<out>.prerender`. `build/bad/prerender/` projects are refused
+`.<out>.prerender`. A project that holds `_expected.webgpu` (its reason) draws with a
+real adapter: `zig build test-webgpu` runs it too, beside `browser/gpu/`, and compares all
+four builds with one golden, `_expected.webgpu-expected`, which a blessing run of
+`test-webgpu` writes from the first build (`browser-capability-base.md` §6). The gates
+compare its page with no adapter against `_expected.expected`. `build/bad/prerender/` projects are refused
 prerendering builds: an `init`, a `view` or a route list that is not pure, a
 render that throws, a shell without `{{view}}` or with two, a route that
 breaks §7.4's rules or two that write one file, an application with no

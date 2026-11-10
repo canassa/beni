@@ -1,0 +1,194 @@
+-- The base's Gpu family on a prerendered `browser-inline` page
+-- (browser-capability-base.md §6, *Prerender plus Gpu*).
+--
+-- `init` returns a command, so the build runs none of its GPU work. After
+-- the takeover the command finds the hydrated canvas, configures it, draws
+-- one blue frame, reads the pixel back, then cleans up: it unconfigures the
+-- canvas and destroys the device, whose loss is then `Destroyed`. "again"
+-- does the same on the same canvas node.
+--
+-- In the gates (happy-dom) and in Chrome without WebGPU there is no
+-- adapter, and the page says "unavailable" (the precise absence is
+-- `browser/gpu/Availability`). Under `zig build test-webgpu` Chrome has a
+-- real adapter (`_expected.webgpu`): its transcript is
+-- `_expected.webgpu-expected`, written by a blessing run there.
+import Browser
+import Cmd exposing (Cmd)
+import Gpu
+import Gpu.Adapter
+import Gpu.Batch as Batch
+import Gpu.Buffer
+import Gpu.CommandEncoder as CommandEncoder
+import Gpu.Device
+import Gpu.Error as Error exposing (InputError)
+import Gpu.Flags as Flags exposing (CopyDst, MapRead)
+import Gpu.Frame as Frame
+import Gpu.Handle exposing (Buffer, CommandEncoder, Device, Frame, Mapping, Surface, Texture, TextureView)
+import Gpu.MappedRange
+import Gpu.RenderPass as RenderPass
+import Gpu.Scalar as Scalar
+import Gpu.Surface as Surface
+import Gpu.Types as Types
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Again
+    | Drawn (List String)
+
+
+must : Result e a → a
+must r =
+    case r of
+        Ok a →
+            a
+
+        Err _ →
+            Debug.todo "a fixture value failed"
+
+
+u32 : Int → Scalar.U32
+u32 n = must (Scalar.u32 n)
+
+
+-- A function, not a constant: `must` may stop the program, so a constant
+-- read by the command would be computed where the module loads.
+blue : ⊤ → Types.Color
+blue ⊤ =
+    f = λx → must (Scalar.finiteF64 x)
+    Types.ColorFields (Types.colorDict (f 0.0) (f 0.0) (f 1.0) (f 1.0))
+
+
+shown : Result Error.Error a, (a → String) → String
+shown r f =
+    case r of
+        Ok a →
+            "Ok " ++ f a
+
+        Err _ →
+            "Err"
+
+
+clearAndCopy : Texture, TextureView, Buffer, CommandEncoder → Result InputError ⊤
+clearAndCopy t v out enc =
+    attachment =
+        { (Types.renderPassColorAttachment (Types.AttachmentTextureView v) Types.Clear Types.Store)
+            | clearValue = Types.Value (blue ⊤)
+        }
+    RenderPass.with enc (Types.renderPassDescriptor [ Just attachment ]) (λ_ → Ok ⊤)?
+    CommandEncoder.copyTextureToBuffer
+        enc
+        (Types.texelCopyTextureInfo t)
+        { (Types.texelCopyBufferInfo out) | bytesPerRow = Types.Value (u32 256) }
+        (Types.Extent3DFields
+            { width = u32 1, height = Types.Default, depthOrArrayLayers = Types.Default }
+        )
+
+
+paint : Buffer, Frame → Result Error.Error ⊤
+paint out frame =
+    t = Frame.getCurrentTexture frame?
+    v = Batch.createView (Frame.batch frame) t Types.textureViewDescriptor?
+    encoded = Frame.encode frame Types.commandEncoderDescriptor (clearAndCopy t v out _)?
+    _ = Frame.submitCommands frame [ encoded.commands ]?
+    Ok ⊤
+
+
+firstWord : Mapping → Result Error.Error Int
+firstWord mapping =
+    range = (Gpu.Buffer.getMappedRange mapping Gpu.Buffer.whole)?
+    Result.mapError (Gpu.MappedRange.readU32 range 0) Error.InvalidInput
+
+
+-- The command's body: a device, the canvas, one frame, then cleanup.
+draw : ⊤ → List String
+draw ⊤ =
+    device =
+        case Gpu.requestAdapter Types.adapterOptions of
+            Err _ →
+                Nothing
+
+            Ok adapter →
+                Result.toMaybe (Gpu.Adapter.requestDevice adapter Types.deviceDescriptor)
+
+    case device of
+        Nothing →
+            [ "gpu: unavailable" ]
+
+        Just d →
+            case Surface.fromElement "gpu" of
+                Err _ →
+                    [ "surface: Err" ]
+
+                Ok surface →
+                    drawOn d surface
+
+
+drawOn : Device, Surface → List String
+drawOn d surface =
+    configuration =
+        { (Types.canvasConfiguration d Types.Rgba8unorm)
+            | usage = Types.Value (Flags.texture [ Flags.RenderAttachment, Flags.TextureCopySrc ])
+        }
+    out =
+        must
+            (Gpu.Device.createBuffer
+                d
+                (Types.bufferDescriptor
+                    (must (Scalar.size64 256))
+                    (Flags.buffer [ MapRead, CopyDst ])
+                )
+            )
+    configured = Surface.configure surface configuration
+    frame = Frame.submit surface "page" (paint out _)
+    pixel = Gpu.Buffer.withMapped out Gpu.Buffer.mapRead firstWord
+    Surface.unconfigure surface
+    Gpu.Device.destroy d
+    lost =
+        case (Gpu.Device.awaitLost d).reason of
+            Error.Destroyed →
+                "Destroyed"
+
+            Error.UnknownLoss →
+                "UnknownLoss"
+    [ "configure: " ++ shown configured λ_ → "done"
+    , "frame: " ++ shown frame λr → String.fromInt (List.length r.submissions) ++ " receipts"
+    , "pixel: " ++ shown pixel String.fromInt
+    , "lost: " ++ lost
+    ]
+
+
+-- The lines so far, each draw's joined by "; " and the draws by " / ".
+update : Msg, String → String × Cmd Msg
+update msg log =
+    case msg of
+        Again →
+            ( log, Cmd.task draw Drawn )
+
+        Drawn more →
+            joined = String.join more "; "
+            ( if log == "" then joined else log ++ " / " ++ joined, Cmd.none )
+
+
+view : String → Html Msg
+view log =
+    <main>
+        <canvas id="gpu" width={4} height={4} />
+        <button id="again" onClick={Again}>again</button>
+        <output id="log">{log}</output>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = λ⊤ → ( "", Cmd.perform λsend → send (Drawn (draw ⊤)) )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

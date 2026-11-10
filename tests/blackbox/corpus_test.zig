@@ -1017,11 +1017,19 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         }
         return expanded.items;
     }
-    // `test-webgpu` runs the WebGPU pages alone.
+    // `test-webgpu` runs the WebGPU pages alone: `browser/gpu/`, and each
+    // `browser/prerender/` project that holds `_expected.webgpu` (its
+    // reason), a `browser-inline` page whose GPU work needs a real adapter
+    // (`browser-capability-base.md` §6).
     if (cfg.webgpu) {
         var kept: std.ArrayList(Fixture) = .empty;
         for (fixtures.items) |fixture| {
-            if (std.mem.endsWith(u8, fixture.dir, "/gpu")) try kept.append(arena, fixture);
+            const prerendered = std.mem.endsWith(u8, fixture.dir, "/prerender") and blk: {
+                const marker = try fixtureGoldenPath(arena, fixture, "webgpu");
+                Io.Dir.cwd().access(testing.io, marker, .{}) catch break :blk false;
+                break :blk true;
+            };
+            if (std.mem.endsWith(u8, fixture.dir, "/gpu") or prerendered) try kept.append(arena, fixture);
         }
         return kept.items;
     }
@@ -3106,6 +3114,10 @@ const Case = struct {
         // it, `.dev-prerender-steps`: a development build that warns, or
         // whose mount faults.
         var goldens: [builds.len][]const u8 = @splat("expected");
+        // Under `test-webgpu` every build of a page with a real adapter has
+        // one golden of its own, `_expected.webgpu-expected`, which a
+        // blessing run there writes from the first build.
+        const webgpu = c.cfg.webgpu and (c.bless or c.goldenExists("webgpu-expected"));
         var scripts: [builds.len]Script = @splat(script);
         for (builds, &goldens, &scripts) |b, *golden, *own_script| {
             // A data site's `--no-prerender` build may have its own golden
@@ -3128,6 +3140,7 @@ const Case = struct {
                 own_script.* = .{ .name = name, .bytes = bytes };
             } else |_| {}
         }
+        if (webgpu) goldens = @splat("webgpu-expected");
         var plans: [builds.len]PagePlan = undefined;
         for (builds, &plans, 0..) |b, *plan, i| {
             var args: std.ArrayList([]const u8) = .empty;
@@ -3206,7 +3219,7 @@ const Case = struct {
             plan.* = try c.checkedPlan(.{
                 .pass = b.pass,
                 .golden = goldens[i],
-                .bless = c.bless and (i == 0 or own_golden),
+                .bless = c.bless and (i == 0 or (own_golden and !webgpu)),
                 .out = b.out,
                 .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{b.out}),
                 .skip = false,
