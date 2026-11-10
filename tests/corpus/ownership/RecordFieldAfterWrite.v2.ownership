@@ -3,6 +3,7 @@ module RecordFieldAfterWrite
   32:9 update c: accepted param [hoisted 1]
   39:9 update c: accepted param
   47:9 update c: rejected alias: p.hist[*] holds it and is read at 48:5
+  hoist acc.cur.count: read 33:17; after operands 32:9
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 4: accepted 2, rejected 2
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

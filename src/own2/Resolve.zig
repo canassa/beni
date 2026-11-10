@@ -503,7 +503,8 @@ const Resolver = struct {
         try r.ops.writes.appendSlice(g, writes.items);
         if (r.aggregate) try r.stack.accept(r.ev(), d.pending, d.point, targets, Holders.paramTarget);
         line.extra = try relied.cond(r.ev().arena, r.account());
-        line.hoisted = r.uses.hoists;
+        line.hoists = try @import("HoistPlace.zig").rows(r.arena, w, r.regions, d.point, r.uses.hoists.items);
+        line.hoisted = @intCast(line.hoists.len);
         r.e.ev.f.account.in_demands = false;
         return line;
     }

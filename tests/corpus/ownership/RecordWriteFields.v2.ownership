@@ -21,6 +21,10 @@ module RecordWriteFields
   108:9 update p: accepted param
   108:9 update p: rejected alias: p holds it and is read at 109:23
   109:7 update <call Maybe.map>: accepted callback-param [hoisted 1]
+  hoist origin.x: read 37:20; before 36:13
+  hoist origin.y: read 87:20; before 86:13
+  hoist origin.y: read 97:20; before 96:13
+  hoist p.x: read 109:23; before 109:7
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 22: accepted 17, rejected 5
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

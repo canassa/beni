@@ -8,6 +8,12 @@ module RecordHoistChannel
   46:9 update p: accepted param [hoisted 1]
   47:12 update q: accepted param [hoisted 1]
   55:9 update p: accepted param
+  hoist p.x: read 5:12; after operands 4:9
+  hoist p.x: read 12:12; before 11:5
+  hoist p.x: read 23:12; before 22:9
+  hoist before.x: read 31:13; after operands 30:9
+  hoist p.x: read 39:17; after operands 38:9
+  hoist p.x: read 48:15; after operands 46:9
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 9: accepted 9, rejected 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -79,6 +79,27 @@ pub const Table = struct {
     }
 };
 
+/// A hoisted read of the report (§2.8, *the hoist rows*): its line, and what orders and names it.
+pub const Row = struct {
+    /// The declaration, the write's instruction, the read's last access and its access of the written field.
+    key: [4]u32,
+    text: []const u8,
+    /// The read, a pattern's binding and a capture's closure: one row for these.
+    read: [3]u32,
+
+    /// The rows' lines into `out`, in the order that the writes run, a read once: the first write that
+    /// hoists it at a depth binds it.
+    pub fn lines(arena: Allocator, rows: []Row, out: *std.ArrayList([]const u8)) Allocator.Error!void {
+        std.mem.sort(Row, rows, {}, struct {
+            fn lt(_: void, a: Row, b: Row) bool {
+                return std.mem.order(u32, &a.key, &b.key) == .lt;
+            }
+        }.lt);
+        var seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty;
+        for (rows) |r| if (!(try seen.getOrPut(arena, r.read)).found_existing) try out.append(arena, r.text);
+    }
+};
+
 /// Whether a demand of kind `k` is a list write the lowering wraps or
 /// stores: a writer call, a spread chain's construction, a `++`. A record
 /// update is S5's, a deep demand (a send, a consumed argument, a focus)

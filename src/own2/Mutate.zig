@@ -68,6 +68,12 @@ pub const Name = enum {
     field_read_by_point,
     /// §2.7, *Field events* (R-4.8.2): an update that keeps no field makes an event, as an update that reads its record does.
     full_update_reads,
+    /// §2.8, *the hoist rows*: every hoisted read is bound at the write, also one in an arm that the write is not in.
+    hoist_at_write,
+    /// §2.8, *the hoist rows*: an accepted record write keeps no row of the reads that it hoists.
+    hoist_rows_lost,
+    /// §2.8, *the hoist rows*: a need's accepted record write has no line, so its rows are lost.
+    need_record_quiet,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

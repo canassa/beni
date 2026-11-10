@@ -29,7 +29,8 @@ const none: u32 = Ids.none_int;
 /// an update of that record writes `fields` and keeps every other field,
 /// a read by the update itself, which nothing can move.
 /// `value`: the record's value there.
-pub const Event = struct { local: u32, path: PathId, point: u32, value: u32, rank: u32 = none, fields: []const u32 = &.{} };
+/// `binding`: a record pattern's local for the field. `read`: a field capture's access inside its lambda (`point` is the closure's creation).
+pub const Event = struct { local: u32, path: PathId, point: u32, value: u32, rank: u32 = none, fields: []const u32 = &.{}, binding: u32 = none, read: u32 = none };
 
 /// The kind of the use that a read of field step `st` makes of its record, where no path names the field:
 /// `read` in the record pass, which an update of that record asks as a field event (§2.7), else `whole`.
@@ -205,7 +206,7 @@ pub fn bound(k: anytype, i: u32, locals: []const u32) Error!bool {
     for (locals) |local| {
         const st = try Place.Step.field(fr.account, k.ctx.fieldRank(k.ctx.ctx, k.bir.locals[k.w.code.decl.locals_start + local].name));
         try fr.charge(.use, 1);
-        try k.w.events.append(k.gpa, .{ .local = r.local, .path = r.path, .point = i, .value = rec, .rank = st.payload });
+        try k.w.events.append(k.gpa, .{ .local = r.local, .path = r.path, .point = i, .value = rec, .rank = st.payload, .binding = local });
         // A field no path names: the record is used whole, as a field access of it is.
         const below = try fr.places.extend(k.gpa, fr.gc(), r.path, st);
         k.atom.* += 1;
@@ -245,10 +246,10 @@ fn firstAfter(w: anytype, h: u32, q: PathId, rank: u32, point: u32) Error!usize 
 /// What holder `h`'s later events at the record path `q` are to an update
 /// at `point` that writes `fields` (none named: every field): the first
 /// later update of that record through `h`, a whole use of the old record
-/// (R-4.8.2), as a witness; and in `hoists` one more for each of the
+/// (R-4.8.2), as a witness; and in `hoists` the event of each of the
 /// frame's own reads of a written field. Each event it visits is a record
 /// on the account: the reads of the written fields and no other.
-pub fn after(w: anytype, regions: anytype, h: u32, q: PathId, point: u32, fields: []const u32, hoists: ?*u32) Error!?Liveness.UseId {
+pub fn after(w: anytype, regions: anytype, h: u32, q: PathId, point: u32, fields: []const u32, hoists: ?*std.ArrayList(u32)) Error!?Liveness.UseId {
     if (@import("Mutate.zig").on(.update_no_events)) return null;
     const es = w.events.items;
     var n = try firstAfter(w, h, q, none, point);
@@ -264,7 +265,7 @@ pub fn after(w: anytype, regions: anytype, h: u32, q: PathId, point: u32, fields
             try w.f.charge(.inspection, 1);
             if (es[n].point <= point or !regions.compatible(point, es[n].point)) continue;
             // No hoist (a once closure's write happens at its call, R-4.8.2): the read is a whole use, the earliest one.
-            if (hoists) |hs| hs.* += 1 else if (witness == null or es[n].point < es[witness.?].point) {
+            if (hoists) |hs| try hs.append(w.f.gpa, @intCast(n)) else if (witness == null or es[n].point < es[witness.?].point) {
                 witness = @intCast(n);
             }
         }

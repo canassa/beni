@@ -79,6 +79,7 @@ pub const Line = struct {
     use_token: u32 = none,
     /// An accepted `update`: the frame's own later reads of a written field, each hoisted before the write (§2.8).
     hoisted: u32 = 0,
+    hoists: []const Facts.Hoist = &.{},
 };
 
 /// A holder event (§2.8's sweep): `key` holder `hi` keyed, `hold` its
@@ -270,6 +271,7 @@ pub const Table = struct {
         for (t.feet.items, 0..) |ft, i| if (i == 0 or !std.mem.eql(u32, &t.feet.items[i - 1], &ft)) try t.scratch.appendSlice(g, &footOf(&w.f, contracts, ft));
         var r: Rec = .{ .targets = try x.add(g, w.leavesOfRun(d.targets)), .operands = try x.add(g, w.valuesOfRun(d.operands)), .line = l, .feet = try x.add(g, t.scratch.items), .log_at = at[0], .events = try x.add(g, @ptrCast(x.log.items[at[0]..])), .writes = try x.add(g, @ptrCast(ws)), .swrites = try x.add(g, @ptrCast(sws)) };
         r.line.extra.sel = try x.arena.allocator().dupe(u64, l.extra.sel);
+        r.line.hoists = try x.arena.allocator().dupe(Facts.Hoist, l.hoists);
         const got = try x.keys.getOrPut(g, keyOf(d));
         r.next = if (got.found_existing) got.value_ptr.* else none;
         got.value_ptr.* = @intCast(x.recs.items.len);

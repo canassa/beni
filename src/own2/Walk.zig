@@ -169,6 +169,8 @@ pub const Walk = struct {
     uses: std.ArrayList(Facts.Use) = .empty,
     /// What the frame does with records' fields (§2.7): read by an `update` demand only.
     events: std.ArrayList(Update.Event) = .empty,
+    /// The record pass: each instruction's consumer, by its offset in the declaration (a hoist's placement, `HoistPlace`).
+    parents: []u32 = &.{},
     /// Per footprint (`use_node`): one call and argument; calls of one callee and arity share it (§2.7).
     foots: std.ArrayList([2]u32) = .empty,
     foot_of: Ids.FixedDict(4) = .{},
@@ -198,6 +200,7 @@ pub const Walk = struct {
 
     pub fn deinit(w: *Walk) void {
         const gpa = w.f.gpa;
+        gpa.free(w.parents);
         w.f.deinit();
         gpa.free(w.bindings);
         inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries, &w.runs }) |l| l.deinit(gpa);
@@ -1230,4 +1233,5 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     w.walk_calls = @intCast(w.f.calls.items.len);
     w.index = try Liveness.Index.build(gpa, account, .inference, places, regions, w.uses.items);
     Update.settle(w);
+    if (w.f.records and w.events.items.len != 0) w.parents = try gpa.dupe(u32, k.consumer);
 }

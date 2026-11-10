@@ -1,7 +1,10 @@
 module RecordFieldSets
   11:5 update q: accepted call
+  16:9 update p: accepted callback-param [hoisted 1]
   22:9 update p: accepted param
+  23:5 update q: accepted callback-param
+  hoist p.y: read 17:12; before 16:9
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 2: accepted 2, rejected 0
+  records 4: accepted 4, rejected 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 2: accepted 2, rejected 0
+records 4: accepted 4, rejected 0

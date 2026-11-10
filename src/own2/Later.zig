@@ -39,7 +39,7 @@ pub const Uses = struct {
     feet: ?*std.ArrayList([2]u32) = null,
     /// The judged demand's written fields when it is an `update` (§2.8, *Dead* by field), and the reads it hoists.
     update: ?[]const u32 = null,
-    hoists: u32 = 0,
+    hoists: std.ArrayList(u32) = .empty,
     /// The judged update is a once closure's (`once`): its write happens at a call, so no read of a written field is a hoist.
     no_hoist: bool = false,
     /// The hold that is asked now is the written record itself (`HoldAt.Held`): only then are its later uses by field.
@@ -51,13 +51,14 @@ pub const Uses = struct {
 
     pub fn deinit(u: *Uses) void {
         u.asked.deinit(u.f().gpa);
+        u.hoists.deinit(u.f().gpa);
     }
 
     /// Forget a judgement's answers (each judgement asks its own); `update`: the next one's written fields.
     pub fn clear(u: *Uses, update: ?[]const u32, no_hoist: bool) void {
         u.asked.clearRetainingCapacity();
         u.update = update;
-        u.hoists = 0;
+        u.hoists.clearRetainingCapacity();
         u.no_hoist = no_hoist and !@import("Mutate.zig").on(.once_read_hoists);
     }
 

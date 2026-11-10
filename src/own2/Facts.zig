@@ -254,6 +254,22 @@ pub const Prepass = struct {
 /// A source position, `line:col` as a diagnostic prints it.
 pub const Position = struct { line: u32, col: u32 };
 
+/// One read that an accepted record write hoists (§2.8, *Record lowering boundary*): BIR identities only.
+pub const Hoist = struct {
+    /// The access of the written field (for a record pattern its scrutinee), and the last access of the
+    /// same source chain, which is the read as the source writes it.
+    read: u32,
+    outer: u32,
+    /// The declaration-local holder, and a record pattern's binding of the field.
+    holder: u32,
+    binding: u32 = Ids.none_int,
+    /// A field capture: the closure's creation, which reads the field (the access is in the lambda).
+    capture: u32 = Ids.none_int,
+    /// The instruction the read is bound at, and when: 0 before it, 1 after its operands and before its stores.
+    placement: u32,
+    phase: u1,
+};
+
 /// One verdict line of the report (R-7.15), as `Message` says it and
 /// `Report` prints it: positions and texts, no id.
 pub const Line = struct {
