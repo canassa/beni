@@ -1,0 +1,42 @@
+-- run: a fiber of `s` lent to `s2` when both stop (#2093;
+-- transparent-effects-proposal.md §17.5, amended 2026-11-10). `s` stops
+-- with 1 ms and `s2` with 10 s. The release of the fiber of `s` waits inside
+-- `withScheduler s2`. The stop of `s2` cancels the fibers lent to it in its
+-- sweep, and that cancels the wait of the release at once
+-- (boundary.md §9.8.14 (d) step 1), before the deadline of either. No
+-- deadline cuts it, so each `done` is told 0, and neither scheduler stays
+-- busy.
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+report : String, Int → ⊤
+report name cut =
+    _ = Debug.log name cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+    s2 = Task.scheduler λ⊤ → ⊤
+
+    _ = Task.withScheduler s λ⊤ →
+        f = Task.spawn λ⊤ →
+            Task.bracket
+                (λ⊤ → ⊤)
+                (λ_ _ →
+                    Debug.log "release enters s2" ⊤
+                    Task.withScheduler s2 λ⊤ → Task.never ⊤
+                )
+                λ_ → Task.never ⊤
+        Task.yieldNow ⊤
+        f
+    Task.stopScheduler s 1 (report "s stopped, cut" _)
+    Task.stopScheduler s2 10000 (report "s2 stopped, cut" _)
+    Task.sleep (Duration.millis 50)
+    _ = Debug.log "s busy" (Task.schedulerBusy s)
+    _ = Debug.log "s2 busy" (Task.schedulerBusy s2)
+    Node.done

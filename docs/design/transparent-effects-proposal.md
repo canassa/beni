@@ -2715,6 +2715,18 @@ pub onSchedulerCount : Scheduler, sync (Int → ⊤) → ⊤           -- `f` wi
   function runs; one `f` watches, the last given. An object's scheduler always holds its consumer
   fiber, so a count above one says a fiber a handler started still runs, and the count's drop to
   one is when an unanswered `ask` can be told `NoReply`.
+  *Amended 2026-11-10 (#2093; Cesar's decision, 2026-11-10, dashboard `scheduler-stop-lent-q1`: "both deadlines cut", the first that passes):* **a fiber lent to
+  another scheduler stays under its own scheduler's deadline.** A fiber of `s` whose finaliser
+  enters `withScheduler s2` and waits there is under two deadlines: the deadline of `s`, the
+  scheduler it belongs to, and the deadline of `s2`, the scheduler it is lent to. Each one cuts the
+  finaliser when it passes, so the first that passes cuts it, as `boundary.md` §9.8.14 (f) cuts a
+  finaliser of the scheduler's own. The cut counts in the `done` of `s` once the deadline of `s` has
+  passed, and otherwise in the `done` of `s2`. Before, only the scheduler the slot named could cut:
+  the release waited inside `s2`, so the stop of `s` never ended, `schedulerBusy s` stayed `True` and
+  `done` was never called. A stop of `s2` itself cancels the lent wait in its sweep (§9.8.14 (d) step
+  1), before any deadline. Fixtures: `run/SchedulerStopLent` (only `s` stops: its deadline cuts the
+  release, `done` is told 1), `run/SchedulerStopLentBoth` (both stop: the sweep of `s2` ends the
+  release, each `done` is told 0).
 - **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
   the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
   scheduler's: a wake under a scheduler always goes through its `run`.

@@ -4720,6 +4720,10 @@ test driver's virtual clock owns). When it passes:
 - from then on, each finaliser still to run runs until its first suspension and is abandoned
   there.
 
+*(Amended 2026-11-10, #2093: under a scheduler of its own (§9.12, proposal §17.5), a fiber that
+belongs to `s` and is lent to `s2` inside a finaliser is cut by whichever of the two deadlines passes
+first; the deadline of `s` is not lost because the slot names `s2`.)*
+
 Every finaliser therefore **starts** exactly once, and the teardown ends in bounded time. The count
 of abandoned ones reaches `done`; the `browser` platform writes one `console.warn` line when it is
 not 0 (in both builds: it is a cleanup that did not happen, which a release's log should hold, and

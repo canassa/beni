@@ -1,0 +1,40 @@
+-- run: a stopped scheduler's deadline cuts a release that waits while its
+-- fiber is lent to another scheduler (#2093; transparent-effects-proposal.md
+-- §17.5, amended 2026-11-10). The fiber belongs to `s`. Its release enters
+-- `Task.withScheduler s2` and waits there forever. `stopScheduler s 1`
+-- cancels the fiber and its release starts; at the deadline of `s` the
+-- release is cut, `done` is told 1, and `s` is no longer busy. `s2` is not
+-- stopped: only the deadline of `s` can cut the release.
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+report : Int → ⊤
+report cut =
+    _ = Debug.log "stopped, cut" cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+    s2 = Task.scheduler λ⊤ → ⊤
+
+    _ = Task.withScheduler s λ⊤ →
+        f = Task.spawn λ⊤ →
+            Task.bracket
+                (λ⊤ → ⊤)
+                (λ_ _ →
+                    Debug.log "release enters s2" ⊤
+                    Task.withScheduler s2 λ⊤ → Task.never ⊤
+                )
+                λ_ → Task.never ⊤
+        Task.yieldNow ⊤
+        f
+    Task.stopScheduler s 1 report
+    Task.sleep (Duration.millis 50)
+    _ = Debug.log "busy after deadline" (Task.schedulerBusy s)
+    _ = Debug.log "s2 busy" (Task.schedulerBusy s2)
+    Node.done

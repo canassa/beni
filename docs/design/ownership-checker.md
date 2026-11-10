@@ -4310,6 +4310,13 @@ again (`boundary.md` §9.8.16 (b), amended the same day). None of them writes `o
 does, and `finished` still calls it with the work's answer. So the words of `spawn`, `spawnIn`, `spawnDetached`
 and `join` hold. The new helpers `withStranded`, `stranded` and `stranding` are pinned.
 
+*Amended 2026-11-10 (#2093):* two more of those helpers changed, and I read them again. `expiredFor` also asks
+whether the deadline of the scheduler the fiber belongs to (`memberOf`) has passed, through the new helper
+`expiredOf`, and `countCut` counts a cut against that scheduler once its deadline has passed
+(`transparent-effects-proposal.md` §17.5, amended the same day). Both read fields of the fiber and of a scheduler
+record and write a counter; neither writes `outcome` nor keeps a value. So the words of `spawn`, `spawnIn`,
+`spawnDetached` and `join` hold. `expiredOf` is pinned.
+
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
 
