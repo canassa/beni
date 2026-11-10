@@ -1,0 +1,6 @@
+# v2 refuses the update of a kept record, where it is made and at the calls that hand it over (#1000, #1001).
+34:9 record_still_used update
+41:9 record_still_used update
+52:9 record_still_used update
+67:27 record_still_used update
+68:27 record_still_used update

@@ -1,2 +1,4 @@
 # v2 refuses the closure that edits what its captured cell holds, called many times (§2.11.4).
+# A refused record line is an error too (§2.8, a refused record line is an error): the `record_` lines.
 22:9 list_still_used once
+23:13 record_still_used update

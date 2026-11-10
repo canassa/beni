@@ -1,0 +1,2 @@
+# v2's record pass passes its limit in `run`, so no call of `step` has a record verdict (§2.8, a refused record line is an error).
+10:9 ownership_limit limit

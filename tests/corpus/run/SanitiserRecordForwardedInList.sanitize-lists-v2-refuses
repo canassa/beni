@@ -1,0 +1,3 @@
+# v2 refuses the write of a record that a forwarded list holds, and that a local still reads.
+33:33 record_may_be_shared update
+33:33 record_may_be_shared update

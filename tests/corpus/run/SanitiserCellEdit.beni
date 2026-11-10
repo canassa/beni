@@ -3,7 +3,7 @@
 -- with no loan of them live is accepted, and so is a call of a function that
 -- makes the edit. A loan read before the edit is dead by then. A closure that
 -- `List.map` calls does a cell operation on a captured counter: no list write
--- of `List.map`'s own.
+-- of `List.map`'s own. `field` changes a copy of the contents' record (§2.8).
 import List
 import Node exposing (Program)
 import Ref exposing (Ref)
@@ -42,8 +42,8 @@ modified ⊤ =
 field : ⊤ → String
 field ⊤ =
     r = Ref.make { items = [ 0 ], n = 0 }
-    Ref.update r λs → { s | items = List.push s.items 1 }
-    Ref.update r λs → { s | items = List.push s.items 2, n = 1 }
+    Ref.update r λs → { Record.copy s | items = List.push s.items 1 }
+    Ref.update r λs → { Record.copy s | items = List.push s.items 2, n = 1 }
     ints (Ref.get r).items
 
 

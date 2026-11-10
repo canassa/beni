@@ -110,20 +110,19 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (limit)", .{ name, span[0], span[1] }));
                 }
                 if (dr.failure) |f| {
-                    // The record pass past its limit: no line accepts an update of it. No error while record verdicts are not enforced (§2.11.5).
+                    // The record pass past its limit: no line accepts an update of it, and its limit is a limit as a list's is (§2.8).
+                    const which = if (records) " (record pass)" else "";
                     if (records) {
                         rlimits += 1;
                         // Its record writes have no verdict: the module's records keep the spread (§2.8).
                         if (!@import("Mutate.zig").on(.record_limit_clean)) channel.record_refused = true;
-                        if (in.format_summaries) try others.append(arena, try std.fmt.allocPrint(arena, "record-pass unchecked {s}", .{name}));
-                        continue;
-                    }
-                    limits += 1;
+                        if (@import("Mutate.zig").on(.record_limit_quiet)) continue;
+                    } else limits += 1;
                     try others.append(arena, switch (f) {
-                        .exhausted => try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size", .{name}),
-                        .limit => |l| try std.fmt.allocPrint(arena, "limit {s}: {t}", .{ name, l }),
+                        .exhausted => try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size{s}", .{ name, which }),
+                        .limit => |l| try std.fmt.allocPrint(arena, "limit {s}: {t}{s}", .{ name, l, which }),
                         // The lane past its ceiling (§4.1): a defect, named for its fix.
-                        .invariant => |l| try std.fmt.allocPrint(arena, "limit {s}: ownership_accounting_invariant ({t} lane of atom {d}, {t})", .{ name, l.role, l.atom, l.phase }),
+                        .invariant => |l| try std.fmt.allocPrint(arena, "limit {s}: ownership_accounting_invariant ({t} lane of atom {d}, {t}){s}", .{ name, l.role, l.atom, l.phase, which }),
                     });
                     continue;
                 }

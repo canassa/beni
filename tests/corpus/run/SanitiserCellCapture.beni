@@ -6,7 +6,7 @@
 -- that adds to a counter.
 -- Writing the cell again on each call stales no reader, so none of them
 -- is `once`. v2 refused each call, `once`, and left each closure's cell
--- writes out of its declaration's summary.
+-- writes out of its declaration's summary. A callback changes a copy (§2.8).
 import Io
 import List
 import Node exposing (Program)
@@ -54,8 +54,8 @@ simulate : Machine → ⊤
 simulate m = frames 3 λms →
     now = Ref.get m.world
     if now.sized ≠ now.atOnce then
-        Ref.update m.world λw → { w | sized = w.atOnce }
-    signals = Ref.modify m.world λw → step w ms
+        Ref.update m.world λw → { Record.copy w | sized = w.atOnce }
+    signals = Ref.modify m.world λw → step (Record.copy w) ms
     Ref.set m.log [ ints signals ]
 
 

@@ -1,1 +1,1 @@
-v2 copies these records, so each line prints the kept value
+a record below one handed to a function (#1001): v2 refuses it, and the sanitised run shows the stale box when it does not

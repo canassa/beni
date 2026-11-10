@@ -1,0 +1,6 @@
+# v2 refuses the update of a record that a fresh value keeps, where it is made (#1000).
+30:10 record_still_used update
+37:10 record_still_used update
+44:10 record_still_used update
+51:10 record_still_used update
+59:10 record_still_used update

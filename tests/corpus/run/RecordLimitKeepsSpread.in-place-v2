@@ -1,2 +1,0 @@
-`run` passes its limit in checker v2's record pass, so its calls have no record verdict (ownership-v2.md §2.8, the
-emitter reads the rows; #1018): the module keeps the spread, and the three builds print the golden.

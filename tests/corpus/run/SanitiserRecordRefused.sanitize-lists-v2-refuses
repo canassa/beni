@@ -1,0 +1,2 @@
+# v2 refuses the first update of `twice`: the old record is updated again (§2.8, a refused record line is an error).
+9:9 record_still_used update

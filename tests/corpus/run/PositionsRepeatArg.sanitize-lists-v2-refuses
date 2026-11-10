@@ -1,2 +1,4 @@
 # v2 refuses the write(s) below; the edit would change what the program prints.
+# A refused record line is an error too (§2.8, a refused record line is an error): the `record_` lines.
 26:9 list_may_be_shared List.update
+26:9 record_may_be_shared update

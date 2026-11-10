@@ -1,0 +1,8 @@
+# v2 refuses the update of a record that another value holds and reads later, where it is made (#1001).
+32:10 record_still_used update
+40:10 record_still_used update
+49:10 record_still_used update
+57:10 record_still_used update
+90:27 record_still_used update
+91:27 record_still_used update
+91:27 record_still_used update

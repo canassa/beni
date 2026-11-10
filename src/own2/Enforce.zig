@@ -480,26 +480,26 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     try diagnostics(gpa, arena, reports, &d.per_module[m.int()]);
 }
 
-/// One error per refused or limited line (R-1.1, §6): the code by cause
-/// and kind (R-6.1), the verdict line as the message.
+/// One error per refused or limited line, a list's or a record's (R-1.1, §6; §2.8, a refused record line is
+/// an error): the code by cause and kind (R-6.1), the verdict line as the message.
 fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module, dest: *std.ArrayList(CheckDiagnostics.Item)) Allocator.Error!void {
     for (reports) |r| {
         for (r.lines) |l| {
-            // A record's verdict is reported and not yet enforced: until the lowering reads it, the emitter copies every update (§8, S5).
-            if (!l.refused or std.mem.eql(u8, l.op, "update")) continue;
+            const record = std.mem.eql(u8, l.op, "update");
+            if (!l.refused or (record and @import("Mutate.zig").on(.record_refusal_quiet))) continue;
             const code: @import("diagnostic").Code = switch (l.cause) {
-                .top_level => .top_level_list_changed,
+                .top_level => if (record) .top_level_record_changed else .top_level_list_changed,
                 .read_only => .view_changes_model,
                 .comparison => .comparison_changes_value,
                 .limit => .ownership_limit,
-                else => if (l.approx) .list_may_be_shared else .list_still_used,
+                else => if (l.approx) (if (record) .record_may_be_shared else .list_may_be_shared) else if (record) .record_still_used else .list_still_used,
             };
             const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}\n\n{s}", .{
                 l.op,
                 l.base,
                 Facts.causeText(l.cause),
                 if (l.detail.len != 0) try std.fmt.allocPrint(arena, ": {s}", .{l.detail}) else "",
-                if (l.approx) "This is a limit of the checker, not proof of sharing." else if (l.cause == .comparison) "This is a rule of the language: `==` and `<` call a type's `eq` and `compare`, which only read. Change a copy (`List.copy`)." else "This is sharing the checker can see.",
+                if (record) (if (l.approx) "This is a limit of the checker, not proof of sharing. To be safe, change a copy, made with `Record.copy`." else if (l.cause == .comparison) "This is a rule of the language: `==` and `<` call a type's `eq` and `compare`, which only read. Change a copy, made with `Record.copy`." else "This is sharing the checker can see. Change a copy, made with `Record.copy`.") else if (l.approx) "This is a limit of the checker, not proof of sharing." else if (l.cause == .comparison) "This is a rule of the language: `==` and `<` call a type's `eq` and `compare`, which only read. Change a copy (`List.copy`)." else "This is sharing the checker can see.",
             });
             try dest.append(gpa, .{ .ownership = true, .code = code, .module = @fromBackingInt(r.module), .region = @fromBackingInt(0), .token = l.token, .message = message });
         }
