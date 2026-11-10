@@ -85,14 +85,12 @@ counted body =
               )
             ]
     Js.set (Js.global "globalThis") "DataView" (Js.construct (Js.global "Proxy") [ original, trap ])
-    -- A tuple, not a record: a release build evaluates the fields of
-    -- `{ value = body ⊤, brand = Js.read brand }` in key order, reading the
-    -- count before the body runs (a compiler defect, reported 2026-11-09).
-    ( value, brandCount, viewCount ) =
-        Js.finally (λ⊤ → ( body ⊤, Js.read brand, Js.read views )) λ⊤ →
-            _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", descriptor ]
-            Js.set (Js.global "globalThis") "DataView" original
-    { value = value, brand = brandCount, views = viewCount }
+    -- The fields are evaluated in written order (language.md, *Evaluation
+    -- order*): the counts are read after the body ran. A --release build
+    -- reads them first until #2430 is fixed.
+    Js.finally (λ⊤ → { value = body ⊤, brand = Js.read brand, views = Js.read views }) λ⊤ →
+        _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", descriptor ]
+        Js.set (Js.global "globalThis") "DataView" original
 
 
 --| A region (binary.md §6) of a Uint8Array view, made before counting: a
@@ -200,10 +198,9 @@ detachedReads body =
               )
             ]
     _ = Js.call object "defineProperty" [ prototype, Js.from "detached", spy ]
-    ( value, count ) = Js.finally (λ⊤ → ( body ⊤, Js.read reads )) λ⊤ →
+    Js.finally (λ⊤ → { value = body ⊤, reads = Js.read reads }) λ⊤ →
         _ = Js.call object "defineProperty" [ prototype, Js.from "detached", descriptor ]
         ⊤
-    { value = value, reads = count }
 
 
 --| With ArrayBuffer.prototype.detached and SharedArrayBuffer.prototype.growable
