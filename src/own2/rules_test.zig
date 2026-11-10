@@ -51,7 +51,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // Its lines are its table: a line for each rule broken, and its comment.
-    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 440 },
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 445 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -98,7 +98,7 @@ const layers = [_]Entry{
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
     // The mark of a field read in an effect tree (§2.10, R-4.8.5).
-    .{ .file = "FieldMark.zig", .layer = 3, .max_lines = 45 },
+    .{ .file = "FieldMark.zig", .layer = 3, .max_lines = 60 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
     // The answers occurrence (§2.11.3).
@@ -246,7 +246,7 @@ const layers = [_]Entry{
     // A closure's field captures, read off the text (§2.11.4, R-5.4.6).
     .{ .file = "FieldCapture.zig", .layer = 8, .max_lines = 70 },
     // A record's fields read, in a contract's reads (§2.8, R-4.8.5).
-    .{ .file = "FieldReads.zig", .layer = 8, .max_lines = 70 },
+    .{ .file = "FieldReads.zig", .layer = 8, .max_lines = 95 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
@@ -324,7 +324,8 @@ const layers = [_]Entry{
     .{ .file = "NeedLeaves.zig", .layer = 11, .max_lines = 90 },
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     // What a closure's creation asks of its writes, split from `Eval` (#2028).
-    .{ .file = "Once.zig", .layer = 11, .max_lines = 60 },
+    // A once closure's record write names its fields (R-4.8.2).
+    .{ .file = "Once.zig", .layer = 11, .max_lines = 63 },
     // What a called code says of what its creation made (#2028).
     .{ .file = "Made.zig", .layer = 11, .max_lines = 55 },
     .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },

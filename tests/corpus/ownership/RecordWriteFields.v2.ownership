@@ -1,0 +1,27 @@
+module RecordWriteFields
+  23:14 update p: accepted param
+  36:13 update origin: accepted param [hoisted 1]
+  42:13 update origin: accepted param
+  48:13 update origin: rejected later-use: origin is read again at 49:14
+  54:13 update origin: accepted param
+  60:13 update origin: rejected later-use: origin is read again at 61:15
+  61:15 update origin: rejected held-operand: the value at 61:7, evaluated before it, holds it until its consumer runs
+  66:13 update origin: rejected later-use: origin is read again at 67:5
+  71:14 update p: accepted param
+  76:13 update origin: accepted param
+  81:22 update p: accepted param
+  81:41 update p: accepted param
+  86:13 update origin: accepted param [hoisted 1]
+  91:33 update <expression>: accepted param
+  91:46 update p: accepted param
+  96:13 update origin: accepted param [hoisted 1]
+  102:9 update p: accepted param
+  102:9 update p: accepted param
+  103:7 update <call Maybe.map>: accepted callback-param
+  108:9 update p: accepted param
+  108:9 update p: rejected alias: p holds it and is read at 109:23
+  109:7 update <call Maybe.map>: accepted callback-param [hoisted 1]
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 22: accepted 17, rejected 5
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 22: accepted 17, rejected 5

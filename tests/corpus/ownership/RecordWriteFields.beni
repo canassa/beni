@@ -1,0 +1,109 @@
+-- ownership: a callee's write of a record says its fields
+-- (`ownership-v2.md` §2.8, *a callee's write says its fields*; R-4.8.2,
+-- R-4.8.5, R-4.8.7). `shift` writes `x` of its record and no other field.
+-- After `shift 3 origin`, a read of `origin.x` is hoisted before the call
+-- (`thenWritten`), and a read of `origin.y` is no use at all
+-- (`thenUntouched`). A later callee that reads `x` uses the old record
+-- whole, and the first call is refused (`thenCalleeWritten`, `thenAgain`);
+-- one that reads only `y` does not (`thenCalleeUntouched`). The old record
+-- whole is a whole use (`thenWhole`). The fields go through a callee that
+-- hands its parameter on (`outer`, `throughOuter`), and two writes name
+-- the union (`both`, `afterBoth`: `z` is untouched). A function that
+-- calls itself hears of its own write with no field, so its write is of
+-- every field (`walk`, `afterWalk`: the read of `y` is a hoist). A once
+-- closure's fields are its code's (`onceUntouched` accepted,
+-- `onceWritten` refused).
+type alias P =
+    x : Int
+    y : Int
+    z : Int
+
+
+shift : Int, P → P
+shift dx p = { p | x = p.x + dx }
+
+
+readX : P → Int
+readX p = p.x
+
+
+readY : P → Int
+readY p = p.y
+
+
+pub thenWritten : P → P × Int
+thenWritten origin =
+    moved = shift 3 origin
+    ( moved, origin.x )
+
+
+pub thenUntouched : P → P × Int
+thenUntouched origin =
+    moved = shift 3 origin
+    ( moved, origin.y )
+
+
+pub thenCalleeWritten : P → P × Int
+thenCalleeWritten origin =
+    moved = shift 3 origin
+    ( moved, readX origin )
+
+
+pub thenCalleeUntouched : P → P × Int
+thenCalleeUntouched origin =
+    moved = shift 3 origin
+    ( moved, readY origin )
+
+
+pub thenAgain : P → P × Int
+thenAgain origin =
+    moved = shift 3 origin
+    ( moved, (shift 3 origin).x )
+
+
+pub thenWhole : P → P × P
+thenWhole origin =
+    moved = shift 3 origin
+    ( moved, origin )
+
+
+outer : Int, P → P
+outer dx p = shift dx p
+
+
+pub throughOuter : P → P × Int
+throughOuter origin =
+    moved = outer 3 origin
+    ( moved, origin.y )
+
+
+both : Bool, P → P
+both b p = if b then { p | x = 0 } else { p | y = 0 }
+
+
+pub afterBoth : Bool, P → P × Int × Int
+afterBoth b origin =
+    moved = both b origin
+    ( moved, origin.y, origin.z )
+
+
+walk : Int, P → P
+walk n p = if n ≤ 0 then p else walk (n - 1) { p | x = p.x + n }
+
+
+pub afterWalk : P → P × Int
+afterWalk origin =
+    moved = walk 3 origin
+    ( moved, origin.y )
+
+
+pub onceUntouched : Maybe Int, P → Maybe P × Int
+onceUntouched m p =
+    f = shift _ p
+    ( Maybe.map m f, p.y )
+
+
+pub onceWritten : Maybe Int, P → Maybe P × Int
+onceWritten m p =
+    f = shift _ p
+    ( Maybe.map m f, p.x )

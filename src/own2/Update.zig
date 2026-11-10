@@ -16,6 +16,7 @@ const Relation = @import("Relation.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
+const FieldMark = @import("FieldMark.zig");
 const Liveness = @import("Liveness.zig");
 
 const Error = Ids.ChargeError;
@@ -92,13 +93,26 @@ pub fn pointOf(w: anytype, u: Liveness.UseId) u32 {
 
 /// A callee's write `x` of argument `arg` at `words`, at a call: the demand's token, and whether it
 /// writes a record's own storage: by the value, by the argument's place (a top-level value names
-/// none) or by the known code's parameter (a type variable's place at the caller). Every field,
-/// until a contract names them (§2.8).
-pub fn atCall(e: anytype, d: anytype, call: anytype, x: anytype, arg: u32, words: []const u32, base: u32) Error!void {
+/// none) or by the known code's parameter (a type variable's place at the caller). Its fields are
+/// the ones that the callee's contract names (`fieldsAt`), where the demand is of `one` route.
+pub fn atCall(e: anytype, d: anytype, call: anytype, x: anytype, arg: u32, words: []const u32, base: u32, one: bool) Error!void {
     const f = e.fr();
     d.token = e.w.bir.insts.items(.main_token)[call.inst];
     if (x.deep or d.cell or !f.records) return;
     d.record = isRecord(f, if (words.len == 0) arg else try e.ev.valueAt(arg, words)) or (base != call.inst and recordBelow(f, try e.ctx.placeOfInst(e.ctx.ctx, base), words)) or (call.code != none and recordParam(f, (try e.ctx.codeSig(e.ctx.ctx, call.code)).params, x.j, words));
+    // A demand that covers more routes than its own (`Graft.Group.also`) names no field: each route has its fields.
+    if (d.record and one and call.contract != none) d.fields = try fieldsAt(e, call.contract, call.code, x.j, words);
+}
+
+/// The fields that contract `c` of code `code` writes of the record at `words` of its parameter `j` (the
+/// write tree's marks, `FieldMark.written`); none, every field, where the code is a member of the group
+/// that is being solved, whose writes still grow.
+pub fn fieldsAt(e: anytype, c: Contract.Id, code: u32, j: u32, words: []const u32) Error![]const u32 {
+    const f = e.fr();
+    if (code != none) if (e.ev.live) |lv| if (lv.draftRes(lv.ctx, code) != null) return &.{};
+    try f.charge(.inspection, @intCast(words.len + 1));
+    for (e.contracts.writesOf(e.contracts.head(c).writes)) |r| if (r[0] == j) return FieldMark.written(&e.contracts.trees, f.slots, f.arena, r[1], words);
+    return &.{};
 }
 
 /// `{ base | fields }` at instruction `i` (R-2.5): an `update` demand on the
@@ -216,11 +230,11 @@ fn firstAfter(w: anytype, h: u32, q: PathId, rank: u32, point: u32) Error!usize 
 /// (R-4.8.2), as a witness; and in `hoists` one more for each of the
 /// frame's own reads of a written field. Each event it visits is a record
 /// on the account: the reads of the written fields and no other.
-pub fn after(w: anytype, regions: anytype, h: u32, q: PathId, point: u32, fields: []const u32, hoists: *u32) Error!?Liveness.UseId {
+pub fn after(w: anytype, regions: anytype, h: u32, q: PathId, point: u32, fields: []const u32, hoists: ?*u32) Error!?Liveness.UseId {
     if (@import("Mutate.zig").on(.update_no_events)) return null;
     const es = w.events.items;
     var n = try firstAfter(w, h, q, none, point);
-    const witness: ?u32 = while (n < es.len and es[n].local == h and es[n].path == q) : (n += 1) {
+    var witness: ?u32 = while (n < es.len and es[n].local == h and es[n].path == q) : (n += 1) {
         try w.f.charge(.inspection, 1);
         if (regions.compatible(point, es[n].point)) break @intCast(n);
     } else null;
@@ -230,7 +244,11 @@ pub fn after(w: anytype, regions: anytype, h: u32, q: PathId, point: u32, fields
         n = if (fields.len == 0) try firstAfter(w, h, q, 0, 0) else try firstAfter(w, h, q, fields[k], point);
         while (n < es.len and es[n].local == h and es[n].path == q and es[n].rank != none and (fields.len == 0 or es[n].rank == fields[k])) : (n += 1) {
             try w.f.charge(.inspection, 1);
-            if (es[n].point > point and regions.compatible(point, es[n].point)) hoists.* += 1;
+            if (es[n].point <= point or !regions.compatible(point, es[n].point)) continue;
+            // No hoist (a once closure's write happens at its call, R-4.8.2): the read is a whole use, the earliest one.
+            if (hoists) |hs| hs.* += 1 else if (witness == null or es[n].point < es[witness.?].point) {
+                witness = @intCast(n);
+            }
         }
     }
     return if (witness) |b| .from(event_bit | b) else null;

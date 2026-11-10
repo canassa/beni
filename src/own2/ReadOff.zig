@@ -817,7 +817,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                     // An edit in place of what a cell holds is deep at its `◆`: never a cell operation (§2.13.7).
                     // So is a write at a family's payload: a `var` whose base no step can name.
                     eff.deep = eff.deep or (out == .writes and ((!l.at_pos and Cells.endsInContents(f.slots, eff.slot)) or f.places.kind(f.places.pathPlace(Slots.pathOf(sl))) == .@"var"));
-                    if (try Contract.Draft.addEffect(Put.effList(s, out), s.arena, eff)) if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
+                    if (try Contract.Draft.addEffect(Put.effList(s, out), s.arena, eff)) if (out != .reads) if (e.solver) |sv| if (!(out == .writes and f.records and @import("FieldReads.zig").told(s.d.writes.items, eff, false))) try sv.effFact(sv.ctx, e.x, out == .writes, eff);
                 }
             },
             .call, .supply => {
@@ -879,7 +879,7 @@ fn demandFacts(e: *Evaluation, di: usize) Error!void {
         if (try Contract.Draft.addEffect(&e.sink.d.writes, e.sink.arena, eff)) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, true, eff);
         return;
     }
-    for (e.w.leavesOfRun(dm.targets)) |t| try paramEffects(&e.sink, t, dm.deep, .writes);
+    for (e.w.leavesOfRun(dm.targets)) |t| if (!dm.record or !try @import("FieldReads.zig").writes(&e.sink, t, dm.fields)) try paramEffects(&e.sink, t, dm.deep, .writes);
 }
 
 /// The facts of the code's contract (§2.10 *Read-off*): its result's

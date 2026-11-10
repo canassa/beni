@@ -10,6 +10,7 @@ const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Cells = @import("Cells.zig");
 const Eval = @import("Eval.zig");
+const Update = @import("Update.zig");
 
 const none: u32 = Ids.none_int;
 
@@ -42,6 +43,7 @@ pub fn demands(e: *Eval.Evaluation) Eval.Error!void {
                 for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
             }
             const cap_local = e.ctx.capturesOf(e.ctx.ctx, cl.code)[wr.j - sig.own];
+            const record = f.records and !cell and !wr.deep and Update.isRecord(f, try e.ev.valueAt(caps[wr.j - sig.own], f.slots.relWords(wr.slot)));
             const write_path: Eval.PathId = if (cap_local != none) try Eval.pathAt(e, try e.ctx.placeOfLocal(e.ctx.ctx, cap_local), f.slots.relWords(wr.slot)) else .none;
             try e.demands.append(gpa, .{
                 .point = cl.point,
@@ -53,7 +55,8 @@ pub fn demands(e: *Eval.Evaluation) Eval.Error!void {
                 .write_path = write_path,
                 .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
                 .deep = wr.deep,
-                .record = f.records and !cell and !wr.deep and @import("Update.zig").isRecord(f, try e.ev.valueAt(caps[wr.j - sig.own], f.slots.relWords(wr.slot))),
+                .record = record,
+                .fields = if (record) try Update.fieldsAt(e, c, cl.code, wr.j, f.slots.relWords(wr.slot)) else &.{},
             });
         }
     }

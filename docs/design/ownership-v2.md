@@ -972,7 +972,7 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 | Query | Lists | Answer |
 |---|---|---|
 | a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`, or when `U` has a node marked `D` or `A` at a prefix of that remainder (§2.10: every demand at or below a deep read's path sees it; *A part a callee answers*, below); a use whose *exit* (below) is a prefix of `q` counts as one at `q`; a `call` use non-empty only at untouched fields is no use |
-| a use under a written field `f ∈ F` (record demand) | subtree of `(h, q.f)` | kind `field` → a **hoist**; kind `call`/`whole` → a whole use, refused |
+| a use under a written field `f ∈ F` (record demand) | subtree of `(h, q.f)` | kind `field` → a **hoist**, or a whole use where the demand is a once closure's (§2.8, *A once closure's write happens at its call*); kind `call`/`whole` → a whole use, refused |
 | a use under `q` (list demand) | subtree of `(h, q)` | a use |
 | an untouched field's use | never read | — |
 
@@ -1086,7 +1086,8 @@ storage write, the base's own storage at the written position (`at_position`); f
    `Update.ofNeed`: the known code's place says that the written slot is a record's own object; a function that
    no code is known for says nothing, and its need stays a list's). Every one is printed `update` and is
    reported, not enforced (§2.11.5). Its targets are the record's storage
-   leaves. It writes the fields `F`; a callee's write names none yet, and then `F` is every field. For a holder
+   leaves. It writes the fields `F`: an update's own, or the fields that the callee's contract names for the
+   write (below, *a callee's write says its fields*); where none is named, `F` is every field. For a holder
    `h` that holds a target at path `q`, the later uses and events of `h` after the demand, compatibly, are:
    - a use at `q` or above it (a whole use, a call whose callee's footprint reaches `q`, a kept field of a
      later update of a record that contains this one): the old record is read whole: refused, as for a list;
@@ -1111,8 +1112,35 @@ storage write, the base's own storage at the written position (`at_position`); f
    reach a caller through another callee keep their fields (`FieldReads.through`: `outer p = getY p`). Fixture
    `ownership/RecordCalleeFields`; mutant `field_reads_whole`. *Refused that a perfect checker accepts, with
    what S5 owes:* a record pattern in a `case` arm; a record pattern that binds a field no path names, after
-   an update; a callee's write of a field set (the contract's `F`, §2.10). A closure that reads one field of
-   a captured record is a field capture (§2.11.4).
+   an update. A closure that reads one field of a captured record is a field capture (§2.11.4).
+
+   *Amended 2026-11-10 (#1018; R-4.8.2, R-4.8.5, R-4.8.7): a callee's write says its fields.* A record
+   demand on a parameter's own record publishes, in the frame's `writes`, a mark of each field of its `F` at
+   the record's slot (§2.10, *a write's fields*; `FieldReads.writes`), printed `writes π2ε{.x}`. A caller's
+   demand for that write takes its `F` from the marks (`Update.fieldsAt`, `FieldMark.written`), and a once
+   closure's demand takes it from the closure's code alike. So after `moved = shift 3 origin`, with
+   `shift dx p = { p | x = p.x + dx }`, a read of `origin.y` is nothing, a read of `origin.x` is a hoist, a
+   call `readY origin` is nothing, and a call `readX origin` or a second `shift 3 origin` is a whole use,
+   refused `later-use` (R-4.8.7). The write names every field, as before, where:
+   - a demand that names no field wrote the same slot (an update of every field counts its fields; a write
+     that is no record demand, or one of a record demand whose `F` is every field, names none);
+   - the written leaf is no parameter's own slot: a whole subtree, a cell's contents, a payload's `var`, a
+     call's or a supply's result (they are said as any write is, `ReadOff.paramEffects`);
+   - the callee is a member of the group that is being solved: its writes still grow, and a member hears of
+     a write once, with no field (`FieldReads.told`). So a function that calls itself with its record
+     writes every field of it;
+   - the caller's demand covers more routes than its own (`Graft.Group.also`): each route has its fields.
+   Two writes of one slot name the union of their fields.
+
+   *A once closure's write happens at its call* (R-4.8.2). The demand of a once closure that writes a
+   captured record is at the closure's creation, and the write runs when the closure is called, at a point
+   that the lowering cannot name. So for a `once` record demand a **read** event of a field in `F` after the
+   creation is no hoist: it is a whole use, and the earliest such read or use is the witness (`Update.after`
+   with no hoist count, `Later.Uses.no_hoist`). A read of a field not in `F` stays nothing. With
+   `f = bump p _` and `bump p n = { p | x = p.x + n }`, a later `p.x` refuses the closure's write (printed
+   `alias: p holds it and is read at …`, as a list's once demand is), and a later `p.y` does not. The demand
+   at the call that runs the closure is a call's demand and hoists as one. Fixtures `ownership/RecordWriteFields`
+   and `ownership/RecordOnce` (its `.v2.ownership`); mutants `write_fields_all`, `once_read_hoists`.
 6. **Exclusive.** What the overlaps relied on (§2.9.4): a selection of the frame's parameters is accepted
    `param` and added to `req`; anything else that is not given is refused `exclusive`.
 
@@ -1954,7 +1982,12 @@ report, F4). Master's v2 printed a shared subtree as `.1 = .0`. The contract bec
   fields are read: its plain run holds a mark for each field in place of the one mark (`FieldMark.of`: the
   field's one-step slot). The mark names no parameter and no place, so a node grafted at another slot keeps
   it. The one mark stays a read of the record whole. A block writes a node's runs as it writes a result's, so
-  the marks need no new format. A write's `fields` are not built yet.
+  the marks need no new format.
+  *Amended 2026-11-10 (#1018; R-4.8.7): a write's fields.* A write node at a record's slot holds the same
+  marks: one for each field that a record demand writes there, or the one mark, which is every field
+  (§2.8, *a callee's write says its fields*). A node with both is every field. A deep write is an `open` run,
+  as before, and names no field. A graft keeps the marks, so a caller that hands its parameter to a callee
+  publishes the callee's fields at its own slot.
 - **Arrivals by structure.** An `open` node with an arrival `π_j·s` reads, at its slot `q·r`, the objects at
   `π_j·(s·r)` for every `r` its place takes (the `q… π_j·s*` entry of a type variable's slot today). The
   read-off writes a parameter's subtree read by structure as that one node, never one entry per slot below
@@ -6540,9 +6573,9 @@ L0  Ids  Counters  Scratch
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
 | `CallReq.zig` | 10 | a callee's `req` at a call, as a record's write relies on it and, in the record pass, as a list's does (§2.11.2 item 4, *A list's write beside a record's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
 | `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
-| `FieldReads.zig` | 8 | a record's fields read, in a contract's `reads`: the frame's field events as marks at the record's slot, and a callee's marks read at a caller (§2.8, *Dead, by field*, §2.10, R-4.8.5), for `ReadOff` | Ids, Place, Slots, Contract |
+| `FieldReads.zig` | 8 | a record's fields read and written, in a contract's `reads` and `writes`: the frame's field events as marks at the record's slot, a callee's marks read at a caller, and a record demand's written fields as marks (§2.8, *Dead, by field*, §2.10, R-4.8.5, R-4.8.7), for `ReadOff` | Ids, Place, Slots, Contract |
 | `FieldCapture.zig` | 8 | a closure's field captures, read off the frame's text: the read events and uses at the creation, and the closure's kid of field values (§2.11.4, *a field capture*, R-5.4.6), for `Walk` | Ids, Place |
-| `FieldMark.zig` | 3 | the mark of a field read in an effect tree, and whether a read tree reads a field of a set (§2.10, *a read's fields*; §2.8), for `Contract`, `Later`, `FieldReads` | Place, Trees |
+| `FieldMark.zig` | 3 | the mark of a field in an effect tree, whether a read tree reads a field of a set, and the fields that a write tree names (§2.10, *a read's fields*, *a write's fields*; §2.8), for `Contract`, `Later`, `FieldReads`, `Update` | Place, Trees |
 | `ByStructure.zig` | 10 | a value at a supply's key, by its own structure (§2.1, *An arrival's level*) | Ids, Contract, Relation, Slots, Value |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
 | `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
@@ -9494,7 +9527,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | R-4.8.3 | §2.8 Disjoint (update) | S5 |
 | R-4.8.4 | §2.6 `record_update` | S5 |
 | R-4.8.5, R-4.8.6 | §2.11 item 1 with `W{F}`; §2.8 (no facts reads whole) | S5 |
-| R-4.8.7 | §2.7 (`call` use never hoisted) | S5 |
+| R-4.8.7 | §2.7 (`call` use never hoisted), §2.8 (*a callee's write says its fields*) | S5 |
 | R-4.8.8 | §2.8 Dead/Disjoint | S5 |
 | R-4.8.9, R-4.8.10 | §2.13.1 | S5 |
 | R-4.8.11 | §2.11 keep edges (per path, through `reach` and the trie) | S4, S5 |

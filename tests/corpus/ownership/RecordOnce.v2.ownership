@@ -1,0 +1,21 @@
+module RecordOnce
+  18:12 update p: accepted param
+  22:16 update <call Maybe.map>: accepted callback-param
+  22:29 update p: accepted param
+  22:29 update p: accepted param
+  26:16 update <call List.map>: rejected once: it is written by a closure that may run more than once
+  26:29 update p: accepted param
+  26:29 update p: accepted param
+  31:9 update p: accepted param
+  31:9 update p: rejected alias: p holds it and is read at 32:23
+  32:7 update <call Maybe.map>: accepted callback-param [hoisted 1]
+  37:9 update p: accepted param
+  37:9 update p: accepted param
+  38:7 update <call Maybe.map>: accepted callback-param
+  46:15 update <call RecordOnce.apply>: accepted callback-param
+  46:22 update p: accepted param
+  46:22 update p: rejected alias: p holds it and is read at 46:33
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 16: accepted 13, rejected 3
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 16: accepted 13, rejected 3

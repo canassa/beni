@@ -40,6 +40,8 @@ pub const Uses = struct {
     /// The judged demand's written fields when it is an `update` (§2.8, *Dead* by field), and the reads it hoists.
     update: ?[]const u32 = null,
     hoists: u32 = 0,
+    /// The judged update is a once closure's (`once`): its write happens at a call, so no read of a written field is a hoist.
+    no_hoist: bool = false,
 
     fn f(u: *Uses) *Value.Frame {
         return &u.w.f;
@@ -50,10 +52,11 @@ pub const Uses = struct {
     }
 
     /// Forget a judgement's answers (each judgement asks its own); `update`: the next one's written fields.
-    pub fn clear(u: *Uses, update: ?[]const u32) void {
+    pub fn clear(u: *Uses, update: ?[]const u32, no_hoist: bool) void {
         u.asked.clearRetainingCapacity();
         u.update = update;
         u.hoists = 0;
+        u.no_hoist = no_hoist and !@import("Mutate.zig").on(.once_read_hoists);
     }
 
     /// `liveAt`, each `(holder, path, point)` asked once a judgement.
@@ -84,7 +87,7 @@ pub const Uses = struct {
         const charge: Ids.Charge = .growth(fr.account);
         var best: ?Liveness.UseId = try w.index.useAfter(g, charge, fr.places, u.regions, h, q, point, filter);
         // Below a record an update writes, only the frame's field events count (`Update.after`).
-        if (if (u.update) |fs| try Update.after(w, u.regions, h, q, point, fs, &u.hoists) else try w.index.useUnder(g, charge, fr.places, u.regions, h, q, point, filter)) |x| {
+        if (if (u.update) |fs| try Update.after(w, u.regions, h, q, point, fs, if (u.no_hoist) null else &u.hoists) else try w.index.useUnder(g, charge, fr.places, u.regions, h, q, point, filter)) |x| {
             if (best == null or Update.pointOf(w, x) < Update.pointOf(w, best.?)) best = x;
         }
         // A deep read whose levels fold above it (§2.7, a read on a cycle).
