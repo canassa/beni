@@ -1,0 +1,38 @@
+-- A prerendered `init` may not draw from the page's seed, even when only
+-- its command uses the draw: `Random.value` reads the host's randomness
+-- where `init` runs, so the build refuses it at the call (`prerender.md`
+-- §3.1; browser-capability-base.md §4.2, §5). A seeded `Random.step` is
+-- pure and allowed.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Random
+import Sub
+import Tea
+
+
+type Msg
+    = Rolled Int
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ =
+    roll = Random.value (Random.int 1 6)
+    ( 0, Cmd.perform λsend → send (Rolled roll) )
+
+
+view : Int → Html Msg
+view n = <main><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = init
+            , update = λ_ n → ( n, Cmd.none )
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]
