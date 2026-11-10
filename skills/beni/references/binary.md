@@ -184,4 +184,4 @@ unexpected host failure stops the program; do not catch it. `Binary.shared` give
 Sources: `docs/design/binary.md` §1–§8; `docs/design/browser-sources.md`;
 `docs/design/webgpu.md` §3.1, §3.2; `core/Binary.beni`; `core/Binary/Atomics.beni`;
 `core/Binary/Wgsl.beni`; `core/Binary/Region.beni`;
-`platforms/browser/Browser/Image.beni`, `Video.beni`, `Canvas.beni`, `Source.beni`.
+`platforms/browser-base/Browser/Image.beni`, `Video.beni`, `Canvas.beni`, `Source.beni`.

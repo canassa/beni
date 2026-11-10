@@ -1,0 +1,37 @@
+-- A prerendered `init` may not read the canvas format, even when only its
+-- command uses the answer: `Gpu.preferredCanvasFormat` reads the host where
+-- `init` runs, so the build refuses it at the call (`prerender.md` §3.1;
+-- browser-capability-base.md §4.2, §5).
+import Browser
+import Cmd exposing (Cmd)
+import Gpu
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Known Bool
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ =
+    format = Gpu.preferredCanvasFormat ⊤
+    ( 0, Cmd.perform λsend → send (Known (Result.toMaybe format ≠ Nothing)) )
+
+
+view : Int → Html Msg
+view n = <main><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = init
+            , update = λ_ n → ( n, Cmd.none )
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

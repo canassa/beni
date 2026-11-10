@@ -62,6 +62,14 @@ and error classification in beni over `Js`, following the existing Task/Http
 boundary discipline. New host primitives need the same exact
 foreign/type/arity/effect checks as other platform primitives.
 
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Gpu*).* The `Gpu` modules, with
+their private engine modules, and the media modules `Browser.Canvas`, `Browser.Image`,
+`Browser.Video` and `Browser.Source` are `browser-base`'s (`platforms/browser-base/`), the
+renderer-free platform that `browser` and `browser-inline` both layer on. Each renderer, and
+`browser-tea` above `browser`, re-exports the public modules. `zig build gpu-bindings` writes
+`Gpu.Types`, `Gpu.Flags`, `Gpu.Limits` and `Gpu.Native` there, and its staleness check reads
+them there. §2.3's realm rule is unchanged.
+
 | Layer | Purpose | Completeness rule |
 |---|---|---|
 | `Gpu.Handle` | The handle types: aliases of the generated native types and the engine's own handles (§2.1) | Every native GPU object interface of the inventory |
@@ -115,7 +123,11 @@ modules only, so a TEA program cannot import `Gpu.Engine` or `Gpu.Native`; a dir
 `browser` program can, since a platform cannot keep a module from the program it is the
 top of (#2256). Their signatures name `Js.Value`, which such a program cannot make. The
 private `Gpu.Memory` (S2a), `Gpu.Make` and `Gpu.Session` (S2b) are in the same position,
-accepted as debt under #2256.
+accepted as debt under #2256. *Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Gpu*):*
+the `Gpu` modules and their private engine modules belong to `browser-base`, and `browser`,
+`browser-tea` and `browser-inline` each re-export the public modules only. No program on any
+of the three can import `Gpu.Engine`, `Gpu.Native`, `Gpu.Memory`, `Gpu.Make` or `Gpu.Session`
+(`build/bad/{managed,tea,inline}/GpuEngineHidden`), which settles #2256's debt.
 
 **`Gpu.Handle`** imports only core, including those generated modules, and no
 `Gpu` module. It declares:
