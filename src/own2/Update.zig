@@ -90,29 +90,6 @@ pub fn pointOf(w: anytype, u: Liveness.UseId) u32 {
     return if (u.int() & event_bit != 0) w.events.items[u.int() & ~event_bit].point else w.index.get(u).point;
 }
 
-/// The record objects the frame's events read: the storage of each record a
-/// field is read of or an update keeps fields of. The read-off says a
-/// parameter's among them as a read of its slot, so a caller that writes
-/// the record first sees the callee's read (R-4.8.2, a callee that reads a
-/// written field).
-pub fn objects(w: anytype, s: anytype, effects: anytype) Error!void {
-    if (@import("Mutate.zig").on(.update_reads_off)) return;
-    const f = &w.f;
-    var ls: std.ArrayList(u32) = .empty;
-    defer ls.deinit(f.gpa);
-    for (w.events.items) |x| try s.e.ev.storageOf(x.value, 0, &ls);
-    for (ls.items) |li| {
-        const l = f.leafAt(li);
-        // A parameter's record: a plain read of its own slot. An open record's storage is held as a whole
-        // subtree (§2.3.1), which `effects` reads deep, and a field read reads nothing below the record.
-        if (l.kind != .ref or f.roots.items[l.root].kind != .param) {
-            try effects(s, li, false, .reads);
-        } else for (f.slots.elems(l.slots)) |sl| {
-            if (!Slots.isNot(sl)) _ = try Contract.Draft.addEffect(&s.d.reads, s.arena, .{ .j = f.roots.items[l.root].a, .slot = try f.slots.relOf(f.gpa, f.account, f.places, Slots.pathOf(sl)) });
-        }
-    }
-}
-
 /// A callee's write `x` of argument `arg` at `words`, at a call: the demand's token, and whether it
 /// writes a record's own storage: by the value, by the argument's place (a top-level value names
 /// none) or by the known code's parameter (a type variable's place at the caller). Every field,

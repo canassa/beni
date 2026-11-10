@@ -17,13 +17,13 @@ module RecordDemands
   129:9 update p: accepted param
   136:9 update p: accepted param
   150:9 update p: rejected later-use: p is read again at 151:11
-  162:9 update p: rejected later-use: p is read again at 163:11
+  162:9 update p: accepted param
   175:13 update RecordDemands.originAlias: rejected top-level: RecordDemands.originAlias is a top-level value
   181:5 update answer: accepted call
   209:9 update r: accepted param
   215:9 update r: accepted param
   226:9 update r: accepted fresh
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 24: accepted 11, rejected 13
+  records 24: accepted 12, rejected 12
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 24: accepted 11, rejected 13
+records 24: accepted 12, rejected 12

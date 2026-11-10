@@ -141,7 +141,8 @@ pub const Uses = struct {
             // The callee's read and write trees a parameter (§2.7), charged.
             const rw = fr.slots.relWords(rem);
             try fr.charge(.inspection, @intCast(rw.len + 1));
-            for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw)) return true;
+            // An update asks a callee's reads of its record by field (`FieldMark.reads`, R-4.8.5).
+            for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and (if (u.update) |fs| @import("FieldMark.zig").reads(&u.contracts.trees, fr.places, fr.slots, r[1], rw, fs) else Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw))) return true;
             for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw, if (fr.records) fr.places.pathPlace(x.path) else .none)) return true;
         }
         return false;

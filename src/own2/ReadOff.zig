@@ -925,7 +925,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         }
         try readsDeep(s, b.value, f.slots.relWords(rel), pass);
     }
-    try @import("Update.zig").objects(w, s, paramEffects); // a record's object, read by a field read or an update (§2.7)
+    try @import("FieldReads.zig").events(w, s, paramEffects); // a record's object, read by a field read or an update (§2.7)
     // Writes: every demand's parameter targets, whatever its verdict.
     for (0..e.demands.items.len) |di| try demandFacts(e, di);
     // Escapes, deep. By index: an escape made meanwhile is read off when it is made.
@@ -1087,7 +1087,7 @@ fn readsThrough(s: *Sink, v: u32, at: []const u32, n: Contract.Node, pass: u32) 
         // A read is one whatever route reaches it: the walk by route sets.
         const req = [1]Routed.Req{.{ .words = es.wordsOf(x), .deep = x.open, .out = &ps }};
         try Routed.project(&e.ev, v, &req, 0, if (x.open) pass else 0);
-        for (ps.items) |p| try paramEffects(s, p.leaf, x.open, .reads);
+        for (ps.items) |p| if (x.open or !try @import("FieldReads.zig").through(s, p.leaf, x.arrivals)) try paramEffects(s, p.leaf, x.open, .reads);
     }
 }
 
