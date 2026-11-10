@@ -1,0 +1,12 @@
+module RecordNeed
+  29:5 update q: accepted call
+  35:5 update q: accepted call
+  39:8 update <lambda>: rejected need: RecordNeed.mod edits what it returns, which may be a list it does not own
+  43:10 update <lambda>: rejected need: RecordNeed.mod edits what it returns, which may be a list it does not own
+  47:10 update <lambda>: rejected need: RecordNeed.modQ edits what it returns, which may be a list it does not own
+  51:8 update <lambda>: rejected need: RecordNeed.modQ edits what it returns, which may be a list it does not own
+  55:11 update <lambda>: accepted callback-param
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 3, rejected 4
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 3, rejected 4

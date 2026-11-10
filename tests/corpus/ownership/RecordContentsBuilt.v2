@@ -1,0 +1,4 @@
+Checker v2 refuses the same writes as v1 in this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+Where a container can hold one record at two positions, v1 refuses the callback's update (`exclusive` or `supply`).
+v2 accepts the callback's line on a condition for its caller (`param`), and refuses at the call that hands the
+container over (`disjoint`, approximate).

@@ -1,0 +1,2 @@
+Checker v2 gives v1's verdict on each record line of this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+The lines differ only in the text that v2 does not print: the fix class and the parts of the counts line.

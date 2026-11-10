@@ -1,0 +1,3 @@
+Checker v2 refuses the same writes as v1 in this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+`keeps`'s callback can answer the top-level `start`, which the next step would write. v1 refuses the callback's
+update (`supply`). v2 refuses at the fold's call, with the cause `top-level`.

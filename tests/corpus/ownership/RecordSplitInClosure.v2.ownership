@@ -1,0 +1,19 @@
+module RecordSplitInClosure
+  14:9 once l: accepted param
+  17:21 List.push l: accepted param
+  21:5 h <call>: accepted param
+  27:9 once l: accepted param
+  30:21 List.push r: accepted param
+  34:5 h <call>: accepted param
+  38:10 List.update <call RecordSplitInClosure.dup>: accepted fresh
+  38:10 update <call RecordSplitInClosure.dup>[*]: rejected disjoint: another operand of the same operation reaches it (approx)
+  38:23 RecordSplitInClosure.dup <literal>: accepted fresh
+  38:49 update v: accepted param
+  42:17 List.update <call RecordSplitInClosure.rotated>: accepted fresh
+  42:17 update <call RecordSplitInClosure.rotated>[*]: accepted callback-param
+  42:30 RecordSplitInClosure.rotated <literal>: accepted fresh
+  42:71 update v: accepted param
+  demands 10: accepted 10 (fresh 4, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 3, rejected 1
+total 10: accepted 10 (fresh 4, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 3, rejected 1

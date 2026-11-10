@@ -1,0 +1,12 @@
+module RecordTakenForwarded
+  13:12 List.update rs: accepted param
+  19:5 RecordTakenForwarded.upd <literal>: accepted fresh
+  19:5 update <literal>[*].1: rejected disjoint: another operand of the same operation reaches it (approx)
+  19:49 update x: accepted param
+  23:14 RecordTakenForwarded.upd <literal>: accepted fresh
+  23:14 update <literal>[*].1: accepted callback-param
+  23:74 update x: accepted param
+  demands 3: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 3, rejected 1
+total 3: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 3, rejected 1

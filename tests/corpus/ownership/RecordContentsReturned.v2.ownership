@@ -1,0 +1,25 @@
+module RecordContentsReturned
+  12:13 update rows[*]: accepted callback-param
+  12:32 update r: accepted param
+  16:42 RecordContentsReturned.dupRec <call List.push>: accepted param
+  16:60 List.push acc: accepted param
+  20:8 update <call RecordContentsReturned.dupRec>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  20:14 RecordContentsReturned.dupRec <literal>: accepted fresh
+  28:8 update <call RecordContentsReturned.twiceOf>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  32:18 List.push <call List.push>: accepted param
+  32:29 List.push xs: accepted param
+  36:8 update <call RecordContentsReturned.pushTwice>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  36:14 RecordContentsReturned.pushTwice <literal>: accepted fresh
+  40:8 update <call List.map>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  47:13 update <call List.map>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  56:10 List.push xs: accepted fresh
+  57:5 update <call List.map>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  69:5 update <call List.push>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  69:11 List.push xs: accepted fresh
+  73:14 update <call List.push>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  73:20 List.push <call List.map>: accepted fresh
+  77:9 update <call List.map>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 9: accepted 9 (fresh 5, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 11: accepted 2, rejected 9
+total 9: accepted 9 (fresh 5, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 11: accepted 2, rejected 9

@@ -1,0 +1,11 @@
+module RecordRecursive
+  58:7 update q: rejected alias: r holds it and is read at 58:5
+  65:7 update q: rejected alias: r holds it and is read at 65:5
+  71:5 update q: rejected top-level: RecordRecursive.top is a top-level value
+  78:7 update r: rejected alias: q holds it and is read at 78:5
+  85:7 update r: rejected alias: q holds it and is read at 85:5
+  92:7 update r: rejected alias: q holds it and is read at 92:5
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 6: accepted 0, rejected 6
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 6: accepted 0, rejected 6

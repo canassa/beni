@@ -1,0 +1,14 @@
+module RecordBaseLevels
+  22:26 update n: accepted param
+  22:41 update k#Tree.0: accepted param
+  22:41 update k#Tree.0.kids[*]#Tree.0: accepted param
+  22:41 update k#Tree.0.kids[*]⟨Tree⟩#Tree.0: accepted param
+  25:26 update n: accepted param
+  34:23 update k#Tree.0: rejected alias: n holds it and is read at 34:39
+  34:23 update k#Tree.0.kids[*]#Tree.0: rejected alias: n holds it and is read at 34:39
+  34:23 update k#Tree.0.kids[*]⟨Tree⟩#Tree.0: rejected alias: n holds it and is read at 34:39
+  34:39 update n: accepted param
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 9: accepted 6, rejected 3
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 9: accepted 6, rejected 3

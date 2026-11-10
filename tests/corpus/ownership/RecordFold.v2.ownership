@@ -1,0 +1,14 @@
+module RecordFold
+  24:13 update state: accepted param
+  27:13 update state: accepted param
+  34:23 update state: accepted callback-param
+  34:54 update s: accepted param
+  38:14 update <record>: accepted fresh
+  42:23 update state: accepted param [hoisted 1]
+  50:15 update <record>: rejected top-level: RecordFold.start is a top-level value
+  51:35 update s: accepted param
+  hoist state.count: read 42:49; before 42:23
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 8: accepted 7, rejected 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 8: accepted 7, rejected 1

@@ -1,0 +1,3 @@
+Checker v2 refuses the same writes as v1 in this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+The lines name the same writes with v2's paths (`k#Tree.0.kids[*]#Tree.0`), a line for each depth that the checker
+keeps apart. The update of a tree's node that `n` holds and reads later is refused `alias` by both.
