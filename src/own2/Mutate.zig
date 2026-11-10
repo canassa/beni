@@ -74,6 +74,10 @@ pub const Name = enum {
     hoist_rows_lost,
     /// §2.8, *the hoist rows*: a need's accepted record write has no line, so its rows are lost.
     need_record_quiet,
+    /// §2.8, *the capture rows*: a field capture has no row.
+    capture_rows_lost,
+    /// §2.11.4, *a field capture*: a local function captures a field as a lambda does, where the lowering reads at its calls.
+    field_capture_local,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

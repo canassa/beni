@@ -1462,6 +1462,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), &mod.contracts, try walkCode(mod, id), &atoms[owner.items[x]], w);
         mod.codes.items[id].walk = w;
         if (mod.codes.items[id].kind != .called) r.walks += 1;
+        if (mod.codes.items[id].kind != .called) r.captures = try @import("HoistPlace.zig").captures(arena, w, r.captures);
     }
     // Every code of the group starts at ⊥ (§2.12).
     var bot: Contract.Draft = .{ .arity = 0 };

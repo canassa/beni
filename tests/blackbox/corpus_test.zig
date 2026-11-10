@@ -4416,7 +4416,7 @@ const Case = struct {
         while (lines.next()) |l| {
             // A `hoist` line is a row of the lowering channel (`ownership-v2.md` §2.8, the hoist rows).
             const keep = std.mem.startsWith(u8, l, "module ") or std.mem.startsWith(u8, l, "  demands ") or std.mem.startsWith(u8, l, "total ") or
-                std.mem.startsWith(u8, l, "records ") or std.mem.startsWith(u8, l, "limits ") or std.mem.startsWith(u8, l, "cause ") or std.mem.startsWith(u8, l, "  hoist ") or
+                std.mem.startsWith(u8, l, "records ") or std.mem.startsWith(u8, l, "limits ") or std.mem.startsWith(u8, l, "cause ") or std.mem.startsWith(u8, l, "  hoist ") or std.mem.startsWith(u8, l, "  capture ") or
                 (l.len > 2 and l[0] == ' ' and l[1] == ' ' and std.ascii.isDigit(l[2]));
             if (!keep) continue;
             try out.appendSlice(arena, l);

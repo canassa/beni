@@ -1,0 +1,12 @@
+module RecordLocalFunction
+  20:9 update p: accepted param
+  28:9 update p: accepted param
+  35:9 update p: accepted param
+  capture p.x: read 34:23; before 34:13
+  summary untouched: π1 RW{y}; res .0 π1◦
+  summary written: π1 RW{x}; res .0 π1◦
+  summary lambda: π1 RW{y}, π1.x R; res .0 π1◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 3
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 3

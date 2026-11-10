@@ -35,6 +35,23 @@ pub fn rows(arena: std.mem.Allocator, w: anytype, regions: *const Regions.Tree, 
     return out;
 }
 
+/// `before`, and a row for each field capture of walk `w`: read where its closure is made (§2.11.4).
+pub fn captures(arena: std.mem.Allocator, w: anytype, before: []const Facts.Hoist) std.mem.Allocator.Error![]const Facts.Hoist {
+    var n: usize = 0;
+    for (w.events.items) |ev| n += @intFromBool(ev.read != none);
+    if (n == 0 or @import("Mutate.zig").on(.capture_rows_lost)) return before;
+    const out = try arena.alloc(Facts.Hoist, before.len + n);
+    @memcpy(out[0..before.len], before);
+    var at = before.len;
+    for (w.events.items) |ev| if (ev.read != none) {
+        // A capture alone reads its whole source chain when the closure is made (v1's row: the full path).
+        const last = outer(w, ev.read);
+        out[at] = .{ .read = last, .outer = last, .holder = ev.local, .capture = ev.point, .placement = ev.point, .phase = 0 };
+        at += 1;
+    };
+    return out;
+}
+
 fn parentOf(w: anytype, inst: u32) u32 {
     const i = inst -% w.code.decl.inst_start.int();
     return if (i < w.parents.len) w.parents[i] else none;

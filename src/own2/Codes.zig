@@ -9,6 +9,7 @@
 
 const Ids = @import("Ids.zig");
 const Walk = @import("Walk.zig");
+const Facts = @import("Facts.zig");
 const Kept = @import("Kept.zig");
 
 const PlaceId = Ids.PlaceId;
@@ -26,6 +27,8 @@ pub const DeclResult = struct {
     /// Validations that found a code outside its candidate (§2.12 step 3).
     defects: u32 = 0,
     lines: []Kept.Line = &.{},
+    /// The record pass: its frames' field captures, each a row placed at its closure's creation (§2.8, the capture rows).
+    captures: []const Facts.Hoist = &.{},
     /// The account's failure, when it stopped the walk.
     failure: ?Ids.Failure = null,
     account: Ids.Account = .{},

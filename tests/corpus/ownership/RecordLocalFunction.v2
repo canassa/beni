@@ -1,0 +1,4 @@
+A local function reads a captured record's field when it is called, and a lambda when it is made
+(ownership-v2.md §2.11.4, a field capture; §2.8, the capture rows). v2 refuses an update of the record before a
+call of the local function. v1 accepts `untouched` and `written`; for `written` that is a defect of v1 (#2455: a
+stale read under `--records-in-place`).

@@ -23,6 +23,8 @@ const none: u32 = Ids.none_int;
 /// use of the field's value, and the answer is true. False: the frame uses `l` whole.
 pub fn of(k: anytype, i: u32, l: u32, v: u32, kids: *std.ArrayList(u32)) Error!bool {
     if (@import("Mutate.zig").on(.field_capture_whole)) return false;
+    // A lambda only (`f a _` is one): a local function reads when it is called, as in v1, and the lowering has no row for it.
+    if (k.tag(i) != .lambda and !@import("Mutate.zig").on(.field_capture_local)) return false;
     const fr = k.f();
     var r = k.w.regions.get(k.w.regions.regionOf(k.data(i).rhs));
     while (r.kind != .frame) : (r = k.w.regions.get(r.parent)) if (r.kind == .body) return false;
