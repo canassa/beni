@@ -1,0 +1,15 @@
+module RecordSupply
+  15:11 update p: accepted param
+  41:7 update r: rejected later-use: r is read again at 41:5
+  47:7 update r: rejected later-use: r is read again at 47:5
+  47:21 update q: accepted param
+  53:5 update r: rejected call: RecordSupply.both still holds it when it runs the function
+  60:7 update r: rejected alias: k holds it and is read at 60:16
+  66:7 update ps[*]: rejected later-use: ps is read again at 66:5
+  70:8 update r: accepted callback-param
+  70:8 update <call RecordSupply.twice>: accepted callback-param
+  76:7 update r: rejected later-use: r is read again at 76:5
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 10: accepted 4, rejected 6
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 10: accepted 4, rejected 6

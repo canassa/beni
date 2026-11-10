@@ -1,0 +1,18 @@
+module RecordContentsKeep
+  12:13 update rows[*]: accepted callback-param
+  12:32 update r: accepted param
+  19:13 update <call List.update>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  19:19 List.update rows: accepted param
+  26:13 update <call List.update>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  26:19 List.update <call List.push>: accepted param
+  26:32 List.push rows: accepted param
+  30:11 update <call List.update>[*]: accepted param
+  30:17 List.update rows: accepted param
+  34:11 update <call List.update>[*]: accepted param
+  34:17 List.update rows: accepted param
+  34:17 update rows[*]: accepted callback-param
+  34:41 update r: accepted param
+  demands 5: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 8: accepted 6, rejected 2
+total 5: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 8: accepted 6, rejected 2

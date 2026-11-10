@@ -1,0 +1,3 @@
+Checker v2 gives v1's verdict on each record line of this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+The two calls that hand one record to two written parameters are refused `disjoint` by both checkers: v2's refusal
+is approximate, and v1's is exact.

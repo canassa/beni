@@ -1,0 +1,12 @@
+module RecordField
+  16:15 update model: accepted param
+  16:33 List.push model.items: accepted param
+  21:12 update model: accepted param
+  21:32 construction model.items: accepted param
+  22:5 update next: accepted param
+  26:23 construction model.items: rejected alias: model.items holds it and is read at 26:19
+  demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 3: accepted 3, rejected 0
+total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 3: accepted 3, rejected 0
+cause alias 1

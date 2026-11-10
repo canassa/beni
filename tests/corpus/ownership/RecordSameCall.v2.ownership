@@ -1,0 +1,9 @@
+module RecordSameCall
+  18:9 update b: accepted param
+  24:9 update p: accepted param
+  31:5 update r: rejected disjoint: another path of the same argument reaches it (approx)
+  37:5 update r: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 2, rejected 2
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 2, rejected 2

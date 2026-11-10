@@ -1,0 +1,3 @@
+Checker v2 gives v1's verdict on each record line of this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+The update of a record that another local holds and reads later is refused `alias`. The update of a call's
+fresh answer is accepted: v2 says `fresh` where v1 says `call`.

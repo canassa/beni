@@ -1,0 +1,33 @@
+module RecordContentsCore
+  23:13 update rows[*]: accepted callback-param
+  23:32 update r: accepted param
+  27:8 update <call List.map>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  31:8 update <call List.indexedMap>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  35:8 update <call List.filterMap>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  39:8 update <call List.concatMap>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  43:8 update <call List.initialize>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  47:8 update <call List.take>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  51:8 update <call List.drop>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  55:8 update <call List.sortBy>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  59:8 update <call Dict.values>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  63:9 update <call List.foldl>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  63:15 List.foldl <literal>: accepted callback-param
+  63:47 List.push acc: accepted param
+  67:9 update <call Dict.insert>#Dict.0#Node.2: rejected disjoint: another operand of the same operation reaches it (approx)
+  68:5 update m#Just.0: accepted callback-param
+  68:22 update r: accepted param
+  72:9 List.update <literal>: accepted fresh
+  72:9 update <literal>[*]: rejected disjoint: another operand of the same operation reaches it (approx)
+  72:37 update r: accepted param
+  76:9 update <call List.unzip>.0[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  80:9 update <call List.map>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  84:12 update os[*]: accepted callback-param
+  84:29 update o: accepted param
+  88:9 update <literal>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  92:17 update os[*]: accepted callback-param
+  92:34 update o: accepted param
+  96:9 update <call List.repeat>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 25: accepted 9, rejected 16
+total 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 25: accepted 9, rejected 16

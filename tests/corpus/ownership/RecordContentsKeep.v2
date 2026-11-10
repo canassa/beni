@@ -1,0 +1,3 @@
+Checker v2 gives v1's verdict on each record line of this fixture (ownership-v2.md §2.11.5, the record pass; #1018).
+A list that can hold one record at two positions refuses the callee's write of its elements: v2 says `disjoint`,
+approximate, where v1 says `exclusive`. At a callback, v2 says `param` in the lambda and `callback-param` at the call.
