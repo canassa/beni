@@ -1,0 +1,80 @@
+-- ownership (core): a cast's answer is one set of objects, however many slots
+-- the caller's type gives it (`ownership-v2.md` §2.9.3, #2413). `castG`
+-- answers one list at all 16 fields of `R` through `Js` (a type variable's
+-- slot, one open arrival), so `wrap1`'s and `wrap`'s answers, a subtree of 17
+-- slots held whole (`↓ε`), are not each list once: the push of `r.f0` while
+-- `r.f1` is read must copy. Counting the `↓ε` slot by slot read the open
+-- arrival as one entry and claimed `nondup yes`.
+import Js
+import List
+
+
+type alias R =
+    f0 : List Int
+    f1 : List Int
+    f2 : List Int
+    f3 : List Int
+    f4 : List Int
+    f5 : List Int
+    f6 : List Int
+    f7 : List Int
+    f8 : List Int
+    f9 : List Int
+    f10 : List Int
+    f11 : List Int
+    f12 : List Int
+    f13 : List Int
+    f14 : List Int
+    f15 : List Int
+
+
+castG : ⊤ → a
+castG u =
+    l = [ 5 ]
+    Js.to
+        (Js.from
+            { f0 = l
+            , f1 = l
+            , f2 = l
+            , f3 = l
+            , f4 = l
+            , f5 = l
+            , f6 = l
+            , f7 = l
+            , f8 = l
+            , f9 = l
+            , f10 = l
+            , f11 = l
+            , f12 = l
+            , f13 = l
+            , f14 = l
+            , f15 = l
+            }
+        )
+
+
+type alias W =
+    inner : R
+    other : List Int
+
+
+wrap : List Int → W
+wrap x = { inner = castG ⊤, other = [] }
+
+
+wrap1 : List Int → R
+wrap1 x = castG ⊤
+
+
+demo : List Int → List Int × List Int
+demo x =
+    w = wrap x
+    b = w.inner.f1
+    ( List.push w.inner.f0 1, b )
+
+
+demo1 : List Int → List Int × List Int
+demo1 x =
+    r = wrap1 x
+    b = r.f1
+    ( List.push r.f0 1, b )

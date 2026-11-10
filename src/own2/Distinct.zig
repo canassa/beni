@@ -491,7 +491,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
                             // At a slot no step below can name, the arrivals
                             // are one set: `xs` twice inside a cast is one leaf
                             // there, so expansion cannot count it (#1710).
-                            if (idx.len == 1 and try OneSet.of(f, ents[idx[0]])) return Cond.unprovable;
+                            if (idx.len == 1 and (try OneSet.of(f, ents[idx[0]]) or !try e.countsBelow(r.a, ents[idx[0]].leaf))) return Cond.unprovable;
                             gr.must = 1;
                         } else if (try Chains.gather(e, &occs, c)) return Cond.unprovable;
                     }

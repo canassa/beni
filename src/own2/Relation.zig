@@ -934,6 +934,42 @@ pub const Eval = struct {
         return try e.f.leaf(.{ .kind = .fresh, .atom = call, .tags = l.tags });
     }
 
+    /// Whether the callee of call `call` says nothing open where leaf `li`'s subtrees `↓p` read it, at,
+    /// below or above each `p`, but a label's answer, and says nothing at a caller's fold (§2.9.3, #2413):
+    /// an open atom or argument is one entry for every slot below it, which no expansion counts, while a
+    /// label's answer is a call's leaf the check reads again. One `inspection` a node of the callee's tree.
+    pub fn countsBelow(e: *Eval, call: u32, li: u32) Error!bool {
+        const c = e.contractOf(call) orelse return false;
+        if ((try CallFolds.of(e, call, none)).len != 0) return false;
+        const t = &e.contracts.trees;
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(e.gpa());
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(e.gpa());
+        for (Subtree.subs(e.f.slots, e.f.leafAt(li).slots)) |sb| {
+            const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), Slots.pathOf(sb)));
+            var n = e.contracts.head(c).res_root;
+            for (pw) |w| {
+                try e.charge(.inspection, 1);
+                const row = if (t.kidAt(n, w) == null) t.rowKid(e.places(), n, w) orelse 0 else 0;
+                if (!onlyLabels(t.open(n)) or !onlyLabels(t.here(row)) or !onlyLabels(t.open(row))) return false;
+                n = t.kidAt(n, w) orelse 0;
+            }
+            if (n != 0) try stack.append(e.gpa(), n);
+            while (stack.pop()) |m| {
+                if ((try seen.getOrPut(e.gpa(), .{m})).found_existing) continue;
+                try e.charge(.inspection, 1);
+                if (!onlyLabels(t.open(m))) return false;
+                for (t.kids(m)) |k| try stack.append(e.gpa(), k[1]);
+            }
+        }
+        return true;
+    }
+    fn onlyLabels(run: []const Contract.Arrival) bool {
+        for (run) |a| if (a.kind != .cb) return false;
+        return true;
+    }
+
     /// The objects at every slot of leaf `x`'s subtree when they are the same
     /// atoms at each (`⊤`, a shared value, a call's fresh objects): a call's
     /// leaf whose callee says only that, open, above it and nothing below it
