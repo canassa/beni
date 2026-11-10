@@ -1549,11 +1549,36 @@ now written in place, with its hoisted reads bound first, as under v1.
   a release ships them; each must print the fixture's golden. `zig build test-records-in-place-v2` does it
   for every `run/` program and `browser/inline/` page that v2 accepts. Fixtures: the six of the records'
   differential corpus; `run/RecordOnceInPlace` (a once closure's write in a module with no refusal: the
-  creation's line is no row); `run/RecordRefusedKeepsSpread` and `run/RecordLimitKeepsSpread` (the spread
-  is kept). Mutants: `record_rows_unchecked` (the record half is clean also with a refusal),
+  creation's line is no row). Mutants: `record_rows_unchecked` (the record half is clean also with a refusal),
   `record_reads_lost` (the table has the writes and no read: the sanitiser then traps on a stale read) and
   `record_limit_clean` (a declaration past the limit leaves the record half clean: the caller that nothing
-  checked reads a stale field).
+  checked reads a stale field). Since the next amendment, a refusal and a limit stop an enforcing build
+  before the emitter, so the first and the third mutant change no build.
+
+*Amended 2026-11-10 (#1018, S5b): a refused record line is an error.* This replaces two sentences of §2.11.5
+(*the verdict is reported and not yet enforced*; *that is no error while record verdicts are not enforced*)
+and the item *until a refused record line is an error*, above.
+
+- **In a build that enforces**, `Enforce` makes one error for each refused record line, as it does for a list
+  line (R-1.1, §6). The code is R-6.1's, by the line's cause: `record_still_used` (exact),
+  `record_may_be_shared` (approximate), `top_level_record_changed`, `view_changes_model`,
+  `comparison_changes_value`. The message is the verdict line, and its last sentence names the fix: change a
+  copy, `{ Record.copy r | … }`. A refusal that only the record pass has, on a list demand, is a record line
+  (§2.11.5), so it has a record code.
+- **The record pass's limit is a limit.** A declaration that passes its limit in the record pass has a line
+  `limit <name>: <limit> (record pass)` in the report, and an enforcing build has one `ownership_limit` error
+  for it (R-6.11). So no update copies silently (`ownership-checker.md` §31.1).
+- **A build that does not enforce is not changed**: it has no ownership error, and every update is a copy.
+- **The channel's clean bit stays.** In an enforcing build the emitter now runs only where no record line is
+  refused. The record half's clean bit is still the one fact that the converter reads: a module whose record
+  half is not clean has no row and no store.
+- **Tests.** The v2 check of an `ownership/` fixture expects exit 1 for a refused record line too, and only
+  ownership codes; `ownership/RecordFieldAfterWrite`, `RecordSiblingHolds` and the new `RecordTopLevel` pin
+  the three record codes and the messages (`.v2.diag`). A `run/` fixture with a v2 pass that enforces, and a record line that v2 refuses, names its
+  refusals in `.sanitize-lists-v2-refuses` (ten fixtures, and the new `run/SanitiserRecordRefused` and
+  `run/SanitiserRecordLimit`), or changes a copy with `Record.copy` (three accepted twins, whose programs
+  were written when an update was a copy). Mutants: `record_refusal_quiet` (a refused record line makes no
+  error) and `record_limit_quiet` (the record pass's limit makes no line and no error).
 
 ### 2.9 Conditions: the selection and the one relation
 
