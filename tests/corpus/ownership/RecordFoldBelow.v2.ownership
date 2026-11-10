@@ -1,0 +1,29 @@
+module RecordFoldBelow
+  27:9 update c: accepted param
+  28:5 update acc: accepted param
+  28:29 List.push acc.hist: accepted param
+  32:17 List.foldl <record>.hist: accepted callback-param
+  32:17 update <record>: rejected disjoint: another operand of the same operation reaches it (approx)
+  32:17 update <record>.cur: rejected disjoint: another operand of the same operation reaches it (approx)
+  32:61 RecordFoldBelow.bumpKeep a.hist: accepted param
+  32:61 update a: accepted param
+  32:61 update a.cur: accepted param
+  37:9 update d: accepted param
+  38:10 List.push hist: accepted param
+  42:18 List.foldl <expression>.1: accepted callback-param
+  42:18 update <expression>.0: rejected disjoint: another operand of the same operation reaches it (approx)
+  42:49 RecordFoldBelow.step t.1: accepted param
+  42:49 update t.0: accepted param
+  48:11 update x: accepted param
+  52:17 update w.a: accepted callback-param
+  52:40 update v.a: accepted param
+  61:12 update d: accepted param
+  65:15 update w.a: accepted callback-param
+  65:44 update v.a: accepted param
+  70:9 update v.a: accepted param
+  75:17 update t.a: accepted callback-param
+  75:40 update v.a: accepted param
+  demands 6: accepted 6 (fresh 0, call 0, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 18: accepted 15, rejected 3
+total 6: accepted 6 (fresh 0, call 0, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 18: accepted 15, rejected 3

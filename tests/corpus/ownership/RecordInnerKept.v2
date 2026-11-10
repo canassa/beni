@@ -1,0 +1,4 @@
+Checker v2 refuses the update in `split` itself, `alias`: the answer `b` of the unknown function `f` can hold `o`, and `b`
+is read later (ownership-v2.md §2.11.5, the record pass). v1 accepts `split` on a condition for its callers and refuses
+the caller `use`, which passes a function that keeps its argument. Both refuse the program. v2 also refuses a caller
+whose function keeps nothing: an over-refusal, #2470.

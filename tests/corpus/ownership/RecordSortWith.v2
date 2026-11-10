@@ -1,0 +1,3 @@
+`byWith`: checker v2 refuses the write of the elements of `List.sortWith`'s answer, `disjoint`, approximate: it does
+not know that the answer holds each element once (ownership-v2.md §2.11.5, the record pass). v1 accepts. An
+over-refusal, #2470. `twice` and `writing` are refused by both; v2's line in `writing` is at the lambda (`unknown`).

@@ -1,0 +1,3 @@
+`decoded`: checker v2 refuses the update of the rows that a decoder answered, `escaped`, approximate: it does not
+know that a decoder builds a new object for each record (the entry and schema work, S7; ownership-v2.md §2.11.5).
+v1 accepts. An over-refusal, #2470. `patched` and `shared` have v1's verdicts.

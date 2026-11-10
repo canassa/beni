@@ -1,0 +1,2 @@
+# v2 refuses the fold whose callback reads the second field after it wrote the first: the two are one object (§2.8).
+30:12 record_may_be_shared update

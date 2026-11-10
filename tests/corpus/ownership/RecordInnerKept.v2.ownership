@@ -1,0 +1,7 @@
+module RecordInnerKept
+  23:10 update i: rejected alias: b holds it and is read at 24:5
+  28:9 update <record>.inner: accepted fresh
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 2: accepted 1, rejected 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 2: accepted 1, rejected 1
