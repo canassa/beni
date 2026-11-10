@@ -1,0 +1,19 @@
+-- A prerendered `view` may not read the browser's storage: `Storage.get`
+-- reads the host, so the build refuses it at the call (`prerender.md`
+-- §3.1; browser-capability-base.md §5).
+import Browser
+import Html exposing (Html)
+import Storage
+import Tea
+
+
+saved : ⊤ → String
+saved ⊤ = Maybe.withDefault (Storage.get Storage.Local "name") ""
+
+
+view : Int → Html Int
+view n = <main><output>{n}</output><output>{saved ⊤}</output></main>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]

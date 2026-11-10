@@ -1928,6 +1928,40 @@ module Phase
   value onRendered : Resume ⊤ → ⊤ → ⊤  -- impure
   value rendered : ⊤ → ⊤  -- suspends
   value rendering : (⊤ → a) → a  -- impure
+module Random
+  alias Generator a
+  alias Seed
+  value andThen : Generator a, (a → Generator b) → Generator b
+  value constant : a → Generator a
+  value float : Float, Float → Generator Float
+  value generate : Generator a, (a → msg) → Cmd msg  -- impure
+  value independentSeed : Generator Seed
+  value initialSeed : Int → Seed
+  value int : Int, Int → Generator Int
+  value lazy : (⊤ → Generator a) → Generator a
+  value list : Generator a, Int → Generator (List a)
+  value map : Generator a, (a → b) → Generator b
+  value map2 : Generator a, Generator b, (a, b → c) → Generator c
+  value map3 : Generator a, Generator b, Generator c, (a, b, c → d) → Generator d
+  value maxInt : Int
+  value minInt : Int
+  value pair : Generator a, Generator b → Generator (a × b)
+  value step : Generator a, Seed → a × Seed
+  value uniform : a, List a → Generator a
+  value value : Generator a → a  -- impure
+  value weighted : Float × a, List (Float × a) → Generator a
+module Storage
+  type Area
+    Local
+    Session
+  type Error
+    QuotaExceeded
+    Unavailable
+  value get : Area, String → Maybe String  -- impure
+  value keys : Area → List String  -- impure
+  value remove : Area, String → ⊤  -- impure
+  value save : Area, String, String, (Error → msg) → Cmd msg  -- impure
+  value set : Area, String, String → Result Error ⊤  -- impure
 module Sub
   type Sub a
     None
@@ -1949,4 +1983,33 @@ module Time
   value seconds : Int → Duration
   value sleep : Duration → ⊤  -- suspends
   value toMillis : Posix → Int
+module WebSocket
+  alias Close
+    Close
+  type CloseError
+    InvalidCode
+    ReasonTooLong
+  type ConnectError
+    BadUrl
+    BadProtocol
+    Blocked
+    Unreachable
+  type Event
+    Opened
+    Received
+    Closed
+    Failed
+  type Socket
+  type WriteError
+    NotOpen
+  value buffered : Socket → Int  -- impure
+  value close : Socket, Close → Result CloseError ⊤  -- impure
+  value connect : String, List String, (Socket → a) → Result ConnectError a  -- suspends
+  value disconnect : Socket, Close, (CloseError → msg) → Cmd msg  -- impure
+  value eq : Socket, Socket → Bool
+  value listen : String, List String, (Event → msg) → Sub msg  -- impure
+  value protocol : Socket → String  -- impure
+  value read : Socket → Result Close String  -- suspends
+  value send : Socket, String, (WriteError → msg) → Cmd msg  -- impure
+  value write : Socket, String → Result WriteError ⊤  -- impure
 ```

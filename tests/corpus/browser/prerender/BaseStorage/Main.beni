@@ -1,0 +1,74 @@
+-- The base's Storage on a prerendered `browser-inline` page
+-- (browser-capability-base.md §9, *Storage, WebSocket, Random*).
+--
+--   - load: `init`'s command reads the visit count and writes it back one
+--     higher; the build reads and writes nothing.
+--   - "again": the same, from a click, through `Storage.save`, the
+--     command form.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Storage
+import Sub
+import Tea
+
+
+type Msg
+    = Again
+    | Note String
+
+
+-- Read the count, and the count one higher to write.
+next : ⊤ → Int
+next ⊤ =
+    case Storage.get Storage.Local "visits" of
+        Just text →
+            Maybe.withDefault (String.toInt text) 0 + 1
+
+        Nothing →
+            1
+
+
+visit : ⊤ → String
+visit ⊤ =
+    n = next ⊤
+    case Storage.set Storage.Local "visits" (String.fromInt n) of
+        Ok ⊤ →
+            "visit ${String.fromInt n}"
+
+        Err _ →
+            "not saved"
+
+
+update : Msg, String → String × Cmd Msg
+update msg log =
+    case msg of
+        Again →
+            n = String.fromInt (next ⊤)
+            ( log ++ " / saving " ++ n
+            , Storage.save Storage.Local "visits" n λ_ → Note "not saved"
+            )
+
+        Note line →
+            ( if log == "" then line else log ++ " / " ++ line, Cmd.none )
+
+
+view : String → Html Msg
+view log =
+    <main>
+        <button id="again" onClick={Again}>again</button>
+        <output id="log">{log}</output>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = λ⊤ → ( "", Cmd.perform λsend → send (Note (visit ⊤)) )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

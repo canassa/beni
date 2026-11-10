@@ -1,0 +1,66 @@
+-- The base's WebSocket on a prerendered `browser-inline` page
+-- (browser-capability-base.md §9, *Storage, WebSocket, Random*).
+--
+-- `init`'s command connects after the takeover, writes "hello", waits for
+-- the server's message and closes: the build opens no socket. The server
+-- is the driver's (`socket` steps).
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import WebSocket
+
+
+type Msg
+    = Note String
+
+
+talk : WebSocket.Socket → String
+talk socket =
+    case WebSocket.write socket "hello" of
+        Err _ →
+            "write failed"
+
+        Ok ⊤ →
+            case WebSocket.read socket of
+                Ok text →
+                    _ = WebSocket.close socket { code = 1000, reason = "done" }
+                    "heard ${text}"
+
+                Err _ →
+                    "closed"
+
+
+chat : ⊤ → String
+chat ⊤ =
+    case WebSocket.connect "/chat" [] talk of
+        Ok line →
+            line
+
+        Err _ →
+            "no connection"
+
+
+update : Msg, String → String × Cmd Msg
+update msg log =
+    case msg of
+        Note line →
+            ( if log == "" then line else log ++ " / " ++ line, Cmd.none )
+
+
+view : String → Html Msg
+view log = <main><output id="log">{log}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = λ⊤ → ( "", Cmd.perform λsend → send (Note (chat ⊤)) )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

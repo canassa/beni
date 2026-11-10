@@ -313,7 +313,7 @@ platforms/browser/Rt.beni                        Rt.delegated                   
 platforms/browser/Rt.beni                        Rt.listen                        1243d5a6e6b5b6928bfbebcc25820de2d99427d260a5ac9563114de5d5d2ca47
 platforms/browser/Rt.beni                        Rt.watchEdits                    20e5623383338d389c4ae2c01bd7d04cf7623ef5d8d2ed568c8e13455c07916d
 platforms/browser/Rt.beni                        Rt.crashScreen                   d52beb68c9c80b7f461581a9321cf9eb120b7d364baffe4f97c39e787016f29a
-platforms/browser/WebSocket.beni                 WebSocket.attach                 a9b8c1f44e84e971bc4c84e4bc969a6c2645fea2e280d524859382d7553bbfe6
+platforms/browser-base/WebSocket.beni            WebSocket.attach                 a9b8c1f44e84e971bc4c84e4bc969a6c2645fea2e280d524859382d7553bbfe6
 platforms/browser-inline/Inline.beni             Inline.on                        4db2e435823c8c64884b9194e762dda3287615a57b165a58200a8d77177d3085
 platforms/browser-inline/Inline.beni             Inline.onArm                     877b5d232990df7d722a976671c148d74fa0899becb4105b249dd4e486098986
 platforms/browser-inline/Inline.beni             Inline.listen                    02eb3db387e7d4343ff4dd3e68e9d459deb6bd86c0ee6c7efacfb0eb8adb216a

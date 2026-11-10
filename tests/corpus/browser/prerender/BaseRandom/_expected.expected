@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="roll">"roll"</button>
+    <output id="log">"a die"</output>
+  </main>
+</body>
+-- click #roll
+<body>
+  <main>
+    <button id="roll">"roll"</button>
+    <output id="log">"a die / a die"</output>
+  </main>
+</body>
