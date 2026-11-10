@@ -1,0 +1,66 @@
+-- load
+<body>
+  <div>
+    <button id="inc">"0"</button>
+    <button id="tap">"0"</button>
+    <button id="rename">"a"</button>
+  </div>
+</body>
+-- title
+(title: "a: 0")
+(the DOM did not change)
+-- click #tap
+<body>
+  <div>
+    <button id="inc">"0"</button>
+    <button id="tap">"1"</button>
+    <button id="rename">"a"</button>
+  </div>
+</body>
+-- title
+(title: "a: 0")
+(the DOM did not change)
+-- click #inc
+<body>
+  <div>
+    <button id="inc">"1"</button>
+    <button id="tap">"1"</button>
+    <button id="rename">"a"</button>
+  </div>
+</body>
+-- title
+(title: "a: 1")
+(the DOM did not change)
+-- click #tap
+<body>
+  <div>
+    <button id="inc">"1"</button>
+    <button id="tap">"2"</button>
+    <button id="rename">"a"</button>
+  </div>
+</body>
+-- title
+(title: "a: 1")
+(the DOM did not change)
+-- click #rename
+<body>
+  <div>
+    <button id="inc">"1"</button>
+    <button id="tap">"2"</button>
+    <button id="rename">"a!"</button>
+  </div>
+</body>
+-- title
+(title: "a!: 1")
+(the DOM did not change)
+-- click #inc
+<body>
+  <div>
+    <button id="inc">"2"</button>
+    <button id="tap">"2"</button>
+    <button id="rename">"a!"</button>
+  </div>
+</body>
+-- title
+(title: "a!: 2")
+(the DOM did not change)

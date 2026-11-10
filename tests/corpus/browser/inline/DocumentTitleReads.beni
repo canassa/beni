@@ -1,0 +1,61 @@
+-- A document's title is written again only by a handler whose key's writes
+-- it reads (browser-inline.md §10.2, amended 2026-11-10; #1168), and it
+-- still changes each time it must. The title reads `count` in place and
+-- `name` through a function. `Inc` and `Rename`
+-- write what it reads, so the title follows them. `Tap` writes `taps`,
+-- which the title does not read: the body changes and the title stays.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    count : Int
+    taps : Int
+    name : String
+
+
+type Msg
+    = Inc
+    | Tap
+    | Rename
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Inc →
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+        Tap →
+            ( { model | taps = model.taps + 1 }, Cmd.none )
+
+        Rename →
+            ( { model | name = "${model.name}!" }, Cmd.none )
+
+
+heading : Model → String
+heading model = if model.name == "" then "nobody" else model.name
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = "${heading model}: ${String.fromInt model.count}"
+    , body =
+        <div>
+            <button id="inc" onClick={Inc}>{String.fromInt model.count}</button>
+            <button id="tap" onClick={Tap}>{String.fromInt model.taps}</button>
+            <button id="rename" onClick={Rename}>{model.name}</button>
+        </div>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → ( { count = 0, taps = 0, name = "a" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

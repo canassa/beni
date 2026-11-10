@@ -2686,6 +2686,11 @@ itself (`Program.Key.fields`). The lowering sends each value to that handler as
 answers for such a declaration. A lowering that targets 1.24 sees what it saw, and hands such a
 handler the bare value, which is the defect 1.25 corrects; `inline` targets 1.25.
 
+**Version 1.26** (*added 2026-11-10*, additive, gated on nothing; `browser-inline.md` §10.2, #1168):
+`programRetitles(key)` reports whether the key's writes conflict with what a document's `title`
+reads, conservatively true for unknown reads and for a program that is not a document. A lowering
+that targets 1.25 sees what it saw; `inline` targets 1.26.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

@@ -75,7 +75,10 @@ const std = @import("std");
 /// Version 1.25 adds `Program.Subscription.whole`, a declaration whose key's
 /// handler takes the message itself (`browser-inline.md` §3, amended
 /// 2026-11-09, #2258).
-pub const version: Version = .{ .major = 1, .minor = 25 };
+/// Version 1.26 adds `Context.programRetitles`, whether a key's writes
+/// conflict with what a document's title reads (`browser-inline.md` §10.2,
+/// amended 2026-11-10, #1168).
+pub const version: Version = .{ .major = 1, .minor = 26 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1328,6 +1331,13 @@ pub const Context = struct {
         return cx.vtable.program_settles(cx.impl, key);
     }
 
+    /// 1.26: whether key `key`'s writes conflict with what the document's
+    /// `title` reads, so that its handler must write the title again. True
+    /// when the reads are not known.
+    pub fn programRetitles(cx: *Context, key: u32) bool {
+        return cx.vtable.program_retitles(cx.impl, key);
+    }
+
     /// 1.6, inside `Lowering.program` only: report `code` at a part of the
     /// program's call; the lowering then returns the error.
     pub fn programReport(cx: *Context, part: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
@@ -2045,6 +2055,7 @@ pub const VTable = struct {
     program_start: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!Expr,
     program_field: *const fn (impl: *anyopaque, block: Block, field: Context.ProgramField, model: Expr) Error!Expr,
     program_settles: *const fn (impl: *anyopaque, key: u32) bool,
+    program_retitles: *const fn (impl: *anyopaque, key: u32) bool,
     program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
     program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
     program_report_at: *const fn (impl: *anyopaque, site: u32, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },

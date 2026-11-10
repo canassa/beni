@@ -2057,6 +2057,17 @@ same dispatch, so the title and the body never disagree after a message. *A late
 rule:* a handler whose writes the title does not read calls it too; the write-set pass does not yet
 give the title's read set (#1168).
 
+*Amended 2026-11-10 (#1168): a handler calls the title's function only when its key's writes
+conflict with what the title reads.* The write-set pass gives the title's read set, as it gives the
+subscriptions' (§3): the model paths that the `title` field of the view's result reads, with the
+reads of each function that the field's value comes through. A key's handler calls
+the function after its write pass when one of the key's writes conflicts with one of those paths
+(`cx.programRetitles`, `boundary.md` §9.4.6, version 1.26), and has no call otherwise. The title is
+then evaluated as a hole's value is (§8.3): when a write reaches it, and not after every message.
+The mount's call after the first pass stays. The read set is ρ, so that every handler calls the
+function, when the pass cannot give it: a view whose walk was cut short, a result that is not the
+record the view wrote, and a program whose keys the pass did not recognise.
+
 ### 10.3 `Tea.application`
 
 `Tea.application` is `document` with two more fields and an `init` of two parameters.

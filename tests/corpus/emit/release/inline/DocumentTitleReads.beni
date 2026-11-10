@@ -1,0 +1,54 @@
+-- A document's title is written again only by a handler whose key's writes
+-- it reads (browser-inline.md §10.2, amended 2026-11-10; #1168). The title
+-- reads `count`, through a function. `Inc` writes `count`, so its
+-- handler calls the title's function after its write pass. `Tap` writes
+-- `taps`, which the title does not read, so its handler has no call.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    count : Int
+    taps : Int
+
+
+type Msg
+    = Inc
+    | Tap
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Inc →
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+        Tap →
+            ( { model | taps = model.taps + 1 }, Cmd.none )
+
+
+heading : Model → String
+heading model = "Count ${String.fromInt model.count}"
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = heading model
+    , body =
+        <div>
+            <button id="inc" onClick={Inc}>{String.fromInt model.count}</button>
+            <button id="tap" onClick={Tap}>{String.fromInt model.taps}</button>
+        </div>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → ( { count = 0, taps = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
