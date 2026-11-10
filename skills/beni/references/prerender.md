@@ -137,7 +137,7 @@ main =
 
 `init`, `view` and routes must be pure: the build and browser compute the same first render. Host, clock and random reads are `prerender_impure`, at the call.
 `Debug.log` is allowed, also in another module. A render that throws fails the build (`prerender_failed`), with the route.
-- An inline or local named init may return a pure model with `Cmd.none`, `Cmd.perform`, or a literal `Cmd.batch`. Only the client makes the command metadata and runs the body.
+- An inline or local named init may return a pure model with `Cmd.none`, `Cmd.perform`, `Cmd.afterRender`, or a literal `Cmd.batch`. Only the client makes the command metadata and runs the body: `Cmd.afterRender` can focus or measure (`Dom.focus`, `Dom.box`) the page it took over.
   Eager arguments and captures must be pure. Opaque helpers and metadata selecting the model remain compiler limits; host reads remain refused.
 - The build reads all the code that they can run, in each module of the program and its
   platforms. `init` can name a function of another module: `init = Counter.init`.
