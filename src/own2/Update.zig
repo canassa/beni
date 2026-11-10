@@ -144,7 +144,7 @@ pub fn of(k: anytype, i: u32, fields: anytype, base: u32) Error!u32 {
     if (fr.records and r.local != none and r.path != .none) try k.w.events.append(k.gpa, .{ .local = r.local, .path = r.path, .point = i, .value = bv, .fields = written });
     k.pop(base);
     // The list pass (R-8.6): a new record that holds the base's fields, and no demand.
-    if (!fr.records) return k.recordOf(i, ranks.items, ks.items, 0);
+    if (!fr.records) return k.recordOf(i, ranks.items, ks.items, 0, i);
     try k.w.demands.append(k.gpa, .{
         .point = i,
         .kind = .update,
@@ -157,7 +157,8 @@ pub fn of(k: anytype, i: u32, fields: anytype, base: u32) Error!u32 {
         .record = true,
         .fields = written,
     });
-    return k.recordOf(i, ranks.items, ks.items, if (@import("Mutate.zig").on(.update_fresh_site)) 0 else bv + 1);
+    const fresh = @import("Mutate.zig").on(.update_fresh_site);
+    return k.recordOf(i, ranks.items, ks.items, if (fresh) 0 else bv + 1, if (fresh) i else none);
 }
 
 /// A record pattern on the value of instruction `i` (R-4.8.2, R-4.8.12): where the frame names a

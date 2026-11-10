@@ -243,6 +243,8 @@ const layers = [_]Entry{
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A record update over its base and the frame's field events, split from `Walk` (§2.6, §2.7).
     .{ .file = "Update.zig", .layer = 8, .max_lines = 260 },
+    // A closure's field captures, read off the text (§2.11.4, R-5.4.6).
+    .{ .file = "FieldCapture.zig", .layer = 8, .max_lines = 70 },
     // A record's fields read, in a contract's reads (§2.8, R-4.8.5).
     .{ .file = "FieldReads.zig", .layer = 8, .max_lines = 70 },
     // A demand says whether it is a cell operation (#1727).
@@ -432,6 +434,8 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "Update.zig", .needle = "ranks.items, st.kidWord()" },
     // An update's written field ranks, no slot words.
     .{ .file = "FieldMark.zig", .needle = "fields, st.payload" },
+    // The field ranks that a frame reads of a capture, no slot words.
+    .{ .file = "FieldCapture.zig", .needle = "ranks.items, rank" },
     // A call's argument instructions, no slot words.
     .{ .file = "PendingArg.zig", .needle = "cl.arg_insts, inst" },
     .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
@@ -906,7 +910,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 174), layers.len);
+    try testing.expectEqual(@as(usize, 175), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -127,6 +127,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 for (dr.lines) |l| {
                     const op = if (l.demand.callee_inst != Ids.none_int) try Message.opName(frame, arena, l.demand.callee_inst) else "";
                     var ln = try Message.line(frame, arena, l, op);
+                    ln.hoisted = l.hoisted;
                     const key = try std.fmt.allocPrint(arena, "{d}:{d} {s} {s}", .{ ln.position.line, ln.position.col, ln.op, ln.base });
                     if (first) {
                         if (ln.refused) (try said.getOrPutValue(arena, key, 0)).value_ptr.* += 1;

@@ -48,6 +48,8 @@ pub const Name = enum {
     pending_arg_whole,
     /// §2.8, *Dead, by field* (R-4.8.5): a callee's read of one field of a parameter's record is said as a read of the record whole.
     field_reads_whole,
+    /// §2.11.4, *A field capture* (R-5.4.6): a closure that reads only fields of a captured record holds the record whole.
+    field_capture_whole,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

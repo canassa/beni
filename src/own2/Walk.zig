@@ -29,6 +29,7 @@ const WalkContext = @import("WalkContext.zig");
 const Called = @import("Called.zig");
 const Construction = @import("Construction.zig");
 const Update = @import("Update.zig");
+const FieldCapture = @import("FieldCapture.zig");
 const FnSite = @import("FnSite.zig");
 
 pub const Error = Ids.ChargeError;
@@ -254,10 +255,10 @@ const Walker = struct {
     pub fn f(k: *Walker) *Value.Frame {
         return &k.w.f;
     }
-    fn tag(k: *const Walker, i: u32) Inst.Tag {
+    pub fn tag(k: *const Walker, i: u32) Inst.Tag {
         return k.bir.instTag(@fromBackingInt(i));
     }
-    fn data(k: *const Walker, i: u32) Inst.Data {
+    pub fn data(k: *const Walker, i: u32) Inst.Data {
         return k.bir.instData(@fromBackingInt(i));
     }
     pub fn rel(k: *const Walker, i: u32) u32 {
@@ -275,7 +276,7 @@ const Walker = struct {
     fn args(k: *const Walker, c: u32) []const Inst.Index {
         return k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.data(c).rhs)), Inst.Index);
     }
-    fn charge(k: *Walker, cat: Ids.Category, n: u32) Error!void {
+    pub fn charge(k: *Walker, cat: Ids.Category, n: u32) Error!void {
         try k.w.f.account.reserve(cat, n);
     }
 
@@ -365,7 +366,7 @@ const Walker = struct {
         k.w.bindings[local] = .{ .value = v, .point = point, .token = tok };
     }
 
-    fn placeOfLocal(k: *Walker, local: u32) Error!PlaceId {
+    pub fn placeOfLocal(k: *Walker, local: u32) Error!PlaceId {
         return k.ctx.placeOfLocal(k.ctx.ctx, local);
     }
 
@@ -754,12 +755,12 @@ const Walker = struct {
             try ks.append(k.gpa, try k.valueOf(fl.value.int()));
             try k.consume(fl.value.int(), i);
         }
-        return k.recordOf(i, ranks.items, ks.items, 0);
+        return k.recordOf(i, ranks.items, ks.items, 0, i);
     }
 
     /// The record `ranks` name, of values `ks`: fields in rank order, as the place's steps.
-    /// `over`: 0 for a new object, or one more than the value whose object it is (an update's base).
-    pub fn recordOf(k: *Walker, i: u32, ranks: []const u32, ks: []const u32, over: u32) Error!u32 {
+    /// `over`: 0, or one more than the value whose object it is (an update's base). `site`: its own object, or none.
+    pub fn recordOf(k: *Walker, i: u32, ranks: []const u32, ks: []const u32, over: u32, site: u32) Error!u32 {
         const fr = k.f();
         const n = ranks.len;
         const order = try k.gpa.alloc(u32, n);
@@ -778,7 +779,7 @@ const Walker = struct {
             try sr.append(k.gpa, ranks[o]);
             try sk.append(k.gpa, ks[o]);
         }
-        return k.built(i, .record, over, if (over == 0) i else none, sk.items, try fr.mkWords(sr.items));
+        return k.built(i, .record, over, site, sk.items, try fr.mkWords(sr.items));
     }
 
     /// A closure value of `code` (or a fixed contract) holding the values
@@ -788,6 +789,8 @@ const Walker = struct {
         defer ks.deinit(k.gpa);
         for (captures) |l| {
             const b = if (l < k.w.bindings.len) k.w.bindings[l] else Binding{};
+            // The record pass: a capture read only by its fields is those fields' values (`FieldCapture`, R-5.4.6).
+            if (b.value != none and code & fixed_bit == 0 and k.f().records and try FieldCapture.of(k, i, l, b.value, &ks)) continue;
             try ks.append(k.gpa, if (b.value == none) try k.f().top() else b.value);
             // A capture is read at the closure's creation.
             if (b.value != none) try k.captureUse(l, i);
@@ -847,7 +850,7 @@ const Walker = struct {
                 var ranks: std.ArrayList(u32) = .empty;
                 defer ranks.deinit(k.gpa);
                 for (0..vals.items.len) |n| if (k.ctx.ctorField(k.ctx.ctx, k.data(i).lhs, @intCast(n))) |r| try ranks.append(k.gpa, r);
-                if (ranks.items.len != 0) return k.recordOf(i, ranks.items, vals.items, 0);
+                if (ranks.items.len != 0) return k.recordOf(i, ranks.items, vals.items, 0, i);
                 return k.built(i, .ctor, c[0], none, vals.items, &.{});
             },
             .code => |c| {

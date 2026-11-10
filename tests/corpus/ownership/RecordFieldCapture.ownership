@@ -1,0 +1,23 @@
+module RecordFieldCapture
+  18:9 update p: accepted param [hoisted 1]
+  26:9 update p: accepted param
+  33:9 update p: accepted param
+  40:9 update p: rejected captured: g, a closure holding it, is used at 41:12 [copy]
+  47:9 update p: accepted param
+  54:9 update p: accepted param
+  hoist p.x: read 19:15; after operands 18:9
+  capture p.y: read 25:15; before 25:9
+  capture p.x: read 32:15; before 32:9
+  capture p.y: read 46:21; before 46:15
+  capture p.y: read 46:21; before 46:9
+  capture p.tags: read 53:27; before 53:9
+  summary after: π1 W{x}, π1.tags R, π1.x R
+  summary before: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary beforeWritten: π1 W{x}, π1.tags R, π1.x R
+  summary wholeCapture: π1 RW{x}, π1.tags R, π1.x R
+  summary nested: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary listField: π1 W{tags}, π1.tags R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 6: accepted 5, pending 0, rejected 1 (copy 1, restructure 0); hoisted 1, eager reads 5
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 6: accepted 5, pending 0, rejected 1 (copy 1, restructure 0); hoisted 1, eager reads 5

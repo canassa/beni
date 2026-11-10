@@ -266,6 +266,8 @@ pub const Line = struct {
     cause: Cause = .unknown,
     approx: bool = false,
     detail: []const u8 = "",
+    /// An accepted `update`: the frame's later reads of a written field, each read before the write (§2.8).
+    hoisted: u32 = 0,
 };
 
 /// R-7.15's spelling of an acceptance's ground.
