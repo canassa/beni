@@ -4825,6 +4825,13 @@ const Emitter = struct {
                 } else false;
             }
             out.settles = settles;
+            const retitles = try a.alloc(bool, keys.len);
+            for (key_writes, retitles) |kw, *retitles_key| {
+                retitles_key.* = for (prog.title_reads) |r| {
+                    if (w.conflicts(r, kw)) break true;
+                } else false;
+            }
+            out.retitles = retitles;
             // Version 1.14: the subscription set and the commands.
             if (effects != null) {
                 const where = struct {

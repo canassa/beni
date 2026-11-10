@@ -640,6 +640,11 @@ pub const Program = struct {
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
     subscription_reads: []const u32 = &.{rho_path},
+    /// A document's or an application's title: the model paths the `title`
+    /// field of the view's result reads (`browser-inline.md` §10.2, amended
+    /// 2026-11-10). ρ for every other kind, and when the view's walk was
+    /// cut short: the top, never a partial read set.
+    title_reads: []const u32 = &.{rho_path},
     /// `Input.effects` only: the subscription set and `init`'s command.
     subscriptions: Subscriptions = .{},
     /// The record's `subscriptions` field, the instruction its value is in
@@ -6249,6 +6254,11 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
             defer reads.deinit(a.gpa);
             try a.anchors(result, &reads);
             prog.view_reads = try a.arena().dupe(u32, reads.items);
+            if (view_complete and (kind == .document or kind == .application)) {
+                reads.clearRetainingCapacity();
+                try a.anchors(a.titleOf(result), &reads);
+                prog.title_reads = try a.arena().dupe(u32, reads.items);
+            }
         }
     };
     a.ctx = .{ .mode = .closed };
@@ -6299,6 +6309,19 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     for (maps, a.map_ctor_acc.items) |*mc, x| mc.* = .{ .path = try a.arena().dupe(u64, if (x[0] == 0 or x[0] >= a.call_paths.items.len) &.{} else a.call_paths.items[x[0]]), .ctor = x[1] };
     prog.map_ctors = maps;
     return prog;
+}
+
+/// The `title` of a document view's result: the field's term when the
+/// result is the record the view wrote, and otherwise the whole result,
+/// which reads no less.
+fn titleOf(a: *const Writes, result: u32) u32 {
+    if (a.termTag(result) != .rec) return result;
+    var i: u32 = 3;
+    while (i < a.termLen(result)) : (i += 2) {
+        const name = a.in.interner.slice(@fromBackingInt(a.termWord(result, i)));
+        if (std.mem.eql(u8, name, "title")) return a.termWord(result, i + 1);
+    }
+    return result;
 }
 
 fn finishViewParams(a: *Writes) Error![]const ViewParam {
