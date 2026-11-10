@@ -4,7 +4,7 @@
 -- The callback of `pushed` updates the element that it is handed and pushes
 -- it onto the accumulator. The accumulator holds earlier elements of the
 -- same list, and nothing says that two elements of a list are two objects.
--- So the update cannot edit the element in place: it copies. The push
+-- So the update of the element is refused in the record pass. The push
 -- writes the accumulator's own array, which nothing else holds: accepted.
 -- In `twice` the list's own pair fails: `both` pushes onto `xs` and returns
 -- `ys`, and `twice` hands it one list as both. That push stays refused.

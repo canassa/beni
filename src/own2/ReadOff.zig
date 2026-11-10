@@ -870,7 +870,7 @@ fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
     return s.host.reaches(&e.ev, e.escapes.items, 0, li, Distinct.overlap);
 }
 
-/// A demand's written parameter slots (whatever its verdict). A record's write that a label's hold refuses is none: the update copies (§2.11.5).
+/// A demand's written parameter slots (whatever its verdict). A record's write that a label's hold refuses is none: it is refused where it is made (§2.11.5).
 fn demandFacts(e: *Evaluation, di: usize) Error!void {
     const dm = e.demands.items[di];
     if (@import("Mutate.zig").on(.contract_no_writes) or (dm.record and dm.kept)) return;

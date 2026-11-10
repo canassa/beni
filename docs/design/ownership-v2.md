@@ -2149,8 +2149,8 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    `b` is refused. The push onto `acc` was refused with it in that pass, and is accepted there now. Whether
    the slot is a record's is read from the known code's parameter place, or from the argument's. The list
    pass has no such occurrence, and reads `C.req` once. *Refused that a perfect checker accepts:* a record's
-   write still fails for a pair that only a list's write asks (`twice b xs = both b xs xs`), which costs a
-   copy and no error. Fixture `ownership/RecordFoldPush`; mutant `list_req_whole`.
+   write still fails for a pair that only a list's write asks (`twice b xs = both b xs xs`): one more
+   refused record line. Fixture `ownership/RecordFoldPush`; mutant `list_req_whole`.
 5. **Escapes.** The objects at `C.escapes`' projections are escaped at the call (§2.4), deep.
 6. **Labels.** Each of `C.labels` is instantiated (§2.11.3).
 
@@ -3461,7 +3461,8 @@ survives: no probe reaches a stale label there. The 240 `review-2173/g9` program
   `res ε π1ε`, and a chain of updates writes one object. Until this amendment the update built a record with a
   fresh site and wrote nothing: a copy. *The verdict is reported and not yet enforced:* the emitter still copies
   under `--ownership=v2`, so a refused update changes no emitted code, and `Enforce` makes no diagnostic of a
-  record line until the lowering reads v2's record channel (§8, S5).
+  record line until the lowering reads v2's record channel (§8, S5). When it does, a refused update is a
+  compile error whose fix is `Record.copy`, as in v1 (`ownership-checker.md` §31.1): never a silent copy.
 
   **Two passes** *(2026-11-10, #1018, S5a; R-8.6; as built. This is option A of the owner's question
   `ownership-v2-fable-q2`, which is open: the text changes if the owner chooses the other design, below).* No list
@@ -3479,7 +3480,10 @@ survives: no probe reaches a stale label there. The 240 `review-2173/g9` program
      (below). Only its **record lines** are taken: the demands whose written object is a record's own
      (§2.8, *Dead, by field*). Its list lines are dropped: they are judged as if every update were in place,
      which is more sharing than any run has. A declaration that passes its limit in this pass has no record
-     line (`record-pass unchecked`), so its updates copy, and it is no error.
+     line (`record-pass unchecked`). That is no error while record verdicts are not enforced. When they are,
+     it is a limit as a list's is, since no update copies silently (`ownership-checker.md` §31.1), unless
+     that step takes the limit away. Of the 1 320 single-file fixtures of `ownership/` and `run/`, one
+     declaration reaches it (`ownership/WideFieldConditions`, `run`).
 
   *Why the list pass is sound when an accepted update edits in place.* An accepted update's base is dead at
   each written field (a read is hoisted before the write), and no holder uses the old record whole. So every
@@ -3522,8 +3526,9 @@ survives: no probe reaches a stale label there. The 240 `review-2173/g9` program
   *A cell's contents.* `Ref.update r λw → { w | n = 1 }`: the cell holds its contents while the callback
   runs (§2.13.7). A list that the contents hold is edited in place by the callback, and that edit is said deep
   at the cell's `◆`. The contents' own record is not: the callback's write of it is refused where it is made
-  (`call`: the cell still holds it), and is not read off as a write. The update copies, and the cell stores
-  the copy, which is the cell operation that the list pass has. v1 refuses the same update (`supply`).
+  (`call`: the cell still holds it), as v1 refuses that update (`supply`), and the program writes
+  `{ Record.copy w | … }`. The refused write is not read off as a write of the frame, so no caller is charged
+  with it. What stays is the cell operation that stores the callback's answer, which the list pass has too.
   Fixture `ownership/RecordCellEdit`; mutant `cell_record_edit`.
 - **`try`** (`e?`): the value is `e`'s success payload; the failure payload, built into the enclosing
   definition's failure constructor, is a returned alternative of that definition.

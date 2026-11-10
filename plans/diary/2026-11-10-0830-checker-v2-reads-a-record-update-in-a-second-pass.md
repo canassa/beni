@@ -16,7 +16,7 @@
   import whose passes differ skips the record pass.
 - The record pass has: the `update` demand, liveness by field with field events (`Update.zig`), a record
   pattern that reads the fields it binds, record demands at calls, callbacks, once closures, needs and
-  closures that leave, the cell rule (a cell callback's update of the contents' own record copies), and
+  closures that leave, the cell rule (a cell callback's update of the contents' own record is refused where it is made), and
   `Record.copy` with the word `copyof` (the owner's answer to `ownership-v2-fable-q1`).
 - Found on the way and fixed apart: #2418 (a chain of calls that thread one record cost 2ⁿ checks, PR #2419).
 
@@ -34,6 +34,11 @@
   that caused it. So the pass split needs the rule "a refusal that only the record pass has is a record
   line". Without it the report loses, for example, the entry's hold on the model.
 - A cell callback's edit is "deep at `◆`" for a list. For the contents' own record that makes every caller's
-  demand a list demand. v1's answer is simpler: the update in the callback copies.
+  demand a list demand. v1's answer is simpler: it refuses the update in the callback.
 - The second pass costs about as many account records as the first. The skip rule keeps core's modules at one
   pass.
+- A refused record update is a compile error with the fix `Record.copy` (`ownership-checker.md` §31.1, the
+  owner: "never a silent copy"). My first text for this slice said that a refused update "copies". That is
+  true only of today's emitter under `--ownership=v2`, which copies every update. I corrected the text before
+  the pull request was ready. A record pass that passes its limit is therefore a limit to solve before v2
+  enforces a record verdict: one declaration of the single-file corpus reaches it.

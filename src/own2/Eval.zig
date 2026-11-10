@@ -466,7 +466,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
             // A cell callback's write of the contents is deep at the cell's `◆`: an edit of what the cell holds, never a
             // cell operation (`cellWrite`), for every caller (§2.13.7). Of the contents' own record it is refused: the cell
-            // holds it while the callback runs, so the update copies and the cell stores the copy, a cell operation (§2.11.5).
+            // holds it while the callback runs. No caller is charged with that write: the cell operation that stores the answer stays (§2.11.5).
             for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) for ((try entriesOf(e, su.res_root)).items.items) |rs| for (rs.arrivals) |a| {
                 if (a.kind == .param and Cells.throughContents(f.slots, a.slot)) (if (d.record and !@import("Mutate.zig").on(.cell_record_edit)) &d.kept else &d.deep).* = true;
             };

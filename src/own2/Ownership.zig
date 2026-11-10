@@ -107,7 +107,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (limit)", .{ name, span[0], span[1] }));
                 }
                 if (dr.failure) |f| {
-                    // The record pass past its limit: its updates copy (no line accepts one), and nothing is an error.
+                    // The record pass past its limit: no line accepts an update of it. No error while record verdicts are not enforced (§2.11.5).
                     if (records) {
                         rlimits += 1;
                         if (in.format_summaries) try others.append(arena, try std.fmt.allocPrint(arena, "record-pass unchecked {s}", .{name}));

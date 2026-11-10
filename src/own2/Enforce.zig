@@ -485,7 +485,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
 fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module, dest: *std.ArrayList(CheckDiagnostics.Item)) Allocator.Error!void {
     for (reports) |r| {
         for (r.lines) |l| {
-            // A record's verdict is reported and not yet enforced: until the lowering reads it, an update copies (§8, S5).
+            // A record's verdict is reported and not yet enforced: until the lowering reads it, the emitter copies every update (§8, S5).
             if (!l.refused or std.mem.eql(u8, l.op, "update")) continue;
             const code: @import("diagnostic").Code = switch (l.cause) {
                 .top_level => .top_level_list_changed,

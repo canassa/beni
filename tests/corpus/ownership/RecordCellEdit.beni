@@ -1,9 +1,9 @@
 -- ownership: a record that a cell holds, updated by the cell's callback
 -- (`ownership-v2.md` §2.11.5, §2.13.7). `Ref.update` hands its callback the
 -- contents, and the cell holds them while the callback runs. So the update
--- of the contents' own record is refused: it copies, and the cell stores
--- the copy, which is a cell operation. `bump` therefore edits nothing in
--- place, and the closure of `handler` may run more than once. `grow` edits
+-- of the contents' own record is refused where it is made, and the frame
+-- has no write of it: what stays is the cell operation that stores the
+-- answer. So the closure of `handler` may run more than once. `grow` edits
 -- a list that the contents hold: that edit is judged as before.
 import Ref exposing (Ref)
 

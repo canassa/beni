@@ -1,10 +1,10 @@
 //! L10: what a call's writes rely on of its callee's `req`
 //! (`docs/design/ownership-v2.md` §2.11.2 item 4, *A list's write beside a
 //! record's*). A callee's `req` is one selection for all of its writes. In
-//! the record pass (§2.11.5) a record's own object is in it, and a record's
-//! write that cannot hold is copied. So a list's write does not fail there
-//! for a pair that only a record's write asks: the report would say that
-//! failure as a record's refusal. The list pass reads `req` once.
+//! the record pass (§2.11.5) a record's own object is in it. A list's write
+//! does not fail there for a pair that only a record's write asks: the
+//! report would say that failure as a second refusal, at the list, beside
+//! the record's own. The list pass reads `req` once.
 //!
 //! Obligations kept here: O14's call half for a list beside a record: each
 //! written list is still asked apart from every other occurrence.
