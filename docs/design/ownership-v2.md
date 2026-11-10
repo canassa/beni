@@ -6604,12 +6604,12 @@ are identical and nothing is written (R-7.11).
 
    | N = M | `use` fresh was | `use` fresh | `demo` fresh was | `demo` fresh | `use` supplied was | `use` supplied | `demo` supplied was | `demo` supplied |
    |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-   | 16 | 889 | 1 189 | 2 566 | 415 | 2 172 | 2 714 | 5 127 | 5 127 |
-   | 32 | 1 721 | 2 310 | 8 808 | 415 | 6 284 | 7 340 | 19 049 | 19 049 |
-   | 64 | 3 397 | 4 563 | 33 578 (growth 5 915) | 415 | 20 684 | 22 766 | 74 539 (growth 46 876) | 74 539 (growth 46 876) |
-   | 128 | 6 935 | 9 254 | limit | 415 | 74 124 | 78 256 | limit | limit |
-   | 256 | 14 037 | 18 661 | limit | 415 | 279 436 (growth 3 721) | 287 666 (growth 11 951) | limit | limit |
-   | 512 | 28 279 | 37 512 | limit | 415 | limit | limit | 315 (`use` unknown) | 315 (`use` unknown) |
+   | 16 | 889 | 1 207 | 2 566 | 415 | 2 172 | 2 780 | 5 127 | 5 127 |
+   | 32 | 1 721 | 2 344 | 8 808 | 415 | 6 284 | 7 470 | 19 049 | 19 049 |
+   | 64 | 3 397 | 4 629 | 33 578 (growth 5 915) | 415 | 20 684 | 23 024 | 74 539 (growth 46 876) | 74 539 (growth 46 876) |
+   | 128 | 6 935 | 9 384 | limit | 415 | 74 124 | 78 770 | limit | limit |
+   | 256 | 14 037 | 18 919 | limit | 415 | 279 436 (growth 3 721) | 288 692 (growth 12 977) | limit | limit |
+   | 512 | 28 279 | 38 026 | limit | 415 | limit | limit | 315 (`use` unknown) | 315 (`use` unknown) |
 
    The fresh push was refused at every size and is accepted at every size. `use` fresh is still linear in N + M:
    it now walks its answer's N labels where it read one set. The supplied twin is the product as before, read

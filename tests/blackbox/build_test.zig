@@ -14892,8 +14892,8 @@ test "the checker v2 walks a fresh M-field actual of an N-field wrapper in no gr
     // the lambda is solved before `use` (§2.12), and its answer, fresh at
     // every slot, is grafted once per field (`AtomGraft`) and asks nothing
     // of the distinct check (`Trees.Table.only`). So `h` and `use` spend no
-    // growth, and their records grow with N + M, not N × M: `use` 4 563 at
-    // 64 and 37 512 at 512 (it counts its answer's slots by their labels
+    // growth, and their records grow with N + M, not N × M: `use` 4 629 at
+    // 64 and 38 026 at 512 (it counts its answer's slots by their labels
     // since #2413), `h` 4 244 and 36 942 (Debug, 2026-11-10).
     const a = testing.allocator;
     var totals: [2][2]u64 = undefined;
