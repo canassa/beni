@@ -3845,6 +3845,12 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      ("reach and Esc stop at ◆") holds for holders (`Cells.behindCell`) and for cell operations, not for the reach of
      an escape. A cell operation beside such an escape is accepted (`Ref.set`, or an update whose answer is fresh):
      it changes no list that a loan names (`run/SanitiserFiberReplace`).
+     *Amended 2026-11-10 (#2403):* the same holds for a loan the closure captures. `l = Ref.get r`, kept in a task,
+     escapes what it lends, so the function's contract escapes `π1◆` (the read-off follows an escaped loan to the
+     contents it names, `ReadOff.paramEffects`). Before this, the contract said only `reads π1ε`, and a caller's
+     later `Ref.update r λm → List.push m 2` was accepted while the task held the old list, inlined or not
+     (`run/SanitiserCellLoanKept`: direct, given as a function, and by `Ref.modify`). A function that reads the
+     contents and keeps nothing, or keeps `List.copy` of them, escapes nothing (`run/SanitiserCellLoanKeptApart`).
    - **An in-place edit of a captured cell's contents makes the closure `once`** (§2.11.4), refused where it escapes
      or where a label may call it many times. So the work of a fiber never edits contents that another fiber can hold
      a loan of (`run/SanitiserFiberBranch`: one branch of `Task.par` holds a loan across a sleep, and the other branch

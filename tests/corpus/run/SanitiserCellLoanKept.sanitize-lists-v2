@@ -1,0 +1,3 @@
+A function keeps a loan of a cell's contents in a task (ownership-v2.md §2.13.7, an escape reaches through ◆,
+#2403): built again under --ownership=v2 and the list stale-read sanitiser. Its contract escapes the contents, so
+v2 refuses each later in-place edit through the cell; accepted, the sanitised run reads a stale list.

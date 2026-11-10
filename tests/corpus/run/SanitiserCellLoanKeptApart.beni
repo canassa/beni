@@ -1,0 +1,63 @@
+-- The twin of `SanitiserCellLoanKept` (`ownership-v2.md` §2.13.7, #2403): the same frames edit the cell's
+-- contents in place after a function that reads them and keeps nothing (`peek`), or keeps only a copy
+-- (`keepCopy`). Neither contract escapes `π1◆`, so each edit is accepted, and the sanitised run prints the same.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+peek : Ref (List Int) → ⊤
+peek r = say ("peek " ++ show (Ref.get r))
+
+
+keepCopy : Ref (List Int) → ⊤
+keepCopy r =
+    l = List.copy (Ref.get r)
+    _ = Task.soon λ⊤ → say ("kept " ++ show l)
+    ⊤
+
+
+direct : ⊤ → ⊤
+direct ⊤ =
+    r = Ref.make (List.push [ 0 ] 1)
+    peek r
+    Ref.update r λl → List.push l 2
+    say ("direct " ++ show (Ref.get r))
+
+
+handed : (Ref (List Int) → ⊤) → ⊤
+handed g =
+    r = Ref.make (List.push [ 0 ] 1)
+    g r
+    Ref.update r λl → List.push l 2
+    say ("handed " ++ show (Ref.get r))
+
+
+modified : (Ref (List Int) → ⊤) → ⊤
+modified g =
+    r = Ref.make (List.push [ 0 ] 1)
+    g r
+    n = Ref.modify r λl → ( 1, List.push l 2 )
+    say ("modified ${String.fromInt n} ${show (Ref.get r)}")
+
+
+main : Program
+main = Io.run λ⊤ →
+    direct ⊤
+    handed peek
+    handed keepCopy
+    modified peek
+    modified keepCopy
+    Io.sleep 1
+    Node.done

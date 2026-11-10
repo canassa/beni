@@ -1,0 +1,58 @@
+-- A function that keeps a loan of a cell's contents in a task (`ownership-v2.md` §2.13.7, *an escape reaches
+-- through `◆`*, #2403): `l = Ref.get r` is a loan of what `r` holds, and the task keeps it. Its contract escapes
+-- `π1◆`, so the caller's in-place edit through the cell is refused, called directly, given as a function, or
+-- edited by `Ref.modify`. Accepted, the sanitised run reads a stale list. The twin is `SanitiserCellLoanKeptApart`.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+keepContents : Ref (List Int) → ⊤
+keepContents r =
+    l = Ref.get r
+    _ = Task.soon λ⊤ → say ("kept " ++ show l)
+    ⊤
+
+
+direct : ⊤ → ⊤
+direct ⊤ =
+    r = Ref.make (List.push [ 0 ] 1)
+    keepContents r
+    Ref.update r λl → List.push l 2
+    say ("direct " ++ show (Ref.get r))
+
+
+handed : (Ref (List Int) → ⊤) → ⊤
+handed g =
+    r = Ref.make (List.push [ 0 ] 1)
+    g r
+    Ref.update r λl → List.push l 2
+    say ("handed " ++ show (Ref.get r))
+
+
+modified : (Ref (List Int) → ⊤) → ⊤
+modified g =
+    r = Ref.make (List.push [ 0 ] 1)
+    g r
+    n = Ref.modify r λl → ( 1, List.push l 2 )
+    say ("modified ${String.fromInt n} ${show (Ref.get r)}")
+
+
+main : Program
+main = Io.run λ⊤ →
+    direct ⊤
+    handed keepContents
+    modified keepContents
+    Io.sleep 1
+    Node.done

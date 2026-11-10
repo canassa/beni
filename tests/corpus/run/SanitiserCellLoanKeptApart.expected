@@ -1,0 +1,10 @@
+peek 0,1: ⊤
+direct 0,1,2: ⊤
+peek 0,1: ⊤
+handed 0,1,2: ⊤
+handed 0,1,2: ⊤
+peek 0,1: ⊤
+modified 1 0,1,2: ⊤
+modified 1 0,1,2: ⊤
+kept 0,1: ⊤
+kept 0,1: ⊤

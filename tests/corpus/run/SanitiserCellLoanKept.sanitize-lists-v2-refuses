@@ -1,0 +1,5 @@
+# v2 refuses the in-place edit through the cell after a direct call that keeps its contents (§2.13.7, #2403).
+32:5 list_still_used Ref.update
+# and the call that gives that function to a frame that edits the contents, by update or by modify.
+55:5 list_still_used value
+56:5 list_still_used value
