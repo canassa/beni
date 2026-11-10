@@ -400,6 +400,20 @@ test "corpus: regress" {
     try walk(.regress);
 }
 
+test "an in-place probe reads only the errors of a build" {
+    // #2457: a warning fails no build, so a refused build that has one is still refused.
+    const warn = "{\"code\":\"prepend_in_loop\",\"severity\":\"warning\",\"span\":{}}";
+    const own = "{\"code\":\"list_may_be_shared\",\"severity\":\"error\",\"span\":{}}";
+    const other = "{\"code\":\"type_mismatch\",\"severity\":\"error\",\"span\":{}}";
+    try testing.expect(Case.onlyOwnership("[" ++ warn ++ "," ++ own ++ "]", true));
+    // A warning alone refuses nothing, and another error is another reason.
+    try testing.expect(!Case.onlyOwnership("[" ++ warn ++ "]", true));
+    try testing.expect(!Case.onlyOwnership("[" ++ own ++ "," ++ other ++ "]", true));
+    // The rule for a whole stream reads the warning too: its callers compare every diagnostic.
+    try testing.expect(!Case.onlyOwnership("[" ++ warn ++ "," ++ own ++ "]", false));
+    try testing.expect(Case.onlyOwnership("[" ++ own ++ "]", false));
+}
+
 /// `tests/blackbox/ownership-v2-known.txt`, the justified v1/v2 differences,
 /// read once per process: each entry's key (`<root> <module> <line:col> ::
 /// <demand> :: <v1> :: <v2>`) and whether a case used it, for `walk`'s
@@ -2388,10 +2402,11 @@ const Case = struct {
         try probe.appendSlice(c.arena, &.{ "--diagnostics=json", "--out=out-probe" });
         try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
         const tried = try c.inProject(probe.items);
-        if (!(tried.exit_code == 1 and ownershipOnly(tried.stderr))) return null;
+        if (!(tried.exit_code == 1 and onlyOwnership(tried.stderr, true))) return null;
         const diags = try std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, c.arena, std.mem.trim(u8, tried.stderr, " \r\n"), .{});
         var text: std.ArrayList(u8) = .empty;
         for (diags) |d| {
+            if (d.severity == .warning) continue;
             const writer = d.message[0 .. std.mem.indexOfAny(u8, d.message, " \n") orelse d.message.len];
             try text.print(c.arena, "{d}:{d} {t} {s}\n", .{ d.span.start.line, d.span.start.col, d.code, writer });
         }
@@ -2541,6 +2556,13 @@ const Case = struct {
     }
 
     fn ownershipOnly(stderr: []const u8) bool {
+        return onlyOwnership(stderr, false);
+    }
+
+    /// Whether each diagnostic of the JSON `stderr` is the ownership checker's, and one is there. With
+    /// `errors`, a warning is not read: it fails no build, so a probe that asks why a build failed
+    /// reads only the errors (#2457).
+    fn onlyOwnership(stderr: []const u8, errors: bool) bool {
         const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
@@ -2548,6 +2570,8 @@ const Case = struct {
         while (it.next()) |rest| {
             const end = std.mem.indexOfScalar(u8, rest, '"') orelse return false;
             const code = rest[0..end];
+            // The printer writes the severity next to the code.
+            if (errors and std.mem.startsWith(u8, rest[end..], "\",\"severity\":\"warning\"")) continue;
             var known = false;
             for (codes) |k| if (std.mem.eql(u8, k, code)) {
                 known = true;
