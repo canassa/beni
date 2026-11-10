@@ -1,0 +1,13 @@
+module RecordCalleeWritesBelow
+  20:11 List.push m.b: accepted param
+  24:10 update m: accepted param
+  29:9 update m: accepted param
+  30:12 RecordCalleeWritesBelow.pokeB m.b: accepted param
+  35:9 update m: rejected later-use: m is read again at 36:12
+  36:12 RecordCalleeWritesBelow.pokeB m.b: accepted param
+  41:9 update m: rejected later-use: m is read again at 42:12
+  42:12 update m: accepted param
+  demands 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 3, rejected 2
+total 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 3, rejected 2

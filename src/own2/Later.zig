@@ -146,7 +146,10 @@ pub const Uses = struct {
             try fr.charge(.inspection, @intCast(rw.len + 1));
             // An update asks a callee's reads of its record by field (`FieldMark.reads`, R-4.8.5).
             for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and (if (u.update) |fs| @import("FieldMark.zig").reads(&u.contracts.trees, fr.places, fr.slots, r[1], rw, fs) else Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw))) return true;
-            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw, if (fr.records) fr.places.pathPlace(x.path) else .none)) return true;
+            // An update asks the callee's writes by field too: a write below an untouched field is none (`FieldMark.writes`).
+            const at: Ids.PlaceId = if (fr.records) fr.places.pathPlace(x.path) else .none;
+            const by_field = u.update != null and !@import("Mutate.zig").on(.callee_write_whole);
+            for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and (if (by_field) @import("FieldMark.zig").writes(&u.contracts.trees, fr.places, r[1], rw, at, u.update.?) else writeMeets(&u.contracts.trees, fr.places, r[1], rw, at))) return true;
         }
         return false;
     }

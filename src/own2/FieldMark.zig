@@ -38,6 +38,24 @@ fn among(fields: []const u32, st: Place.Step) bool {
     return st.kind != .field or fields.len == 0 or std.mem.indexOfScalar(u32, fields, st.payload) != null;
 }
 
+/// Whether write tree `n0` writes, of the record at `words` below its root (`at0`: the root's place, or
+/// none), what an update of the fields `fields` must not meet (ranks, sorted; none: every field): a deep
+/// write at or above the record, a write of an object above it that is no record's own, any write of the
+/// record's own object (another update of it, whatever its field), or a write below a step that is a
+/// field of `fields` or no field's. A write below another field is reached through an untouched field.
+pub fn writes(t: *const Trees.Table, places: *const Place.Table, n0: Node, words: []const u32, at0: Place.PlaceId, fields: []const u32) bool {
+    var n = n0;
+    var at = at0;
+    for (words) |w| {
+        if ((t.here(n).len != 0 and !(at != .none and places.kind(at) == .record)) or t.open(n).len != 0) return true;
+        n = t.kidAt(n, w) orelse return t.rowReaches(places, n, w);
+        if (at != .none) at = places.child(at, Place.Step.fromWord(w)) orelse .none;
+    }
+    if (t.here(n).len != 0 or t.open(n).len != 0) return true;
+    for (t.kids(n)) |k| if (t.count(k[1]) != 0 and among(fields, Place.Step.fromWord(k[0]))) return true;
+    return false;
+}
+
 /// The fields that write tree `n0` names at the record `words` below its root: the marks' ranks, in `arena`.
 /// None, which is every field: the plain mark is there, no mark is, or the walk leaves the tree.
 pub fn written(t: *const Trees.Table, slots: anytype, arena: std.mem.Allocator, n0: Node, words: []const u32) std.mem.Allocator.Error![]const u32 {

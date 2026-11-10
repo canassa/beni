@@ -60,6 +60,8 @@ pub const Name = enum {
     record_supply_whole,
     /// §2.11.2 item 4, *a deep occurrence, for a record's write*: a deep occurrence stays every object below its slot.
     record_deep_whole,
+    /// §2.8, *a later callee's writes, by field* (R-4.8.5): a later callee's write below any field is a whole use of the old record.
+    callee_write_whole,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.
