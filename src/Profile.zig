@@ -169,6 +169,8 @@ pub const Phase = enum {
     /// check, on the module's worker, and in `dump --stage=ownership` only for a
     /// module the check did not walk (#1193).
     ownership2_module,
+    /// The step 0 prototype's walk of one module (research report 111), on the module's worker.
+    ownership3_module,
 };
 
 pub const Counter = enum {

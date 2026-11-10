@@ -2400,3 +2400,204 @@ test "P-sync: every platform's bodies are listed and pinned, and no listener is 
     }
     try testing.expect(ok);
 }
+
+// ---- the step 0 prototype of research report 110 (`--ownership=v3`, research report 111) ----
+
+const own3_cases =
+    \\import List
+    \\
+    \\
+    \\type Tree
+    \\    = Leaf
+    \\    | Node (List Int) Tree Tree
+    \\
+    \\
+    \\pub one : List Int → List Int
+    \\one xs = List.push xs 1
+    \\
+    \\
+    \\pub two : List Int → Int
+    \\two xs =
+    \\    ys = List.push xs 1
+    \\    List.length xs + List.length ys
+    \\
+    \\
+    \\pub three : Int → List Int
+    \\three n = List.push [ n ] 2
+    \\
+    \\
+    \\pub keys : List Int → List Int
+    \\keys xs = List.foldl xs [] λx acc → List.push acc x
+    \\
+    \\
+    \\pub four : List Int → List Int
+    \\four xs = [ …xs, 4 ]
+    \\
+    \\
+    \\pub five : List Int, List Int → List Int
+    \\five xs ys = xs ++ ys
+    \\
+    \\
+    \\pub six : List Int → List Int × List Int
+    \\six xs = ( List.push xs 1, xs )
+    \\
+    \\
+    \\pub grow : Tree → Tree
+    \\grow t =
+    \\    case t of
+    \\        Leaf →
+    \\            Leaf
+    \\
+    \\        Node items l r →
+    \\            Node (List.push items 1) (grow l) r
+    \\
+    \\
+    \\pub twice : List Int → List Int
+    \\twice xs = five xs xs
+    \\
+    \\
+    \\pub branch : Bool, List Int → List Int
+    \\branch c xs = if c then List.push xs 1 else xs
+    \\
+;
+
+test "ownership v3 (the step 0 prototype): the write rule on one module" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Cases.beni", own3_cases);
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Cases.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\total 13: accepted 10 (fresh 2, call 0, param 7, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
+        \\cause disjoint 1
+        \\cause later-use 2
+        \\
+    , r.stdout);
+    const full = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Cases.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), full.exit_code);
+    for ([_][]const u8{
+        // A parameter that the body writes: the contract asks the caller for it.
+        "  10:10 List.push xs: accepted param\n",
+        // The old list is read after the write.
+        "  15:10 List.push xs: rejected later-use: it is read again at 16:5 (<call List.length>)\n",
+        "  20:11 List.push <literal>: accepted fresh\n",
+        // A lambda writes the accumulator that `List.foldl` hands it; the first value is the caller's own.
+        "  24:11 call List.foldl <literal>: accepted fresh\n",
+        "  24:37 List.push acc: accepted callback-param\n",
+        "  28:13 construction xs: accepted param\n",
+        "  32:17 ++ xs: accepted param\n",
+        // The pair answers the old list beside the new one.
+        "  36:12 List.push xs: rejected later-use: it is read again at 36:10 (<tuple>)\n",
+        // The root's list and the lists of the deeper nodes are two locations.
+        "  46:19 List.push items: accepted param\n",
+        "  46:39 call Cases.grow l#Node.0: accepted param\n",
+        // One list as the written operand and as the other operand.
+        "  50:12 call Cases.five xs: rejected disjoint: another operand of the same operation reaches it\n",
+        // The other arm of the `if` answers the old list, and does not run with the write.
+        "  54:25 List.push xs: accepted param\n",
+        "  summary grow: π1#Node.0 W π1#Node.0 W; res [#Node.0 π1@0] [#Node.0 π1@1]\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, full.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, full.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+test "ownership v3 (the step 0 prototype): a refusal is an error under enforcement, and the entry hands `update` its model" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Cases.beni", own3_cases);
+    const refused = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Cases.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expect(std.mem.indexOf(u8, refused.stderr, "List.push xs is refused: later-use") != null);
+    try testing.expect(std.mem.indexOf(u8, refused.stderr, "call Cases.five xs is refused: disjoint") != null);
+    // Without the hidden flag the same module is v1's to judge.
+    try w.write("Main.beni",
+        \\import Page
+        \\
+        \\
+        \\update : ⊤, List Int → List Int
+        \\update _ xs = List.push xs 1
+        \\
+        \\
+        \\main : Page.Program
+        \\main = Page.sandbox { init = λ⊤ → [], update = update, view = λxs → Page.text (String.fromInt (List.length xs)) }
+        \\
+    );
+    const main = try std.fs.path.join(w.arena.allocator(), &.{ try w.projectPath(), "Main.beni" });
+    const page = "--platform=tests/platforms/page";
+    const checked = try w.runWith(&.{ "check", page, "--ownership=v3", "--ownership-everywhere", "--no-cache", main }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    const report = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", page, main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
+}
+
+// The first full run of the sanitiser corpus under the prototype accepted 19
+// programs that it must refuse (research report 111 §4.2). Each has a write
+// that changes a list in place while another holder reads it: a plain build
+// and a sanitised build print different text, or the sanitised run traps.
+// The causes: the answer of a function parameter (what it can hold, and where
+// it goes), a function that keeps what it is handed, two parts of one handed
+// value, a prepend that answers the spread's array, evidence, and an `entry`
+// record of an unknown shape.
+test "ownership v3 (the step 0 prototype): the sanitiser fixtures that the first full run accepted are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const dir = "tests/corpus/run/";
+    const single = [_][]const u8{
+        "SanitiserAnswerLeft",             "SanitiserCellStaleLength",      "SanitiserCellStoredCapture",
+        "SanitiserFoldAlternativesShared", "SanitiserFoldAnswerFedKept",    "SanitiserFoldHandsLabelKeeps",
+        "SanitiserFoldKeepsAnswer",        "SanitiserLabelRounds",          "SanitiserLabelRoundsOrder",
+        "SanitiserPairCrossEdgeFold",      "SanitiserPairCrossEdgeFoldr",   "SanitiserPairCrossEdgeLoop",
+        "SanitiserPairCycleFold",          "SanitiserPairCycleLoop",        "SanitiserPairCycleParam",
+        "SanitiserPrependFrontHeld",       "SanitiserRecordCallbackShared",
+    };
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node" });
+    for (single) |name| try argv.append(a, try std.fmt.allocPrint(a, dir ++ "{s}.beni", .{name}));
+    const r = try w.runWith(argv.items, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    for (single) |name| {
+        // The header of a refusal names the file and the position.
+        const at = try std.fmt.allocPrint(a, " " ++ dir ++ "{s}.beni:", .{name});
+        if (std.mem.indexOf(u8, r.stderr, at) == null) {
+            std.debug.print("the prototype does not refuse {s}\n", .{name});
+            return error.TestExpectedRefusal;
+        }
+    }
+    // A method that writes its parameter, handed as `where` evidence at a call.
+    const ev = dir ++ "SanitiserEvidenceWriter";
+    const evidence = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--root=" ++ ev, ev ++ "/Main.beni", ev ++ "/Stack.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), evidence.exit_code);
+    try testing.expect(std.mem.indexOf(u8, evidence.stderr, "handed as evidence") != null);
+    // An `entry` record that fails the shape test of the state protocol.
+    const en = dir ++ "SanitiserEntryUnsupported";
+    const entry = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=" ++ en ++ "/platform", "--root=" ++ en, en ++ "/Main.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), entry.exit_code);
+    try testing.expect(std.mem.indexOf(u8, entry.stderr, "goes where") != null);
+}
+
+// A function that writes its parameter, captured by a lambda that goes to
+// `List.foldl`: no rule composes its contract with what the lambda hands it,
+// so the prototype refuses it there. Before, no demand was made, and `q` was
+// written in place while it was read later.
+test "ownership v3 (the step 0 prototype): a captured function that writes cannot go through another function" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Captured.beni",
+        \\import List
+        \\
+        \\
+        \\pub run : List Int → Int
+        \\run q =
+        \\    h = λa x → List.push a x
+        \\    r = List.foldl [ 1, 2 ] q λx acc → h acc x
+        \\    List.length q + List.length r
+        \\
+    );
+    const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Captured.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "is called by a function that goes to another function") != null);
+}

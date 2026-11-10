@@ -201,6 +201,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .ownership_everywhere = common.ownership_everywhere,
         .ownership_records_lost = common.ownership_records_lost,
         .ownership_v2 = common.ownership == .v2,
+        .ownership_v3 = common.ownership == .v3,
     };
 }
 
@@ -267,6 +268,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // `--stage=ownership --ownership=v2`: the check's run of the checker v2
     // keeps what the dump prints, so v2 runs once (#1193).
     if (dump.stage == .ownership and dump.common.ownership == .v2) options.ownership_v2_dump = .{ .summaries = !dump.ownership_totals, .below = dump.ownership_below, .short_candidates = dump.ownership_short_candidates };
+    if (dump.stage == .ownership and dump.common.ownership == .v3) options.ownership_v3_dump = .{ .summaries = !dump.ownership_totals };
     // A summary is read off solved types, which only a module this run
     // checks keeps (§16.9). A module the report prints is checked here;
     // every other one installed from the checked core keeps its ownership
@@ -274,6 +276,8 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // facts of the module that declares it, so `--ownership-flips` checks
     // core from source.
     options.no_pack = dump.stage == .ownership and dump.ownership_flips != null;
+    // The step 0 prototype has no block in the checked core: it checks core from source.
+    if (dump.common.ownership == .v3) options.no_pack = true;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.
@@ -682,7 +686,7 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
 /// it (ownership-checker.md §9.1). An embedded core or platform module is
 /// included when the path names its directory, and never under `.`.
 fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
-    if (dump.common.ownership == .v2) return dumpOwnershipV2(gpa, session, stdout, stderr, dump);
+    if (dump.common.ownership != .v1) return dumpOwnershipV2(gpa, session, stdout, stderr, dump);
     const Ownership = beni.own.Ownership;
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const target = storePath(&buffer, dump.file);
@@ -829,6 +833,10 @@ fn dumpOwnershipV2(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer
     if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
     const Run = struct {
         fn go(g: std.mem.Allocator, s: *Session, ts: []const u32, w: *Io.Writer, totals: bool) bool {
+            if (s.options.ownership_v3) {
+                beni.own3.Enforce.dump(g, s, ts, w, .{ .totals_only = totals }) catch return false;
+                return true;
+            }
             beni.own2.Enforce.dump(g, s, ts, w, .{ .totals_only = totals }) catch return false;
             return true;
         }

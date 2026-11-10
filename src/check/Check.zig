@@ -179,6 +179,8 @@ pub const Options = struct {
     /// The ownership checker v2's hook (`ownership-v2.md` §3.7, §8 S3a), in
     /// place of v1's under the hidden `--ownership=v2`.
     ownership2: ?*const @import("../own2/Enforce.zig").Context = null,
+    /// The step 0 prototype's hook (research report 111), under the hidden `--ownership=v3`.
+    ownership3: ?*const @import("../own3/Enforce.zig").Context = null,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9), and then only for a
     /// module of the ROOT package. Set by `check` and `build` (A.83); a
@@ -385,7 +387,7 @@ pub fn run(
         for (kept.items) |*m| m.release(gpa);
         kept.deinit(gpa);
     }
-    if (options.keep_stores or options.ownership != null or options.ownership2 != null) {
+    if (options.keep_stores or options.ownership != null or options.ownership2 != null or options.ownership3 != null) {
         try kept.ensureTotalCapacity(gpa, modules);
         for (0..modules) |_| kept.appendAssumeCapacity(.{
             .store = .init(std.heap.page_allocator),

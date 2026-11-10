@@ -87,6 +87,7 @@ const artifact_bytes = @import("frontend/artifact_bytes.zig");
 const Enforce = @import("own/Enforce.zig");
 const Enforce2 = @import("own2/Enforce.zig");
 const Own2Report = @import("own2/Report.zig");
+const Enforce3 = @import("own3/Enforce.zig");
 const stamped = @import("stamped.zig");
 const EntryPlan = @import("entry/Plan.zig");
 
@@ -212,6 +213,9 @@ ownership_sites: []?[]const [6]u64 = &.{},
 /// each module's report from the check's own run of the checker v2, which the
 /// dump prints, so v2 runs once (#1193).
 ownership2_reports: []?*Own2Report.Kept = &.{},
+/// Under `--ownership=v3` (the step 0 prototype, research report 111): each
+/// module's contracts for its importers, and its report for the dump.
+ownership3: ?*Enforce3.State = null,
 
 pub const DiagnosticsFormat = enum { text, json };
 
@@ -225,6 +229,8 @@ pub fn freeOwnershipBlocks(session: *Session) void {
     for (session.ownership2_reports) |slot| if (slot) |k| k.deinit(session.gpa);
     session.gpa.free(session.ownership2_reports);
     session.ownership2_reports = &.{};
+    if (session.ownership3) |s| s.deinit(session.gpa);
+    session.ownership3 = null;
 }
 
 pub const Options = struct {
@@ -404,6 +410,12 @@ pub const Options = struct {
     /// `summaries` false for `--ownership-totals`; `short_candidates` for
     /// the hidden `--ownership-short-candidates` (`Groups.Input`).
     ownership_v2_dump: ?struct { summaries: bool, below: bool = false, short_candidates: bool = false } = null,
+    /// `--ownership=v3` (`Cli.Common.ownership`): the step 0 prototype of
+    /// research report 110 runs in place of v1 (`src/own3/`). Hidden and
+    /// test-only. `ownership_v3_dump`: the check keeps each module's report
+    /// for `dump --stage=ownership`.
+    ownership_v3: bool = false,
+    ownership_v3_dump: ?struct { summaries: bool } = null,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and
@@ -612,6 +624,12 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     // a run under `--ownership=v2` reads and writes no cache, so it never
     // installs an entry v1 checked.
     if (options.ownership_v2) session.options.cache = null;
+    // The step 0 prototype writes no cache section and no block of the
+    // checked core: it reads no cache and checks core from source.
+    if (options.ownership_v3) {
+        session.options.cache = null;
+        session.options.no_pack = true;
+    }
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
     if (options.ownership) {
@@ -622,7 +640,7 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
         if (options.pack_in) |bytes| session.pack = CorePack.Pack.init(bytes);
-    } else if (options.core_package and options.core_root == null and !options.no_pack) {
+    } else if (options.core_package and options.core_root == null and !session.options.no_pack) {
         session.pack = CorePack.Pack.init(core_pack.bytes);
     }
     session.profile = try Profile.init(gpa, io, .{
@@ -2629,6 +2647,11 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     var ins2: Enforce2.Inputs = if (session.options.ownership_v2) try Enforce2.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
     defer if (session.options.ownership_v2) ins2.deinit(session.gpa);
     const ownership2: Enforce2.Context = .{ .session = session, .ins = &ins2 };
+    // The step 0 prototype's inputs, under `--ownership=v3`.
+    var ins3: Enforce3.Inputs = if (session.options.ownership_v3) try Enforce3.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
+    defer if (session.options.ownership_v3) ins3.deinit(session.gpa);
+    if (session.options.ownership_v3) session.ownership3 = try Enforce3.State.init(session.gpa, session.graph.count());
+    const ownership3: Enforce3.Context = .{ .session = session, .ins = &ins3, .state = session.ownership3 orelse undefined };
     const Runner = struct {
         session: *Session,
         quiet: []const bool,
@@ -2636,6 +2659,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         cutoff: *Check.Cutoff,
         ownership: *const Enforce.Context,
         ownership2: *const Enforce2.Context,
+        ownership3: *const Enforce3.Context,
         entry_constructors: []const []const u8,
         entry_kinds: []const @import("js/Manifest.zig").EntryKind,
         result: Check.Error!Check = undefined,
@@ -2651,8 +2675,9 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 r.session.resolution.provenance,
                 &r.session.interner,
                 .{
-                    .ownership = if (r.session.options.ownership_v2) null else r.ownership,
+                    .ownership = if (r.session.options.ownership_v2 or r.session.options.ownership_v3) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
+                    .ownership3 = if (r.session.options.ownership_v3) r.ownership3 else null,
                     .profile = &r.session.profile,
                     .entry_constructors = r.entry_constructors,
                     .entry_kinds = r.entry_kinds,
@@ -2684,7 +2709,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             try kinds.append(session.gpa, kind);
         }
     };
-    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2, .ownership3 = &ownership3 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {
