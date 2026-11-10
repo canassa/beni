@@ -2209,9 +2209,25 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    earlier elements of `bs`, and nothing says that two elements of a list are two objects, so the update of
    `b` is refused. The push onto `acc` was refused with it in that pass, and is accepted there now. Whether
    the slot is a record's is read from the known code's parameter place, or from the argument's. The list
-   pass has no such occurrence, and reads `C.req` once. *Refused that a perfect checker accepts:* a record's
-   write still fails for a pair that only a list's write asks (`twice b xs = both b xs xs`): one more
-   refused record line. Fixture `ownership/RecordFoldPush`; mutant `list_req_whole`.
+   pass has no such occurrence, and reads `C.req` once. Fixture `ownership/RecordFoldPush`; mutant
+   `list_req_whole`.
+   *Amended 2026-11-10 (#1018): a record's write beside a list's.* Until this amendment a record's write
+   still failed for a pair that only a list's write asks: `twice b xs = both b xs xs`, with
+   `both b xs ys = ( { b | x = b.x + 1 }, List.push xs 1, ys )`, refused the update of `b` with the push onto
+   `xs`. Now, where the instantiation is `no`, the call reads `C.req` for its record writes too
+   (`CallReq.of`): each plain occurrence, not deep, at a slot that is a **list's** own storage is asked apart.
+   Every pair of a record's object with another occurrence stays, and so does every pair with a deep
+   occurrence or with one whose slot's kind is not known. The pairs that are not asked each have a list's
+   storage on one side, with another list's storage or an apart occurrence on the other. A list's storage is
+   no record's object, so such a pair says nothing of a record's write; a record that one of the lists holds
+   is an occurrence of its own (`π2[*]`), or is under a deep one, and stays asked. Whether the slot is a
+   list's is read as a record's is: from the known code's parameter place, or from the argument's
+   (`Update.kindBelow`); a type variable, an opaque type and every other kind stay plain. So the three
+   readings are: the contract's (no write relies on it where it is `no` and a split exists), the record
+   writes', the list writes'. A call whose first reading holds still costs one instantiation. In `twice`
+   the push stays refused and the update is accepted; `same b = pair b b` (one record twice, R-4.8.8) and
+   `inList b = keepIn b [ b ]` (a list that holds the record) stay refused. Fixture
+   `ownership/RecordBesideLists`; mutant `record_req_whole`.
 5. **Escapes.** The objects at `C.escapes`' projections are escaped at the call (§2.4), deep.
 6. **Labels.** Each of `C.labels` is instantiated (§2.11.3).
 
@@ -3538,8 +3554,8 @@ survives: no probe reaches a stale label there. The 240 `review-2173/g9` program
   record line until the lowering reads v2's record channel (§8, S5). When it does, a refused update is a
   compile error whose fix is `Record.copy`, as in v1 (`ownership-checker.md` §31.1): never a silent copy.
 
-  **Two passes** *(2026-11-10, #1018, S5a; R-8.6; as built. This is option A of the owner's question
-  `ownership-v2-fable-q2`, which is open: the text changes if the owner chooses the other design, below).* No list
+  **Two passes** *(2026-11-10, #1018, S5a; R-8.6; as built. **Decided 2026-11-10 13:58 UTC by Cesar, on the
+  dashboard, question `ownership-v2-fable-q2`: "A: two passes".** The other design, below, is not built).* No list
   verdict reads a record fact (R-8.6; v1 keeps a parallel domain for the same reason, `ownership-checker.md` §31.4 item 6). In the
   slot domain a record fact would enter the list analysis at many places: an arrival at a record's own slot, a
   write and a read of it, an occurrence of it in `req`, a `need`, a mark of a label or of a contract, and the
@@ -3592,10 +3608,10 @@ survives: no probe reaches a stale label there. The 240 `review-2173/g9` program
   both. Its record pass is skipped, and its block says so (the top bit, §3.6). *Not built:* the record pass
   judges its list demands too, though the report reads only a refusal of them.
 
-  *The other design: one evaluation with a kind filter.* The first build of S5a judged lists and records in one
-  evaluation: an update wrote its base's object for both. 70 list lines of the corpus moved in 41 fixtures, 3
-  programs reached `ownership_summary_size`, and a near-limit declaration cost three times its records. Six
-  filters, one for each place found, left 24 moved lines.
+  *The other design: one evaluation with a kind filter (option B of `ownership-v2-fable-q2`, not chosen).* The
+  first build of S5a judged lists and records in one evaluation: an update wrote its base's object for both. 70
+  list lines of the corpus moved in 41 fixtures, 3 programs reached `ownership_summary_size`, and a near-limit
+  declaration cost three times its records. Six filters, one for each place found, left 24 moved lines.
 
   *A cell's contents.* `Ref.update r λw → { w | n = 1 }`: the cell holds its contents while the callback
   runs (§2.13.7). A list that the contents hold is edited in place by the callback, and that edit is said deep
@@ -6571,7 +6587,7 @@ L0  Ids  Counters  Scratch
 | `Groups.zig` | 10 | the module: adapters, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, VarOpen, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6); the two passes' blocks as one (`both`, `part`) | Ids, Place, Slots, Contract, Groups |
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
-| `CallReq.zig` | 10 | a callee's `req` at a call, as a record's write relies on it and, in the record pass, as a list's does (§2.11.2 item 4, *A list's write beside a record's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
+| `CallReq.zig` | 10 | a callee's `req` at a call, as the contract has it and, in the record pass, as a record's write and as a list's write rely on it (§2.11.2 item 4, *A list's write beside a record's*, *a record's write beside a list's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
 | `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
 | `FieldReads.zig` | 8 | a record's fields read and written, in a contract's `reads` and `writes`: the frame's field events as marks at the record's slot, a callee's marks read at a caller, and a record demand's written fields as marks (§2.8, *Dead, by field*, §2.10, R-4.8.5, R-4.8.7), for `ReadOff` | Ids, Place, Slots, Contract |
 | `FieldCapture.zig` | 8 | a closure's field captures, read off the frame's text: the read events and uses at the creation, and the closure's kid of field values (§2.11.4, *a field capture*, R-5.4.6), for `Walk` | Ids, Place |
