@@ -80,7 +80,7 @@ pub const Filter = struct {
 /// A use's group within its path (§2.8, #1214): its kind, and a `call`
 /// use's callee use node, the only things a filter judges.
 fn groupOf(u: Use) u32 {
-    return if (u.kind == .call and u.use_node != .none) u.use_node.int() + 3 else @backingInt(u.kind);
+    return if (u.kind == .call and u.use_node != .none) u.use_node.int() + 4 else @backingInt(u.kind);
 }
 
 pub const Index = struct {
@@ -493,7 +493,7 @@ pub const Index = struct {
     /// Whether use `i` is a `call` use whose callee's use shape decides
     /// what it reads (§2.7).
     pub fn filtered(x: *const Index, i: u32) bool {
-        return x.groupKey(i) >= 3;
+        return x.groupKey(i) >= 4;
     }
 
     /// Use `i`'s group: its kind, and a `call` use's callee use node.

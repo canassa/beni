@@ -319,7 +319,7 @@ const Resolver = struct {
             r.hs.clearRetainingCapacity();
             try HoldAt.holdsAt(r.ev(), .{ .leaf = hds[k].leaf, .q = hds[k].q, .refine = hds[k].refine }, t, &r.hs);
             for (r.hs.items) |x| {
-                const u = try r.uses.liveOnce(h.local, x[0], point);
+                const u = try r.uses.liveOnce(h.local, x[0], point, x[2]);
                 if (u != null or visit.dead) try visit.each(visit.ctx, k, x[0], x[1], u);
             }
         }

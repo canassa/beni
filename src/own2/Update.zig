@@ -31,6 +31,12 @@ const none: u32 = Ids.none_int;
 /// `value`: the record's value there.
 pub const Event = struct { local: u32, path: PathId, point: u32, value: u32, rank: u32 = none, fields: []const u32 = &.{} };
 
+/// The kind of the use that a read of field step `st` makes of its record, where no path names the field:
+/// `read` in the record pass, which an update of that record asks as a field event (§2.7), else `whole`.
+pub fn readKind(f: anytype, st: Place.Step) @import("Facts.zig").UseKind {
+    return if (f.records and st.kind == .field and !@import("Mutate.zig").on(.field_read_by_point)) .read else .whole;
+}
+
 /// Whether value `v` is a record's: a write of its own storage is a record write.
 pub fn isRecord(f: anytype, v: u32) bool {
     return recordAt(f, v, &.{});
@@ -199,9 +205,9 @@ pub fn bound(k: anytype, i: u32, locals: []const u32) Error!bool {
         try fr.charge(.use, 1);
         try k.w.events.append(k.gpa, .{ .local = r.local, .path = r.path, .point = i, .value = rec, .rank = st.payload });
         // A field no path names: the record is used whole, as a field access of it is.
-        const at = (try fr.places.extend(k.gpa, fr.gc(), r.path, st)) orelse r.path;
+        const below = try fr.places.extend(k.gpa, fr.gc(), r.path, st);
         k.atom.* += 1;
-        try k.w.uses.append(k.gpa, .{ .local = r.local, .path = at, .point = i, .kind = .whole, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
+        try k.w.uses.append(k.gpa, .{ .local = r.local, .path = below orelse r.path, .point = i, .kind = if (below == null) readKind(fr, st) else .whole, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
     }
     k.pop(i);
     return true;

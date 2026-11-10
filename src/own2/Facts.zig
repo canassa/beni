@@ -21,7 +21,8 @@ pub const RegionId = Ids.RegionId;
 
 /// What a use is (§2.7): a field chain of this frame's own (hoistable), a
 /// whole use, or an argument read by a callee at the paths its class names.
-pub const UseKind = enum(u8) { field, whole, call };
+/// `read` (the record pass only, §2.7): a field access's use of its base record for a field no path names.
+pub const UseKind = enum(u8) { field, whole, call, read };
 
 /// One use `(local, path, point, kind, callee use node)` (§2.7).
 pub const Use = struct {

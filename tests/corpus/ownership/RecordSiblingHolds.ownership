@@ -1,0 +1,19 @@
+module RecordSiblingHolds
+  25:9 update c: rejected alias: acc.cur holds it and is read at 26:13 [copy]
+  32:9 update c: accepted param
+  39:9 update c: accepted param
+  46:9 update c: rejected alias: acc.cur holds it and is read at 47:5 [copy]
+  51:18 update <record>.cur: rejected disjoint: another operand of the same operation reaches it (RecordSiblingHolds.listField writes it) [copy]
+  55:22 update <record>.cur: rejected disjoint: another operand of the same operation reaches it (RecordSiblingHolds.otherField writes it) [copy]
+  59:23 update <record>.cur: accepted param (RecordSiblingHolds.listField writes it)
+  summary sameField: π2.cur RW{count}, π2.cur.count R; res .0 π2.cur◦, .1 π2.cur, condition(fresh1){shared}r{shared}
+  summary listField: π2.cur RW{count}, π2.cur.count R, π2.hist RA; res .0 π2.cur◦, .1 π2.hist, condition(fresh1)r{sep π2.cur π2.hist}
+  summary otherField: π2.cur RW{count}, π2.cur.count R, π2.twin R; res .0 π2.cur◦, .1 π2.twin, condition(fresh1)r{sep π2.cur π2.twin}
+  summary wholeAfter: π2 RA, π2.cur RW{count}, π2.cur.count R; res .0 π2.cur◦, .1 π2, condition(fresh1)r{shared}
+  summary shared: π1 RW{count}, π2 R; res .0 π1◦, .1 fresh1r{excl π1}, .1[*] π1, condition(fresh2)r{shared}
+  summary sharedTwin: π1 RW{count}, π2 R; res .0 π1◦, .1 π1, condition(fresh1)r{shared}
+  summary apart: π1 RW{count}, π2 R, π3 R; res .0 π1◦, .1 fresh1r{excl π2}, .1[*] π2, condition(fresh2)r{sep π1 π2}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 3, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 3, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0

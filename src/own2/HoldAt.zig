@@ -23,8 +23,9 @@ const PathId = Ids.PathId;
 /// refined by the target's slots.
 pub const Hold = struct { leaf: u32, q: PathId, refine: bool };
 
-/// A path at which a hold holds a target's object, and the relation there.
-pub const Held = struct { PathId, Relation.Ov };
+/// A path at which a hold holds a target's object, the relation there, and whether the hold at that path
+/// is the target itself (its own slot's path, or its own leaf) and not another object that may be it.
+pub const Held = struct { PathId, Relation.Ov, bool };
 
 /// The paths at which hold `hd` holds an object `target` may be, and
 /// the relation there: each `(path, ov)`.
@@ -34,7 +35,7 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
     const o = try Distinct.overlap(ev, hd.leaf, target, true);
     if (o.kind == .no) return;
     if (@import("Mutate.zig").on(.hold_at_off)) return;
-    if (!hd.refine) return out.append(g, .{ hd.q, o });
+    if (!hd.refine) return out.append(g, .{ hd.q, o, hd.leaf == target });
     // The path of the hold: below `q` by the steps from the leaf's
     // position to the slots that meet the target's.
     const lf = fr.leafAt(hd.leaf);
@@ -58,7 +59,7 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
             if (hd.q == pslot and !fr.places.paths.col.info[ts].levels) {
                 try fr.account.reserve(.path, 1 + fr.places.ancestorAt(.from(ts), fr.places.pathDepth(pslot))[1]);
                 if (!fr.places.isPrefix(pslot, .from(ts))) continue;
-                try out.append(g, .{ .from(ts), o });
+                try out.append(g, .{ .from(ts), o, true });
                 any = true;
                 continue;
             }
@@ -67,7 +68,7 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
             defer ps.deinit(g);
             _ = try Dests.routes(.{ .gpa = g, .account = fr.account, .places = fr.places, .slots = fr.slots }, pslot, .from(ts), hd.q, &ps);
             for (ps.items) |p| {
-                try out.append(g, .{ .from(p), o });
+                try out.append(g, .{ .from(p), o, true });
                 any = true;
             }
         }
@@ -87,12 +88,12 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
                 // rest is asked apart from it, as distinct slots are (#1742).
                 const own = tls.items.len == 1 and tls.items[0] == target;
                 const o2 = if (own) try Distinct.apartOf(ev, try fr.leaf(rl), target, true) else try Distinct.overlap(ev, try fr.leaf(rl), target, true);
-                if (o2.kind != .no) try out.append(g, .{ hd.q, o2 });
+                if (o2.kind != .no) try out.append(g, .{ hd.q, o2, false });
             }
             return;
         }
     }
-    try out.append(g, .{ hd.q, o });
+    try out.append(g, .{ hd.q, o, hd.leaf == target });
 }
 
 /// The leaves of target `t` at the holder leaf `lf`'s root: `t`
