@@ -804,3 +804,75 @@ after another against clean master 620c322a45). The gates fail the same set
 on both sides. Chrome fails only `tea/DomCapabilities` on both. The manager
 accepted the `HttpSendTracked` golden, and it was recorded from a real build.
 Comparisons: `zig-out/scratch/http-final-{gates,browser}-comparison.json`.
+
+
+### Navigation host operations — built 2026-11-10
+
+`Browser.Address`, a private base module, holds what both `Browser.Navigation`
+modules duplicated. That is reading the address, `pushState`/`replaceState` with
+the origin and throttle checks, `go`, `load`, `reload`, URL resolution, the
+link-click guard, the announcement event, and the two shared listeners
+(`requests`, `follow`, over `Listen`). Each renderer keeps its facade with
+its own `Key`, `Error` and `Browser.UrlRequest`, because programs match
+their constructors (§3).
+
+Two shapes were measured on the release navigation pages against the Http
+commit:
+
+- Translating a shared `Problem` into the facade's `Error` cost +37–48
+  brotli bytes on command pages.
+- Handing `Browser.Address` the facade's constructors (`Faults e`, a record
+  of `BadUrl`, `CrossOrigin` and `Throttled`) cost +8–23.
+
+The second is built. For links, a record of the facade's `Internal` and
+`External` was no smaller than a `case` on a shared `Link`, so links use
+the `case`.
+
+Inline's subscriptions `onUrlRequest` and `onUrlChange` keep inline's own
+listener installation, with the `Inline.stopped` guard, and use
+`Browser.Address.link` and `currentUrl`. Moving them onto `Listen.on`
+measured +48–70 brotli bytes more on the link pages (`LinkGuard`,
+`LinkAfterDefect`, `DynamicLink`) for the same behaviour. That choice is the
+manager's to review. Inline gains
+`eachUrlRequest` and `eachUrlChange`: they need a fiber, and the platform
+has scoped tasks since the Time slice.
+
+Fixtures. `browser/prerender/BaseNavigation` is a prerendered inline page.
+Its `init` starts `eachUrlChange` and `eachUrlRequest` fibers after the
+takeover. A `pushUrl` is heard, a click on an internal link arrives as
+`Internal` with its default prevented, and a push to another origin is
+`CrossOrigin`. All four builds share one transcript. It failed before the
+slice, because inline's `Browser.Navigation` did not expose
+`eachUrlChange`/`eachUrlRequest` (`zig-out/scratch/nav-before/`).
+`build/bad/prerender/BaseNavigationInView` refuses `currentUrl` in a
+prerendered `view` as `prerender_impure` at the read in `Browser.Address`.
+It already held before, at the old module's read.
+
+Sizes (release, against 9896224686): the four empty-page variants and both
+timer controls are identical to master. Inline pages without navigation
+are identical. No emit golden changed. Navigation pages, raw/brotli/gzip:
+
+| Page | Before | After |
+|---|---:|---:|
+| inline/NavigateCommands | 4769/1720/1968 | 4787/1735/1984 |
+| inline/LinkGuard | 2724/1214/1392 | 2767/1226/1401 |
+| inline/LinkAfterDefect | 3125/1378/1599 | 3168/1389/1618 |
+| inline/DynamicLink | 3792/1561/1780 | 3835/1568/1793 |
+| prerender/Blog | 13832/5009/5605 | 13875/5023/5623 |
+| tea/NavigateCommands | 14080/5339/5927 | 14088/5362/5943 |
+| tea/InlineNavigateCommands | 12463/4766/5315 | 12476/4785/5326 |
+
+Owner decisions (2026-11-10, relayed by the manager): the `Faults e` shape
+and its +7–23 brotli bytes on navigation pages are accepted. So is inline
+keeping its own URL listener installation. A worker-realm refusal now names
+`Browser.Address.reload` and `Browser.Address.load`, where the raw access
+lives, and `platform_test` expects that. #2448 tracks naming the public
+function the program called, for every private base module.
+
+Final validation (zorg 0.17.1+zorg.3, default mode, run one after another
+against clean master 620c322a45). Chrome: no new failure. The lane fails
+only `tea/DomCapabilities`; master also fails `dom/ScriptedFetch`. The gates
+had two lane-only failures. One was the list-column CPU budget (1050 ms
+against 1000), which passes alone. The other was the `platform_test` naming
+above, now updated and passing. Comparisons:
+`zig-out/scratch/nav-final-{gates,browser}-comparison.json`.
