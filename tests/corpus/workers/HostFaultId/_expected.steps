@@ -1,0 +1,7 @@
+# The id a ref reports, and a text that is no id: the host's own answers.
+{"path": "/good-id"}
+{"path": "/bad-id"}
+# The host throws a RangeError: a defect, not InvalidId.
+{"path": "/fault-id"}
+# The next request is served.
+{"path": "/good-id"}

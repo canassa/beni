@@ -1,0 +1,47 @@
+-- workers: `idFromString` that throws another class than `TypeError`
+-- stops the request (boundary.md §9.12 (e), (k); CLAUDE.md rule 9; #1263).
+-- `host-faults.mjs` makes the namespace's `idFromString` throw a
+-- `RangeError` for the text `fault`. `Worker.byId` names only the host's
+-- `TypeError`, "Invalid Durable Object ID", so the `RangeError` is a
+-- defect: a 500, never `InvalidId`. A text that is no id still reaches the
+-- host and is `InvalidId`.
+import Schema
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+room : Worker.Definition
+room = Object.define "Room" Schema.string (λ_ → ⊤) Object.none
+
+
+showId : Result Worker.IdError (Worker.Ref String) → Response
+showId result =
+    case result of
+        Ok _ →
+            Worker.text 200 "a ref"
+
+        Err Worker.InvalidId →
+            Worker.text 400 "invalid id"
+
+
+route : Context, Request → Response
+route ctx request =
+    case ( Worker.objects (Worker.env ctx) "ROOMS" Schema.string, Worker.path request ) of
+        ( Just rooms, "/good-id" ) →
+            showId (Worker.byId rooms (Worker.refId (Worker.byName rooms "r")))
+
+        ( Just rooms, "/bad-id" ) →
+            showId (Worker.byId rooms "not an id")
+
+        ( Just rooms, "/fault-id" ) →
+            showId (Worker.byId rooms "fault")
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no ROOMS binding"
+
+        _ →
+            Worker.text 404 "no such path"
