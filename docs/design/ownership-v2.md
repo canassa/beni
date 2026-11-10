@@ -1501,6 +1501,25 @@ Fixtures: the `hoist` lines of every `ownership/` fixture that has a `.v2` file 
 or the fixture's `.v2.ownership`); `ownership/RecordNeedHoist`. Mutants `hoist_at_write`, `hoist_rows_lost`,
 `need_record_quiet`.
 
+*Amended 2026-11-10 (#1018, S5b): the capture rows.* A closure that reads a field of a captured record holds
+the field's value, read when the closure is made (§2.11.4, *a field capture*). The lowering must make that
+read at the creation, whether or not a write is near: a row for each field capture, placed before the
+closure's creation (`HoistPlace.captures`; a walk's events with a `read`, kept with the declaration's result
+because they are the frame's text and no judgement's). The report prints
+`capture model.name: read 24:23; before 24:13`, v1's text: the access in the lambda, and the creation. A
+capture that an earlier write hoists has that write's `hoist` row and no `capture` row: one row a read.
+Fixtures: the `capture` lines of every `ownership/` fixture with a `.v2` file are compared, as the `hoist`
+lines are. Mutant `capture_rows_lost`.
+
+*A field capture is a lambda's only* (the same amendment; §2.11.4). `FieldCapture.of` took every closure,
+also a local function (a `let` with parameters). v1 has no capture row for a local function, and the emitter
+has never bound one: a local function reads its captured record when it is called. So a field capture is now
+made for a `lambda` instruction only (`f a _` is one), and a local function holds the record whole. An update
+of the record before a call of the local function is refused, also where the update does not write the
+field that the function reads; a perfect checker accepts that case. No verdict of the corpus moved. v1
+accepts both cases, and for a written field that is a defect of v1 (#2455: a stale read under
+`--records-in-place`). Fixture `ownership/RecordLocalFunction`; mutant `field_capture_local`.
+
 ### 2.9 Conditions: the selection and the one relation
 
 *Replaced 2026-11-02 (#1685), with §2.3. Until then this section specified κ snapshots, their tries and
