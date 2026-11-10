@@ -1844,6 +1844,58 @@ module Hosted
   value tap : (Send a → ⊤), (a → msg) → Tap msg  -- impure
   value title : String → ⊤  -- impure
   value unhear : Relay msg → ⊤  -- impure
+module Http
+  opaque type Body
+  type Error
+    BadUrl
+    BadRequest
+    Timeout
+    NetworkError
+    BadStatus
+    BadBody
+  opaque type Expect a b
+  opaque type Header
+  alias Metadata
+    Metadata
+  opaque type Part
+  type Problem
+    InvalidMethod
+    ForbiddenMethod
+    InvalidHeader
+    ForbiddenHeader
+    BodyNotAllowed
+    MultipartContentType
+    UnprintableBody
+  type Progress
+    Sending
+    Receiving
+  type Response a
+    BadUrl_
+    BadRequest_
+    Timeout_
+    NetworkError_
+    BadStatus_
+    GoodStatus_
+  value emptyBody : Body
+  value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure
+  value expectSchema : Schema e a → Expect Error a
+  value expectString : Expect Error String
+  value expectStringResponse : (Response String → Result x a) → Expect x a
+  value expectWhatever : Expect Error ⊤
+  value fractionReceived : { received : Int, size : Maybe Int } → Float
+  value fractionSent : { sent : Int, size : Int } → Float
+  value get : { expect : Expect x a, url : String } → Result x a  -- suspends
+  value header : String, String → Header
+  value jsonBody : Schema e a, a → Body  -- impure
+  value multipartBody : List Part → Body
+  value post : { body : Body, expect : Expect x a, url : String } → Result x a  -- suspends
+  value request : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe (Progress → ⊤), url : String } → Result x a  -- suspends
+  value riskyRequest : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe (Progress → ⊤), url : String } → Result x a  -- suspends
+  value riskySend : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg  -- impure
+  value send : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg  -- impure
+  value stringBody : String, String → Body
+  value stringPart : String, String → Part
+  value track : String, (Progress → msg) → Sub msg  -- impure
 module Listen
   alias Entry
   value callback : (a → ⊤) → a → ⊤  -- impure

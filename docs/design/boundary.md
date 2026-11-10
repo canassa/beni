@@ -3882,6 +3882,11 @@ section is normative for `browser`'s `Http` and **replaces §9.8.8's `Http` row*
 them are migrated by the slice that lands this (`plans/http-and-routing.md`). The choices it takes
 for the owner are H1–H5 of that plan; each is written here as recommended and is reversible until
 its slice lands. *Amended 2026-10-02:* the owner confirmed H1–H5 as recommended.
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Http*):* `Http` is a module of
+`browser-base`, re-exported by `browser`, `browser-tea` and `browser-inline`, and imports no
+renderer. Its after-render wait (`ready`) is `Phase.onRendered` (§9.8.6). On `browser-inline`
+`send`, `riskySend` and a request in a `Cmd.task` or `Cmd.perform` body compile as any
+unkeyed command; `browser/prerender/BaseHttp` sends its request only after the takeover.
 
 **The model is elm/http 2.0** (the owner, 2026-10-01: mirror Elm's packages, read their code;
 `Http.elm` and `Elm/Kernel/Http.js` at `2.0.0`). Its pieces keep their names — `request`, `get`,

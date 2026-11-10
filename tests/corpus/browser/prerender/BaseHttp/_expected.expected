@@ -1,0 +1,55 @@
+-- load
+(fetch 1: GET /api/greeting {})
+<body>
+  <main>
+    <button id="missing">"missing"</button>
+    <button id="offline">"offline"</button>
+    <button id="save">"save"</button>
+    <output id="log"></output>
+  </main>
+</body>
+-- respond 1 200 "hello"
+<body>
+  <main>
+    <button id="missing">"missing"</button>
+    <button id="offline">"offline"</button>
+    <button id="save">"save"</button>
+    <output id="log">"greeting: ok hello"</output>
+  </main>
+</body>
+-- click #missing
+(fetch 2: GET /api/missing {})
+(the DOM did not change)
+-- respond 2 404 ""
+<body>
+  <main>
+    <button id="missing">"missing"</button>
+    <button id="offline">"offline"</button>
+    <button id="save">"save"</button>
+    <output id="log">"greeting: ok hello / missing: bad status 404"</output>
+  </main>
+</body>
+-- click #offline
+(fetch 3: GET /api/offline {})
+(the DOM did not change)
+-- fail 3
+<body>
+  <main>
+    <button id="missing">"missing"</button>
+    <button id="offline">"offline"</button>
+    <button id="save">"save"</button>
+    <output id="log">"greeting: ok hello / missing: bad status 404 / offline: network error"</output>
+  </main>
+</body>
+-- click #save
+(fetch 4: POST /api/notes {"content-type":"text/plain"} "note")
+(the DOM did not change)
+-- respond 4 200 "saved"
+<body>
+  <main>
+    <button id="missing">"missing"</button>
+    <button id="offline">"offline"</button>
+    <button id="save">"save"</button>
+    <output id="log">"greeting: ok hello / missing: bad status 404 / offline: network error / save: ok saved"</output>
+  </main>
+</body>

@@ -1,0 +1,25 @@
+-- A prerendered `view` may not make a request: `Http.get` reaches the
+-- host, so the build refuses it at the call (`prerender.md` §3.1;
+-- browser-capability-base.md §5).
+import Browser
+import Html exposing (Html)
+import Http
+import Tea
+
+
+greeting : ⊤ → String
+greeting ⊤ =
+    case Http.get { url = "/api/greeting", expect = Http.expectString } of
+        Ok text →
+            text
+
+        Err _ →
+            ""
+
+
+view : Int → Html Int
+view n = <main><output>{n}</output><output>{greeting ⊤}</output></main>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]
