@@ -762,3 +762,45 @@ Still owed on dagon (`test-webgpu`): the first real run of BaseGpu, which
 writes `_expected.webgpu-expected` and checks all four builds against it;
 the `_expected.webgpu` walk and golden path itself; and the 134
 `browser/gpu/` pages on a real adapter after the move.
+
+
+### Http — built 2026-11-10
+
+`Http` moves to `browser-base` whole and is removed from `browser` in the
+same slice. It has imported no renderer since the Dom slice: its
+after-render wait calls `Phase.onRendered`. The base, `browser` and
+`browser-inline` re-export it, and `browser-tea` does through `browser`.
+The binary response (#1887) is not part of this family.
+
+Fixtures. `browser/prerender/BaseHttp` is a prerendered inline page. Its
+`init` command asks for `/api/greeting`. The build sends nothing; the page
+sends it after the takeover. The driver's scripted `fetch` answers it.
+"missing" is `Err (BadStatus 404)`, "offline" is `Err NetworkError`, and
+"save" is `Http.send`, the command form, posting a text body. Each
+outcome renders as a value, and all four builds share one transcript.
+`build/bad/prerender/BaseHttpInView` and `BaseHttpInInit` call `Http.get` in
+`view` and eagerly in `init`. Both are refused at the call as
+`suspending_callback`: a request suspends, and `view` and `init` are
+synchronous callbacks. The checker refuses this before the prerender
+check, so the code is not `prerender_impure`. All three failed before the
+slice with an unknown module `Http` (`zig-out/scratch/http-before/`).
+
+Not covered yet, and owed to the next functional slice (§7 step 3):
+cancellation that blocks a stale reply. It needs `Cmd.keyed` `Restart` or
+`Cmd.cancel`, which remain inline compiler limits. `Http.track` on inline
+is a static `Sub.on` and has no inline fixture yet.
+
+Sizes (release JavaScript): the four empty-page variants and both timer
+controls are SHA-identical to master. The nine inline pages of the earlier
+families (BaseDom and BaseGpu included) are byte-identical to the Gpu commit
+fdbdfb5005. One emit golden moves and is not regenerated pending manager
+review: `emit/release/tea/HttpSendTracked`, 19094/7141/7889 → 19100/7145/7891
+raw/brotli/gzip. One helper is inlined at its call site and two declarations
+are reordered; the key identity string `platform:Http.Key` is unchanged.
+BaseHttp's release page is 13751/5153/5720.
+
+Final validation (2026-11-10, zorg 0.17.1+zorg.3, default mode, run one
+after another against clean master 620c322a45). The gates fail the same set
+on both sides. Chrome fails only `tea/DomCapabilities` on both. The manager
+accepted the `HttpSendTracked` golden, and it was recorded from a real build.
+Comparisons: `zig-out/scratch/http-final-{gates,browser}-comparison.json`.
