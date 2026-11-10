@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="again">"again"</button>
+    <output id="log">"configure: Ok done; frame: Ok 1 receipts; pixel: Ok 4294901760; lost: Destroyed"</output>
+  </main>
+</body>
+-- click #again
+<body>
+  <main>
+    <canvas id="gpu" width="4" height="4"></canvas>
+    <button id="again">"again"</button>
+    <output id="log">"configure: Ok done; frame: Ok 1 receipts; pixel: Ok 4294901760; lost: Destroyed / configure: Ok done; frame: Ok 1 receipts; pixel: Ok 4294901760; lost: Destroyed"</output>
+  </main>
+</body>
