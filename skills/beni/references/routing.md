@@ -81,7 +81,8 @@ main =
 
 - Write the `{ title, body }` record in the `view` itself.
 - A refusal message must not wait: give a constructor, as above.
-- There is no `eachUrlRequest` or `eachUrlChange`. They need a fiber.
+- `eachUrlRequest` and `eachUrlChange` run in a command's fiber (`Cmd.perform`), as on
+  `browser-tea`.
 - A link's `href` can change: `href={"/blog/" ++ slug}`. A `javascript:` or `data:text/html` URL is
   written as an empty `href`, as on `browser-tea`. The build checks a literal. The page checks a
   value when it writes it.

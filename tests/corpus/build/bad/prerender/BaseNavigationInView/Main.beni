@@ -1,0 +1,26 @@
+-- A prerendered `view` may not read the page's address: `currentUrl`
+-- reads the host, now through `browser-base`'s `Browser.Address`, so the
+-- build refuses it at the call (`prerender.md` §3.1;
+-- browser-capability-base.md §5). The build hands `init` a route instead.
+import Browser
+import Browser.Navigation as Navigation
+import Html exposing (Html)
+import Tea
+
+
+path : ⊤ → String
+path ⊤ =
+    case Navigation.currentUrl ⊤ of
+        Just url →
+            url.path
+
+        Nothing →
+            ""
+
+
+view : Int → Html Int
+view n = <main><output>{n}</output><output>{path ⊤}</output></main>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]

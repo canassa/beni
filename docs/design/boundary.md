@@ -4189,6 +4189,12 @@ H7 with one change, recorded under (a). *Amended 2026-10-29 (#1163):* `browser-i
 `Browser.Navigation`, `Browser.UrlRequest`, `Tea.document` and `Tea.application` too, with these
 semantics; what its `inline` lowering compiles of them, and its two departures (no `each` forms, a
 `sync` refusal tagger), are `browser-inline.md` §10.
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Navigation*):* the host operations of
+`Browser.Navigation` — reading and changing the address, `load`, `reload`, history traversal, URL
+resolution, the link-click guard of (c) and the shared listeners — are `browser-base`'s private
+`Browser.Address`. `browser` and `browser-inline` each keep a facade with its own `Key`, `Error` and
+`Browser.UrlRequest`, whose constructors programs match; a facade hands `Browser.Address` its
+`Error` constructors and maps a link to its own `UrlRequest`.
 
 **(a) Where `Url` lives** (H7). `Url`, `Url.Parser`, `Url.Parser.Query` and `Url.Builder` are
 pure and use nothing of a page, so they are **core modules**: a library, the `node` platform and a

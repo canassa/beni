@@ -2057,6 +2057,14 @@ does, builds on both platforms. Its listeners read only the host — the event a
 they are added as they are, not through `Listen.on`: the `send` the mount hands a start enters the
 dispatch guard itself (§3).
 
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Navigation*).* The host work —
+reading and changing the address, `load`, `reload`, `go`, URL resolution and the link-click guard —
+is `browser-base`'s private `Browser.Address`, shared with `browser`'s facade. This facade keeps
+`Key`, `Error`, its `sync` taggers and its own listener installation for `onUrlRequest` and
+`onUrlChange`, and hands `Browser.Address` its `Error` constructors. Since the platform has scoped
+tasks (§9 of the base design, *Time*), `eachUrlRequest` and `eachUrlChange` exist here too, over
+`Listen.each` and the shared listeners, in a command's fiber (`browser/prerender/BaseNavigation`).
+
 ### 10.2 `Tea.document`
 
 The lowering recognises `Tea.document` where it is called, as it does `element` (§2): `init`,
