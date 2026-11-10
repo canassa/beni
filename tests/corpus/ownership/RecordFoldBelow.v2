@@ -1,0 +1,6 @@
+Where a fold's callback answers a record that its answer holds at two places, v1 refuses the callback's update
+(`supply`), and checker v2 refuses at the fold's call (`disjoint`, approximate): `histFold`, `tupleFold`
+(ownership-v2.md §2.11.5, the record pass). `twinFold` is accepted by v2 and refused by v1: its callback answers one
+record at `.a` and `.b`, and nothing reads `.b` after the write of `.a`, so no read is stale.
+`run/SanitiserRecordTwinFold` runs it with its records in place under the sanitiser, and
+`run/SanitiserRecordTwinFoldRead` is the twin that reads `.b` and is refused.

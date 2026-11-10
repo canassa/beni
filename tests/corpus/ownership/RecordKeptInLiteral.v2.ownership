@@ -1,0 +1,9 @@
+module RecordKeptInLiteral
+  25:10 update r: rejected alias: b holds it and is read at 26:5
+  32:10 update r: rejected alias: b holds it and is read at 33:5
+  37:13 update <record>: accepted fresh
+  41:15 update <record>: accepted fresh
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 2, rejected 2
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 2, rejected 2

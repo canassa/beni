@@ -1,0 +1,12 @@
+module RecordSortWith
+  18:15 update rows[*]: accepted callback-param
+  18:34 update r: accepted param
+  22:15 update <call List.sortWith>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  26:11 update <call List.sortWith>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  30:14 update <call List.sortBy>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  34:16 update <lambda>: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
+  34:50 update a: accepted param
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 3, rejected 4
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 3, rejected 4

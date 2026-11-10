@@ -1,0 +1,12 @@
+module RecordContentsAnswered
+  22:13 update rows[*]: accepted callback-param
+  22:32 update r: accepted param
+  29:13 update <call List.copy>[*]: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  40:16 update <call RecordContentsAnswered.patch>[*]: accepted param
+  40:22 update rows[*]: accepted callback-param
+  40:54 update r: accepted param
+  44:19 update <call RecordContentsAnswered.patch>[*]: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 5, rejected 2
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 5, rejected 2

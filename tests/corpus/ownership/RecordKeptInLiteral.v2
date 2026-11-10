@@ -1,0 +1,4 @@
+Checker v2 refuses the update in `inList` and in `inRecord` themselves, `alias`: the answer `b` of the unknown function
+`f` can hold `r`, and `b` is read later (ownership-v2.md §2.11.5, the record pass). v1 accepts them on a condition for
+their callers and refuses the callers that pass a function which keeps its argument. v2 also refuses a caller whose
+function keeps nothing: an over-refusal, #2470.

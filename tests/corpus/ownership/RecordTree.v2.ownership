@@ -1,0 +1,22 @@
+module RecordTree
+  23:18 update n: accepted param
+  23:44 update n.kids[*]#Tree.0: rejected disjoint: another operand of the same operation reaches it (approx)
+  23:44 update n.kids[*]#Tree.0.kids[*]#Tree.0: rejected disjoint: another operand of the same operation reaches it (approx)
+  23:44 update n.kids[*]#Tree.0.kids⟨Tree⟩[*]#Tree.0: rejected disjoint: another operand of the same operation reaches it (approx)
+  32:26 update n: accepted param
+  32:41 update k#Tree.0: accepted param
+  32:41 update k#Tree.0.kids[*]#Tree.0: accepted param
+  32:41 update k#Tree.0.kids[*]⟨Tree⟩#Tree.0: accepted param
+  35:26 update n: accepted param
+  39:12 update t#Tree.0: rejected later-use: t is read again at 39:10
+  39:12 update t#Tree.0.kids[*]#Tree.0: rejected later-use: t is read again at 39:10
+  39:12 update t#Tree.0.kids[*]⟨Tree⟩#Tree.0: rejected later-use: t is read again at 39:10
+  43:16 update t#Tree.0: rejected later-use: t is read again at 43:14
+  43:16 update t#Tree.0.kids[*]#Tree.0: rejected later-use: t is read again at 43:14
+  43:16 update t#Tree.0.kids[*]⟨Tree⟩#Tree.0: rejected later-use: t is read again at 43:14
+  47:11 update <Tree …>#Tree.0: accepted fresh
+  47:11 update <Tree …>#Tree.0.kids[*]#Tree.0: accepted fresh
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 17: accepted 8, rejected 9
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 17: accepted 8, rejected 9

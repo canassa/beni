@@ -1,0 +1,3 @@
+Checker v2 accepts a fold whose callback answers one record at two fields, where nothing reads the second after the
+write of the first (ownership-v2.md §2.8; ownership/RecordFoldBelow, `twinFold`; #1018). v1 refuses it. The three
+builds with the records in place must print the golden.
