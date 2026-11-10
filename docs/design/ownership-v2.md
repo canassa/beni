@@ -2228,6 +2228,26 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    the push stays refused and the update is accepted; `same b = pair b b` (one record twice, R-4.8.8) and
    `inList b = keepIn b [ b ]` (a list that holds the record) stay refused. Fixture
    `ownership/RecordBesideLists`; mutant `record_req_whole`.
+   *Amended 2026-11-10 (#1018): a deep occurrence, for a record's write; and a taken row.* Two things kept
+   a record's write refused where only lists met. (a) A **deep** occurrence `π_j·s*` is every object at and
+   below its slot, lists and records alike, and the reading above did not change it. (b) A write that a
+   callback makes of what a label supplies it relies also on each label that the supply comes through
+   (`Outward`), and where the supply is taken out of a container, on the container's occurrences
+   (§2.11.3, `RowEnv.takenOccs`): one deep occurrence of the container, read once for every write.
+   `shared k = List.update [ { title = "b", kids = k, other = k } ] 0 grow`,
+   `grow g = { g | kids = List.push g.kids "new" }`: the element's two lists are one list, so the container
+   holds that list twice. The push is refused, and the update of the element was refused with it.
+   Now, for a record's write, `ReqKinds.of` (which `CallReq.of` uses, and which `Outward` uses for a taken
+   row whose first reading is `no`) reads a deep occurrence as **the record objects at and below its slot**:
+   one occurrence for each slot of the argument's place there whose kind is a record's, plain or apart as
+   the deep occurrence was. A list's, a tuple's and a constructor's slot adds none. The deep occurrence stays
+   as it is where the records cannot be named one by one: a place on a cycle, a slot whose kind may hold a
+   record that no step names (a type variable, an opaque type, a closure, a cell, a dictionary), an argument
+   with no place, or more than 64 places below (`ReqKinds.max_places`; each place visited is one record on
+   the account). A list's write reads every condition once, as before. So `shared` refuses the push and
+   accepts the update of the element, and `twice g = List.update [ g, g ] 0 grow`, a list whose two elements
+   are one record, stays refused. Fixture `ownership/RecordBesideListsSupplied`; mutants
+   `record_supply_whole` (the taken row is read once) and `record_deep_whole` (a deep occurrence stays deep).
 5. **Escapes.** The objects at `C.escapes`' projections are escaped at the call (§2.4), deep.
 6. **Labels.** Each of `C.labels` is instantiated (§2.11.3).
 
@@ -6587,7 +6607,8 @@ L0  Ids  Counters  Scratch
 | `Groups.zig` | 10 | the module: adapters, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, VarOpen, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6); the two passes' blocks as one (`both`, `part`) | Ids, Place, Slots, Contract, Groups |
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
-| `CallReq.zig` | 10 | a callee's `req` at a call, as the contract has it and, in the record pass, as a record's write and as a list's write rely on it (§2.11.2 item 4, *A list's write beside a record's*, *a record's write beside a list's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
+| `CallReq.zig` | 10 | a callee's `req` at a call, as the contract has it and, in the record pass, as a record's write and as a list's write rely on it (§2.11.2 item 4, *A list's write beside a record's*, *a record's write beside a list's*, #1018), for `Outward` | Ids, Contract, Value, Relation, ReqKinds, Distinct, MovedReq |
+| `ReqKinds.zig` | 9 | a requirement as a write of one kind relies on it: the plain occurrences at slots of the other kind asked apart, and for a record's write a deep occurrence named record by record (§2.11.2 item 4, #1018), for `CallReq`, `Outward` | Ids, Place, Contract, Value, Relation, Update |
 | `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
 | `FieldReads.zig` | 8 | a record's fields read and written, in a contract's `reads` and `writes`: the frame's field events as marks at the record's slot, a callee's marks read at a caller, and a record demand's written fields as marks (§2.8, *Dead, by field*, §2.10, R-4.8.5, R-4.8.7), for `ReadOff` | Ids, Place, Slots, Contract |
 | `FieldCapture.zig` | 8 | a closure's field captures, read off the frame's text: the read events and uses at the creation, and the closure's kid of field values (§2.11.4, *a field capture*, R-5.4.6), for `Walk` | Ids, Place |

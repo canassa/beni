@@ -1,0 +1,17 @@
+module RecordBesideListsSupplied
+  16:10 update g: accepted param
+  16:23 List.push g.kids: accepted param
+  20:12 List.update <literal>: accepted fresh
+  20:12 List.update <literal>[*].kids: rejected disjoint: another operand of the same operation reaches it (approx)
+  20:12 update <literal>[*]: accepted callback-param
+  24:13 List.update <literal>: accepted fresh
+  24:13 List.update <literal>[*].kids: accepted callback-param
+  24:13 update <literal>[*]: accepted callback-param
+  28:11 List.update <literal>: accepted fresh
+  28:11 List.update <literal>[*].kids: rejected disjoint: another operand of the same operation reaches it (approx)
+  28:11 update <literal>[*]: rejected disjoint: another operand of the same operation reaches it (approx)
+  demands 7: accepted 5 (fresh 3, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 2
+  records 4: accepted 3, rejected 1
+total 7: accepted 5 (fresh 3, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 2
+records 4: accepted 3, rejected 1
+cause disjoint 2

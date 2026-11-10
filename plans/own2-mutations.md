@@ -38,6 +38,10 @@ fixtures had a `.v2.ownership` and no `.v2` file, and a `.v2.ownership` is read 
 `record_req_whole` (a record's write at a call relies on the callee's whole `req`, `CallReq.zig`) is killed by
 `ownership/RecordBesideLists` and `RecordFoldPush`; `list_req_whole`, whose code changed with it, is still killed by
 `RecordFoldPush` (`--only=record_req_whole,list_req_whole`, 457 s, control green).
+`record_supply_whole` (a record's write reads a taken row's container once, `Outward.zig`) and `record_deep_whole` (a deep
+occurrence stays every object below its slot for a record's write, `ReqKinds.zig`) are each killed by
+`ownership/RecordBesideListsSupplied`. The two mutants of the kind reading, whose code moved to `ReqKinds.zig`, are still
+killed (`--only=record_supply_whole,record_deep_whole,record_req_whole,list_req_whole`, 446 s, control green).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -81,7 +85,9 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `field_capture_whole` | §2.11.4, R-5.4.6 | a closure that reads only fields of a captured record holds the record whole | killed | | 0 | 3: RecordDemands (OwnershipV2Differs), … | 0 | |
 | `write_fields_all` | §2.10, R-4.8.2 | a callee's write of a record names no field, so a caller reads it as every field | killed | | 0 | 2: RecordOnce (OwnershipV2Differs), … | 0 | |
 | `once_read_hoists` | §2.8, R-4.8.2 | a read of a written field after a once closure is made is a hoist, as after an update | killed | | 0 | 2: RecordOnce (OwnershipV2Differs), … | 0 | |
-| `record_req_whole` | §2.11.2 item 4 | a record's write at a call relies on the callee's whole `req`, also where only two lists' storage meets | killed | | 0 | 2: RecordBesideLists (OwnershipV2Differs), … | 0 | |
+| `record_req_whole` | §2.11.2 item 4 | a record's write at a call relies on the callee's whole `req`, also where only two lists' storage meets | killed | | 0 | 3: RecordBesideLists (OwnershipV2Differs), … | 0 | |
+| `record_supply_whole` | §2.11.2 item 4 | a record's write reads the taken row's container occurrences once, as a list's write does | killed | | 0 | RecordBesideListsSupplied (OwnershipV2Differs) | 0 | |
+| `record_deep_whole` | §2.11.2 item 4 | for a record's write a deep occurrence stays every object at and below its slot | killed | | 0 | RecordBesideListsSupplied (OwnershipV2Differs) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

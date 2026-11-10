@@ -1,0 +1,28 @@
+-- ownership: a record's write beside a list's, through a label's supply
+-- (`ownership-v2.md` §2.11.2 item 4, *a deep occurrence, for a record's
+-- write; and a taken row*; R-8.6). `grow` updates its record and pushes
+-- onto its `kids`. `List.update` hands it one element. In `shared` the
+-- element's two lists are one list: the push is refused, and the update of
+-- the element is accepted, because no pair that a record's write asks
+-- meets. In `apart` both are accepted. In `twice` the list's two elements
+-- are one record: the update is refused.
+type alias G =
+    title : String
+    kids : List String
+    other : List String
+
+
+grow : G → G
+grow g = { g | kids = List.push g.kids "new" }
+
+
+pub shared : List String → List G
+shared k = List.update [ { title = "b", kids = k, other = k } ] 0 grow
+
+
+pub apart : List String, List String → List G
+apart k l = List.update [ { title = "b", kids = k, other = l } ] 0 grow
+
+
+pub twice : G → List G
+twice g = List.update [ g, g ] 0 grow

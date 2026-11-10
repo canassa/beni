@@ -1,0 +1,25 @@
+module RecordBesideListsSupplied
+  16:10 update g: accepted param
+  16:23 List.push g.kids: accepted param
+  20:12 List.update <literal>: accepted fresh
+  20:12 List.update <literal>[*].kids: rejected disjoint: another operand of the same operation reaches it (RecordBesideListsSupplied.grow writes what List.update supplies it)
+  20:12 update <literal>[*]: accepted fresh (List.update writes it)
+  20:12 value RecordBesideListsSupplied.grow: rejected exclusive: List.update hands its parameter 1 an element of <literal>, whose elements may share one list
+  24:13 List.update <literal>: accepted fresh
+  24:13 List.update <literal>[*].kids: accepted param (RecordBesideListsSupplied.grow writes what List.update supplies it)
+  24:13 update <literal>[*]: accepted fresh (List.update writes it)
+  24:13 value RecordBesideListsSupplied.grow: accepted callback-param (List.update supplies it owned)
+  28:11 List.update <literal>: accepted fresh
+  28:11 List.update <literal>[*].kids: accepted param (RecordBesideListsSupplied.grow writes what List.update supplies it)
+  28:11 update RecordBesideListsSupplied.grow: rejected exclusive: List.update hands its parameter 1 a position of a list that may hold one record at two positions [copy]
+  28:11 value RecordBesideListsSupplied.grow: rejected exclusive: List.update hands its parameter 1 an element of <literal>, whose elements may share one list
+  summary grow: π1 W{kids}, π1.kids RAW[storage], π1.kids[*] A, π1.other RA; res .kids condition(fresh1) π1.kids, .kids[*] ~condition(fresh2) ~π1.kids[*], .other ~condition(fresh3) π1.other, π1◦
+  summary shared: π1 RAW[storage], π1[*] A; res [*] condition(fresh1){shared} fresh501◦, [*].kids condition(fresh2) ~condition(fresh5) π1, [*].kids[*] ~condition(fresh6) ~π1[*], [*].other condition(fresh3) ~condition(fresh7) π1, fresh4{shared}r{excl π1[*]}
+  summary apart: π1 RAW[storage], π1[*] A, π2 RA; res [*] condition(fresh1){sep π1 π2} fresh501◦, [*].kids condition(fresh2) ~condition(fresh6) π1, [*].kids[*] ~condition(fresh3) ~π1[*], [*].other condition(fresh4) ~condition(fresh7) π2, fresh5{excl π1, excl π2, sep π1 π2, sep π1[*] π2}r{excl π1[*]}; xreq sep-root π1 π2, spine π1
+  summary twice: π1 RA, π1.kids AW[storage], π1.kids[*] A, π1.other A; res [*] condition(fresh2) ~π1◦ π1, [*].kids ~condition(fresh3) ~π1.kids, [*].kids[*] ~condition(fresh5) ~π1.kids[*], [*].other ~condition(fresh4) ~π1.other, fresh1{shared}r{shared}
+  demands 10: accepted 7 (fresh 3, call 0, param 3, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
+  records 4: accepted 3, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 10: accepted 7 (fresh 3, call 0, param 3, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
+records 4: accepted 3, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+cause disjoint 1
+cause exclusive 2

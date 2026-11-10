@@ -38,27 +38,27 @@ pub fn isRecord(f: anytype, v: u32) bool {
 
 /// Whether the place `words` below value `v` is a record's.
 pub fn recordAt(f: anytype, v: u32, words: []const u32) bool {
-    return kindAt(f, v, words) == .record;
+    return if (placeAt(f, v, words)) |p| f.places.kind(p) == .record else false;
 }
 
-/// The kind of the place `words` below value `v`, where the value has a place.
-pub fn kindAt(f: anytype, v: u32, words: []const u32) ?Place.Kind {
+/// The place `words` below value `v`, where the value has a place.
+pub fn placeAt(f: anytype, v: u32, words: []const u32) ?Place.PlaceId {
     const x = f.val(v);
     // A reference read by steps has no place of its own: its position's.
     const at = if (x.place != .none) x.place else if (x.kind == .ref and x.pos != none) f.places.pathPlace(f.pos.items[x.pos].slot) else return null;
-    return kindBelow(f, at, words);
+    return placeBelow(f, at, words);
 }
 
 /// Whether the place `words` below place `at` is a record's. A word no child answers (a level) says no.
 pub fn recordBelow(f: anytype, at: Place.PlaceId, words: []const u32) bool {
-    return kindBelow(f, at, words) == .record;
+    return if (placeBelow(f, at, words)) |p| f.places.kind(p) == .record else false;
 }
 
-/// The kind of the place `words` below place `at`; none where a word has no child there.
-pub fn kindBelow(f: anytype, at: Place.PlaceId, words: []const u32) ?Place.Kind {
+/// The place `words` below place `at`; none where a word has no child there.
+pub fn placeBelow(f: anytype, at: Place.PlaceId, words: []const u32) ?Place.PlaceId {
     var p = at;
     for (words) |wd| p = f.places.child(p, Place.Step.fromWord(wd)) orelse return null;
-    return f.places.kind(p);
+    return p;
 }
 
 /// `recordBelow` at parameter `j` of a code whose parameters' places are `params`.
