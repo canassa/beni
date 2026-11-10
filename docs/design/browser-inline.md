@@ -112,6 +112,14 @@ command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
   (§10.4):* the pass reads `init` and each key through the platform's functions, so a command a
   layer makes (`Navigation.pushUrl`) is read as its `perform`.
 
+*Amended 2026-11-10 (`browser-capability-base.md` §9, *Dom*; interface 1.29).* The pass also
+reads `Cmd.afterRender` (`Lowering.Effects.after_render`). Its body is `sync`, so it **runs**: in
+the runtime it is queued exactly as a `perform` that cannot suspend, after the write pass that shows
+its model, in the same dispatch. That point is this platform's after-render phase: the page is
+written inside the dispatch, so nothing is left to patch. `Dom.rendered` in a fiber waits until the
+scheduler's drain that runs it, and with it the dispatch, has returned. A prerendered `init` may
+return it, staged as a `perform` is (§4.2 of the base design).
+
 ## 5. What the lowering refuses
 
 *Amended 2026-11-10 (the owner).* A subscription may drop its value with a tagger

@@ -15703,7 +15703,7 @@ pub const Lowerer = struct {
     /// time the walk enters it.
     const Verdicts = struct { per: [][]Purity, command_diagnostic: bool = false };
 
-    const StagedConstructor = enum { none, perform, batch };
+    const StagedConstructor = enum { none, perform, batch, after_render };
 
     /// Resolve against the selected lowering's actual platform module and
     /// declaration. An app module or alias merely spelled Cmd is no proof.
@@ -15729,6 +15729,7 @@ pub const Lowerer = struct {
         if (std.mem.eql(u8, value_name, "none")) return .none;
         if (std.mem.eql(u8, value_name, "perform")) return .perform;
         if (std.mem.eql(u8, value_name, "batch")) return .batch;
+        if (effects.after_render and std.mem.eql(u8, value_name, "afterRender")) return .after_render;
         return null;
     }
 
@@ -15748,7 +15749,7 @@ pub const Lowerer = struct {
         if (args.len != 1) return null;
         switch (kind) {
             .none => return null,
-            .perform => return try l.effectOf(l.ownFrame(), args[0], verdicts),
+            .perform, .after_render => return try l.effectOf(l.ownFrame(), args[0], verdicts),
             .batch => {
                 if (l.bir.instTag(args[0]) != .list) return null;
                 var debug = false;
@@ -15813,7 +15814,7 @@ pub const Lowerer = struct {
             const d = l.bir.instData(root);
             const kind = (try l.stagedConstructor(@fromBackingInt(@intCast(d.lhs)))).?;
             const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
-            if (kind == .perform) {
+            if (kind == .perform or kind == .after_render) {
                 try l.discard(out, args[0], p);
             } else if (kind == .batch) {
                 for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Inst.Index)) |command| _ = try l.eraseStagedCommand(out, command);

@@ -1,0 +1,37 @@
+-- A prerendered `init` may not measure a node, even when only its command
+-- uses the answer: `Dom.box` reads the host where `init` runs, so the build
+-- refuses it at the call (`prerender.md` §3.1; browser-capability-base.md
+-- §4.2, §5).
+import Browser
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Measured Bool
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ =
+    measured = Dom.box "main"
+    ( 0, Cmd.perform λsend → send (Measured (measured ≠ Err (Dom.NotFound "main"))) )
+
+
+view : Int → Html Msg
+view n = <main id="main"><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = init
+            , update = λ_ n → ( n, Cmd.none )
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

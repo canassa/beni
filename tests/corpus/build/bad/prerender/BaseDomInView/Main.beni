@@ -1,0 +1,19 @@
+-- A prerendered `view` may not read the page's viewport: `Dom.viewport`
+-- reads the host, so the build refuses it at the call (`prerender.md`
+-- §3.1; browser-capability-base.md §5).
+import Browser
+import Dom
+import Html exposing (Html)
+import Tea
+
+
+width : ⊤ → Float
+width ⊤ = (Dom.viewport ⊤).width
+
+
+view : Int → Html Int
+view n = <main><output>{n}</output><output>{width ⊤}</output></main>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]

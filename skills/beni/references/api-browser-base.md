@@ -60,6 +60,42 @@ module Cmd
   value none : Cmd msg
   value perform : (Send msg → ⊤) → Cmd msg  -- impure
   value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
+module Dom
+  type Align
+    Start
+    Center
+    End
+    Nearest
+  alias Alignment
+    Alignment
+  alias Box
+    Box
+  type Error
+    NotFound
+  type FullscreenError
+    NoElement
+    Unsupported
+    NotActivated
+    Refused
+  type SelectError
+    NoField
+    NotText
+  alias Viewport
+    Viewport
+  value blur : String → Result Error ⊤  -- impure
+  value box : String → Result Error Box  -- impure
+  value eachFullscreenChange : (Maybe String → ⊤) → ⊤  -- suspends
+  value exitFullscreen : ⊤ → ⊤  -- suspends
+  value focus : String → Result Error ⊤  -- impure
+  value fullscreenElement : ⊤ → Maybe String  -- impure
+  value onFullscreenChange : (Maybe String → msg) → Sub msg  -- impure
+  value rendered : ⊤ → ⊤  -- suspends
+  value requestFullscreen : String → Result FullscreenError ⊤  -- suspends
+  value scrollIntoView : String → Result Error ⊤  -- impure
+  value scrollIntoViewWith : String, Alignment → Result Error ⊤  -- impure
+  value scrollTo : String, Float, Float → Result Error ⊤  -- impure
+  value select : String, Selection → Result SelectError ⊤  -- impure
+  value viewport : ⊤ → Viewport  -- impure
 module Hosted
   type Host a
   type Job a
@@ -74,6 +110,7 @@ module Hosted
   type Tap a
   value afterRender : Host msg, Later msg → ⊤  -- impure
   value callJob : Job msg, Send msg → ⊤  -- impure
+  value callLater : Later msg, Send msg → ⊤  -- impure
   value close : Outlet msg → ⊤  -- impure
   value closeRelay : Relay msg → ⊤  -- impure
   value compare : Key, Key → Order
@@ -105,6 +142,15 @@ module Listen
   value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
   value on2 : String, String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
   value withEntry : ((⊤ → ⊤) → ⊤), (⊤ → a) → a  -- impure
+module Phase
+  value after : Value → ⊤  -- impure
+  value flush : Bool → ⊤  -- impure
+  value installRendered : Value → ⊤  -- impure
+  value mount : Value, Value → ⊤  -- impure
+  value nudgeWith : Value → ⊤  -- impure
+  value onRendered : Resume ⊤ → ⊤ → ⊤  -- impure
+  value rendered : ⊤ → ⊤  -- suspends
+  value rendering : (⊤ → a) → a  -- impure
 module Sub
   type Sub a
     None

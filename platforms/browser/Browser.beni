@@ -12,6 +12,7 @@
 import Hosted
 import Html exposing (Html)
 import Js
+import Phase
 import Task
 import Url exposing (Url)
 
@@ -149,41 +150,7 @@ hosted p =
 --| than the flush already queued, so no render ever sees a half-handled
 --| message.
 pub flush : ⊤ → ⊤
-flush ⊤ =
-    if Js.isNull (Js.read loop) || Js.read busy || Js.read dispatching then
-        ⊤
-    else
-        Js.to (Js.apply (Js.read loop) [])
-
-
---| How `Dom.rendered` waits: `resume` is called at the start of the
---| after-render phase of the flush the page has queued, or at once when
---| none is queued. Returns what stops the wait.
-pub onRendered : Task.Resume ⊤ → (⊤ → ⊤)
-onRendered resume =
-    if Js.isNull (Js.read directRendered) then
-        loopRendered resume
-    else
-        Js.to (Js.apply (Js.read directRendered) [ Js.from resume ])
-
-
-loopRendered : Task.Resume ⊤ → (⊤ → ⊤)
-loopRendered resume =
-    if
-        Js.isNull (Js.read loop)
-            || not (Js.to (Js.apply (Js.read setPhase) [ Js.from afterRender ]))
-                && Js.to (Js.get (Js.read later) "length") == 0
-    then
-        _ = Js.apply (Js.from resume) [ Js.null ]
-        Js.to Js.null
-    else
-        _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
-        _ = Js.apply (Js.read nudge) []
-        λ⊤ →
-            i : Int
-            i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
-            if i ≥ 0 then
-                Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
+flush ⊤ = Phase.flush (Js.read dispatching)
 
 
 -- ---- The hosted loop (`boundary.md` §9.8; `backend.md` §15.11) -----------
@@ -197,44 +164,15 @@ loopRendered resume =
 -- node's `send`, with `skip`, which renders nothing. Each latch is released
 -- in a `Js.finally`, however its work ends; a throw that ends it stops the
 -- page, which is the runtime's guard (`boundary.md` §9.8.10 (c)).
--- The runtime's loop, once a hosted program has mounted (null before),
--- what sets its after-render phase, and what queues a flush: the last
--- hosted mount node's `send`, with `skip`.
-loop : Js.Ref Js.Value
-loop = Js.ref Js.null
-
-
-setPhase : Js.Ref Js.Value
-setPhase = Js.ref Js.null
-
-
-nudge : Js.Ref Js.Value
-nudge = Js.ref Js.null
-
-
 -- A message no `update` sees: sent to queue a flush, and the render it
 -- queues shows what the program showed.
 skip : Js.Value
 skip = Js.array []
 
 
--- After-render work queued since the last flush, and the resumes of the
--- fibers waiting for its phase (`onRendered`), first queued first.
-later : Js.Ref Js.Value
-later = Js.ref (Js.array [])
-
-
-waiters : Js.Ref Js.Value
-waiters = Js.ref (Js.array [])
-
-
--- A hosted program renders in a flush, or the after-render phase runs; and
--- a message is being dispatched. `flush` does nothing during either: the
--- flush already queued renders what the dispatch did.
-busy : Js.Ref Bool
-busy = Js.ref False
-
-
+-- A message is being dispatched. `flush` does nothing during it, or
+-- while a hosted program renders (`Phase.rendering`): the flush already
+-- queued renders what the dispatch did.
 dispatching : Js.Ref Bool
 dispatching = Js.ref False
 
@@ -242,26 +180,6 @@ dispatching = Js.ref False
 -- Messages sent while one was being dispatched, as apply, message pairs.
 inbox : Js.Ref Js.Value
 inbox = Js.ref (Js.array [])
-
-
--- The after-render phase, which ends every flush once a hosted program has
--- mounted: the fibers waiting in `Dom.rendered` resume, in the order they
--- waited, then the work queued before this flush began runs, first queued
--- first, each at once. Work queued, or a message sent, while it runs is the
--- next flush's.
-afterRender : ⊤ → ⊤
-afterRender ⊤ =
-    resumes = Js.read waiters
-    work = Js.read later
-    Js.write waiters (Js.array [])
-    Js.write later (Js.array [])
-    Js.write busy True
-    Js.finally
-        (λ⊤ →
-            Js.each resumes λresume → Js.to (Js.apply resume [ Js.null ])
-            Js.each work λf → Js.to (Js.apply f [])
-        )
-        λ⊤ → Js.write busy False
 
 
 -- Apply every message the inbox holds from `i` on, in the order they were
@@ -292,23 +210,20 @@ host :
     , Js.Value
     → Js.Value
 host p root flushing phase stop =
-    Js.write loop flushing
-
     -- A fiber that throws stops the page, as a handler that throws does.
     -- Once the page has stopped, `stop` cancels every fiber of every
     -- program (`boundary.md` §9.8.14). The after-render work not yet run is
     -- dropped with no help: only a flush runs it, and none runs once the
     -- page has stopped.
     Task.onDefect λ⊤ → Js.to (Js.apply stop [])
-    Js.write setPhase phase
-    _ = Js.apply phase [ Js.from afterRender ]
+    Phase.mount flushing phase
 
     send =
         λmsg →
             _ = Js.call root "$$root" [ msg ]
             ⊤
 
-    Js.write nudge (Js.from λ⊤ → send skip)
+    Phase.nudgeWith (Js.from λ⊤ → send skip)
     model = Js.ref (Js.to Js.null)
     started = Js.ref False
     dirty = Js.ref False
@@ -319,7 +234,7 @@ host p root flushing phase stop =
             (Js.from
                 { after =
                     λf →
-                        _ = Js.call (Js.read later) "push" [ f ]
+                        Phase.after f
                         send skip
                 , send = send
                 }
@@ -360,21 +275,8 @@ host p root flushing phase stop =
                     Js.read shown
                 else
                     Js.write dirty False
-                    Js.write busy True
-                    Js.finally
-                        (λ⊤ →
-                            Js.write model (p.settle self (Js.read model))
-                            Js.write shown (p.view (Js.read model))
-                            Js.read shown
-                        )
-                        λ⊤ → Js.write busy False
+                    Phase.rendering λ⊤ →
+                        Js.write model (p.settle self (Js.read model))
+                        Js.write shown (p.view (Js.read model))
+                        Js.read shown
         }
-
-
--- The compiled platform supplies its synchronous after-render point.
-directRendered : Js.Ref Js.Value
-directRendered = Js.ref Js.null
-
-
-pub installRendered : Js.Value → ⊤
-installRendered callback = Js.write directRendered callback

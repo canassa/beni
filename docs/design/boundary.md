@@ -3308,6 +3308,17 @@ field names where `box` is live: it reads the host rectangle's `x`, `y`, `width`
 (`backend.md` §9 item 4's closed list); a page that never measures a node renames them, since no
 JavaScript reads these records. `emit/release/tea/DomCapabilities` pins both.
 
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Dom*).* `Dom` is a module of
+`browser-base`, re-exported by `browser`, `browser-tea` and `browser-inline`, and imports no
+renderer. `Dom.rendered` and HTTP's after-render wait go through the base's private `Phase`
+module, which owns the hosted loop's phase state that `Browser` held: the loop's `flush`, the
+after-render phase, its queued work and its waiting fibers. `Browser.hosted` hands its loop to
+`Phase.mount`; `Browser.onRendered` is `Phase.onRendered`. On `browser-inline`, which writes the
+page inside the dispatch, no loop is mounted: `Dom.rendered` resumes from a microtask, once the
+scheduler's drain that runs the fiber (and with it the dispatch that writes the page) has returned,
+and `Cmd.afterRender` runs after the write pass as a `perform` that cannot suspend does
+(`browser-inline.md` §4). `browser/prerender/BaseDom` pins both, prerendered and not.
+
 **`Browser.flush : () -> ()`**, `impure`, renders every program with a message waiting now, then runs
 phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,
 so no render sees a half-handled message.
@@ -3387,7 +3398,7 @@ pub foreign pure hosted :
     }
     → Program
 pub foreign impure flush : ⊤ → ⊤
-pub foreign impure onRendered : Resume ⊤ → (⊤ → ⊤)     -- `Dom.rendered` is `Task.callback` over it
+pub foreign impure onRendered : Resume ⊤ → (⊤ → ⊤)     -- `Dom.rendered` is `Task.callback` over it; `Phase.onRendered` since 2026-11-10
 ```
 
 `init` is called once, at mount, with the program's `Host`; `update` for each message; `settle` once

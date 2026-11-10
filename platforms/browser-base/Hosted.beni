@@ -196,6 +196,18 @@ mapLater l tag =
     guest (Js.array [ Js.at v 0, outer ])
 
 
+--| Run after-render work now, handed `send`: what a renderer whose page is
+--| written inside the dispatch does once that write is done.
+pub callLater : Later msg, Send msg → ⊤
+callLater l s =
+    v = host l
+    tag = Js.at v 1
+    Js.to
+        (Js.apply (Js.at v 0)
+            [ Js.from λm → s (guest (if Js.isNull tag then m else Js.apply tag [ m ])) ]
+        )
+
+
 --| Queue after-render work into the program's next flush.
 pub afterRender : Host msg, Later msg → ⊤
 afterRender h l =

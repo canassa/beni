@@ -1,0 +1,165 @@
+--! The render phase the base's capabilities wait for
+--! (`docs/design/browser-capability-base.md` §3): what `Dom.rendered` and
+--! HTTP's after-render wait call, and the state through which a renderer
+--! with a deferred render loop supplies its phase. Private to the platform
+--! chain: no program imports it.
+--!
+--! A renderer that renders inside the dispatch that sent the message —
+--! `browser-inline`'s write pass — installs nothing: a fiber's turn runs in
+--! one dispatch, which writes the page before it ends, so the next turn
+--! sees what was sent. A renderer that renders in a flush of its own — the
+--! `browser` platform's hosted loop — calls `mount` when a hosted program
+--! mounts, and this module runs the waiting fibers and the after-render
+--! work in the phase it hands the loop. A page that never waits for a render reaches none of
+--! the wait's code.
+
+import Js
+import Task
+
+
+-- The hosted loop's `flush`, once a hosted program has mounted (null
+-- before), what sets its after-render phase, and what queues a flush.
+loop : Js.Ref Js.Value
+loop = Js.ref Js.null
+
+
+setPhase : Js.Ref Js.Value
+setPhase = Js.ref Js.null
+
+
+nudge : Js.Ref Js.Value
+nudge = Js.ref Js.null
+
+
+-- After-render work queued since the last flush, and the resumes of the
+-- fibers waiting for its phase (`onRendered`), first queued first.
+later : Js.Ref Js.Value
+later = Js.ref (Js.array [])
+
+
+waiters : Js.Ref Js.Value
+waiters = Js.ref (Js.array [])
+
+
+-- A hosted program renders in a flush, or the after-render phase runs.
+busy : Js.Ref Bool
+busy = Js.ref False
+
+
+--| A hosted program has mounted: `flushing` is the runtime loop's
+--| `flush`, and `phase` sets its after-render phase, which it is handed
+--| now, and answers whether a flush is queued.
+pub mount : Js.Value, Js.Value → ⊤
+mount flushing phase =
+    Js.write loop flushing
+    Js.write setPhase phase
+    _ = Js.apply phase [ Js.from afterRender ]
+    ⊤
+
+
+--| What queues a flush: the last hosted mount node's `send`, with a
+--| message no `update` sees.
+pub nudgeWith : Js.Value → ⊤
+nudgeWith f = Js.write nudge f
+
+
+--| Queue after-render work into the next flush.
+pub after : Js.Value → ⊤
+after f =
+    _ = Js.call (Js.read later) "push" [ f ]
+    ⊤
+
+
+--| Render, with `flush` held off until the render ends, however it ends.
+pub rendering : sync (⊤ → a) → a
+rendering render =
+    Js.write busy True
+    Js.finally render λ⊤ → Js.write busy False
+
+
+--| Run the loop's flush now, unless no hosted program has mounted, one
+--| renders, or `blocked` (a message is being dispatched).
+pub flush : Bool → ⊤
+flush blocked =
+    if Js.isNull (Js.read loop) || Js.read busy || blocked then
+        ⊤
+    else
+        Js.to (Js.apply (Js.read loop) [])
+
+
+-- The after-render phase, which ends every flush once a hosted program
+-- has mounted: the fibers waiting in `rendered` resume, in the order they
+-- waited, then the work queued before this flush began runs, first queued
+-- first, each at once. Work queued, or a message sent, while it runs is
+-- the next flush's.
+afterRender : ⊤ → ⊤
+afterRender ⊤ =
+    resumes = Js.read waiters
+    work = Js.read later
+    Js.write waiters (Js.array [])
+    Js.write later (Js.array [])
+    Js.write busy True
+    Js.finally
+        (λ⊤ →
+            Js.each resumes λresume → Js.to (Js.apply resume [ Js.null ])
+            Js.each work λf → Js.to (Js.apply f [])
+        )
+        λ⊤ → Js.write busy False
+
+
+-- The compiled platform supplies its synchronous after-render point.
+directRendered : Js.Ref Js.Value
+directRendered = Js.ref Js.null
+
+
+pub installRendered : Js.Value → ⊤
+installRendered callback = Js.write directRendered callback
+
+
+--| Wait until what has been sent is on the page. With a hosted loop, at the
+--| start of the after-render phase of the flush it has queued, or at once
+--| when none is queued. With no loop, until the scheduler's drain that runs
+--| this fiber has returned: the dispatch it runs in writes the page before
+--| it ends, and a fiber resumed inside the same drain would still be inside
+--| that dispatch (`Task.onTurn`). A microtask runs once it has returned. A
+--| cancelled wait needs no undoing: a resume after it does nothing.
+pub rendered : ⊤ → ⊤
+rendered ⊤ =
+    if Js.isNull (Js.read loop) && Js.isNull (Js.read directRendered) then
+        Task.callback λresume →
+            _ =
+                Js.apply (Js.global "queueMicrotask")
+                    [ Js.from λ⊤ → Task.resume resume ⊤ ]
+            λ⊤ → ⊤
+    else
+        Task.callback λresume → onRendered resume
+
+
+--| How `rendered` waits under a hosted loop: `resume` is called at the
+--| start of the after-render phase of the flush the page has queued, or at
+--| once when none is queued. Returns what stops the wait.
+pub onRendered : Task.Resume ⊤ → (⊤ → ⊤)
+onRendered resume =
+    if Js.isNull (Js.read directRendered) then
+        loopRendered resume
+    else
+        Js.to (Js.apply (Js.read directRendered) [ Js.from resume ])
+
+
+loopRendered : Task.Resume ⊤ → (⊤ → ⊤)
+loopRendered resume =
+    if
+        Js.isNull (Js.read loop)
+            || not (Js.to (Js.apply (Js.read setPhase) [ Js.from afterRender ]))
+                && Js.to (Js.get (Js.read later) "length") == 0
+    then
+        _ = Js.apply (Js.from resume) [ Js.null ]
+        Js.to Js.null
+    else
+        _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
+        _ = Js.apply (Js.read nudge) []
+        λ⊤ →
+            i : Int
+            i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
+            if i ≥ 0 then
+                Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
