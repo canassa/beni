@@ -14916,21 +14916,22 @@ test "the checker v2 walks a fresh M-field actual of an N-field wrapper in no gr
     for (0..2) |k| try testing.expect(totals[1][k] <= 10 * totals[0][k]);
 }
 
-test "the checker v2 stops a 64-wide callback product loudly with ownership_limit and nothing else but its dependents" {
+test "the checker v2 stops an 80-wide callback product loudly with ownership_limit and nothing else but its dependents" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // §7.6 item 6: "generated cases exceeding the growth allowance must fail
-    // with ownership_limit". N = M = 64 supplied descendants are 4 096
-    // products, past the default allowance on the slot domain. The dump says
-    // `limit use`, the declaration is unchecked, and `check` refuses with
-    // `ownership_limit` for `use`. (Should the product ever fit, the dump's
-    // verdict stands and the test ends there.)
+    // with ownership_limit". N = M = 80 supplied descendants are 6 400
+    // products, past the default allowance on the slot domain (64 fits since the
+    // fresh-only shortcut of §7.6 item 6). The dump says
+    // `limit demo`, the declaration is unchecked, and `check` refuses with
+    // `ownership_limit` for `demo`. A product that fits is a failure here, not
+    // a quiet return.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(testing.allocator);
-    try own2_generated.wideSource(testing.allocator, &src, 64, 64, .supplied);
+    try own2_generated.wideSource(testing.allocator, &src, 80, 80, .supplied);
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -14944,11 +14945,11 @@ test "the checker v2 stops a 64-wide callback product loudly with ownership_limi
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    if (!try expectBoundedOrLimit(dump.stdout, "use", 400_000)) return;
+    try testing.expect(try expectBoundedOrLimit(dump.stdout, "demo", 400_000));
     try testing.expectEqual(@as(u8, 1), check.exit_code);
     try testing.expect(std.mem.indexOf(u8, check.stderr, "\"code\":\"ownership_limit\"") != null);
     try testing.expect(std.mem.indexOf(u8, check.stderr, "ownership_summary_size") != null);
-    // `demo` reads `use`'s unknown answer and is refused for that; nothing else is.
+    // `demo` is the one declaration stopped; nothing else is refused but a dependent's list_may_be_shared.
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, check.stderr, "\"code\":\"ownership_limit\""));
     try testing.expectEqual(std.mem.count(u8, check.stderr, "\"code\":"), 1 + std.mem.count(u8, check.stderr, "\"code\":\"list_may_be_shared\""));
 }
