@@ -118,10 +118,12 @@ pub const Input = struct {
 /// Under them the platform's other functions are walked like the
 /// program's own rather than taken as opaque.
 pub const Effects = struct {
+    command_context: bool = false,
     sub_none: Ref = .{},
     sub_batch: Ref = .{},
     sub_map: Ref = .{},
     sub_on: Ref = .{},
+    sub_listen: Ref = .{},
     cmd_none: Ref = .{},
     cmd_batch: Ref = .{},
     cmd_perform: Ref = .{},
@@ -179,6 +181,8 @@ pub const Declaration = struct {
     first: u32,
     /// The start, a function term.
     start: u32,
+    /// A scoped body (`Sub.listen`), rather than a synchronous installer.
+    waits: bool = false,
     /// The constructor the tagger gives, and the key of `Program.keys` it is.
     ctor: u32 = none,
     key_index: u32 = none,
@@ -961,7 +965,7 @@ mu_seen: std.ArrayList(u32) = .empty,
 mu_walk: u32 = 0,
 /// `Input.effects`: the marker terms a subscription set, a declaration
 /// and a command are tuples headed by (`effectTerm`), made on first use.
-markers: [3]u32 = .{ none, none, none },
+markers: [4]u32 = .{ none, none, none, none },
 /// `Input.effects`: the last value `direct` walked in a key, before the
 /// k-limit cut it (`evalKey`).
 uncut: u32 = none,
@@ -2651,6 +2655,12 @@ fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) E
     // 2026-10-09: tag reads).
     var reads: u32 = 0;
     for (branches) |br| try a.patReads(f, @fromBackingInt(b.instData(br).lhs), s, &reads);
+    // A proven closed choice has no run-time selector left to carry.
+    // Preserve its literal result so constructor helpers such as Duration
+    // can feed a static subscription key through a clamp or conversion.
+    if (a.in.effects != null and a.ctx.mode == .closed and a.isConstantTerm(s) and
+        items.items.len == 1 and items.items[0].gamma == 0)
+        return items.items[0].term;
     return a.mkAlt(s, keyed, reads, items.items);
 }
 
@@ -2795,6 +2805,24 @@ fn evalMethod(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     const dt = a.dispatchOf(f.m) orelse return a.freshCall(all);
     const site = dt.siteOf(inst) orelse return a.freshCall(all);
     const ci = site.callee.unwrap() orelse return a.freshCall(all);
+    if (a.in.effects != null and a.ctx.mode == .closed and all.len == 2) {
+        const primitive = switch (dt.term(ci)) {
+            .primitive => |p| p == .num_compare or p == .strict_eq,
+            else => false,
+        };
+        if (primitive) if (a.effectInteger(all[0])) |left| if (a.effectInteger(all[1])) |right| {
+            const yes: ?bool = switch (mc.origin) {
+                .eq => left == right,
+                .neq => left != right,
+                .lt => left < right,
+                .le => left <= right,
+                .gt => left > right,
+                .ge => left >= right,
+                .none => null,
+            };
+            if (yes) |answer| return a.mkCon(if (answer) a.ctor_true else a.ctor_false, &.{});
+        };
+    }
     switch (dt.term(ci)) {
         .top => |t| return a.callTop(f.m, t.decl.int(), all, f.m, inst, g),
         .ext => |t| {
@@ -2870,12 +2898,12 @@ fn funArity(a: *Writes, t: u32) u32 {
 // bodies. A marker is a string literal no program can write (its second
 // half is not 0), so no other value is one of these.
 
-const Marker = enum(u2) { sub = 0, decl = 1, cmd = 2 };
+const Marker = enum(u2) { sub = 0, decl = 1, cmd = 2, work = 3 };
 
 fn marker(a: *Writes, which: Marker) Error!u32 {
     const i = @backingInt(which);
     if (a.markers[i] == none) {
-        const names = [_][]const u8{ "sub", "decl", "cmd" };
+        const names = [_][]const u8{ "sub", "decl", "cmd", "work" };
         a.markers[i] = try a.mkLit(lit_string, try a.internBytes(names[i]), 0xffff_ffff);
     }
     return a.markers[i];
@@ -2915,6 +2943,7 @@ fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
 /// other call.
 fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!?u32 {
     if (fx.sub_on.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.decl, args)});
+    if (fx.sub_listen.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.work, args)});
     if (fx.cmd_perform.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
     if (fx.sub_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .sub) orelse try a.freshCall(args);
     if (fx.cmd_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .cmd) orelse try a.freshCall(args);
@@ -2923,11 +2952,12 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
         const decls = try a.arena().dupe(u32, a.effectParts(args[0], .sub) orelse return try a.freshCall(args));
         const mapped = try a.arena().alloc(u32, decls.len);
         for (decls, mapped) |x, *y| {
-            const ps = try a.arena().dupe(u32, a.effectParts(x, .decl) orelse return try a.freshCall(args));
+            const kind: Marker = if (a.effectParts(x, .work) != null) .work else .decl;
+            const ps = try a.arena().dupe(u32, a.effectParts(x, kind) orelse return try a.freshCall(args));
             const more = try a.arena().alloc(u32, ps.len + 1);
             @memcpy(more[0..ps.len], ps);
             more[ps.len] = args[1];
-            y.* = try a.effectTerm(.decl, more);
+            y.* = try a.effectTerm(kind, more);
         }
         return try a.effectTerm(.sub, mapped);
     }
@@ -3139,11 +3169,12 @@ fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscript
     const out = try a.arena().alloc(Declaration, decls.len);
     const payload = try a.mkSame(mu_path);
     for (decls, out, 0..) |x, *o, i| {
-        const ps = try a.arena().dupe(u32, a.effectParts(x, .decl) orelse return .{ .class = .unknown });
+        const waits = a.effectParts(x, .work) != null;
+        const ps = try a.arena().dupe(u32, a.effectParts(x, if (waits) .work else .decl) orelse return .{ .class = .unknown });
         if (ps.len < 3) return .{ .class = .unknown };
         if (!a.isConstantTerm(ps[0]) or a.termTag(ps[1]) != .fun) return .{ .class = .unknown };
         const at = a.funSite(ps[1]);
-        o.* = .{ .key = ps[0], .first = @intCast(i), .start = ps[1], .module = at.m, .inst = at.inst };
+        o.* = .{ .key = ps[0], .first = @intCast(i), .start = ps[1], .module = at.m, .inst = at.inst, .waits = waits };
         for (out[0..i], 0..) |before, j| if (before.key == ps[0]) {
             o.first = @intCast(j);
             break;
@@ -3212,8 +3243,35 @@ fn applicationSubscriptions(a: *Writes, frame: *Frame, fs: Fields, sub: u32) Err
 /// A call of the top-level `(m, d)`: a core row, `Fresh` for a `foreign` or
 /// a platform function without one, the body inlined in `view` for the
 /// program's own functions, and otherwise its summary instantiated.
+/// Exact integer operations while reading a static effect description.
+/// Outside the double's exact integer range the ordinary conservative
+/// summary applies. No host code is evaluated to recover a constant key.
+fn effectInteger(a: *Writes, t: u32) ?i64 {
+    if (a.termTag(t) != .lit or a.termWord(t, 1) != lit_int) return null;
+    const bits = @as(u64, a.termWord(t, 2)) | (@as(u64, a.termWord(t, 3)) << 32);
+    const n: i64 = @bitCast(bits);
+    return if (n >= -9007199254740991 and n <= 9007199254740991) n else null;
+}
+
+fn effectIntegerCall(a: *Writes, name: []const u8, args: []const u32) Error!?u32 {
+    if (args.len != 2) return null;
+    const x = a.effectInteger(args[0]) orelse return null;
+    const y = a.effectInteger(args[1]) orelse return null;
+    if (std.mem.eql(u8, name, "max")) return if (x > y) args[0] else args[1];
+    if (std.mem.eql(u8, name, "min")) return if (x < y) args[0] else args[1];
+    const yes: ?bool = if (std.mem.eql(u8, name, "gt")) x > y else if (std.mem.eql(u8, name, "ge")) x >= y else if (std.mem.eql(u8, name, "lt")) x < y else if (std.mem.eql(u8, name, "le")) x <= y else null;
+    if (yes) |v| return try a.mkCon(if (v) a.ctor_true else a.ctor_false, &.{});
+    const calculated: i128 = if (std.mem.eql(u8, name, "add")) @as(i128, x) + y else if (std.mem.eql(u8, name, "sub")) @as(i128, x) - y else if (std.mem.eql(u8, name, "mul")) @as(i128, x) * y else return null;
+    if (calculated < -9007199254740991 or calculated > 9007199254740991) return null;
+    const bits: u64 = @bitCast(@as(i64, @intCast(calculated)));
+    return try a.mkLit(lit_int, @truncate(bits), @truncate(bits >> 32));
+}
+
 fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32) Error!u32 {
     const decl = a.bir(m).decls[d];
+    if (a.in.effects != null and a.ctx.mode == .closed and a.in.packages[m] == .core and std.mem.eql(u8, a.in.module_names[m], "Basics")) {
+        if (try a.effectIntegerCall(a.declName(m, d), args)) |constant| return constant;
+    }
     if (a.command_probe) |probe| {
         const dispatch = a.dispatchOf(m);
         const own = if (dispatch) |dt| dt.effectDecl(d).own else .yes;
@@ -3272,6 +3330,13 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
     if (decl.params == 0) return a.apply(try a.topValue(m, d, g), args, g);
     if (args.len != decl.params) return a.opaqueCall(args, m, site_m, site);
+    // A static subscription's constructor is read with its actual
+    // captures, not a summary that has already forgotten their literals.
+    // Duration is pure beni code; its constructors/clamps are read the
+    // same way, and its numerical operations above retain exact literals.
+    if (a.in.effects != null and a.ctx.mode == .closed and a.walk_platform and
+        (a.in.packages[m] != .core or std.mem.eql(u8, a.in.module_names[m], "Duration")))
+        return a.direct(m, d, args, g);
     if (a.ctx.mode == .view and a.isOwn(m)) return a.direct(m, d, args, g);
     const s = try a.summary(m, d);
     return a.instantiate(s, a.fnId(m, d), args, g);
@@ -4349,7 +4414,8 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
         .log_scope => {
             if (args.len < 2) return a.freshCall(args);
             const r = try a.apply(args[args.len - 1], &.{try a.mkLit(lit_unit, 0, 0)}, g);
-            return if (a.scopedBodies(r, 64)) a.freshEmpty() else r;
+            const keeps_context = if (a.in.effects) |fx| fx.command_context else false;
+            return if (!keeps_context and a.scopedBodies(r, 64)) a.freshEmpty() else r;
         },
         .debug_log => {
             if (args.len != 2) return a.freshCall(args);

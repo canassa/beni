@@ -1,0 +1,9 @@
+-- load
+<body>
+  <button>"0"</button>
+</body>
+-- click button
+console.info: a body {"request":"r1"}
+<body>
+  <button>"1"</button>
+</body>

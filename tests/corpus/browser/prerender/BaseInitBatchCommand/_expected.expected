@@ -1,0 +1,7 @@
+-- load
+console.log: first client command: ⊤
+<body>
+  <main>
+    <output id="stamp">"2"</output>
+  </main>
+</body>

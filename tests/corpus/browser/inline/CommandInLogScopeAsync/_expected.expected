@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <output>"0"</output>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <output>"1"</output>
+  </main>
+</body>
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- advance 5
+console.info: body {"request":"r1"}
+console.info: reply update
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <output>"2"</output>
+  </main>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- stop
+(stopped)
+<body></body>

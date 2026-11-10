@@ -1,0 +1,38 @@
+-- Approved negative contract: even a command-only capture is eager.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Loaded Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg _ =
+    case msg of
+        Loaded stamp →
+            ( stamp, Cmd.none )
+
+
+view : Int → Html Msg
+view stamp = <main><output id="stamp">{stamp}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init =
+                λ⊤ →
+                    stamp = Time.toMillis (Time.now ⊤)
+                    ( 0, Cmd.perform λsend → send (Loaded stamp) )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

@@ -515,3 +515,107 @@ outputs (+39–52 Brotli bytes after timer-only costs are removed).
 `zig-out/scratch/listener-accepted-report.md` holds the complete size table,
 commands, original logs and exact comparisons. Only the 14 accepted emit
 goldens were regenerated from real runs; no other golden or budget changed.
+
+
+### Time and page events — built 2026-11-10
+
+The manager accepted listener commit `7cbf44842` and ordered capability
+families in site order: Time/events, Dom, GPU/image/canvas, Http, navigation
+host operations, then Storage/WebSocket/Random. The Time/event family
+includes the shared Cmd/Sub/Hosted prerequisites and scoped inline tasks;
+Time.every retains its existing Sub.listen clock/fiber semantics. Native
+frame callbacks enter the shared captured boundary. Static subscription
+sets remain the compiler's current limit. Only unkeyed perform/none/batch
+commands are initially analyzed; full policies/model-dependent sets still
+follow before site use.
+
+Before implementation, BaseTimeEvents and BaseInitCommand failed missing
+Time/event capabilities; CommandInLogScope failed the existing compiler
+limit. Exact commands and outputs: `zig-out/scratch/time-fixtures-before.json`
+and `time-before-*.log`. Init command staging and log-context boundaries
+remain subject to §4.2–4.3's already approved contracts, with no host-read
+purity exemption. No release field-order issue has been encountered; any
+such case must be reported, not rewritten around.
+
+
+Time implementation now includes the staged-init structural proof: inline
+and local named init functions may return a pure model paired with canonical
+none/perform/literal batch construction. The prerender tree omits only that
+metadata and preserves eager argument evaluation. A diagnostic-only walk
+finds eager host reads through app helpers; it cannot authorize any split.
+Metadata inspected to choose the model remains a compiler limit. Real
+fixtures cover named init, nested batches, eager clocks, opaque helpers and
+model inspection. A Node preload refuses Date.now and browser globals during
+the prerender build in both development and release.
+
+Scoped cancellation must still let a cancelled fiber run its finalizers
+after the page closes. Dropping its scheduler turn stranded Task.onExit;
+TimeCleanup first showed the missing release and now records it exactly
+once, with no timer or late message after stop. Shared Hosted's asserted
+ownership send rows move with its defining package: TaskWords mutation
+checks exposed the missing selection before that repair. Validation and
+measurements for the family remain in progress; no completion is claimed.
+
+
+### Unused update context — reachability proof
+
+The first Time comparison found extra update IIFEs after the context state
+was eliminated. The existing timer and empty-page fixtures are red-before
+evidence; their bytes must return to master. Interface 1.28 adds a lowering
+description of the functions that can write its update-context or finalizer
+state (`Effects.update_writers`) and a conservative `Program.update_context`
+fact. A dependency names its defining core/platform module and declaration,
+including a private helper; reexports do not change that identity.
+
+Inline names Task's five writers: withClock, withLogContext, withScheduler,
+addFinalizer and cleanupFiber. These are every write of Task.slotted and
+Task.finalising. If source reachability reaches none of them, updates need
+no context bracket and the lowering writes the handler directly, without a
+wrapper. Missing declarations or an absent description keep the bracket.
+Mixed builds keep it for every update, including a synchronous reply to a
+command. This is a build-wide proof of absence of writes, not a test of the
+current state before an update: an update may itself add slots/finalizers.
+Retain the log-context, async reply and defect fixtures when exercising it.
+
+
+The task scope's defect cleanup is installed lazily as a callback when the
+first task root is created. A task-free page's generic defect boundary calls
+no callback while its cleanup slot is null, so it never reaches the Task scope machinery
+through cleanup. This preserves cancellation on a defect while avoiding
+unneeded task code and its effects on whole-program specialization. The
+empty-prerender +5 raw/-1 Brotli snapshot is the failing size evidence; the
+stop and reader-defect finalizer fixtures must remain correct.
+
+
+### Log-scope command acceptance — 2026-11-10
+
+The owner accepted LogScopeInUpdate's +205 Brotli release bytes for the
+shared Cmd creation-context contract. The #1003 refusal is removed:
+CommandInLogScope is a page, including synchronous and waiting bodies,
+record and swapped result forms. A body retains its creator's context;
+reply updates use program context. Record the accepted emit from a real
+build exactly matching the reviewed output. SubListen remains pending
+the owner's decision and is not changed by this approval.
+
+
+SubListen owner decision, 2026-11-10: lift the zero-field tagger limit. A
+constant constructor calls its handler without arguments; preserve the 2+
+field refusal and give remaining field-count mismatches their own accurate
+counts. Validate CSR/prerender, development/release in happy-dom and Chrome;
+keep empty and timer controls byte-identical.
+
+
+Time/events final validation (2026-11-10): all four empty variants and both
+native timer controls are byte-identical to clean master. Log-scope command
+creation and zero-field subscription taggers are owner-approved and built.
+SubListen's true red-before source uses an ignored message; all four
+CSR/prerender × dev/release variants pass happy-dom and Chrome after the fix.
+Time.every retains constant intervals and shares equivalent timer keys.
+Chrome has only the same known DomCapabilities failure on lane and master.
+The final full gate's chat transcript mismatch was followed by the manager's
+required uncached repetitions: 10/10 lane and 10/10 clean master, identical
+rates, with the original failure preserved. Known baseline gate failures
+remain; no budget/guard or chat golden changed. Exactly approved existing
+emit/ownership goldens were recorded from actual outputs. Full scoped-policy
+and model-dependent subscription APIs remain incomplete; next capability
+family is Dom. Evidence: zig-out/scratch/time-final-report.md.
