@@ -1,0 +1,3 @@
+A record's write through a label's supply does not fail for a pair that only a list's write asks
+(ownership-v2.md §2.11.2 item 4, a deep occurrence, for a record's write; and a taken row; #1018). v1 gives the same verdict
+on each record line; it also has a line for the function value, and the texts of the refusals differ.

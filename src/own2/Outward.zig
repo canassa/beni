@@ -16,6 +16,7 @@ const Contract = @import("Contract.zig");
 const RowEnv = @import("RowEnv.zig");
 const LabelChain = @import("LabelChain.zig");
 const CallReq = @import("CallReq.zig");
+const ReqKinds = @import("ReqKinds.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const CellEdit = @import("CellEdit.zig");
@@ -50,7 +51,13 @@ pub fn finishDemands(e: *Evaluation) Error!void {
             for (try FedWrite.relies(&e.ev, e.chain(), lv.lab, su, lv.call, lv.words, d.deep)) |x| d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, x);
             if (su.each) continue;
             if (lv.lab.origin[2] & RowEnv.taken_origin != 0 and !@import("Mutate.zig").on(.taken_occs_off)) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
-                d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, os), lv.call));
+                const occs = try Cond.of(f.account, os);
+                var taken = try Distinct.instSel(&e.ev, occs, lv.call);
+                // A record's write asks no pair of two lists' storage: a second reading where the first is `no` (`ReqKinds`).
+                if (taken.no and d.record and !@import("Mutate.zig").on(.record_supply_whole)) if (try ReqKinds.of(&e.ev, f.calls.items[lv.call], occs, true)) |r| {
+                    taken = try Distinct.instSel(&e.ev, r, lv.call);
+                };
+                d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, taken);
             };
         };
     }

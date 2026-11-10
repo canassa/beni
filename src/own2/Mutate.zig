@@ -56,6 +56,10 @@ pub const Name = enum {
     once_read_hoists,
     /// §2.11.2 item 4, *a record's write beside a list's*: a record's write relies on the callee's whole `req`.
     record_req_whole,
+    /// §2.11.2 item 4, *a taken row*: a record's write reads the taken row's container occurrences once, as a list's does.
+    record_supply_whole,
+    /// §2.11.2 item 4, *a deep occurrence, for a record's write*: a deep occurrence stays every object below its slot.
+    record_deep_whole,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.
