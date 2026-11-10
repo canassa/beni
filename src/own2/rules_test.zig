@@ -242,7 +242,8 @@ const layers = [_]Entry{
     // A construction over its base, split from `Walk` (#2028).
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A record update over its base and the frame's field events, split from `Walk` (§2.6, §2.7).
-    .{ .file = "Update.zig", .layer = 8, .max_lines = 260 },
+    // The kind of a slot, for `CallReq` (a list's storage beside a record's object).
+    .{ .file = "Update.zig", .layer = 8, .max_lines = 270 },
     // A closure's field captures, read off the text (§2.11.4, R-5.4.6).
     .{ .file = "FieldCapture.zig", .layer = 8, .max_lines = 70 },
     // A record's fields read, in a contract's reads (§2.8, R-4.8.5).

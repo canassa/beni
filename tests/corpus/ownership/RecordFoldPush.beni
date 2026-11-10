@@ -6,8 +6,8 @@
 -- same list, and nothing says that two elements of a list are two objects.
 -- So the update of the element is refused in the record pass. The push
 -- writes the accumulator's own array, which nothing else holds: accepted.
--- In `twice` the list's own pair fails: `both` pushes onto `xs` and returns
--- `ys`, and `twice` hands it one list as both. That push stays refused.
+-- In `twice` the list's own pair fails: `both` pushes onto `xs`, returns `ys`, and gets one list as both.
+-- That push stays refused; the update of `b` is accepted (§2.11.2 item 4, *a record's write beside a list's*).
 type alias B =
     x : Int
 
