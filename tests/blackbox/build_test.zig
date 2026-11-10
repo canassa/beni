@@ -13748,8 +13748,12 @@ test "the checker v2 charges a declaration near its limit the same in either ord
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     const first = try moduleSection(dump.stdout, "A");
     const second = try moduleSection(dump.stdout, "B");
-    try testing.expect(std.mem.indexOf(u8, first, "limit h") == null);
-    try testing.expect(std.mem.indexOf(u8, second, "limit h") == null);
+    // The list pass is under its limit in either order. The record pass writes `r` at each update, costs more, and
+    // passes the same allowance, in either order too (`ownership-v2.md` §2.8, a refused record line is an error).
+    try testing.expect(std.mem.indexOf(u8, first, "limit h: ownership_summary_size\n") == null);
+    try testing.expect(std.mem.indexOf(u8, second, "limit h: ownership_summary_size\n") == null);
+    try testing.expect(std.mem.indexOf(u8, first, "limit h: ownership_summary_size (record pass)\n") != null);
+    try testing.expect(std.mem.indexOf(u8, second, "limit h: ownership_summary_size (record pass)\n") != null);
     const growth = try accountField(first, "h", "growth");
     try testing.expectEqual(growth, try accountField(second, "h", "growth"));
     if (growth * 100 < above * 95 or below * 100 < growth * 95) std.debug.print("h's growth {d} is not within 5 % of {d} and {d}: move them\n", .{ growth, above, below });

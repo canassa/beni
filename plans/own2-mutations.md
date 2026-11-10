@@ -64,14 +64,22 @@ a field as a lambda does, `FieldCapture.zig`) by `RecordLocalFunction`; `field_c
 *The emitter reads the rows (#1018, S5b):* `record_rows_unchecked` (the record half of the channel is clean also where a
 record line is refused, `Hoists.zig`) is killed by four `run/Sanitiser*` fixtures: `SanitiserRecordForwardedInList` prints
 another answer, and in `SanitiserRecordInnerKept` the emitter's `assertAccepted` stops the compiler on the refused update;
-`run/RecordRefusedKeepsSpread` is its own fixture on the net. `record_reads_lost` (the channel has the record writes and no
+`run/RecordRefusedKeepsSpread` was its own fixture on the net. `record_reads_lost` (the channel has the record writes and no
 read) is killed on the net by `run/RecordHoistValues` and `RecordInPlaceValues`: the stale-read sanitiser traps.
 `record_limit_clean` (a declaration past the record pass's limit leaves the record half clean, `Ownership.zig`) is killed on
-the net by `run/RecordLimitKeepsSpread`: the caller that nothing checked reads a stale field, and no assertion fires
+the net by `run/RecordLimitKeepsSpread` (now `run/SanitiserRecordLimit`): the caller that nothing checked reads a stale field, and no assertion fires
 (`--only=record_rows_unchecked,record_reads_lost,record_limit_clean`, 816 s, control green; the first again after the
 fix of the creation's row, 298 s). The first run of `record_rows_unchecked` also found a defect of the conversion that no
 fixture had: it converts every module with a record line, and two `ownership/` fixtures stopped the compiler in the table's
 own verification, because a once closure's creation had a demand row (`run/RecordOnceInPlace` pins the fix).
+*A refused record line is an error (#1018, S5b):* `record_refusal_quiet` (a refused record line makes no error,
+`Enforce.zig`) is killed by ten `run/Sanitiser*` fixtures (their refusals goldens name the record lines) and by fourteen
+`ownership/` fixtures (the v2 check's exit code); `record_limit_quiet` (the record pass's limit makes no line and no
+error, `Ownership.zig`) by `run/SanitiserRecordLimit`: the checker accepts a program that it must refuse
+(`--only=record_refusal_quiet,record_limit_quiet,record_rows_unchecked,record_limit_clean`, 825 s, control green).
+**`record_rows_unchecked` and `record_limit_clean` survive from this step on, and are equivalent**: a refused record
+line and a limit of the record pass now stop an enforcing build before the emitter, and a build that does not enforce
+stores nothing. The clean bit that they break stays as the one fact that the conversion reads, as v1's `allAccepted` does.
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -127,9 +135,11 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `need_record_quiet` | §2.8, the hoist rows | a need's accepted record write has no line, so its rows are lost | killed | | 0 | 2: RecordFieldSets (OwnershipV2Differs), … | 0 | |
 | `capture_rows_lost` | §2.8, the capture rows | a field capture has no row | killed | | 0 | 3: RecordFieldCapture (OwnershipV2Differs), … | 0 | |
 | `field_capture_local` | §2.11.4, a field capture | a local function captures a field as a lambda does, where the lowering reads at its calls | killed | | 0 | RecordLocalFunction (OwnershipV2Differs) | 0 | |
-| `record_rows_unchecked` | §2.8, the emitter reads the rows | the record half of the channel is clean also where a record line is refused | killed (panics) | | 4: SanitiserRecordForwardedInList (GoldenMismatch), … | 0 | 0 | |
+| `record_rows_unchecked` | §2.8, the emitter reads the rows | the record half of the channel is clean also where a record line is refused | SURVIVED | equivalent | 0 | 0 | 0 | 0 |
 | `record_reads_lost` | §2.8, the emitter reads the rows | the channel has the record writes and none of the reads that they hoist | elsewhere | | 0 | 0 | 0 | 2 own |
-| `record_limit_clean` | §2.8, the emitter reads the rows | a declaration past the record pass's limit leaves the record half clean | elsewhere | | 0 | 0 | 0 | 1 own |
+| `record_limit_clean` | §2.8, the emitter reads the rows | a declaration past the record pass's limit leaves the record half clean | SURVIVED | equivalent | 0 | 0 | 0 | 0 |
+| `record_refusal_quiet` | §2.8, a refused record line is an error | a refused record line makes no error | killed | | 10: SanitiserCellLoan (SanitisedRefusalDiffers), … | 14: RecordCalleeFields (UnexpectedExitCode), … | 0 | |
+| `record_limit_quiet` | §2.8, a refused record line is an error | the record pass's limit makes no line and no error | killed | | SanitiserRecordLimit (SanitisedRefusalAccepted) | 0 | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

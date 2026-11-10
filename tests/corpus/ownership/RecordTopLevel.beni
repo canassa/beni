@@ -1,0 +1,20 @@
+-- ownership: a top-level record is shared, as a top-level list is
+-- (`ownership-checker.md` §31.9; `ownership-v2.md` §2.8, *a refused record
+-- line is an error*). An update of `base` is refused `top-level`, and its
+-- error has the code `top_level_record_changed`. An update of a copy is
+-- accepted.
+type alias P =
+    x : Int
+    y : Int
+
+
+base : P
+base = { x = 1, y = 2 }
+
+
+pub moved : ⊤ → P
+moved ⊤ = { base | x = 2 }
+
+
+pub copied : ⊤ → P
+copied ⊤ = { Record.copy base | x = 2 }

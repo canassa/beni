@@ -1,5 +1,5 @@
--- `SanitiserRowKept`'s accepted twin: the callback writes a field the row excludes, a
--- copy the update made, so what the supply keeps is untouched (§2.1).
+-- `SanitiserRowKept`'s accepted twin: the callback writes a field the row excludes, of a
+-- copy that `Record.copy` made, so what the supply keeps is untouched (§2.1, §2.8).
 import Node exposing (Program)
 import String
 
@@ -14,7 +14,7 @@ type alias L =
 
 c : { r | a : L }, ({ r | a : L } → x) → x × { r | a : L }
 c rec f =
-    g = λ⊤ → f { rec | a = [] }
+    g = λ⊤ → f { Record.copy rec | a = [] }
     y = g ⊤
     ( y, rec )
 

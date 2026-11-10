@@ -299,8 +299,9 @@ recorded under spreads (`ownership-checker.md` §31.12).
 A `run/` fixture with a `<name>.in-place-v2` file gets the same three builds
 under checker v2 (`--ownership=v2 --records-in-place`), which writes a record
 in place from its own verdicts and rows (`ownership-v2.md` §2.8, *the emitter
-reads the rows*). A module with a refused record line keeps the spread there,
-so such a fixture prints its golden too.
+reads the rows*). A refused record line is an error there, as a list's is: a
+program with one does not build, and it names its refusals in a
+`.sanitize-lists-v2-refuses` file, as a program with a refused list write does.
 
 A `run/` fixture with a `<name>.sanitize-lists` file is built once more with the
 ownership check enforced (`--ownership-everywhere`) and under the list

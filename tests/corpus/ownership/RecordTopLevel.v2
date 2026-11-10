@@ -1,0 +1,2 @@
+A refused record line is an error under checker v2 (ownership-v2.md §2.8, a refused record line is an error): an
+update of a top-level record has the code `top_level_record_changed`, which `.v2.diag` pins. v2 gives v1's verdicts.

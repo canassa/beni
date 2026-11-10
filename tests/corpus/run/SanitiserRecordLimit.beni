@@ -1,8 +1,8 @@
--- `ownership-v2.md` §2.8, *the emitter reads the rows*: a declaration that passes its limit in the
--- record pass has no record verdict, so the module's records keep the spread. `run` is that
--- declaration (the program of `ownership/WideFieldConditions`, #684), and it reads `m0` after `step`
--- changed a field of it. `keep`'s update is accepted on a condition for its callers, which nothing
--- checked in `run`: written in place, `m0.f1.b` is `m0.f1.a`, and the answer is -99099.
+-- `ownership-v2.md` §2.8, *a refused record line is an error*: a declaration that passes its limit
+-- in the record pass has no record verdict, and a build that enforces stops with that limit. `run`
+-- is that declaration (the program of `ownership/WideFieldConditions`, #684), and it reads `m0`
+-- after `step` changed a field of it. `keep`'s update is accepted on a condition for its callers,
+-- which nothing checked in `run`: written in place, `m0.f1.b` is `m0.f1.a`, and the answer is -99099.
 import Node exposing (Program)
 
 

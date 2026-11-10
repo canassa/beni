@@ -1,2 +1,0 @@
-Checker v2 refuses the first update of `twice`, and a refused record line is not an error yet (ownership-v2.md
-§2.8, the emitter reads the rows; #1018): the module keeps the spread, and the three builds print the golden.

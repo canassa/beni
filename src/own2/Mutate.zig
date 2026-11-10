@@ -84,6 +84,10 @@ pub const Name = enum {
     record_reads_lost,
     /// §2.8, *the emitter reads the rows*: a declaration past the record pass's limit leaves the record half clean.
     record_limit_clean,
+    /// §2.8, *a refused record line is an error*: a refused record line makes no error.
+    record_refusal_quiet,
+    /// §2.8, *a refused record line is an error*: the record pass's limit makes no line and no error.
+    record_limit_quiet,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

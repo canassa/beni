@@ -2342,19 +2342,6 @@ const Case = struct {
 
     /// Whether an ownership report has a rejected or pending line, for a
     /// list or, since §31.9's codes, for a record update.
-    /// `report` without its record demands' lines (`L:C update …`).
-    fn withoutRecordLines(arena: std.mem.Allocator, report: []const u8) ![]const u8 {
-        var out: std.ArrayList(u8) = .empty;
-        var lines = std.mem.splitScalar(u8, report, '\n');
-        while (lines.next()) |line| {
-            const text = std.mem.trimStart(u8, line, " ");
-            const op = text[(std.mem.indexOfScalar(u8, text, ' ') orelse text.len)..];
-            if (std.mem.startsWith(u8, line, "  ") and std.mem.startsWith(u8, op, " update ")) continue;
-            try out.print(arena, "{s}\n", .{line});
-        }
-        return out.items;
-    }
-
     fn ownershipRefusal(report: []const u8) bool {
         var lines = std.mem.splitScalar(u8, report, '\n');
         while (lines.next()) |line| {
@@ -4260,8 +4247,8 @@ const Case = struct {
         const single = flags.len == 0;
         const check_flags: []const []const u8 = if (single) &.{ "--platform=node", "--ownership-everywhere" } else flags;
         const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v2" }, check_flags, &.{path} }));
-        // A record line is reported and not enforced until v2's lowering reads it (`ownership-v2.md` §8, S5; #1018).
-        if ((enforces or single) and (ownershipRefusal(try withoutRecordLines(c.arena, r.stdout)) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null)) {
+        // A refused record line is an error as a list's is (`ownership-v2.md` §2.8, a refused record line is an error; #1018).
+        if ((enforces or single) and (ownershipRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null)) {
             try expectExit(1, checked);
             if (!ownershipOnly(checked.stderr)) {
                 detail("{s}: under --ownership=v2 the report's rejections must be the check's only errors\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
