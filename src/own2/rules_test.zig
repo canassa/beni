@@ -51,7 +51,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // Its lines are its table: a line for each rule broken, and its comment.
-    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 450 },
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 455 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -98,7 +98,7 @@ const layers = [_]Entry{
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
     // The mark of a field read in an effect tree (§2.10, R-4.8.5).
-    .{ .file = "FieldMark.zig", .layer = 3, .max_lines = 60 },
+    .{ .file = "FieldMark.zig", .layer = 3, .max_lines = 75 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
     // The answers occurrence (§2.11.3).

@@ -42,6 +42,9 @@ fixtures had a `.v2.ownership` and no `.v2` file, and a `.v2.ownership` is read 
 occurrence stays every object below its slot for a record's write, `ReqKinds.zig`) are each killed by
 `ownership/RecordBesideListsSupplied`. The two mutants of the kind reading, whose code moved to `ReqKinds.zig`, are still
 killed (`--only=record_supply_whole,record_deep_whole,record_req_whole,list_req_whole`, 446 s, control green).
+`callee_write_whole` (a later callee's write below any field is a whole use of the old record, `Later.zig`) is killed by
+`ownership/RecordCalleeWritesBelow`; `field_reads_whole`, the read half, is killed by that fixture too
+(`--only=callee_write_whole,field_reads_whole`, 307 s, control green).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -88,6 +91,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `record_req_whole` | §2.11.2 item 4 | a record's write at a call relies on the callee's whole `req`, also where only two lists' storage meets | killed | | 0 | 3: RecordBesideLists (OwnershipV2Differs), … | 0 | |
 | `record_supply_whole` | §2.11.2 item 4 | a record's write reads the taken row's container occurrences once, as a list's write does | killed | | 0 | RecordBesideListsSupplied (OwnershipV2Differs) | 0 | |
 | `record_deep_whole` | §2.11.2 item 4 | for a record's write a deep occurrence stays every object at and below its slot | killed | | 0 | RecordBesideListsSupplied (OwnershipV2Differs) | 0 | |
+| `callee_write_whole` | §2.8, R-4.8.5 | a later callee's write below any field is a whole use of the old record, also below an untouched field | killed | | 0 | RecordCalleeWritesBelow (OwnershipV2Differs) | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

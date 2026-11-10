@@ -1,0 +1,18 @@
+module RecordCalleeWritesBelow
+  20:11 List.push m.b: accepted param
+  24:10 update m: accepted param
+  29:9 update m: accepted param
+  30:12 call RecordCalleeWritesBelow.pokeB m.b: accepted param (RecordCalleeWritesBelow.pokeB writes π1.b)
+  35:9 update m: rejected later-use: m is read again at 36:12 [copy]
+  36:12 call RecordCalleeWritesBelow.pokeB m.b: accepted param (RecordCalleeWritesBelow.pokeB writes π1.b)
+  41:9 update m: rejected later-use: m is read again at 42:12 [copy]
+  42:12 update m: accepted param (RecordCalleeWritesBelow.setC writes it)
+  summary pokeB: π1.b RAW[storage], π1.b[*] A; res [*] ~π1.b[*], π1.b
+  summary setC: π1 W{c}, π1.b RA; res .b π1.b, .c fresh501◦, π1◦
+  summary untouched: π1 W{a}, π1.a R, π1.b RAW[storage], π1.b[*] RA, π1.c R; res .1 π1.b, .1[*] ~π1.b[*]
+  summary written: π1 W{b}, π1.a R, π1.b RAW[storage], π1.b[*] RA, π1.c R; res .1 π1.b, .1[*] ~π1.b[*]
+  summary another: π1 W{a, c}, π1.a R, π1.b RA, π1.c R; res .1 π1◦, .1.b π1.b, .1.c fresh501◦
+  demands 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 3, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 3, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
