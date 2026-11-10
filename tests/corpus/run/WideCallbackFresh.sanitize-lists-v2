@@ -1,0 +1,1 @@
+v2 pushes a list of a wide fresh callback answer in place, its whole subtree counted slot by slot (§2.9.3, #2413): built again under --ownership=v2 and the sanitiser.

@@ -1,0 +1,46 @@
+-- §7.6 item 6's WideCallbackResult with fresh leaves, N = M = 4: `use`'s answer
+-- has N × (M + 1) = 20 slots, past the 16 a subtree is written out to, and each
+-- list in it is a fresh `[]` of its own run of the lambda. So `demo` pushes
+-- `r.a0.b0` in place while `r.a1.b1` is still read (§2.9.3, *A subtree held
+-- whole*; #2413). Its supplied twin is `WideCallbackSupplied`.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    b0 : List Int
+    b1 : List Int
+    b2 : List Int
+    b3 : List Int
+
+
+type alias H =
+    a0 : R
+    a1 : R
+    a2 : R
+    a3 : R
+
+
+h : (⊤ → R) → H
+h f = { a0 = f ⊤, a1 = f ⊤, a2 = f ⊤, a3 = f ⊤ }
+
+
+use : List Int → H
+use x = h λ⊤ → { b0 = [], b1 = [], b2 = [], b3 = [] }
+
+
+demo : List Int → List Int × List Int
+demo x =
+    r = use x
+    ( List.push r.a0.b0 1, r.a1.b1 )
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    p = demo [ 7 ]
+    Node.print (show p.0 ++ "|" ++ show p.1)

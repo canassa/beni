@@ -14892,8 +14892,9 @@ test "the checker v2 walks a fresh M-field actual of an N-field wrapper in no gr
     // the lambda is solved before `use` (§2.12), and its answer, fresh at
     // every slot, is grafted once per field (`AtomGraft`) and asks nothing
     // of the distinct check (`Trees.Table.only`). So `h` and `use` spend no
-    // growth, and their records grow with N + M, not N × M: `use` 3 396 at
-    // 64 and 28 278 at 512, `h` 4 244 and 36 942 (Debug, 2026-11-10).
+    // growth, and their records grow with N + M, not N × M: `use` 4 563 at
+    // 64 and 37 512 at 512 (it counts its answer's slots by their labels
+    // since #2413), `h` 4 244 and 36 942 (Debug, 2026-11-10).
     const a = testing.allocator;
     var totals: [2][2]u64 = undefined;
     for ([_]u32{ 64, 512 }, 0..) |n, i| {
@@ -14916,6 +14917,48 @@ test "the checker v2 walks a fresh M-field actual of an N-field wrapper in no gr
     }
     // Eight times N and M cost at most ten times the records, never 64.
     for (0..2) |k| try testing.expect(totals[1][k] <= 10 * totals[0][k]);
+}
+
+test "the checker v2 keys a holder of a wide fresh call answer as one atom, and reads a supplied one slot by slot" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6: `demo` holds `use`'s N×M answer in `r`, pushes `r.a0.b0`
+    // and reads `r.a1.b1`. Fresh, `use`'s tree says only `fresh`
+    // (`Trees.Table.only`), so `r`'s base keys are the call's one atom
+    // (§2.8, *Base keys*) and the push is accepted (§2.9.3, #2413): 415
+    // records at 64 and at 512 (Debug, 2026-11-10), where it was 33 578 at
+    // 64 and `ownership_summary_size` from 128 (#2412). Supplied (`b_j = x`),
+    // the answer is the product: read slot by slot, charged, refused.
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 512 }, 0..) |n, i| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, .{ .wide = .{ .n = n, .m = n, .leaf = .fresh } });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "demo", 2_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "demo", "growth"));
+        try testing.expect(std.mem.indexOf(u8, dump, "List.push r.a0.b0: accepted fresh") != null);
+        totals[i] = try accountTotal(dump, "demo");
+    }
+    // Eight times N and M add at most a quarter: the holder is keyed by its atom, not its slots.
+    try testing.expect(totals[1] <= totals[0] + totals[0] / 4);
+
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    const dump = try dumpGenerated(&w, .{ .wide = .{ .n = 32, .m = 32, .leaf = .supplied } });
+    try testing.expect(!try expectBoundedOrLimit(dump, "demo", 60_000));
+    try testing.expect(std.mem.indexOf(u8, dump, "List.push r.a0.b0: rejected") != null);
+    // Slot by slot: at least a record a slot of the 32×32 answer.
+    try testing.expect(try accountTotal(dump, "demo") >= 32 * 32);
 }
 
 test "the checker v2 stops an 80-wide callback product loudly with ownership_limit and nothing else but its dependents" {
