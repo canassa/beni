@@ -1,0 +1,35 @@
+-- ownership: a need's record write has a line, and it hoists
+-- (`ownership-v2.md` §2.8, *the hoist rows*, *a need's record write has a
+-- line*; §2.11.3). `mod` updates what `f` answers. Handed `λr → r`, `f`
+-- answers the record that the caller handed `mod`, so the caller's `p` is
+-- written at the call. A read of `p.x` after the call is bound before it
+-- (`written`), and `p` whole after the call refuses the write (`whole`).
+-- A read in another arm than the write is bound before the statement
+-- that holds the write (`inArm`).
+type alias P =
+    x : Int
+    y : Int
+
+
+mod : (P → P), P → P
+mod f p =
+    q = f p
+    { q | x = 1 }
+
+
+pub written : P → Int
+written p =
+    q = mod (λr → r) p
+    q.x + p.x
+
+
+pub whole : P → P × P
+whole p =
+    q = mod (λr → r) p
+    ( q, p )
+
+
+pub inArm : Bool, P → Int
+inArm t p =
+    q = if t then { p | x = 1 } else p
+    q.y + p.x

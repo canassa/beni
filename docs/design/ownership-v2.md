@@ -1467,6 +1467,40 @@ write authorization. Test mutation through a stale field holder after a join, cl
 write, and hoists across constructor projections. `--ownership-records-lost` changes record facts only and
 must not leak into list acceptance or a cache built without that mode.
 
+*Amended 2026-11-10 (#1018, S5b): the hoist rows, as built.* This is the first part of the record half of
+the lowering channel: what an accepted record write hoists, said by BIR identities and printed in the report.
+Nothing reads the rows but the report yet; the emitter reads them in the next step.
+
+- **Which reads.** An accepted record demand keeps the events that its judgement counted as hoists
+  (`Later.Uses.hoists`): the frame's own reads of a written field through a hold that is the written record
+  (*Dead, by field*). A row (`Facts.Hoist`) has the read, its holder, a record pattern's binding of the
+  field, a field capture's closure, the placement and the phase. The read is the access of the written
+  field, and the row also names the last access of the same source chain (`r.a.b` for the read of `r.a`),
+  which is where the source reads. A field capture's event is at the closure's creation; its row names the
+  first access of that field in the lambda (`Update.Event.read`).
+- **Where it is bound** (`HoistPlace.placement`; v1's rule, `ownership-checker.md` §31.14). A read in the
+  write's region, or in a region inside it, comes after the write on every path: the temporary is made at
+  the write. Else the two are in arms that part, and the temporary is made before the instruction that holds
+  the write, below the lowest instruction that holds both. A field capture is placed by its closure's
+  creation. The phase is 1 (after the operands, before the stores) where the placement is the write's own
+  `record_update` instruction, and 0 (before the instruction) elsewhere: a call that writes its argument, a
+  statement that holds the write.
+- **One row a read.** A read that two writes hoist is bound once, by the first of them in the report's
+  order.
+- **The report** prints each row after a module's verdict lines, in v1's text:
+  `hoist state.count: read 42:49; before 42:23`, `hoist p.x: read 62:12; after operands 61:9`. The path is
+  the holder's source chain through the written field.
+- **A need's record write has a line.** A write that a callee makes of a label's answer is judged at the
+  call that the answer comes from (§2.11.3, a need), and its accepted demand has no line of its own. Where it
+  is a record's it hoists, so its line is kept: `q = modClosed (λr → r) p` followed by `q.x + p.x` prints
+  `update p: accepted callback-param [hoisted 1]` and the row of `p.x`, as v1 does.
+- The rows live past a round: a kept judgement copies them (`Kept.put`), and a module's lines copy them
+  into the module's arena (`Groups.solveRounds`).
+
+Fixtures: the `hoist` lines of every `ownership/` fixture that has a `.v2` file are compared (v1's golden,
+or the fixture's `.v2.ownership`); `ownership/RecordNeedHoist`. Mutants `hoist_at_write`, `hoist_rows_lost`,
+`need_record_quiet`.
+
 ### 2.9 Conditions: the selection and the one relation
 
 *Replaced 2026-11-02 (#1685), with §2.3. Until then this section specified κ snapshots, their tries and
@@ -6676,6 +6710,7 @@ L0  Ids  Counters  Scratch
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups, CallGraft |
 | `Report.zig` | 11 | dump lines and totals | Facts |
 | `Hoists.zig` | 11 | the lowering channel | Facts |
+| `HoistPlace.zig` | 6 | where a hoisted read is bound: the rows of an accepted record write, their read, placement and phase (§2.8, *the hoist rows*), for `Resolve` | Ids, Facts, Regions |
 | `Ownership.zig` | 12 | facade: the list pass and the record pass of each module, their lines merged, one block for both (§2.11.5, *Two passes*) | Ids, Facts, ContractText, Groups, Block, Message, Report, Hoists, Counters, Mutate |
 | `Enforce.zig` | 13 | the driver hook, inputs, the interface's block | Ids, Facts, Groups, Block, Ownership, Report, Hoists, Message |
 | `rules_test.zig` | — | the layering gate | — |

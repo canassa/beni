@@ -4,6 +4,8 @@ module RecordCells
   36:19 construction s.items: accepted fresh
   41:9 update r: accepted param [hoisted 1]
   42:19 construction s.items: accepted fresh
+  hoist b.items: read 36:48; after operands 35:9
+  hoist r.items: read 42:48; after operands 41:9
   demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 2: accepted 2, rejected 0
 total 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

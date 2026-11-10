@@ -15,6 +15,7 @@ module RecordOnce
   46:15 update <call RecordOnce.apply>: accepted callback-param
   46:22 update p: accepted param
   46:22 update p: rejected alias: p holds it and is read at 46:33
+  hoist p.x: read 32:23; before 32:7
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 16: accepted 13, rejected 3
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

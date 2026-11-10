@@ -1547,7 +1547,6 @@ fn solveRounds(mod: *Module, rs: []DeclResult, codes: []const u32, owner: []cons
     const gpa = mod.gpa;
     const in = mod.in;
     const arena = mod.walk_arena.allocator();
-    _ = arena;
     // Rounds of evaluations, until nothing moved after it was read.
     var round: u32 = 0;
     var lines: std.ArrayList(std.ArrayList(Resolve.Line)) = .empty;
@@ -1669,7 +1668,12 @@ fn solveRounds(mod: *Module, rs: []DeclResult, codes: []const u32, owner: []cons
                     moved = true;
                 }
             }
-            if (!called) for (got.lines) |l| if (!l.demand.quiet or l.outcome.verdict != .accepted) try lines.items[k].append(gpa, l);
+            // A need's write that is accepted has no line of its own, but a record's: it hoists (§2.8).
+            if (!called) for (got.lines) |l0| if (!l0.demand.quiet or l0.outcome.verdict != .accepted or (l0.demand.record and !@import("Mutate.zig").on(.need_record_quiet))) {
+                var l = l0; // Its hoist rows outlive the round (§2.8).
+                if (l.hoists.len != 0) l.hoists = try arena.dupe(Facts.Hoist, l.hoists);
+                try lines.items[k].append(gpa, l);
+            };
         }
         // Settled when every read saw the version that stands now.
         var stale = false;

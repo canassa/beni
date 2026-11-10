@@ -23,6 +23,14 @@ module RecordDemands
   209:9 update r: accepted param [hoisted 1]
   215:9 update r: accepted param [hoisted 1]
   226:9 update r: accepted fresh [hoisted 1]
+  hoist p.x: read 62:12; after operands 61:9
+  hoist p.x: read 115:15; after operands 114:9
+  hoist p.tags: read 122:27; after operands 121:9
+  hoist p.x: read 130:11; after operands 129:9
+  hoist p.x: read 137:13; after operands 136:9
+  hoist r.a: read 210:25; after operands 209:9
+  hoist r.a: read 216:28; after operands 215:9
+  hoist r.x: read 227:12; after operands 226:9
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 24: accepted 14, rejected 10
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

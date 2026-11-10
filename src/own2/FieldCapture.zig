@@ -28,6 +28,9 @@ pub fn of(k: anytype, i: u32, l: u32, v: u32, kids: *std.ArrayList(u32)) Error!b
     while (r.kind != .frame) : (r = k.w.regions.get(r.parent)) if (r.kind == .body) return false;
     var ranks: std.ArrayList(u32) = .empty;
     defer ranks.deinit(k.gpa);
+    // Each field's first access in the lambda: the read that a hoist row names (§2.8).
+    var reads: std.ArrayList(u32) = .empty;
+    defer reads.deinit(k.gpa);
     try k.charge(.inspection, r.end - r.start + 1);
     var x = r.start;
     while (x <= r.end) : (x += 1) {
@@ -35,17 +38,20 @@ pub fn of(k: anytype, i: u32, l: u32, v: u32, kids: *std.ArrayList(u32)) Error!b
         const c = k.consumer[k.rel(x)];
         if (c == none or k.tag(c) != .field_access or k.data(c).lhs != x) return false;
         const rank = k.ctx.fieldRank(k.ctx.ctx, @fromBackingInt(k.data(c).rhs));
-        if (std.mem.indexOfScalar(u32, ranks.items, rank) == null) try ranks.append(k.gpa, rank);
+        if (std.mem.indexOfScalar(u32, ranks.items, rank) == null) {
+            try ranks.append(k.gpa, rank);
+            try reads.append(k.gpa, c);
+        }
     }
     if (ranks.items.len == 0) return false;
     var vals: std.ArrayList(u32) = .empty;
     defer vals.deinit(k.gpa);
     const root = try fr.places.rootPath(k.gpa, try k.placeOfLocal(l));
-    for (ranks.items) |rank| {
+    for (ranks.items, reads.items) |rank, read| {
         const st = try Place.Step.field(fr.account, rank);
         try fr.charge(.use, 1);
         try vals.append(k.gpa, try k.project(v, .plain, st.word(), 0));
-        try k.w.events.append(k.gpa, .{ .local = l, .path = root, .point = i, .value = v, .rank = st.payload });
+        try k.w.events.append(k.gpa, .{ .local = l, .path = root, .point = i, .value = v, .rank = st.payload, .read = read });
         // A field that a path names is used at that path; a field that no path names has its event only.
         if (try fr.places.extend(k.gpa, fr.gc(), root, st)) |at| {
             k.atom.* += 1;

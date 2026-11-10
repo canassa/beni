@@ -5,6 +5,7 @@ module RecordFullUpdateLater
   24:49 update model: accepted param
   29:12 update model: accepted param
   30:13 update model: rejected held-operand: the value at 30:7, evaluated before it, holds it until its consumer runs
+  hoist model.count: read 18:27; after operands 17:12
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 6: accepted 4, rejected 2
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

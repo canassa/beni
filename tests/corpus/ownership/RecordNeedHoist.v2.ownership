@@ -1,0 +1,11 @@
+module RecordNeedHoist
+  17:5 update q: accepted call
+  22:9 update p: accepted callback-param [hoisted 1]
+  28:9 update p: rejected later-use: p is read again at 29:5
+  34:19 update p: accepted param [hoisted 1]
+  hoist p.x: read 23:12; before 22:9
+  hoist p.x: read 35:12; before 34:5
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 3, rejected 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 3, rejected 1

@@ -49,6 +49,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
     for (in.modules, out, 0..) |*mi, *r, at| {
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;
         var others: std.ArrayList([]const u8) = .empty;
+        // The hoisted reads of the record pass (§2.8), printed before every other line that is no verdict, as v1 prints them.
+        var hoist_lines: std.ArrayList([]const u8) = .empty;
+        var hoist_rows: std.ArrayList(Hoists.Row) = .empty;
         var limits: u32 = 0;
         var blocks: [2]?[]const u8 = .{ null, null };
         var word_errors: [][3]u32 = &.{};
@@ -144,6 +147,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                         if (!@import("Mutate.zig").on(.record_pass_lists)) ln.op = "update";
                     }
                     try lines.append(arena, ln);
+                    // An accepted record write's hoisted reads, by the write's instruction (§2.8, the hoist rows).
+                    if (!ln.refused) for (l.hoists) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, l.demand.point, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h), .read = .{ h.read, h.binding, h.capture } });
                 }
                 if (in.format_summaries) {
                     const a = &dr.account;
@@ -239,7 +244,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         // the determinism tests compare across job counts (rule 5).
         if (in.format_summaries) if (block) |b| try others.append(arena, try std.fmt.allocPrint(arena, "block: {d} bytes, hash {x:0>16}", .{ b.len, std.hash.Wyhash.hash(0, b) }));
         if (in.channels) |c| c[at] = try channel.finish(arena, gpa, limits != 0);
-        r.* = .{ .module = mi.module, .lines = lines.items, .others = others.items, .limits = limits, .block = block, .word_errors = word_errors };
+        try Hoists.Row.lines(arena, hoist_rows.items, &hoist_lines);
+        try hoist_lines.appendSlice(arena, others.items);
+        r.* = .{ .module = mi.module, .lines = lines.items, .others = hoist_lines.items, .limits = limits, .block = block, .word_errors = word_errors };
     }
     return out;
 }

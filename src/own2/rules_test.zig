@@ -51,7 +51,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // Its lines are its table: a line for each rule broken, and its comment.
-    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 460 },
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 470 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -141,6 +141,8 @@ const layers = [_]Entry{
     .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
     // A label applied to an `alt` of known codes, one virtual call each (§2.11.3, #2322).
     .{ .file = "AltCodes.zig", .layer = 5, .max_lines = 115 },
+    // Where a hoisted read is bound (§2.8, the hoist rows).
+    .{ .file = "HoistPlace.zig", .layer = 6, .max_lines = 80 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
     // A code's summary lines, its called contracts' after it (#2028).
@@ -344,7 +346,7 @@ const layers = [_]Entry{
     .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "ClosureRuns.zig", .layer = 12, .max_lines = 85 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
-    .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
+    .{ .file = "Resolve.zig", .layer = 12, .max_lines = 685 },
     // The conditions of a contract, split from `ReadOff` (#2028).
     .{ .file = "CondsOff.zig", .layer = 12, .max_lines = 120 },
     // A frame's write of what it handed a label: a need on the supply (§2.11.3, #2393).
@@ -362,8 +364,8 @@ const layers = [_]Entry{
     // Evidence terms as function values (#1708).
     // Which types share one place graph (§2.1, *A family*).
     .{ .file = "Family.zig", .layer = 12, .max_lines = 260 },
-    // The flag of the record pass (§2.11.5, R-8.6).
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1905 },
+    // The flag of the record pass (§2.11.5, R-8.6); a line's hoist rows outlive a round (§2.8).
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1910 },
     // A refused loan's text, split from `Message` (#1991).
     .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
     // How a block names what is local to a module, split from `Block` (#1991).
@@ -372,11 +374,12 @@ const layers = [_]Entry{
     .{ .file = "BlockCalled.zig", .layer = 13, .max_lines = 35 },
     .{ .file = "BlockStep.zig", .layer = 13, .max_lines = 60 },
     .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
-    .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
+    // A hoisted read's line of the report (§2.8, the hoist rows).
+    .{ .file = "Message.zig", .layer = 14, .max_lines = 295 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
-    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 170 },
+    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 190 },
     // The facade runs the list pass and the record pass of each module (§2.11.5, R-8.6).
-    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 400 },
+    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 410 },
     .{ .file = "Enforce.zig", .layer = 16, .max_lines = 510 },
 };
 
@@ -915,7 +918,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 176), layers.len);
+    try testing.expectEqual(@as(usize, 177), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

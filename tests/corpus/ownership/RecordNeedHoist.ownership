@@ -1,0 +1,15 @@
+module RecordNeedHoist
+  17:5 update q: accepted call
+  22:9 update p: accepted param (RecordNeedHoist.mod writes it) [hoisted 1]
+  28:9 update p: rejected later-use: p is read again at 29:5 (RecordNeedHoist.mod writes it) [copy]
+  34:19 update p: accepted param [hoisted 1]
+  hoist p.x: read 23:12; before 22:9
+  hoist p.x: read 35:12; before 34:5
+  summary mod: π1 R, π2 R; res cb1◦r{excl cb1}; π1 calls ≤1, need owned record, supply 1 π2 ownedr{excl π2}
+  summary written: π1 RW{x, y}, π1.x R
+  summary whole: π1 RW{x, y}; res .1 π1
+  summary inArm: π2 RW{x}, π2.x R, π2.y R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 3, pending 0, rejected 1 (copy 1, restructure 0); hoisted 2, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 3, pending 0, rejected 1 (copy 1, restructure 0); hoisted 2, eager reads 0
