@@ -669,6 +669,9 @@ pub const Direct = struct {
         /// group (`browser-direct.md` §5.4, `cx.programLet`).
         lets: []const Let = &.{},
         settles: []const bool = &.{},
+        /// Version 1.26: whether each key's writes conflict with what a
+        /// document's title reads (`cx.programRetitles`).
+        retitles: []const bool = &.{},
         sites: []const Site = &.{},
         view_capped: bool = false,
         root_group: u32 = std.math.maxInt(u32),
@@ -21000,6 +21003,12 @@ const markup_vtable: beni_markup.VTable = struct {
         return if (key < d.settles.len) d.settles[key] else true;
     }
 
+    fn programRetitles(impl: *anyopaque, key: u32) bool {
+        const pc = lowerer(impl).program_now orelse return true;
+        const d = pc.direct orelse return true;
+        return if (key < d.retitles.len) d.retitles[key] else true;
+    }
+
     fn programReport(impl: *anyopaque, at_: M.Program.Part, code: M.Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
         try lowerer(impl).programReport(at_, code, message);
         return error.Reported;
@@ -21614,6 +21623,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_start = programStart,
         .program_field = programField,
         .program_settles = programSettles,
+        .program_retitles = programRetitles,
         .program_report = programReport,
         .program_report_at = programReportAt,
         .program_keys = programKeys,
