@@ -400,6 +400,20 @@ test "corpus: regress" {
     try walk(.regress);
 }
 
+test "an in-place probe reads only the errors of a build" {
+    // #2457: a warning fails no build, so a refused build that has one is still refused.
+    const warn = "{\"code\":\"prepend_in_loop\",\"severity\":\"warning\",\"span\":{}}";
+    const own = "{\"code\":\"list_may_be_shared\",\"severity\":\"error\",\"span\":{}}";
+    const other = "{\"code\":\"type_mismatch\",\"severity\":\"error\",\"span\":{}}";
+    try testing.expect(Case.onlyOwnership("[" ++ warn ++ "," ++ own ++ "]", true));
+    // A warning alone refuses nothing, and another error is another reason.
+    try testing.expect(!Case.onlyOwnership("[" ++ warn ++ "]", true));
+    try testing.expect(!Case.onlyOwnership("[" ++ own ++ "," ++ other ++ "]", true));
+    // The rule for a whole stream reads the warning too: its callers compare every diagnostic.
+    try testing.expect(!Case.onlyOwnership("[" ++ warn ++ "," ++ own ++ "]", false));
+    try testing.expect(Case.onlyOwnership("[" ++ own ++ "]", false));
+}
+
 /// `tests/blackbox/ownership-v2-known.txt`, the justified v1/v2 differences,
 /// read once per process: each entry's key (`<root> <module> <line:col> ::
 /// <demand> :: <v1> :: <v2>`) and whether a case used it, for `walk`'s
@@ -1155,7 +1169,7 @@ const Config = struct {
     /// `lists-v2` (`zig build test-lists-in-place-v2`) its v2 twin.
     in_place: InPlace = .none,
 
-    const InPlace = enum { none, records, lists, lists_v2 };
+    const InPlace = enum { none, records, records_v2, lists, lists_v2 };
 
     const Mode = enum {
         /// Unset: every fixture must pass (today's behaviour).
@@ -1223,9 +1237,10 @@ const Config = struct {
             null;
         const in_place: InPlace = if (envOr(arena, "BENI_IN_PLACE")) |text| blk: {
             if (std.mem.eql(u8, text, "all")) break :blk .records;
+            if (std.mem.eql(u8, text, "records-v2")) break :blk .records_v2;
             if (std.mem.eql(u8, text, "lists")) break :blk .lists;
             if (std.mem.eql(u8, text, "lists-v2")) break :blk .lists_v2;
-            std.debug.print("BENI_IN_PLACE must be `all`, `lists` or `lists-v2` (or unset), not `{s}`\n", .{text});
+            std.debug.print("BENI_IN_PLACE must be `all`, `records-v2`, `lists` or `lists-v2` (or unset), not `{s}`\n", .{text});
             return error.BadInPlace;
         } else .none;
         var cfg: Config = .{
@@ -2368,6 +2383,14 @@ const Case = struct {
         slot: usize,
         checker: []const u8,
     };
+    /// The records' differential passes: v1's (`.in-place`) and v2's (`.in-place-v2`), each its marker,
+    /// its mode, its flags and the three output directories (sanitised, stores, release).
+    const RecordsPass = struct { golden: []const u8, mode: Config.InPlace, flags: []const []const u8, outs: [3][]const u8 };
+    const records_passes = [_]RecordsPass{
+        .{ .golden = "in-place", .mode = .records, .flags = &.{"--records-in-place"}, .outs = .{ "out-in-place", "out-stores", "release-stores" } },
+        .{ .golden = "in-place-v2", .mode = .records_v2, .flags = &.{ "--ownership=v2", "--records-in-place" }, .outs = .{ "out-in-place-v2", "out-stores-v2", "release-stores-v2" } },
+    };
+
     const lists_passes = [_]ListsPass{
         .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .refuses = "sanitize-lists-refuses", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 7, .checker = "v1" },
         .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .refuses = "sanitize-lists-v2-refuses", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 8, .checker = "v2" },
@@ -2388,10 +2411,11 @@ const Case = struct {
         try probe.appendSlice(c.arena, &.{ "--diagnostics=json", "--out=out-probe" });
         try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
         const tried = try c.inProject(probe.items);
-        if (!(tried.exit_code == 1 and ownershipOnly(tried.stderr))) return null;
+        if (!(tried.exit_code == 1 and onlyOwnership(tried.stderr, true))) return null;
         const diags = try std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, c.arena, std.mem.trim(u8, tried.stderr, " \r\n"), .{});
         var text: std.ArrayList(u8) = .empty;
         for (diags) |d| {
+            if (d.severity == .warning) continue;
             const writer = d.message[0 .. std.mem.indexOfAny(u8, d.message, " \n") orelse d.message.len];
             try text.print(c.arena, "{d}:{d} {t} {s}\n", .{ d.span.start.line, d.span.start.col, d.code, writer });
         }
@@ -2541,6 +2565,13 @@ const Case = struct {
     }
 
     fn ownershipOnly(stderr: []const u8) bool {
+        return onlyOwnership(stderr, false);
+    }
+
+    /// Whether each diagnostic of the JSON `stderr` is the ownership checker's, and one is there. With
+    /// `errors`, a warning is not read: it fails no build, so a probe that asks why a build failed
+    /// reads only the errors (#2457).
+    fn onlyOwnership(stderr: []const u8, errors: bool) bool {
         const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
@@ -2548,6 +2579,8 @@ const Case = struct {
         while (it.next()) |rest| {
             const end = std.mem.indexOfScalar(u8, rest, '"') orelse return false;
             const code = rest[0..end];
+            // The printer writes the severity next to the code.
+            if (errors and std.mem.startsWith(u8, rest[end..], "\",\"severity\":\"warning\"")) continue;
             var known = false;
             for (codes) |k| if (std.mem.eql(u8, k, code)) {
                 known = true;
@@ -2735,32 +2768,42 @@ const Case = struct {
             // the run-hash cache, as the other passes' do; under
             // `BENI_IN_PLACE=all` they look nothing up, record nothing and
             // run every one (`runOnceCrash`).
-            if (c.cfg.in_place == .records or c.goldenExists("in-place")) in_place: {
+            // Its v2 twin (`.in-place-v2`, `BENI_IN_PLACE=records-v2`) builds
+            // the same three under `--ownership=v2`, whose channel names the
+            // record writes and the reads to bind (`ownership-v2.md` §2.8, *the
+            // emitter reads the rows*).
+            for (records_passes) |rp| if (c.cfg.in_place == rp.mode or c.goldenExists(rp.golden)) in_place: {
                 // Every fixture, under `BENI_IN_PLACE=all`: one the ownership
                 // checker refuses under the flag has nothing to run in place.
-                if (c.cfg.in_place == .records and !c.goldenExists("in-place")) {
-                    if (try c.ownershipRefuses(platform_arg, &.{"--records-in-place"}, sources)) break :in_place;
+                if (c.cfg.in_place == rp.mode and !c.goldenExists(rp.golden)) {
+                    if (try c.ownershipRefuses(platform_arg, rp.flags, sources)) break :in_place;
                 }
                 var in_place: std.ArrayList([]const u8) = .empty;
-                try in_place.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--sanitize-records", "--out=out-in-place" });
+                try in_place.appendSlice(c.arena, &.{ "build", platform_arg });
+                try in_place.appendSlice(c.arena, rp.flags);
+                try in_place.appendSlice(c.arena, &.{ "--sanitize-records", try std.fmt.allocPrint(c.arena, "--out={s}", .{rp.outs[0]}) });
                 if (c.cfg.mode == .pending) try in_place.append(c.arena, "--diagnostics=json");
                 try in_place.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 var stores: std.ArrayList([]const u8) = .empty;
-                try stores.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--out=out-stores" });
+                try stores.appendSlice(c.arena, &.{ "build", platform_arg });
+                try stores.appendSlice(c.arena, rp.flags);
+                try stores.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{rp.outs[1]}));
                 if (c.cfg.mode == .pending) try stores.append(c.arena, "--diagnostics=json");
                 try stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 // The sanitiser first: a stale read traps there, naming its field.
-                try c.runOnce("out-in-place", .dev, in_place.items, "expected", false);
-                try c.runOnce("out-stores", .dev, stores.items, "expected", false);
+                try c.runOnce(rp.outs[0], .dev, in_place.items, "expected", false);
+                try c.runOnce(rp.outs[1], .dev, stores.items, "expected", false);
                 // And the stores as a release ships them: the specialiser and the
                 // optimiser over records written in place (`backend.md` §9;
                 // `ownership-checker.md` §31.10, *The optimiser barrier*).
                 var release_stores: std.ArrayList([]const u8) = .empty;
-                try release_stores.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--release", "--allow-debug", "--check-call-graph", "--out=release-stores" });
+                try release_stores.appendSlice(c.arena, &.{ "build", platform_arg });
+                try release_stores.appendSlice(c.arena, rp.flags);
+                try release_stores.appendSlice(c.arena, &.{ "--release", "--allow-debug", "--check-call-graph", try std.fmt.allocPrint(c.arena, "--out={s}", .{rp.outs[2]}) });
                 if (c.cfg.mode == .pending) try release_stores.append(c.arena, "--diagnostics=json");
                 try release_stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
-                try c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false);
-            }
+                try c.runOnce(rp.outs[2], .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false);
+            };
             // A fixture of the lists' differential corpus (`.sanitize-lists`,
             // its reason; `ownership-v2.md` §7.3) is built once more under
             // the list sanitiser, with the ownership check enforced as an
@@ -3481,6 +3524,14 @@ const Case = struct {
                     .{ .pass = .release, .out = "release-stores", .flags = &.{ "--records-in-place", "--release", "--allow-debug", "--check-call-graph" } },
                 };
             },
+            .records_v2 => blk: {
+                if (try c.ownershipRefuses(platform_arg, &.{ "--ownership=v2", "--records-in-place" }, sources)) return plans;
+                break :blk &.{
+                    .{ .pass = .dev, .out = "out-in-place-v2", .flags = &.{ "--ownership=v2", "--records-in-place", "--sanitize-records" } },
+                    .{ .pass = .dev, .out = "out-stores-v2", .flags = &.{ "--ownership=v2", "--records-in-place" } },
+                    .{ .pass = .release, .out = "release-stores-v2", .flags = &.{ "--ownership=v2", "--records-in-place", "--release", "--allow-debug", "--check-call-graph" } },
+                };
+            },
             // `browser-inline` enforces as an in-place platform: no flag
             // makes it.
             .lists => &.{.{ .pass = .dev, .out = "out-lists", .flags = &.{"--sanitize-lists"} }},
@@ -3814,6 +3865,9 @@ const Case = struct {
         const sweep = (c.cfg.in_place == .records and
             (std.mem.eql(u8, out_dir, "out-in-place") or std.mem.eql(u8, out_dir, "out-stores") or
                 std.mem.eql(u8, out_dir, "release-stores"))) or
+            (c.cfg.in_place == .records_v2 and
+                (std.mem.eql(u8, out_dir, "out-in-place-v2") or std.mem.eql(u8, out_dir, "out-stores-v2") or
+                    std.mem.eql(u8, out_dir, "release-stores-v2"))) or
             (c.cfg.in_place == .lists and std.mem.eql(u8, out_dir, "out-lists")) or
             (c.cfg.in_place == .lists_v2 and std.mem.eql(u8, out_dir, "out-lists-v2"));
         if (c.cfg.mode == .strict and !bless and !sweep) {

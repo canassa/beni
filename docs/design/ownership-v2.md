@@ -1520,6 +1520,41 @@ field that the function reads; a perfect checker accepts that case. No verdict o
 accepts both cases, and for a written field that is a defect of v1 (#2455: a stale read under
 `--records-in-place`). Fixture `ownership/RecordLocalFunction`; mutant `field_capture_local`.
 
+*Amended 2026-11-10 (#1018, S5b): the emitter reads the rows.* Under `--ownership=v2`, in a build that
+enforces (`--records-in-place`, `--ownership-everywhere`, an in-place chain), an accepted record update is
+now written in place, with its hoisted reads bound first, as under v1.
+
+- **The channel's record half** (`own2/Hoists.Table`, §3.7): `records`, the record pass's clean bit (it
+  checked every declaration, no record line is refused, no declaration passed its limit there; a module
+  that the record pass skips has nothing to write and is clean); `record_writes`, the declaration and
+  instruction of each accepted record line (an update, a call whose callee writes the record, or the
+  creation of a closure that writes its capture at most once); `reads`, each row of the report (a hoisted
+  read with its write, a field capture with none), one a read.
+- **A module's records are written in place** only where the module is an application's, the list half is
+  clean (`clean`), and the record half is clean (`records`). Every other module keeps the spread, as in v1
+  (`ownership-checker.md` §31.10): core, the platforms, a module with a refusal or a limit.
+- **The limit is part of the clean bit for soundness.** An update that is accepted on a condition for its
+  callers is a store only where each caller was checked. A declaration past its limit in the record pass
+  has no verdict for its calls. So one such declaration makes the whole module keep the spread.
+- **Until a refused record line is an error** (the next step of S5b), a module with a refused record line
+  keeps the spread for every update and says nothing. This holds only under the two hidden flags.
+- **The emitter is not changed.** It reads v1's table (`own/Hoists.Table`), and v2 may not import `src/own/`.
+  So the session converts v2's rows into that table when the check ends (`src/js/RecordRows.zig`): a demand
+  row for each record write at an update or a call (a closure's creation writes nothing and has no row),
+  and a read row whose path is the BIR's own access chain from the holder to the read's last access, with
+  the prefix through the written field (a capture's is the whole chain). The converted table passes v1's
+  own `verifyAgainstBir`, asserted in a build with safety.
+- **Tests.** A `run/` fixture with an `.in-place-v2` file (its reason) is built three times more under
+  `--ownership=v2 --records-in-place`: with the stale-read sanitiser, with the stores as they ship, and as
+  a release ships them; each must print the fixture's golden. `zig build test-records-in-place-v2` does it
+  for every `run/` program and `browser/inline/` page that v2 accepts. Fixtures: the six of the records'
+  differential corpus; `run/RecordOnceInPlace` (a once closure's write in a module with no refusal: the
+  creation's line is no row); `run/RecordRefusedKeepsSpread` and `run/RecordLimitKeepsSpread` (the spread
+  is kept). Mutants: `record_rows_unchecked` (the record half is clean also with a refusal),
+  `record_reads_lost` (the table has the writes and no read: the sanitiser then traps on a stale read) and
+  `record_limit_clean` (a declaration past the limit leaves the record half clean: the caller that nothing
+  checked reads a stale field).
+
 ### 2.9 Conditions: the selection and the one relation
 
 *Replaced 2026-11-02 (#1685), with §2.3. Until then this section specified κ snapshots, their tries and

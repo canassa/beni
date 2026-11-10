@@ -296,6 +296,12 @@ project) is built three more times with its records written in place
 `.release-expected` when it has one. Each must print `.expected`, which was
 recorded under spreads (`ownership-checker.md` §31.12).
 
+A `run/` fixture with a `<name>.in-place-v2` file gets the same three builds
+under checker v2 (`--ownership=v2 --records-in-place`), which writes a record
+in place from its own verdicts and rows (`ownership-v2.md` §2.8, *the emitter
+reads the rows*). A module with a refused record line keeps the spread there,
+so such a fixture prints its golden too.
+
 A `run/` fixture with a `<name>.sanitize-lists` file is built once more with the
 ownership check enforced (`--ownership-everywhere`) and under the list
 stale-read sanitiser (`--sanitize-lists`, `ownership-v2.md` §7.3): every
@@ -331,10 +337,13 @@ the named write is accepted.
 Both files hold their reason, are written by hand and never blessed, and their
 passes' digests go to the run-hash cache as every pass's do. `BENI_IN_PLACE=all` (`zig build
 test-records-in-place`) gives every `run/` fixture and every
-`browser/inline/` page the record passes, and `BENI_IN_PLACE=lists` (`zig
+`browser/inline/` page the record passes, `BENI_IN_PLACE=records-v2` (`zig
+build test-records-in-place-v2`) their v2 twin, and `BENI_IN_PLACE=lists` (`zig
 build test-lists-in-place`) the list pass, `BENI_IN_PLACE=lists-v2` (`zig
 build test-lists-in-place-v2`) its v2 twin; there a program the ownership
 checker refuses under the pass's flags is skipped, and nothing is recorded.
+A warning does not make a refused program an accepted one: the probe reads
+only the errors of the build.
 
 ### A Worker
 

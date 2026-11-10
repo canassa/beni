@@ -23,6 +23,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Facts = @import("Facts.zig");
+const Ids = @import("Ids.zig");
 
 /// The channel's format version (§3.7: versioned, outside the interface
 /// hash). 2: v1's `Hoists` was 1.
@@ -44,22 +45,38 @@ pub fn reliesOnCallers(a: Facts.Verdict.Accepted) bool {
     return a != .fresh;
 }
 
+/// One accepted record write (§2.8, *the emitter reads the rows*): its declaration and its instruction, an
+/// update or a call whose callee writes the record.
+pub const RecordWrite = struct { decl: u32, inst: u32 };
+
+/// One read that the lowering binds: a hoisted read with the instruction of the write that hoists it, or a
+/// field capture alone (`write` none).
+pub const Read = struct { decl: u32, write: u32, row: Facts.Hoist };
+
 pub const Table = struct {
     /// R-1.12's clean bit: every declaration checked, no limit, every write
     /// accepted. What S8b's stores need; the sanitiser does not read it.
     clean: bool = false,
     /// The accepted list writes, by instruction, ascending, each once.
     writes: []const Write = &.{},
+    /// The record half's clean bit: the record pass checked every declaration that it had, refused no record
+    /// line and passed no limit. With `clean`, the module's records are written in place.
+    records: bool = false,
+    /// The accepted record writes, by instruction, each once; and the reads that the lowering binds.
+    record_writes: []const RecordWrite = &.{},
+    reads: []const Read = &.{},
 
     pub const empty: Table = .{};
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         gpa.free(t.writes);
+        gpa.free(t.record_writes);
+        gpa.free(t.reads);
         t.* = .empty;
     }
 
     pub fn clone(t: Table, gpa: Allocator) Allocator.Error!Table {
-        return .{ .clean = t.clean, .writes = try gpa.dupe(Write, t.writes) };
+        return .{ .clean = t.clean, .writes = try gpa.dupe(Write, t.writes), .records = t.records, .record_writes = try gpa.dupe(RecordWrite, t.record_writes), .reads = try gpa.dupe(Read, t.reads) };
     }
 
     /// Whether the write at instruction `inst` is one the checker accepted.
@@ -86,17 +103,23 @@ pub const Row = struct {
     text: []const u8,
     /// The read, a pattern's binding and a capture's closure: one row for these.
     read: [3]u32,
+    /// The row itself, and whether a write hoists it (else a field capture alone).
+    hoist: Facts.Hoist,
+    written: bool,
 
     /// The rows' lines into `out`, in the order that the writes run, a read once: the first write that
-    /// hoists it at a depth binds it.
-    pub fn lines(arena: Allocator, rows: []Row, out: *std.ArrayList([]const u8)) Allocator.Error!void {
+    /// hoists it at a depth binds it. The rows that stay go to the channel `b`.
+    pub fn lines(arena: Allocator, rows: []Row, out: *std.ArrayList([]const u8), b: *Builder) Allocator.Error!void {
         std.mem.sort(Row, rows, {}, struct {
-            fn lt(_: void, a: Row, b: Row) bool {
-                return std.mem.order(u32, &a.key, &b.key) == .lt;
+            fn lt(_: void, x: Row, y: Row) bool {
+                return std.mem.order(u32, &x.key, &y.key) == .lt;
             }
         }.lt);
         var seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty;
-        for (rows) |r| if (!(try seen.getOrPut(arena, r.read)).found_existing) try out.append(arena, r.text);
+        for (rows) |r| if (!(try seen.getOrPut(arena, r.read)).found_existing) {
+            try out.append(arena, r.text);
+            if (!@import("Mutate.zig").on(.record_reads_lost)) try b.reads.append(arena, .{ .decl = r.key[0], .write = if (r.written) r.key[1] else Ids.none_int, .row = r.hoist });
+        };
     }
 };
 
@@ -113,6 +136,15 @@ pub const Builder = struct {
     writes: std.ArrayList(Write) = .empty,
     refused: bool = false,
     unchecked: bool = false,
+    /// The record half: a record line refused or a declaration past its limit in the record pass; the accepted writes; the reads.
+    record_refused: bool = false,
+    record_writes: std.ArrayList(RecordWrite) = .empty,
+    reads: std.ArrayList(Read) = .empty,
+
+    /// A record line of declaration `decl` at instruction `inst`: refused, or an accepted record write.
+    pub fn record(b: *Builder, scratch: Allocator, decl: u32, inst: u32, refused: bool, write: bool) Allocator.Error!void {
+        if (refused) b.record_refused = true else if (write) try b.record_writes.append(scratch, .{ .decl = decl, .inst = inst });
+    }
 
     /// A demand's verdict at instruction `inst`.
     pub fn add(b: *Builder, scratch: Allocator, inst: u32, kind: Facts.DemandKind, refused: bool, callers: bool) Allocator.Error!void {
@@ -145,7 +177,21 @@ pub const Builder = struct {
             items[n] = w;
             n += 1;
         }
-        return .{ .clean = !b.unchecked, .writes = try gpa.dupe(Write, items[0..n]) };
+        // The record half: the writes by instruction, each once. A refused record line publishes none.
+        const clean_records = !b.unchecked and (!b.record_refused or @import("Mutate.zig").on(.record_rows_unchecked));
+        const rws = b.record_writes.items;
+        std.mem.sort(RecordWrite, rws, {}, struct {
+            fn lessThan(_: void, x: RecordWrite, y: RecordWrite) bool {
+                return x.inst < y.inst;
+            }
+        }.lessThan);
+        var m: usize = 0;
+        for (rws) |w| {
+            if (m != 0 and rws[m - 1].inst == w.inst) continue;
+            rws[m] = w;
+            m += 1;
+        }
+        return .{ .clean = !b.unchecked, .writes = try gpa.dupe(Write, items[0..n]), .records = clean_records, .record_writes = if (clean_records) try gpa.dupe(RecordWrite, rws[0..m]) else &.{}, .reads = if (clean_records) try gpa.dupe(Read, b.reads.items) else &.{} };
     }
 };
 
