@@ -1100,10 +1100,17 @@ storage write, the base's own storage at the written position (`at_position`); f
    (no subtree answers for the paths below it), since a field event is at one path. A callee that reads a field
    of a parameter's record, or updates it, publishes a shallow `reads` at the record's slot (the events' record
    objects, read off as the uses are), so a caller that writes the record first sees a later call as a whole
-   use. That read names no field yet: a callee that reads only an untouched field is refused where R-4.8.5
-   accepts it. *Refused that a perfect checker accepts, with what S5 owes:* a closure that captures the record
-   and reads one field (a field capture, R-5.4.6); a record pattern in a `case` arm; a callee's read or write
-   of a field set (the contract's `F`, §2.10).
+   use. *Amended 2026-11-10 (#1018; R-4.8.5): a callee's read says its field.* A field read of a parameter's
+   record is, in the callee's `reads`, a mark of that field at the record's slot (§2.10, *Effects as trees*;
+   `FieldReads.events`), printed `π1ε{.y}`. An update in the callee reads its record whole. A later call that
+   hands the old record on is a whole use only where the callee's read tree reads a written field there
+   (`FieldMark.reads`): a deep read at or above the record, a read of it whole, the mark of a field in
+   `F`, or a read below such a field's step. So `q = { p | x = 1 }` followed by `getY p`, `getY p = p.y`, is
+   accepted, and followed by `sum p`, `sum p = p.x + p.y`, it is refused `later-use`. A callee's reads that
+   reach a caller through another callee keep their fields (`FieldReads.through`: `outer p = getY p`). Fixture
+   `ownership/RecordCalleeFields`; mutant `field_reads_whole`. *Refused that a perfect checker accepts, with
+   what S5 owes:* a closure that captures the record and reads one field (a field capture, R-5.4.6); a record
+   pattern in a `case` arm; a callee's write of a field set (the contract's `F`, §2.10).
 6. **Exclusive.** What the overlaps relied on (§2.9.4): a selection of the frame's parameters is accepted
    `param` and added to `req`; anything else that is not given is refused `exclusive`.
 
@@ -1941,6 +1948,11 @@ report, F4). Master's v2 printed a shared subtree as `.1 = .0`. The contract bec
   kids. **Covering effects fold:** a node whose own slot and every object slot below it are read, or escape,
   is that one deep effect, and its kids are dropped. A shallow write of every slot below is not folded: a deep
   write is `consumed` (§2.8), which says more. Nothing else changes: a fold names the same slots.
+  *Amended 2026-11-10 (#1018): a read's fields.* In the record pass a read node at a record's slot says which
+  fields are read: its plain run holds a mark for each field in place of the one mark (`FieldMark.of`: the
+  field's one-step slot). The mark names no parameter and no place, so a node grafted at another slot keeps
+  it. The one mark stays a read of the record whole. A block writes a node's runs as it writes a result's, so
+  the marks need no new format. A write's `fields` are not built yet.
 - **Arrivals by structure.** An `open` node with an arrival `π_j·s` reads, at its slot `q·r`, the objects at
   `π_j·(s·r)` for every `r` its place takes (the `q… π_j·s*` entry of a type variable's slot today). The
   read-off writes a parameter's subtree read by structure as that one node, never one entry per slot below
@@ -6513,6 +6525,8 @@ L0  Ids  Counters  Scratch
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
 | `CallReq.zig` | 10 | a callee's `req` at a call, as a record's write relies on it and, in the record pass, as a list's does (§2.11.2 item 4, *A list's write beside a record's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
 | `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
+| `FieldReads.zig` | 8 | a record's fields read, in a contract's `reads`: the frame's field events as marks at the record's slot, and a callee's marks read at a caller (§2.8, *Dead, by field*, §2.10, R-4.8.5), for `ReadOff` | Ids, Place, Slots, Contract |
+| `FieldMark.zig` | 3 | the mark of a field read in an effect tree, and whether a read tree reads a field of a set (§2.10, *a read's fields*; §2.8), for `Contract`, `Later`, `FieldReads` | Place, Trees |
 | `ByStructure.zig` | 10 | a value at a supply's key, by its own structure (§2.1, *An arrival's level*) | Ids, Contract, Relation, Slots, Value |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
 | `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
