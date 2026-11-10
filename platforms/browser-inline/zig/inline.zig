@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 31 },
+    .targets = .{ .major = 1, .minor = 32 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -4471,6 +4471,15 @@ const Page = struct {
         };
     }
 
+    /// A document's title after key `k`'s write pass (§10.2, amended
+    /// 2026-11-10): written again only when the key's writes conflict with
+    /// what the title reads.
+    fn retitleAfter(pg: *Page, blk: m.Block, k: u32) m.Error!void {
+        const r = pg.retitle orelse return;
+        if (!pg.cx.programRetitles(k)) return;
+        try pg.cx.js.expression(blk, try pg.cx.js.call(try pg.cx.js.name(r), &.{}));
+    }
+
     /// Key `k`'s handler body into `blk`, its fields `params`: the arm
     /// writes the model, then the write pass runs the buckets the key's
     /// writes reach — and those of a control the key's events show — each
@@ -4502,7 +4511,7 @@ const Page = struct {
         if (kept and !commands) {
             if (next != before) try js.expression(blk, next);
             try pg.writePass(blk, pass);
-            if (pg.retitle) |r| try js.expression(blk, try js.call(try js.name(r), &.{}));
+            try pg.retitleAfter(blk, k);
             return;
         }
         var result = next;
@@ -4520,7 +4529,7 @@ const Page = struct {
         // holds, for an element's pair too, and there is nothing to store.
         if (!kept and (element_ or next != before)) try js.assign(blk, try pg.modelRef(), if (element_) try js.member(result, "a") else result);
         try pg.writePass(blk, pass);
-        if (pg.retitle) |r| try js.expression(blk, try js.call(try js.name(r), &.{}));
+        try pg.retitleAfter(blk, k);
         if (element_) switch (cx.programCommand(k)) {
             .runs, .suspends => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
