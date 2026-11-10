@@ -1,0 +1,3 @@
+The twin of SanitiserCellLoanKept (ownership-v2.md §2.13.7, #2403): built again under --ownership=v2 and the list
+stale-read sanitiser. The functions read the cell's contents and keep nothing, or keep a copy, so v2 accepts each
+in-place edit through the cell and the sanitised run prints the same.

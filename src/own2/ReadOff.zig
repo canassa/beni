@@ -804,6 +804,8 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
         if (l.kind == .answer and out == .escapes) _ = try Contract.Draft.addEffect(Put.effList(s, out), s.arena, .{ .j = f.cbs.items[l.atom].j, .slot = f.cbs.items[l.atom].slot, .deep = true });
         if (out == .escapes and try Made.selfEscape(s, l)) continue;
         if (out == .escapes and l.kind == .top and l.root != Value.none) try Origin.leaves(&e.ev, l, &stack);
+        // An escaping loan lets what it lends escape: its cell's contents, `π_j◆` (§2.13.7, #2403).
+        if (out == .escapes and l.kind == .loan) try stack.append(gpa, l.atom);
         if (l.kind != .ref) continue;
         const r = f.roots.items[l.root];
         switch (r.kind) {
