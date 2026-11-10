@@ -25,6 +25,8 @@ module Browser.Navigation
   alias Key
   value back : Key, Int, (Error → msg) → Cmd msg  -- impure
   value currentUrl : ⊤ → Maybe Url  -- impure
+  value eachUrlChange : (Url → ⊤) → ⊤  -- suspends
+  value eachUrlRequest : (UrlRequest → ⊤) → ⊤  -- suspends
   value forward : Key, Int, (Error → msg) → Cmd msg  -- impure
   value goBack : Key, Int → Result Error ⊤  -- impure
   value goForward : Key, Int → Result Error ⊤  -- impure

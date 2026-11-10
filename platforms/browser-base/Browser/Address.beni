@@ -1,0 +1,244 @@
+--! The page's address as the renderers' `Browser.Navigation` facades share
+--! it (`docs/design/browser-capability-base.md` §3; `boundary.md` §9.8.13
+--! (c), §9.8.17): reading it, changing it, the guard that decides which
+--! link clicks are the page's, and the listeners both forms hear. Private
+--! to the platform chain: no program imports it. Each facade keeps its own
+--! `Key`, `Error` and `Browser.UrlRequest`, whose constructors a program
+--! matches, and turns this module's `Problem` and `Link` into them.
+
+import Js
+import Listen
+import Url exposing (Url)
+
+
+--| How a facade's `Error` says why the address did not change: its
+--| constructors, handed to each change, so no refusal is translated.
+pub type alias Faults e =
+    badUrl : String → e
+    crossOrigin : String → e
+    throttled : e
+
+
+--| A link click the page should handle itself: to the page's own
+--| protocol, host and port, or any other.
+pub type Link
+    = Internal Url
+    | External String
+
+
+--| The page's address, or `Nothing` when it is not an `http` or `https`
+--| one (a page opened from a file).
+pub currentUrl : ⊤ → Maybe Url
+currentUrl ⊤ = Url.fromString (Js.to (Js.get (Js.global "location") "href"))
+
+
+--| Add an entry to the browser's history with the URL, resolved against
+--| the page, and tell every follower of the address.
+pub push : Faults e, String → Result e ⊤
+push faults url = change faults "pushState" url
+
+
+--| Replace the current entry of the browser's history with the URL, and
+--| tell every follower of the address.
+pub replace : Faults e, String → Result e ⊤
+replace faults url = change faults "replaceState" url
+
+
+--| Leave the page for the URL, resolved against the page. An address that
+--| does not resolve, and a `javascript:` one, which would run text as
+--| script, is `BadUrl`.
+pub load : Faults e, String → Result e ⊤
+load faults url =
+    target = resolve url
+    if Js.isNull target || Js.same (Js.get target "protocol") (Js.from "javascript:") then
+        Err (faults.badUrl url)
+    else
+        -- `assign` documents a `SyntaxError` for an address it cannot
+        -- parse and a `SecurityError` for one it refuses; nothing else is
+        -- caught (CLAUDE.md rule 9).
+        Js.catchIf
+            (λ⊤ →
+                _ = Js.call (Js.global "location") "assign" [ Js.get target "href" ]
+                Ok ⊤
+            )
+            (λerror → isDomException error "SyntaxError" || isDomException error "SecurityError")
+            λerror →
+                if isDomException error "SyntaxError" then
+                    Err (faults.badUrl url)
+                else
+                    Err faults.throttled
+
+
+--| Load the page again.
+pub reload : ⊤ → ⊤
+reload ⊤ = Js.to (Js.call (Js.global "location") "reload" [])
+
+
+--| Go `n` entries through the history, back when `n` is negative. The
+--| address changes when the browser has gone, and followers hear it then;
+--| `n = 0` does nothing.
+pub go : Faults e, Int → Result e ⊤
+go faults n =
+    if n == 0 then
+        Ok ⊤
+    else
+        Js.catchIf
+            (λ⊤ →
+                _ = Js.call (Js.global "history") "go" [ Js.from n ]
+                Ok ⊤
+            )
+            (λerror → isDomException error "SecurityError")
+            λ_ → Err faults.throttled
+
+
+--| The listener both forms of a facade's `onUrlRequest` run: one on the
+--| window's clicks, which decides while the click is dispatched and after
+--| every handler on the page has run, and prevents the host from following
+--| the link when it is a request: a plain click (the main button, no Ctrl,
+--| Meta, Shift or Alt) whose default nothing prevented, on an `<a href>`
+--| with no `download` and a `target` that is empty or `_self`. Any other
+--| click is the host's.
+pub requests : sync (Link → ⊤) → (⊤ → ⊤)
+requests send = Listen.on "window" "click" link λl →
+    case l of
+        Just r →
+            send r
+
+        Nothing →
+            ⊤
+
+
+--| The listener both forms of a facade's `onUrlChange` run: `popstate`,
+--| which a browser fires for a fragment followed and for the back and
+--| forward buttons, and this module's own announcement of a push or a
+--| replace, in the order they fire. The address is read when each fires;
+--| one that is not a `Url` sends nothing.
+pub follow : sync (Url → ⊤) → (⊤ → ⊤)
+follow send = Listen.on2 "window" "popstate" announcement (λ_ → currentUrl ⊤) λurl →
+    case url of
+        Just u →
+            send u
+
+        Nothing →
+            ⊤
+
+
+--| Elm's guard, made precise (`boundary.md` §9.8.13 (c)), decided while
+--| the click is dispatched: a default already prevented has been handled,
+--| a modified or non-main click is the user asking the host, and so is a
+--| link that downloads or opens elsewhere. A request has its default
+--| prevented here.
+pub link : Js.Value → Maybe Link
+link event =
+    if
+        Js.to (Js.get event "defaultPrevented")
+            || not (Js.same (Js.get event "button") (Js.from 0))
+            || Js.to (Js.get event "ctrlKey")
+            || Js.to (Js.get event "metaKey")
+            || Js.to (Js.get event "shiftKey")
+            || Js.to (Js.get event "altKey")
+    then
+        Nothing
+    else
+        a = anchorOf event
+        if
+            Js.isNull a
+                || not (Js.to (Js.call a "hasAttribute" [ Js.from "href" ]))
+                || Js.to (Js.call a "hasAttribute" [ Js.from "download" ])
+                || not (sameContext (Js.call (Js.get a "target") "toLowerCase" []))
+        then
+            Nothing
+        else
+            _ = Js.call event "preventDefault" []
+            href : String
+            href = Js.to (Js.get a "href")
+            location = Js.global "location"
+            case Url.fromString href of
+                Just url →
+                    if
+                        Js.same (Js.get a "protocol") (Js.get location "protocol")
+                            && Js.same (Js.get a "host") (Js.get location "host")
+                    then
+                        Just (Internal url)
+                    else
+                        Just (External href)
+
+                Nothing →
+                    Just (External href)
+
+
+sameContext : Js.Value → Bool
+sameContext target = Js.same target (Js.from "") || Js.same target (Js.from "_self")
+
+
+-- The nearest `<a>` at or above the click's target, along its composed
+-- path, or null.
+anchorOf : Js.Value → Js.Value
+anchorOf event =
+    found = Js.ref Js.null
+    anchor = Js.global "HTMLAnchorElement"
+    Js.each (Js.call event "composedPath" []) λnode →
+        if Js.isNull (Js.read found) && Js.instanceOf node anchor then
+            Js.write found node
+    Js.read found
+
+
+--| The event every push and replace is announced by: the platform's own,
+--| so other code on the page sees `popstate` only for the host's
+--| traversals.
+pub announcement : String
+announcement = "beni:navigate"
+
+
+-- Resolve the URL against the page, check its origin, then make the
+-- change. `pushState` and `replaceState` document a `SecurityError`: for
+-- another origin, which is found first, and for too many calls, which
+-- Safari and Firefox throw. Chrome drops a call over its limit with a
+-- warning instead, so the address is compared afterwards — the one way to
+-- see that drop.
+change : Faults e, String, String → Result e ⊤
+change faults method url =
+    target = resolve url
+    location = Js.global "location"
+    if Js.isNull target then
+        Err (faults.badUrl url)
+    else if not (Js.same (Js.get target "origin") (Js.get location "origin")) then
+        Err (faults.crossOrigin url)
+    else
+        href = Js.get target "href"
+        changed =
+            Js.catchIf
+                (λ⊤ →
+                    _ = Js.call (Js.global "history") method [ Js.null, Js.from "", href ]
+                    Js.same (Js.get location "href") href
+                )
+                (λerror → isDomException error "SecurityError")
+                λ_ → False
+        if changed then
+            _ =
+                Js.call (Js.global "window") "dispatchEvent"
+                    [ Js.construct (Js.global "Event") [ Js.from announcement ] ]
+            Ok ⊤
+        else
+            Err faults.throttled
+
+
+-- The URL resolved against the page's address, or null: `URL.parse`
+-- answers null for what does not resolve, and an engine without it has
+-- `new URL`, whose one documented failure is a `TypeError`.
+resolve : String → Js.Value
+resolve url =
+    constructor = Js.global "URL"
+    base = Js.get (Js.global "location") "href"
+    if Js.isUndefined (Js.get constructor "parse") then
+        Js.catchIf
+            (λ⊤ → Js.construct constructor [ Js.from url, base ])
+            (λerror → Js.instanceOf error (Js.global "TypeError"))
+            λ_ → Js.null
+    else
+        Js.call constructor "parse" [ Js.from url, base ]
+
+
+isDomException : Js.Value, String → Bool
+isDomException error name =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
