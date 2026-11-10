@@ -78,6 +78,12 @@ pub const Name = enum {
     capture_rows_lost,
     /// §2.11.4, *a field capture*: a local function captures a field as a lambda does, where the lowering reads at its calls.
     field_capture_local,
+    /// §2.8, *the emitter reads the rows*: the record half of the channel is clean also where a record line is refused.
+    record_rows_unchecked,
+    /// §2.8, *the emitter reads the rows*: the channel has the record writes and none of the reads that they hoist.
+    record_reads_lost,
+    /// §2.8, *the emitter reads the rows*: a declaration past the record pass's limit leaves the record half clean.
+    record_limit_clean,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

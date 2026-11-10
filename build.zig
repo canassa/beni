@@ -900,6 +900,12 @@ pub fn build(b: *std.Build) void {
     // sanitiser, against its golden. Lists are not written in place yet, so
     // this is the one pass; S8b adds the stores. Not a gate. The gates run
     // the `.sanitize-lists` fixtures.
+    // Its v2 twin: the same three builds under `--ownership=v2`, whose channel names the record
+    // writes and the reads to bind (`ownership-v2.md` §2.8, *the emitter reads the rows*). Not a gate.
+    const in_place_v2_step = b.step("test-records-in-place-v2", "Build every run/ program and browser/inline/ page under --ownership=v2 with its records written in place, under the stale-read sanitiser, as shipped and as a release; not a gate");
+    in_place_v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "records-v2" }).step);
+    in_place_v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "records-v2" }).step);
+
     const lists_step = b.step("test-lists-in-place", "Build every run/ program and browser/inline/ page under the list stale-read sanitiser, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
     lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "lists" }).step);
     lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "lists" }).step);

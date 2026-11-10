@@ -1,0 +1,2 @@
+A once closure's accepted record write has a line at the closure's creation, which is no row of the emitter's
+table (ownership-v2.md §2.8, the emitter reads the rows): the module is clean, and `bump`'s update is a store.

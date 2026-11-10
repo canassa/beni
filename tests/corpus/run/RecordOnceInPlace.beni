@@ -1,0 +1,34 @@
+-- `ownership-v2.md` §2.8, *the emitter reads the rows*: a closure that runs at most once writes
+-- the record that it captured, and the checker accepts the write with a line at the closure's
+-- creation too. The emitter's table has a row for an update and for a call, and none for a
+-- creation. `viaMaybe` is such a closure in a module with no refusal: `bump`'s update is a store.
+import Node exposing (Program)
+
+
+type alias P =
+    x : Int
+    y : Int
+
+
+bump : P, Int → P
+bump p n = { p | x = p.x + n }
+
+
+viaMaybe : Maybe Int, P → Maybe P
+viaMaybe m p = Maybe.map m (bump p _)
+
+
+show : Maybe P → String
+show m =
+    case m of
+        Just p →
+            String.fromInt (p.x * 10 + p.y)
+
+        Nothing →
+            "none"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (viaMaybe (Just 4) { x = 1, y = 2 }), show (viaMaybe Nothing { x = 1, y = 2 }) ]

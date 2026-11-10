@@ -2253,6 +2253,17 @@ fn checkSerial(session: *Session) RunError!void {
         session.checked.hoists[i] = l.hoists;
         l.hoists = .empty;
     };
+    // Under `--ownership=v2` the emitter's table is made from v2's channel (`ownership-v2.md` §2.8, the
+    // emitter reads the rows): v1 did not run, so each slot is empty until here.
+    if (session.options.ownership_v2) for (session.checked.channels, 0..) |*ch, i| {
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
+        const bir = session.artifacts.bir(session.graph.moduleFile(m));
+        var t = try @import("js/RecordRows.zig").table(gpa, ch, bir, &session.interner, &session.checked.dispatch[i], session.graph.modulePackage(m) == .app);
+        if (std.debug.runtime_safety) std.debug.assert(!t.clean or t.verifyAgainstBir(bir, &session.interner, &session.checked.dispatch[i]));
+        session.checked.hoists[i].deinit(gpa);
+        session.checked.hoists[i] = t;
+        t = .empty;
+    };
     // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
     // §8). They are summed from the per-module flags the workers set, because
     // the decision is now theirs: there is no serial load pass left to count.

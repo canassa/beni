@@ -1,0 +1,2 @@
+The records differential corpus under checker v2 (ownership-v2.md §2.8, the emitter reads the rows): the same
+three builds as `.in-place`, with `--ownership=v2`, whose channel names the record writes and the reads to bind.

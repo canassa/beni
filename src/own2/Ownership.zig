@@ -113,6 +113,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     // The record pass past its limit: no line accepts an update of it. No error while record verdicts are not enforced (§2.11.5).
                     if (records) {
                         rlimits += 1;
+                        // Its record writes have no verdict: the module's records keep the spread (§2.8).
+                        if (!@import("Mutate.zig").on(.record_limit_clean)) channel.record_refused = true;
                         if (in.format_summaries) try others.append(arena, try std.fmt.allocPrint(arena, "record-pass unchecked {s}", .{name}));
                         continue;
                     }
@@ -128,7 +130,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 var frame = frame_base;
                 frame.decl = d;
                 // Its frames' field captures: a row each, unless an earlier write's row has the read (§2.8, the capture rows).
-                for (dr.captures) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, h.capture, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h, "capture"), .read = .{ h.read, h.binding, h.capture } });
+                for (dr.captures) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, h.capture, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h, "capture"), .read = .{ h.read, h.binding, h.capture }, .hoist = h, .written = false });
                 for (dr.lines) |l| {
                     const op = if (l.demand.callee_inst != Ids.none_int) try Message.opName(frame, arena, l.demand.callee_inst) else "";
                     var ln = try Message.line(frame, arena, l, op);
@@ -150,7 +152,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     }
                     try lines.append(arena, ln);
                     // An accepted record write's hoisted reads, by the write's instruction (§2.8, the hoist rows).
-                    if (!ln.refused) for (l.hoists) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, l.demand.point, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h, "hoist"), .read = .{ h.read, h.binding, h.capture } });
+                    if (!ln.refused) for (l.hoists) |h| try hoist_rows.append(arena, .{ .key = .{ dr.decl, l.demand.point, h.outer, h.read }, .text = try Message.hoistLine(frame, arena, h, "hoist"), .read = .{ h.read, h.binding, h.capture }, .hoist = h, .written = true });
+                    // The channel's record half (§2.8): a line of the record pass refuses, or is an accepted record write.
+                    if (!first) try channel.record(arena, dr.decl, l.demand.point, ln.refused, l.demand.record);
                 }
                 if (in.format_summaries) {
                     const a = &dr.account;
@@ -245,8 +249,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         // The dump names the block by its size and a hash of its bytes: what
         // the determinism tests compare across job counts (rule 5).
         if (in.format_summaries) if (block) |b| try others.append(arena, try std.fmt.allocPrint(arena, "block: {d} bytes, hash {x:0>16}", .{ b.len, std.hash.Wyhash.hash(0, b) }));
+        // The rows' lines, and the rows into the channel before it is finished.
+        try Hoists.Row.lines(arena, hoist_rows.items, &hoist_lines, &channel);
         if (in.channels) |c| c[at] = try channel.finish(arena, gpa, limits != 0);
-        try Hoists.Row.lines(arena, hoist_rows.items, &hoist_lines);
         try hoist_lines.appendSlice(arena, others.items);
         r.* = .{ .module = mi.module, .lines = lines.items, .others = hoist_lines.items, .limits = limits, .block = block, .word_errors = word_errors };
     }

@@ -51,7 +51,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // Its lines are its table: a line for each rule broken, and its comment.
-    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 470 },
+    .{ .file = "Mutate.zig", .layer = 0, .max_lines = 480 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
     .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
@@ -377,9 +377,10 @@ const layers = [_]Entry{
     // A hoisted read's line of the report (§2.8, the hoist rows).
     .{ .file = "Message.zig", .layer = 14, .max_lines = 295 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
-    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 190 },
-    // The facade runs the list pass and the record pass of each module (§2.11.5, R-8.6).
-    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 410 },
+    // The channel's record half: the accepted record writes and the reads to bind (§2.8, the emitter reads the rows).
+    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 200 },
+    // The facade runs the list pass and the record pass of each module (§2.11.5, R-8.6), and fills both halves of the channel.
+    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 415 },
     .{ .file = "Enforce.zig", .layer = 16, .max_lines = 510 },
 };
 
