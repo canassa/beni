@@ -1092,7 +1092,8 @@ storage write, the base's own storage at the written position (`at_position`); f
      later update of a record that contains this one): the old record is read whole: refused, as for a list;
    - a later **update** event at `(h, q)`: a whole use of the old record (R-4.8.2 (c)): refused;
    - a **read** event at `(h, q)` of a field in `F`: accepted, and counted as a hoist (the lowering binds the
-     read before the write; until the lowering reads the channel the count is the report's `[hoisted n]` only);
+     read before the write; until the lowering reads the channel the count is the report's `[hoisted n]` only,
+     printed after the acceptance as v1 prints it);
    - a read event of a field not in `F`, and any use strictly below `q`: nothing.
 
    The events are sorted by `(local, path, field, point)` when the walk ends; a query is one binary search a
@@ -1109,8 +1110,9 @@ storage write, the base's own storage at the written position (`at_position`); f
    accepted, and followed by `sum p`, `sum p = p.x + p.y`, it is refused `later-use`. A callee's reads that
    reach a caller through another callee keep their fields (`FieldReads.through`: `outer p = getY p`). Fixture
    `ownership/RecordCalleeFields`; mutant `field_reads_whole`. *Refused that a perfect checker accepts, with
-   what S5 owes:* a closure that captures the record and reads one field (a field capture, R-5.4.6); a record
-   pattern in a `case` arm; a callee's write of a field set (the contract's `F`, §2.10).
+   what S5 owes:* a record pattern in a `case` arm; a record pattern that binds a field no path names, after
+   an update; a callee's write of a field set (the contract's `F`, §2.10). A closure that reads one field of
+   a captured record is a field capture (§2.11.4).
 6. **Exclusive.** What the overlaps relied on (§2.9.4): a selection of the frame's parameters is accepted
    `param` and added to `req`; anything else that is not given is refused `exclusive`.
 
@@ -3298,6 +3300,19 @@ codes of their own. Their parameters are their own, then their **captures**: the
 the body reads, in local order. The body is walked as its own frame, and its contract is read off as any
 code's. A block's local functions that call each other are a group, solved as §2.12 solves a declaration
 group.
+
+*Amended 2026-11-10 (#1018; R-5.4.6): a field capture, in the record pass.* A frame that names a captured
+local only as the base of a field access (`λ⊤ → p.x`, `λ⊤ → Api.login model.form.email`) reads those fields
+when the closure is made, and the closure holds their values, not the record (`ownership-checker.md` §31.6).
+So, at the creation, each such field is a read event of the local (§2.7, *Field events*) and a use of the
+field's value at its path, and the closure's kid for that capture is a record of those fields' values with no
+object of its own (`FieldCapture.of`). A closure made after `q = { p | x = 1 }` that reads `p.x` is then a
+hoist of that read, and a closure made before it holds the old `x` and is no holder of `p`'s object. A
+frame that names the local in any other way (returns it, updates it, matches it) captures it whole: the
+closure holds the record, and a write of it while the closure is used is refused `captured`. The rule is
+read off the text, over the instructions of the frame and of the frames inside it, because the lowering must
+find the same captures: it reads each captured field at the creation. The list pass captures every local
+whole, as before (R-8.6). Fixture `ownership/RecordFieldCapture`; mutant `field_capture_whole`.
 
 *Amended 2026-11-03 (#1745): a parameter written as a pattern.* A code's parameter place is its local's type for a
 name (`λx`) and, for a pattern (`λ( k, v )`, `λ⊤`), the parameter's place in the code's own function type: the
@@ -6526,6 +6541,7 @@ L0  Ids  Counters  Scratch
 | `CallReq.zig` | 10 | a callee's `req` at a call, as a record's write relies on it and, in the record pass, as a list's does (§2.11.2 item 4, *A list's write beside a record's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
 | `PendingArg.zig` | 9 | what a pending argument holds for its consumer, in the record pass: the leaves that the callee's contract reaches (§2.8, *A pending argument*, R-4.8.5), for `Stack` | Ids, Contract, Forest, Relation |
 | `FieldReads.zig` | 8 | a record's fields read, in a contract's `reads`: the frame's field events as marks at the record's slot, and a callee's marks read at a caller (§2.8, *Dead, by field*, §2.10, R-4.8.5), for `ReadOff` | Ids, Place, Slots, Contract |
+| `FieldCapture.zig` | 8 | a closure's field captures, read off the frame's text: the read events and uses at the creation, and the closure's kid of field values (§2.11.4, *a field capture*, R-5.4.6), for `Walk` | Ids, Place |
 | `FieldMark.zig` | 3 | the mark of a field read in an effect tree, and whether a read tree reads a field of a set (§2.10, *a read's fields*; §2.8), for `Contract`, `Later`, `FieldReads` | Place, Trees |
 | `ByStructure.zig` | 10 | a value at a supply's key, by its own structure (§2.1, *An arrival's level*) | Ids, Contract, Relation, Slots, Value |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
