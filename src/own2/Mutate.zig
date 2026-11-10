@@ -26,6 +26,8 @@ pub const Name = enum {
     recons_never,
     /// O1: a prepend whose front is a call never answers its base's array, whatever the call hands back.
     recons_front_any,
+    /// Cost only (§4.1): a call's mixed condition is instantiated again at each asking, not once (#2418).
+    mixed_memo_off,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

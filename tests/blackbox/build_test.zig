@@ -10460,6 +10460,58 @@ test "the checker v2 reads a chain of 400 calls at its end in records linear in 
     }
 }
 
+test "the checker v2 instantiates a call's mixed condition once through a chain that threads a record" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9.1 *Apart occurrences*, §4.1 (#2418): `s_k = keep
+    // s_(k-1) { list = [ k ], model = [] }`, where `keep` answers a record of
+    // its argument's fields with one list field pushed. A check asked each
+    // call's mixed condition again at each round in which the call's group
+    // gained entries, and each asking instantiated the chain below it again:
+    // 4 324 records at 4 calls, 48 571 at 8, and `ownership_summary_size` at
+    // 12. Once per call, mode and selection, 8 calls cost 10 731 records, 16
+    // cost 38 264 and 32 cost 147 163, with growth 0: twice the calls cost at
+    // most 4.5 times the records, which is the growth of the chain that
+    // pushes onto a plain list (11 940 at 16 calls, 42 679 at 32).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const c8 = try recordChainTotal(&w, 8);
+    const c16 = try recordChainTotal(&w, 16);
+    const c32 = try recordChainTotal(&w, 32);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (c16 * 10 > c8 * 45 or c32 * 10 > c16 * 45) {
+        std.debug.print("record chain: {d} records at 8 calls, {d} at 16, {d} at 32\n", .{ c8, c16, c32 });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// `chain`'s total in a v2 dump of `s_k = keep s_(k-1) { list = [ k ], model =
+/// [] }` for k up to `n`: every push accepted, no limit, growth 0.
+fn recordChainTotal(w: *World, n: u32) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type alias V =\n    list : List Int\n    model : List Int\n\n\ntype alias S =\n    seed : Int\n    versions : List V\n    count : Int\n    bad : List String\n    checks : Int\n\n\n");
+    try src.appendSlice(a, "keep : S, V → S\nkeep s v = { seed = s.seed, versions = List.push s.versions v, count = s.count, bad = s.bad, checks = s.checks }\n\n\npub chain : S → S\nchain s0 =\n");
+    for (1..n + 1) |k| try src.print(a, "    s{d} = keep s{d} {{ list = [ {d} ], model = [] }}\n", .{ k, k - 1, k });
+    try src.print(a, "    s{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, ": rejected ") == null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
 /// `chain`'s total in a v2 dump of a chain of n choices written inline:
 /// `x_k = if c then x_{k-1} else [ 1 ]`, or, `knots`, `x_k = if c then
 /// T [ x_{k-1} ] else t`. `x_n` holds the parameter `xs` (`zs` inside

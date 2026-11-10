@@ -1,0 +1,23 @@
+module StateChain
+  26:18 List.push s.versions: accepted param
+  35:10 call StateChain.keep s0.versions: accepted param (StateChain.keep writes π1.versions)
+  36:10 call StateChain.keep s1.versions: accepted param (StateChain.keep writes π1.versions)
+  37:10 call StateChain.keep s2.versions: accepted param (StateChain.keep writes π1.versions)
+  38:10 call StateChain.keep s3.versions: accepted param (StateChain.keep writes π1.versions)
+  39:10 call StateChain.keep s4.versions: accepted param (StateChain.keep writes π1.versions)
+  40:10 call StateChain.keep s5.versions: accepted param (StateChain.keep writes π1.versions)
+  41:10 call StateChain.keep s6.versions: accepted param (StateChain.keep writes π1.versions)
+  42:10 call StateChain.keep s7.versions: accepted param (StateChain.keep writes π1.versions)
+  43:10 call StateChain.keep s8.versions: accepted param (StateChain.keep writes π1.versions)
+  44:11 call StateChain.keep s9.versions: accepted param (StateChain.keep writes π1.versions)
+  45:11 call StateChain.keep s10.versions: accepted param (StateChain.keep writes π1.versions)
+  46:11 call StateChain.keep s11.versions: accepted param (StateChain.keep writes π1.versions)
+  52:10 call StateChain.keep s0.versions: accepted param (StateChain.keep writes π1.versions)
+  53:10 call StateChain.keep s1.versions: accepted param (StateChain.keep writes π1.versions)
+  54:9 List.push v.list: rejected call: s2.versions[*].list may hold it through the call at 52:10, and is read at 55:21 (approx)
+  summary keep: π1.bad RA, π1.checks R, π1.count R, π1.seed R, π1.versions RAW[storage], π1.versions[*] A, π2 RA; res .bad ~condition(fresh4) π1.bad, .versions condition(fresh3) π1.versions{excl π2, sep π1.versions[*] π2}r{excl π2, sep π1.versions[*] π2}, .versions[*] ~condition(fresh1) ~π1.versions[*] ~π2, condition(fresh2){sep π1.bad π2, sep π1.versions π1.bad, sep π1.versions[*] π1.bad} fresh501◦
+  summary chain: π1.bad RA, π1.checks R, π1.count R, π1.seed R, π1.versions RAW[storage], π1.versions[*] RA; res .bad ~condition(fresh5) π1.bad, .versions condition(fresh4) π1.versions, .versions[*] ~condition(fresh3) ~fresh502◦ ~fresh503◦ ~fresh504◦ ~fresh505◦ ~fresh506◦ ~fresh507◦ ~fresh508◦ ~fresh509◦ ~fresh510◦ ~fresh511◦ ~fresh512◦ ~fresh513◦ ~π1.versions[*], .versions[*].list ~fresh1, .versions[*].model ~fresh2, condition(fresh6){sep π1.versions π1.bad, sep π1.versions[*] π1.bad} fresh501◦
+  summary twice: π1.bad R, π1.checks R, π1.count R, π1.seed R, π1.versions RW[storage], π1.versions[*] R, π2 R, π2.list RW[storage], π2.list[*] R
+  demands 16: accepted 15 (fresh 0, call 0, param 15, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 16: accepted 15 (fresh 0, call 0, param 15, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

@@ -133,6 +133,8 @@ pub const Eval = struct {
     /// Per call: 0 unset, 1 in progress, 2 done (`cond_of`); bit 4: `Distinct.instCondMixed` asks it.
     cond_state: std.ArrayList(u8) = .empty,
     cond_of: std.ArrayList(Cond) = .empty,
+    /// `PlainReach.instCondMixed`'s conditions, by `(call, mode, keeping, selection)` (`CondOnce`, #2418); `hoped`: its strict check hoped.
+    mixed_memo: std.StringHashMapUnmanaged(struct { cond: Cond, hoped: bool }) = .empty,
     /// A holder is judged against a label's answer (§2.11.3, *An answer handed on*).
     keeping: bool = false,
     read_mode: enum { ask, strict, hope, reading } = .ask,
@@ -208,6 +210,7 @@ pub const Eval = struct {
         e.inst_leaves.deinit(g);
         e.cond_state.deinit(g);
         e.cond_of.deinit(g);
+        e.mixed_memo.deinit(g);
         e.pairs.deinit(g);
         e.label_map.deinit(g);
         e.known.deinit(g);
