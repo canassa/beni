@@ -1,0 +1,109 @@
+-- The base's Dom family on a prerendered page (browser-capability-base.md
+-- §6, *Prerender plus Dom*).
+--
+--   - load: `init`'s after-render work focuses and measures the hydrated
+--     input; the prerender tree runs none of it.
+--   - "edit": `update` shows an input the page has not written yet and asks,
+--     with `Cmd.afterRender`, to focus it; the work runs after the write.
+--   - "open": a fiber sends `Opened`, waits with `Dom.rendered` until the
+--     page shows the second input, then focuses it.
+--   - "missing": focusing an id nothing rendered is `Err (NotFound id)`.
+import Browser
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Edit
+    | Open
+    | Opened
+    | Missing
+    | Failed Dom.Error
+
+
+type alias Model =
+    editing : Bool
+    opened : Bool
+    failure : String
+
+
+focus : String, Cmd.Send Msg → ⊤
+focus id send =
+    case Dom.focus id of
+        Ok ⊤ →
+            Debug.log "focused ${id}" ⊤
+
+        Err why →
+            send (Failed why)
+
+
+measure : String, Cmd.Send Msg → ⊤
+measure id send =
+    case Dom.box id of
+        Ok box →
+            _ = Debug.log "measured ${id}, sized" (box.width ≥ 0 && box.height ≥ 0)
+            _ = Debug.log "viewport read" ((Dom.viewport ⊤).width ≥ 0)
+            focus id send
+
+        Err why →
+            send (Failed why)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Edit →
+            ( { model | editing = True }, Cmd.afterRender (focus "first" _) )
+
+        Open →
+            ( model, Cmd.perform openThenFocus )
+
+        Opened →
+            ( { model | opened = True }, Cmd.none )
+
+        Missing →
+            ( model, Cmd.afterRender (focus "nowhere" _) )
+
+        Failed (Dom.NotFound id) →
+            ( { model | failure = "not found: ${id}" }, Cmd.none )
+
+
+openThenFocus : Cmd.Send Msg → ⊤
+openThenFocus send =
+    send Opened
+    Debug.log "waiting for the render" ⊤
+    Dom.rendered ⊤
+    focus "second" send
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <input id="hydrated" />
+        <button id="edit" onClick={Edit}>edit</button>
+        <button id="open" onClick={Open}>open</button>
+        <button id="missing" onClick={Missing}>missing</button>
+        {if model.editing then <input id="first" /> else <span />}
+        {if model.opened then <input id="second" /> else <span />}
+        <p>{model.failure}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init =
+                λ⊤ →
+                    ( { editing = False, opened = False, failure = "" }
+                    , Cmd.afterRender (measure "hydrated" _)
+                    )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            }
+        )
+        [ "/" ]

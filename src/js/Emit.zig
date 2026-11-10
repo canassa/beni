@@ -4219,6 +4219,7 @@ const Emitter = struct {
                     found.cmd_none = ref(e, m, "none");
                     found.cmd_batch = ref(e, m, "batch");
                     found.cmd_perform = ref(e, m, "perform");
+                    if (fx.after_render) found.cmd_after_render = ref(e, m, "afterRender");
                 }
             }
             effects = found;

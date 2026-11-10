@@ -127,6 +127,7 @@ pub const Effects = struct {
     cmd_none: Ref = .{},
     cmd_batch: Ref = .{},
     cmd_perform: Ref = .{},
+    cmd_after_render: Ref = .{},
 
     pub const Ref = struct {
         m: u32 = none,
@@ -2945,6 +2946,7 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
     if (fx.sub_on.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.decl, args)});
     if (fx.sub_listen.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.work, args)});
     if (fx.cmd_perform.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
+    if (fx.cmd_after_render.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
     if (fx.sub_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .sub) orelse try a.freshCall(args);
     if (fx.cmd_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .cmd) orelse try a.freshCall(args);
     if (fx.sub_map.is(m, d) and args.len == 2) {

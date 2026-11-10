@@ -8243,3 +8243,14 @@ does not change the declaration's package. The implementations cited as
 contract. TaskWords' timeout/raceOk mutation checks first missed both
 mutations after the move while clean master detected them; selecting the
 new defining package restores the checks. No ownership word is weakened.
+
+
+**Browser render-phase amendment (2026-11-10).** `Browser.host` was read
+again after the hosted loop's phase state (the flush, the after-render phase,
+its queue of work and its waiting fibers, the busy latch) moved to the base's
+private `Phase` module. `host` now calls `Phase.mount`, `Phase.after` and
+`Phase.rendering` where it wrote those cells itself. The render callback
+handed to `Phase.rendering` is applied once, synchronously, inside its
+`Js.finally`, and is not kept. `host` still installs each `settle`/`view`
+result in its own `model` and `shown` cells and retains no previous state, so
+the entry-word audit of 2026-10-22 holds unchanged. No word changes.

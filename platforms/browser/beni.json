@@ -5,7 +5,7 @@
   "html": "index.html",
   "entryHost": "window",
   "platforms": ["browser-base"],
-  "reexports": ["Html", "Html.Markdown", "Cmd", "Sub", "Time", "Browser.Events", "Hosted"],
+  "reexports": ["Html", "Html.Markdown", "Cmd", "Sub", "Time", "Browser.Events", "Hosted", "Dom"],
   "markup": { "lowering": "dom", "module": "Rt" },
   "zig": "zig/root.zig",
   "entryKinds": [{

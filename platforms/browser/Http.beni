@@ -16,10 +16,10 @@
 --! or `send` and `riskySend`, elm/http's commands, whose progress a
 --! `track` subscription hears (§9.8.19).
 
-import Browser
 import Cmd exposing (Cmd)
 import Dict exposing (Dict)
 import Js
+import Phase
 import Schema exposing (Schema)
 import Sub exposing (Sub)
 import Task exposing (Resume)
@@ -482,7 +482,7 @@ commanded credentials r =
 -- the work that adds their listeners, queued by that flush, run first.
 ready : ⊤ → ⊤
 ready ⊤ =
-    Task.callback λresume → Browser.onRendered resume
+    Task.callback λresume → Phase.onRendered resume
     Task.yieldNow ⊤
 
 

@@ -8,8 +8,8 @@ Name the platform in `beni.json` (`"build": { "platform": "…" }`) or with `--p
 | `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, the `Gpu` modules, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
-| `browser-base` | none | a dependency or library | shared commands, subscriptions, timers and window events; no runnable entry |
-| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Time`, `Browser.Events`, `Html`; compiled views |
+| `browser-base` | none | a dependency or library | shared commands, subscriptions, timers, window events and `Dom`; no runnable entry |
+| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Time`, `Browser.Events`, `Dom`, `Html`; compiled views |
 | `html` | none | — | the markup vocabulary the four above share |
 | `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |
 
@@ -285,8 +285,8 @@ builds on both. The program is compiled, not run: each constructor is recognised
 and the page ships only what it reaches. Lists are edited in place here, so the ownership checker's
 errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`. Pages: `prerender.md`.
 
-`Time` and `Browser.Events` use the shared base. Stop cancels waiting work. `Cmd.perform` in a log scope is supported: bodies keep creation log context; updates use program context.
-Zero-field taggers (`λ_ → Tick`) are supported. Compiler limits: static, model-independent sets and unkeyed commands; full keyed policies remain unavailable.
+`Time`, `Browser.Events` and `Dom` use the shared base. `Cmd.afterRender` runs after the page is written; `Dom.rendered` waits for it. Stop cancels waiting work. `Cmd.perform` in a log scope is supported: bodies keep creation log context; updates use program context.
+Zero-field taggers (`λ_ → Tick`) are supported. Compiler limits: static, model-independent sets and unkeyed commands (`none`, `batch`, `perform`, `afterRender`); full keyed policies remain unavailable.
 
 ## `html`
 
