@@ -1,0 +1,6 @@
+import Node exposing (Program)
+import Order
+
+
+main : Program
+main = Node.printLines (Order.cases ⊤)

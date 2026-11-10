@@ -1,0 +1,7 @@
+record literal: value 5, reads 1
+field bound first: value 5, reads 1
+record update: value 5, reads 1
+read written first (control): value 5, reads 0
+constructor: value 5, reads 1
+tuple: value 5, reads 1
+list: value 5, reads 1
