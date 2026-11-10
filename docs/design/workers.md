@@ -655,6 +655,11 @@ refused. A false detection costs one runtime walk, never a refused program
 (rule 7). Fixtures: `tests/corpus/browser/dedicated/PolyRecursiveFork` and
 `PolyRecursiveNest`.
 
+**Decided 2026-11-10 by Cesar (the owner), question `wire-polyrec-hang-q1`:**
+the dynamic walk. The other option was a refusal with a diagnostic in
+ordinary Wire, as #1763 proposed. The owner chose the walk, because no
+guarantee needs the refusal.
+
 ## 6. Native API adapters and precise failures
 
 The [research §9](research/workers-api-research.md#9-prose-defined-serialization-and-exact-native-transfer-checks)
