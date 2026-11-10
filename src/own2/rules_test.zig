@@ -239,7 +239,8 @@ const layers = [_]Entry{
     // A construction over its base, split from `Walk` (#2028).
     .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A demand says whether it is a cell operation (#1727).
-    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
+    // A block takes its result off the pending operands (#2449).
+    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1245 },
     // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
     .{ .file = "FnRun.zig", .layer = 9, .max_lines = 250 },
     // What carries a need, for `NeedLeaves` (§2.11.3).

@@ -1,0 +1,12 @@
+module ArmLetResult
+  17:15 List.push xs: accepted param
+  19:15 List.push xs: accepted param
+  20:31 List.push first: accepted param
+  28:15 List.push xs: accepted param
+  30:15 List.push xs: accepted param
+  31:31 List.push first: accepted param
+  summary roll: unused
+  summary pushed: π2 RAW[storage], π2[*] RA; res .0 π2, .0[*] ~condition(fresh1) ~π2[*]
+  summary plain: π2 RAW[storage], π2[*] RA; res .0 π2, .0[*] ~condition(fresh1) ~π2[*]
+  demands 6: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

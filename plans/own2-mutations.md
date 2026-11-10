@@ -19,6 +19,8 @@ candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#22
 *Since #2354:* `below_join_one_name` is killed by `run/SanitiserFamilyJoinBelow` (`--only=below_join_one_name`, 96 s).
 *Since #2325:* `recons_never` and `recons_front_any` (when a prepend may answer its base's array, `Recons.zig`) are killed by
 `run/SanitiserPrependFrontHeld`, the first also by `ownership/Prepend` and `PrependFresh` (`--only=recons_never,recons_front_any`, 205 s).
+*Since #2449:* `block_result_pending` (a block's result stays a pending operand after the block took its value, `Walk.zig`)
+is killed by `ownership/ArmLetResult` (`--only=block_result_pending`, 259 s, control green).
 *Since #2418:* `mixed_memo_off` (a call's mixed condition instantiated again at each asking, `CondOnce.zig`) is a cost-only
 mutant: it is killed by `ownership/StateChain`, which reaches `ownership_summary_size` under it (`--only=mixed_memo_off`, 261 s).
 
@@ -202,6 +204,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `comparison_row_no_reads` | O9 | a comparison's contract reads nothing | killed | | 0 | 2: ApartPaths (OwnershipV2Differs), … | 0 | |
 | `entry_held_off` | G1 | `EntryHeld.demands` off | stale | | 0 | 0 | 0 | 15 STALE |
 | `entry_mark_off` | G1 | an argument of an entry is not marked | stale | | 0 | 0 | 0 | 2 STALE |
+| `block_result_pending` | §2.8, #2449 | a block's result stays a pending operand after the block took its value | killed | | 0 | ArmLetResult (OwnershipV2Differs) | 0 | |
 | `word_aliased` | O9 | a row's word `aliased` is ignored | killed | | SanitiserTimeoutAnswer (ProgramFailed) | 9: HostedEntryHostSettle [browser+everywhere] (OwnershipV2Differs), … | 0 | |
 | `word_builderdone` | O9 | a row's word `builderdone` is ignored | SURVIVED | open | 0 | 0 | 0 | 0 |
 | `word_cellcomplete` | O9 | a row's word `cellcomplete` is ignored | stale | | 0 | 0 | 0 | 113 STALE |
