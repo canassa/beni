@@ -431,14 +431,14 @@ fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
 }
 
 /// Whether one cell can be in both parts of one summary location. Two
-/// answers of one function parameter are not one cell by this test: the
-/// caller that knows the function decides (`answerOfCode`).
+/// answers of one function parameter (two calls) are two roots, so they are
+/// not one cell by this test: the caller that knows the function decides
+/// (`answerOfCode`). One answer at two places is one cell at two places.
 ///
 /// Two cells read through one root that holds each cell once (`linear`) are
 /// one cell only when that root's own atoms say so: its parts are apart.
 fn dupOverlap(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
     for (xs) |x| {
-        if (f.roots.items[x.root].kind == .answer) continue;
         for (ys) |y| {
             if (!f.overlap(x, y)) continue;
             if (x.via != none and x.via == y.via and f.roots.items[x.via].linear) continue;
@@ -2811,6 +2811,13 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, seen: *S
                     try f.refuse(level, .supply, not_own);
                     continue;
                 }
+                // The function must answer that answer as it is, and one time:
+                // at the same location, at no other place of its result, and
+                // handed to no function. (`[ r, r ]` has one cell at two places.)
+                if (!f.passesOn(code, @intCast(re), ls, lf)) {
+                    try f.refuse(level, .supply, not_own);
+                    continue;
+                }
                 var inner = try f.innerUse(code, ls.a, lf, level);
                 inner.code = cc;
                 try f.answerOwn(&inner, ls.e, &.{}, seen);
@@ -2829,6 +2836,25 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, seen: *S
             },
         };
     }
+}
+
+/// Whether the known function `code` answers the answer `ls` of a function
+/// that it captured as it is: at result entry `re`, which is the same
+/// location as the answer's entry; at no other entry of the result; and it
+/// hands that answer to no function.
+fn passesOn(f: *Frame, code: Code, re: u32, ls: Src, lf: *const CMod.Fn) bool {
+    const m = f.m;
+    const lc = code.contract;
+    if (m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != m.loc.layoutEntries(lf.layouts[lf.arity])[ls.e].loc) return false;
+    for (lc.res, 0..) |srcs, k| {
+        if (k == re) continue;
+        for (srcs) |x| if (x.kind == .answer and x.a == ls.a and x.e == ls.e) return false;
+    }
+    for (lc.fns) |lfo| {
+        const g = lfo orelse continue;
+        for (g.supply) |srcs| for (srcs) |x| if (x.kind == .answer and x.a == ls.a and x.e == ls.e) return false;
+    }
+    return true;
 }
 
 /// The known function `code` answers its parameter `(a, e)`, the holder
