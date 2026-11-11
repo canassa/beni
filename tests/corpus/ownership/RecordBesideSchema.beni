@@ -6,9 +6,9 @@
 --
 -- `inline`: the schema value is an earlier operand of the call that takes
 -- the updated copy. v2 refuses the update (`held-operand`).
--- `after` and `listAfter`: `Schema.decode` took a schema value before. v2
--- refuses each later write of the declaration (`escaped`), also of an
--- object that is made after that call: a new copy, a new list.
+-- `after`, `listAfter`, `pushed`: a `Schema` function took a schema value
+-- before. v2 refuses each later write of the declaration (`escaped`): of a
+-- new copy, of a new list, and of a parameter that the call did not take.
 -- `parsed`: the record is a parse's answer. v2 refuses the callee's write
 -- of it (`unknown`, approximate).
 -- `alone`: no schema member. Both checkers accept the update of the copy.
@@ -63,3 +63,17 @@ use k =
     _ = inline k
     _ = after first k
     List.length (listAfter [ k ])
+
+
+step : Int, Part.Encoded → Part.Encoded
+step k row = { row | n = k }
+
+
+pub pushed : Schema.Value, Part.Encoded → Part.Encoded
+pushed value row =
+    case Schema.read (Part.schema ⊤) value of
+        Ok part →
+            step part.n row
+
+        Err _ →
+            row

@@ -418,7 +418,7 @@ test "the known list pins its open entries and its fixture entries" {
     // `ownership-v2.md` §7, point 2: an `open` entry is pinned and not justified, and none may be left at the
     // switch-over. So their number is a number of this test: it changes only with a line of a diff, and the
     // switch-over makes it 0.
-    const open_entries = 158;
+    const open_entries = 135;
     // A test that runs this binary in a directory of its own has no list (`run_hash_test.zig`), as for `knownDifferences`.
     const text = Io.Dir.cwd().readFileAlloc(testing.io, "tests/blackbox/ownership-v2-known.txt", testing.allocator, .limited(1 << 22)) catch |err| switch (err) {
         error.FileNotFound => return,

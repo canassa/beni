@@ -6917,6 +6917,10 @@ are identical and nothing is written (R-7.11).
    later write of the declaration, also of an object that is made after that call (#2480;
    `ownership/RecordBesideSchema` pins the forms, one of them for a list). v2 cannot identify a schema member
    until S7, and it reads `Schema.decode` as pessimistic until S6 (#1704). 158 are `open`.
+
+   *Third step of #2477 (2026-11-11):* 23 more are of the same kind, after `Schema.read` or `Schema.parse`
+   took a schema value (#2480). 21 of them are in `browser/inline` pages: `pushed` reads the server's value
+   with a schema and then updates the model, which the call did not take. 135 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
