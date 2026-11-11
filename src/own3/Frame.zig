@@ -2203,6 +2203,11 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
         // A location with no source holds no cell: nothing is in it.
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = st.fresh };
     }
+    // The callee's "two parts of my result are apart" rests on two things
+    // that only this frame knows: the arguments, and the functions among them.
+    if (f.roots.items[root].linear and es.len > 1) {
+        if (!try f.argsApart(args)) f.roots.items[root].linear = false;
+    }
     if (f.roots.items[root].linear) try f.answerApart(&base, root, layout, cov);
     return f.rootVal(root);
 }
@@ -2290,7 +2295,9 @@ fn answerApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []const
     }
 }
 
-/// Whether the function value `v` is known code whose contract says that two parts of its answer are apart.
+/// Whether the function value `v` is known code whose contract says that
+/// two parts of its answer are apart, and that contract can know it: no part
+/// of the answer is the answer of another function.
 fn linearFn(f: *Frame, v: Val) Error!bool {
     const n = f.nodes.items[v];
     if (n.tag == .join) {
@@ -2298,7 +2305,49 @@ fn linearFn(f: *Frame, v: Val) Error!bool {
         return true;
     }
     const code = (try f.codeOf(v)) orelse return false;
-    return !code.contract.nonlinear;
+    if (code.contract.nonlinear) return false;
+    for (code.contract.res) |srcs| for (srcs) |x| if (x.kind == .answer) return false;
+    return true;
+}
+
+/// Whether no cell is at two places of the arguments `args`: in two
+/// arguments, or in two parts of one argument (`( q, q )`). A callee that
+/// only rearranges what it takes answers a value whose parts are apart only
+/// when the parts of what it takes are.
+fn argsApart(f: *Frame, args: []const Val) Error!bool {
+    var buf: std.ArrayList(Atom) = .empty;
+    defer buf.deinit(f.gpa);
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    for (args) |v| if (!try f.partsOf(v, &buf, &runs, 0)) return false;
+    for (runs.items, 0..) |x, i| for (runs.items[i + 1 ..]) |y| {
+        if (f.dupOverlap(buf.items[x[0]..x[1]], buf.items[y[0]..y[1]])) return false;
+    };
+    return true;
+}
+
+/// The parts of the value `v` as runs of atoms: an item of a tuple, a record
+/// or a constructor application is a part, and anything else is one part.
+/// False when a part is a root whose own parts are not apart.
+fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2]u32), depth: u32) Error!bool {
+    if (v == v_none or v == v_shared) return true;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .none, .shared, .fnref => return true,
+        .built => if (depth < 8) {
+            for (0..n.b) |ki| if (!try f.partsOf(f.kids.items[n.a + ki].val, buf, runs, depth + 1)) return false;
+            return true;
+        },
+        .ref => {
+            const r = f.roots.items[n.a];
+            if (r.kind == .local and !r.linear) return false;
+        },
+        else => {},
+    }
+    const start: u32 = @intCast(buf.items.len);
+    _ = try f.allLeaves(v, buf);
+    if (buf.items.len != start) try runs.append(f.gpa, .{ start, @intCast(buf.items.len) });
+    return true;
 }
 
 const SrcState = struct {
@@ -2508,7 +2557,10 @@ fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
 
 /// A known function meets a use: what it does with each parameter is judged
 /// against what the use hands there, and each function that it captured
-/// flows to the use that the two contracts compose to.
+/// flows to the use that the two contracts compose to. A captured value that
+/// the function lets escape escapes only where the use can run the function
+/// (`called`, lost or `top`): a holder whose contract says that it does not
+/// run the function, and does not lose it, never runs it.
 fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     const lc = code.contract;
     var use = use_in.*;
@@ -2692,6 +2744,11 @@ fn slotsOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32, rel: ?[]con
             for (below.items) |i| {
                 if (at) |t| if (es[i].loc != t and !(es[i].kind.wide() and m.loc.isPrefix(es[i].loc, t))) continue;
                 try out.append(f.gpa, .{ .fe = i, .free = fnc.free[fnc.off[k] + i], .srcs = fnc.supply[fnc.off[k] + i] });
+            }
+            if (out.items.len == 0) {
+                // The use's type has no entry at that place: each cell of the wide entry, not "no cell".
+                if (fe < Loc.all) try out.append(f.gpa, .{ .fe = fe, .free = fnc.free[fnc.off[k] + fe], .srcs = fnc.supply[fnc.off[k] + fe] });
+                for (below.items) |i| try out.append(f.gpa, .{ .fe = i, .free = fnc.free[fnc.off[k] + i], .srcs = fnc.supply[fnc.off[k] + i] });
             }
             return true;
         }
@@ -2956,7 +3013,9 @@ fn ownSupply(f: *Frame, level: *const Use, code: Code, k: u32, le: u32, seen: *S
 
 /// The labels of entry `le` of the function's layout `fl` below entry `fe`
 /// of the use's layout `ul`, then `suffix`. Empty when the use's entry is
-/// below the function's: all of it is a part of the function's entry.
+/// below the function's: all of it is a part of the function's entry. The
+/// suffix is dropped then, on purpose: the answer is each cell of the use's
+/// entry, which is more than the part that was asked for and never less.
 fn partBelow(f: *Frame, fl: u32, le: u32, ul: u32, fe: u32, suffix: []const u64, labels: *std.ArrayList(u64)) Error![]const u64 {
     const m = f.m;
     if (fe == none) return &.{};
