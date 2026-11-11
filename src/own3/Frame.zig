@@ -34,6 +34,13 @@
 //! the write reaches a target, no other operand that the operation reads
 //! reaches a target, and no read after the write reaches a target. A
 //! forgotten case gives `shared`, which refuses.
+//!
+//! **Function values** (research report 112 §2). A function value is known
+//! (the frame has its code, or it is the frame's own function parameter) or
+//! it is in the default state. Each consumer of a known function is a use,
+//! and one operation, `flow`, judges the function against the use. A
+//! consumer that no contract describes is the `top` use: it refuses a
+//! function that writes its parameter. So a forgotten case gives `top`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -1666,7 +1673,7 @@ fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     return f.joinVal(try m.placeOfInst(inst), outs.items, ctxs.items);
 }
 
-// ---- function values -------------------------------------------------------------------
+// ---- lambdas and local functions -------------------------------------------------------
 
 /// Walk the code at `inst` in its own frame, to its contract; the value is a closure over its captures.
 fn codeValue(f: *Frame, inst: u32, params: []const Inst.Index, body: u32, ty: Var.Optional, self_local: u32) Error!Val {
@@ -2049,8 +2056,9 @@ fn evidenceTerm(f: *Frame, inst: u32, ti: anytype, depth: u32) Error!void {
 
 /// The atoms of argument `v` at the callee's entry `se` of the signature
 /// layout `sig`. With `suffix`, only the part at that suffix below the entry
-/// (a function writes a part of what a type variable stands for).
-fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, out: *std.ArrayList(Atom)) Error!bool {
+/// (a function writes a part of what a type variable stands for). With
+/// `deep`, each cell below that part too.
+fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bool, out: *std.ArrayList(Atom)) Error!bool {
     const m = f.m;
     const n = f.nodes.items[v];
     switch (n.tag) {
@@ -2073,7 +2081,10 @@ fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, out: *st
         }
         if (want) |wl| {
             var found = false;
-            for (m.loc.layoutEntries(own), 0..) |oe, k| if (oe.loc == wl and cov[k] == se) {
+            // The cell at that part. `deep`: each cell below it too (the
+            // part is a wide location of another reading of the type).
+            for (m.loc.layoutEntries(own), 0..) |oe, k| if (Loc.hits(cov[k], se) and (oe.loc == wl or (deep and m.loc.isPrefix(wl, oe.loc)))) {
+                if (cov[k] != se and !deep) continue;
                 found = true;
                 if (try f.leaves(v, @intCast(k), out)) dup = true;
             };
@@ -2124,7 +2135,7 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
             const fl = c.flags[c.off[j] + se];
             if (fl & flag_w != 0) {
                 const w: u32 = @intCast(f.atoms.items.len);
-                const dup = try f.argLeaves(args[j], sig, @intCast(se), &.{}, &f.atoms);
+                const dup = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
                 // A written argument of no cell asks nothing, and is accepted.
                 try f.demand(w, .{
                     .point = inst,
@@ -2140,7 +2151,7 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
             }
             if (fl & flag_e != 0) {
                 const start: u32 = @intCast(f.atoms.items.len);
-                _ = try f.argLeaves(args[j], sig, @intCast(se), &.{}, &f.atoms);
+                _ = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
                 try f.noteEscape(start, inst);
             }
         }
@@ -2283,15 +2294,16 @@ fn pairedLeaves(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayo
     const m = f.m;
     const pentry = m.loc.layoutEntries(psig)[pe];
     const rentry = m.loc.layoutEntries(rsig)[cr];
-    if (!(pentry.kind.wide() and rentry.kind.wide())) return f.argLeaves(v, psig, pe, &.{}, &f.atoms);
+    if (!(pentry.kind.wide() and rentry.kind.wide())) return f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
     const rloc = m.loc.layoutEntries(rlayout)[e].loc;
     // The fallback cover: the caller's entry is not below the callee's.
-    if (!m.loc.isPrefix(rentry.loc, rloc)) return f.argLeaves(v, psig, pe, &.{}, &f.atoms);
+    if (!m.loc.isPrefix(rentry.loc, rloc)) return f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
     var labels: std.ArrayList(u64) = .empty;
     defer labels.deinit(f.gpa);
     try m.loc.labels(rloc, &labels, f.gpa);
     const skip = m.loc.loc_depth.items[rentry.loc];
-    return f.argLeaves(v, psig, pe, labels.items[skip..], &f.atoms);
+    // A wide entry of the caller's own type stands for each cell below that place.
+    return f.argLeaves(v, psig, pe, labels.items[skip..], m.loc.layoutEntries(rlayout)[e].kind.wide(), &f.atoms);
 }
 
 // ---- function values: one rule (research report 112 §2) -------------------------------------
@@ -2432,10 +2444,12 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             }
             if (fl & flag_e != 0) {
                 var sink: EscSink = .{ .inst = inst };
-                if (try f.slotOf(&use, @intCast(k), lc.layouts[k], @intCast(le))) |slot| {
-                    for (slot.srcs) |ss| try f.resolve(&use, ss, &.{}, &sink, 0);
+                var slots: std.ArrayList(Slot) = .empty;
+                defer slots.deinit(f.gpa);
+                if (try f.slotsOf(&use, @intCast(k), lc.layouts[k], @intCast(le), null, &slots)) {
+                    for (slots.items) |slot| for (slot.srcs) |ss| try f.resolve(&use, ss, &.{}, false, &sink, 0);
                 } else for (use.fnc.off[k]..use.fnc.off[k + 1]) |i| {
-                    for (use.fnc.supply[i]) |ss| try f.resolve(&use, ss, &.{}, &sink, 0);
+                    for (use.fnc.supply[i]) |ss| try f.resolve(&use, ss, &.{}, false, &sink, 0);
                 }
             }
         }
@@ -2455,7 +2469,7 @@ fn captureEscapes(f: *Frame, code: Code, inst: u32) Error!void {
         const n = lc.off[j + 1] - lc.off[j];
         for (0..n) |e| if (lc.flags[lc.off[j] + e] & flag_e != 0) {
             const start: u32 = @intCast(f.atoms.items.len);
-            _ = try f.argLeaves(f.lists.items[code.caps + k], lc.layouts[j], @intCast(e), &.{}, &f.atoms);
+            _ = try f.argLeaves(f.lists.items[code.caps + k], lc.layouts[j], @intCast(e), &.{}, false, &f.atoms);
             try f.noteEscape(start, inst);
         };
     }
@@ -2502,6 +2516,8 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     }
     if (use.fnc.called) f.drafts.items[di].called = true;
     if (use.rewrites()) f.drafts.items[di].rewrites = true;
+    var labels: std.ArrayList(u64) = .empty;
+    defer labels.deinit(f.gpa);
     for (0..use.fnc.arity) |k| {
         const cov = try m.loc.cover(use.fnc.layouts[k], f.drafts.items[di].layouts[k]);
         for (cov, 0..) |fe, me| {
@@ -2512,7 +2528,11 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
             }
             if (!use.fnc.free[use.fnc.off[k] + fe]) f.drafts.items[di].free[slot] = false;
             var sink: DraftSink = .{ .use = &use, .di = di, .slot = slot };
-            for (use.fnc.supply[use.fnc.off[k] + fe]) |s| try f.resolve(&use, s, &.{}, &sink, 0);
+            // The part of the use's entry that this entry of the function's type is
+            // (the use is over `a`, the function over `List (List Int)`).
+            const part = try f.partBelow(f.drafts.items[di].layouts[k], @intCast(me), use.fnc.layouts[k], fe, &.{}, &labels);
+            const wide = m.loc.layoutEntries(f.drafts.items[di].layouts[k])[me].kind.wide();
+            for (use.fnc.supply[use.fnc.off[k] + fe]) |s| try f.resolve(&use, s, part, wide, &sink, 0);
         }
     }
 }
@@ -2526,32 +2546,90 @@ fn flowUnknown(f: *Frame, v: Val, use: *const Use) Error!void {
 }
 
 /// What `use` hands the function at its parameter `k`, at entry `le` of
-/// `layout` (the function's own reading of that parameter). Null when no one
-/// entry of the use's layout covers it.
-fn slotOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32) Error!?Slot {
-    if (use.kind == .top) return .{ .fe = none, .free = false, .srcs = CMod.shared_only };
-    const fnc = use.fnc;
-    if (k >= fnc.arity) return null;
-    const pcov = try f.m.loc.cover(fnc.layouts[k], layout);
-    const fe = pcov[le];
-    if (fe >= Loc.all) {
-        // The function's type is wider here than the holder's (a function
-        // over `List a`, handed a `List Int`): no cell is there to hand.
-        if (f.m.loc.noObject(fnc.layouts[k], f.m.loc.layoutEntries(layout)[le].loc)) return .{ .fe = none, .free = true, .srcs = &.{} };
-        return null;
+/// `layout` (the function's own reading of that parameter): one slot for
+/// each entry of the use's layout that holds a cell of it. The two layouts
+/// are two readings of one type, and either can be the wider one:
+///
+/// - the use's entry at the same location, or a wide one above it (the call
+///   map: the use is a fold over `a`, the function is over `List Int`);
+/// - each entry of the use below it, when the function's entry is wide (the
+///   function is over `a`, the use is over `List (List Int)`).
+///
+/// `rel`: only the cells at these labels below the function's entry are
+/// asked for (an answer at one location below a wide entry comes from the
+/// parameter's cells at the same place below it). Null: all of the entry.
+///
+/// False when no rule follows it. True with no slot: no cell is there.
+fn slotsOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32, rel: ?[]const u64, out: *std.ArrayList(Slot)) Error!bool {
+    const m = f.m;
+    if (use.kind == .top) {
+        try out.append(f.gpa, .{ .fe = none, .free = false, .srcs = CMod.shared_only });
+        return true;
     }
-    return .{ .fe = fe, .free = fnc.free[fnc.off[k] + fe], .srcs = fnc.supply[fnc.off[k] + fe] };
+    const fnc = use.fnc;
+    if (k >= fnc.arity) return false;
+    const sig = fnc.layouts[k];
+    const entry = m.loc.layoutEntries(layout)[le];
+    const fe = (try m.loc.cover(sig, layout))[le];
+    if (fe < Loc.all) try out.append(f.gpa, .{ .fe = fe, .free = fnc.free[fnc.off[k] + fe], .srcs = fnc.supply[fnc.off[k] + fe] });
+    if (entry.kind.wide()) {
+        var below: std.ArrayList(u32) = .empty;
+        defer below.deinit(f.gpa);
+        try m.loc.belowWide(sig, entry.loc, fe, &below, f.gpa);
+        if (below.items.len != 0) {
+            // The location that is asked for, when the use's type has it.
+            var at: ?u32 = if (rel != null) entry.loc else null;
+            if (rel) |labels| for (labels) |l| {
+                at = m.loc.find(at.?, l);
+                if (at == null) break;
+            };
+            const es = m.loc.layoutEntries(sig);
+            if (at) |t| {
+                // Only the use's entry at that location, or a wide one above it.
+                var n: usize = 0;
+                for (out.items) |slot| {
+                    if (es[slot.fe].loc != t and !(es[slot.fe].kind.wide() and m.loc.isPrefix(es[slot.fe].loc, t))) continue;
+                    out.items[n] = slot;
+                    n += 1;
+                }
+                out.shrinkRetainingCapacity(n);
+            }
+            for (below.items) |i| {
+                if (at) |t| if (es[i].loc != t and !(es[i].kind.wide() and m.loc.isPrefix(es[i].loc, t))) continue;
+                try out.append(f.gpa, .{ .fe = i, .free = fnc.free[fnc.off[k] + i], .srcs = fnc.supply[fnc.off[k] + i] });
+            }
+            return true;
+        }
+    }
+    if (fe < Loc.all) return true;
+    // No entry of the use's type is there. A type with no object at the
+    // location (a function over `List a`, handed a `List Int`) hands no cell.
+    return m.loc.noObject(sig, entry.loc);
+}
+
+/// Whether the function's result entry `k` of layout `fl` can hold a cell
+/// of the use's answer entry `ae` of layout `ul`; `cv` is the call map's
+/// entry for `k`. The other direction of `slotsOf`: a wide entry of the
+/// function holds each cell of the use's entries below it.
+fn answersAt(f: *const Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) bool {
+    const m = f.m;
+    if (Loc.hits(cv, ae)) return true;
+    const fe = m.loc.layoutEntries(fl)[k];
+    if (!fe.kind.wide()) return false;
+    const ue = m.loc.layoutEntries(ul)[ae];
+    return m.loc.isPrefix(fe.loc, ue.loc) or m.loc.startsAbove(ue.loc, fe.loc);
 }
 
 /// What the source `src` of `use`'s contract is in this frame: `sink` gets
 /// each part. `suffix`: only the part at these labels below the source's
-/// entry. A parameter of a known function that has the location is what that
-/// function's own use hands it: this is the composition.
-fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, sink: anytype, depth: u32) Error!void {
+/// entry; `deep`: and each cell below that part (the one that asks is a wide
+/// location). A parameter of a known function that has the location is what
+/// that function's own use hands it: this is the composition.
+fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool, sink: anytype, depth: u32) Error!void {
     switch (src.kind) {
         .fresh => try sink.fresh(f),
         .shared => try sink.shared(f),
-        .answer => try sink.answer(f, use, src, suffix),
+        .answer => try sink.answer(f, use, src, suffix, deep),
         .param => {
             if (src.a >= use.args.len) return sink.lost(f, use);
             if (use.kind == .inner and src.a < use.own) {
@@ -2560,19 +2638,23 @@ fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, sink: anyt
                 if (up.kind == .top) return sink.shared(f);
                 if (depth > 12) return sink.lost(f, use);
                 const lc = use.c;
-                const slot = (try f.slotOf(up, src.a, lc.layouts[src.a], src.e)) orelse return sink.lost(f, use);
-                if (slot.srcs.len == 0) return;
-                if (!slot.free) try sink.held(f);
+                var slots: std.ArrayList(Slot) = .empty;
+                defer slots.deinit(f.gpa);
+                if (!try f.slotsOf(up, src.a, lc.layouts[src.a], src.e, null, &slots)) return sink.lost(f, use);
                 var labels: std.ArrayList(u64) = .empty;
                 defer labels.deinit(f.gpa);
-                try f.suffixOf(f.m.loc.layoutEntries(lc.layouts[src.a])[src.e].loc, f.m.loc.layoutEntries(up.fnc.layouts[src.a])[slot.fe].loc, &labels);
-                try labels.appendSlice(f.gpa, suffix);
-                const part = try f.gpa.dupe(u64, labels.items);
-                for (slot.srcs) |ss| try f.resolve(up, ss, part, sink, depth + 1);
+                const wide = deep or f.m.loc.layoutEntries(lc.layouts[src.a])[src.e].kind.wide();
+                for (slots.items) |slot| {
+                    if (!slot.free) try sink.held(f);
+                    // The part of the use's entry that the function's entry is. An
+                    // entry of the use below the function's entry is all of it.
+                    const part = try f.partBelow(lc.layouts[src.a], src.e, up.fnc.layouts[src.a], slot.fe, suffix, &labels);
+                    for (slot.srcs) |ss| try f.resolve(up, ss, part, wide, sink, depth + 1);
+                }
                 return;
             }
             const start: u32 = @intCast(f.atoms.items.len);
-            const dup = try f.argLeaves(use.args[src.a], use.c.layouts[src.a], src.e, suffix, &f.atoms);
+            const dup = try f.argLeaves(use.args[src.a], use.c.layouts[src.a], src.e, suffix, deep, &f.atoms);
             try sink.atoms(f, .{ .start = start, .dup = dup, .use = use, .a = src.a, .e = src.e, .suffix = suffix, .captured = use.kind == .inner });
         },
     }
@@ -2606,7 +2688,11 @@ const FlatSink = struct {
         const c = h.use.c;
         if (c.flags[c.off[h.a] + h.e] & (flag_w | flag_s) != 0) f.oldNames(h.start, s.st);
     }
-    fn answer(s: *FlatSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+    fn answer(s: *FlatSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, deep: bool) Error!void {
+        // A wide location asks: each part of the answer below the place, not the one at it.
+        const outer = s.st.whole;
+        if (deep) s.st.whole = true;
+        defer s.st.whole = outer;
         try f.answerOfParam(level, src, suffix, s.st, s.depth + 1);
     }
 };
@@ -2625,7 +2711,7 @@ const EscSink = struct {
     fn atoms(s: *EscSink, f: *Frame, h: Handed) Error!void {
         try f.noteEscape(h.start, s.inst);
     }
-    fn answer(s: *EscSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+    fn answer(s: *EscSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, _: bool) Error!void {
         // The own answer of a function that the frame does not know holds
         // what the function is handed and what it captured: both are judged
         // where they are handed and held.
@@ -2673,10 +2759,10 @@ const OwnSink = struct {
             .kind = .callsite,
         });
     }
-    fn answer(s: *OwnSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+    fn answer(s: *OwnSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, deep: bool) Error!void {
         if (src.a != level.j) return f.refuse(s.level, .supply, "the callee hands the function the answer of another function");
         // The function's own answer comes back to it (a fold): what it answers at the written part must be `own`.
-        try f.answerOwn(level, src.e, suffix, s.seen);
+        try f.answerOwn(level, src.e, suffix, deep, s.seen);
     }
 };
 
@@ -2710,7 +2796,7 @@ const DraftSink = struct {
         }
         try f.supplyAtoms(s.di, s.slot, h.start, site.inst, site.others, h.a, h.e, h.dup);
     }
-    fn answer(s: *DraftSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+    fn answer(s: *DraftSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, deep: bool) Error!void {
         const m = f.m;
         const site = s.use.site;
         if (level.id == s.use.id and src.a == s.use.j) {
@@ -2718,7 +2804,21 @@ const DraftSink = struct {
             const dr = f.drafts.items[s.di];
             const index: u16 = @intCast(f.roots.items[dr.root].index);
             const acov = try m.loc.cover(s.use.fnc.layouts[s.use.fnc.arity], dr.layouts[dr.arity]);
-            for (acov, 0..) |cv, ae| if (Loc.hits(cv, src.e)) try s.add(f, .{ .kind = .answer, .a = index, .e = @intCast(ae) });
+            // The answer's entry at the same part below the use's entry, when it has one.
+            var want: ?u32 = m.loc.layoutEntries(s.use.fnc.layouts[s.use.fnc.arity])[src.e].loc;
+            for (suffix) |l| {
+                want = m.loc.find(want.?, l);
+                if (want == null) break;
+            }
+            var exact = false;
+            if (!deep) if (want) |wl| for (m.loc.layoutEntries(dr.layouts[dr.arity]), 0..) |de, ae| if (de.loc == wl and Loc.hits(acov[ae], src.e)) {
+                exact = true;
+            };
+            for (acov, 0..) |cv, ae| {
+                if (!Loc.hits(cv, src.e)) continue;
+                if (exact and m.loc.layoutEntries(dr.layouts[dr.arity])[ae].loc != want.?) continue;
+                try s.add(f, .{ .kind = .answer, .a = index, .e = @intCast(ae) });
+            }
             return;
         }
         // The answer of another function: what it can hold.
@@ -2736,31 +2836,49 @@ const DraftSink = struct {
 /// parameter `k` at its entry `le`: each source of what `level` hands there
 /// must be `own`, and the holder must not read it again.
 fn ownSupply(f: *Frame, level: *const Use, code: Code, k: u32, le: u32, seen: *Seen) Error!void {
-    const m = f.m;
     const lc = code.contract;
     const not_own = "the function writes a parameter that the callee reads again or does not hand as its own";
-    const slot = (try f.slotOf(level, k, lc.layouts[k], le)) orelse return f.refuse(level, .supply, not_own);
-    if (!slot.free) return f.refuse(level, .supply, not_own);
-    if (slot.srcs.len == 0) return;
+    var slots: std.ArrayList(Slot) = .empty;
+    defer slots.deinit(f.gpa);
+    if (!try f.slotsOf(level, k, lc.layouts[k], le, null, &slots)) return f.refuse(level, .supply, not_own);
+    for (slots.items) |slot| if (!slot.free) return f.refuse(level, .supply, not_own);
+    if (slots.items.len == 0) return;
     switch (seen.visit(level, k, le)) {
         .new => {},
         .old => return,
         .full => return f.refuse(level, .supply, "the supply of a function parameter is too deep to follow"),
     }
-    // The part below the holder's entry that the function writes.
-    var suffix: std.ArrayList(u64) = .empty;
-    defer suffix.deinit(f.gpa);
-    try f.suffixOf(m.loc.layoutEntries(lc.layouts[k])[le].loc, m.loc.layoutEntries(level.fnc.layouts[k])[slot.fe].loc, &suffix);
-    const part = try f.gpa.dupe(u64, suffix.items);
+    var labels: std.ArrayList(u64) = .empty;
+    defer labels.deinit(f.gpa);
     var sink: OwnSink = .{ .level = level, .seen = seen };
-    for (slot.srcs) |src| try f.resolve(level, src, part, &sink, 0);
+    const wide = f.m.loc.layoutEntries(lc.layouts[k])[le].kind.wide();
+    for (slots.items) |slot| {
+        // The part below the holder's entry that the function writes.
+        const part = try f.partBelow(lc.layouts[k], le, level.fnc.layouts[k], slot.fe, &.{}, &labels);
+        for (slot.srcs) |src| try f.resolve(level, src, part, wide, &sink, 0);
+    }
+}
+
+/// The labels of entry `le` of the function's layout `fl` below entry `fe`
+/// of the use's layout `ul`, then `suffix`. Empty when the use's entry is
+/// below the function's: all of it is a part of the function's entry.
+fn partBelow(f: *Frame, fl: u32, le: u32, ul: u32, fe: u32, suffix: []const u64, labels: *std.ArrayList(u64)) Error![]const u64 {
+    const m = f.m;
+    if (fe == none) return &.{};
+    const floc = m.loc.layoutEntries(fl)[le].loc;
+    const uloc = m.loc.layoutEntries(ul)[fe].loc;
+    if (uloc != floc and m.loc.isPrefix(floc, uloc)) return &.{};
+    if (!m.loc.isPrefix(uloc, floc)) return &.{};
+    try f.suffixOf(floc, uloc, labels);
+    try labels.appendSlice(f.gpa, suffix);
+    return f.gpa.dupe(u64, labels.items);
 }
 
 /// The answer of the function in the location of `level`, at entry `e`,
 /// comes back to it, and it is written then. So the answer must be `own`:
 /// made by the function, or a parameter that it was handed as its own and
 /// did not let go.
-fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, seen: *Seen) Error!void {
+fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bool, seen: *Seen) Error!void {
     const m = f.m;
     const not_own = "the function answers a value that it does not own, and the callee hands it back";
     const code = level.code orelse return f.refuse(level, .supply, not_own);
@@ -2782,11 +2900,11 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, seen: *S
         if (want == null) break;
     }
     var exact = false;
-    if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(rcov[re], e)) {
+    if (!deep) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(rcov[re], e)) {
         exact = true;
     };
     for (rcov, 0..) |cv, re| {
-        if (!Loc.hits(cv, e)) continue;
+        if (!f.answersAt(fnc.layouts[fnc.arity], e, lc.layouts[lc.arity], re, cv)) continue;
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != want.?) continue;
         if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc)) continue;
         for (lc.res[re]) |ls| switch (ls.kind) {
@@ -2820,7 +2938,7 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, seen: *S
                 }
                 var inner = try f.innerUse(code, ls.a, lf, level);
                 inner.code = cc;
-                try f.answerOwn(&inner, ls.e, &.{}, seen);
+                try f.answerOwn(&inner, ls.e, &.{}, true, seen);
             },
             .param => {
                 if (ls.a >= code.own_params) {
@@ -2977,7 +3095,7 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
     var psuffix: std.ArrayList(u64) = .empty;
     defer psuffix.deinit(f.gpa);
     for (cov, 0..) |cv, k| {
-        if (!Loc.hits(cv, ae)) continue;
+        if (!f.answersAt(fnc.layouts[fnc.arity], ae, lc.layouts[lc.arity], k, cv)) continue;
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
         // The function's type is wider here than the holder's: no cell is there.
         if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc)) continue;
@@ -3016,23 +3134,35 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
                     // same cell, so no claim. The answer still holds it.
                     st.shared = true;
                     if (ls.a - code.own_params < code.ncaps) {
-                        _ = try f.argLeaves(f.lists.items[code.caps + ls.a - code.own_params], lc.layouts[ls.a], ls.e, &.{}, &f.atoms);
+                        _ = try f.argLeaves(f.lists.items[code.caps + ls.a - code.own_params], lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
                     } else try f.lostAnswer(use, st);
                     continue;
                 }
                 // What the holder hands that parameter.
-                const slot = (try f.slotOf(use, ls.a, lc.layouts[ls.a], ls.e)) orelse {
+                var slots: std.ArrayList(Slot) = .empty;
+                defer slots.deinit(f.gpa);
+                // The answer entry is at the result entry's location, or
+                // below it: the parameter's cells at the same place.
+                var rel: ?[]const u64 = null;
+                const kloc = m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc;
+                const aloc = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae].loc;
+                if (cv < Loc.all and m.loc.isPrefix(kloc, aloc)) {
+                    try f.suffixOf(aloc, kloc, &psuffix);
+                    rel = try f.gpa.dupe(u64, psuffix.items);
+                }
+                if (!try f.slotsOf(use, ls.a, lc.layouts[ls.a], ls.e, rel, &slots)) {
                     try f.lostAnswer(use, st);
                     continue;
-                };
-                if (slot.srcs.len == 0) continue;
-                // The holder can hand one cell to two calls: two answers can be that cell.
-                if (!slot.free) st.dup = true;
-                // The part of what is handed that the function's parameter entry is.
-                try f.suffixOf(m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc, m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc, &psuffix);
-                const part = try f.gpa.dupe(u64, psuffix.items);
+                }
                 var sink: FlatSink = .{ .st = st, .depth = depth };
-                for (slot.srcs) |ss| try f.resolve(use, ss, part, &sink, 0);
+                const wide = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].kind.wide();
+                for (slots.items) |slot| {
+                    // The holder can hand one cell to two calls: two answers can be that cell.
+                    if (!slot.free) st.dup = true;
+                    // The part of what is handed that the function's parameter entry is.
+                    const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, &psuffix);
+                    for (slot.srcs) |ss| try f.resolve(use, ss, part, wide, &sink, 0);
+                }
             },
         };
     }
@@ -3051,7 +3181,7 @@ fn escapeAnswer(f: *Frame, v: Val, use: *const Use) Error!void {
 fn escapeSupplies(f: *Frame, use: *const Use) Error!void {
     if (use.kind == .top) return;
     var sink: EscSink = .{ .inst = use.site.inst };
-    for (use.fnc.supply) |srcs| for (srcs) |s| try f.resolve(use, s, &.{}, &sink, 0);
+    for (use.fnc.supply) |srcs| for (srcs) |s| try f.resolve(use, s, &.{}, false, &sink, 0);
 }
 
 // ---- the frame's own function parameters ---------------------------------------------------
