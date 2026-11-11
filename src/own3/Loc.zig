@@ -582,6 +582,25 @@ pub const Table = struct {
         return true;
     }
 
+    /// The entries of layout `sig` that are parts of the location `loc`,
+    /// where `loc` is a wide location of another reading of the same type
+    /// position (a type variable where `sig` has `List (List Int)`): each
+    /// cell below a wide location is a cell of it. `skip` is an entry that
+    /// the caller has already. An entry of a deep level that starts above
+    /// `loc` names cells at each depth, so it is one of them.
+    pub fn belowWide(t: *const Table, sig: u32, loc: u32, skip: u32, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
+        for (t.layoutEntries(sig), 0..) |s, i| {
+            if (i == skip) continue;
+            if (t.isPrefix(loc, s.loc) or t.startsAbove(s.loc, loc)) try out.append(gpa, @intCast(i));
+        }
+    }
+
+    /// Whether `deep` is a location of a deep level that starts at `loc` or above it.
+    pub fn startsAbove(t: *const Table, deep: u32, loc: u32) bool {
+        const entry = t.deepEntry(deep);
+        return entry != none and t.isPrefix(entry, loc);
+    }
+
     // ---- the call map ----------------------------------------------------------
 
     /// Per entry of layout `of` (a caller's type), the entry of layout `sig`
