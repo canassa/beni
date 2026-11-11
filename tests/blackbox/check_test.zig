@@ -2600,10 +2600,13 @@ test "ownership v3 (the step 0 prototype): the sanitiser fixtures that the first
 }
 
 // A function that writes its parameter, captured by a lambda that goes to
-// `List.foldl`: no rule composes its contract with what the lambda hands it,
-// so the prototype refuses it there. Before, no demand was made, and `q` was
-// written in place while it was read later.
-test "ownership v3 (the step 0 prototype): a captured function that writes cannot go through another function" {
+// `List.foldl`. The lambda's contract says what it hands the captured
+// function, and the fold's contract says what it hands the lambda: the two
+// compose (research report 112 §2.4). So the write is a demand on `q` at the
+// call of the fold. It is refused while `q` is read later, and accepted when
+// it is not. Report 111's prototype made no demand at first (a trap), and
+// then refused both.
+test "ownership v3: a function that a lambda captured is judged where the lambda goes" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Captured.beni",
@@ -2616,10 +2619,184 @@ test "ownership v3 (the step 0 prototype): a captured function that writes canno
         \\    r = List.foldl [ 1, 2 ] q λx acc → h acc x
         \\    List.length q + List.length r
         \\
+        \\
+        \\pub runDead : List Int → Int
+        \\runDead q =
+        \\    h = λa x → List.push a x
+        \\    r = List.foldl [ 1, 2 ] q λx acc → h acc x
+        \\    List.length r
+        \\
     );
-    const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Captured.beni" }, .{ .raw_diagnostics = true });
-    try testing.expectEqual(@as(u8, 1), r.exit_code);
-    try testing.expect(std.mem.indexOf(u8, r.stderr, "is called by a function that goes to another function") != null);
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Captured.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  7:9 call List.foldl q: rejected later-use: it is read again at 8:5 (<call List.length>)\n",
+        "  14:9 call List.foldl q: accepted param\n",
+        "total 4: accepted 3 (fresh 0, call 0, param 1, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The faults of round 2 (research report 112 §3). Each function has a write
+// that changes a list in place while another holder reads it, and report
+// 111's prototype accepted each one. In each, a known function reached a
+// consumer by a way on which the walk dropped its code, and nothing judged
+// it. The rule of report 112 has one answer: a function value leaves the
+// known state only through `flow`, and a consumer that no contract describes
+// is the `top` use.
+//
+// - `nest`: a nested fold whose callback is a composition (129 programs of
+//   `bench/ownership-sweeps/folds-callbacks.mjs`). `cb` is captured by the
+//   outer lambda and goes to `comp`, whose contract had no fact for it.
+// - `twice`: a closure handed back without a run, then run two times (24
+//   programs of `handed-back.mjs`). The closure hands a captured list to a
+//   captured function that writes.
+// - `joinArg`, `joinCallee`: a function in an arm of a `case`, at a function
+//   parameter and as a callee.
+// - `later`: a local function that an earlier local function calls.
+// - `selfPass`: a local function that hands itself to `List.map`.
+// - `capEsc`: a closure that puts a captured list into a cell.
+//
+// The last five are not in a sweep: the rule predicted them.
+test "ownership v3: the faults of round 2 are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Round2.beni",
+        \\import List
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree
+        \\    = Node (List Int) (List Tree)
+        \\
+        \\
+        \\comp : (x, a → b), (x, b → c) → (x, a → c)
+        \\comp f g =
+        \\    λx a → g x (f x a)
+        \\
+        \\
+        \\pub nest : List Int → Int
+        \\nest s =
+        \\    cb = λx a → List.push a x
+        \\    res =
+        \\        List.foldl [ 1, 2 ] s λy a0 →
+        \\            List.foldl [ y ] a0 (comp cb λ_ v → v)
+        \\    List.length res + List.length s
+        \\
+        \\
+        \\back : (⊤ → List Int) → Maybe (⊤ → List Int)
+        \\back f =
+        \\    Just f
+        \\
+        \\
+        \\pub twice : Int → Int
+        \\twice n =
+        \\    k = [ n ]
+        \\    p = λl → List.push l 1
+        \\    case back (λ⊤ → p k) of
+        \\        Just g →
+        \\            _ = g ⊤
+        \\            List.length (g ⊤)
+        \\
+        \\        Nothing →
+        \\            0
+        \\
+        \\
+        \\pub joinArg : Int → Int
+        \\joinArg c =
+        \\    xs = [ [ 1 ], [ 2 ] ]
+        \\    ys =
+        \\        List.map xs
+        \\            (case c of
+        \\                0 →
+        \\                    λl → List.push l 1
+        \\
+        \\                _ →
+        \\                    λl → l
+        \\            )
+        \\    List.length ys + List.length xs
+        \\
+        \\
+        \\pub joinCallee : Int → Int
+        \\joinCallee c =
+        \\    q = [ c ]
+        \\    r =
+        \\        (case c of
+        \\            0 →
+        \\                λl → List.push l 1
+        \\
+        \\            _ →
+        \\                λl → l
+        \\        )
+        \\            q
+        \\    List.length r + List.length q
+        \\
+        \\
+        \\pub later : Int → Int
+        \\later c =
+        \\    q = [ c ]
+        \\    a n acc = if n == 0 then acc else b (n - 1) acc
+        \\    b n acc = a n (List.push acc n)
+        \\    r = a 2 q
+        \\    List.length r + List.length q
+        \\
+        \\
+        \\sum : Tree → Int
+        \\sum t =
+        \\    case t of
+        \\        Node items kids →
+        \\            List.length items + List.foldl kids 0 λk n → n + sum k
+        \\
+        \\
+        \\pub selfPass : Int → Int
+        \\selfPass c =
+        \\    kid = Node [ 1 ] []
+        \\    t = Node [ c ] [ kid ]
+        \\    walk u =
+        \\        case u of
+        \\            Node items kids →
+        \\                Node (List.push items 9) (List.map kids walk)
+        \\    r = walk t
+        \\    sum r + sum kid
+        \\
+        \\
+        \\pub capEsc : Int → Int
+        \\capEsc c =
+        \\    k = [ c ]
+        \\    r = Ref.make []
+        \\    _ =
+        \\        List.map [ 1 ] λx →
+        \\            Ref.set r k
+        \\            x
+        \\    k2 = List.push k 9
+        \\    List.length k2 + List.length (Ref.get r)
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Round2.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        // `nest`: `comp` runs its first function with a value that has no claim.
+        "  18:9 value <call List.foldl>: rejected supply: the callee hands the function a value that it does not own\n",
+        // `twice`: `back` loses the closure, so each function that it captured is in the default.
+        "  32:10 value <call Round2.back>: rejected supply: the function writes a parameter that the callee reads again or does not hand as its own\n",
+        // `joinArg`: each arm flows to the parameter of `List.map`, so the write is a demand on `xs`.
+        "  45:9 call List.map xs[*]: rejected later-use: it is read again at 53:22 (<call List.length>)\n",
+        "  60:9 value <call>: rejected call: a function that writes its parameter goes where the checker does not follow it\n",
+        // `later`: `b` was called before it was bound.
+        "  73:5 value <expression>: rejected call: a function that writes its parameter goes where the checker does not follow it\n",
+        // `selfPass`: the lists of the deeper nodes are a demand on `t` too.
+        "  95:9 call walk t⟨List⟩: rejected later-use: it is read again at 96:13 (<call Round2.sum>)\n",
+        "  107:10 List.push k: rejected escaped: it escaped before the write\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
 }
 
 // The accepted twins of the same fixtures stay accepted: the rules that
