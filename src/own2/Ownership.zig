@@ -32,6 +32,7 @@ pub const Input = struct {
     /// Per module, its lowering channel (`Hoists`, §3.7), in `gpa`.
     channels: ?[]Hoists.Table = null,
     below: bool = false, // with the summaries, each one's `belowLine`
+    records_lost: bool = false, // `--ownership-records-lost`: each record line is refused, and no list line reads that (§7, point 8; R-8.6)
 };
 
 const FieldNames = struct {
@@ -134,6 +135,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                     const op = if (l.demand.callee_inst != Ids.none_int) try Message.opName(frame, arena, l.demand.callee_inst) else "";
                     var ln = try Message.line(frame, arena, l, op);
                     ln.hoisted = l.hoisted;
+                    if (in.records_lost and !first and l.demand.record and !@import("Mutate.zig").on(.records_lost_keeps)) ln = .{ .position = ln.position, .token = ln.token, .op = ln.op, .base = ln.base, .refused = true, .approx = true, .detail = Message.records_lost };
                     const key = try std.fmt.allocPrint(arena, "{d}:{d} {s} {s}", .{ ln.position.line, ln.position.col, ln.op, ln.base });
                     if (first) {
                         if (ln.refused) (try said.getOrPutValue(arena, key, 0)).value_ptr.* += 1;

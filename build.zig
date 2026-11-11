@@ -882,6 +882,13 @@ pub fn build(b: *std.Build) void {
     lost.addArtifactArg(safe.exe);
     lost.has_side_effects = true;
     lost_step.dependOn(&lost.step);
+    // The same comparison for checker v2 (`ownership-v2.md` §7, point 8): there each record line is refused.
+    const lost_v2_step = b.step("test-records-lost-v2", "Check every corpus program under --ownership=v2 with every record condition lost, and compare its list lines with the ordinary run's (ownership-v2.md §7); not a gate");
+    const lost_v2 = b.addSystemCommand(&.{ "node", "tests/records-lost.mjs" });
+    lost_v2.addArtifactArg(safe.exe);
+    lost_v2.addArg("--ownership=v2");
+    lost_v2.has_side_effects = true;
+    lost_v2_step.dependOn(&lost_v2.step);
 
     // Every `run/` program and every `browser/inline/` page built again with
     // its records written in place (`--records-in-place`) — under the hidden
