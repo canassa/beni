@@ -12,7 +12,7 @@ module RecordWriteFields
   81:22 update p: accepted param
   81:41 update p: accepted param
   86:13 update origin: accepted param [hoisted 1]
-  91:33 update <expression>: accepted param
+  91:33 update <record>: accepted param
   91:46 update p: accepted param
   96:13 update origin: accepted param [hoisted 1]
   102:9 update p: accepted param

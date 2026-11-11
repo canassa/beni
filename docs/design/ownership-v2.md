@@ -6884,6 +6884,28 @@ are identical and nothing is written (R-7.11).
    one, changes a golden and fails the gate, and the parity can never pass vacuously. A v2 limit (§4.4) is a
    failure, not an exemption, except in a fixture with a `.v2` golden of its own, whose limits that golden
    pins.
+
+   **Record lines are in the net** (*built 2026-11-11, #1018*). A record line (`update …`) is compared as a
+   list line is, with the same key. Until then the net left out each record line of both checkers. Three
+   rules belong to it:
+   - *One demand for each base.* v2 writes one record demand of several bases as one line
+     (`update a, b`), and v1 writes a line for each base. The net reads v2's line as one demand for each base.
+   - *The record pass's limit.* A declaration that passes its limit in the record pass (§2.11.5, *Two
+     passes*) has a line `unchecked <name>: lines a-b (record-pass limit)` in v2's report. The list pass
+     checked that declaration, so the line excuses only v1's record lines there, and a list line there is
+     compared. It is a limit as a list's is (§2.8): a failure, unless the fixture's own `.v2` golden pins it
+     or the known list has `<root> <module> record-pass limit <declaration>` with its owner. A declaration
+     that the list pass did not check has no second limit.
+   - *An `open` entry.* An entry whose reason begins with `open (#N):` is pinned and not justified. It names
+     both checkers' causes, and the issue owns the analysis. A new difference, and one that goes away, fails
+     the gates as for each other entry. No `open` entry may be left at the switch-over.
+
+   On that day the corpus has 1 218 record lines that differ, after the first rule: 834 are v1's entry rows of
+   a record and 25 are the program's record at its constructor (the entry protocol, S7), 98 are in fixtures
+   whose `.v2` file holds the analysis, and 261 are `open` (#2477). Two declarations pass the record pass's
+   limit (#2476). v2 also names the base of a demand as v1 does where the base is an update (`<record>`) or a
+   tuple (`<tuple>`): 29 pairs of one-sided entries of the list went away with that, and 7 pairs are one
+   entry each.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
