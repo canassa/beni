@@ -6906,6 +6906,11 @@ are identical and nothing is written (R-7.11).
    limit (#2476). v2 also names the base of a demand as v1 does where the base is an update (`<record>`) or a
    tuple (`<tuple>`): 29 pairs of one-sided entries of the list went away with that, and 7 pairs are one
    entry each.
+
+   *First step of #2477 (2026-11-11):* 57 of the 261 are the record line of a known list line. Such a line
+   is at the position of the list line, has the same pair of verdicts, and its base is the list line's base
+   or the beginning of it (`update model` beside `M.handle model.items`). The two lines are one call's
+   demands, so the record line takes the list line's reason. 204 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
