@@ -18,10 +18,10 @@ generator found three more faults. Each is fixed, and the final runs have no tra
 345 fixtures and 44 000 generated programs (§4.2). 16 of the 19 were in the contract of a function
 parameter, where report 110's rule "a forgotten case gives `shared`, which refuses" does not hold: a missing
 fact about a function gives an accepted write (§3.9). So the changes are these. The first-order core of
-report 110 (locations, `own` and `shared`, one write rule) carries real code at ten times v2's speed, and it
-is the next path. The contract of function values is not a small part of it: it has most of the rules (§2.6),
-it had all but three of the faults, and with its coarse rules the prototype refuses 68 of the 163 sanitiser
-fixtures that v2 accepts (§4.4). It needs a normative text, and the sanitiser corpus as a gate, before more
+report 110 (locations, `own` and `shared`, one write rule) carries real code at about nine times v2's speed
+on the same modules, and it is the next path. The contract of function values is not a small part of it: it has most of the rules (§2.6),
+it had 16 of the 19 faults that the corpus found, and with its coarse rules the prototype refuses 68 of the
+163 sanitiser fixtures that v2 accepts (§4.4). It needs a normative text, and the sanitiser corpus as a gate, before more
 code (§7). And step 0's gate cannot be met with step 0's scope: `List.foldl` is ordinary beni code, and 23 of
 the 308 writes are at a program's entry or at a send (§3.4).
 
