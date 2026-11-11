@@ -1,0 +1,12 @@
+module RecordStoresTopLevel
+  32:11 update s: accepted param
+  36:16 update s: accepted param
+  40:16 update s: rejected disjoint: another path of the same argument reaches it (approx)
+  44:14 update <record>: rejected disjoint: another path of the same argument reaches it (approx)
+  48:19 update s: rejected disjoint: another path of the same argument reaches it (approx)
+  52:12 update s: accepted param
+  56:18 update s: accepted param
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 4, rejected 3
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 4, rejected 3

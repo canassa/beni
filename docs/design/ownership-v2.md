@@ -6966,6 +6966,11 @@ are identical and nothing is written (R-7.11).
    `run/SanitiserRowKept`, `run/SanitiserRecordForwardedInList`). In each one v2 refuses the closure or the
    call beside that line, so neither checker accepts the write. With this step no `open` line is left where
    v2 accepts a write that v1 refuses or holds pending. 34 are `open`.
+
+   *Thirteenth step of #2477 (2026-11-11):* 10 more are `run/ListPersistence`. A reduction of that program
+   found a new over-refusal of v2 (#2494): a call whose callee updates a record and stores a value that is a
+   top-level value, or holds one, is refused (`disjoint`, approximate), and the same update written inline
+   is accepted. `ownership/RecordStoresTopLevel` pins the forms. 24 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when

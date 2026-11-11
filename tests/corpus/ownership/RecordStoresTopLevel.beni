@@ -1,0 +1,56 @@
+-- ownership: a callee updates a record and stores a value that holds a
+-- top-level value (`ownership-v2.md` §2.11.5, the record pass; #2494). The
+-- update writes a field of the record. It does not write the top-level
+-- value, so no read can be stale, and checker v1 accepts each declaration.
+--
+-- Checker v2 refuses `paramState`, `newState` and `wholeTopLevel` at the call
+-- (`disjoint`, approximate): the stored argument is the top-level `empty`,
+-- or holds it. That is an over-refusal of v2.
+-- `inline` is the update of `paramState` written with no call, and
+-- `noTopLevel` has a parameter in the place of `empty`: v2 accepts both.
+type alias Model =
+    len : Int
+    items : List Int
+
+
+type alias V =
+    list : List Int
+    model : Model
+
+
+type alias S =
+    seed : Int
+    last : V
+    count : Int
+
+
+empty : Model
+empty = { len = 0, items = [] }
+
+
+set : S, V → S
+set s v = { s | last = v, count = s.count + 1 }
+
+
+setModel : S, Model → S
+setModel s m = { s | last = { list = [], model = m }, count = s.count + 1 }
+
+
+pub paramState : S → S
+paramState s = set s { list = [], model = empty }
+
+
+pub newState : V → S
+newState v = set { seed = 1, last = v, count = 0 } { list = [], model = empty }
+
+
+pub wholeTopLevel : S → S
+wholeTopLevel s = setModel s empty
+
+
+pub inline : S → S
+inline s = { s | last = { list = [], model = empty }, count = s.count + 1 }
+
+
+pub noTopLevel : S, Model → S
+noTopLevel s m = set s { list = [], model = m }
