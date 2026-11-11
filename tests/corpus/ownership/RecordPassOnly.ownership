@@ -1,0 +1,11 @@
+module RecordPassOnly
+  15:16 update rec: rejected later-use: rec is read again at 17:5 [copy]
+  21:11 update <record>: accepted fresh (RecordPassOnly.keep writes it)
+  21:39 List.push s.a: rejected supply: RecordPassOnly.keep supplies its parameter 1 borrowed (⊤) (approx)
+  summary keep: π1 RAW{a}, π2 R; res .0 cb2{excl cb2}r{excl cb2} condition(fresh2), .1 condition(fresh3) π1, condition(fresh1){sep π1 cb2}r{sep π1 cb2}; π2 calls ≤1, supply 1 ⊤ borrowed{lost}r{lost}, supply 1.a fresh borrowed{lost}r{lost}
+  summary twice: π1 RA; res .0 condition(fresh3) fresh3{lost}r{lost} ⊤{lost}r{lost}, .0[*] ~condition(fresh4) ~fresh4{lost}r{lost} ~⊤{lost}r{lost}, .1 condition(fresh5) fresh501◦, .1.a fresh1 ~condition(fresh6), .1.b ~condition(fresh7) π1, condition(fresh2){lost}r{lost}
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 2: accepted 1, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 2: accepted 1, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+cause supply 1

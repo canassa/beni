@@ -202,7 +202,9 @@ const ImportReader = struct {
         const r: *ImportReader = @ptrCast(@alignCast(ctx));
         if (m >= r.interfaces.len) return null;
         const from_pack = if (m < r.ins.from_pack.len) r.ins.from_pack[m] else null;
-        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else from_pack orelse r.interfaces[m].ownership;
+        const all = if (r.blocks) |b| (b[m] orelse &.{}) else from_pack orelse r.interfaces[m].ownership;
+        mod.record_facts = mod.record_facts or !Block.passesAgree(all);
+        const bytes = Block.part(all, mod.in.records);
         if (bytes.len == 0 or bytes.len % 4 != 0) return null;
         const gpa = mod.gpa;
         const words = try gpa.alloc(u32, bytes.len / 4);
@@ -483,7 +485,8 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
 fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module, dest: *std.ArrayList(CheckDiagnostics.Item)) Allocator.Error!void {
     for (reports) |r| {
         for (r.lines) |l| {
-            if (!l.refused) continue;
+            // A record's verdict is reported and not yet enforced: until the lowering reads it, the emitter copies every update (§8, S5).
+            if (!l.refused or std.mem.eql(u8, l.op, "update")) continue;
             const code: @import("diagnostic").Code = switch (l.cause) {
                 .top_level => .top_level_list_changed,
                 .read_only => .view_changes_model,

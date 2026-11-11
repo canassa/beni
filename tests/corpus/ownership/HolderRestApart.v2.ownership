@@ -6,16 +6,22 @@ module HolderRestApart
   36:44 HolderRestApart.grow k#Tree.1: accepted param
   36:44 HolderRestApart.grow k#Tree.1[*]#Tree.1: accepted param
   36:44 HolderRestApart.grow k#Tree.1[*]⟨Tree⟩#Tree.1: accepted param
+  40:19 update model: accepted param
   40:36 HolderRestApart.grow model.root#Tree.1: accepted param
   40:36 HolderRestApart.grow model.root#Tree.1[*]#Tree.1: accepted param
   40:36 HolderRestApart.grow model.root#Tree.1[*]⟨Tree⟩#Tree.1: accepted param
-  account mapT: source 31, baseline 3967, growth 0 of 65536, total 3967, continuation 3944 of 31744, demands 0, walks 1, rounds 4, liveness_index lanes 5, transfer_settlement lanes 3
-  summary mapT: res ε fresh, [*]#0.1 cb(π2ε@22), [*]#0.1⟲ cb(π2ε@22) cb(π2ε@22); nondup no; reads π1ε* π2ε*; label π2ε@22 many [1: #0.1 π1[*]#0.1 π1[*]#0.1*, #0.1[*]#0.1 π1[*]#0.1⟲ π1[*]#0.1⟲*, #0.1[*]⟲#0.1 π1[*]#0.1⟲ π1[*]#0.1⟲* sep ⇐ sel π1{ε*~,[*]*} π2{ε~}]
-  account grow: source 46, baseline 6275, growth 0 of 65536, total 6275, continuation 6221 of 47104, demands 793, walks 2, rounds 4, liveness_index lanes 11, transfer_settlement lanes 5
-  summary grow: res #0.1 π2#0.1 fresh, #0.1[*]#0.1 π2#0.1[*]#0.1 fresh, #0.1[*]⟲#0.1 π2#0.1[*]#0.1 π2#0.1[*]⟲#0.1 fresh; nondup no; reads π2ε*; writes π2#0.1 π2#0.1[*]#0.1* π2#0.1[*]⟲#0.1*; req yes
-  account update: source 13, baseline 921, growth 0 of 65536, total 921, continuation 909 of 13312, demands 435, walks 1, rounds 1, liveness_index lanes 5, transfer_settlement lanes 1
-  summary update: res ε fresh, .root#0.1 π2.root#0.1 fresh, .root#0.1[*]#0.1 π2.root#0.1[*]#0.1 fresh, .root#0.1[*]⟲#0.1 π2.root#0.1[*]#0.1 π2.root#0.1[*]⟲#0.1 fresh; nondup no; reads π2.root*; writes π2.root#0.1 π2.root#0.1[*]#0.1* π2.root#0.1[*]⟲#0.1*; req ⇐ sel π2{ε*~,.root#0.1,.root#0.1[*]#0.1*,.root#0.1[*]⟲#0.1*}
-  block: 908 bytes, hash 5f86f34ef82f6b3c
+  account mapT: source 31, baseline 6933, growth 0 of 65536, total 6933, continuation 6910 of 31744, demands 0, walks 1, rounds 4, liveness_index lanes 5, transfer_settlement lanes 3
+  summary mapT: res ε fresh, [*]#0.1 cb(π2ε@22), [*]#0.1⟲ cb(π2ε@22) cb(π2ε@22); nondup no; answers ⇐ sel π1{[*]#0.1,[*]#0.1⟲} π2{ε!!1}; reads π1ε* π2ε*; label π2ε@22 many [1 each: #0.1 π1[*]#0.1 π1[*]#0.1*, #0.1[*]#0.1 π1[*]#0.1⟲ π1[*]#0.1⟲*, #0.1[*]⟲#0.1 π1[*]#0.1⟲ π1[*]#0.1⟲* sep ⇐ sel π1{ε~,[*]#0.1,[*]#0.1⟲} π2{ε*~} below ⇐ sel π1{[*]*}]
+  account grow: source 46, baseline 7510, growth 0 of 65536, total 7510, continuation 7456 of 47104, demands 873, walks 2, rounds 4, liveness_index lanes 11, transfer_settlement lanes 5
+  summary grow: res #0.1 π2#0.1 fresh, #0.1[*]… π2#0.1[*], #0.1[*]#0.1 fresh, #0.1[*]⟲#0.1 π2#0.1[*]#0.1 fresh; nondup no; reads π2ε*; writes π2#0.1 π2#0.1[*]#0.1* π2#0.1[*]⟲#0.1*; req yes
+  account update: source 13, baseline 1146, growth 0 of 65536, total 1146, continuation 1134 of 13312, demands 381, walks 1, rounds 1, liveness_index lanes 5, transfer_settlement lanes 1
+  summary update: res ε fresh, .root#0.1 π2.root#0.1 fresh, .root#0.1[*]#0.1 π2.root#0.1[*]#0.1 fresh, .root#0.1[*]⟲#0.1 π2.root#0.1[*]#0.1 π2.root#0.1[*]⟲#0.1 fresh; nondup no; reads π2.root*; writes π2.root#0.1 π2.root#0.1[*]#0.1* π2.root#0.1[*]⟲#0.1*; req ⇐ sel π2{ε~,.root#0.1,.root#0.1[*]#0.1,.root#0.1[*]⟲#0.1}
+  record-pass account grow: source 46, baseline 7562, growth 0 of 65536, total 7562, continuation 7508 of 47104, demands 873, walks 2, rounds 4, liveness_index lanes 11, transfer_settlement lanes 5
+  record-pass account update: source 13, baseline 1259, growth 0 of 65536, total 1259, continuation 1247 of 13312, demands 456, walks 1, rounds 1, liveness_index lanes 5, transfer_settlement lanes 1
+  record-pass summary update: res ε π2ε, .root#0.1 π2.root#0.1 fresh, .root#0.1[*]#0.1 π2.root#0.1[*]#0.1 fresh, .root#0.1[*]⟲#0.1 π2.root#0.1[*]#0.1 π2.root#0.1[*]⟲#0.1 fresh; nondup no; reads π2ε π2.root*; writes π2ε π2.root#0.1 π2.root#0.1[*]#0.1* π2.root#0.1[*]⟲#0.1*; req ⇐ sel π2{ε,.root#0.1,.root#0.1[*]#0.1,.root#0.1[*]⟲#0.1}
+  block: 1868 bytes, hash d4b1ab39891163ef
   demands 10: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+  records 1: accepted 1, rejected 0
 total 10: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+records 1: accepted 1, rejected 0
 cause disjoint 3

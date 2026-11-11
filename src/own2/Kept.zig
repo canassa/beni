@@ -77,6 +77,8 @@ pub const Line = struct {
     /// `req` reads a call's `relies` once, not once per write of it.
     extra: Cond = .{},
     use_token: u32 = none,
+    /// An accepted `update`: the frame's own later reads of a written field, each hoisted before the write (§2.8).
+    hoisted: u32 = 0,
 };
 
 /// A holder event (§2.8's sweep): `key` holder `hi` keyed, `hold` its

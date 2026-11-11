@@ -28,6 +28,7 @@ const Bir = @import("../bir/Bir.zig");
 const WalkContext = @import("WalkContext.zig");
 const Called = @import("Called.zig");
 const Construction = @import("Construction.zig");
+const Update = @import("Update.zig");
 const FnSite = @import("FnSite.zig");
 
 pub const Error = Ids.ChargeError;
@@ -130,6 +131,10 @@ pub const Demand = struct {
     graft: [3]u32 = .{ none, 0, 0 },
     /// The other routes a grouped demand covers (`Graft`), named in its line: steps from `write_path`, as `write_rel`.
     also: []const u32 = &.{},
+    /// The written object is a record (§2.8): judged by field and printed `update`. `fields`: the
+    /// written fields' ranks, sorted; none named: every field (a callee's write of a record slot).
+    record: bool = false,
+    fields: []const u32 = &.{},
 };
 
 /// A local's binding.
@@ -160,6 +165,8 @@ pub const Walk = struct {
     bir: *const Bir,
     bindings: []Binding,
     uses: std.ArrayList(Facts.Use) = .empty,
+    /// What the frame does with records' fields (§2.7): read by an `update` demand only.
+    events: std.ArrayList(Update.Event) = .empty,
     /// Per footprint (`use_node`): one call and argument; calls of one callee and arity share it (§2.7).
     foots: std.ArrayList([2]u32) = .empty,
     foot_of: Ids.FixedDict(4) = .{},
@@ -192,7 +199,7 @@ pub const Walk = struct {
         w.f.deinit();
         gpa.free(w.bindings);
         inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries, &w.runs }) |l| l.deinit(gpa);
-        inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.derived }) |l| l.deinit(gpa);
+        inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.derived, &w.events }) |l| l.deinit(gpa);
     }
 
     pub fn leavesOfRun(w: *const Walk, r: Ids.Range) []const u32 {
@@ -252,7 +259,7 @@ const Walker = struct {
     fn data(k: *const Walker, i: u32) Inst.Data {
         return k.bir.instData(@fromBackingInt(i));
     }
-    fn rel(k: *const Walker, i: u32) u32 {
+    pub fn rel(k: *const Walker, i: u32) u32 {
         return i - k.w.code.decl.inst_start.int();
     }
     pub fn token(k: *const Walker, i: u32) u32 {
@@ -306,7 +313,7 @@ const Walker = struct {
         k.pop(operand);
     }
 
-    fn pop(k: *Walker, operand: u32) void {
+    pub fn pop(k: *Walker, operand: u32) void {
         var at = k.stack.items.len;
         while (at > 0) : (at -= 1) if (k.stack.items[at - 1][0] == operand) break;
         if (at == 0) return;
@@ -576,9 +583,11 @@ const Walker = struct {
             .field_access, .tuple_index => {
                 const target = k.res[k.rel(d.lhs)];
                 const st = if (k.tag(i) == .field_access) try Step.field(fr.account, k.ctx.fieldRank(k.ctx.ctx, @fromBackingInt(d.rhs))) else try Step.index(fr.account, d.rhs);
-                const v = try k.project(try k.valueOf(d.lhs), .plain, st.word(), 0);
+                const of = try k.valueOf(d.lhs);
+                const v = try k.project(of, .plain, st.word(), 0);
                 k.pop(d.lhs);
                 if (target.local != none) {
+                    if (fr.records and st.kind == .field and target.path != .none) try k.w.events.append(k.gpa, .{ .local = target.local, .path = target.path, .point = i, .value = of, .rank = st.payload });
                     if (try fr.places.extend(k.gpa, fr.gc(), target.path, st)) |p| return .{ .v = v, .local = target.local, .path = p };
                     try k.use(d.lhs, i, .whole, .{ none, none }, .{ none, none, none });
                 }
@@ -629,14 +638,10 @@ const Walker = struct {
             },
             .record => {
                 const fields = k.bir.extraSlice(Bir.inlineRange(d), Bir.Field);
-                return .{ .v = try k.record(i, fields, null) };
+                return .{ .v = try k.record(i, fields) };
             },
-            .record_update => {
-                // A record built from the base's fields and the new values
-                // (§2.11.5): no storage of the base is written.
-                const fields = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(d.rhs)), Bir.Field);
-                return .{ .v = try k.record(i, fields, d.lhs) };
-            },
+            // The base's object, written at the fields (§2.6, `Update`); in the list pass, a new record of the base's fields.
+            .record_update => return .{ .v = try Update.of(k, i, k.bir.extraSlice(k.bir.subRange(@fromBackingInt(d.rhs)), Bir.Field), d.lhs) },
             .call => {
                 try k.evidence(i);
                 if (k.ctx.isListAppend(k.ctx.ctx, i) and k.args(i).len == 2) return .{ .v = try k.appendChain(i) };
@@ -737,9 +742,8 @@ const Walker = struct {
         return c != none and (k.tag(c) == .call or k.tag(c) == .pat_ctor) and k.data(c).lhs == i;
     }
 
-    /// A record literal, or an update's copy (`base` its base instruction).
-    fn record(k: *Walker, i: u32, fields: []const Bir.Field, base: ?u32) Error!u32 {
-        const fr = k.f();
+    /// A record literal.
+    fn record(k: *Walker, i: u32, fields: []const Bir.Field) Error!u32 {
         var ranks: std.ArrayList(u32) = .empty;
         defer ranks.deinit(k.gpa);
         var ks: std.ArrayList(u32) = .empty;
@@ -749,29 +753,12 @@ const Walker = struct {
             try ks.append(k.gpa, try k.valueOf(fl.value.int()));
             try k.consume(fl.value.int(), i);
         }
-        if (base) |b| {
-            // The untouched fields: the base's, each a `field` use of it.
-            const bv = try k.valueOf(b);
-            const at = try k.placeOf(i);
-            const pr = fr.places.steps(at);
-            for (pr.steps) |st| {
-                if (!st.inRow()) continue;
-                if (std.mem.indexOfScalar(u32, ranks.items, st.kidWord()) != null) continue;
-                try ranks.append(k.gpa, st.kidWord());
-                try ks.append(k.gpa, try k.project(bv, .plain, st.word(), 0));
-                const r = k.res[k.rel(b)];
-                if (r.local != none) if (try fr.places.extend(k.gpa, fr.gc(), r.path, st)) |p| {
-                    k.atom.* += 1;
-                    try k.w.uses.append(k.gpa, .{ .local = r.local, .path = p, .point = i, .kind = .field, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
-                };
-            }
-            k.pop(b);
-        }
-        return k.recordOf(i, ranks.items, ks.items);
+        return k.recordOf(i, ranks.items, ks.items, 0);
     }
 
     /// The record `ranks` name, of values `ks`: fields in rank order, as the place's steps.
-    fn recordOf(k: *Walker, i: u32, ranks: []const u32, ks: []const u32) Error!u32 {
+    /// `over`: 0 for a new object, or one more than the value whose object it is (an update's base).
+    pub fn recordOf(k: *Walker, i: u32, ranks: []const u32, ks: []const u32, over: u32) Error!u32 {
         const fr = k.f();
         const n = ranks.len;
         const order = try k.gpa.alloc(u32, n);
@@ -790,7 +777,7 @@ const Walker = struct {
             try sr.append(k.gpa, ranks[o]);
             try sk.append(k.gpa, ks[o]);
         }
-        return k.built(i, .record, 0, i, sk.items, try fr.mkWords(sr.items));
+        return k.built(i, .record, over, if (over == 0) i else none, sk.items, try fr.mkWords(sr.items));
     }
 
     /// A closure value of `code` (or a fixed contract) holding the values
@@ -859,7 +846,7 @@ const Walker = struct {
                 var ranks: std.ArrayList(u32) = .empty;
                 defer ranks.deinit(k.gpa);
                 for (0..vals.items.len) |n| if (k.ctx.ctorField(k.ctx.ctx, k.data(i).lhs, @intCast(n))) |r| try ranks.append(k.gpa, r);
-                if (ranks.items.len != 0) return k.recordOf(i, ranks.items, vals.items);
+                if (ranks.items.len != 0) return k.recordOf(i, ranks.items, vals.items, 0);
                 return k.built(i, .ctor, c[0], none, vals.items, &.{});
             },
             .code => |c| {
@@ -1058,7 +1045,7 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     const n = d.inst_end.int() - d.inst_start.int();
     const nl = d.locals_end - d.locals_start;
     w.* = .{
-        .f = .{ .gpa = gpa, .arena = arena, .account = account, .places = places, .slots = slots },
+        .f = .{ .gpa = gpa, .arena = arena, .account = account, .places = places, .slots = slots, .records = ctx.records },
         .code = code,
         .bir = bir,
         .bindings = try gpa.alloc(Binding, nl),
@@ -1200,7 +1187,8 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
             continue;
         }
         if (k.binds[r] != none) {
-            try k.consume(i, i);
+            // A record pattern reads the fields it binds, each its own read (`Update.bound`); any other pattern reads its value whole.
+            if (!k.w.f.records or bir.instTag(@fromBackingInt(k.binds[r])) != .pat_record or !try Update.bound(&k, i, bir.extraSlice(Bir.inlineRange(bir.instData(@fromBackingInt(k.binds[r]))), u32))) try k.consume(i, i);
             try k.bind(k.binds[r], try k.valueOf(i), i);
             continue;
         }
@@ -1237,4 +1225,5 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     w.result = result;
     w.walk_calls = @intCast(w.f.calls.items.len);
     w.index = try Liveness.Index.build(gpa, account, .inference, places, regions, w.uses.items);
+    Update.settle(w);
 }

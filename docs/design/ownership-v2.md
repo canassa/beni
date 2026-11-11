@@ -134,8 +134,10 @@ recommendation 5, a soundness argument per rule over the slot carrier, was not t
 
 - **Materialisation as a fact of the value.** The refinements `elem`, `others`, `level` and `below·s` are gone (not
   `below(p)`, the slot set of §2.3.1). A position says what the source projected, in one frame. Across a call only a selection separates two objects of one slot.
-- **`delta`.** A record update copies (§2.11.5), so R-4.8's `update` demand, O7 and O12 wait for S5. Records are not
-  written in place today, and no sanitiser pass checks them.
+- **`delta`.** There is none: since 2026-11-10 a record update is, in the record pass, a record built over its
+  base, with an `update` demand, and in the list pass a new record (§2.11.5, *Two passes*, S5a). Its verdict is
+  reported and not enforced: the emitter still copies under `--ownership=v2`, O12 (hoists) and the lowering
+  channel wait for S5b, and no sanitiser pass checks v2's records.
 - **Non-regular types.** A non-regular type's family shares one place graph (§2.1, *A family*), so a place stands for
   instantiations that differ in structure, and a function and its caller read one map. These types stay (the owner, 2026-11-07, #2214).
 - **Precision against v1.** R-8.3 is not met: `tests/blackbox/ownership-v2-known.txt` carried 361 rows where v1 accepts and
@@ -911,6 +913,23 @@ group, and the uses strictly below `q` are one `firstAfter`, because a footprint
 always reaches the hold. That holds only where `q`'s place is not on a cycle; on a cycle a path below `q` can
 fold back onto it, and the query filters the whole range by group, as before.
 
+**Field events** *(amended 2026-11-10, #1018, S5a; as built).* What a frame does with a record's fields is a
+table of its own, `Walk.events`, beside the uses. Only the record pass makes it (§2.11.5, *Two passes*), and
+only an `update` demand reads it, so no list verdict depends on it (R-8.6). An event is `(local, record path, point, record value)` and one of:
+- a **read** of field `f`: a step of this frame's own field chain (`r.f`, also a field no path names), or a field
+  that a record pattern binds. It is the frame's own read of the record's field slot, which the lowering can move
+  before a write: a **hoist**.
+- an **update** of the record at that path through that local: a read by the update itself of every field it
+  keeps, which nothing can move. A later update of the old record is a whole use of it (R-4.8.2 (c)).
+
+The uses are the list pass's, with one change in the record pass: a record pattern in a `let` reads the fields
+it binds, each a `whole` use at the field's path, and not its record whole. The kind `field` is, as built,
+only an update's kept field whose place holds an object (a use at `r.g`): a list demand reads it as it reads a
+`whole` use. The table below is read with these two notes: "kind `field` → a hoist" is a read event, and a
+`whole` or `call` use *strictly below* a written field is the consumer of a chain whose read event stands for
+it, so an update demand does not read it. A `whole` use whose point is a field access is that access's own
+(a field no path names): its read event stands for it too.
+
 A **use** is `(atom, local, PathId, point, kind, callee-use-node?)`, where `atom` is the use occurrence: unique in
 its declaration and deterministic, not the operand instruction, so one instruction reading a local twice has two
 uses and the transfer rules of §2.6 need no change. Kinds: `field` (this frame's own field chain,
@@ -1060,6 +1079,31 @@ storage write, the base's own storage at the written position (`at_position`); f
    the meeting slot), and the liveness index (§2.7) answers whether it is used there or above after the
    demand. Holders are indexed by root: a target of root `R` is compared with the leaves of `R` only, and a
    call's leaves are expanded into the roots they come from first.
+   **Dead, by field** *(2026-11-10, #1018, S5a).* A **record demand** is an `update`, or a callee's write of a
+   record's own storage at a call, a once closure's or a callback's alike. So is each demand that such a write
+   makes where no call judges it: the write of a parameter or a capture by a closure that leaves or runs again
+   (§2.11.4, `Closures`), and the need of a label whose answer or supply a callee writes (§2.11.3, *a need*;
+   `Update.ofNeed`: the known code's place says that the written slot is a record's own object; a function that
+   no code is known for says nothing, and its need stays a list's). Every one is printed `update` and is
+   reported, not enforced (§2.11.5). Its targets are the record's storage
+   leaves. It writes the fields `F`; a callee's write names none yet, and then `F` is every field. For a holder
+   `h` that holds a target at path `q`, the later uses and events of `h` after the demand, compatibly, are:
+   - a use at `q` or above it (a whole use, a call whose callee's footprint reaches `q`, a kept field of a
+     later update of a record that contains this one): the old record is read whole: refused, as for a list;
+   - a later **update** event at `(h, q)`: a whole use of the old record (R-4.8.2 (c)): refused;
+   - a **read** event at `(h, q)` of a field in `F`: accepted, and counted as a hoist (the lowering binds the
+     read before the write; until the lowering reads the channel the count is the report's `[hoisted n]` only);
+   - a read event of a field not in `F`, and any use strictly below `q`: nothing.
+
+   The events are sorted by `(local, path, field, point)` when the walk ends; a query is one binary search a
+   written field and one record on the account an event it visits. The best-hold descent asks each hold path
+   (no subtree answers for the paths below it), since a field event is at one path. A callee that reads a field
+   of a parameter's record, or updates it, publishes a shallow `reads` at the record's slot (the events' record
+   objects, read off as the uses are), so a caller that writes the record first sees a later call as a whole
+   use. That read names no field yet: a callee that reads only an untouched field is refused where R-4.8.5
+   accepts it. *Refused that a perfect checker accepts, with what S5 owes:* a closure that captures the record
+   and reads one field (a field capture, R-5.4.6); a record pattern in a `case` arm; a callee's read or write
+   of a field set (the contract's `F`, §2.10).
 6. **Exclusive.** What the overlaps relied on (§2.9.4): a selection of the frame's parameters is accepted
    `param` and added to `req`; anything else that is not given is refused `exclusive`.
 
@@ -2089,6 +2133,24 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    `req` gathers once (§2.9.4). A demand's own judgement adds to it apart. Before, each of n writes of one call
    instantiated `C.req` (n occurrences) again and added it again: `caller w = wall w` with 256 written fields
    reached the growth limit, and `fresh` cost 42 653 → 167 333 records at 64 → 128 fields (now 3 037 → 6 309).
+   *Amended 2026-11-10 (#1018): a list's write beside a record's, in the record pass.* `C.req` is one
+   selection for every write of `C`. In the record pass an update writes its base's object (§2.11.5), so a
+   function that updates a record and pushes onto a list has both written slots plain in it, and a pair that
+   only the record's write asks made the selection `no` for the list's write too. The report would say that
+   as a record's refusal at the list (*Two passes*, a refusal that only the record pass has). So
+   where the instantiation is `no`, the call reads `C.req` a second time for its list writes (`CallReq.of`):
+   each plain occurrence at a record's own object, not deep, is asked **apart** (§2.9.1). Every pair of a
+   written list with another occurrence stays. The pairs of a record's object with another record's object or
+   with an apart occurrence are not asked. A record demand relies on the first reading, and a list demand on
+   the second. Where the first reading is not `no`, every write relies on it, as before, so a call whose
+   writes hold costs one instantiation. `pushed bs = List.foldl bs [] λb acc → List.push acc (bump b)`,
+   `bump b = { b | x = b.x + 1 }`: the callback's `req` is `sel π1{ε} π2{ε,[*]~}`. The accumulator holds
+   earlier elements of `bs`, and nothing says that two elements of a list are two objects, so the update of
+   `b` is refused. The push onto `acc` was refused with it in that pass, and is accepted there now. Whether
+   the slot is a record's is read from the known code's parameter place, or from the argument's. The list
+   pass has no such occurrence, and reads `C.req` once. *Refused that a perfect checker accepts:* a record's
+   write still fails for a pair that only a list's write asks (`twice b xs = both b xs xs`): one more
+   refused record line. Fixture `ownership/RecordFoldPush`; mutant `list_req_whole`.
 5. **Escapes.** The objects at `C.escapes`' projections are escaped at the call (§2.4), deep.
 6. **Labels.** Each of `C.labels` is instantiated (§2.11.3).
 
@@ -3388,10 +3450,86 @@ survives: no probe reaches a stale label there. The 240 `review-2173/g9` program
 
 #### 2.11.5 Other constructs
 
-- **Record update** `{ r | F = … }` builds a record: a `built` record with a fresh site, whose untouched fields
-  are `r`'s projections (each a `field` use of `r`) and whose `F` fields are the new values. No storage of `r`
-  is written: an in-place record update is a later slice's `update` demand (R-4.8), and until then the
-  emitter copies.
+- **Record update** `{ r | F = … }` *(amended 2026-11-10, #1018, S5a)* writes, in the record pass (*Two
+  passes*, below), `r`'s own object at the fields `F`
+  (R-2.5, O7). Its value is a record built **over its base**: it has no site of its own, its storage is `r`'s
+  storage (as a list construction's is its base's, §2.13.2), its `F` kids are the new values and its other kids
+  are `r`'s projections. It makes one **`update` demand** on `r`'s storage, with `F`, the new values as its
+  operands (all evaluated before the demand's point, R-4.8.3) and the pending operands of that point. §2.7's
+  *Field events* and §2.8's *Dead, by field* say how the demand is judged. So `s = { r | a = 1 }` makes `s` and
+  `r` two holders of one object, a function that updates its parameter publishes `writes π1ε` and
+  `res ε π1ε`, and a chain of updates writes one object. Until this amendment the update built a record with a
+  fresh site and wrote nothing: a copy. *The verdict is reported and not yet enforced:* the emitter still copies
+  under `--ownership=v2`, so a refused update changes no emitted code, and `Enforce` makes no diagnostic of a
+  record line until the lowering reads v2's record channel (§8, S5). When it does, a refused update is a
+  compile error whose fix is `Record.copy`, as in v1 (`ownership-checker.md` §31.1): never a silent copy.
+
+  **Two passes** *(2026-11-10, #1018, S5a; R-8.6; as built. This is option A of the owner's question
+  `ownership-v2-fable-q2`, which is open: the text changes if the owner chooses the other design, below).* No list
+  verdict reads a record fact (R-8.6; v1 keeps a parallel domain for the same reason, `ownership-checker.md` §31.4 item 6). In the
+  slot domain a record fact would enter the list analysis at many places: an arrival at a record's own slot, a
+  write and a read of it, an occurrence of it in `req`, a `need`, a mark of a label or of a contract, and the
+  cost of the record demands. So the checker does not put them into one evaluation. It checks each module twice
+  (`Ownership.run`):
+
+  1. **The list pass.** An update builds a new record that holds the base's fields (`Update.of` without the
+     flag): no storage is written, and no demand is made. Every list line of the report, every `limit` line,
+     the lowering channel's list writes and the enforcement come from this pass, and from nothing else. It is
+     the analysis as it was before records were written in place.
+  2. **The record pass** (`Groups.Input.records`, `Value.Frame.records`). An update writes its base's object
+     (below). Only its **record lines** are taken: the demands whose written object is a record's own
+     (§2.8, *Dead, by field*). Its list lines are dropped: they are judged as if every update were in place,
+     which is more sharing than any run has. A declaration that passes its limit in this pass has no record
+     line (`record-pass unchecked`). That is no error while record verdicts are not enforced. When they are,
+     it is a limit as a list's is, since no update copies silently (`ownership-checker.md` §31.1), unless
+     that step takes the limit away. Of the 1 320 single-file fixtures of `ownership/` and `run/`, one
+     declaration reaches it (`ownership/WideFieldConditions`, `run`).
+
+  *Why the list pass is sound when an accepted update edits in place.* An accepted update's base is dead at
+  each written field (a read is hoisted before the write), and no holder uses the old record whole. So every
+  later access through an old holder reads a kept field, whose storage is the same in both models. No program
+  sees which lists share storage differently from the model in which the update copies.
+
+  *What the record pass must not lose.* A refusal that only the record pass has is a record's refusal, also
+  where its demand is no record demand (a write said deep, a need whose kind no place says, the entry's hold).
+  So a refused line of the record pass that is no record line, and that the list pass does not refuse at the
+  same position with the same text, is reported as an `update` line. Each refusal of the list pass stands for
+  one refusal of that text in the record pass and no more: two writes of one slot at one call have one text
+  (`ownership/RecordPassTwice`). A list pass that refuses the same line makes the module an error, and nothing
+  of it is lowered. A record pass that cannot publish its block says so (`record-pass block not published`).
+
+  *Contracts.* A code has a contract from each pass. A module's block holds both (`Block.both`): one word, the
+  list pass's block, the record pass's block. The word is the first block's length in words, and its top bit
+  says that the second block has the same bytes and is not written. An importer's pass reads its own part
+  (`Block.part`). A module whose record pass published no block is unknown to an importer's record pass, and
+  its codes read the pessimistic contract there.
+
+  *The dump.* `record-pass summary …` is the record pass's contract of a declaration where its text is not the
+  list pass's, and `record-pass account …` its account. Count lines: `demands` and `total` count list lines, and
+  `records` counts record lines.
+
+  *Cost.* The record pass costs a second check of the module: about as many account records as the list pass
+  (`browser/tea/BallMachine`: 211 449 in the list pass, 216 097 in the record pass). Measured on 2026-11-10
+  with a Debug compiler, `check --ownership=v2 --ownership-everywhere --no-cache`, the best of three runs,
+  with the record pass off (the mutant `record_pass_off`) and on: `examples/conduit` 237 and 388 ms,
+  `browser/tea/BallMachine` 239 and 382 ms, `examples/sternhalma` 108 and 153 ms. So the whole check costs
+  40 to 65 % more on a program that updates records. A module with no update
+  and no record pattern, whose imports all have the same block in both passes, has the same contracts in
+  both. Its record pass is skipped, and its block says so (the top bit, §3.6). *Not built:* the record pass
+  judges its list demands too, though the report reads only a refusal of them.
+
+  *The other design: one evaluation with a kind filter.* The first build of S5a judged lists and records in one
+  evaluation: an update wrote its base's object for both. 70 list lines of the corpus moved in 41 fixtures, 3
+  programs reached `ownership_summary_size`, and a near-limit declaration cost three times its records. Six
+  filters, one for each place found, left 24 moved lines.
+
+  *A cell's contents.* `Ref.update r λw → { w | n = 1 }`: the cell holds its contents while the callback
+  runs (§2.13.7). A list that the contents hold is edited in place by the callback, and that edit is said deep
+  at the cell's `◆`. The contents' own record is not: the callback's write of it is refused where it is made
+  (`call`: the cell still holds it), as v1 refuses that update (`supply`), and the program writes
+  `{ Record.copy w | … }`. The refused write is not read off as a write of the frame, so no caller is charged
+  with it. What stays is the cell operation that stores the callback's answer, which the list pass has too.
+  Fixture `ownership/RecordCellEdit`; mutant `cell_record_edit`.
 - **`try`** (`e?`): the value is `e`'s success payload; the failure payload, built into the enclosing
   definition's failure constructor, is a returned alternative of that definition.
 - **`markup`**: a `built` opaque value with a fresh site whose kids are every embedded value; each embedded
@@ -3748,7 +3886,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    | Word / placement | Exact row semantics; declarations carrying it |
    |---|---|
    | result `elementof` | Parameter 1 is a sequence with element type equal to the result; result `π₁[*]`, π₁ `R` at ε and `A` at `[*]`. No split, no `taken`, no ownership transfer. `at`/`unsafeGet`: `borrowed List a, borrowed Int → elementof a`. The root `borrowed` does not suppress the word's element `A`. Additional parameters have explicit words. |
-   | result `copyof` | Parameter 1 and result are sequences with the same element type. Result storage fresh, `[*] = π₁[*]`; π₁ `R`, `[*]` `A`. List-kind descendant κ is `lost`; record-kind descendant κ is the corresponding `excl π₁` path, not unconditional `yes`; crossing paths are `yes`. Copying storage removes only that root's loan tag. `copy`, `sliceOf`, pinned `sortWith` (its comparator additionally `many`, borrowed supplies). Companion π₁ `borrowed`; reject `fresh`, `exclusive`, `returned` or another result selector beside it. |
+   | result `copyof` | Parameter 1 and result are sequences with the same element type, or *(amended 2026-11-10, #1018; the owner's decision, Jayson, 2026-11-10 06:44 UTC: "Extend copyof to records")* records of one type: `Record.copy : borrowed { r \| } → copyof { r \| }`, whose result is a new object and holds at each step, a field or the row, what parameter 1 holds there. Result storage fresh, `[*] = π₁[*]`; π₁ `R`, `[*]` `A`. List-kind descendant κ is `lost`; record-kind descendant κ is the corresponding `excl π₁` path, not unconditional `yes`; crossing paths are `yes`. Copying storage removes only that root's loan tag. `copy`, `sliceOf`, pinned `sortWith` (its comparator additionally `many`, borrowed supplies). Companion π₁ `borrowed`; reject `fresh`, `exclusive`, `returned` or another result selector beside it. |
    | result `prepended` | Exactly two parameters: `stored a, returned List a → prepended List a`. Result storage is π₂'s storage (re-cons: a view over, or a header sharing, π₂'s base) or fresh (copy), π₂ `RA`, π₁ `RA`; contents are the positional collection of π₁ and π₂[*], not a branch union. At each path κ is `excl π₁ ∧ excl π₂[*] ∧ sep(π₁,π₂[*])`, with the construction's cross-path comparisons. No existing storage write is demanded: prepend allocates or reconstructs a view. Surface prepend's fresh-front refinement is §2.13.2, never a name test for `cons`. |
    | callback parameter `stored` | Store its **result**, not the closure. Without a cell selector, the answer is put back at the element position `[*]` of the written container, whatever its kind: a `sequence`'s `[*]` or a `dict`'s value position `[*]` (keys cross). **Row:** the callback is invoked at most once with the taken element; its stored answer replaces that element at the destination's `[*]`, the result's `[*]` is the join of the stored answer and the remainder, and κ there is derived as §2.9's construction rule derives it with the remainder (the taken position removed first). The answer is either the element type `a`, and then the whole answer is stored, or a resolved Maybe-like two-constructor carrier (one nullary, one unary whose payload is `a`, validated by shape as for `lentoptional`, no name test). For the carrier, the unary payload path (`Just`'s payload) is the selected result path that is stored, and the nullary alternative (`Nothing`) is a removal: it stores nothing, the taken position is gone, and the result's `[*]` is the remainder only; the result row joins the two alternatives. **Placement:** on the callback parameter. **Companions:** the callback is `once taken`; parameter 1 is the sole `written returned` destination, a `sequence` or a `dict` whose element type is `a`; the callback's argument is `a` or the same carrier over `a` (the taken element at its payload path; the nullary argument alternative takes nothing); the answer type must match the argument form. `List.focus` carries `once taken stored` with `a → a`; `Dict.focus` carries it with `Maybe v → Maybe v` over a `dict` destination, worded in S8 (#1021, #1053). With `cellupdate`, store result ε at π₁◆; with `cellmodify`, store only result .1 at π₁◆ and return .0 under the loan/disjointness rule below. These selectors require `stored sync` and imply once/taken/owned; reject duplicate/conflicting invocation or destination words. |
    | result `cellnew` | Result is a fresh `cell` handle, ◆ initially parameter 1; require parameter 1 `consumed`. `Ref.make : consumed a → cellnew Ref a`. Inspect the payload for loans **before** installing the barrier. |
@@ -5153,7 +5291,7 @@ Mutated: every row. Unmoved, and so unpinned here: `Supplied.mayBeHeld`, `Distin
 | O4 | *Join is union;* escapes only grow. A `case` keeps each arm's value whole, and a contract join never drops a slot. (The header of `Resolve.zig` calls another claim O4: it is O5's `req`) | `Leaves.Table.alt`, `Contract.Table.join`, `Forest.unite`, `Eval.addEscapeAt` | `add_escape_drop` **mutated** (15 fixtures), `unite_left` **mutated** (blanket), `project_alt_first` **mutated** by `ownership/` goldens only. `alt_first_arm` crashes on core | kept, not pinned |
 | O5 | *Contracts cover bodies:* `res`, `reads`, `writes`, `req`, `escapes`, `stores`, `labels`, `need`. Instantiation is extensive. Each published contract was walked under candidates it stays within (Lemma C) | `ReadOff.factsOff`, `Put`, `Deliver`, `Groups`' validation round, `Within.within`, `Relation.Eval.arrivalLeaves`, `Eval.callEffects`, `Graft` | `contract_no_res`, `contract_no_reads`, `contract_no_escapes`, `contract_no_stores`, `contract_no_req` **mutated**, each by `run/Sanitiser*` fixtures; `contract_no_writes` blanket. `need` is not on master, so it has no mutation. `Within.within` always true **survives** (#2188): it is false on 8 fixtures, and with it ignored no verdict moves. The claim here before that goldens fail does not reproduce. `graft_stop_off`: one v1 parity line, 14 **STALE** lines | no file names it |
 | O6 | *Positions partition.* Two positions of one root are related when they may name one element (§2.3.2); `[*]` meets each list step; `⟲` covers every level; a slice is a range of its parent. Replaces materialisation | `Steps.stepRel`, `Value.Frame.related`, `Value.Frame.child`, `Steps.fileUnder`, `Place.extend`, `Place.expandLevels`, `Slots.canon`, `StepsTo.of`, `RefRead.levels`, `LevelWide.of`, `LevelTargets.of`, `CallFolds.of`, `Relation.instBelow`, `PathsTo.of`, `Slots.joinNames`, `Put.levelNames`, `Slots.relsBelow`, `BelowAnchors.of` | `run/SanitiserPatternStoredBack`, `run/SanitiserWideDistinct` **mutated** (`step_elem_apart`); `run/SanitiserLevelRoutes` and its siblings (`level_route_shortest`), `run/SanitiserLevelRoutesFolded` (`level_slot_twice`), `run/SanitiserLevelResult` and its siblings (`level_wide_off`), `run/SanitiserLevelCaller` and its siblings (`caller_folds_off`), `run/SanitiserLevelCallerBelow`, `run/SanitiserLevelCallerNeed`, `run/SanitiserLevelCallerReadOff`, `run/SanitiserLevelCallerReadOffAtoms` and `run/SanitiserLevelCallerReadOffFold` (`below_folds_off`), `run/SanitiserLevelRoutesDense`, `run/SanitiserLevelSlots` and its siblings (`level_join_kept`), `run/SanitiserLevelReroot` and its siblings (`reroot_one_route`), `run/SanitiserFamilyJoinBelow` (`below_join_one_name`), all **mutated**; a front and a back: the unit test alone; a slice: `ownership/` goldens and a unit test; `level_replay_same`: `ownership/` goldens alone. Every **mutated** | **Open** until §2.1's two rules hold: *One below* (every reader at and below a slot reads each fold above it) and *Every name* (a slot re-rooted maps to every slot its objects reach). The step relation is kept. A reference's next levels are every route (§2.1, #2192), and an open arrival of a result or a supply is said at the folds above it, the callee's own (§2.1, #2195) and those a cycle a type variable closes at the caller adds, read whole there, a need's discharge and a read below a slot included (#2223), and what a result says at a join is said at each of its level paths, for a slot written out one by one too (§2.1, #2197). *One below* holds since #2359: a result read off below a call's slot reads the folds above it, a slot that is itself a fold read whole, and so do the readers of atoms. *Every name* holds on a family's heads since #2354: a read of a call's tree below a slot named through a join reads each of its level paths too (`BelowAnchors.of`). **Not covered yet**: no known case. A slot re-rooted by every route, not one of several, is §2.1 *Every name* (#2353). A member that calls another of its group at such an instance reads its draft while the group is solved and its candidate as a contract in the validation round, which says the caller's folds (§2.12; `run/SanitiserLevelCallerGroup`). A family's `⟲` is a regular type's, on its one graph (§2.1), so a family whose heads close a cycle with a middle inherits the regular rows' rules and their holes; the one found there, a read below a join's name that a symbol `↓p` keeps (#2354), is closed |
-| O7 | *Withdrawn until S5.* `delta` is gone: a record update builds a record (`Walk.Walker.record`) with a fresh site, and no storage of the base is written (§2.11.5). When S5 makes a record write, this obligation returns: the written object is the base's, and the kept fields are its | — | — | withdrawn |
+| O7 | *Records are written* (returned 2026-11-10, #1018; §2.11.5). The written object is the base's: an update's value is built over its base and has the base's storage, and the kept fields are the base's projections. Every later read or keep of a written field through an old holder is found: a read event, a later update's event, a whole use at or above the record, a callee's read of the record's object (`reads` at its slot) | `Update.of`, `Update.after`, `Later.Uses.liveAt`, `Value.Frame.setsOf`, `ReadOff.factsOff`, `Ownership.run` (the record pass, and a refusal that only it has) | `ownership/RecordDemands` and the `Record*` fixtures' `.v2.ownership` goldens, `ownership/RecordFoldPush`, `RecordPassOnly`, `RecordPassTwice`, `RecordCellEdit`; mutants `update_fresh_site`, `update_no_events`, `update_reads_off`, `record_pass_off`, `record_pass_lists`, `record_refusal_lost`, `cell_record_edit`, `list_req_whole` | kept, not enforced until S5b |
 | O8 | *Escape is deep and forever:* every leaf of an escaped value is escaped, through `◆`; a write is blocked by an escape of itself or of a leaf it lies inside, a deep demand also below it; `shared` is never written | `Eval.addEscapeAt`, `ReadOff.escapeFacts`, `Holders.Escapes.escaped`, `Closures.escapedWrites`, `Stored`, `Contents.check`, `Host` | `run/SanitiserEscapedResult`, `run/SanitiserAnswerLeft` and others, **mutated** (`unescaped_off` 9 fixtures, `call_escape_off`, `escape_shallow`, `add_escape_drop`, `stored_off`, `contents_check_off`, `host_reach_off`, `escaped_writes_off`); `shared_writable`: `ownership/` goldens alone. `escape_unknown_off`: v1 parity alone (3 lines) | no file names it |
 | O9 | *Rows state their bodies.* A row is taken as given (§2.13.6). The index obligation of a `taken` result is pinned on each caller. P-sync and P1–P4, P7 hold of each runtime. Every fiber starter's row escapes its work | `Rows.fromWords`, `Taken`, `RowEnv`, `tests/corpus/ownership/p-sync.txt` | Trusted words: 19 of 27 **mutated** (`word_<w>`), `run/SanitiserTakenElement`, `run/SanitiserTimeoutAnswer`. `cellcomplete` **STALE** (113 lines), `entry` **STALE** (15), `taken_mark_off` **STALE** (15), `once` v1 parity alone. `builderdone`, `lentoptional`, `prepended`, `unused` **survive**, `unknown` is equivalent (#2188) | hypothesis A; the flip reports do not exist (G7) |
 | O10 | *Unknown is never empty.* Every empty read has a reason of Lemma E | the `⊤` fallbacks of `Relation.Eval.instAt`, `arrivalLeaves`, `Walk.Walker.project`; `PastPayload.prefix`, `Origin.leaves` | `run/SanitiserTopOrigin` **mutated** (`origin_leaves_off`), `run/SanitiserFamilyRead` **mutated** (`payload_read_off`, `empty_past_arrival`). `payload_prefix_off` alone **survives**: `PastPayload.read` answers the same read. `arrival_no_label_empty` **STALE** (4 lines). Eight fallbacks **survive**: no program reaches them (#2187) | **not kept by construction: G4** |
@@ -5182,7 +5320,7 @@ names are directories under `~/.cache/beni-agents/`, in `s214/probes/` where no 
 | G5 | F1: a cycle's reads end in the least fixed point | **Closed (#2146).** It was false on regular types: `Distinct.overlap` answered `no` to a pair in progress and **memoised what it computed under that cut**. `Pairs.zig` keeps no value before its component's head, found by entry number, has solved it (§2.9.2, *The fixed point of the pairs*); `kept`'s non-monotone equations are accumulated. `instBelow` and `expandRouted` cut with no `min_cut`, and no program reaches either: outside a group a fill's reads go to older points, and each panics under runtime safety if reached | `C11foldTwo`, `C7swap`, `C13param` (`review-2150/probes`), `run/SanitiserPairCycle*`: `TRAP` before, refused now, and `run/SanitiserPairCrossEdge*`, which a head by depth still lets through. A generator of 27 120 programs over this shape: 244 `TRAP`s to 0, and it did not find the cross edge, which needs an exact edge order. A model of 15 000 random join systems, 12 orders each: 55 wrong least fixed points and 71 order splits by depth, 0 and 0 by number. Those two cuts: 0 of 58 823 programs. The ledger's roots show nothing either way, which is a measure of the corpus | #2146 |
 | G6 | O2: a fast path answers what the plain reading answers (`aggregated`, `Operands`, `Stack`, `Descent`, `Graft`, `Kept`, `Twins`) | §2.8 argues each one. In v2, `-Downership-full-cross-check` covers `Kept` alone (`Kept.cross`; the spine is v1's), and no CI job or gate runs it | `.github/workflows/`, `build.zig:231` | #2147 |
 | G7 | §7 item 7: a rule mutation harness, and each trusted word's flip report (R-8.7, R-5.10.7) | *The harness and the flip reports run since 2026-11-07.* `rules_test` still checks that a header has the words, not that its `O`n exists or means this table's | `plans/own2-mutations.md`: 32 of 172 mutants fail no test, 9 are pinned by the net alone | #2148, #2187, #2188 |
-| G8 | S5: Theorem for records | §2.11.5 copies, no `update` demand exists, and the sanitiser has no record pass. The Theorem says nothing of a record write yet | §2.11.5, §7.3 | #1018 |
+| G8 | S5: Theorem for records | Since 2026-11-10 an `update` demand exists and is judged by field (§2.8, *Dead, by field*), but nothing enforces its verdict and the emitter copies, so the Theorem is not yet claimed of a record write: the lowering channel, the hoists' placement and the record sanitiser pass are S5b's, field sets in contracts and field captures S5's later steps | §2.11.5, §2.8, §7.3 | #1018 |
 | G9 | a call's value names its contract, across modules | an imported value called with arguments reads the value's contract | `review-2117b/probes/X4btop` | #2132 |
 | G10 | §2.3.3's `family` | a value's `family` is never set: `Walk.Walker.project` makes one only from one. Every family arm is dead, so the claim that a family stands for a step a position cannot name is no fact of the code | `grep`, census | #2149 |
 | G11 | the Theorem's (iv): a checked caller at every export | a `--library` export accepts `param` with no caller: JavaScript is the caller, and its next read traps | `review-2150/probes/Lib1` | #2151 |
@@ -5355,6 +5493,13 @@ A contract is immutable once read off; a join makes a new one. Its text (the dum
 and the delivery queue of §2.12.
 
 ### 3.6 Blocks (`Block.zig`): format v-next
+
+*Amended 2026-11-10 (#1018, S5a): one block for the two passes.* A module's interface holds one byte string for
+both passes of §2.11.5 (`Block.both`): one word, then the list pass's block, then the record pass's block, each
+as below. The word is the first block's length in words, and its top bit says that the record pass's block has
+the same bytes and is not written. An importer's pass reads its own part (`Block.part`), and bytes that are
+not of this form read as no block. A module whose record pass published none is unknown to an importer's
+record pass, and its codes read the pessimistic contract there.
 
 *Replaced 2026-11-02 (#1685): version 16, magic `OWN2`.* A block carries the module's public codes' contracts.
 It is a serialization of each contract's words, with every module-local id made canonical:
@@ -6312,7 +6457,7 @@ L0  Ids  Counters  Scratch
 | `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |
 | `NeedLeaves.zig` | 11 | where a closure with a need goes: an escape, a return, a call under no label, each refused (§2.11.3, *A closure that leaves*, #2116) | Ids, Value, Eval, Walk |
 | `Needs.zig` | 11 | a label's need published and discharged at each call, a caller's folds too (§2.11.3, *a need*, #2116; §2.1, #2223), a need on a supply discharged by `KeepsNot` (#2393), and a fold's handed accumulator carried on (#2386) | Ids, Slots, Contract, Distinct, LabelChain, NeedArrivals, NeedFolds, NeedCarry, KeepsNot, RunKeeps, CallFolds, SlotWords, Graft, Value, Eval, Walk |
-| `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
+| `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval, CallReq |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
 | `CaptureRuns.zig` | 9 | a known code's write of its own parameter that reaches, through the labels outward, a capture of an outer known code run more than once: `once` (§2.11.4, *a capture written through a label the code applies*, #2395); a closure a walked call runs and hands back, run again (§2.11.3, *runs add up*); split from `Closures` | Ids, Value, Relation, LabelChain, FnSite |
@@ -6323,6 +6468,7 @@ L0  Ids  Counters  Scratch
 | `FnSite.zig` | 8 | a function value that is one closure of the frame through callees' results, and the closures an escaped or returned result reaches through them, and whether a call hands one back (§2.11.3, *a closure handed back*, #2395) | Ids, Subtree, Contract, Relation |
 | `Virtual.zig` | 9 | a virtual call: a label's application to a known code, with its roots (§2.11.3, #2166) | Ids, BelowSize, Contract, Value, WalkContext |
 | `Construction.zig` | 8 | a construction over its base, split from `Walk` (§2.13.2) | Ids, Facts, Place, Value, Relation |
+| `Update.zig` | 8 | a record update over its base, its `update` demand, and the frame's field events with their queries (§2.7 *Field events*, §2.8 *Dead, by field*, §2.11.5), split from `Walk` | Ids, Place, Relation, Liveness |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, FnSite, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `AnswerRead.zig` | 9 | whether known code only reads what it runs a parameter for (§2.11.3, #2059) |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
@@ -6349,8 +6495,9 @@ L0  Ids  Counters  Scratch
 | `Callees.zig` | 12 | what a call runs and what a function reference is, the one reading of a block for a call, split from `Groups` (§2.11.1, §2.11.4) | Ids, Slots, Rows, Prepass, Walk |
 | `Family.zig` | 12 | which types share one place graph, from their declarations (§2.1, *A family*) | Bir |
 | `Groups.zig` | 10 | the module: adapters, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, VarOpen, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
-| `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6); the two passes' blocks as one (`both`, `part`) | Ids, Place, Slots, Contract, Groups |
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
+| `CallReq.zig` | 10 | a callee's `req` at a call, as a record's write relies on it and, in the record pass, as a list's does (§2.11.2 item 4, *A list's write beside a record's*, #1018), for `Outward` | Ids, Place, Contract, Value, Relation, Update, Distinct, MovedReq |
 | `ByStructure.zig` | 10 | a value at a supply's key, by its own structure (§2.1, *An arrival's level*) | Ids, Contract, Relation, Slots, Value |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
 | `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
@@ -6362,7 +6509,7 @@ L0  Ids  Counters  Scratch
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups, CallGraft |
 | `Report.zig` | 11 | dump lines and totals | Facts |
 | `Hoists.zig` | 11 | the lowering channel | Facts |
-| `Ownership.zig` | 12 | facade | Ids, Facts, ContractText, Groups, Block, Message, Report, Hoists, Counters |
+| `Ownership.zig` | 12 | facade: the list pass and the record pass of each module, their lines merged, one block for both (§2.11.5, *Two passes*) | Ids, Facts, ContractText, Groups, Block, Message, Report, Hoists, Counters, Mutate |
 | `Enforce.zig` | 13 | the driver hook, inputs, the interface's block | Ids, Facts, Groups, Block, Ownership, Report, Hoists, Message |
 | `rules_test.zig` | — | the layering gate | — |
 
@@ -6654,6 +6801,8 @@ are identical and nothing is written (R-7.11).
    `--only` a list of names). The table is `plans/own2-mutations.md`. No obligation has a mutant for each of its sentences, O7 has none (withdrawn),
    and O12 has one (only the list half exists until S5).
 8. **Lists independent of records** (R-8.6): `--ownership-records-lost` keeps every list line byte-identical.
+   *Since 2026-11-10 (S5a):* this holds by construction, because the list lines are the list pass's and the
+   record pass gives none (§2.11.5, *Two passes*; mutant `record_pass_lists`). The flag and its test are S5's later step.
 
 ---
 

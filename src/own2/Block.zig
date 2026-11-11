@@ -323,6 +323,33 @@ const Reader = struct {
     }
 };
 
+/// A module's two blocks as the one its interface holds (§3.6): one word, the list pass's block, the record pass's. The word is the first block's length in
+/// words; its top bit says that the record pass's block has the same bytes and is not written. No record block and no top bit: an importer's record pass reads no block.
+pub fn both(arena: Allocator, lists: ?[]const u8, records: ?[]const u8) Allocator.Error!?[]const u8 {
+    const a = lists orelse return null;
+    const same = records != null and std.mem.eql(u8, a, records.?);
+    const b: []const u8 = if (same) &.{} else records orelse &.{};
+    const out = try arena.alloc(u8, 4 + a.len + b.len);
+    std.mem.writeInt(u32, out[0..4], @as(u32, @intCast(a.len / 4)) | @as(u32, @intFromBool(same)) << 31, .little);
+    @memcpy(out[4..][0..a.len], a);
+    @memcpy(out[4 + a.len ..], b);
+    return out;
+}
+
+/// Whether both passes read one part of `bytes`: the top bit, or bytes that are no block for either pass.
+pub fn passesAgree(bytes: []const u8) bool {
+    return part(bytes, false).len == 0 or std.mem.readInt(u32, bytes[0..4], .little) >> 31 != 0;
+}
+
+/// The part of `both`'s bytes that a pass reads; empty when it has none, or the bytes are not `both`'s.
+pub fn part(bytes: []const u8, records: bool) []const u8 {
+    if (bytes.len < 4 or bytes.len % 4 != 0) return &.{};
+    const head = std.mem.readInt(u32, bytes[0..4], .little);
+    const n = @as(usize, head & 0x7fff_ffff) * 4;
+    if (n > bytes.len - 4) return &.{};
+    return if (!records or head >> 31 != 0) bytes[4..][0..n] else bytes[4 + n ..];
+}
+
 /// Decode a block's contracts into `t`, each validated by re-encoding; the
 /// contracts in the block's order.
 pub fn read(gpa: Allocator, words: []const u32, t: *Contract.Table, slots: *Slots.Table, places: *Place.Table, account: *Ids.Account, remap: Remap, out: *std.ArrayList(Contract.Id)) Error!void {

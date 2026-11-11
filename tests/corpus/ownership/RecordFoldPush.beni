@@ -1,0 +1,28 @@
+-- ownership: a list's write beside a record's write of one call
+-- (`ownership-v2.md` §2.11.5, *Two passes*; R-8.6: no list line reads a
+-- record fact).
+-- The callback of `pushed` updates the element that it is handed and pushes
+-- it onto the accumulator. The accumulator holds earlier elements of the
+-- same list, and nothing says that two elements of a list are two objects.
+-- So the update of the element is refused in the record pass. The push
+-- writes the accumulator's own array, which nothing else holds: accepted.
+-- In `twice` the list's own pair fails: `both` pushes onto `xs` and returns
+-- `ys`, and `twice` hands it one list as both. That push stays refused.
+type alias B =
+    x : Int
+
+
+bump : B → B
+bump b = { b | x = b.x + 1 }
+
+
+pub pushed : List B → List B
+pushed bs = List.foldl bs [] λb acc → List.push acc (bump b)
+
+
+both : B, List Int, List Int → B × List Int × List Int
+both b xs ys = ( { b | x = b.x + 1 }, List.push xs 1, ys )
+
+
+pub twice : B, List Int → B × List Int × List Int
+twice b xs = both b xs xs

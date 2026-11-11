@@ -216,7 +216,7 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
 pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Allocator.Error!Facts.Line {
     const d = l.demand;
     const o = l.outcome;
-    const op: []const u8 = switch (d.kind) {
+    const op: []const u8 = if (d.record) "update" else switch (d.kind) {
         .construction => "construction",
         .append => "++",
         .once => "once",

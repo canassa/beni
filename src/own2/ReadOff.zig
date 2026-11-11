@@ -110,7 +110,7 @@ fn valueBody(s: *Sink, v: u32, q: PathId, out: Put.ResList, stack: ?*std.ArrayLi
                 try Put.arrive(s, q, try Made.made(s, .{ .kind = .site, .atom = x.site }), out);
                 if (try hosted(s, try f.leaf(.{ .kind = .site, .atom = x.site }), q.int(), false, out)) try Put.arrive(s, q, .{ .kind = .host }, out);
             }
-            if (x.form == .list and x.head != 0) {
+            if ((x.form == .list or x.form == .record) and x.head != 0) {
                 var ls: std.ArrayList(u32) = .empty;
                 defer ls.deinit(gpa);
                 try e.ev.storageOf(x.head - 1, 0, &ls);
@@ -870,10 +870,10 @@ fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
     return s.host.reaches(&e.ev, e.escapes.items, 0, li, Distinct.overlap);
 }
 
-/// A demand's written parameter slots (whatever its verdict).
+/// A demand's written parameter slots (whatever its verdict). A record's write that a label's hold refuses is none: it is refused where it is made (§2.11.5).
 fn demandFacts(e: *Evaluation, di: usize) Error!void {
-    if (@import("Mutate.zig").on(.contract_no_writes)) return;
     const dm = e.demands.items[di];
+    if (@import("Mutate.zig").on(.contract_no_writes) or (dm.record and dm.kept)) return;
     if (dm.graft[0] != Ids.none_int) {
         const eff: Contract.Effect = .{ .j = dm.graft[0], .slot = dm.graft[1], .node = dm.graft[2] };
         if (try Contract.Draft.addEffect(&e.sink.d.writes, e.sink.arena, eff)) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, true, eff);
@@ -925,10 +925,10 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         }
         try readsDeep(s, b.value, f.slots.relWords(rel), pass);
     }
+    try @import("Update.zig").objects(w, s, paramEffects); // a record's object, read by a field read or an update (§2.7)
     // Writes: every demand's parameter targets, whatever its verdict.
     for (0..e.demands.items.len) |di| try demandFacts(e, di);
-    // Escapes, deep.
-    // By index: an escape made meanwhile is read off when it is made.
+    // Escapes, deep. By index: an escape made meanwhile is read off when it is made.
     const n_esc = e.escapes.items.len;
     for (0..n_esc) |i| try paramEffects(s, e.escapes.items[i].leaf, true, .escapes);
     // Labels: the direct ones with their arguments, the passed-on ones with

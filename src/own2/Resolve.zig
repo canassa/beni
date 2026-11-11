@@ -48,6 +48,7 @@ const HoldAt = @import("HoldAt.zig");
 const Kept = @import("Kept.zig");
 const Parts = @import("Parts.zig");
 const Twins = @import("Twins.zig");
+const Update = @import("Update.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -341,7 +342,7 @@ const Resolver = struct {
         const fr = r.f();
         const g = r.gpa();
         try fr.charge(.demand, 1);
-        r.uses.clear();
+        r.uses.clear(if (d.record) d.fields else null);
         var line: Line = .{ .demand = d, .outcome = .{} };
         const o = &line.outcome;
         const targets = w.leavesOfRun(d.targets);
@@ -444,13 +445,13 @@ const Resolver = struct {
                     // its own.
                     if (Cells.behindCell(x.r.f().places, q)) return;
                     const u = use.?;
-                    const idx = &x.r.e.w.index;
+                    const idx = x.r.e.w;
                     switch (ov.kind) {
                         .no => {},
                         .under => try x.relied.add(x.r.gpa(), x.r.account(), ov.cond),
                         .may => if (x.best.*) |bh| {
-                            const up = idx.get(u).point;
-                            const bp = idx.get(bh.use).point;
+                            const up = Update.pointOf(idx, u);
+                            const bp = Update.pointOf(idx, bh.use);
                             // At one use of one holder, an exact hold before one at
                             // or below a `[*]` or a `⟲` (*Verdicts*), else the first.
                             const pl = x.r.f().places;
@@ -471,7 +472,7 @@ const Resolver = struct {
             bs.clearRetainingCapacity();
             const aggregating = try r.bucketsOf(t, &bs);
             try r.live.begin(r.ev(), bs.items);
-            while (try r.live.next(r.ev(), if (best) |bh| w.index.get(bh.use).point else std.math.maxInt(u32))) |hi| {
+            while (try r.live.next(r.ev(), if (best) |bh| Update.pointOf(w, bh.use) else std.math.maxInt(u32))) |hi| {
                 c.h = r.live.holders.items[hi].local;
                 const hds = r.live.holdsOf(hi);
                 try r.heldAt(hi, try r.tags.meeting(g, r.account(), &fr.sets.tags, hi, hds.len, HoldTags{ .f = fr, .hs = hds }, fr.leafAt(t).tags), t, d.point, visit);
@@ -484,7 +485,7 @@ const Resolver = struct {
             refuse(o, if (bh.h == base_local) .later_use else if (clos.kind == .built and clos.form == .closure) .captured else .alias);
             o.holder_path = bh.q;
             line.holder = .{ .kind = .binding, .who = bh.h, .token = w.bindings[bh.h].token };
-            line.use_token = w.bir.insts.items(.main_token)[w.index.get(bh.use).point];
+            line.use_token = w.bir.insts.items(.main_token)[Update.pointOf(w, bh.use)];
             if (outs.items.len > 1) o.exactness = .approximate;
             return line;
         }
@@ -502,6 +503,7 @@ const Resolver = struct {
         try r.ops.writes.appendSlice(g, writes.items);
         if (r.aggregate) try r.stack.accept(r.ev(), d.pending, d.point, targets, Holders.paramTarget);
         line.extra = try relied.cond(r.ev().arena, r.account());
+        line.hoisted = r.uses.hoists;
         r.e.ev.f.account.in_demands = false;
         return line;
     }

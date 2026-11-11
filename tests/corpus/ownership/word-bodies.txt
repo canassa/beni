@@ -283,6 +283,7 @@ core/List.beni                List.treeRight      b2e19afd38f659ab811b1b8903cb67
 core/List.beni                List.rightGrow      02be384e61c64fb0a7f7bc8b0045556b22afe611f3f1e5c67d627f5308c11459
 core/List.beni                List.twoTo          68767a991f14e47a1887c247b6cc4c4c1a66cf5339e8910e87db6f16a32d70ea
 core/List.beni                List.copy           783a7a1af5d026d8926ea60a6993dfee60244e28035de7953215f5f28bb5f5a2
+core/Record.beni              Record.copy         63d10e2ca8d71cb466b12031da01abc7723fed22f27e2582fd0caeb62325576c
 core/List.beni                List.plainOf        50e673fd3a34d122bc7cac5c74b2b2354526df336e4b3f8999c686e561df2948
 core/List.beni                List.triePushed     51f692fddaff6c37093d4082c76d0a07fb581c90892adba38777315c5d1f89d7
 core/List.beni                List.fillTail       4324642e605f5505f297b954e5a623ce16b4bcc6da49a83dbbc1f40ff9d84793

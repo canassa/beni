@@ -1,0 +1,9 @@
+module RecordCopy
+  17:19 construction copy.items: rejected alias: box.items holds it and is read at 17:38
+  23:19 construction <call List.copy>: accepted fresh
+  27:15 update <call Record.copy>: accepted fresh
+  demands 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 1: accepted 1, rejected 0
+total 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 1: accepted 1, rejected 0
+cause alias 1

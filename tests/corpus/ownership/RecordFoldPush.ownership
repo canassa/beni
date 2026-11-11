@@ -1,0 +1,19 @@
+module RecordFoldPush
+  16:10 update b: accepted param
+  20:13 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  20:13 update bs[*]: accepted param (List.foldl writes it)
+  20:39 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  20:54 update b: accepted callback-param (List.foldl supplies it owned)
+  24:18 update b: accepted param
+  24:39 List.push xs: accepted param
+  28:14 call RecordFoldPush.both xs: rejected disjoint: another operand of the same operation reaches it (RecordFoldPush.both writes π2)
+  28:14 update b: accepted param (RecordFoldPush.both writes it)
+  summary bump: π1 W{x}, π1.x R; res π1◦
+  summary pushed: π1 R, π1[*] W{x}; res [*] ~π1[*]◦, ~fresh1r{lost}; rxreq excl π1
+  summary both: π1 W{x}, π1.x R, π2 RAW[storage], π2[*] A, π3 RA; res .0 π1◦, .1 condition(fresh2) π2, .1[*] ~condition(fresh3) ~π2[*], .2 ~condition(fresh4) π3, condition(fresh1){sep π2 π3, sep π2[*] π3}r{sep π1 π2[*]}
+  summary twice: π1 W{x}, π1.x R, π2 RAW[storage], π2[*] RA; res .0 π1◦, .1 condition(fresh2) π2, .1[*] ~condition(fresh3) ~π2[*], .2 ~condition(fresh4) π2, condition(fresh1){shared}r{sep π1 π2[*]}
+  demands 4: accepted 3 (fresh 1, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 4: accepted 3 (fresh 1, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+cause disjoint 1

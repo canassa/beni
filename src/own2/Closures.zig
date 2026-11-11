@@ -24,6 +24,7 @@ const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
 const FnSite = @import("FnSite.zig");
 const CaptureRuns = @import("CaptureRuns.zig");
+const Update = @import("Update.zig");
 
 const none: u32 = Ids.none_int;
 
@@ -99,6 +100,7 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
                 .deep = wr.deep,
                 .callback = true,
                 .many = wr.j >= sig.own,
+                .record = f.records and !wr.deep and if (wr.j < sig.own) Update.recordParam(f, sig.params, wr.j, f.slots.relWords(wr.slot)) else Update.recordAt(f, caps[wr.j - sig.own], f.slots.relWords(wr.slot)),
             });
         }
     }

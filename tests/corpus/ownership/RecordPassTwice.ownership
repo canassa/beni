@@ -1,0 +1,14 @@
+module RecordPassTwice
+  15:9 List.push rec.a: rejected later-use: rec.a is read again at 16:14
+  16:16 update rec: accepted once
+  23:16 call RecordPassTwice.keep shared.a: rejected later-use: shared.a is read again at 24:5 (RecordPassTwice.keep writes π1.a)
+  23:16 update shared: rejected later-use: shared is read again at 24:5 (RecordPassTwice.keep writes it) [copy]
+  23:33 List.push s.a: rejected supply: RecordPassTwice.keep supplies its parameter 1 borrowed (⊤) (approx)
+  summary keep: π1 RW{a}, π1.a RAW[storage], π1.a[*] RA, π2 R; res .0 cb2{excl cb2}r{excl cb2} ~condition(fresh2), .1 condition(fresh3) π1.a, .1[*] ~condition(fresh4) ~π1.a[*], condition(fresh1){sep π1.a cb2, sep π1.a[*] cb2}r{sep π1.a[*] cb2}; π2 calls ≤1, supply 1 ⊤ borrowed{lost}r{lost}, supply 1.a fresh borrowed{lost}r{lost}
+  summary twice: π1 RAW{a}, π1.a RAW[storage], π1.a[*] RA, π1.b R; res .0 fresh5{lost}r{lost} ~condition(fresh1) ⊤{lost}r{lost}, .0[*] ~condition(fresh2) ~fresh2{lost}r{lost}, .1 condition(fresh3) ~condition(fresh7) π1.a, .1[*] ~condition(fresh4) ~π1.a[*], .2 ~condition(fresh8) π1, condition(fresh6){shared}r{shared}
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+  records 2: accepted 1, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+records 2: accepted 1, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+cause later-use 2
+cause supply 1

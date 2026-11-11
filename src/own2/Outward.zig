@@ -1,7 +1,7 @@
 //! L11: what the labels outward of a virtual call add
 //! (`docs/design/ownership-v2.md` §2.11.2 item 4, §2.11.3). A demand a
 //! known code's call makes relies on its callee's `req`, instantiated at
-//! the call, and on each label its supply comes through (`LabelChain`):
+//! the call (`CallReq`), and on each label its supply comes through (`LabelChain`):
 //! their supplies' conditions and a `taken` row's container occurrences
 //! (#1758, #1760). A label the frame passes on inside such a code takes the
 //! same of every label outward for its own supplies (#1721).
@@ -15,7 +15,7 @@ const SlotWords = @import("SlotWords.zig");
 const Contract = @import("Contract.zig");
 const RowEnv = @import("RowEnv.zig");
 const LabelChain = @import("LabelChain.zig");
-const MovedReq = @import("MovedReq.zig");
+const CallReq = @import("CallReq.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const CellEdit = @import("CellEdit.zig");
@@ -31,14 +31,13 @@ const none: u32 = Ids.none_int;
 /// after the group's facts are delivered, the distinct check reads them whole.
 pub fn finishDemands(e: *Evaluation) Error!void {
     const f = e.fr();
-    const req_of = try e.ev.arena.alloc(?Cond, f.calls.items.len);
+    const req_of = try e.ev.arena.alloc(?[2]Cond, f.calls.items.len);
     @memset(req_of, null);
     for (e.demands.items) |*d| {
         if (d.call == none or @import("Mutate.zig").on(.relies_off)) continue;
         const call = f.calls.items[d.call];
-        const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
-        if (req_of[d.call] == null) req_of[d.call] = (try MovedReq.of(&e.ev, call, c)) orelse try Distinct.reqOn(&e.ev, c, d.call);
-        d.relies = req_of[d.call].?;
+        if (req_of[d.call] == null) req_of[d.call] = try CallReq.of(&e.ev, call, d.call);
+        d.relies = req_of[d.call].?[@intFromBool(!d.record)];
         const held = e.contracts.head(call.contract).flags.taken_write;
         if (held and !@import("Mutate.zig").on(.taken_mark_off) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
         if (!call.virtual or d.wslot == none) continue;

@@ -1,0 +1,16 @@
+module RecordPassTwice
+  15:9 List.push rec.a: rejected alias: rec.a holds it and is read at 16:9
+  16:9 update rec: accepted param
+  16:16 update rec: accepted param
+  17:9 update <call>: accepted param
+  23:16 RecordPassTwice.keep shared.a: rejected later-use: shared is read again at 24:5
+  23:16 RecordPassTwice.keep <call RecordPassTwice.keep>: accepted callback-param
+  23:16 update shared: rejected later-use: shared is read again at 24:5
+  23:16 update shared.a: rejected call: RecordPassTwice.keep still holds it when it runs the function
+  23:33 List.push s.a: accepted param
+  demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 2
+  records 5: accepted 3, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 2
+records 5: accepted 3, rejected 2
+cause later-use 1
+cause alias 1

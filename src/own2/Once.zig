@@ -53,6 +53,7 @@ pub fn demands(e: *Eval.Evaluation) Eval.Error!void {
                 .write_path = write_path,
                 .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
                 .deep = wr.deep,
+                .record = f.records and !cell and !wr.deep and @import("Update.zig").isRecord(f, try e.ev.valueAt(caps[wr.j - sig.own], f.slots.relWords(wr.slot))),
             });
         }
     }

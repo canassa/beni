@@ -179,6 +179,8 @@ fn flatAt(uses: *Later.Uses, h: u32, c: PathId, point: u32) Error!bool {
     const w = uses.w;
     const fr = &w.f;
     const g = fr.gpa;
+    // An update's later uses are by field (`Later.Uses.update`): each path is asked.
+    if (uses.update != null) return false;
     if (w.index.lastUse(h) == none or w.index.lastUse(h) <= point) return true;
     var memo: Ids.FixedDict(1) = .{};
     defer memo.deinit(g);
@@ -224,7 +226,7 @@ fn cover(uses: *Later.Uses, u: Facts.Use, c: PathId) Error!Cover {
     for (rems) |rem| {
         const rw = fr.slots.relWords(rem);
         try fr.charge(.inspection, @intCast(rw.len + 1));
-        switch (coverAt(uses, hd, foot[1], rw)) {
+        switch (coverAt(uses, hd, foot[1], rw, if (fr.records) fr.places.pathPlace(u.path) else .none)) {
             .all => return .all,
             .some => got = .some,
             .none => {},
@@ -234,7 +236,7 @@ fn cover(uses: *Later.Uses, u: Facts.Use, c: PathId) Error!Cover {
 }
 
 /// `cover` at one slot `rw` of the callee's parameter `j`.
-fn coverAt(uses: *Later.Uses, hd: anytype, j: u32, rw: []const u32) Cover {
+fn coverAt(uses: *Later.Uses, hd: anytype, j: u32, rw: []const u32, at: Ids.PlaceId) Cover {
     const fr = &uses.w.f;
     var got: Cover = .none;
     for (uses.contracts.readsOf(hd.reads)) |r| if (r[0] == j) switch (readCover(&uses.contracts.trees, fr.places, r[1], rw)) {
@@ -244,19 +246,22 @@ fn coverAt(uses: *Later.Uses, hd: anytype, j: u32, rw: []const u32) Cover {
     };
     // A write at `c` or above it is all of it; one only below it, some.
     for (uses.contracts.writesOf(hd.writes)) |r| if (r[0] == j) {
-        if (writtenAbove(&uses.contracts.trees, fr.places, r[1], rw)) return .all;
-        if (Later.writeMeets(&uses.contracts.trees, fr.places, r[1], rw)) return .some;
+        if (writtenAbove(&uses.contracts.trees, fr.places, r[1], rw, at)) return .all;
+        if (Later.writeMeets(&uses.contracts.trees, fr.places, r[1], rw, at)) return .some;
     };
     return got;
 }
 
 /// Whether write tree `n0` writes the slot `words` below its root or a
 /// prefix of it: the walk down its steps, charged by the caller.
-fn writtenAbove(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32) bool {
+/// `at0`: the place of the tree's root (`Later.writeMeets`): a record's plain write is none of what it holds.
+fn writtenAbove(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32, at0: Ids.PlaceId) bool {
     var n = n0;
+    var at = at0;
     for (words) |w| {
-        if (t.here(n).len != 0 or t.open(n).len != 0) return true;
+        if ((t.here(n).len != 0 and !(at != .none and places.kind(at) == .record)) or t.open(n).len != 0) return true;
         n = t.kidAt(n, w) orelse return t.rowReaches(places, n, w);
+        if (at != .none) at = places.child(at, Place.Step.fromWord(w)) orelse .none;
     }
     return t.here(n).len != 0 or t.open(n).len != 0;
 }

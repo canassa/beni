@@ -1,0 +1,24 @@
+-- ownership: two refusals with one text at one call
+-- (`ownership-v2.md` §2.11.5, *Two passes*). `keep` pushes onto `rec.a`
+-- itself, and `twice` reads `shared` again: the list pass refuses that
+-- write of `shared.a`. In the record pass the callback's push is a second
+-- write of `shared.a` at the same call, refused because `keep` still holds
+-- the record. Only the record pass has that second refusal. Each refusal
+-- of the list pass stands for one refusal of the same text in the record
+-- pass, so the second one is said, as an `update` line.
+type alias L =
+    List Int
+
+
+keep : { r | a : L }, ({ r | a : L } → x) → x × L
+keep rec f =
+    z = List.push rec.a 0
+    g = λ⊤ → f { rec | a = [] }
+    y = g ⊤
+    ( y, z )
+
+
+pub twice : { a : L, b : L } → L × L × { a : L, b : L }
+twice shared =
+    ( y, r ) = keep shared λs → List.push s.a 1
+    ( y, r, shared )

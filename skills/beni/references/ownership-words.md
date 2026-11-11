@@ -27,6 +27,8 @@ The result selectors and a stored callback need these words:
   `at : borrowed List a, borrowed Int → elementof a`.
 - `copyof`: the result is a fresh copy of the storage of the first
   parameter, which is `borrowed`: `copy : borrowed List a → copyof List a`.
+  The first parameter and the result are lists with one element type, or
+  records of one type: `copy : borrowed { r | } → copyof { r | }`.
 - `prepended`: the result is the first parameter in front of the second.
   There are exactly two parameters: `cons : stored a, returned List a →
   prepended List a`.

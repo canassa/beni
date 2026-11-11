@@ -28,6 +28,22 @@ pub const Name = enum {
     recons_front_any,
     /// Cost only (§4.1): a call's mixed condition is instantiated again at each asking, not once (#2418).
     mixed_memo_off,
+    /// O7: a record update's value is a new object, not its base's.
+    update_fresh_site,
+    /// O7: an update asks no field event: no later update and no read of a written field is found.
+    update_no_events,
+    /// O7: a field read or an update of a parameter's record is no read of its object in the contract.
+    update_reads_off,
+    /// §2.11.2 item 4: a list's write relies on the callee's whole `req`, a record's pairs with it.
+    list_req_whole,
+    /// R-8.6 (§2.11.5, *Two passes*): a refusal that only the record pass has stays a list line, so a list verdict reads the record pass.
+    record_pass_lists,
+    /// §2.11.5: a refusal that only the record pass has, on a demand that is no record demand, is dropped.
+    record_refusal_lost,
+    /// §2.11.5, *Two passes*: the record pass never runs, so no update has a line and a block says that both passes agree.
+    record_pass_off,
+    /// §2.11.5, §2.13.7: a cell callback's update of the contents' own record is an edit in place, as a list's is.
+    cell_record_edit,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

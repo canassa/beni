@@ -1,0 +1,3 @@
+A record update is a write under the checker v2 (ownership-v2.md §2.11.5, §2.8 Dead, by field; #1018): v2 reports its own
+record lines here. They are reported and not yet enforced, and they differ from v1's where v2 judges a write at
+another demand or has not built a rule yet (field captures, a field set in a contract).
