@@ -1,0 +1,19 @@
+module RecordStoresTopLevel
+  32:11 update s: accepted param
+  36:16 update s: accepted param
+  40:16 update s: accepted param (RecordStoresTopLevel.set writes it)
+  44:14 update <record>: accepted fresh (RecordStoresTopLevel.set writes it)
+  48:19 update s: accepted param (RecordStoresTopLevel.setModel writes it)
+  52:12 update s: accepted param
+  56:18 update s: accepted param (RecordStoresTopLevel.set writes it)
+  summary set: π1 W{count, last}, π1.count R, π2 RA; res .last π2, π1◦
+  summary setModel: π1 W{count, last}, π1.count R, π2 RA; res .last fresh501◦, .last.list fresh1, .last.model π2, π1◦
+  summary paramState: π1 W{count, last}, π1.count R; res .last fresh501◦, .last.list fresh1, .last.model shared(RecordStoresTopLevel.empty), .last.model.items shared(RecordStoresTopLevel.empty).items, π1◦
+  summary newState: π1 R; res .last fresh502◦, .last.list fresh1, .last.model shared(RecordStoresTopLevel.empty), .last.model.items shared(RecordStoresTopLevel.empty).items, fresh501◦
+  summary wholeTopLevel: π1 W{count, last}, π1.count R; res .last fresh501◦, .last.list fresh1, .last.model shared(RecordStoresTopLevel.empty), .last.model.items shared(RecordStoresTopLevel.empty).items, π1◦
+  summary inline: π1 W{count, last}, π1.count R; res .last fresh501◦, .last.list fresh1, .last.model shared(RecordStoresTopLevel.empty), .last.model.items shared(RecordStoresTopLevel.empty).items, π1◦
+  summary noTopLevel: π1 W{count, last}, π1.count R, π2 RA; res .last fresh501◦, .last.list fresh1, .last.model π2, π1◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
