@@ -2836,6 +2836,130 @@ test "ownership v3: the faults of round 2 are refused" {
     }
 }
 
+// The faults that a search by hand found after the convergence test of
+// research report 112 (§6.3). The test's family has flat lists only. These
+// are about the match between two readings of one type, and about an answer
+// that the callee cannot know.
+//
+// - `wider`: `idp : a → a` goes to a parameter of the type `List (List Int)
+//   → List (List Int)`. Its one location, the type variable, stands for the
+//   outer list and for each inner list. The prototype matched the two types
+//   in one direction: the inner lists of the answer had no holder.
+//   `widerDead` is the safe twin, and it stays accepted.
+// - `below`: the holder's type is the wider one (`a → a`), and the function
+//   (`List b → List b`) has a variable one level down. The part of the
+//   argument that the variable stands for is each list below that place.
+// - `answerAndArgument`, `answerTwice`: the contract of the callee says that
+//   the two parts of its result are apart. The callee does not know its
+//   function. The caller does: the function answers its parameter, so the
+//   two parts are one list.
+//
+// The prototype that passed the first gate accepted each of the 13 demands.
+test "ownership v3: the faults that a search by hand found are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Hand.beni",
+        \\import List
+        \\
+        \\
+        \\idp : a → a
+        \\idp v =
+        \\    v
+        \\
+        \\
+        \\run2 : (List (List Int) → List (List Int)), List (List Int) → List (List Int)
+        \\run2 f v =
+        \\    f v
+        \\
+        \\
+        \\pub wider : Int → Int
+        \\wider c =
+        \\    inner = [ c ]
+        \\    qq = [ inner ]
+        \\    r = run2 idp qq
+        \\    w = List.update r 0 λm → List.push m 9
+        \\    List.length w + List.length inner
+        \\
+        \\
+        \\pub widerDead : Int → Int
+        \\widerDead c =
+        \\    inner = [ c ]
+        \\    qq = [ inner ]
+        \\    r = run2 idp qq
+        \\    w = List.update r 0 λm → List.push m 9
+        \\    List.length w
+        \\
+        \\
+        \\app : (a → a), a → a
+        \\app f v =
+        \\    f v
+        \\
+        \\
+        \\keepL : List b → List b
+        \\keepL ys =
+        \\    List.take ys 99
+        \\
+        \\
+        \\pub below : Int → Int
+        \\below c =
+        \\    inner = [ c ]
+        \\    r = app keepL [ [ inner ] ]
+        \\    w =
+        \\        case r of
+        \\            [ [ m, …_ ], …_ ] →
+        \\                List.push m 9
+        \\
+        \\            _ →
+        \\                []
+        \\    List.length w + List.length inner
+        \\
+        \\
+        \\withBoth : (List Int → List Int), List Int → List Int × List Int
+        \\withBoth f xs =
+        \\    ( f xs, xs )
+        \\
+        \\
+        \\pub answerAndArgument : Int → Int
+        \\answerAndArgument c =
+        \\    r = withBoth (λl → l) [ c ]
+        \\    v = [ r.0, r.1 ]
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
+        \\
+        \\twoCalls : (List Int → List Int), List Int → List Int × List Int
+        \\twoCalls f xs =
+        \\    a = f xs
+        \\    b = f xs
+        \\    ( a, b )
+        \\
+        \\
+        \\pub answerTwice : Int → Int
+        \\answerTwice c =
+        \\    r = twoCalls (λl → l) [ c ]
+        \\    v = [ r.0, r.1 ]
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Hand.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  19:9 call List.update r: accepted call\n",
+        "  19:9 call List.update r[*]: rejected later-use: it is read again at 20:21 (<call List.length>)\n",
+        "  28:9 call List.update r[*]: accepted call\n",
+        "  49:17 List.push m: rejected later-use: it is read again at 53:21 (<call List.length>)\n",
+        "  65:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  80:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "total 13: accepted 9 (fresh 2, call 3, param 0, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 4\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
 // The accepted twins of the same fixtures stay accepted: the rules that
 // refuse the 19 programs do not refuse the programs beside them, where each
 // write is safe.
