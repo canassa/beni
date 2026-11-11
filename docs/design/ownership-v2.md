@@ -6960,6 +6960,12 @@ are identical and nothing is written (R-7.11).
    record that its receiver hands it (`run/SanitiserRowChain` and its accepted twin). v1 holds the update
    pending; v2 judges it at the receiver's call. The accepted twin has the marker `.in-place-v2` now: it
    runs with its records in place under the sanitiser. 52 are `open`.
+
+   *Twelfth step of #2477 (2026-11-11):* 18 more are lines where v2 accepts an update's own line that v1
+   refuses or holds pending, with the lines beside them (`ownership/MaybeDefault`, `browser/tea/BallMachine`,
+   `run/SanitiserRowKept`, `run/SanitiserRecordForwardedInList`). In each one v2 refuses the closure or the
+   call beside that line, so neither checker accepts the write. With this step no `open` line is left where
+   v2 accepts a write that v1 refuses or holds pending. 34 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
