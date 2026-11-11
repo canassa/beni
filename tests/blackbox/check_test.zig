@@ -2659,9 +2659,11 @@ test "ownership v3: a function that a lambda captured is judged where the lambda
 //   parameter and as a callee.
 // - `later`: a local function that an earlier local function calls.
 // - `selfPass`: a local function that hands itself to `List.map`.
-// - `capEsc`: a closure that puts a captured list into a cell.
+// - `capEsc`, `capEsc2`: a closure that puts a captured list into a cell,
+//   handed to `List.map` as it is, and answered by a function first.
+// - `ansTwice`: one answer of a function parameter at two elements of a list.
 //
-// The last five are not in a sweep: the rule predicted them.
+// The last seven are not in a sweep: the rule predicted them.
 test "ownership v3: the faults of round 2 are refused" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -2775,6 +2777,35 @@ test "ownership v3: the faults of round 2 are refused" {
         \\    k2 = List.push k 9
         \\    List.length k2 + List.length (Ref.get r)
         \\
+        \\
+        \\keepIn : Ref (List Int), List Int → (Int → Int)
+        \\keepIn r k =
+        \\    λx →
+        \\        Ref.set r k
+        \\        x
+        \\
+        \\
+        \\pub capEsc2 : Int → Int
+        \\capEsc2 c =
+        \\    k = [ c ]
+        \\    r = Ref.make []
+        \\    _ = List.map [ 1 ] (keepIn r k)
+        \\    k2 = List.push k 9
+        \\    List.length k2 + List.length (Ref.get r)
+        \\
+        \\
+        \\dupTwice : (List Int → List Int), List Int → List (List Int)
+        \\dupTwice f xs =
+        \\    r = f xs
+        \\    [ r, r ]
+        \\
+        \\
+        \\pub ansTwice : Int → Int
+        \\ansTwice c =
+        \\    v = dupTwice (λl → List.push l 1) [ c ]
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Round2.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
@@ -2791,6 +2822,12 @@ test "ownership v3: the faults of round 2 are refused" {
         // `selfPass`: the lists of the deeper nodes are a demand on `t` too.
         "  95:9 call walk t⟨List⟩: rejected later-use: it is read again at 96:13 (<call Round2.sum>)\n",
         "  107:10 List.push k: rejected escaped: it escaped before the write\n",
+        // `capEsc2`: the function that answers the closure lets its parameter escape.
+        "  123:10 List.push k: rejected escaped: it escaped before the write\n",
+        // `ansTwice`: the two elements are one answer of `f`.
+        "  136:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        // Report 111's prototype accepted each of the 14 demands that it made here.
+        "total 24: accepted 14 (fresh 2, call 1, param 0, callback-param 11, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
