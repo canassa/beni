@@ -106,9 +106,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 // A declaration v2 does not check (a construct not built yet, a
                 // limit) names its lines, so a verdict diff can tell a demand it
                 // did not check from one it missed (`bench/ownership-everywhere.mjs`).
-                if (in.format_summaries and first and dr.failure != null) {
+                if (in.format_summaries and dr.failure != null) {
                     const span = declLines(in.names, mi, d);
-                    try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (limit)", .{ name, span[0], span[1] }));
+                    try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} ({s}limit)", .{ name, span[0], span[1], if (records) "record-pass " else "" }));
                 }
                 if (dr.failure) |f| {
                     // The record pass past its limit: no line accepts an update of it, and its limit is a limit as a list's is (§2.8).

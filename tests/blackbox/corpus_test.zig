@@ -414,6 +414,30 @@ test "an in-place probe reads only the errors of a build" {
     try testing.expect(Case.onlyOwnership("[" ++ own ++ "]", false));
 }
 
+test "the parity net compares record lines" {
+    // `ownership-v2.md` §7, point 2 (#1018): a record line is compared as a list line is.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const root = "parity-test";
+    // An expected difference prints nothing.
+    quiet = true;
+    defer quiet = false;
+    // The same verdict on each side, and v2's one line of two bases against v1's line for each base.
+    const v1 = "module M\n  3:5 update a: accepted param (M.f writes it)\n  3:5 update b: accepted param (M.f writes it)\n";
+    try Case.parityOf(arena, root, root, v1, "module M\n  3:5 update a, b: accepted param\n");
+    // Another verdict for one base is a difference, and so is a record line that one side does not have.
+    try testing.expectError(error.OwnershipV2Differs, Case.parityOf(arena, root, root, v1, "module M\n  3:5 update a, b: rejected alias: x holds it\n"));
+    try testing.expectError(error.OwnershipV2Differs, Case.parityOf(arena, root, root, v1, "module M\n  3:5 update a: accepted param\n"));
+    // A declaration past the record pass's limit: v1's record lines there have no verdict to compare.
+    const limit = "module M\n  unchecked f: lines 2-4 (record-pass limit)\n";
+    try Case.parityOf(arena, root, root, v1, limit);
+    // The list pass checked that declaration, so a list line there is compared.
+    try testing.expectError(error.OwnershipV2Differs, Case.parityOf(arena, root, root, v1 ++ "  4:9 List.push xs: accepted fresh\n", limit));
+    // Outside the declaration's lines, a record line is compared.
+    try testing.expectError(error.OwnershipV2Differs, Case.parityOf(arena, root, root, v1 ++ "  9:5 update c: accepted param\n", limit));
+}
+
 /// `tests/blackbox/ownership-v2-known.txt`, the justified v1/v2 differences,
 /// read once per process: each entry's key (`<root> <module> <line:col> ::
 /// <demand> :: <v1> :: <v2>`) and whether a case used it, for `walk`'s
@@ -4364,12 +4388,16 @@ const Case = struct {
             if (std.mem.startsWith(u8, l, "module ")) module = l["module ".len..];
             const t = std.mem.trim(u8, l, " ");
             if (!std.mem.startsWith(u8, t, "unchecked ")) continue;
-            if (!limits_allowed and std.mem.endsWith(u8, t, "(limit)")) known: {
+            // The record pass's limit is a limit as a list's is (§2.8): a failure, or a known line of its own.
+            const records = std.mem.endsWith(u8, t, record_limit);
+            // A declaration that the list pass did not check has no second limit in the record pass.
+            if (records and std.mem.indexOf(u8, dump, try std.fmt.allocPrint(arena, "  {s}(limit)\n", .{t[0 .. t.len - record_limit.len]})) != null) continue;
+            if (!limits_allowed and (records or std.mem.endsWith(u8, t, "(limit)"))) known: {
                 const decl = t["unchecked ".len..][0 .. std.mem.indexOfScalar(u8, t["unchecked ".len..], ':') orelse 0];
                 // Only the summary-size limit is ever known: an accounting
                 // invariant is a defect and always fails.
-                const size = std.mem.indexOf(u8, dump, try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size\n", .{decl})) != null;
-                if (size and (try knownDifferences()).use(try std.fmt.allocPrint(arena, "{s} {s} limit {s}", .{ root, module, decl }))) break :known;
+                const size = std.mem.indexOf(u8, dump, try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size{s}\n", .{ decl, if (records) " (record pass)" else "" })) != null;
+                if (size and (try knownDifferences()).use(try std.fmt.allocPrint(arena, "{s} {s} {s}limit {s}", .{ root, module, if (records) "record-pass " else "", decl }))) break :known;
                 detail("{s}: the checker v2 reached a limit: {s}\n", .{ name, t });
                 return error.OwnershipV2Limit;
             }
@@ -4397,18 +4425,15 @@ const Case = struct {
                 const other = y.find(d);
                 if (other) |o| {
                     if (side == 1 or o.refused == d.refused) continue;
-                } else if (y.unchecked(d.module, d.line)) continue;
-                // Record demands, either side's: v2 reports them and does not
-                // enforce them until its lowering reads them, and its record
-                // rules are built slice by slice (`ownership-v2.md` §8, S5;
-                // #1018). The slice that enforces them compares them here.
-                // Until then v2's goldens pin its record lines. By demand kind only.
-                if (std.mem.startsWith(u8, d.demand, "update ")) continue;
+                } else if (y.unchecked(d)) continue;
                 const v1_verdict = if (side == 0) d.verdict else if (other) |o| o.verdict else "absent";
                 const v2_verdict = if (side == 1) d.verdict else if (other) |o| o.verdict else "absent";
                 const key = try std.fmt.allocPrint(arena, "{s} {s} {s} #{d} :: {s} :: {s} :: {s}", .{ root, d.module, d.pos, d.k, d.demand, v1_verdict, v2_verdict });
                 if (known.use(key)) continue;
-                try wrong.print(arena, "{s}\n", .{key});
+                // Each side's line under the key: the cause is in the line, not in the key.
+                const v1_line = if (side == 0) d.text else if (other) |o| o.text else "(no demand)";
+                const v2_line = if (side == 1) d.text else if (other) |o| o.text else "(no demand)";
+                try wrong.print(arena, "{s}\n    v1: {s}\n    v2: {s}\n", .{ key, v1_line, v2_line });
             }
         }
         if (wrong.items.len != 0) {
@@ -4418,17 +4443,20 @@ const Case = struct {
     }
 
     const ParityDemand = struct { module: []const u8, pos: []const u8, line: u32, demand: []const u8, k: u32, refused: bool, verdict: []const u8, text: []const u8 };
+    /// How v2's report ends the `unchecked` line of a declaration past the record pass's limit.
+    const record_limit = "(record-pass limit)";
     const ParityDump = struct {
         demands: std.ArrayList(ParityDemand) = .empty,
-        spans: std.ArrayList(struct { module: []const u8, from: u32, to: u32 }) = .empty,
+        /// `records`: a declaration past the record pass's limit. The list pass checked it, so only its record lines have no verdict.
+        spans: std.ArrayList(struct { module: []const u8, from: u32, to: u32, records: bool }) = .empty,
 
         fn find(p: ParityDump, d: ParityDemand) ?ParityDemand {
             for (p.demands.items) |e| if (std.mem.eql(u8, e.module, d.module) and std.mem.eql(u8, e.pos, d.pos) and std.mem.eql(u8, e.demand, d.demand) and e.k == d.k) return e;
             return null;
         }
 
-        fn unchecked(p: ParityDump, module: []const u8, line: u32) bool {
-            for (p.spans.items) |s| if (std.mem.eql(u8, s.module, module) and s.from <= line and line <= s.to) return true;
+        fn unchecked(p: ParityDump, d: ParityDemand) bool {
+            for (p.spans.items) |s| if (std.mem.eql(u8, s.module, d.module) and s.from <= d.line and d.line <= s.to and (!s.records or std.mem.startsWith(u8, d.demand, "update "))) return true;
             return false;
         }
     };
@@ -4450,7 +4478,7 @@ const Case = struct {
                 var nums = std.mem.tokenizeAny(u8, t[at + ": lines ".len ..], "- ");
                 const from = try std.fmt.parseInt(u32, nums.next() orelse continue, 10);
                 const to = try std.fmt.parseInt(u32, nums.next() orelse continue, 10);
-                try p.spans.append(arena, .{ .module = module, .from = from, .to = to });
+                try p.spans.append(arena, .{ .module = module, .from = from, .to = to, .records = std.mem.endsWith(u8, t, record_limit) });
                 continue;
             }
             if (l.len < 3 or l[0] != ' ' or l[1] != ' ' or !std.ascii.isDigit(l[2])) continue;
@@ -4474,9 +4502,15 @@ const Case = struct {
                     i += 1;
                 }
             }
-            var e: ParityDemand = .{ .module = module, .pos = pos, .line = try std.fmt.parseInt(u32, pos[0 .. std.mem.indexOfScalar(u8, pos, ':') orelse pos.len], 10), .demand = demand.items, .k = 0, .refused = !std.mem.eql(u8, verdict[1], ": accepted"), .verdict = verdict[1][2..], .text = t };
-            while (p.find(e) != null) e.k += 1;
-            try p.demands.append(arena, e);
+            // A record demand of several bases is one demand for each base, as v1 writes it: `update a, b` is `update a` and `update b`.
+            const joined = std.mem.startsWith(u8, demand.items, "update ") and std.mem.indexOf(u8, demand.items, ", ") != null;
+            const separator: []const u8 = if (joined) ", " else "\n";
+            var bases = std.mem.splitSequence(u8, if (joined) demand.items["update ".len..] else demand.items, separator);
+            while (bases.next()) |base| {
+                var e: ParityDemand = .{ .module = module, .pos = pos, .line = try std.fmt.parseInt(u32, pos[0 .. std.mem.indexOfScalar(u8, pos, ':') orelse pos.len], 10), .demand = if (joined) try std.fmt.allocPrint(arena, "update {s}", .{base}) else base, .k = 0, .refused = !std.mem.eql(u8, verdict[1], ": accepted"), .verdict = verdict[1][2..], .text = t };
+                while (p.find(e) != null) e.k += 1;
+                try p.demands.append(arena, e);
+            }
         }
         return p;
     }

@@ -10,8 +10,8 @@ module RecordFoldBelow
   32:61 update a.cur: accepted param
   37:9 update d: accepted param
   38:10 List.push hist: accepted param
-  42:18 List.foldl <expression>.1: accepted callback-param
-  42:18 update <expression>.0: rejected disjoint: another operand of the same operation reaches it (approx)
+  42:18 List.foldl <tuple>.1: accepted callback-param
+  42:18 update <tuple>.0: rejected disjoint: another operand of the same operation reaches it (approx)
   42:49 RecordFoldBelow.step t.1: accepted param
   42:49 update t.0: accepted param
   48:11 update x: accepted param

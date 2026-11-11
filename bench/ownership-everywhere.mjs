@@ -212,16 +212,23 @@ function verdicts(out) {
     // One demand however each checker spells it: v1 names a call of a
     // summarised declaration `call X`, v2 the worded `X`; a call base is
     // `<call>` or `<call X>`.
-    const demand = m[2].replace(/^call /, "").replace(/<call[^>]*>/g, "<call>");
-    let k = 0;
-    while (at.has(`${module}\t${m[1]}\t${demand}\t#${k}`)) k++;
-    at.set(`${module}\t${m[1]}\t${demand}\t#${k}`, { refused: m[3] !== "accepted", verdict: m[3], demand, line: line.trim() });
+    const whole = m[2].replace(/^call /, "").replace(/<call[^>]*>/g, "<call>");
+    // A record demand of several bases is one demand for each base, as v1
+    // writes it: `update a, b` is `update a` and `update b`.
+    const demands = whole.startsWith("update ") ? whole.slice("update ".length).split(", ").map((b) => `update ${b}`) : [whole];
+    for (const demand of demands) {
+      let k = 0;
+      while (at.has(`${module}\t${m[1]}\t${demand}\t#${k}`)) k++;
+      at.set(`${module}\t${m[1]}\t${demand}\t#${k}`, { refused: m[3] !== "accepted", verdict: m[3], demand, line: line.trim() });
+    }
   }
   return at;
 }
 
 /// The declarations a dump says it did not check (a construct not built, a
-/// limit): per module, the line spans of their `unchecked` lines.
+/// limit): per module, the line spans of their `unchecked` lines. A span is
+/// `records` for a declaration past the record pass's limit: the list pass
+/// checked it, so only its record lines (`update …`) have no verdict.
 function unchecked(out) {
   const spans = new Map();
   let module = "";
@@ -231,10 +238,10 @@ function unchecked(out) {
       module = header[1];
       continue;
     }
-    const m = line.match(/^\s+unchecked (.*): lines (\d+)-(\d+)/);
+    const m = line.match(/^\s+unchecked (.*): lines (\d+)-(\d+)(?: \((.*)\))?$/);
     if (!m) continue;
     if (!spans.has(module)) spans.set(module, []);
-    spans.get(module).push({ name: m[1], from: Number(m[2]), to: Number(m[3]) });
+    spans.get(module).push({ name: m[1], from: Number(m[2]), to: Number(m[3]), records: m[4] === "record-pass limit" });
   }
   return spans;
 }
@@ -289,7 +296,6 @@ async function diff(sides) {
   const accepts = [];
   const refuses = [];
   const notBuilt = [];
-  const updates = [];
   const oneSided = [];
   const explained = [];
   for (const [i, root] of roots.entries()) {
@@ -314,18 +320,11 @@ async function diff(sides) {
       // check: counted and listed, never silent.
       const missing = !x ? 0 : !y ? 1 : -1;
       if (missing >= 0) {
-        const span = (skipped[missing].get(module) ?? []).find((s) => s.from <= line && line <= s.to);
+        const span = (skipped[missing].get(module) ?? []).find((s) => s.from <= line && line <= s.to && (!s.records || (x ?? y).demand.startsWith("update ")));
         if (span) {
           notBuilt.push({ ...row, why: `${sides[missing]} did not check ${span.name}` });
           continue;
         }
-      }
-      // v1's record-update demands (`update …`): v2 makes none, since an
-      // in-place record update is a later slice and the emitter copies
-      // (`ownership-v2.md` §2.11.5). Counted apart, by demand kind only.
-      if (missing >= 0 && sides[missing] === "v2" && sides[1 - missing] === "v1" && (x ?? y).demand.startsWith("update ")) {
-        updates.push(row);
-        continue;
       }
       const differs = missing >= 0 || x.refused !== y.refused;
       // A known difference names the demand and both verdicts, so it
@@ -361,7 +360,6 @@ async function diff(sides) {
   show(oneSided, "Demands only one side reports, in a declaration both checked", true);
   show(explained, "Known differences (tests/blackbox/ownership-v2-known.txt)", true);
   show(notBuilt, "Demands in a declaration one side did not check", !!args.unchecked);
-  show(updates, "v1's record-update demands, which v2 does not make (ownership-v2.md §2.11.5)", false);
   const stale = [...allowed.keys()].filter((k) => !used.has(k));
   if (stale.length) {
     console.log(`\n## Known differences that no longer occur: ${stale.length}\n`);

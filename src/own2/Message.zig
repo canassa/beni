@@ -21,6 +21,8 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 
 const none = Ids.none_int;
+/// A record line's detail under `--ownership-records-lost` (§7, point 8).
+pub const records_lost = "no record condition holds under --ownership-records-lost";
 
 pub const Position = Facts.Position;
 
@@ -83,9 +85,6 @@ fn data(f: Frame, i: u32) Bir.Inst.Data {
 
 /// A value reference's `M.v`.
 /// A callee reference's `M.f`: the function it runs, through aliases.
-/// A record line's detail under `--ownership-records-lost` (§7, point 8).
-pub const records_lost = "no record condition holds under --ownership-records-lost";
-
 pub fn calleeName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     const of = f.callee_of orelse return refName(f, a, i);
     const md = of(f.ctx, i) orelse return null;
@@ -158,7 +157,8 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
         .field_access, .tuple_index => unreachable,
         .list => "<literal>",
         .lambda => "<lambda>",
-        .record => "<record>",
+        .record, .record_update => "<record>",
+        .tuple => "<tuple>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
         // A spread literal's outermost call is the literal, as v1 names it.
         .call => if (spreadRoot(f, i)) "<construction>" else if (isAppend(f, i)) "<++>" else if (f.ctor_of(f.ctx, d.lhs)) |c| try std.fmt.allocPrint(a, "<{s} …>", .{f.names.interner.slice(f.names.birs[c[0]].symbol(f.names.birs[c[0]].ctors[c[1]].name))}) else if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
