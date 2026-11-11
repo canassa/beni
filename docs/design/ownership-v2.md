@@ -6941,6 +6941,10 @@ are identical and nothing is written (R-7.11).
    fold's accumulator. v1 refuses the update in the callback, and v2 refuses at the call, as
    `ownership/RecordContents` and `ownership/RecordFoldBelow` pin. One of the 18 is the fold that v2 accepts
    and v1 refuses (`twinFold`). I read the source of each pair. 74 are `open`.
+
+   *Eighth step of #2477 (2026-11-11):* 6 more are a worker program at `Worker.program`, in three programs:
+   v2 refuses at the constructor's call, and v1 holds the update of `handle` pending. The entry protocol is
+   S7. 68 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
