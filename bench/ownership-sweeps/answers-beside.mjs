@@ -54,6 +54,14 @@ const CALLEES = {
     call: (f) => `make (λy → ( y, ${f} y )) [ n ]`, parts: bindList },
   twoList: { pre: 'q0 = [ n ]', decls: [fn('make', `${F}, ${F}, List Int, List Int → List (List Int)`, 'f g x y', '[ f x, g y ]')],
     call: (f) => `make ${f} ${f} q0 q0`, parts: bindList },
+  // One answer source: two calls of one function, which is handed one list as two arguments, as two parts of
+  // one argument, or two lists that are apart (the safe form).
+  oneList: { pre: 'q0 = [ n ]', decls: [fn('make', `${F}, List Int, List Int → List (List Int)`, 'f x y', '[ f x, f y ]')],
+    call: (f) => `make ${f} q0 q0`, parts: bindList },
+  partList: { pre: 'q0 = [ n ]', decls: [fn('make', `${F}, ${P2} → List (List Int)`, 'f p', '[ f p.0, f p.1 ]')],
+    call: (f) => `make ${f} ( q0, q0 )`, parts: bindList },
+  apartList: { decls: [fn('make', `${F}, List Int, List Int → List (List Int)`, 'f x y', '[ f x, f y ]')],
+    call: (f) => `make ${f} [ n ] [ n + 1 ]`, parts: bindList },
 };
 
 // Functions: what the handed function answers. `pre`: a line before the call.
