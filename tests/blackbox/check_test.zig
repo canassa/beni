@@ -2837,9 +2837,9 @@ test "ownership v3: the faults of round 2 are refused" {
 }
 
 // The faults that a search by hand found after the convergence test of
-// research report 112 (§6.3). The test's family has flat lists only. These
-// are about the match between two readings of one type, and about a fact of
-// a contract that the callee cannot know.
+// research report 112 (§6.3). The test's family has flat lists only, and no
+// result in it has two parts. These are about the match between two readings
+// of one type, and about a claim of a contract that the callee cannot know.
 //
 // - `wider`: `idp : a → a` goes to a parameter of the type `List (List Int)
 //   → List (List Int)`. Its one location, the type variable, stands for the
@@ -2849,16 +2849,20 @@ test "ownership v3: the faults of round 2 are refused" {
 // - `below`: the holder's type is the wider one (`a → a`), and the function
 //   (`List b → List b`) has a variable one level down. The part of the
 //   argument that the variable stands for is each list below that place.
-// - `answerAndArgument`, `answerTwice`: the contract of the callee says that
-//   the two parts of its result are apart. The callee does not know its
-//   function. The caller does: the function answers its parameter, so the
-//   two parts are one list.
-// - `nestedAnswer`: the same, one function deeper. The function that the
-//   caller hands answers the answer of a function that it captured, so its
-//   own contract cannot say that the parts of its answer are apart.
-// - `argumentTwice`: no function value. The callee only rearranges what it
-//   takes, and the argument has one list at two places. The claim of the
-//   callee's contract rests on the arguments too.
+//
+// A contract says that two sources of a result are two cells: two locations
+// are apart, and one summary location holds each cell once. The caller
+// trusted that. It rests on what only the caller knows:
+//
+// - `answerAndArgument`, `answerTwice`: the function that the callee was
+//   handed. It answers its parameter, so the two parts are one list.
+// - `nestedAnswer`: the same, one function deeper. The handed function
+//   answers the answer of a function that it captured.
+// - `argumentTwice`: the arguments. No function value: the callee only
+//   rearranges what it takes, and the argument has one list at two places.
+// - `oneLocation`, `answerOfTwo`: the same two for one summary location:
+//   the elements of the result are two parts of one argument, or two parts
+//   of one answer of a function that answers one list two times.
 //
 // The prototype that passed the first gate accepted each of these demands.
 test "ownership v3: the faults that a search by hand found are refused" {
@@ -2975,6 +2979,32 @@ test "ownership v3: the faults that a search by hand found are refused" {
         \\    w = List.update v 0 λm → List.push m 9
         \\    List.length w
         \\
+        \\
+        \\pack : List Int × List Int → List (List Int)
+        \\pack p =
+        \\    [ p.0, p.1 ]
+        \\
+        \\
+        \\pub oneLocation : Int → Int
+        \\oneLocation c =
+        \\    q = [ c ]
+        \\    v = pack ( q, q )
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
+        \\
+        \\gather : (List Int → List Int × List Int), List Int → List (List Int)
+        \\gather f x =
+        \\    r = f x
+        \\    [ r.0, r.1 ]
+        \\
+        \\
+        \\pub answerOfTwo : Int → Int
+        \\answerOfTwo c =
+        \\    v = gather (λl → ( l, l )) [ c ]
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Hand.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
@@ -2987,7 +3017,9 @@ test "ownership v3: the faults that a search by hand found are refused" {
         "  80:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  94:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  108:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "total 19: accepted 13 (fresh 4, call 3, param 0, callback-param 6, once 0, entry 0; assumed 0), pending 0, rejected 6\n",
+        "  121:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  134:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "total 25: accepted 17 (fresh 4, call 5, param 0, callback-param 8, once 0, entry 0; assumed 0), pending 0, rejected 8\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
