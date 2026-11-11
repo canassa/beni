@@ -2222,6 +2222,11 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
 /// Pairs that need no check:
 ///
 /// - one parameter location: the callee's own claim is about that;
+/// - one answer source at one summary location, when the arguments are
+///   apart: the callee hands the function a cell once, or its supply is not
+///   `free`. When they are not apart, two calls can be handed one cell
+///   (`[ f x, f y ]` with one list as `x` and `y`), and the location has no
+///   claim;
 /// - an answer and a parameter location that the function was handed, in
 ///   one summary location: they are alternatives, or the supply is not
 ///   `free` (which `answerOfCode` reads as one cell at two places);
@@ -2279,10 +2284,24 @@ fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []cons
             try runs.append(f.gpa, .{ .e = @intCast(e), .ri = cr, .src = s, .start = start, .end = @intCast(buf.items.len) });
         }
     }
-    if (runs.items.len < 2) return;
+    if (runs.items.len == 0) return;
+    // One answer source at a summary location is each answer of each call
+    // of the function there. The callee hands the function a cell once (or
+    // its supply is not `free`). Two of its parameters can be one cell here.
+    var answers = false;
+    for (runs.items) |x| if (x.src.kind == .answer and !es[x.e].single) {
+        answers = true;
+    };
+    if (!answers and runs.items.len < 2) return;
     // A function's answer has parts that are apart only when what it is handed has.
     const args_apart = try f.argsApart(base.args);
-    if (!args_apart and es.len > 1) f.roots.items[root].linear = false;
+    if (!args_apart) {
+        if (es.len > 1) f.roots.items[root].linear = false;
+        for (runs.items) |x| if (x.src.kind == .answer and !es[x.e].single) {
+            f.rents.items[ent0 + x.e].kind = .shared;
+        };
+    }
+    if (runs.items.len < 2) return;
     for (runs.items, 0..) |x, xi| for (runs.items[xi + 1 ..]) |y| {
         const same_e = x.e == y.e;
         // A location that names one value holds one of its sources.
