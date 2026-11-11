@@ -2546,24 +2546,44 @@ test "ownership v3 (the step 0 prototype): the sanitiser fixtures that the first
     defer w.deinit();
     const a = w.arena.allocator();
     const dir = "tests/corpus/run/";
-    const single = [_][]const u8{
-        "SanitiserAnswerLeft",             "SanitiserCellStaleLength",      "SanitiserCellStoredCapture",
-        "SanitiserFoldAlternativesShared", "SanitiserFoldAnswerFedKept",    "SanitiserFoldHandsLabelKeeps",
-        "SanitiserFoldKeepsAnswer",        "SanitiserLabelRounds",          "SanitiserLabelRoundsOrder",
-        "SanitiserPairCrossEdgeFold",      "SanitiserPairCrossEdgeFoldr",   "SanitiserPairCrossEdgeLoop",
-        "SanitiserPairCycleFold",          "SanitiserPairCycleLoop",        "SanitiserPairCycleParam",
-        "SanitiserPrependFrontHeld",       "SanitiserRecordCallbackShared",
+    // Each fixture: where its first refusal is, the cause, and how many refusals it has.
+    const Want = struct { name: []const u8, at: []const u8, cause: []const u8, count: usize };
+    const single = [_]Want{
+        .{ .name = "SanitiserAnswerLeft", .at = "36:9", .cause = "escaped", .count = 2 },
+        .{ .name = "SanitiserCellStaleLength", .at = "27:11", .cause = "supply", .count = 1 },
+        .{ .name = "SanitiserCellStoredCapture", .at = "28:22", .cause = "escaped", .count = 4 },
+        .{ .name = "SanitiserFoldAlternativesShared", .at = "51:16", .cause = "disjoint", .count = 8 },
+        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 2 },
+        .{ .name = "SanitiserFoldHandsLabelKeeps", .at = "32:29", .cause = "supply", .count = 1 },
+        .{ .name = "SanitiserFoldKeepsAnswer", .at = "28:10", .cause = "supply", .count = 6 },
+        .{ .name = "SanitiserLabelRounds", .at = "26:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserLabelRoundsOrder", .at = "22:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPairCrossEdgeFold", .at = "24:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPairCrossEdgeFoldr", .at = "24:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPairCrossEdgeLoop", .at = "47:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPairCycleFold", .at = "22:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPairCycleLoop", .at = "28:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPairCycleParam", .at = "27:9", .cause = "later-use", .count = 1 },
+        .{ .name = "SanitiserPrependFrontHeld", .at = "39:22", .cause = "later-use", .count = 3 },
+        .{ .name = "SanitiserRecordCallbackShared", .at = "47:9", .cause = "disjoint", .count = 4 },
     };
     var argv: std.ArrayList([]const u8) = .empty;
     try argv.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node" });
-    for (single) |name| try argv.append(a, try std.fmt.allocPrint(a, dir ++ "{s}.beni", .{name}));
+    for (single) |want| try argv.append(a, try std.fmt.allocPrint(a, dir ++ "{s}.beni", .{want.name}));
     const r = try w.runWith(argv.items, .{ .raw_diagnostics = true, .cwd = .inherit });
     try testing.expectEqual(@as(u8, 1), r.exit_code);
-    for (single) |name| {
-        // The header of a refusal names the file and the position.
-        const at = try std.fmt.allocPrint(a, " " ++ dir ++ "{s}.beni:", .{name});
-        if (std.mem.indexOf(u8, r.stderr, at) == null) {
-            std.debug.print("the prototype does not refuse {s}\n", .{name});
+    for (single) |want| {
+        // The header of a refusal names the file and the position; its text has the cause.
+        const file = try std.fmt.allocPrint(a, " " ++ dir ++ "{s}.beni:", .{want.name});
+        const header = try std.fmt.allocPrint(a, "{s}{s}\n", .{ file, want.at });
+        var ok = false;
+        if (std.mem.indexOf(u8, r.stderr, header)) |i| {
+            if (std.mem.indexOfPos(u8, r.stderr, i, "refused:")) |j| {
+                ok = std.mem.startsWith(u8, std.mem.trimStart(u8, r.stderr[j + "refused:".len ..], " \n"), want.cause);
+            }
+        }
+        if (!ok or std.mem.count(u8, r.stderr, file) != want.count) {
+            std.debug.print("{s}: wanted {d} refusals, the first at {s} with the cause {s}; in:\n{s}\n", .{ want.name, want.count, want.at, want.cause, r.stderr });
             return error.TestExpectedRefusal;
         }
     }
@@ -2600,4 +2620,80 @@ test "ownership v3 (the step 0 prototype): a captured function that writes canno
     const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Captured.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "is called by a function that goes to another function") != null);
+}
+
+// The accepted twins of the same fixtures stay accepted: the rules that
+// refuse the 19 programs do not refuse the programs beside them, where each
+// write is safe.
+test "ownership v3 (the step 0 prototype): the accepted twins of the refused fixtures stay accepted" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const twins = [_][]const u8{
+        "SanitiserPairCycleFoldApart", "SanitiserPairCycleLoopApart", "SanitiserPairCycleParamApart", "SanitiserPairCrossEdgeFoldApart",
+        "SanitiserFoldHandsLabel",     "SanitiserFoldAlternatives",   "SanitiserRecordCallback",      "SanitiserPrependFront",
+        "SanitiserFoldAnswerFed",      "SanitiserFoldAccumulator",    "SanitiserCellCapture",
+    };
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node" });
+    for (twins) |name| try argv.append(a, try std.fmt.allocPrint(a, "tests/corpus/run/{s}.beni", .{name}));
+    const r = try w.runWith(argv.items, .{ .raw_diagnostics = true, .cwd = .inherit });
+    if (r.exit_code != 0) std.debug.print("{s}\n", .{r.stderr});
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+}
+
+// The two faults that the generator of research report 111 found.
+//
+// `sameList` (seed 144 of the second family): `callBoth` hands `q` to a
+// function that could write it, so the result has a new name for the cells
+// of `q`. `ident` does not write, so `q` stays in use; a later write of `q`
+// must see the result as a holder (report 111 §3.10).
+//
+// `twice` (the first family's first run): a list at two positions of a
+// literal gives a location with no claim. The location still holds the
+// list, so a write of the list while the literal is read is refused
+// (report 111 §3.5).
+test "ownership v3 (the step 0 prototype): the two faults that the generator found are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Gen.beni",
+        \\import List
+        \\
+        \\
+        \\ident : List Int → List Int
+        \\ident xs = xs
+        \\
+        \\
+        \\callBoth : (List Int → List Int), (List Int → List Int), List Int → List Int × List Int
+        \\callBoth f g xs =
+        \\    a = f xs
+        \\    ( a, g a )
+        \\
+        \\
+        \\pub sameList : List Int, List Int → Int
+        \\sameList p q =
+        \\    v0 = { a = q, b = p }
+        \\    v1 = (callBoth ident ident q).1
+        \\    v2 = { v0 | a = List.push v0.a 1 }
+        \\    List.length v1 + List.length v2.a
+        \\
+        \\
+        \\pub twice : List Int → Int
+        \\twice q =
+        \\    v0 = [ q, q ]
+        \\    v3 = [ …q, 8 ]
+        \\    List.length v3 + List.length v0
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Gen.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  18:21 List.push v0.a: rejected later-use: it is read again at 19:5 (<call List.length>)\n",
+        "  25:12 construction q: rejected later-use: it is read again at 26:22 (<call List.length>)\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
 }
