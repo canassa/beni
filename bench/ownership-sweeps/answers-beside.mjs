@@ -3,7 +3,9 @@
 // second answer). The callee cannot know if the two parts are one cell: that depends on the function. The
 // caller then puts both parts into one list and writes one element, or writes one part and reads the other.
 // A hand search for research report 112 §6.3 found this corner: the prototype trusted the callee's "the parts
-// of my result are apart". Programs are `<callee>.<fn>.<use>/Main.beni`. See bench/ownership-sweeps/README.md.
+// of my result are apart". Three callees have no function: the argument has one list at two places, which is
+// the first-order form of the same claim. Programs are `<callee>.<fn>.<use>/Main.beni`.
+// See bench/ownership-sweeps/README.md.
 import fs from 'fs';
 import path from 'path';
 
@@ -38,6 +40,12 @@ const CALLEES = {
     parts: (k) => `p0 = r.0.0\np1 = r.1\n${k}` },
   // A callee over a type variable.
   genAns: { decls: [fn('make', '(a → a), a → a × a', 'f x', '( f x, x )')], call: (f) => `make ${f} [ n ]`, parts: bindPair },
+  // The handed function makes the two parts, one with a function that it captured.
+  viaBuild: { decls: [fn('make', '(x → a), x → a', 'build x', 'build x')], call: (f) => `make (λy → ( y, ${f} y )) [ n ]`, parts: bindPair },
+  // No function: the callee only rearranges its argument, and the argument has one list at two places.
+  argPair: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', `${P2} → ${P2}`, 'p', '( p.0, p.1 )')], call: () => 'make ( q0, q0 )', parts: bindPair },
+  argSwap: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', 'a × b → b × a', 'p', '( p.1, p.0 )')], call: () => 'make ( q0, q0 )', parts: bindPair },
+  argTwo: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', `List Int, List Int → ${P2}`, 'x y', '( x, y )')], call: () => 'make q0 q0', parts: bindPair },
 };
 
 // Functions: what the handed function answers. `pre`: a line before the call.
@@ -58,7 +66,8 @@ const USES = {
 
 function gen(callee, fname, use) {
   const C = CALLEES[callee], G = FNS[fname];
-  const lines = [...(G.pre ? [G.pre] : []), `r = ${C.call(G.f)}`, C.parts(USES[use])];
+  if (C.nofn && fname !== 'id') return null;
+  const lines = [...(C.pre ? [C.pre] : []), ...(G.pre && !C.nofn ? [G.pre] : []), `r = ${C.call(G.f)}`, C.parts(USES[use])];
   return [
     'import List\nimport Node exposing (Program)\nimport String\n',
     fn('show', 'List Int → String', 'l', 'String.join (List.map l String.fromInt) ","'),
@@ -74,6 +83,7 @@ const list = [];
 for (const callee of Object.keys(CALLEES)) for (const fname of Object.keys(FNS)) for (const use of Object.keys(USES)) {
   const name = `${callee}.${fname}.${use}`;
   if (filter && !name.includes(filter)) continue;
+  if (!gen(callee, fname, use)) continue;
   const d = path.join(out, name);
   fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, 'Main.beni'), gen(callee, fname, use));
