@@ -8,38 +8,47 @@ is `src/own3/`, behind the hidden flag `--ownership=v3`. It does not change v1 o
 
 ## 0. Verdict
 
-**Converges for the ways that a function value travels. The border with the first-order core needed four
-rounds of fixes, and then held in one blind sweep.** One rule replaces the case rules of report 111. A
-function value is judged against the use of the location that it is in (`flow`), and a location that no
-contract describes has the default, which refuses a function that asks for something (§2). The rule explains
-the 173 of the 175 faults so far that are about a function value; the other two are first-order (§3). Before
-any test ran, it predicted seven more faults of report 111's prototype, and each of the seven traps there
-(§3.3). The prototype that is built to it passes the gate: 0 traps, differences and crashes on the 49 743
-programs of the four sweeps, on the 44 000 programs of report 111's generators and on the 345 fixtures of the
-sanitiser corpus; 299 of the 308 real writes; 954 000 lines per second (§5). The new family, 1 960 programs
-of which 21 of the 28 carriers are shapes that no test had, found no fault in its one run. Report 111's
-prototype traps on 371 of the same programs (§6.2). So a new way to travel did not need a new case.
+**Converges for the ways that a function value travels. Unclear for the border with the first-order core:
+it needed five rounds of fixes, and a review found the last fault after a blind sweep had found none.** One
+rule replaces the case rules of report 111. A function value is judged against the use of the location that
+it is in (`flow`), and a location that no contract describes has the default, which refuses a function that
+asks for something (§2). The rule explains the 173 of the 175 faults so far that are about a function value;
+the other two are first-order (§3). Before any test ran, it predicted seven more faults of report 111's
+prototype, and each of the seven traps there (§3.3). The prototype that is built to it passes the gate: 0
+traps, differences and crashes on the 49 743 programs of the four sweeps, on the 44 000 programs of report
+111's generators and on the 345 fixtures of the sanitiser corpus; 299 of the 308 real writes; 958 000 lines
+per second (§5). The new family, 1 960 programs of which 21 of the 28 carriers are shapes that no test had,
+found no fault in its one run. Report 111's prototype traps on 371 of the same programs (§6.2). So a new way
+to travel did not need a new case.
 
 Two limits belong to this verdict.
 
-First, a search by hand after that run found three faults: 15 of 97 programs trap (§6.3). None is a way to
-travel, and `flow` did not change. Two are the match between the type of a function and the type of its
-holder. The third is a claim of a contract that two sources of a result are two cells. The claim rests on
-answers and on arguments that a callee cannot know. It took four rounds. The fixes of the first two rounds
-were cases, and each next round found a form that the fix before it did not cover: that is the pattern that
-this round asks about, and here it occurred. The third fix is one check for each pair of sources, and the
-fourth round added one form to that check. Two forms of this fault have no function value: they are faults
-of the first-order core. Report 111's prototype traps on 14 of the 15 programs, and one is a fault that this
-round made. Then a blind sweep for this claim, 3 870 programs, ran one time on the final code and found no
-fault; the two earlier prototypes trap on 146 of its programs (§6.4). The sweep is blind for the checker and
-not for its author: a form that the hand search did not suggest is not in it. Each run of the gate and the
-family was repeated on the final code with no fault.
+First, the border. A search by hand after that run found three faults: 20 of 121 programs trap (§6.3). None
+is a way to travel, and `flow` did not change. Two are the match between the type of a function and the type
+of its holder. The third is a claim of a contract that two sources of a result are two cells. The claim
+rests on answers and on arguments that a callee cannot know, and two forms of the fault have no function
+value. Report 111's prototype traps on 19 of the 20 programs, and one is a fault that this round made. The
+third fault took five rounds of fixes:
 
-Second, the rule pays with precision where a function goes through a default location (a function-typed
-result, a function in a value). On the new family the prototype accepts 18 % of the safe programs, and v2
-48 %. The check of the third fault pays too: where one list is at two places of a call's arguments, the
-prototype accepts 40 % of the safe programs of the blind sweep, and v2 each one. On real code the round
-costs no write.
+- The fixes of the first two rounds were cases, and each next round found a form that the fix before it did
+  not cover. That is the pattern that this round asks about, and here it occurred.
+- The third fix is one check for each pair of sources, and the fourth round added one form to it. Then a
+  blind sweep for this claim, 3 870 programs, ran one time and found no fault; the two earlier prototypes
+  trap on 146 of its programs (§6.4).
+- Then the second review of the pull request read the code and found a fault that the sweep has no form
+  for: the check of the arguments was still the case of the second round. Five of seven programs from that
+  finding trap on the code that passed the blind sweep (§6.5). The fifth fix gives that check one case for
+  each kind of value, and the check of the sources rests on it.
+
+So the evidence for the border is not that of the rule. A blind sweep by the author of the fixes did not
+find what a reader of the code found. Each run of the gate, the family and the sweeps was repeated on the
+final code with no fault, and a last round by hand found none. That does not show that the border is closed.
+
+Second, precision. The rule pays where a function goes through a default location (a function-typed result,
+a function in a value). On the new family the prototype accepts 18 % of the safe programs, and v2 48 %. The
+check of the third fault pays too: where one list is at two places of a call's arguments, the prototype
+accepts 40 % of the safe programs of the blind sweep, and v2 each one. On real code the round costs no
+write.
 
 ---
 
@@ -181,6 +190,10 @@ A function-typed location that `call` and `inner` do not name is `top`. So a new
 travel (a new holder shape) is `top` until a contract describes it. It can lose precision. It cannot make a
 fact "nothing happens".
 
+This argument is about a function that is lost. It is not the whole safety argument. A first-order claim of
+a contract that is wrong for a function's answer or for an argument is another kind of fault, and §2.7 has
+it.
+
 ### 2.7 Two things at the border of the rule
 
 The search by hand of §6.3 found three faults. None changed `flow`. They are at the border between the rule
@@ -195,9 +208,16 @@ and the first-order core, and the rule needs both of these to be right:
   the callee does with an answer (§2.1). It cannot say what the answer is, and it cannot say if two of its
   arguments are one cell. A contract claims in two ways that two sources of its result are two cells: two
   locations of the result are apart, and one location that holds many cells (the elements of a list) holds
-  each cell one time. The callee can know that of one source that it puts at one place. So for each pair of
-  sources, and for the answer of a function at a location that holds many cells, the caller reads what the
-  sources are in its own frame. If they can be one cell, the claim does not hold there (`sourcesApart`).
+  each cell one time. The callee can know that of one source that it puts at one place. The caller reads the
+  claim in two steps (`sourcesApart`):
+  1. *The arguments.* A contract is written for arguments of which no cell is at two places. The caller
+     checks that of its arguments, with one case for each kind of value (`argsApart`, `partsOf`). When it
+     holds, two parameter sources are two cells. When it does not, the callee's claim has no ground: the
+     locations of the result are not apart, and a location that holds many cells and has an answer or two
+     sources has no claim.
+  2. *Each pair with an answer.* The caller reads what the function answers in its own frame. If the two
+     sources can be one cell, the claim does not hold there.
+
   The same holds one level down for the answer of a function: only a known function whose contract can know
   it has the claim that two parts of its answer are apart. The frame's own function parameter does not have
   it, and a function whose answer holds the answer of another function does not (`linearFn`). So the
@@ -277,10 +297,10 @@ All changes are in `src/own3/`. `src/own/` and `src/own2/` did not change.
 
 | | Report 111 | This round |
 |---|---:|---:|
-| `Frame.zig` | 3 073 lines | 3 828 |
+| `Frame.zig` | 3 073 lines | 3 885 |
 | `Check.zig` | 921 | 971 |
 | `Loc.zig` | 621 | 658 |
-| `src/own3/`, all | 5 162 | 6 010 |
+| `src/own3/`, all | 5 162 | 6 067 |
 
 **Removed** (each was a rule for one way that a function value travels):
 
@@ -308,7 +328,7 @@ All changes are in `src/own3/`. `src/own/` and `src/own2/` did not change.
 | `answerOf`, `answerOfCode`, `answerOfParam`, `lostAnswer` | §2.5: the table of answers |
 | `mention`, `flowTop`, `usedEarly`, `selfValue` | §2.6: the places where a function becomes a default value, and a function that names itself |
 | `slotsOf`, `answersAt`, `partBelow`, `Loc.belowWide` | §2.7: two readings of one type (added after the search by hand of §6.3) |
-| `sourcesApart`, `argsApart`, `partsOf`, `linearFn`, `handsOn` | §2.7: a claim that two sources of a result are two cells is checked where the functions and the arguments are known (added after §6.3) |
+| `sourcesApart`, `argsApart`, `valueApart`, `partsOf`, `linearFn`, `handsOn` | §2.7: a claim that two sources of a result are two cells is checked where the functions and the arguments are known (added after §6.3, and changed after §6.5) |
 
 Outside that part:
 
@@ -340,16 +360,16 @@ The rule has no case for where a function goes. Three things are still lists, an
 
 ## 5. The gate
 
-All figures are of the final code (`51a1bb0eff`, after the fixes of §6.3) merged with `master`
+All figures are of the final code (`b371210096`, after the fixes of §6.3 and §6.5) merged with `master`
 (`40a78316a1`), on one machine, 2026-11-11. The speed figures and the first run of each sweep are of a
 ReleaseFast compiler (Zig 0.17.0, LLVM). The second run of each sweep is of a ReleaseSafe compiler of the
 same sources, in which each bounds check of the checker is on. Appendix A has each command.
 
-The prototype passed this gate two times. The first time was before the family of §6 ran (`f5a4bea289`,
-with the ReleaseFast compiler). The second time was on the final code. The tables have the figures of the
-final code. Against the first time: three of the four sweeps have the same verdict for each program, and
-`recursive-levels.mjs` has 84 safe programs fewer with `SAME` (§5.1); the figures of §5.2 are the same; in
-§5.3 the final code accepts one more fixture.
+The prototype passed this gate three times: before the family of §6 ran (`f5a4bea289`, with the ReleaseFast
+compiler), on the code of the blind sweep of §6.4 (`51a1bb0eff`), and on the final code. The tables have the
+figures of the final code. Against the first time: three of the four sweeps have the same verdict for each
+program, and `recursive-levels.mjs` has 78 safe programs fewer with `SAME` (§5.1); the figures of §5.2 are the same; in §5.3 the
+final code accepts one more fixture.
 
 | Gate of the owner's request | Result | |
 |---|---|---|
@@ -357,7 +377,7 @@ final code. Against the first time: three of the four sweeps have the same verdi
 | 0 on report 111's two generators | 0 of 44 000 programs (§5.2) | **holds** |
 | 0 on the sanitiser corpus | 0 of 345 fixtures (§5.3) | **holds** |
 | At least 299 of the 308 real list writes accepted | 299 (§5.4) | **holds** |
-| More than 500 000 lines per second | 954 000 on the modules that v2 walks; 1 172 000 on its own walk (§5.4) | **holds** |
+| More than 500 000 lines per second | 958 000 on the modules that v2 walks; 1 178 000 on its own walk (§5.4) | **holds** |
 
 The gates of the repository (`zig build gates`) are green on the same tree.
 
@@ -365,7 +385,7 @@ The gates of the repository (`zig build gates`) are green on the same tree.
 
 | Generator | Programs | `SAME` | `REFUSED` | `TRAP` | `DIFF` | `CRASH` | `LIMIT` |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `recursive-levels.mjs` | 16 131 | 4 276 | 11 855 | 0 | 0 | 0 | 0 |
+| `recursive-levels.mjs` | 16 131 | 4 282 | 11 849 | 0 | 0 | 0 | 0 |
 | `folds-callbacks.mjs` | 30 300 | 6 182 | 24 118 | 0 | 0 | 0 | 0 |
 | `callbacks-keep.mjs` | 720 | 108 | 612 | 0 | 0 | 0 | 0 |
 | `handed-back.mjs` | 2 592 | 0 | 2 592 | 0 | 0 | 0 | 0 |
@@ -378,25 +398,24 @@ gets a new list), and `SAME` is a correct verdict for those.
 
 | Generator | Twin | Programs | `SAME`: v2 | report 111's prototype | this round | v2 only | this round only |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `recursive-levels.mjs` | `dead` | 5 377 | 5 208 | 4 360 | 4 276 | 1 047 | 115 |
+| `recursive-levels.mjs` | `dead` | 5 377 | 5 208 | 4 360 | 4 282 | 1 041 | 115 |
 | `folds-callbacks.mjs` | `dead` | 10 476 | 2 981 | 3 299 | 4 220 | 505 | 1 744 |
 | `folds-callbacks.mjs` | `kept` | 9 348 | 1 456 | 1 510 | 1 962 | 411 | 917 |
 | `callbacks-keep.mjs` | all | 720 | 105 | 108 | 108 | 0 | 3 |
 | `handed-back.mjs` | all | 2 592 | 476 | 60 | 0 | 476 | 0 |
-| the two `dead` rows | | 15 853 | 8 189 (52 %) | 7 659 (48 %) | 8 496 (54 %) | | |
+| the two `dead` rows | | 15 853 | 8 189 (52 %) | 7 659 (48 %) | 8 502 (54 %) | | |
 
 Report 111's prototype also has 153 `TRAP` on these programs (129 and 24), which are not in its `SAME`
 columns.
 
 - **Recursive levels.** v2 accepts 97 % of the safe twins, and the prototype 80 %. This corner is first-order.
   The prototype of the first gate had report 111's verdict on each of its programs (4 360 safe twins). The
-  final code refuses 84 of those. Each of the 84 has a callee over a recursive type that answers its argument
-  or a part of it (`cut : G a → G a`), and an argument that is deep enough for the type to fold. The frame
-  records one list of such a value at two of the folded locations. The check of pairs of §2.7 reads the one
-  argument at two of its locations, finds that list at both, and makes the parts of the result "not apart".
-  That is the price of the fix of §6.3 in a first-order corner. The exact check for two locations of one
-  argument is the argument's own claim that its parts are apart, and the frame has it. That change was not
-  made: it is a change after the last run of the gate (§8).
+  final code refuses 78 of those. Each of the 78 has an argument that is a nest of constructor applications
+  nine to eleven levels deep, and a callee that answers that argument or a part of it. The check of the
+  arguments (`partsOf`, §6.5) does not follow a nest below eight levels: it has no claim on it. Then a
+  location of the result that holds many cells and has two sources has no claim. The limit is a constant of
+  the prototype, and this is its price in a first-order corner. The change of the constant is not in this
+  round: it is a change after the last run of the gate (§8).
 - **Folds and callbacks.** The prototype accepts more safe twins than v2 (40 % and 28 %), and more than
   report 111's prototype (31 %). It refuses 157 programs that report 111's prototype accepted with the same
   output, and it accepts 1 512 that report 111's refused. v2 accepts 505 safe twins that the prototype
@@ -443,14 +462,14 @@ The 63 losses by the prototype's cause (a fixture counts once for each cause tha
 |---|---:|---:|
 | Of the 308 writes that v1 judges: accepted at the same position | 299 | 299 |
 | Refusals at a position where v1 has no line | 0 | 2 |
-| Lines per second, on the modules that v2 walks | 1 049 000 | 954 000 |
-| Lines per second, on all that it walks | 1 321 000 | 1 172 000 |
+| Lines per second, on the modules that v2 walks | 1 049 000 | 958 000 |
+| Lines per second, on all that it walks | 1 321 000 | 1 178 000 |
 | v2, lines per second | 119 000 | 121 000 |
 
 `master` has more lines than at report 111: v2 walks 185 325 lines (report 111: 171 766), and the prototype
 572 966 (558 336). The code of the first gate, on `master` at `59ea68b8eb`, measured 962 000 and 1 216 000
-lines per second. The final code is 1 % and 4 % below that, on a `master` with more lines. Against report
-111 the two figures are 9 % and 11 % lower.
+lines per second. The final code is below that by less than 1 % and by 3 %, on a `master` with more lines.
+Against report 111 the two figures are 9 % and 11 % lower.
 
 The nine writes that the prototype does not accept are the nine of report 111 §4.4, with the same causes. Six
 of them are a function that a call answers (§2.8).
@@ -572,18 +591,21 @@ The causes of the 1 724 refusals: `supply` 692, `unknown` 519, `call` 364, `late
 ### 6.3 After the run: a search by hand
 
 The family varies how a function travels. It does not vary the types: each list in it is a `List Int`, no
-result in it has two parts, and no call in it has one list at two arguments. So after the run, 97 programs
-were written by hand against the prototype, in five rounds. Each program comes from a question that the
-family does not ask. **15 of the 97 trap. They are three faults.** v2 refuses each of the 15. Report 111's
-prototype traps on 14 of them and refuses one.
+result in it has two parts, and no call in it has one list at two arguments. So after the run, 121 programs
+were written by hand against the prototype, in seven rounds. Each program comes from a question that the
+family does not ask. **20 of the 121 trap. They are three faults.** v2 refuses each of the 20. Report 111's
+prototype traps on 19 of them and refuses one.
 
 | Round | Programs | Trap | The question of the round | Fault |
 |---|---:|---:|---|---|
 | 1 | 37 | 5 | what the family does not vary: a callback and a holder of two different types, an answer beside its argument, a method call, a callback that takes a callback, recursion that wraps the callback again, a callback over a tree or a `Dict`, a constructor as a function, a function in a cell | 1, 2, and 3 (an answer beside an argument) |
-| 2 | 6 | 4 | a question of the review of this pull request: are two parts of one wide value always apart? | 3 (the arguments; a function that a handed function captured) |
+| 2 | 6 | 4 | a question of the first review of this pull request: are two parts of one wide value always apart? | 3 (the arguments; a function that a handed function captured) |
 | 3 | 7 | 3 | the same claim for one location that holds many cells | 3 (one location, two sources) |
 | 4 | 13 | 3 | one function that is called two times | 3 (one location, one source) |
-| 5 | 34 | 0 | the same claim through a captured value, a partial application, `List.append`, `List.concat`, a spread, a projection of an argument, a pattern in place of `List.update`, a list that a handed function captured, an argument that the callee reads before the function gets it, and a fold with one list in the list and in the accumulator | none |
+| 5 | 40 | 0 | the same claim through a captured value, a partial application, `List.append`, `List.concat`, a spread, a projection of an argument, a pattern in place of `List.update`, a list that a handed function captured, an argument that the callee reads before the function gets it, a fold with one list in the list and in the accumulator, and an argument that is one of several values or the result of another call (with no function) | none |
+| | | | *the blind sweep of §6.4 ran here* | |
+| 6 | 7 | 5 | a finding of the second review, from a reading of the code: the check of the arguments does not look into a value that is one of several, or into a deep nest | 3 (the arguments, where the check did not look) |
+| 7 | 11 | 0 | the second review's list of forms that the blind sweep does not have: a callee over a type variable, a list and a view of it, the answer of an earlier call, three places, a function that is one of several, a write of the argument itself | none |
 
 **Fault 1: a function with a wider type than its holder.**
 
@@ -624,7 +646,7 @@ that only the caller knows:
 - if the arguments are apart;
 - what a function answers that a handed function captured.
 
-The search found the fault in four forms, one round after the other:
+The search found the fault in five forms, one round after the other:
 
 ```beni
 withBoth f xs = ( f xs, xs )           -- round 1: an answer beside the argument
@@ -638,6 +660,10 @@ v = pack ( q, q )                      -- `q` is at two elements
 
 each f x y = [ f x, f y ]              -- round 4: one location, one source
 v = each (λl → l) q q                  -- `q` is at two elements
+
+parts f p = [ f p.0, f p.1 ]           -- round 6: the argument is one of several values
+x = if c then ( q, q ) else ( [ 1 ], [ 2 ] )
+v = parts (λl → l) x                   -- `q` is at two elements
 ```
 
 Each program then writes one of the two places in place and reads the other
@@ -657,9 +683,15 @@ Each program then writes one of the two places in place and reads the other
 - **The fix of round 3 is one check** (`sourcesApart`, §2.7). It replaced the two cases. For each pair of
   sources of a result, the caller reads what the two are in its own frame. If they can be one cell, the claim
   does not hold: two locations are not apart, or the one location has no claim. Round 4 found the one form
-  that a check of pairs cannot see: one answer source is each answer of each call of the function. The same
-  check has it now: when the arguments are not apart, a location that holds many cells and has an answer has
-  no claim. Round 5 found no fault.
+  that a check of pairs cannot see: one answer source is each answer of each call of the function. Round 5
+  found no fault, and the blind sweep of §6.4 found none.
+- **Round 6 found that one part of that check was still the case of round 2.** `argsApart` compared the items
+  of a tuple, a record or a constructor application, and it read each other value as one part. So a tuple
+  `( q, q )` that is one arm of an `if`, or that is ten levels down in a nest, was "apart". Round 5 had three
+  programs with such an `if` and no function, and each was refused, because the check of pairs compared the
+  cells of two parameter sources. With a function between the argument and the result, nothing compared
+  them. §6.5 has the fix: the check of the arguments has one case for each kind of value now, and the check
+  of the sources rests on it.
 
 **What the three faults have in common.** None is a new way for a function to travel. Each is at the border
 between the rule and the first-order core: how a location of one type maps to a location of another, and
@@ -693,17 +725,18 @@ programs in which one list is at two elements and nothing is read after the writ
 has the same price for a list that is built in place with one cell two times.
 
 **The gate and the family again.** The fixes changed the prototype after the one run of §6.2. So each run of
-§5 and the family were repeated on the final code (`51a1bb0eff`). §5 has the figures of the final code.
-Three of the four sweeps have the same verdict for each program as at the first gate, and
-`recursive-levels.mjs` has 84 safe programs fewer with `SAME` (§5.1). The family has 240 `SAME` and 1 720 `REFUSED`, and no program has a `TRAP`,
-a `DIFF` or a `CRASH`. The sanitiser corpus has one more accepted fixture (100). The real writes stay at 299. The first version of
-the fix of round 1 cost one real write (`Tea.tableFoldl`, a fold over a nested accumulator): two parts of one
-wide entry of a callee's result are parts of one value, and the check reads them so.
+§5 and the family were repeated on the code of rounds 1 to 4 (`51a1bb0eff`), and then on the final code
+(`b371210096`). §5 has the figures of the final code. The family has 240 `SAME` and 1 720 `REFUSED` on both,
+and no program has a `TRAP`, a `DIFF` or a `CRASH`. The sanitiser corpus has one more accepted fixture
+(100). The real writes stay at 299. The first version of the fix of round 1 cost one real write
+(`Tea.tableFoldl`, a fold over a nested accumulator): two parts of one wide entry of a callee's result are
+parts of one value, and the check reads them so.
 
 ### 6.4 A blind sweep for the border
 
 The two sweeps of §6.3 were written after the faults that they pin. So after the last fix, one more generator
-was written for the claim of §2.7, and it ran one time on the final code. Before that run, 441 of its programs
+was written for the claim of §2.7, and it ran one time, on the code of that fix (`51a1bb0eff`). Before that
+run, 441 of its programs
 were built with no checker, to show that the generator makes programs that build and run. No checker ran on
 a program of it before the one run.
 
@@ -719,8 +752,8 @@ from two inputs, and the caller hands it one list `q` as both inputs.
 
 | | `SAME` | `REFUSED` | `TRAP` | `DIFF` | `CRASH` |
 |---|---:|---:|---:|---:|---:|
-| the final prototype, ReleaseFast (the one run) | 642 | 3 228 | 0 | 0 | 0 |
-| the final prototype, ReleaseSafe | 642 | 3 228 | 0 | 0 | 0 |
+| the prototype at `51a1bb0eff`, ReleaseFast (the one run) | 642 | 3 228 | 0 | 0 | 0 |
+| the prototype at `51a1bb0eff`, ReleaseSafe | 642 | 3 228 | 0 | 0 | 0 |
 | v2 | 1 080 | 2 790 | 0 | 0 | 0 |
 | report 111's prototype (`1692066993`) | 734 | 2 990 | **146** | 0 | 0 |
 | the prototype that passed the first gate (`f5a4bea289`) | 734 | 2 990 | **146** | 0 | 0 |
@@ -734,7 +767,64 @@ from two inputs, and the caller hands it one list `q` as both inputs.
   refuses the write only when a read follows. For a write of an element of the result itself, the prototype
   accepts 60 of the 270 programs, and v2 9.
 - **What the sweep does not show.** Its dimensions come from the forms that the hand search found. It is
-  blind for the checker and not for its author. A form that the author did not think of is not in it.
+  blind for the checker and not for its author. A form that the author did not think of is not in it. §6.5
+  has such a form.
+
+### 6.5 After the blind sweep: a fault that a review found
+
+The code that passed the blind sweep (`51a1bb0eff`) was pushed, and the second review of the pull request
+read `argsApart`. It found, with no program, that a value that is not a tuple, a record or a constructor
+application is one part for that check. Seven programs were written from the finding (round 6 of §6.3). Five
+trap on the code that passed the blind sweep:
+
+- a handed function over a tuple that is one arm of an `if`, bound to a local or at the call (four programs);
+- a handed function over a tuple that is ten levels down in a nest of tuples (one program).
+
+Each of the five traps on report 111's prototype too, and v2 refuses each. The blind sweep has no such form:
+in each of its nine alias forms the list is at two places of a tuple, a record, a list, a local or a
+projection, and the check followed each of those.
+
+**The fix** is in two functions.
+
+- `partsOf` has one case for each kind of value that a frame has (no object, no claim, a part of a root, a
+  construction, one of several values, a known function with what it captured, a function with no captured
+  value, and "each cell at each location"). The `switch` has no default, so a new kind of value does not
+  compile until it has a case. A kind that cannot claim that its own parts are apart has no claim: a root
+  that the frame made and whose parts are not apart, a nest deeper than eight levels, one of several values
+  of which one has no claim, "each cell at each location".
+- `sourcesApart` reads the callee's claim in two steps (§2.7). When no cell is at two places of the
+  arguments, two parameter sources are two cells, and only a pair with an answer is compared cell by cell.
+  When a cell is at two places, the callee's claim has no ground. An entry that the fallback cover feeds was
+  skipped before, and it is checked as each other entry is now (the review asked for that too).
+
+The comparison of the cells of two parameter sources is gone. It was coarse for two locations of one
+argument over a recursive type, and it cost 84 safe programs of `recursive-levels.mjs` in the code of the
+blind sweep (4 276 of 5 377 safe twins). 48 of the 84 are accepted again. The final code refuses 78 safe
+programs that the first gate accepted (36 of the 84, and 42 others), for another cause: the limit of
+`partsOf` on the depth of a nest (§5.1).
+
+**The sweep, extended.** `aliased-arguments.mjs` has three more alias forms for this fault (a tuple that is
+one of several values, as a local and at the call; a tuple ten levels down): 5 160 programs. These 1 290
+programs are not a blind test.
+
+| | `SAME` | `REFUSED` | `TRAP` | `DIFF` | `CRASH` |
+|---|---:|---:|---:|---:|---:|
+| the final prototype, ReleaseFast | 861 | 4 299 | 0 | 0 | 0 |
+| the final prototype, ReleaseSafe | 861 | 4 299 | 0 | 0 | 0 |
+| v2 | 1 425 | 3 735 | 0 | 0 | 0 |
+| the code that passed the blind sweep (`51a1bb0eff`) | 873 | 4 278 | **9** | 0 | 0 |
+| report 111's prototype (`1692066993`) | 1 001 | 3 929 | **230** | 0 | 0 |
+| the prototype that passed the first gate (`f5a4bea289`) | 1 001 | 3 929 | **230** | 0 | 0 |
+
+The code that passed the blind sweep traps on nine of the new programs: three of each new alias form. Each
+of the nine has one function at both inputs that answers its parameter, a callee that answers a list, and a
+caller that writes an element of that list. On the 3 870 programs of the blind run the final code has the
+verdict of that code for each program. Of the 960 safe twins (`dead`) the final code accepts 398 (41 %), and
+v2 each one.
+
+Round 7 took the second review's list of forms that the sweep does not have, one or two programs for each:
+11 programs, and the final code refuses each one. Three forms of that list have no program yet: a callee
+in another module, a list in a `Ref` or a `Dict`, and a recursive callee with aliased arguments.
 
 ---
 
@@ -750,22 +840,22 @@ from two inputs, and the caller hands it one list `q` as both inputs.
     v2 accepts 321 `dead` twins of the new family that the prototype refuses;
   - each closure that writes a captured value, also when it runs one time (`handed-back.mjs`: v2 accepts 476
     programs, the prototype none).
-- **The border of the rule has one blind test.** The three faults of §6.3 were found by 97 programs that
-  the questions of one worker and one reviewer gave. The third fault had four forms in four rounds. The
-  evidence that no fifth form exists is one round by hand with no fault, and one blind sweep whose
-  dimensions the same worker chose (§6.4). The two sweeps of §6.3 were written after the faults. The claim
-  of §2.7 has a list of the pairs that need no check (the comment on `sourcesApart`), and each line of that
-  list is an argument by hand. The match of two types (§2.7) has no blind test: `wider-functions.mjs` was
-  written after its two faults. That match is correct in both directions now, and it is coarse in two places
-  on purpose: a wide location takes each cell below its place, and it reads an answer below it as a whole.
-  The exact form maps both readings to the type of the value at the place where it flows. That work did not
-  start.
+- **The border of the rule is not shown to be closed.** The three faults of §6.3 were found by 121 programs
+  that the questions of one worker and two reviews gave. The third fault had five forms in five rounds. A
+  blind sweep whose dimensions the same worker chose found no fault (§6.4), and a reading of the code by a
+  reviewer then found one (§6.5). So a sweep by the author of a fix is weak evidence for that fix. The
+  stronger evidence here was a reader who did not write the code. The claim of §2.7 has a list of the pairs
+  with an answer that need no check (the comment on `sourcesApart`), and each line of that list is an
+  argument by hand. The match of two types (§2.7) has no blind test: `wider-functions.mjs` was written after
+  its two faults. That match is correct in both directions now, and it is coarse in two places on purpose: a
+  wide location takes each cell below its place, and it reads an answer below it as a whole. The exact form
+  maps both readings to the type of the value at the place where it flows. That work did not start.
 - **The first-order core had no test with one list at two places of a call's arguments.** Two forms of the
   third fault are first-order. Report 111's generators and the four sweeps did not find them.
-  `aliased-arguments.mjs` is the first such test, and 32 of the 146 programs on which the earlier prototypes
-  trap have no function. No random generator has that form yet.
-- **The check of pairs is coarse for two locations of one argument.** It costs 84 safe programs of
-  `recursive-levels.mjs` (§5.1).
+  `aliased-arguments.mjs` is the first such test, and 32 of the 146 programs of its blind run on which the
+  earlier prototypes trap have no function. No random generator has that form yet. The second review's list
+  has three forms with no program: a callee in another module, a list in a `Ref` or a `Dict`, and a
+  recursive callee with such arguments (§6.5).
 - **No sweep has a function value with a recursive type, a record with a row, or a cell in the accumulator.**
   The family of §6.1 has flat lists. `wider-functions.mjs` has nested lists, a pair, a record and a `Maybe`.
   Five programs by hand have a callback over a tree, and six have a `Dict`, a row or a list of functions.
@@ -781,19 +871,20 @@ Each item is the owner's decision.
    the costs of §7's second item. The eight generators are the gate for it.
 2. **Make the sweeps and the sanitiser corpus a gate of the flag**, as report 111 §7 item 2 says. One run of
    the eight generators takes about 25 minutes on seven cores with a ReleaseFast compiler.
-3. **Vary the types in the sweeps, and run them blind.** `function-values.mjs` with the shapes of
-   `folds-callbacks.mjs` (a list of lists, a record, a tuple, a `Maybe`, a constructor) and with a recursive
-   type; one list at two places of the arguments in report 111's random generators. §6.3 is the reason. The
-   match of two types has no blind test yet.
+3. **Vary the types in the sweeps, and let another author write the next sweep.** `function-values.mjs` with
+   the shapes of `folds-callbacks.mjs` (a list of lists, a record, a tuple, a `Maybe`, a constructor) and
+   with a recursive type; one list at two places of the arguments in report 111's random generators; the
+   three forms of §6.5 that have no program. §6.3 and §6.5 are the reason. The match of two types has no
+   blind test yet.
 4. **The normative text** (rule 1 of `CLAUDE.md`). §2 of this report and report 111 §2.1 to §2.5 are its
    outline.
 5. **A row on `Js.get`, on `Dict.focus` and on the platforms' `Send`** (report 111 §7 item 5; §5.4 here).
 6. **A mutant for each `flow` to `top` of §2.6**, as `zig build test-own2-mutations` has for v2. Each is one
    line. A mutant that removes it must make a program of the sweeps trap.
-7. **The exact check for two locations of one argument** (§5.1). In `sourcesApart`, a pair of two parameter
-   sources of one argument needs the argument's own claim that its parts are apart (`argsApart`), not a
-   comparison of cells. `partsOf` must then read each arm of a value that is one of several. It gives back
-   the 84 safe programs of `recursive-levels.mjs`. The eight generators are the gate for it.
+7. **A review of `sourcesApart`, `argsApart` and `partsOf` by a reader who did not write them, and a model
+   of them.** §6.5 is the reason. The claim of §2.7 is small: one predicate on a value ("no cell is at two
+   places"), by the kind of the value, and one check of a pair of sources. It fits the Lean model that
+   report 110 §6.8 names.
 
 ---
 

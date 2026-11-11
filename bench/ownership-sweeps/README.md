@@ -78,7 +78,8 @@ On the rebuilt prototype each of the eight generators has 0 `TRAP`, 0 `DIFF` and
 programs above is `REFUSED`. Report 112 §5 and §6 have the figures, the comparison with v2 by twin, and the
 controls: report 111's prototype traps on 371 programs of `function-values.mjs`, and the prototype as it was
 before the fixes of report 112 §6.3 traps on 38 programs of `wider-functions.mjs`, on 27 of
-`answers-beside.mjs` and on 146 of `aliased-arguments.mjs`.
+`answers-beside.mjs` and on 230 of `aliased-arguments.mjs`.
 
-`function-values.mjs` and `aliased-arguments.mjs` are blind tests: each ran one time on a prototype that had
-not seen its programs (report 112 §6.2, §6.4). The other two were written after the faults that they pin.
+`function-values.mjs` and the first nine alias forms of `aliased-arguments.mjs` (3 870 programs) are blind
+tests: each ran one time on a prototype that had not seen its programs (report 112 §6.2, §6.4). The other
+two generators and the last three alias forms were written after the faults that they pin (§6.3, §6.5).
