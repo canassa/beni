@@ -2651,7 +2651,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     var ins3: Enforce3.Inputs = if (session.options.ownership_v3) try Enforce3.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
     defer if (session.options.ownership_v3) ins3.deinit(session.gpa);
     if (session.options.ownership_v3) session.ownership3 = try Enforce3.State.init(session.gpa, session.graph.count());
-    const ownership3: Enforce3.Context = .{ .session = session, .ins = &ins3, .state = session.ownership3 orelse undefined };
+    const ownership3: ?Enforce3.Context = if (session.ownership3) |state| .{ .session = session, .ins = &ins3, .state = state } else null;
     const Runner = struct {
         session: *Session,
         quiet: []const bool,
@@ -2659,7 +2659,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         cutoff: *Check.Cutoff,
         ownership: *const Enforce.Context,
         ownership2: *const Enforce2.Context,
-        ownership3: *const Enforce3.Context,
+        ownership3: ?*const Enforce3.Context,
         entry_constructors: []const []const u8,
         entry_kinds: []const @import("js/Manifest.zig").EntryKind,
         result: Check.Error!Check = undefined,
@@ -2677,7 +2677,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 .{
                     .ownership = if (r.session.options.ownership_v2 or r.session.options.ownership_v3) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
-                    .ownership3 = if (r.session.options.ownership_v3) r.ownership3 else null,
+                    .ownership3 = r.ownership3,
                     .profile = &r.session.profile,
                     .entry_constructors = r.entry_constructors,
                     .entry_kinds = r.entry_kinds,
@@ -2709,7 +2709,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             try kinds.append(session.gpa, kind);
         }
     };
-    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2, .ownership3 = &ownership3 };
+    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2, .ownership3 = if (ownership3) |*c| c else null };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

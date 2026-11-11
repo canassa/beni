@@ -130,6 +130,12 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     const session = ctx.session;
     const gpa = d.gpa;
     const mi_u = m.int();
+    // A module with no kept types is not walked (v2's hook has the same
+    // test). It has no line, so the lowering channel has no accepted write
+    // of it: a build edits none of its lists in place. It publishes no
+    // contract, and an importer reads a callee with no contract as unknown
+    // code: each argument escapes, the answer has no claim, a function
+    // handed as evidence is refused. Each of these refuses; none accepts.
     if (mi_u >= d.kept.len) return;
     const km = &d.kept[mi_u];
     const bir = ctx.ins.birs[mi_u];
