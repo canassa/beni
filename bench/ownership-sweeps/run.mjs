@@ -1,13 +1,14 @@
 // run.mjs: build each generated program two times, run both, and compare.
 //
-//   node bench/ownership-sweeps/run.mjs --beni=<beni> --checker=v3 [--jobs=N] [--tmp=<dir>] <outdir>
+//   node bench/ownership-sweeps/run.mjs --beni=<beni> --checker=v3 [--jobs=N] [--tmp=<dir>] [--tag=<name>] <outdir>
 //
 // <outdir> is a directory that a generator of this folder wrote (it has a LIST). The oracle is a plain
 // build: no list is edited in place. The second build has `--ownership=<checker> --ownership-everywhere
 // --sanitize-lists`. Each program gets one verdict: SAME (accepted, same output), REFUSED (with its
 // first code and position), LIMIT, TRAP (the checked build throws: a stale read), DIFF (another output),
 // CRASH (the compiler fails), PLAINFAIL (the generated program does not build), BOTHFAIL. The results
-// go to <outdir>.<checker>.txt, one line for each program. A rerun skips the programs that have a line.
+// go to <outdir>.<checker>.txt, one line for each program (<outdir>.<tag>.txt with `--tag`, to keep the
+// results of two compilers apart). A rerun skips the programs that have a line.
 // Last, a tally by verdict and by the program's last name part (`live`, `kept`, `dead`, …): a dead
 // twin reads nothing after the write, so a refusal of it is a precision loss, and a TRAP or DIFF of any
 // program is a soundness hole.
@@ -28,7 +29,7 @@ if (!dir || !opt.beni || !opt.checker) {
 const beni = path.resolve(opt.beni);
 const jobs = Number(opt.jobs ?? Math.max(1, os.cpus().length >> 1));
 const tmpRoot = path.resolve(opt.tmp ?? os.tmpdir());
-const results = `${path.resolve(dir)}.${opt.checker}.txt`;
+const results = `${path.resolve(dir)}.${opt.tag ?? opt.checker}.txt`;
 
 function run(cmd, args, cwd, timeoutMs) {
   return new Promise((resolve) => {

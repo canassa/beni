@@ -1,7 +1,8 @@
 # Ownership sweeps
 
-Four systematic generators of small beni programs, and one runner that judges a checker on them. They were
-written while ownership checker v2 was built. Each one sweeps one corner where v2 had soundness holes. Report
+Five systematic generators of small beni programs, and one runner that judges a checker on them. Four were
+written while ownership checker v2 was built. Each one sweeps one corner where v2 had soundness holes. The
+fifth, `function-values.mjs`, was written for research report 112 (below). Report
 111's prototype (`--ownership=v3`) never ran them. The first time it did, they found 153 programs that it
 accepts and that then read a list after an in-place write (below).
 
@@ -48,6 +49,7 @@ The last part of a program's name is its twin kind:
 | `folds-callbacks.mjs` | 30 300 | folds and callbacks: fold kind (`List.foldl`/`foldr`, hand-written tail and non-tail folds and loops, `Dict` folds, nested folds, `List.map`/`indexedMap`/`filter`, `Maybe.map`/`andThen`) × accumulator shape and edit × what the callback does (push, keep in `Task.soon`/`spawn`, a view, a `Ref`, hand it on, capture it) × callback origin (lambda, top-level, partial application, a generic call, a composition) × live/kept/dead |
 | `callbacks-keep.mjs` | 720 | a function hands a value to a callback that its caller gives, then edits the value in place, while the callback kept it |
 | `handed-back.mjs` | 2 592 | a callee runs a callback that writes what it captures, then hands it back (directly, in a record, tuple or `Maybe`, through `ident`), and the caller runs it again or passes it on |
+| `function-values.mjs` | 1 960 | the ways a function value travels: carrier (compositions two and three deep, a type variable, a record, a tuple, a list, a `Maybe`, a cell, one of two functions, partial application, a function that answers the callback, a callback that answers a callback, a fold in a callback, mutual recursion, a local function that calls itself, hands itself on, or is called before it is bound) × runner (one call, two calls, two runs on one list, `List.foldl`, a hand-written fold, a nested fold, `List.map`) × act (write the handed list, write and keep it, hand a captured list to a captured writer, answer a captured list, answer the handed list) × live/dead |
 
 ## Baseline: report 111's prototype
 
