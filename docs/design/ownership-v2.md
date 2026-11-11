@@ -6926,6 +6926,11 @@ are identical and nothing is written (R-7.11).
    `ownership/RecordKeptInLiteral`. 9 are the update of a record that an unknown function's answer can hold
    (#2470), with the analysis in those fixtures' `.v2` files. 5 are one call that both checkers refuse: v1
    names the function that writes, and v2 names the record. 121 are `open`.
+
+   *Fifth step of #2477 (2026-11-11):* 25 more are a cell callback's update of the contents' own record
+   (§2.11.5, *A cell's contents*). Both checkers refuse it: v1 in the callback, and v2 at the cell operation
+   that runs the callback, as `ownership/RecordCellEdit` pins. 19 of them are in `browser/tea/BallMachine`.
+   96 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
