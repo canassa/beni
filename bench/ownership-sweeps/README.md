@@ -1,8 +1,9 @@
 # Ownership sweeps
 
-Six systematic generators of small beni programs, and one runner that judges a checker on them. Four were
+Seven systematic generators of small beni programs, and one runner that judges a checker on them. Four were
 written while ownership checker v2 was built. Each one sweeps one corner where v2 had soundness holes. The
-last two, `function-values.mjs` and `wider-functions.mjs`, were written for research report 112 (below). Report
+last three, `function-values.mjs`, `wider-functions.mjs` and `answers-beside.mjs`, were written for research
+report 112 (below). Report
 111's prototype (`--ownership=v3`) never ran them. The first time it did, they found 153 programs that it
 accepts and that then read a list after an in-place write (below).
 
@@ -51,6 +52,7 @@ The last part of a program's name is its twin kind:
 | `handed-back.mjs` | 2 592 | a callee runs a callback that writes what it captures, then hands it back (directly, in a record, tuple or `Maybe`, through `ident`), and the caller runs it again or passes it on |
 | `function-values.mjs` | 1 960 | the ways a function value travels: carrier (compositions two and three deep, a type variable, a record, a tuple, a list, a `Maybe`, a cell, one of two functions, partial application, a function that answers the callback, a callback that answers a callback, a fold in a callback, mutual recursion, a local function that calls itself, hands itself on, or is called before it is bound) × runner (one call, two calls, two runs on one list, `List.foldl`, a hand-written fold, a nested fold, `List.map`) × act (write the handed list, write and keep it, hand a captured list to a captured writer, answer a captured list, answer the handed list) × live/dead |
 | `wider-functions.mjs` | 354 | a function value whose type and its holder's type are two readings of one type: a function over a type variable (`a → a`, `List a → List a`, `x, a → a`; top-level, local, lambda) × holder (a parameter of a concrete type, run one time, two times or by a fold; a parameter of a type variable) × shape (a list of lists, a list of lists of lists, a pair, a record, a `Maybe`) × how the innermost list of the answer is written (`List.update`, or through a pattern) × live/dead |
+| `answers-beside.mjs` | 128 | the answer of a function beside another part of a result: callee (a pair of the answer and the argument, of two calls, of two functions; a record; the elements of a list; through one more function; one level down; over a type variable) × what the function answers (its parameter, a new list, a captured list) × what the caller does with the two parts (both into one list and a write of one element; a write of one and a read of the other) |
 
 ## Baseline: report 111's prototype
 
@@ -71,7 +73,8 @@ Of the safe (`dead`) twins, the prototype refuses 48 %, and `master`'s v2 a litt
 ## Round 2: research report 112
 
 The prototype was rebuilt around one rule for function values (`docs/design/research/112-ownership-prototype-function-values.md`).
-On the rebuilt prototype each of the six generators has 0 `TRAP`, 0 `DIFF` and 0 `CRASH`, and each of the 153
+On the rebuilt prototype each of the seven generators has 0 `TRAP`, 0 `DIFF` and 0 `CRASH`, and each of the 153
 programs above is `REFUSED`. Report 112 §5 and §6 have the figures, the comparison with v2 by twin, and the
-control: report 111's prototype traps on 371 programs of `function-values.mjs` and on programs of
-`wider-functions.mjs`.
+controls: report 111's prototype traps on 371 programs of `function-values.mjs`, and the prototype as it was
+before the fixes of report 112 §6.3 traps on 38 programs of `wider-functions.mjs` and on 14 of
+`answers-beside.mjs`.
