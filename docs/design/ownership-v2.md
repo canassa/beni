@@ -7084,6 +7084,20 @@ are identical and nothing is written (R-7.11).
 8. **Lists independent of records** (R-8.6): `--ownership-records-lost` keeps every list line byte-identical.
    *Since 2026-11-10 (S5a):* this holds by construction, because the list lines are the list pass's and the
    record pass gives none (§2.11.5, *Two passes*; mutant `record_pass_lists`). The flag and its test are S5's later step.
+   *Built 2026-11-10 (#1018, S5c):* under `--ownership-records-lost`, checker v2 refuses each record line,
+   approximately, with the cause `unknown` and the detail "no record condition holds under
+   --ownership-records-lost" (R-6.3's causes get no new member). The flag reaches the record pass's lines and
+   nothing else, so the list pass does not see it. A lost record line is refused as any other: the module's
+   record half is not clean, and an enforcing build stops. Two checks compare the list lines with those of the
+   run without the flag, byte for byte. In the gates, each `ownership/` fixture with a `.v2` file and a record
+   line is reported a second time with the flag, and none of its record lines may be accepted (a refusal that
+   only the record pass has, on a list demand, keeps its own cause). Outside
+   the gates, `zig build test-records-lost-v2` does the comparison for every program of the corpus
+   (`tests/records-lost.mjs` with `--ownership=v2`). There a program with no report is an error, and a project
+   whose modules are in several directories is named and not compared (ten of 2 401 programs on 2026-11-11,
+   #2472). The checks cover the flag's own path and the merge of the
+   two passes' lines. They do not cover an importer's list pass that reads the record part of a block: the part
+   is chosen by the pass (`Block.part`). Mutant `records_lost_keeps` (a record line keeps its verdict under the flag).
 
 ---
 
