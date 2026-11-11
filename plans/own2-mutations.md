@@ -80,6 +80,9 @@ error, `Ownership.zig`) by `run/SanitiserRecordLimit`: the checker accepts a pro
 **`record_rows_unchecked` and `record_limit_clean` survive from this step on, and are equivalent**: a refused record
 line and a limit of the record pass now stop an enforcing build before the emitter, and a build that does not enforce
 stores nothing. The clean bit that they break stays as the one fact that the conversion reads, as v1's `allAccepted` does.
+*`--ownership-records-lost` under v2 (#1018, S5c):* `records_lost_keeps` (a record line keeps its verdict under the flag,
+`Ownership.zig`) is killed by 46 `ownership/` fixtures: the second report of the v2 check has a record line that is
+accepted (`RecordsLostKeepsRecordLine`; `--only=records_lost_keeps`, 298 s, control green).
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -140,6 +143,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `record_limit_clean` | §2.8, the emitter reads the rows | a declaration past the record pass's limit leaves the record half clean | SURVIVED | equivalent | 0 | 0 | 0 | 0 |
 | `record_refusal_quiet` | §2.8, a refused record line is an error | a refused record line makes no error | killed | | 10: SanitiserCellLoan (SanitisedRefusalDiffers), … | 14: RecordCalleeFields (UnexpectedExitCode), … | 0 | |
 | `record_limit_quiet` | §2.8, a refused record line is an error | the record pass's limit makes no line and no error | killed | | SanitiserRecordLimit (SanitisedRefusalAccepted) | 0 | 0 | |
+| `records_lost_keeps` | §7, point 8 (R-8.6) | a record line keeps its verdict under `--ownership-records-lost` | killed | | 0 | 46: HolderRestApart (RecordsLostKeepsRecordLine), … | 0 | |
 | `call_escape_off` | O1 O8 | a callee's escapes do not escape at the call | killed | | 11: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |

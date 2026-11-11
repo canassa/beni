@@ -83,6 +83,9 @@ fn data(f: Frame, i: u32) Bir.Inst.Data {
 
 /// A value reference's `M.v`.
 /// A callee reference's `M.f`: the function it runs, through aliases.
+/// A record line's detail under `--ownership-records-lost` (§7, point 8).
+pub const records_lost = "no record condition holds under --ownership-records-lost";
+
 pub fn calleeName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     const of = f.callee_of orelse return refName(f, a, i);
     const md = of(f.ctx, i) orelse return null;

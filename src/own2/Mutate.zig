@@ -88,6 +88,8 @@ pub const Name = enum {
     record_refusal_quiet,
     /// §2.8, *a refused record line is an error*: the record pass's limit makes no line and no error.
     record_limit_quiet,
+    /// §7, point 8 (R-8.6): a record line keeps its verdict under `--ownership-records-lost`.
+    records_lost_keeps,
     /// O1 O8: a callee's escapes do not escape at the call.
     call_escape_off,
     /// O8: a callee's escape is read at the slot, not deep.

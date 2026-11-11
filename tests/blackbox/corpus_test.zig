@@ -4238,6 +4238,25 @@ const Case = struct {
         const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2" }, flags, &.{path} }));
         try expectExit(0, r);
         try c.v2Unchecked(if (flags.len == 0) "v2.unchecked" else try std.fmt.allocPrint(c.arena, "{s}.v2.unchecked", .{std.fs.path.basename(token)}), r.stdout, true);
+        // R-8.6 for v2 (`ownership-v2.md` §7, point 8): with every record condition lost, each record line is
+        // refused, and the list lines are the same, byte for byte.
+        if (std.mem.indexOf(u8, r.stdout, " update ") != null) {
+            const lost = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-records-lost" }, flags, &.{path} }));
+            try expectExit(0, lost);
+            const plain_lists = try demandLines(c.arena, r.stdout, false);
+            const lost_lists = try demandLines(c.arena, lost.stdout, false);
+            if (!std.mem.eql(u8, plain_lists, lost_lists)) {
+                detail("{s}: under --ownership=v2 --ownership-records-lost a list line moved\n--- without the flag ---\n{s}--- with the flag ---\n{s}", .{ c.fixture.name, plain_lists, lost_lists });
+                return error.RecordsLostMovesListLine;
+            }
+            var records = std.mem.splitScalar(u8, try demandLines(c.arena, lost.stdout, true), '\n');
+            // A record demand's line says that its condition is lost; a refusal that only the record pass has, on a
+            // list demand, keeps its own cause. No record line is accepted.
+            while (records.next()) |line| if (line.len != 0 and std.mem.indexOf(u8, line, ": rejected ") == null) {
+                detail("{s}: under --ownership=v2 --ownership-records-lost a record line is accepted\n{s}\n", .{ c.fixture.name, line });
+                return error.RecordsLostKeepsRecordLine;
+            };
+        }
         // `check --ownership=v2` agrees with v2's own report as v1's does with
         // v1's: on an enforcing chain it fails exactly when the report has a
         // rejected or pending list line or a limit, with ownership codes only.
@@ -4304,6 +4323,18 @@ const Case = struct {
         const v1 = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes));
         try c.v2Unchecked(if (flags.len == 0) "v2.unchecked" else try std.fmt.allocPrint(c.arena, "{s}.v2.unchecked", .{std.fs.path.basename(token)}), r.stdout, false);
         try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s} [{s}]", .{ c.fixture.dir, c.fixture.name, token }), v1, r.stdout);
+    }
+
+    /// The demand lines of an ownership report (`  L:C op base: …`): its record lines (`update`), or the others.
+    fn demandLines(arena: std.mem.Allocator, report: []const u8, records: bool) ![]const u8 {
+        var out: std.ArrayList(u8) = .empty;
+        var lines = std.mem.splitScalar(u8, report, '\n');
+        while (lines.next()) |line| {
+            if (!std.mem.startsWith(u8, line, "  ") or line.len < 3 or !std.ascii.isDigit(line[2])) continue;
+            const op = line[(std.mem.indexOfScalarPos(u8, line, 2, ' ') orelse continue)..];
+            if (std.mem.startsWith(u8, op, " update ") == records) try out.print(arena, "{s}\n", .{line});
+        }
+        return out.items;
     }
 
     /// The declarations v2 says it does not check (`unchecked …`), against

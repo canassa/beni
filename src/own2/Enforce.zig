@@ -415,7 +415,7 @@ const DumpRun = struct {
         try r.mods.append(r.gpa, mi);
         const token = r.session.profile.begin();
         defer r.session.profile.end(0, token, .ownership2_module, @backingInt(r.session.graph.moduleFile(@fromBackingInt(m))), 0);
-        const one = try Ownership.run(r.gpa, r.arena, .{ .names = r.nc.names(), .modules = r.mods.items[r.mods.items.len - 1 ..], .publish = true, .format_summaries = !r.totals_only });
+        const one = try Ownership.run(r.gpa, r.arena, .{ .names = r.nc.names(), .modules = r.mods.items[r.mods.items.len - 1 ..], .publish = true, .format_summaries = !r.totals_only, .records_lost = r.session.options.ownership_records_lost });
         if (one[0].block) |b| r.blocks[m] = b;
         r.done[m].reports = one;
         return one;
@@ -451,7 +451,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     // authorise no write (§7.3); their clean bit says whether a caller
     // there was checked.
     var channel = [1]Hoists.Table{.empty};
-    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .below = if (kept) |k| k.below else false, .channels = &channel });
+    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .below = if (kept) |k| k.below else false, .channels = &channel, .records_lost = session.options.ownership_records_lost });
     if (session.graph.modulePackage(m) != .app) {
         gpa.free(channel[0].writes);
         channel[0].writes = &.{};
