@@ -3,7 +3,7 @@
 // second answer). The callee cannot know if the two parts are one cell: that depends on the function. The
 // caller then puts both parts into one list and writes one element, or writes one part and reads the other.
 // A hand search for research report 112 §6.3 found this corner: the prototype trusted the callee's "the parts
-// of my result are apart". Three callees have no function: the argument has one list at two places, which is
+// of my result are apart". Four callees have no function: the argument has one list at two places, which is
 // the first-order form of the same claim. Programs are `<callee>.<fn>.<use>/Main.beni`.
 // See bench/ownership-sweeps/README.md.
 import fs from 'fs';
@@ -19,6 +19,7 @@ const F = '(List Int → List Int)';
 // `parts` binds the two parts `p0` and `p1` of the result `r` around the lines `k` (a case when it must be one).
 const P2 = 'List Int × List Int';
 const bindPair = (k) => `p0 = r.0\np1 = r.1\n${k}`;
+const bindList = (k) => `case r of\n    [ p0, p1 ] →\n${ind(k, 8)}\n\n    _ →\n        "-"`;
 const CALLEES = {
   // The answer and the argument.
   pairAns: { decls: [fn('make', `${F}, List Int → ${P2}`, 'f xs', '( f xs, xs )')], call: (f) => `make ${f} [ n ]`, parts: bindPair },
@@ -46,6 +47,13 @@ const CALLEES = {
   argPair: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', `${P2} → ${P2}`, 'p', '( p.0, p.1 )')], call: () => 'make ( q0, q0 )', parts: bindPair },
   argSwap: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', 'a × b → b × a', 'p', '( p.1, p.0 )')], call: () => 'make ( q0, q0 )', parts: bindPair },
   argTwo: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', `List Int, List Int → ${P2}`, 'x y', '( x, y )')], call: () => 'make q0 q0', parts: bindPair },
+  // One summary location: the elements of the result are two parts of one argument, two parts of one answer,
+  // or the answers of two functions that are handed two arguments.
+  argList: { nofn: true, pre: 'q0 = [ n ]', decls: [fn('make', `${P2} → List (List Int)`, 'p', '[ p.0, p.1 ]')], call: () => 'make ( q0, q0 )', parts: bindList },
+  ansList: { decls: [fn('make', `(List Int → ${P2}), List Int → List (List Int)`, 'h x', 'r0 = h x\n[ r0.0, r0.1 ]')],
+    call: (f) => `make (λy → ( y, ${f} y )) [ n ]`, parts: bindList },
+  twoList: { pre: 'q0 = [ n ]', decls: [fn('make', `${F}, ${F}, List Int, List Int → List (List Int)`, 'f g x y', '[ f x, g y ]')],
+    call: (f) => `make ${f} ${f} q0 q0`, parts: bindList },
 };
 
 // Functions: what the handed function answers. `pre`: a line before the call.
@@ -68,6 +76,7 @@ function gen(callee, fname, use) {
   const C = CALLEES[callee], G = FNS[fname];
   if (C.nofn && fname !== 'id') return null;
   const lines = [...(C.pre ? [C.pre] : []), ...(G.pre && !C.nofn ? [G.pre] : []), `r = ${C.call(G.f)}`, C.parts(USES[use])];
+  if (use === 'list' && C.parts === bindList) lines.splice(lines.length - 1, 1, 'w = List.update r 0 λm → List.push m 9', 'shows w');
   return [
     'import List\nimport Node exposing (Program)\nimport String\n',
     fn('show', 'List Int → String', 'l', 'String.join (List.map l String.fromInt) ","'),
