@@ -1,9 +1,9 @@
 # Ownership sweeps
 
-Seven systematic generators of small beni programs, and one runner that judges a checker on them. Four were
+Eight systematic generators of small beni programs, and one runner that judges a checker on them. Four were
 written while ownership checker v2 was built. Each one sweeps one corner where v2 had soundness holes. The
-last three, `function-values.mjs`, `wider-functions.mjs` and `answers-beside.mjs`, were written for research
-report 112 (below). Report
+last four, `function-values.mjs`, `wider-functions.mjs`, `answers-beside.mjs` and `aliased-arguments.mjs`,
+were written for research report 112 (below). Report
 111's prototype (`--ownership=v3`) never ran them. The first time it did, they found 153 programs that it
 accepts and that then read a list after an in-place write (below).
 
@@ -53,6 +53,7 @@ The last part of a program's name is its twin kind:
 | `function-values.mjs` | 1 960 | the ways a function value travels: carrier (compositions two and three deep, a type variable, a record, a tuple, a list, a `Maybe`, a cell, one of two functions, partial application, a function that answers the callback, a callback that answers a callback, a fold in a callback, mutual recursion, a local function that calls itself, hands itself on, or is called before it is bound) × runner (one call, two calls, two runs on one list, `List.foldl`, a hand-written fold, a nested fold, `List.map`) × act (write the handed list, write and keep it, hand a captured list to a captured writer, answer a captured list, answer the handed list) × live/dead |
 | `wider-functions.mjs` | 354 | a function value whose type and its holder's type are two readings of one type: a function over a type variable (`a → a`, `List a → List a`, `x, a → a`; top-level, local, lambda) × holder (a parameter of a concrete type, run one time, two times or by a fold; a parameter of a type variable) × shape (a list of lists, a list of lists of lists, a pair, a record, a `Maybe`) × how the innermost list of the answer is written (`List.update`, or through a pattern) × live/dead |
 | `answers-beside.mjs` | 240 | two sources of one result that can be one cell: callee (a pair of the answer of a function and the argument, of two calls, of two functions; a record; the elements of a list; through one more function; one level down; over a type variable; a handed function that makes the pair with a captured function; the elements of a list from two parts of one answer, from two functions and two arguments, or from two calls of one function) × what the function answers (its parameter, a new list, a captured list) × what the caller does with the two parts (both into one list and a write of one element; a write of one and a read of the other). Four callees have no function: the argument has one list at two places |
+| `aliased-arguments.mjs` | 3 870 | one list at two places of what a call takes: how (two arguments; two items of a tuple, a record or a list; a local; a projection; an element of a list and an argument; the control, two lists that are apart) × the callee's result (a pair, a swapped pair, a record, a `Maybe` and a list, a list, `List.append`, a spread, a list of lists) × the function between an input and a part (none; one or two functions that answer their parameter, a new list, or a captured list) × what the caller does (a write of one part and a read of the other, of the argument, or of nothing) |
 
 ## Baseline: report 111's prototype
 
@@ -73,8 +74,11 @@ Of the safe (`dead`) twins, the prototype refuses 48 %, and `master`'s v2 a litt
 ## Round 2: research report 112
 
 The prototype was rebuilt around one rule for function values (`docs/design/research/112-ownership-prototype-function-values.md`).
-On the rebuilt prototype each of the seven generators has 0 `TRAP`, 0 `DIFF` and 0 `CRASH`, and each of the 153
+On the rebuilt prototype each of the eight generators has 0 `TRAP`, 0 `DIFF` and 0 `CRASH`, and each of the 153
 programs above is `REFUSED`. Report 112 §5 and §6 have the figures, the comparison with v2 by twin, and the
 controls: report 111's prototype traps on 371 programs of `function-values.mjs`, and the prototype as it was
-before the fixes of report 112 §6.3 traps on 38 programs of `wider-functions.mjs` and on 23 of
-`answers-beside.mjs`.
+before the fixes of report 112 §6.3 traps on 38 programs of `wider-functions.mjs`, on 27 of
+`answers-beside.mjs` and on 146 of `aliased-arguments.mjs`.
+
+`function-values.mjs` and `aliased-arguments.mjs` are blind tests: each ran one time on a prototype that had
+not seen its programs (report 112 §6.2, §6.4). The other two were written after the faults that they pin.
