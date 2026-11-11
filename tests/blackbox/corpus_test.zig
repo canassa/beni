@@ -414,6 +414,36 @@ test "an in-place probe reads only the errors of a build" {
     try testing.expect(Case.onlyOwnership("[" ++ own ++ "]", false));
 }
 
+test "the known list pins its open entries and its fixture entries" {
+    // `ownership-v2.md` §7, point 2: an `open` entry is pinned and not justified, and none may be left at the
+    // switch-over. So their number is a number of this test: it changes only with a line of a diff, and the
+    // switch-over makes it 0.
+    const open_entries = 158;
+    // A test that runs this binary in a directory of its own has no list (`run_hash_test.zig`), as for `knownDifferences`.
+    const text = Io.Dir.cwd().readFileAlloc(testing.io, "tests/blackbox/ownership-v2-known.txt", testing.allocator, .limited(1 << 22)) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    defer testing.allocator.free(text);
+    var open: usize = 0;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |l| {
+        if (l.len == 0 or l[0] == '#') continue;
+        const why = l[(std.mem.indexOf(u8, l, "  ") orelse continue) + 2 ..];
+        if (std.mem.startsWith(u8, why, "open (#")) open += 1;
+        // An entry that names its fixture's `.v2` file as the analysis: the file is there.
+        if (!std.mem.startsWith(u8, why, "the fixture's `.v2` file says why: ")) continue;
+        const root = l[0 .. std.mem.indexOfScalar(u8, l, ' ') orelse l.len];
+        var buf: [512]u8 = undefined;
+        const beside = if (std.mem.endsWith(u8, root, ".beni")) try std.fmt.bufPrint(&buf, "{s}.v2", .{root[0 .. root.len - ".beni".len]}) else try std.fmt.bufPrint(&buf, "{s}/_expected.v2", .{root});
+        Io.Dir.cwd().access(testing.io, beside, .{}) catch {
+            std.debug.print("ownership-v2-known.txt: an entry names the `.v2` file of a fixture that has none: {s}\n", .{beside});
+            return error.KnownEntryWithoutV2File;
+        };
+    }
+    try testing.expectEqual(open_entries, open);
+}
+
 test "the parity net compares record lines" {
     // `ownership-v2.md` §7, point 2 (#1018): a record line is compared as a list line is.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -4503,6 +4533,7 @@ const Case = struct {
                 }
             }
             // A record demand of several bases is one demand for each base, as v1 writes it: `update a, b` is `update a` and `update b`.
+            // No base has a `, ` of its own: a call's base is `<call>` after the loop above. A base name that gets one must be folded there first.
             const joined = std.mem.startsWith(u8, demand.items, "update ") and std.mem.indexOf(u8, demand.items, ", ") != null;
             const separator: []const u8 = if (joined) ", " else "\n";
             var bases = std.mem.splitSequence(u8, if (joined) demand.items["update ".len..] else demand.items, separator);

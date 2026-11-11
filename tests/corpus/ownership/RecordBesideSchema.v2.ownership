@@ -1,0 +1,12 @@
+module RecordBesideSchema
+  28:15 update part: accepted param
+  32:42 update <call Record.copy>: rejected held-operand: the value at 32:27, evaluated before it, holds it until its consumer runs
+  38:5 update <call Record.copy>: rejected escaped: it was given to JavaScript, or kept by a callee
+  44:5 List.push <call List.copy>: rejected escaped: it was given to JavaScript, or kept by a callee
+  51:13 update part: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
+  58:15 update <call Record.copy>: accepted fresh
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 5: accepted 2, rejected 3
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 5: accepted 2, rejected 3
+cause escaped 1

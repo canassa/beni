@@ -6911,6 +6911,12 @@ are identical and nothing is written (R-7.11).
    is at the position of the list line, has the same pair of verdicts, and its base is the list line's base
    or the beginning of it (`update model` beside `M.handle model.items`). The two lines are one call's
    demands, so the record line takes the list line's reason. 204 are `open`.
+
+   *Second step of #2477 (2026-11-11):* 46 more are beside a schema member. In 34 the record is the answer
+   of a parse or a read. In 12 `Schema.decode` took a schema value before the write, and v2 then refuses each
+   later write of the declaration, also of an object that is made after that call (#2480;
+   `ownership/RecordBesideSchema` pins the forms, one of them for a list). v2 cannot identify a schema member
+   until S7, and it reads `Schema.decode` as pessimistic until S6 (#1704). 158 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when

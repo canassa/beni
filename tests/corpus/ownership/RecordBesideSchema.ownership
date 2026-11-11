@@ -1,0 +1,18 @@
+module RecordBesideSchema
+  28:15 update part: accepted param
+  32:42 update <call Record.copy>: accepted fresh
+  38:5 update <call Record.copy>: accepted fresh
+  44:5 List.push <call List.copy>: accepted call
+  51:13 update part: accepted call (RecordBesideSchema.bump writes it)
+  58:15 update <call Record.copy>: accepted fresh
+  summary bump: π1 W{n}, π1.n R
+  summary inline: res fresh1{lost}r{lost}
+  summary after: π1 R; res fresh501◦
+  summary listAfter: π1 R, π1[*] RA; res [*] ~condition(fresh2) ~fresh2{lost} π1[*], fresh1{lost}
+  summary parsed: unused
+  summary alone: π1 R; res fresh501◦
+  summary use: unused
+  demands 1: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 1: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
