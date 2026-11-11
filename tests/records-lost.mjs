@@ -5,24 +5,35 @@
 // hidden and test-only), and the lines a list's demand prints must be the
 // same, byte for byte. A record line (`update …`) may move; nothing else may.
 //
-//     zig build test-records-lost
+//     zig build test-records-lost       (checker v1)
+//     zig build test-records-lost-v2    (checker v2, `ownership-v2.md` §7, point 8)
 //
-// Not a gate: it runs the ownership checker twice over a thousand programs.
+// Not a gate: it runs the ownership checker twice over two thousand programs.
+// A program that the compiler refuses in both runs has no line to compare,
+// so it is an error here, and not a program with no difference.
 
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const beni = resolve(process.argv[2]);
+// The checker's own flags, for both runs: `--ownership=v2` compares checker v2 (`ownership-v2.md` §7, point 8).
+const checker = process.argv.slice(3);
 const repo = process.cwd();
 const corpus = join(repo, "tests/corpus");
 const isDir = (p) => statSync(p).isDirectory();
+// One `dump` reads one directory. A project whose modules are in several (an
+// `_expected.sources` of several lines, a manifest with `"paths"`) is
+// `several`: where the compiler refuses it, it is named and not compared.
 function program(path, fallback) {
-  if (!isDir(path)) return { name: relative(repo, path), platform: fallback, paths: [path], root: [] };
+  if (!isDir(path)) return { name: relative(repo, path), platform: fallback, paths: [path], root: [], several: false };
   const own = existsSync(join(path, "platform")) ? join(path, "platform") : null;
   const named = join(path, "_expected.sources");
-  const dir = existsSync(named) ? join(repo, readFileSync(named, "utf8").trim()) : path;
-  return { name: relative(repo, path), platform: own ?? fallback, paths: [dir], root: [`--root=${dir}`] };
+  const listed = existsSync(named) ? readFileSync(named, "utf8").split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  const dir = listed.length ? join(repo, listed[0]) : path;
+  const manifest = join(path, "beni.json");
+  const several = listed.length > 1 || (existsSync(manifest) && "paths" in (JSON.parse(readFileSync(manifest, "utf8")).build ?? {}));
+  return { name: relative(repo, path), platform: own ?? fallback, paths: [dir], root: [`--root=${dir}`], several };
 }
 function programs(dir, platform, skip = []) {
   return readdirSync(dir)
@@ -30,23 +41,33 @@ function programs(dir, platform, skip = []) {
     .sort()
     .map((n) => program(join(dir, n), platform));
 }
-// An ownership fixture names its platform beside it (`X.platform`).
+// An ownership fixture names its platforms beside it (`X.platform`): tokens
+// `<platform>` or `<platform>+everywhere` (`corpus_test.zig`,
+// `ownershipReport`). Each run here has `--ownership-everywhere`, so a
+// fixture is one program for each platform that it names.
 function ownership() {
   const dir = join(corpus, "ownership");
   return readdirSync(dir)
     .filter((n) => n.endsWith(".beni") || (isDir(join(dir, n)) && n !== "core"))
     .sort()
-    .map((n) => {
+    .flatMap((n) => {
       const base = join(dir, n.replace(/\.beni$/, ""));
-      const named = existsSync(`${base}.platform`) ? readFileSync(`${base}.platform`, "utf8").trim() : existsSync(join(base, "_expected.platform")) ? readFileSync(join(base, "_expected.platform"), "utf8").trim() : "node";
-      return program(join(dir, n), named);
+      const file = [`${base}.platform`, join(base, "_expected.platform")].find((f) => existsSync(f));
+      const tokens = file ? readFileSync(file, "utf8").split(/\s+/).filter(Boolean) : ["node"];
+      const platforms = [...new Set(tokens.map((t) => t.replace(/\+everywhere$/, "")))];
+      return platforms.map((p) => ({ ...program(join(dir, n), p), name: `${relative(repo, join(dir, n))} [${p}]` }));
     });
 }
 const browser = join(corpus, "browser");
 const all = [
   ...programs(join(corpus, "run"), "node"),
   ...ownership(),
-  ...programs(browser, join(repo, "tests/platforms/page"), ["dom", "tea", "inline"]),
+  // The sub-corpora, each with the platform that `corpus_test.zig` builds it for (`collectFixtures`).
+  ...programs(browser, join(repo, "tests/platforms/page"), ["dom", "tea", "inline", "dedicated", "gpu", "managed", "prerender"]),
+  ...programs(join(browser, "dedicated"), join(repo, "tests/platforms/worker")),
+  ...programs(join(browser, "gpu"), join(repo, "tests/platforms/gpu")),
+  ...programs(join(browser, "managed"), "browser"),
+  ...programs(join(browser, "prerender"), "browser-inline"),
   ...programs(join(browser, "dom"), "browser"),
   ...programs(join(browser, "tea"), "browser-tea"),
   ...programs(join(browser, "inline"), "browser-inline"),
@@ -56,7 +77,9 @@ const all = [
 ];
 const run = (argv) =>
   new Promise((done) => {
-    const c = spawn(beni, argv, { cwd: repo });
+    // Only the report is read. A pipe for the diagnostics that nobody reads
+    // stops the compiler when it is full (#2472).
+    const c = spawn(beni, argv, { cwd: repo, stdio: ["ignore", "pipe", "ignore"] });
     c.stdout.setEncoding("utf8");
     let out = "";
     c.stdout.on("data", (d) => (out += d));
@@ -67,14 +90,24 @@ const lines = (out) => out.split("\n").filter((l) => /^  \d+:\d+ /.test(l) && !/
 let next = 0;
 let differ = 0;
 let crashed = 0;
+let refused = 0;
+const several = [];
 async function worker() {
   while (next < all.length) {
     const p = all[next++];
-    const argv = ["dump", "--stage=ownership", "--ownership-everywhere", ...(p.platform ? [`--platform=${p.platform}`] : []), ...p.root, ...p.paths];
+    const argv = ["dump", "--stage=ownership", ...checker, "--ownership-everywhere", ...(p.platform ? [`--platform=${p.platform}`] : []), ...p.root, ...p.paths];
     const [a, b] = await Promise.all([run(argv), run([...argv, "--ownership-records-lost"])]);
     if (a.code !== b.code || a.signal || b.signal) {
       crashed++;
       console.log(`DIFFERENT EXIT ${p.name}: ${a.signal ?? a.code} / ${b.signal ?? b.code}`);
+      continue;
+    }
+    if (a.code !== 0) {
+      if (p.several) several.push(p.name);
+      else {
+        refused++;
+        console.log(`NO REPORT ${p.name}: the compiler refuses the program in both runs (exit ${a.code})`);
+      }
       continue;
     }
     const la = lines(a.out).join("\n");
@@ -90,5 +123,6 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: 12 }, worker));
-console.log(`${all.length} programs: ${differ} with list lines that read a record condition, ${crashed} with a different exit`);
-if (differ || crashed) process.exit(1);
+for (const n of several.sort()) console.log(`not compared (its modules are in several directories): ${n}`);
+console.log(`${all.length} programs: ${differ} with list lines that read a record condition, ${crashed} with a different exit, ${refused} with no report, ${several.length} not compared`);
+if (differ || crashed || refused) process.exit(1);
