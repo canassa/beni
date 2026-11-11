@@ -2283,6 +2283,8 @@ fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []cons
                     .fresh, .shared => continue,
                     .param => {
                         if (s.a >= base.args.len) continue;
+                        // A cell that is two times in this one location of the one
+                        // argument is `apply`'s to see: `expandSrcs` ran for this entry.
                         _ = try f.pairedLeaves(base.args[s.a], c.layouts[s.a], s.e, rsig, @intCast(cr), layout, @intCast(e));
                     },
                     .answer => {
@@ -2407,14 +2409,21 @@ fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
 ///   them has no claim either;
 /// - a part of a root: one part. A root that the frame made says if its
 ///   parts are apart (`linear`); a parameter and a captured local are apart
-///   by the rule that this function checks at each call;
+///   by the rule that this function checks at each call: two parameters,
+///   and two parts of one, are sources of the frame's result, and the caller
+///   judges them with its own arguments. The answer of the frame's own
+///   function parameter is one part too. The frame cannot know if its parts
+///   are apart, and it does not claim that: its contract names them as
+///   answers, and the caller that knows the function decides
+///   (`sourcesApart`, step 2);
 /// - a tuple, a record or a constructor application: each item is a part,
 ///   and each item must be apart in itself. A nest that is too deep to
 ///   follow has no claim;
 /// - one of several values: each of them must be apart in itself. Two of
 ///   them are never one value, so together they are one part;
-/// - a function value: what it captured is one part (an answer never has a
-///   claim on a captured cell);
+/// - a function value: what it captured is one part. An answer never has a
+///   claim on a captured cell, so two captured locals that are one cell need
+///   no check here;
 /// - every cell at every location (`smear`): one cell can be at two.
 fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2]u32), depth: u32) Error!bool {
     if (v == v_none or v == v_shared) return true;
