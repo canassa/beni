@@ -6936,6 +6936,11 @@ are identical and nothing is written (R-7.11).
    `m ▷ Maybe.map (f model _) ▷ Maybe.withDefault model` of R-4.2.3, which `ownership/MaybeDefault` pins. v1
    accepts it. v2 refuses its record lines, as in that fixture, where the list line of the same call is
    under #1704 (v2 reads core's `Maybe.map` as pessimistic). 92 are `open`.
+
+   *Seventh step of #2477 (2026-11-11):* 18 more are a callback's update of a container's element or of a
+   fold's accumulator. v1 refuses the update in the callback, and v2 refuses at the call, as
+   `ownership/RecordContents` and `ownership/RecordFoldBelow` pin. One of the 18 is the fold that v2 accepts
+   and v1 refuses (`twinFold`). I read the source of each pair. 74 are `open`.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when
