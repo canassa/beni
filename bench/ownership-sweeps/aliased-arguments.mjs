@@ -7,7 +7,8 @@
 //
 // The callee's contract says that its two parts are two cells. That claim rests on the arguments and on the
 // functions, which only the caller knows (research report 112 §2.7). A hand search found this corner (§6.3).
-// This generator was written after the fixes of that search and run one time (§6.4).
+// This generator was written after the fixes of that search and run one time (§6.4). Its last three alias
+// forms were added after that run.
 // Programs are `<alias>.<callee>.<fn>.<use>/Main.beni`. See bench/ownership-sweeps/README.md.
 import fs from 'fs';
 import path from 'path';
@@ -31,6 +32,12 @@ const ALIAS = {
   localList: { pre: 'u = [ q, q ]', sig: `List (${L})`, params: 'xs', x: 'x', y: 'y', wrap: '[ x, y, …_ ]', args: 'u' },
   proj: { pre: 't = ( ( q, q ), 5 )', sig: `${L} × ${L}`, params: 'p', x: 'p.0', y: 'p.1', args: 't.0' },
   listAndOne: { sig: `List (${L}), ${L}`, params: 'xs y', x: 'x', y: 'y', wrap: '[ x, …_ ]', args: '[ q ] q' },
+  // Three forms that a review found after the one blind run (report 112 §6.5): the tuple is one of several
+  // values, as a local or at the call, and the tuple is ten levels down in the argument.
+  several: { pre: 't = if n ≥ 0 then ( q, q ) else ( [ 1 ], [ 2 ] )', sig: `${L} × ${L}`, params: 'p', x: 'p.0', y: 'p.1', args: 't' },
+  severalArg: { sig: `${L} × ${L}`, params: 'p', x: 'p.0', y: 'p.1', args: '(if n ≥ 0 then ( q, q ) else ( [ 1 ], [ 2 ] ))' },
+  deep: { sig: `${'('.repeat(9)}${L} × ${L}${') × Int'.repeat(9)}`, params: 'p', x: `p${'.0'.repeat(10)}`, y: `p${'.0'.repeat(9)}.1`,
+    args: `${'( '.repeat(9)}( q, q )${', 1 )'.repeat(9)}` },
 };
 
 // Callees: the result's type, how it is made from the two parts `X` and `Y`, a value for the case with no
