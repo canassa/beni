@@ -2203,7 +2203,102 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
         // A location with no source holds no cell: nothing is in it.
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = st.fresh };
     }
+    if (f.roots.items[root].linear) try f.answerApart(&base, root, layout, cov);
     return f.rootVal(root);
+}
+
+/// The contract of the callee `base.c` says that two parts of its result are
+/// apart (`nonlinear` is false). The callee did not know the functions that
+/// it was handed: the answer of one can be a cell that another location of
+/// the result has too (`( f xs, xs )` with a function that answers its
+/// parameter). This frame knows more. The parts are not apart if a cell
+/// that an answer can hold at one location is at another location too:
+///
+/// - as a cell of an argument that the callee answers there;
+/// - as a cell of the answer of another function;
+/// - as a cell of the same answer entry of the same function (two calls, or
+///   one answer at two places).
+///
+/// Two entries of one answer are apart when the function is known and its
+/// own contract says so. Two parts of one wide entry of the callee's result
+/// (a type variable) are parts of one value: the whole answer, or the whole
+/// argument. So they are apart when that value's parts are.
+fn answerApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []const u32) Error!void {
+    const m = f.m;
+    const c = base.c;
+    var any = false;
+    for (c.res) |srcs| for (srcs) |s| if (s.kind == .answer) {
+        any = true;
+    };
+    if (!any) return;
+    const rsig = c.layouts[c.arity];
+    const es = m.loc.layoutEntries(layout);
+    // Per result entry: the atoms of each source, as runs of `buf`.
+    const Run = struct { e: u32, ri: u32, src: Src, start: u32, end: u32 };
+    var buf: std.ArrayList(Atom) = .empty;
+    defer buf.deinit(f.gpa);
+    var runs: std.ArrayList(Run) = .empty;
+    defer runs.deinit(f.gpa);
+    var suffix: std.ArrayList(u64) = .empty;
+    defer suffix.deinit(f.gpa);
+    const w = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(w);
+    for (0..es.len) |e| {
+        const cr = cov[e];
+        if (cr == none) continue;
+        for (c.res, 0..) |srcs, ri| {
+            if (cr != Loc.all and cr != ri) continue;
+            // The part of the callee's result entry that this entry is, as in `expandSrcs`.
+            suffix.clearRetainingCapacity();
+            const cloc = m.loc.layoutEntries(rsig)[ri].loc;
+            if (m.loc.isPrefix(cloc, es[e].loc)) try f.suffixOf(es[e].loc, cloc, &suffix);
+            for (srcs) |s| {
+                f.atoms.shrinkRetainingCapacity(w);
+                switch (s.kind) {
+                    .fresh, .shared => continue,
+                    .param => {
+                        if (s.a >= base.args.len) continue;
+                        _ = try f.pairedLeaves(base.args[s.a], c.layouts[s.a], s.e, rsig, @intCast(ri), layout, @intCast(e));
+                    },
+                    .answer => {
+                        var st: SrcState = .{ .inst = base.site.inst };
+                        try f.answerOfParam(base, s, suffix.items, &st, 0);
+                    },
+                }
+                if (f.atoms.items.len == w) continue;
+                const start: u32 = @intCast(buf.items.len);
+                try buf.appendSlice(f.gpa, f.atoms.items[w..]);
+                try runs.append(f.gpa, .{ .e = @intCast(e), .ri = @intCast(ri), .src = s, .start = start, .end = @intCast(buf.items.len) });
+            }
+        }
+    }
+    for (runs.items) |x| {
+        if (x.src.kind != .answer) continue;
+        for (runs.items) |y| {
+            if (y.e == x.e) continue;
+            const same_fn = y.src.kind == .answer and y.src.a == x.src.a;
+            const linear = same_fn and x.src.a < base.args.len and try f.linearFn(base.args[x.src.a]);
+            if (y.ri == x.ri and m.loc.layoutEntries(rsig)[x.ri].kind.wide() and cov[x.e] != Loc.all and cov[y.e] != Loc.all) {
+                // Two parts of one value.
+                if (!same_fn or linear) continue;
+            } else if (same_fn and y.src.e != x.src.e and linear) continue;
+            if (f.overlapAny(buf.items[x.start..x.end], buf.items[y.start..y.end])) {
+                f.roots.items[root].linear = false;
+                return;
+            }
+        }
+    }
+}
+
+/// Whether the function value `v` is known code whose contract says that two parts of its answer are apart.
+fn linearFn(f: *Frame, v: Val) Error!bool {
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| if (!try f.linearFn(f.lists.items[n.a + 2 * ki])) return false;
+        return true;
+    }
+    const code = (try f.codeOf(v)) orelse return false;
+    return !code.contract.nonlinear;
 }
 
 const SrcState = struct {
