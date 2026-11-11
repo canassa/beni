@@ -2866,6 +2866,10 @@ test "ownership v3: the faults of round 2 are refused" {
 // - `oneAnswerTwoArguments`: both. The elements are two answers of one
 //   function, which is handed one list as two arguments. `oneAnswerApart`
 //   is the safe twin, and it stays accepted.
+// - `oneOfSeveral`: the argument with one list at two places is one of
+//   several values (an `if`). A review of the pull request found that the
+//   check of the arguments did not look into such a value.
+//   `oneOfSeveralApart` is the safe twin, and it stays accepted.
 //
 // The prototype that passed the first gate accepted each of these demands.
 test "ownership v3: the faults that a search by hand found are refused" {
@@ -3028,6 +3032,28 @@ test "ownership v3: the faults that a search by hand found are refused" {
         \\    w = List.update v 0 λm → List.push m 9
         \\    List.length w
         \\
+        \\
+        \\parts : (List Int → List Int), List Int × List Int → List (List Int)
+        \\parts f p =
+        \\    [ f p.0, f p.1 ]
+        \\
+        \\
+        \\pub oneOfSeveral : Int → Int
+        \\oneOfSeveral c =
+        \\    q = [ c ]
+        \\    x = if c ≥ 0 then ( q, q ) else ( [ 1 ], [ 2 ] )
+        \\    v = parts (λl → l) x
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
+        \\
+        \\pub oneOfSeveralApart : Int → Int
+        \\oneOfSeveralApart c =
+        \\    x = if c ≥ 0 then ( [ c ], [ c ] ) else ( [ 1 ], [ 2 ] )
+        \\    v = parts (λl → l) x
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Hand.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
@@ -3044,7 +3070,9 @@ test "ownership v3: the faults that a search by hand found are refused" {
         "  134:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  147:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  154:9 call List.update v[*]: accepted call\n",
-        "total 31: accepted 22 (fresh 4, call 8, param 0, callback-param 10, once 0, entry 0; assumed 0), pending 0, rejected 9\n",
+        "  168:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  176:9 call List.update v[*]: accepted call\n",
+        "total 37: accepted 27 (fresh 4, call 11, param 0, callback-param 12, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
