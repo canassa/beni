@@ -2215,25 +2215,34 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
 /// which can be one cell (`keep2 ( q, q )`), and on the functions that it
 /// was handed, whose answers can be any cell that they were handed
 /// (`( f xs, xs )` with a function that answers its parameter). This frame
-/// knows both. So for each pair of sources of the result, it reads what
-/// they are here. If they can be one cell, the claim does not hold: two
-/// locations are not apart, or the summary location has no claim.
+/// knows both, and it reads the claim in two steps.
 ///
-/// Pairs that need no check:
+/// 1. **The arguments** (`argsApart`). When no cell is at two places of the
+///    arguments, two parameter sources are two cells: two arguments have no
+///    cell in common, and two locations of one argument are apart by that
+///    argument's own claim. When a cell is at two places, the callee's claim
+///    has no ground: the locations of the result are not apart, and a
+///    summary location with an answer or with two sources has no claim.
+/// 2. **Each pair with an answer.** What the function answers is read here
+///    (`answerOfParam`). If the two sources can be one cell, the claim does
+///    not hold: two locations are not apart, or the summary location has no
+///    claim.
 ///
-/// - one parameter location: the callee's own claim is about that;
-/// - one answer source at one summary location, when the arguments are
-///   apart: the callee hands the function a cell once, or its supply is not
-///   `free`. When they are not apart, two calls can be handed one cell
-///   (`[ f x, f y ]` with one list as `x` and `y`), and the location has no
-///   claim;
+/// Pairs with an answer that need no check:
+///
 /// - an answer and a parameter location that the function was handed, in
 ///   one summary location: they are alternatives, or the supply is not
 ///   `free` (which `answerOfCode` reads as one cell at two places);
+/// - one answer source at one summary location: the callee hands the
+///   function a cell once, or its supply is not `free`. (Step 1 has the
+///   case of two calls that are handed one cell: `[ f x, f y ]` with one
+///   list as `x` and `y`.)
 /// - two entries of one answer, when the function is known, its contract
 ///   says that they are apart, and what it was handed is apart;
-/// - two parts of one wide entry of the callee's result (a type variable):
-///   they are parts of one value, the whole answer or the whole argument.
+/// - an answer and another source in two parts of one wide entry of the
+///   callee's result (a type variable): the callee cannot make a value of
+///   that type from two sources, so they are alternatives, each a whole
+///   value.
 fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []const u32) Error!void {
     const m = f.m;
     const c = base.c;
@@ -2258,64 +2267,71 @@ fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []cons
     const w = f.atoms.items.len;
     defer f.atoms.shrinkRetainingCapacity(w);
     for (0..es.len) |e| {
-        const cr = cov[e];
-        // The fallback cover gives each source to each location: the callee's claim stands there, as before.
-        if (cr >= Loc.all) continue;
-        // The part of the callee's result entry that this entry is, as in `expandSrcs`.
-        suffix.clearRetainingCapacity();
-        const cloc = m.loc.layoutEntries(rsig)[cr].loc;
-        if (m.loc.isPrefix(cloc, es[e].loc)) try f.suffixOf(es[e].loc, cloc, &suffix);
-        for (c.res[cr]) |s| {
-            f.atoms.shrinkRetainingCapacity(w);
-            switch (s.kind) {
-                .fresh, .shared => continue,
-                .param => {
-                    if (s.a >= base.args.len) continue;
-                    _ = try f.pairedLeaves(base.args[s.a], c.layouts[s.a], s.e, rsig, cr, layout, @intCast(e));
-                },
-                .answer => {
-                    var st: SrcState = .{ .inst = base.site.inst };
-                    try f.answerOfParam(base, s, suffix.items, &st, 0);
-                },
+        // No source: the entry has no claim already.
+        if (cov[e] == none) continue;
+        // The fallback cover gives the entry each source of each location, as `apply` does.
+        const lo: usize = if (cov[e] == Loc.all) 0 else cov[e];
+        const hi: usize = if (cov[e] == Loc.all) c.res.len else cov[e] + 1;
+        for (lo..hi) |cr| {
+            // The part of the callee's result entry that this entry is, as in `expandSrcs`.
+            suffix.clearRetainingCapacity();
+            const cloc = m.loc.layoutEntries(rsig)[cr].loc;
+            if (m.loc.isPrefix(cloc, es[e].loc)) try f.suffixOf(es[e].loc, cloc, &suffix);
+            for (c.res[cr]) |s| {
+                f.atoms.shrinkRetainingCapacity(w);
+                switch (s.kind) {
+                    .fresh, .shared => continue,
+                    .param => {
+                        if (s.a >= base.args.len) continue;
+                        _ = try f.pairedLeaves(base.args[s.a], c.layouts[s.a], s.e, rsig, @intCast(cr), layout, @intCast(e));
+                    },
+                    .answer => {
+                        var st: SrcState = .{ .inst = base.site.inst };
+                        try f.answerOfParam(base, s, suffix.items, &st, 0);
+                    },
+                }
+                if (f.atoms.items.len == w) continue;
+                const start: u32 = @intCast(buf.items.len);
+                try buf.appendSlice(f.gpa, f.atoms.items[w..]);
+                try runs.append(f.gpa, .{ .e = @intCast(e), .ri = @intCast(cr), .src = s, .start = start, .end = @intCast(buf.items.len) });
             }
-            if (f.atoms.items.len == w) continue;
-            const start: u32 = @intCast(buf.items.len);
-            try buf.appendSlice(f.gpa, f.atoms.items[w..]);
-            try runs.append(f.gpa, .{ .e = @intCast(e), .ri = cr, .src = s, .start = start, .end = @intCast(buf.items.len) });
         }
     }
     if (runs.items.len == 0) return;
-    // One answer source at a summary location is each answer of each call
-    // of the function there. The callee hands the function a cell once (or
-    // its supply is not `free`). Two of its parameters can be one cell here.
     var answers = false;
-    for (runs.items) |x| if (x.src.kind == .answer and !es[x.e].single) {
+    for (runs.items) |x| if (x.src.kind == .answer) {
         answers = true;
     };
     if (!answers and runs.items.len < 2) return;
-    // A function's answer has parts that are apart only when what it is handed has.
+    // Step 1: the arguments.
     const args_apart = try f.argsApart(base.args);
     if (!args_apart) {
         if (es.len > 1) f.roots.items[root].linear = false;
-        for (runs.items) |x| if (x.src.kind == .answer and !es[x.e].single) {
-            f.rents.items[ent0 + x.e].kind = .shared;
-        };
+        for (runs.items, 0..) |x, xi| {
+            if (es[x.e].single) continue;
+            var two = x.src.kind == .answer;
+            for (runs.items, 0..) |y, yi| if (yi != xi and y.e == x.e) {
+                two = true;
+            };
+            if (two) f.rents.items[ent0 + x.e].kind = .shared;
+        }
+        return;
     }
-    if (runs.items.len < 2) return;
+    if (!answers) return;
+    // Step 2: each pair with an answer.
     for (runs.items, 0..) |x, xi| for (runs.items[xi + 1 ..]) |y| {
+        const xa = x.src.kind == .answer;
+        const ya = y.src.kind == .answer;
+        if (!xa and !ya) continue;
         const same_e = x.e == y.e;
         // A location that names one value holds one of its sources.
         if (same_e and es[x.e].single) continue;
         if (!same_e and !f.roots.items[root].linear) continue;
-        const xa = x.src.kind == .answer;
-        const ya = y.src.kind == .answer;
         const same_fn = xa and ya and x.src.a == y.src.a;
-        const fn_apart = same_fn and args_apart and x.src.a < base.args.len and try f.linearFn(base.args[x.src.a]);
+        const fn_apart = same_fn and x.src.a < base.args.len and try f.linearFn(base.args[x.src.a]);
         if (!same_e and x.ri == y.ri and m.loc.layoutEntries(rsig)[x.ri].kind.wide()) {
             // Two parts of one value.
             if (!same_fn or fn_apart) continue;
-        } else if (!xa and !ya) {
-            if (x.src.a == y.src.a and x.src.e == y.src.e) continue;
         } else if (xa and ya) {
             if (same_fn and x.src.e == y.src.e and same_e) continue;
             if (same_fn and x.src.e != y.src.e and fn_apart) continue;
@@ -2354,38 +2370,79 @@ fn linearFn(f: *Frame, v: Val) Error!bool {
 }
 
 /// Whether no cell is at two places of the arguments `args`: in two
-/// arguments, or in two parts of one argument (`( q, q )`). A callee that
-/// only rearranges what it takes answers a value whose parts are apart only
-/// when the parts of what it takes are.
+/// arguments, or in two parts of one argument (`( q, q )`). A callee's
+/// contract is written for arguments that are so, and its claims about two
+/// sources of its result hold only then (`sourcesApart`).
 fn argsApart(f: *Frame, args: []const Val) Error!bool {
     var buf: std.ArrayList(Atom) = .empty;
     defer buf.deinit(f.gpa);
     var runs: std.ArrayList([2]u32) = .empty;
     defer runs.deinit(f.gpa);
     for (args) |v| if (!try f.partsOf(v, &buf, &runs, 0)) return false;
-    for (runs.items, 0..) |x, i| for (runs.items[i + 1 ..]) |y| {
-        if (f.dupOverlap(buf.items[x[0]..x[1]], buf.items[y[0]..y[1]])) return false;
+    return f.runsApart(buf.items, runs.items);
+}
+
+/// Whether no cell is at two places of the one value `v`.
+fn valueApart(f: *Frame, v: Val, depth: u32) Error!bool {
+    var buf: std.ArrayList(Atom) = .empty;
+    defer buf.deinit(f.gpa);
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    if (!try f.partsOf(v, &buf, &runs, depth)) return false;
+    return f.runsApart(buf.items, runs.items);
+}
+
+fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
+    for (runs, 0..) |x, i| for (runs[i + 1 ..]) |y| {
+        if (f.dupOverlap(buf[x[0]..x[1]], buf[y[0]..y[1]])) return false;
     };
     return true;
 }
 
-/// The parts of the value `v` as runs of atoms: an item of a tuple, a record
-/// or a constructor application is a part, and anything else is one part.
-/// False when a part is a root whose own parts are not apart.
+/// The parts of the value `v` as runs of atoms. False when `v` cannot claim
+/// that its own parts are apart. One case for each kind of value:
+///
+/// - no object, a function with no captured value: no cell;
+/// - no claim (`shared`): its cells are no atoms, and a location that gets
+///   them has no claim either;
+/// - a part of a root: one part. A root that the frame made says if its
+///   parts are apart (`linear`); a parameter and a captured local are apart
+///   by the rule that this function checks at each call;
+/// - a tuple, a record or a constructor application: each item is a part,
+///   and each item must be apart in itself. A nest that is too deep to
+///   follow has no claim;
+/// - one of several values: each of them must be apart in itself. Two of
+///   them are never one value, so together they are one part;
+/// - a function value: what it captured is one part (an answer never has a
+///   claim on a captured cell);
+/// - every cell at every location (`smear`): one cell can be at two.
 fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2]u32), depth: u32) Error!bool {
     if (v == v_none or v == v_shared) return true;
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .shared, .fnref => return true,
-        .built => if (depth < 8) {
+        .built => {
+            if (depth >= 8) return false;
             for (0..n.b) |ki| if (!try f.partsOf(f.kids.items[n.a + ki].val, buf, runs, depth + 1)) return false;
             return true;
+        },
+        .join => {
+            if (depth >= 8) return false;
+            for (0..n.b) |ki| {
+                if (!f.armLive(n, ki)) continue;
+                if (!try f.valueApart(f.lists.items[n.a + 2 * ki], depth + 1)) return false;
+            }
         },
         .ref => {
             const r = f.roots.items[n.a];
             if (r.kind == .local and !r.linear) return false;
         },
-        else => {},
+        .closure => {},
+        .smear => {
+            const start = buf.items.len;
+            _ = try f.allLeaves(v, buf);
+            return buf.items.len == start;
+        },
     }
     const start: u32 = @intCast(buf.items.len);
     _ = try f.allLeaves(v, buf);
