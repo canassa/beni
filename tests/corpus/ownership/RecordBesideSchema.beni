@@ -1,0 +1,65 @@
+-- ownership: a write beside a schema member (`ownership-v2.md` §2.11.5, the
+-- record pass; §8, S6 and S7; #2480). Checker v2 cannot identify a schema
+-- member (`Part.schema`, `Part.parse`) until S7 builds schemas, and it reads
+-- `Schema.decode` as pessimistic until S6 reads core's contracts (#1704).
+-- v1 knows both, and accepts each write of this module.
+--
+-- `inline`: the schema value is an earlier operand of the call that takes
+-- the updated copy. v2 refuses the update (`held-operand`).
+-- `after` and `listAfter`: `Schema.decode` took a schema value before. v2
+-- refuses each later write of the declaration (`escaped`), also of an
+-- object that is made after that call: a new copy, a new list.
+-- `parsed`: the record is a parse's answer. v2 refuses the callee's write
+-- of it (`unknown`, approximate).
+-- `alone`: no schema member. Both checkers accept the update of the copy.
+import Schema
+
+
+schema Part =
+    n : Int
+
+
+first : Part.Encoded
+first = { n = 1 }
+
+
+bump : Part.Type → Int
+bump part =
+    changed = { part | n = part.n + 1 }
+    changed.n
+
+
+inline k = Schema.decode (Part.schema ⊤) { Record.copy first | n = k }
+
+
+after : Part.Encoded, Int → Part.Encoded
+after row k =
+    _ = Schema.decode (Part.schema ⊤) first
+    { Record.copy row | n = k }
+
+
+listAfter : List Int → List Int
+listAfter xs =
+    _ = Schema.decode (Part.schema ⊤) first
+    List.push (List.copy xs) 1
+
+
+pub parsed : String → Int
+parsed text =
+    case Part.parse text of
+        Ok part →
+            bump part
+
+        Err _ →
+            0
+
+
+pub alone : Part.Encoded, Int → Part.Encoded
+alone row k = { Record.copy row | n = k }
+
+
+pub use : Int → Int
+use k =
+    _ = inline k
+    _ = after first k
+    List.length (listAfter [ k ])

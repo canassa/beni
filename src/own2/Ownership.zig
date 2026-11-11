@@ -103,9 +103,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             for (mod.results.items) |*dr| {
                 const d = mi.bir.decls[dr.decl];
                 const name = in.names.declName(mi.module, dr.decl);
-                // A declaration v2 does not check (a construct not built yet, a
-                // limit) names its lines, so a verdict diff can tell a demand it
-                // did not check from one it missed (`bench/ownership-everywhere.mjs`).
+                // A declaration that a pass does not check names its lines, so a verdict diff can tell a demand it
+                // did not check from one it missed (`bench/ownership-everywhere.mjs`). The label is `limit` for each
+                // failure, also for an accounting invariant: the `limit` line below says which, for both passes.
                 if (in.format_summaries and dr.failure != null) {
                     const span = declLines(in.names, mi, d);
                     try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} ({s}limit)", .{ name, span[0], span[1], if (records) "record-pass " else "" }));
