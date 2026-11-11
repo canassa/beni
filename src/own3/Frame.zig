@@ -2151,7 +2151,7 @@ fn expandAnswer(f: *Frame, c: *const Contract, s: Src, args: []const Val, st: *S
     if (s.a >= args.len) return f.lostAnswer(args, st);
     const v = args[s.a];
     const fnc = c.fns[s.a] orelse return f.lostAnswer(args, st);
-    const code = f.codeOf(v) orelse {
+    const code = (try f.codeOf(v)) orelse {
         // A function the frame does not know: the frame's own function
         // parameter answers through its own contract, anything else has no claim.
         const root = f.ownFnRoot(v);
@@ -2245,12 +2245,12 @@ fn expandAnswer(f: *Frame, c: *const Contract, s: Src, args: []const Val, st: *S
     }
 }
 
-fn codeOf(f: *Frame, v: Val) ?Code {
+fn codeOf(f: *Frame, v: Val) Error!?Code {
     const n = f.nodes.items[v];
     return switch (n.tag) {
         .closure => f.codes.items[n.a],
         .fnref => blk: {
-            const c = (f.m.declContract(.{ n.a, n.b }) catch null) orelse break :blk null;
+            const c = (try f.m.declContract(.{ n.a, n.b })) orelse break :blk null;
             break :blk .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
         },
         else => null,
@@ -2265,7 +2265,7 @@ fn handFunction(f: *Frame, inst: u32, callee: u32, c: *const Contract, fnc: *con
     if (v == v_none) return;
     // The callee lets the function's answer escape: each cell that the answer can hold escapes here.
     if (fnc.ans_escapes) try f.escapeAnswer(inst, c, fnc, j, args);
-    const code = f.codeOf(v) orelse {
+    const code = (try f.codeOf(v)) orelse {
         const root = f.ownFnRoot(v);
         if (root != none) return f.passFunction(inst, c, fnc, root, args, others);
         // An unknown function: it can keep what it is handed.
@@ -2317,7 +2317,7 @@ fn handFunction(f: *Frame, inst: u32, callee: u32, c: *const Contract, fnc: *con
         // rule composes its contract with what it is handed there. So it
         // cannot write, and what it can keep is held from here on.
         var keeps = true;
-        if (f.codeOf(cv)) |cc| {
+        if (try f.codeOf(cv)) |cc| {
             if (writesOwn(cc.contract, cc.own_params)) try m.addRefusal(f, inst, .call, "a function that writes its parameter is called by a function that goes to another function");
             keeps = keepsOwn(cc.contract, cc.own_params);
         }
@@ -2351,7 +2351,7 @@ fn handedBack(f: *Frame, s: Supply, a: u32, e: u32) Error!void {
                 f.drafts.items[di].rewrites = true;
                 continue;
             }
-        } else if (f.codeOf(cv)) |cc| {
+        } else if (try f.codeOf(cv)) |cc| {
             if (!keepsOwn(cc.contract, cc.own_params)) continue;
         }
         try m.addRefusal(f, s.inst, .supply, "the function hands a value to a function that can keep it, answers it, and the callee hands it back");
@@ -2932,7 +2932,7 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
                 try f.leak(v, inst);
                 continue;
             }
-            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = f.codeOf(v) };
+            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = try f.codeOf(v) };
             nfields += 1;
         }
     } else {

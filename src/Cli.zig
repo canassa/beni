@@ -1449,7 +1449,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.ownership_below and stage != .ownership) return .{ .usage = .init("beni: --ownership-below applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_short_candidates and (stage != .ownership or s.common.ownership != .v2)) return .{ .usage = .init("beni: --ownership-short-candidates applies to --stage=ownership --ownership=v2 only", .{}) };
     if (s.specific.ownership_both and stage != .ownership) return .{ .usage = .init("beni: --ownership-both applies to --stage=ownership only", .{}) };
-    if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership != .v1)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", .{}) };
+    if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership != .v1)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2 or v3", .{}) };
     if (s.common.ownership == .v3 and (s.specific.ownership_flips != null or s.specific.ownership_skew_sites or s.specific.ownership_below)) return .{ .usage = .init("beni: --ownership=v3 takes --ownership-totals only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
@@ -1601,7 +1601,7 @@ test "dump: stage, positions, exactly one file" {
     try expectUsage("beni: --ownership-below applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-below", "M.beni" });
     try expectCommand(.{ .dump = .{ .common = .{ .ownership = .v2 }, .stage = .ownership, .ownership_short_candidates = true, .file = "M.beni" } }, &.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-short-candidates", "M.beni" });
     try expectUsage("beni: --ownership-short-candidates applies to --stage=ownership --ownership=v2 only", &.{ "dump", "--stage=ownership", "--ownership-short-candidates", "M.beni" });
-    try expectUsage("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership=v2", "M.beni" });
+    try expectUsage("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2 or v3", &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership=v2", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });
