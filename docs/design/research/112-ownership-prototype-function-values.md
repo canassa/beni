@@ -42,13 +42,15 @@ third fault took five rounds of fixes:
 
 So the evidence for the border is not that of the rule. A blind sweep by the author of the fixes did not
 find what a reader of the code found. Each run of the gate, the family and the sweeps was repeated on the
-final code with no fault, and a last round by hand found none. That does not show that the border is closed.
+final code with no fault. The sweep for the border has 1 290 more programs in those runs, which were written
+from the review's finding. A last round by hand, by the same author, found no fault. Those are the same kind
+of evidence as the blind sweep was. They do not show that the border is closed.
 
 Second, precision. The rule pays where a function goes through a default location (a function-typed result,
 a function in a value). On the new family the prototype accepts 18 % of the safe programs, and v2 48 %. The
 check of the third fault pays too: where one list is at two places of a call's arguments, the prototype
 accepts 40 % of the safe programs of the blind sweep, and v2 each one. On real code the round costs no
-write.
+write that v1 judges, and it has two new refusals at positions that v1 does not judge (§5.4).
 
 ---
 
@@ -825,6 +827,15 @@ v2 each one.
 Round 7 took the second review's list of forms that the sweep does not have, one or two programs for each:
 11 programs, and the final code refuses each one. Three forms of that list have no program yet: a callee
 in another module, a list in a `Ref` or a `Dict`, and a recursive callee with aliased arguments.
+
+**A third review** read the fix and asked for one more form: an argument that is the answer of a function
+that the frame was handed (`outer f x = keep2 (f x)`, with a function that answers `( l, l )`). `partsOf`
+reads such an answer as one part. That is correct by composition: the frame's contract names the two parts
+of its result as two entries of the function's answer, and the caller that knows the function finds that
+they are one list (§2.7, step 2). Twelve programs for that form and for two more of that review (two
+parameters as the items of one argument; a tree with one list at two leaves): the final code refuses the nine
+that are not safe, and it accepts the three safe twins, in which the function answers a new list beside its
+parameter. They are not in the counts of §6.3.
 
 ---
 
