@@ -221,6 +221,10 @@ order of the gaps by bytes, with the boundary first because every scenario dispa
   - **An arm that reads its message whole** builds that message in that arm only.
   - **Handlers** live at the program site, measured against tea-inline's in-widget handlers.
   - **The "Depends on" line above is wrong:** the checker does not judge records (#315).
+- *Amended 2026-11-11 (the owner's decisions on the page port, lane `beni-markup`):* two
+  completions of S1, each its own issue and pull request — a view helper whose body is a markup
+  `case`/`if` of element-or-`<></>` arms (#2498, `browser-inline.md` §8.4), and a class list that
+  changes (#2499, §8.2) — before S4's binding arms (part of #300), S2 (#298) and S3 (#299).
 - *Amended 2026-10-22 (the owner, #668):* the cross-module-reader and handler bullets above are
   reversed. Each root's code is one closure that writes its slice in place, bindings are grouped by
   field, and readers register once at mount. This is `browser-inline.md` §8.4's amendment of the

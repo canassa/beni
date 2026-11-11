@@ -198,6 +198,10 @@ fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr
     return cx.notImplemented(tree.root(index).node, no_markup_values);
 }
 
+/// What an `html` hole that is neither a helper call nor an eager `when`
+/// is refused as (§8.2, class 1).
+const not_when = "markup held in data or chosen at run time, or a branch whose arms are not each one element or `<></>`";
+
 /// The class-1 refusal (`browser-inline.md` §5): a limit of the compiler, a
 /// construct this platform does not compile yet, and what to write instead.
 fn later(cx: *m.Context, n: m.Node.Index, what: []const u8) m.Error {
@@ -1164,6 +1168,7 @@ const Page = struct {
             .not_markup => return false,
             .recursive => return later(cx, n, "a function returning markup that calls itself"),
             .other_module => return false,
+            .branch => return pg.helperBranch(n, callee, scope, ctx, out),
             else => return later(cx, n, "this call of a function returning markup"),
         };
         if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
@@ -1177,14 +1182,45 @@ const Page = struct {
         return true;
     }
 
+    /// A view helper whose body is a branch (§8.4, amended 2026-11-11,
+    /// #2498): the helper's context, entered as a call written in place is,
+    /// holding the eager `when`s of the branch its body is (§8.2, *a `case`
+    /// in markup*), each arm's element written where the hole is. The
+    /// context's root is an arm's, in the helper's declaration, where its
+    /// values are evaluated; the branch's arms have no `let`s a hole reads
+    /// (`Arm.statements` refuses them), so no `let` is bound through it.
+    fn helperBranch(pg: *Page, n: m.Node.Index, callee: m.Program.Callee, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html)) m.Error!bool {
+        const cx = pg.cx;
+        if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
+        if (callee.statements) return later(cx, n, "a function returning markup whose body has `let`s that no hole reads");
+        const br = cx.programBranch(n) orelse return later(cx, n, not_when);
+        const arm_root = for (br.arms) |arm| {
+            if (arm.what == .markup) break arm.what.markup;
+        } else return later(cx, n, not_when);
+        // The hole's own facts are on the path outside the call, which the
+        // call's frame extends.
+        const facts = try pg.known(n, cx.programHole(.{ .node = n }));
+        try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = 0, .root = arm_root, .group = facts.group, .entry_groups = facts.entry_groups, .kind = .call });
+        const inner: u32 = @intCast(pg.ctxs.items.len - 1);
+        try cx.programInlineEnter(null, n, null, false);
+        defer cx.programInlineLeave();
+        try pg.whenOf(n, scope, inner, out, facts);
+        return true;
+    }
+
     /// An `html` hole among an element's children: an eager `when`
     /// (§8.2, D-b) — an `if` one arm of which is one element written in
     /// place and the other `<></>`. Its element is in the markup, in the
     /// arm's context; the `when` is a write of the hole's context.
     fn when(pg: *Page, n: m.Node.Index, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html)) m.Error!void {
+        return pg.whenOf(n, scope, ctx, out, null);
+    }
+
+    /// `when`, with the hole's facts read already (`known`) where the hole
+    /// is a helper's call entered for its branch (`helperBranch`).
+    fn whenOf(pg: *Page, n: m.Node.Index, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html), known_facts: ?m.Program.HoleFacts) m.Error!void {
         const cx = pg.cx;
         const tree = pg.tree;
-        const not_when = "markup held in data or chosen at run time, or a branch whose arms are not each one element or `<></>`";
         const br = cx.programBranch(n) orelse return later(cx, n, not_when);
         if (br.arms.len < 2) return later(cx, n, not_when);
         // Each arm one element written in place, or `<></>`: one eager
@@ -1208,7 +1244,7 @@ const Page = struct {
             try shown.append(pg.a(), @intCast(k));
         }
         if (shown.items.len == 0 and !removed) return later(cx, n, not_when);
-        const facts = try pg.known(n, cx.programHole(.{ .node = n }));
+        const facts = known_facts orelse try pg.known(n, cx.programHole(.{ .node = n }));
         if (shown.items.len == 0) {
             // Retain selector and helper-argument effects and throws.
             var groups: std.ArrayList(u32) = .empty;

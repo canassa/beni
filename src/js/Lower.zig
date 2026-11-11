@@ -16784,7 +16784,9 @@ pub const Lowerer = struct {
             if (l.in.public_roots and dc.is_pub) continue;
             var body = dc.body.unwrap() orelse continue;
             while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
-            if (l.bir.instTag(body) != .markup) continue;
+            // Or a `case` each arm of which is markup past its `let`s
+            // (`browser-inline.md` §8.4, amended 2026-11-11, #2498).
+            if (l.bir.instTag(body) != .markup and !(try l.caseOfMarkup(body))) continue;
             if (l.consumed.len == 0) {
                 l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
                 @memset(l.consumed, false);
@@ -16809,6 +16811,21 @@ pub const Lowerer = struct {
             }
             l.consumed[vp.decl] = true;
         }
+    }
+
+    /// Whether `body` is a `case` — an `if` — every arm of which, past its
+    /// `let`s and through a nested `case`, is markup written there.
+    fn caseOfMarkup(l: *Lowerer, body: Inst.Index) Allocator.Error!bool {
+        if (l.bir.instTag(body) != .case) return false;
+        var bodies: std.ArrayList(Inst.Index) = .empty;
+        defer bodies.deinit(l.scratch);
+        try l.flattenArms(body, &bodies);
+        for (bodies.items) |b| {
+            var at = b;
+            while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+            if (l.bir.instTag(at) != .markup) return false;
+        }
+        return true;
     }
 
     /// The root a view piece's declaration's body is, past its `let`s.
@@ -18053,6 +18070,10 @@ pub const Lowerer = struct {
         /// The body has `let`s the markup does not read.
         statements: bool = false,
         refusal: beni_markup.Program.Callee.Refusal = .none,
+        /// `refusal` is `branch` (version 1.30): the `case` the callee's
+        /// body is past its `let`s, whose arms `branchArms` reads
+        /// (`browser-inline.md` §8.4, amended 2026-11-11).
+        branch: ?Inst.Index = null,
         /// A component's callee, as the call names it (`Callee.debug`).
         callee: ?Inst.Index = null,
         /// Version 1.15: the callee of another module (`other_module`).
@@ -18129,6 +18150,10 @@ pub const Lowerer = struct {
         bodies: []const Inst.Index,
         results: []const Inst.Index,
         document: bool = false,
+        /// The branch is the body of the function the hole calls (version
+        /// 1.30, `Chain.branch`): its arms were walked, and are entered, on
+        /// the call's own path, which the hole's token already extends.
+        helper: bool = false,
     };
 
     /// What `exprValue` lowers an arm's body or result as.
@@ -18163,12 +18188,40 @@ pub const Lowerer = struct {
         const tree = &st.built.tree;
         // `Node.Index.none`: the `view`'s body past its `let`s, a branch at
         // the page's root (`Program.view_branch`).
-        const value = if (node == .none) l.viewBranchValue() orelse return null else blk: {
+        var helper = false;
+        // The frame entered for the hole's call, when its callee's body is
+        // the branch (version 1.30): read there, since on that path the
+        // callee is being entered and `chainOfRef` would call it recursive.
+        const framed: ?Inst.Index = blk: {
+            var i = l.inline_frames.items.len;
+            while (i > 0) {
+                i -= 1;
+                const f = l.inline_frames.items[i];
+                if (f.node == node) if (f.chain.branch) |b| break :blk b;
+            }
+            break :blk null;
+        };
+        if (node != .none and framed != null) helper = true;
+        const value = if (node == .none) l.viewBranchValue() orelse return null else if (framed) |b| b else blk: {
             if (tree.kind(node) != .hole) return null;
             const h = tree.hole(node);
             if (h.kind != .html) return null;
             break :blk switch (st.built.values[@backingInt(h.value)]) {
-                .inst => |x| x,
+                // A call of a function whose body is a branch (version
+                // 1.30): the branch is the callee's.
+                .inst => |x| inst: {
+                    if (l.bir.instTag(x) != .call) break :inst x;
+                    const chain = l.chainOfExpr(x, &.{}, true) orelse break :inst x;
+                    if (chain.refusal != .branch) break :inst x;
+                    helper = true;
+                    break :inst chain.branch.?;
+                },
+                .call => |c| call: {
+                    const chain = l.chainOfExpr(c.inst, &.{}, true) orelse return null;
+                    if (chain.refusal != .branch) return null;
+                    helper = true;
+                    break :call chain.branch.?;
+                },
                 else => return null,
             };
         };
@@ -18183,7 +18236,7 @@ pub const Lowerer = struct {
             r.* = b;
             while (l.bir.instTag(r.*) == .let) r.* = @fromBackingInt(@intCast(l.bir.instData(r.*).rhs));
         }
-        return .{ .value = value, .bodies = bodies.items, .results = results, .document = document };
+        return .{ .value = value, .bodies = bodies.items, .results = results, .document = document, .helper = helper };
     }
 
     /// The program's `view`'s body past its `let`s, when it is a `case` —
@@ -18243,13 +18296,15 @@ pub const Lowerer = struct {
 
     /// A completed view walk proves this arm dead on this call path.
     /// Missing facts are unknown, never a dead-arm proof.
-    fn directArmDead(l: *Lowerer, node: beni_markup.Node.Index, body: Inst.Index) bool {
+    fn directArmDead(l: *Lowerer, node: beni_markup.Node.Index, body: Inst.Index, helper: bool) bool {
         const pc = l.program_now orelse return false;
         const d = pc.direct orelse return false;
         const st = l.mk orelse return false;
         const module = l.in.module.int();
         const path = l.inline_path.items;
-        const extra: usize = if (node == .none) 0 else 1;
+        // A helper's branch was walked on the call's path, which the frame
+        // entered for the call already extends by the hole's token.
+        const extra: usize = if (node == .none or helper) 0 else 1;
         const token: u64 = if (node == .none) 0 else (@as(u64, module) << 32) | st.built.node_tokens[@backingInt(node)];
         // Match the current branch's path without changing its caller state.
         const full = l.scratch.alloc(u64, path.len + extra) catch return false;
@@ -18281,7 +18336,7 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
+            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b, arms.helper), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
         }
         return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
     }
@@ -18501,12 +18556,15 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const p = st.pos;
         // A `view`'s body (`Node.Index.none`): its arms were walked on the
-        // root's call path, which no token extends.
-        if (node != .none) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = node != .none };
+        // root's call path, which no token extends; nor does a helper's
+        // branch add one, its call's frame having extended the path.
+        const arms_known = try l.branchArms(node);
+        const token = node != .none and !(if (arms_known) |a| a.helper else false);
+        if (token) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = token };
         defer l.inline_frames.append(l.scratch, frame) catch {};
         const b = block orelse return null;
-        const arms = try l.branchArms(node) orelse return null;
+        const arms = arms_known orelse return null;
         if (k >= arms.bodies.len) return null;
         const what = l.armWhat(arms.results[k]);
         var inputs: []const u32 = &.{};
@@ -18594,11 +18652,14 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const p = st.pos;
         // A `view`'s body (`Node.Index.none`): its arms were walked on the
-        // root's call path, which no token extends.
-        if (node != .none) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = node != .none };
+        // root's call path, which no token extends; nor does a helper's
+        // branch add one (`directBranchEnter`).
+        const arms_known = try l.branchArms(node);
+        const token = node != .none and !(if (arms_known) |a| a.helper else false);
+        if (token) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = token };
         defer l.inline_frames.append(l.scratch, frame) catch {};
-        const arms = try l.branchArms(node) orelse return;
+        const arms = arms_known orelse return;
         if (k >= arms.bodies.len) return;
         var stmts: StmtList = .empty;
         defer st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items) catch {};
@@ -18750,7 +18811,8 @@ pub const Lowerer = struct {
         if (k >= arms.bodies.len) return;
         const what = l.armWhat(arms.results[k]);
         if (what != .markup) return;
-        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        // A helper's branch adds no token (`directBranchEnter`).
+        if (!arms.helper) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
         const root = st.built.tree.root(what.markup);
         const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
         for (names, 0..) |*n, j| {
@@ -18758,7 +18820,7 @@ pub const Lowerer = struct {
             n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
         }
         try l.markupBindInputs(what.markup, names);
-        try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = true });
+        try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = !arms.helper });
     }
 
     /// `cx.programShowFallback`: the markup root a `Show`'s fallback is,
@@ -18843,6 +18905,17 @@ pub const Lowerer = struct {
         }
         const root = if (l.bir.instTag(body) == .markup) st.built.rootAt(body.int()) else null;
         if (root == null) {
+            // A `case` — an `if` — past the `let`s: a branch the program
+            // lowering may read with `programBranch` on the hole (version
+            // 1.30), its parameters bound as a call written in place binds
+            // them.
+            if (l.bir.instTag(body) == .case) {
+                chain.refusal = .branch;
+                chain.branch = body;
+                chain.decl = decl;
+                chain.params = l.paramsOf(decl);
+                return chain;
+            }
             chain.refusal = .not_markup;
             return chain;
         }
@@ -18961,7 +19034,10 @@ pub const Lowerer = struct {
         const chain = l.directChain(node) orelse Chain{};
         try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
         var frame: InlineFrame = .{ .node = node, .chain = chain, .caller = l.declCtx() };
-        if (args) |values| if (chain.root) |root_index| {
+        // A callee whose body is a branch (version 1.30) has its parameters
+        // bound here and no root: each arm's root is bound as the arm is
+        // entered.
+        if (args) |values| if (chain.root != null or chain.branch != null) {
             var stmts: StmtList = .empty;
             if (chain.decl) |decl| {
                 _ = try l.enterDecl(decl);
@@ -18990,14 +19066,16 @@ pub const Lowerer = struct {
                     }
                 }
             }
-            const root = st.built.tree.root(root_index);
-            const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
-            for (names, 0..) |*n, k| {
-                const local = st.built.values[root.inputs.start + k].capture;
-                n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+            if (chain.root) |root_index| {
+                const root = st.built.tree.root(root_index);
+                const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+                for (names, 0..) |*n, k| {
+                    const local = st.built.values[root.inputs.start + k].capture;
+                    n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+                }
+                try l.markupBindInputs(root_index, names);
+                frame.bound = true;
             }
-            try l.markupBindInputs(root_index, names);
-            frame.bound = true;
             if (block) |b| try st.blocks.items[@backingInt(b)].appendSlice(l.scratch, stmts.items);
         };
         try l.inline_frames.append(l.scratch, frame);

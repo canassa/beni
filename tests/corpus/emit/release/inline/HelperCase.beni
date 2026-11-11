@@ -1,0 +1,71 @@
+-- A view helper whose body is a `case` of element-or-`<></>` arms
+-- (docs/design/browser-inline.md §8.4, amended 2026-11-11, #2498): the
+-- helper's context holds the branch's eager `when`s, every arm's element
+-- in the markup where the hole is, and the arm taken is the helper's
+-- `case` evaluated with its parameter bound. Clicks walk the status
+-- through its three values; `Idle` shows nothing.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Status
+    = Idle
+    | Loading
+    | Done
+
+
+type alias Model =
+    status : Status
+
+
+type Msg
+    = Next
+
+
+next : Status → Status
+next s =
+    case s of
+        Idle →
+            Loading
+
+        Loading →
+            Done
+
+        Done →
+            Idle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Next →
+            { model | status = next model.status }
+
+
+banner : Status → Html Msg
+banner s =
+    case s of
+        Idle →
+            <></>
+
+        Loading →
+            <p data-role="loading">Loading</p>
+
+        Done →
+            <p data-role="done">Done</p>
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="status">
+        {banner model.status}
+        <button data-role="next" onClick={Next}>Next</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { status = Idle }, update = update, view = view })
+        "root"

@@ -679,6 +679,32 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   call sites bind their own arguments. This is local evaluation, not a memo shared between passes. Two calls of one helper
   share its root, so a `let` of the helper read by both, in two functions, is refused the same
   way: conservative, never unsound.
+- **A view helper whose body is a branch** (*amended 2026-11-11, #2498; the owner's item 1 (c)
+  for the page port*: the view helper above and §8.2's `case` in markup, composed). A hole whose
+  value calls a function of the same module — under no `Html.map`, with no `let`s no hole reads,
+  not calling itself — whose body after its `let`s is a `case` (an `if`, an `if … else if` chain)
+  each arm of which is one element written in place or `<></>` is that helper's context (the
+  call entered, its arguments evaluated in the enclosing context, its holes with the facts of the
+  call's path) holding the branch's eager `when`s (§8.2, *a `case` in markup*): every arm's
+  element is in the markup in document order, where the hole is, and the arm the value takes is
+  the helper's branch evaluated with its parameters bound, once per pass for all of its `when`s.
+  The write-set pass already walks the helper's body on the call's path (`write-sets.md`, *a
+  hole's facts per call*; `Writes.direct`), so the arms' holes have their facts there, and an arm
+  the pass proved dead on that path is left out as in the `view`. What the `when`s read is the
+  call's whole group: the pass records a selector (§8.2, amended 2026-10-24) for a hole whose
+  value is a `case` written there and not for a call, so a write any arm's hole reads runs the
+  `when`s too, which then write nothing; a selector through the call is a refinement of the pass
+  for later, not of this lowering. An arm that reads a variable its pattern binds, or that is not
+  one element or `<></>`, keeps its class 1 refusal, with its text (`build/bad/inline/
+  HelperCaseBinds`, `HelperCaseValue`); a helper whose body computes its markup any other way
+  stays "no markup value yet". Interface, version 1.30: `Program.Callee.refusal` is `branch` when
+  the callee's body is such a `case` — a lowering that does not know it refuses the call as it
+  refuses `not_markup` — and `programBranch` on the call's hole then gives the branch's arms;
+  entering the call (`programInlineEnter` with its arguments) binds the parameters with no root,
+  and the branch's arms are entered under that frame, which is the one the hole's token extends,
+  so `programBranchEnter`, `programBranchEager` and `programBranchBind` on that hole add no token
+  of their own (`browser/inline/HelperCase`, `HelperCaseTwice`, a helper called twice with
+  different arguments; `emit/release/inline/HelperCase`).
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).
@@ -1542,6 +1568,9 @@ rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when 
 named for is withdrawn. Such an event of the program's own markup goes through the dispatcher
 (§8.3), and `MessageValue/` is the page `browser/inline/MessageValue`. The row of another module's
 event (`PieceEventArgs/`) stays.
+
+*Amended 2026-11-11 (#2498):* the row *an `if` or `case` in markup that is not an eager `when`*
+holds for a helper whose body is the branch (`HelperCaseBinds/`, `HelperCaseValue/`).
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.

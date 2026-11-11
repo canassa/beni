@@ -1,0 +1,53 @@
+-- A view helper whose body is a `case` (docs/design/browser-inline.md
+-- §8.4, amended 2026-11-11) one of whose arms is a markup value (`other`),
+-- not an element written in place: chosen at run time, refused at the hole
+-- as the same branch is in the `view` (class 1, §5), and, since a helper
+-- whose arms are not all markup is not written only in place, its element
+-- arm and `other` are refused as markup values too, as in `CaseValueArm`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+
+
+type Msg
+    = AddCup
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+
+other : Html Msg
+other = <span>other</span>
+
+
+banner : Int → Html Msg
+banner n =
+    case n of
+        0 →
+            <p>none</p>
+
+        _ →
+            other
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {banner model.cups}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0 }, update = update, view = view })
+        "root"

@@ -1,0 +1,52 @@
+-- A view helper whose body is a `case` (docs/design/browser-inline.md
+-- §8.4, amended 2026-11-11) one of whose arms reads a variable its pattern
+-- binds (`draft`): not an eager `when`, so refused at the hole with the
+-- text a branch of that shape has in the `view` (class 1, §5): the part of
+-- S4 that compiles binding arms.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    draft : Maybe String
+
+
+type Msg
+    = Typed String
+    | Done
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed text →
+            { model | draft = Just text }
+
+        Done →
+            { model | draft = Nothing }
+
+
+editor : Maybe String → Html Msg
+editor draft =
+    case draft of
+        Just text →
+            <input data-role="edit" value={text} onInput={Typed} onBlur={λ_ → Done} />
+
+        Nothing →
+            <></>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {editor model.draft}
+        <button data-role="done" onClick={Done}>Done</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { draft = Nothing }, update = update, view = view })
+        "root"

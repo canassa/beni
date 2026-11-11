@@ -229,9 +229,13 @@ an empty attribute. Class-list syntax and style lists remain compiler limits on 
 ## Helpers on `browser-inline`
 
 On `browser-inline`, a view can call a function of its own module that returns markup. The
-compiler writes that markup at the call. These are still compiler limitations:
+compiler writes that markup at the call. The function's body may also be a `case` or an `if`
+whose arms are each one element or `<></>`: each arm's element is written at the call, and the
+page shows the arm the value takes. These are still compiler limitations:
 
 - markup that is held or passed as data;
+- an arm of such a `case` that reads a variable its pattern binds (`Just text → <p>{text}</p>`),
+  or that is not one element or `<></>`;
 - a helper argument that has an effect and that more than one binding function reads.
 
 Keep the program as it is and report the limitation. Do not change its evaluation to make it

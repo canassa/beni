@@ -1,0 +1,64 @@
+-- A view helper whose body is a `case` (docs/design/browser-inline.md
+-- §8.4, amended 2026-11-11, #2498), called twice with different arguments:
+-- two contexts, each with its own `when`s and its own holes, which read the
+-- helper's parameters — bound outside its `case`, so the arms are eager. A
+-- click on cups changes the cups line alone; the coins line stays as it is
+-- until its own count moves off zero.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+        Reset →
+            { model | cups = 0, coins = 0 }
+
+
+count : String, Int → Html Msg
+count label n =
+    case n of
+        0 →
+            <></>
+
+        1 →
+            <p data-role="one">{"one ${label}"}</p>
+
+        _ →
+            <strong data-role="many">{"${String.fromInt n} ${label}"}</strong>
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="counts">
+        {count "cup" model.cups}
+        {count "coin" model.coins}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+        <button data-role="coin" onClick={AddCoin}>Coin</button>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"

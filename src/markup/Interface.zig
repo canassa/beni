@@ -82,7 +82,10 @@ const std = @import("std");
 /// Version 1.28 adds the update-context writer dependencies and absence fact.
 /// Version 1.29 lets the write-set pass read `afterRender` commands
 /// (`Lowering.Effects.after_render`).
-pub const version: Version = .{ .major = 1, .minor = 29 };
+/// Version 1.30 says of a hole's callee that its body is a branch of markup
+/// arms (`Program.Callee.Refusal.branch`), which `programBranch` on the
+/// hole then reads (`browser-inline.md` §8.4, amended 2026-11-11, #2498).
+pub const version: Version = .{ .major = 1, .minor = 30 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -560,6 +563,14 @@ pub const Program = struct {
             other_module,
             /// A function whose body computes its markup, or a value.
             not_markup,
+            /// 1.30: a function of this module whose body after its `let`s
+            /// is a `case` — an `if` — of markup arms: `programBranch` on
+            /// the hole gives the arms, `programInlineEnter` with arguments
+            /// binds the parameters, and the arms are entered under that
+            /// call's frame (`browser-inline.md` §8.4, amended 2026-11-11).
+            /// A lowering that does not read branches refuses it as
+            /// `not_markup`.
+            branch,
             _,
         };
     };
