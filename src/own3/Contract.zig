@@ -50,7 +50,8 @@ pub const flag_r: u8 = 4;
 /// The body hands the location to a function parameter that can write it.
 pub const flag_s: u8 = 8;
 
-/// What a body does with a function parameter.
+/// What a body does with a function parameter: the use of that location
+/// (research report 112 §2.1).
 pub const Fn = struct {
     arity: u32,
     /// The function type's parameter layouts as the owner sees them, then its result layout.
@@ -65,7 +66,8 @@ pub const Fn = struct {
     free: []const bool,
     /// The owner calls it, or hands it to a function that does.
     called: bool = false,
-    /// The value goes where the checker does not follow it: nothing above holds.
+    /// The value goes where no contract describes its holder (the default):
+    /// nothing above holds, and a function that writes its parameter cannot go here.
     lost: bool = false,
     /// The owner lets the function's answer escape, or a cell keeps it. So
     /// each cell that the answer can hold escapes at the call that gives the
@@ -85,7 +87,11 @@ pub const Contract = struct {
     flags: []const u8,
     /// Per result entry.
     res: []const []const Src,
-    /// Per parameter: its function contract, or null.
+    /// Per parameter: its function contract. Each parameter of a function
+    /// type has one, also when the body does nothing with the function.
+    /// Null for a parameter of a function type says that the checker does
+    /// not follow it: a caller hands it a function as to the default
+    /// (research report 112 §2.2).
     fns: []const ?*const Fn,
     /// Parameter 0 has the word `entry`: the argument is a program's record.
     entry: bool = false,
