@@ -92,8 +92,13 @@ pub const Mod = struct {
     /// Per local of the module: its value and its frame, while its declaration is walked.
     lv: []Frame.Val = &.{},
     lframe: []u32 = &.{},
+    /// Per local of the module: an instruction named it before a frame bound it.
+    early: []bool = &.{},
     /// Per instruction: the contract of the lambda or local function there.
     code_contract: []?*const Contract.Contract = &.{},
+    /// Per instruction: the locals that the code there captured in its last
+    /// walk, in the order of its contract's parameters after its own.
+    code_caps: [][]const u32 = &.{},
     contracts: []?*const Contract.Contract = &.{},
     state: []State = &.{},
     worded_done: []bool = &.{},
@@ -299,7 +304,45 @@ pub const Mod = struct {
         const d = m.bir.decls[di];
         const sig = (try m.sigOf(di)) orelse return null;
         if (sig.params.len != d.params) return null;
-        return m.emptyContract(sig.params, sig.result);
+        const tys = try m.walk_arena.allocator().alloc(Var.Optional, sig.vars.len);
+        for (tys, sig.vars) |*t, v| t.* = v.toOptional();
+        return m.bottomContract(sig.params, tys, sig.result);
+    }
+
+    /// `emptyContract`, and for each parameter of a function type the
+    /// contract of a function that the body does nothing with. A parameter
+    /// with no function contract is one that the checker does not follow: a
+    /// caller hands it a function as to the default. So the rounds of a
+    /// group, whose contracts only grow, must not start from that.
+    pub fn bottomContract(m: *Mod, params: []const PlaceId, tys: []const Var.Optional, result: PlaceId) Allocator.Error!*Contract.Contract {
+        const c = try m.emptyContract(params, result);
+        const fns = @constCast(c.fns);
+        for (fns, tys) |*f, ty| f.* = try m.bottomFn(ty);
+        return c;
+    }
+
+    /// The contract of a function parameter of type `ty` that its owner does nothing with; null when `ty` is no function type.
+    fn bottomFn(m: *Mod, ty: Var.Optional) Allocator.Error!?*const Contract.Fn {
+        const ft = m.fnType(ty) orelse return null;
+        const pvars = m.in.store.vars(ft.params);
+        const arity: u32 = @intCast(pvars.len);
+        const layouts = try m.arena.alloc(u32, arity + 1);
+        const off = try m.arena.alloc(u32, arity + 1);
+        var total: u32 = 0;
+        for (pvars, 0..) |pv, k| {
+            layouts[k] = try m.loc.layoutOf(try m.placeOf(pv.toOptional()));
+            off[k] = total;
+            total += @intCast(m.loc.layouts.items[layouts[k]].len);
+        }
+        off[arity] = total;
+        layouts[arity] = try m.loc.layoutOf(try m.placeOf(ft.result.toOptional()));
+        const supply = try m.arena.alloc([]const Src, total);
+        @memset(supply, &.{});
+        const free = try m.arena.alloc(bool, total);
+        @memset(free, true);
+        const fnc = try m.arena.create(Contract.Fn);
+        fnc.* = .{ .arity = arity, .layouts = layouts, .off = off, .supply = supply, .free = free };
+        return fnc;
     }
 
     pub fn emptyContract(m: *Mod, params: []const PlaceId, result: PlaceId) Allocator.Error!*Contract.Contract {
@@ -576,6 +619,7 @@ pub const Mod = struct {
         const body = d.body.unwrap() orelse return null;
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_shared);
+        @memset(m.early[d.locals_start..d.locals_end], false);
         var f = try Frame.init(m, null, di, false, none);
         const params = m.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
         const sig = try m.sigOf(di);
@@ -862,6 +906,12 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.lframe = try gpa.alloc(u32, bir.locals.len);
     defer gpa.free(m.lframe);
     @memset(m.lframe, 0);
+    m.early = try gpa.alloc(bool, bir.locals.len);
+    defer gpa.free(m.early);
+    @memset(m.early, false);
+    m.code_caps = try gpa.alloc([]const u32, bir.insts.len);
+    defer gpa.free(m.code_caps);
+    @memset(m.code_caps, &.{});
     m.code_contract = try gpa.alloc(?*const Contract.Contract, bir.insts.len);
     defer gpa.free(m.code_contract);
     @memset(m.code_contract, null);

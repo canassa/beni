@@ -101,7 +101,7 @@ const Root = struct {
 /// `taken`, an element that a trusted loop of `core/` took out of its list.
 const EKind = enum(u8) { own, shared, alias, derived, taken, version };
 const REntry = struct { kind: EKind, start: u32 = 0, len: u32 = 0, fresh: bool = false };
-const Use = struct { point: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
+const Read = struct { point: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
 const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32 };
 
@@ -130,6 +130,94 @@ const FnDraft = struct {
     lost: bool = false,
     ans_escapes: bool = false,
     rewrites: bool = false,
+    /// The body does something with the function: it calls it or lets it flow.
+    used: bool = false,
+};
+
+/// The call or the mention at which a function value flows: where a demand
+/// and a refusal are, and the operands that a demand is judged against.
+const Site = struct {
+    inst: u32,
+    callee: u32 = none,
+    arg_insts: []const Inst.Index = &.{},
+    others: []const Other = &.{},
+};
+
+/// What the holder of a function-typed location does with a function there
+/// (research report 112 §2). Each consumer of a function value is one of
+/// three uses, and `flow` is the one rule that judges a value against a use.
+///
+/// - `call`: the location is parameter `j` of the callee `c` of the call in
+///   work. `args` are the values of the callee's parameters, and `fnc` says
+///   what the callee hands the function.
+/// - `inner`: the location is capture `j` of a known function whose contract
+///   is `c`, and `up` is the use of that function. `args[own..]` are the
+///   captured values. What the first `own` parameters are is what `up` hands
+///   them. This is the composition of two contracts, at any depth.
+/// - `top`: no contract describes the holder (the default). It runs the
+///   function at any time, any number of times, with values that are not the
+///   function's own, and it keeps the answer.
+const Use = struct {
+    kind: enum(u8) { call, inner, top },
+    /// One number for each holder of a walk (a call, a known function, the
+    /// default). With `j` it names the location: an answer or a supply in
+    /// work is known by the two.
+    id: u32 = 0,
+    c: *const Contract = undefined,
+    fnc: *const CMod.Fn = undefined,
+    j: u32 = none,
+    args: []const Val = &.{},
+    own: u32 = 0,
+    up: ?*const Use = null,
+    site: *const Site,
+    depth: u32 = 0,
+    /// The function in the location, once `flow` knows which it is: a known
+    /// function, or the frame's own function parameter at `root`.
+    code: ?Code = null,
+    root: u32 = none,
+
+    /// Whether a holder on the way writes a cell after it handed that cell on.
+    fn rewrites(use: *const Use) bool {
+        var u: ?*const Use = use;
+        while (u) |x| : (u = x.up) {
+            if (x.kind == .top) return false;
+            if (x.fnc.rewrites) return true;
+        }
+        return false;
+    }
+};
+
+/// What a use hands one parameter location of the function. `fe` is `none`
+/// when the use's type has no entry for it: `srcs` then says all (the
+/// default hands a value with no claim; a type with no object there hands no cell).
+const Slot = struct { fe: u32, free: bool, srcs: []const Src };
+
+/// The atoms `f.atoms[start..]` that a source of a use is in this frame.
+const Handed = struct {
+    start: u32,
+    dup: bool,
+    /// The level whose parameter the atoms are of, the parameter and its entry.
+    use: *const Use,
+    a: u32,
+    e: u32,
+    suffix: []const u64,
+    /// A value that a known function captured: each run hands the same cells.
+    captured: bool,
+};
+
+/// The parameter locations whose supply is in work, and the answers that
+/// must be `own`: `(holder, location, parameter or none, entry)`.
+const Seen = struct {
+    n: u32 = 0,
+    keys: [32][4]u32 = undefined,
+    fn visit(s: *Seen, use: *const Use, k: u32, e: u32) enum { new, old, full } {
+        const key: [4]u32 = .{ use.id, use.j, k, e };
+        for (s.keys[0..s.n]) |x| if (std.mem.eql(u32, &x, &key)) return .old;
+        if (s.n == s.keys.len) return .full;
+        s.keys[s.n] = key;
+        s.n += 1;
+        return .new;
+    }
 };
 
 /// The answer of one call of a function parameter: a root, and what the
@@ -211,7 +299,7 @@ judge_ctx: u32 = none,
 judge_point: u32 = none,
 /// Set by `argLeaves` when the fallback cover gave an entry.
 hit_all: bool = false,
-uses: std.ArrayList(Use) = .empty,
+uses: std.ArrayList(Read) = .empty,
 escapes: std.ArrayList(Escape) = .empty,
 demands: std.ArrayList(Demand) = .empty,
 ctxs: std.ArrayList(Ctx) = .empty,
@@ -222,6 +310,8 @@ scratch: std.ArrayList(Atom) = .empty,
 order: std.ArrayList(u32) = .empty,
 /// While a spread literal or a `++` chain is walked: its root call.
 chain_root: u32 = none,
+/// The next `Use.id`.
+next_use: u32 = 1,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -342,7 +432,7 @@ fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
 
 /// Whether one cell can be in both parts of one summary location. Two
 /// answers of one function parameter are not one cell by this test: the
-/// caller that knows the function decides (`expandAnswer`).
+/// caller that knows the function decides (`answerOfCode`).
 ///
 /// Two cells read through one root that holds each cell once (`linear`) are
 /// one cell only when that root's own atoms say so: its parts are apart.
@@ -724,13 +814,14 @@ fn readAll(f: *Frame, v: Val, point: u32) Error!void {
 }
 
 /// `v` is read at `point` by a callee whose contract flags are `flags` over the signature layout `sig`.
-fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8, is_fn: bool) Error!void {
+fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void {
     if (v == v_none or v == v_shared) return;
     const n = f.nodes.items[v];
     if (n.tag == .fnref) return;
     if (whole(n.tag)) {
-        // A function value: read when the callee reads, calls or keeps it.
-        var any = is_fn;
+        // A function value: read when the callee reads, calls or keeps it
+        // (a contract has the read flag on a function parameter that the body uses).
+        var any = false;
         for (flags) |x| if (x != 0) {
             any = true;
         };
@@ -754,7 +845,7 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8, is_fn: boo
     try f.uses.append(f.gpa, .{ .point = point, .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = all });
 }
 
-fn useReaches(f: *Frame, u: Use, ws: []const Atom) Error!bool {
+fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
     if (u.all) return f.reach(u.val, ws);
     for (0..u.nmask) |i| {
         f.scratch.clearRetainingCapacity();
@@ -927,6 +1018,23 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         d.op = .construction;
         d.kind = .construction;
         d.point = f.chain_root;
+    }
+    // One function can reach one supply by two ways (a fold hands a function
+    // its argument and its own answer): the same demand is one demand.
+    if (in.op == .call and in.kind == .callsite) {
+        var i = f.demands.items.len;
+        while (i > 0) {
+            i -= 1;
+            const d0 = f.demands.items[i];
+            if (d0.point != d.point) break;
+            if (d0.op != d.op or d0.kind != d.kind or d0.loc != d.loc or d0.wn != wn or d0.base_inst != d.base_inst or d0.ctx != d.ctx) continue;
+            const same = for (f.atoms.items[d0.w..][0..wn], f.atoms.items[w..][0..wn]) |x, y| {
+                if (!atomEql(x, y)) break false;
+            } else true;
+            if (!same) continue;
+            f.atoms.shrinkRetainingCapacity(w);
+            return;
+        }
     }
     for (0..wn) |i| {
         const a = f.atoms.items[w + i];
@@ -1112,7 +1220,7 @@ fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
         else => {},
     }
     const v = try f.evalInner(inst, mode);
-    if (mode == .value) try f.leak(v, inst);
+    if (mode == .value) try f.mention(v, inst);
     if (tail) {
         try f.readAll(v, inst);
         if (!try f.makesObject(inst)) f.tail_old = true;
@@ -1140,18 +1248,29 @@ fn makesObject(f: *Frame, inst: u32) Error!bool {
     }
 }
 
-/// A function value that asks its caller for `own` goes where no rule
-/// follows it: the checker cannot answer for its callers.
-fn leak(f: *Frame, v: Val, inst: u32) Error!void {
-    const n = f.nodes.items[v];
-    const c: *const Contract = switch (n.tag) {
-        .closure => f.codes.items[n.a].contract,
-        .fnref => (try f.m.declContract(.{ n.a, n.b })) orelse return,
+/// A function value is the value of an expression that no contract follows:
+/// an item of a construction, an argument at a parameter that is no function
+/// parameter, a result, the right side of a pattern. From here on it is in a
+/// location with the default contract, so it flows to the `top` use (research
+/// report 112 §2.3). A `case` is not here: each of its arms is.
+fn mention(f: *Frame, v: Val, inst: u32) Error!void {
+    switch (f.nodes.items[v].tag) {
+        .closure, .fnref => {},
+        .ref => if (!f.isFnRoot(f.ownFnRoot(v))) return,
         else => return,
-    };
-    const own = if (n.tag == .closure) f.codes.items[n.a].own_params else c.arity;
-    if (!writesOwn(c, own)) return;
-    try f.m.addRefusal(f, inst, .call, "a function that writes its parameter goes where the checker does not follow it");
+    }
+    try f.flowTop(v, inst);
+}
+
+fn flowTop(f: *Frame, v: Val, inst: u32) Error!void {
+    const site: Site = .{ .inst = inst };
+    const top: Use = .{ .kind = .top, .id = f.useId(), .site = &site };
+    try f.flow(v, &top);
+}
+
+fn useId(f: *Frame) u32 {
+    f.next_use += 1;
+    return f.next_use - 1;
 }
 
 /// Whether the function lets one of its own parameters escape.
@@ -1192,8 +1311,12 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .ctor, .ext_ctor => return f.ctorValue(inst),
         .local => {
             const l = f.d.locals_start + data.lhs;
-            // A local function that names itself, while it is walked.
-            if (m.lframe[l] == none) return v_none;
+            // A local function that names itself, while it is walked: the
+            // known function, with its contract so far.
+            if (m.lframe[l] == none) return f.selfValue(data.lhs);
+            // A local that no frame has bound yet (a later local function):
+            // it is used here as a value that nothing is known of.
+            if (m.lframe[l] == 0) m.early[l] = true;
             if (m.lframe[l] != f.id) return f.capture(data.lhs);
             return m.lv[l];
         },
@@ -1491,9 +1614,12 @@ fn binding(f: *Frame, b: u32) Error!void {
                 const params = m.bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Inst.Index);
                 const v = try f.codeValue(b, params, data.rhs, m.typeOfLocal(f.d, def.local), def.local);
                 f.bindLocal(def.local, v);
+                try f.usedEarly(def.local, v, b);
                 return;
             }
-            f.bindLocal(def.local, try f.eval(data.rhs, .bind, false));
+            const v = try f.eval(data.rhs, .bind, false);
+            f.bindLocal(def.local, v);
+            try f.usedEarly(def.local, v, b);
         },
         .let_pattern => {
             const v = try f.ev(data.rhs);
@@ -1503,6 +1629,16 @@ fn binding(f: *Frame, b: u32) Error!void {
         .let_stmt => _ = try f.ev(data.rhs),
         else => {},
     }
+}
+
+/// The local `local` was named before it was bound (an earlier local
+/// function calls it). There it was a value that nothing is known of, so the
+/// function that it is now flows to the `top` use.
+fn usedEarly(f: *Frame, local: u32, v: Val, inst: u32) Error!void {
+    if (!f.m.early[f.d.locals_start + local]) return;
+    // The arms of a `case` are mentions already.
+    const n = f.nodes.items[v];
+    if (n.tag == .closure or n.tag == .fnref) try f.flowTop(v, inst);
 }
 
 fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
@@ -1538,6 +1674,19 @@ fn codeValue(f: *Frame, inst: u32, params: []const Inst.Index, body: u32, ty: Va
     const fnt = m.fnType(ty);
     var rounds: u32 = 0;
     var cap_locals: []const u32 = &.{};
+    const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
+    if (self_local != none and m.code_contract[inst] == null and pvars.len == params.len) {
+        // The function can name itself: its rounds start from the contract
+        // with no flag and no source, as a group of declarations does.
+        const places = try f.gpa.alloc(PlaceId, params.len);
+        const tys = try f.gpa.alloc(Var.Optional, params.len);
+        for (places, tys, pvars) |*p, *t, pv| {
+            p.* = try m.placeOf(pv.toOptional());
+            t.* = pv.toOptional();
+        }
+        m.code_contract[inst] = try m.bottomContract(places, tys, try m.placeOf(fnt.?.result.toOptional()));
+        m.code_caps[inst] = &.{};
+    }
     while (true) : (rounds += 1) {
         const mark = m.lines.items.len;
         var child = try Frame.init(m, f, f.decl, true, inst);
@@ -1547,11 +1696,10 @@ fn codeValue(f: *Frame, inst: u32, params: []const Inst.Index, body: u32, ty: Va
             return v_shared;
         }
         if (self_local != none) {
-            // The function names itself: a call of it reads its contract so far.
+            // The function names itself: a reference is the function with its contract so far.
             m.lv[f.d.locals_start + self_local] = v_none;
             m.lframe[f.d.locals_start + self_local] = none;
         }
-        const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
         for (params, 0..) |p, k| {
             const place = if (k < pvars.len) try m.placeOf(pvars[k].toOptional()) else m.var_place;
             try child.addParam(place, p.int(), if (k < pvars.len) pvars[k].toOptional() else .none);
@@ -1565,6 +1713,7 @@ fn codeValue(f: *Frame, inst: u32, params: []const Inst.Index, body: u32, ty: Va
         const joined = if (old) |o| try CMod.join(m.arena, o, c) else c;
         const changed = if (old) |o| !CMod.eql(o, joined) else true;
         m.code_contract[inst] = joined;
+        m.code_caps[inst] = try m.arena.dupe(u32, cap_locals);
         // A local function that calls itself is walked again until its contract holds.
         if (!changed or !child.self_called or rounds > 16) {
             if (rounds > 16) f.failed = true;
@@ -1667,9 +1816,14 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             flags[off[s.a] + s.e] |= flag_r;
         };
     }
-    // The function parameters.
+    // The function parameters. Each parameter of a function type has a
+    // contract, also when the body does nothing with it: a missing fact
+    // about a function is never "nothing happens" (research report 112 §2.2).
     const fns = try m.arena.alloc(?*const CMod.Fn, arity);
     @memset(fns, null);
+    for (f.params.items) |root| if (f.isFnRoot(root)) {
+        _ = try f.draftOf(root, null);
+    };
     for (f.drafts.items) |*dr| {
         const idx = f.roots.items[dr.root].index;
         const supply = try m.arena.alloc([]const Src, dr.supply.len);
@@ -1686,7 +1840,9 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites };
         fns[idx] = fnc;
         // The function itself is used.
-        for (flags[off[idx]..off[idx + 1]]) |*x| x.* |= flag_r;
+        if (dr.used) for (flags[off[idx]..off[idx + 1]]) |*x| {
+            x.* |= flag_r;
+        };
     }
     // Whether a cell of a parameter can be at two locations of the result.
     var nonlinear = false;
@@ -1769,21 +1925,20 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
                     if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
                 },
                 .ref => fn_root = f.ownFnRoot(callee_val),
-                .none => {
-                    // A local function that calls itself, while it is walked.
-                    if (m.tags[callee] == .local and m.lframe[f.d.locals_start + m.datas[callee].lhs] == none) {
-                        if (f.selfCode(m.datas[callee].lhs)) |c| code = c;
-                    }
-                },
                 else => {},
             }
+            // One of several functions, or a function with no contract: no
+            // rule follows which code runs, so each of them goes to the `top` use.
+            if (code == null and fn_root == none) try f.flowTop(callee_val, inst);
         },
     }
     if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, args[0].int());
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
     for (args, 0..) |a, k| {
-        const is_fn = if (code) |c| k < c.contract.arity and c.contract.fns[k] != null and !c.contract.fns[k].?.lost else false;
+        // An argument at a function parameter flows to that parameter's
+        // contract (`apply`). The argument of an identity is the call's value.
+        const is_fn = if (code) |c| k < c.contract.arity and (c.contract.fns[k] != null or f.isIdentity(c.contract)) else false;
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
     if (code) |c| return f.apply(inst, callee, c, vals.items, args);
@@ -1794,8 +1949,11 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     return f.unknownResult(inst);
 }
 
-/// The code of the local function `local`, while one of its own frames is walked.
-fn selfCode(f: *Frame, local: u32) ?Code {
+/// The local function `local`, named inside its own body: the known function
+/// with its contract so far and the values that it captured, as this frame
+/// has them. So a call of it, and each place that it goes to, is judged as
+/// for any known function.
+fn selfValue(f: *Frame, local: u32) Error!Val {
     const m = f.m;
     var at: ?*Frame = f;
     while (at) |fr| : (at = fr.parent) {
@@ -1804,12 +1962,24 @@ fn selfCode(f: *Frame, local: u32) ?Code {
         const def = m.bir.extraData(@fromBackingInt(m.datas[fr.code_inst].lhs), Bir.LetDef);
         if (def.local != local) continue;
         fr.self_called = true;
-        const c = m.code_contract[fr.code_inst] orelse return null;
-        // Only the own parameters are known here: a capture is the same value in each call.
-        if (c.arity != fr.own_params) return null;
-        return .{ .contract = c, .inst = fr.code_inst, .own_params = fr.own_params };
+        const c = m.code_contract[fr.code_inst] orelse break;
+        const caps = m.code_caps[fr.code_inst];
+        if (c.arity != fr.own_params + caps.len) break;
+        // The captures of the last round, in its order: the same values in each call.
+        var tmp: std.ArrayList(Val) = .empty;
+        defer tmp.deinit(f.gpa);
+        for (caps) |l| {
+            const abs = f.d.locals_start + l;
+            try tmp.append(f.gpa, if (m.lframe[abs] != f.id) try f.capture(l) else m.lv[abs]);
+        }
+        const start: u32 = @intCast(f.lists.items.len);
+        try f.lists.appendSlice(f.gpa, tmp.items);
+        try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(caps.len), .inst = fr.code_inst, .own_params = fr.own_params });
+        return f.node(.{ .tag = .closure, .place = try m.placeOfLocal(f.d, local), .a = @intCast(f.codes.items.len - 1) });
     }
-    return null;
+    // No contract to read: the walk gives up on the declaration.
+    f.failed = true;
+    return v_shared;
 }
 
 fn methodCall(f: *Frame, inst: u32) Error!Val {
@@ -1817,29 +1987,33 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     const data = m.datas[inst];
     const mc = m.bir.extraData(@fromBackingInt(data.rhs), Bir.MethodCall);
     const args = m.bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
-    var vals: std.ArrayList(Val) = .empty;
-    defer vals.deinit(f.gpa);
-    try vals.append(f.gpa, try f.ev(data.lhs));
-    for (args) |a| try vals.append(f.gpa, try f.ev(a.int()));
-    try f.evidence(inst);
     // `==`, `<` and their kin call a type's `eq` and `compare`, which only
     // read (language.md §6.5); `Check` refuses one that does more.
     const name = m.symbolText(mc.name);
-    if (mc.origin != .none or std.mem.eql(u8, name, "compare") or std.mem.eql(u8, name, "eq")) {
+    const reads = mc.origin != .none or std.mem.eql(u8, name, "compare") or std.mem.eql(u8, name, "eq");
+    var code: ?Code = null;
+    if (!reads) if (m.methodTarget(inst)) |t| {
+        if (try m.declContract(t)) |c| {
+            if (c.arity == args.len + 1) code = .{ .contract = c, .decl = t, .own_params = c.arity };
+        }
+    };
+    var vals: std.ArrayList(Val) = .empty;
+    defer vals.deinit(f.gpa);
+    var all: std.ArrayList(Inst.Index) = .empty;
+    defer all.deinit(f.gpa);
+    try all.append(f.gpa, @fromBackingInt(data.lhs));
+    try all.appendSlice(f.gpa, args);
+    for (all.items, 0..) |a, k| {
+        // As in `call`: an argument at a function parameter flows to that parameter's contract.
+        const is_fn = if (code) |c| c.contract.fns[k] != null else false;
+        try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
+    }
+    try f.evidence(inst);
+    if (reads) {
         for (vals.items) |v| try f.readAll(v, inst);
         return f.unknownResult(inst);
     }
-    if (m.methodTarget(inst)) |t| {
-        if (try m.declContract(t)) |c| {
-            if (c.arity == vals.items.len) {
-                var all: std.ArrayList(Inst.Index) = .empty;
-                defer all.deinit(f.gpa);
-                try all.append(f.gpa, @fromBackingInt(data.lhs));
-                try all.appendSlice(f.gpa, args);
-                return f.apply(inst, inst, .{ .contract = c, .decl = t, .own_params = c.arity }, vals.items, all.items);
-            }
-        }
-    }
+    if (code) |c| return f.apply(inst, inst, c, vals.items, all.items);
     for (vals.items) |v| try f.escape(v, inst);
     return f.unknownResult(inst);
 }
@@ -1925,21 +2099,20 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
     for (0..code.ncaps) |k| try all.append(f.gpa, f.lists.items[code.caps + k]);
     if (all.items.len != c.arity) {
         // A partial or an over-application: no rule follows it.
-        for (all.items) |v| try f.escape(v, inst);
+        for (all.items) |v| {
+            try f.flowTop(v, inst);
+            try f.escape(v, inst);
+        }
         if (c.writes()) try m.addRefusal(f, inst, .call, "a function that writes its parameter is not called with all its arguments");
         return f.unknownResult(inst);
     }
     const args = all.items;
     // A function that answers its one parameter as it is (`Js.from`, `Js.to`,
     // `identity`): the value keeps its shape through a type that has none.
-    if (c.arity == 1 and c.fns[0] == null and c.res.len == 1 and c.res[0].len == 1 and c.flags.len == 1 and c.flags[0] & (flag_w | flag_e) == 0) {
-        const s = c.res[0][0];
-        const pe = m.loc.layoutEntries(c.layouts[0])[0];
-        const re = m.loc.layoutEntries(c.layouts[1])[0];
-        if (s.kind == .param and s.a == 0 and s.e == 0 and pe.loc == 0 and re.loc == 0 and pe.kind.wide() and re.kind.wide()) {
-            try f.readBy(args[0], inst, c.layouts[0], c.flags, false);
-            return args[0];
-        }
+    // A function value stays the function that it is: nothing consumed it.
+    if (f.isIdentity(c)) {
+        try f.readBy(args[0], inst, c.layouts[0], c.flags);
+        return args[0];
     }
     const others = try f.gpa.alloc(Other, c.arity);
     for (others, 0..) |*o, j| o.* = .{ .v = args[j], .sig = c.layouts[j], .flags = c.flags[c.off[j]..c.off[j + 1]] };
@@ -1972,13 +2145,17 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
             }
         }
     }
-    // The functions it is handed.
+    // The functions it is handed: each flows to the contract of its parameter.
+    const site: Site = .{ .inst = inst, .callee = callee, .arg_insts = arg_insts, .others = others };
     for (0..c.arity) |j| {
         const fnc = c.fns[j] orelse continue;
-        try f.handFunction(inst, callee, c, fnc, j, args, arg_insts, others);
+        const use: Use = .{ .kind = .call, .id = f.useId(), .c = c, .fnc = fnc, .j = @intCast(j), .args = args, .site = &site };
+        try f.flow(args[j], &use);
     }
     // What it reads.
-    for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]], c.fns[j] != null);
+    for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
+    // The level that the result's sources are read at: no function of it is in work.
+    const base: Use = .{ .kind = .call, .id = f.useId(), .c = c, .args = args, .site = &site };
     // The result.
     const place = try m.placeOfInst(inst);
     const layout = try m.loc.layoutOf(place);
@@ -1998,8 +2175,8 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
         const start: u32 = @intCast(f.atoms.items.len);
         var st: SrcState = .{ .inst = inst };
         if (cr == Loc.all) {
-            for (c.res, 0..) |srcs, ri| try f.expandSrcs(c, srcs, args, c.layouts[c.arity], @intCast(ri), layout, @intCast(e), &st, 0);
-        } else try f.expandSrcs(c, c.res[cr], args, c.layouts[c.arity], cr, layout, @intCast(e), &st, 0);
+            for (c.res, 0..) |srcs, ri| try f.expandSrcs(&base, srcs, c.layouts[c.arity], @intCast(ri), layout, @intCast(e), &st);
+        } else try f.expandSrcs(&base, c.res[cr], c.layouts[c.arity], cr, layout, @intCast(e), &st);
         // The cells of the arguments that the result holds, in an order of its own.
         var kind: EKind = .derived;
         const single = es[e].single;
@@ -2026,16 +2203,16 @@ const SrcState = struct {
     inst: u32 = none,
     /// The labels of the caller's result entry below the callee's result entry in work.
     suffix: []const u64 = &.{},
-    /// The answers in work: `(parameter of the callee, result entry of the known function there)`.
+    /// The answers in work: `(holder, location, result entry of the function there)`.
     /// An answer that comes back to itself adds no cell (the least fixed point).
-    seen: [24][2]u32 = undefined,
+    seen: [24][3]u32 = undefined,
     nseen: u32 = 0,
     /// Each part of the answer is asked for, not the one at `suffix`.
     whole: bool = false,
-    fn visit(st: *SrcState, a: u32, k: u32) enum { new, old, full } {
-        for (st.seen[0..st.nseen]) |x| if (x[0] == a and x[1] == k) return .old;
+    fn visit(st: *SrcState, use: *const Use, k: u32) enum { new, old, full } {
+        for (st.seen[0..st.nseen]) |x| if (x[0] == use.id and x[1] == use.j and x[2] == k) return .old;
         if (st.nseen == st.seen.len) return .full;
-        st.seen[st.nseen] = .{ a, k };
+        st.seen[st.nseen] = .{ use.id, use.j, k };
         st.nseen += 1;
         return .new;
     }
@@ -2051,7 +2228,9 @@ fn oldNames(f: *Frame, from: usize, st: *SrcState) void {
 
 /// Append to `f.atoms` what the sources `srcs` of the callee's result entry
 /// `cr` are for the caller's result entry `e`.
-fn expandSrcs(f: *Frame, c: *const Contract, srcs: []const Src, args: []const Val, rsig: u32, cr: u32, rlayout: u32, e: u32, st: *SrcState, depth: u32) Error!void {
+fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32, rlayout: u32, e: u32, st: *SrcState) Error!void {
+    const c = base.c;
+    const args = base.args;
     const first = f.atoms.items.len;
     var suffix: std.ArrayList(u64) = .empty;
     defer suffix.deinit(f.gpa);
@@ -2086,9 +2265,9 @@ fn expandSrcs(f: *Frame, c: *const Contract, srcs: []const Src, args: []const Va
             },
             .answer => {
                 // An answer that is a cell the callee handed out as its own
-                // is not in the callee's other sources (`expandAnswer` says
+                // is not in the callee's other sources (`answerOfCode` says
                 // `dup` when the callee could hand a cell twice).
-                try f.expandAnswer(c, s, args, st, depth);
+                try f.answerOfParam(base, s, st.suffix, st, 0);
                 continue;
             },
         }
@@ -2115,6 +2294,22 @@ fn pairedLeaves(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayo
     return f.argLeaves(v, psig, pe, labels.items[skip..], &f.atoms);
 }
 
+// ---- function values: one rule (research report 112 §2) -------------------------------------
+//
+// A function value is in one of two states. **Known**: the frame has its
+// code and what it captured (a `closure` or `fnref` value), or it is the
+// frame's own function parameter, whose contract the frame writes. **Default**:
+// it is in a location that no contract describes (an item of a value, a
+// result, the answer of a call). A function in a default location asks
+// nothing of its caller, and its holder can do anything with it.
+//
+// Each consumer of a known function is a **use** (`Use`), and `flow` judges
+// the function against it. A consumer that no contract describes is the
+// `top` use. So a known function goes to the default state only through
+// `flow`, and a fact that the checker does not have is never "nothing
+// happens": it is the `top` use, which refuses a function that asks for
+// something.
+
 /// The frame's own function parameter that `v` is, or `none`.
 fn ownFnRoot(f: *Frame, v: Val) u32 {
     const n = f.nodes.items[v];
@@ -2123,126 +2318,31 @@ fn ownFnRoot(f: *Frame, v: Val) u32 {
     return if ((r.kind == .param or r.kind == .capture) and n.b == r.path) n.a else none;
 }
 
-/// The answer atoms of the frame's own function parameter at root `root`, for the answer entry `ae` of layout `alayout`.
-fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!void {
-    const di = (try f.draftOf(root, null)) orelse {
-        st.shared = true;
-        return;
-    };
-    const ar = f.roots.items[f.answers.items[try f.answerAt(di, st.inst)].root];
-    const root_id = f.answers.items[try f.answerAt(di, st.inst)].root;
-    const dr = f.drafts.items[di];
-    const cov = try f.m.loc.cover(alayout, dr.layouts[dr.arity]);
-    for (cov, 0..) |cv, k| if (Loc.hits(cv, ae)) try f.atoms.append(f.gpa, .{ .root = root_id, .path = ar.path, .e = @intCast(k) });
+/// Whether `root` is a parameter or a capture of a function type: its one location is the function.
+fn isFnRoot(f: *const Frame, root: u32) bool {
+    if (root == none) return false;
+    const r = f.roots.items[root];
+    if (r.kind != .param and r.kind != .capture) return false;
+    const es = f.m.loc.layoutEntries(r.layout);
+    if (es.len == 1 and es[0].kind == .closure and es[0].loc == 0) return true;
+    // A type past a limit of the place graph has the layout of a type variable.
+    return r.index < f.param_ty.items.len and f.m.fnType(f.param_ty.items[r.index]) != null;
 }
 
-/// No rule follows this answer. It has no claim, and it can hold a cell of
-/// each argument of the call: what a function captured is a cell of the
-/// argument that the function is. A location with no claim keeps what it
-/// can hold (report 111 §3.5).
-fn lostAnswer(f: *Frame, args: []const Val, st: *SrcState) Error!void {
-    st.shared = true;
-    for (args) |a| _ = try f.allLeaves(a, &f.atoms);
-}
-
-/// The answer of the function at parameter `s.a`: what the known function there answers.
-fn expandAnswer(f: *Frame, c: *const Contract, s: Src, args: []const Val, st: *SrcState, depth: u32) Error!void {
+/// Whether the contract is that of a function that answers its one parameter
+/// as it is and does nothing else with it.
+fn isIdentity(f: *const Frame, c: *const Contract) bool {
     const m = f.m;
-    if (s.a >= args.len) return f.lostAnswer(args, st);
-    const v = args[s.a];
-    const fnc = c.fns[s.a] orelse return f.lostAnswer(args, st);
-    const code = (try f.codeOf(v)) orelse {
-        // A function the frame does not know: the frame's own function
-        // parameter answers through its own contract, anything else has no claim.
-        const root = f.ownFnRoot(v);
-        if (root == none) try f.lostAnswer(args, st) else try f.ownAnswer(root, fnc.layouts[fnc.arity], s.e, st);
-        return;
-    };
-    if (depth > 8 or code.own_params != fnc.arity) return f.lostAnswer(args, st);
-    const lc = code.contract;
-    const cov = try m.loc.cover(fnc.layouts[fnc.arity], lc.layouts[lc.arity]);
-    // The known function's result entry at the same part below the answer, when it has one.
-    var want: ?u32 = m.loc.layoutEntries(fnc.layouts[fnc.arity])[s.e].loc;
-    for (st.suffix) |l| {
-        want = m.loc.find(want.?, l);
-        if (want == null) break;
+    if (c.arity != 1 or c.res.len != 1 or c.res[0].len != 1 or c.flags.len != 1 or c.flags[0] & (flag_w | flag_e) != 0) return false;
+    if (c.fns[0]) |fnc| {
+        // A function parameter that the body answers and does not call.
+        if (fnc.called or fnc.ans_escapes or fnc.rewrites) return false;
+        for (fnc.supply) |s| if (s.len != 0) return false;
     }
-    var exact = false;
-    if (!st.whole) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(cov[re], s.e)) {
-        exact = true;
-    };
-    var psuffix: std.ArrayList(u64) = .empty;
-    defer psuffix.deinit(f.gpa);
-    for (cov, 0..) |cv, k| {
-        if (!Loc.hits(cv, s.e)) continue;
-        if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
-        switch (st.visit(s.a, @intCast(k))) {
-            .new => {},
-            // In work already: it adds no cell.
-            .old => continue,
-            .full => return f.lostAnswer(args, st),
-        }
-        for (lc.res[k]) |ls| switch (ls.kind) {
-            .fresh => st.fresh = true,
-            .shared => st.shared = true,
-            .answer => {
-                // The answer of a function that the known function captured: the frame's own, or no claim.
-                if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps) {
-                    try f.lostAnswer(args, st);
-                    continue;
-                }
-                const root = f.ownFnRoot(f.lists.items[code.caps + ls.a - code.own_params]);
-                const lf = lc.fns[ls.a];
-                if (root == none or lf == null) try f.lostAnswer(args, st) else try f.ownAnswer(root, lf.?.layouts[lf.?.arity], ls.e, st);
-            },
-            .param => {
-                if (ls.a >= code.own_params) {
-                    // A captured value in the answer: each run answers the
-                    // same cell, so no claim. The answer still holds it.
-                    st.shared = true;
-                    if (ls.a - code.own_params < code.ncaps) {
-                        _ = try f.argLeaves(f.lists.items[code.caps + ls.a - code.own_params], lc.layouts[ls.a], ls.e, &.{}, &f.atoms);
-                    } else try f.lostAnswer(args, st);
-                    continue;
-                }
-                // What the callee hands that parameter.
-                const pcov = try m.loc.cover(fnc.layouts[ls.a], lc.layouts[ls.a]);
-                const fe = pcov[ls.e];
-                if (fe >= Loc.all) {
-                    try f.lostAnswer(args, st);
-                    continue;
-                }
-                // The callee can hand one cell to two calls: two answers can be that cell.
-                if (!fnc.free[fnc.off[ls.a] + fe]) st.dup = true;
-                for (fnc.supply[fnc.off[ls.a] + fe]) |ss| switch (ss.kind) {
-                    .fresh => st.fresh = true,
-                    .shared => st.shared = true,
-                    .answer => {
-                        // The callee hands the function an answer: of this
-                        // function at another part, or of another function.
-                        // What that answer holds, this one can hold.
-                        try f.suffixOf(m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc, m.loc.layoutEntries(fnc.layouts[ls.a])[fe].loc, &psuffix);
-                        const outer = st.suffix;
-                        const kept = try f.gpa.dupe(u64, psuffix.items);
-                        st.suffix = kept;
-                        try f.expandAnswer(c, ss, args, st, depth + 1);
-                        st.suffix = outer;
-                    },
-                    .param => {
-                        if (ss.a >= args.len) {
-                            try f.lostAnswer(args, st);
-                            continue;
-                        }
-                        // The part of the argument that the function's parameter entry is.
-                        try f.suffixOf(m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc, m.loc.layoutEntries(fnc.layouts[ls.a])[fe].loc, &psuffix);
-                        const at = f.atoms.items.len;
-                        if (try f.argLeaves(args[ss.a], c.layouts[ss.a], ss.e, psuffix.items, &f.atoms)) st.dup = true;
-                        if (c.flags[c.off[ss.a] + ss.e] & (flag_w | flag_s) != 0) f.oldNames(at, st);
-                    },
-                };
-            },
-        };
-    }
+    const s = c.res[0][0];
+    const pe = m.loc.layoutEntries(c.layouts[0])[0];
+    const re = m.loc.layoutEntries(c.layouts[1])[0];
+    return s.kind == .param and s.a == 0 and s.e == 0 and pe.loc == 0 and re.loc == 0 and pe.kind.wide() and re.kind.wide();
 }
 
 fn codeOf(f: *Frame, v: Val) Error!?Code {
@@ -2256,136 +2356,6 @@ fn codeOf(f: *Frame, v: Val) Error!?Code {
         else => null,
     };
 }
-
-/// The callee hands the function at parameter `j` what `fnc` says: a known
-/// function's writes are judged against it, here.
-fn handFunction(f: *Frame, inst: u32, callee: u32, c: *const Contract, fnc: *const CMod.Fn, j: usize, args: []const Val, arg_insts: []const Inst.Index, others: []const Other) Error!void {
-    const m = f.m;
-    const v = args[j];
-    if (v == v_none) return;
-    // The callee lets the function's answer escape: each cell that the answer can hold escapes here.
-    if (fnc.ans_escapes) try f.escapeAnswer(inst, c, fnc, j, args);
-    const code = (try f.codeOf(v)) orelse {
-        const root = f.ownFnRoot(v);
-        if (root != none) return f.passFunction(inst, c, fnc, root, args, others);
-        // An unknown function: it can keep what it is handed.
-        try f.escapeSupplies(inst, c, fnc, args);
-        if (fnc.lost) try f.escape(v, inst);
-        if (fnc.rewrites) try m.addRefusal(f, inst, .supply, "the callee changes a value after it handed it to a function that the checker does not know");
-        return;
-    };
-    const lc = code.contract;
-    if (fnc.lost or code.own_params != fnc.arity) {
-        if (writesOwn(lc, code.own_params)) try m.addRefusal(f, inst, .call, "a function that writes its parameter goes where the checker does not follow it");
-        try f.escapeSupplies(inst, c, fnc, args);
-        // It can run at any later time: what it captured is held from here on.
-        try f.escape(v, inst);
-        return;
-    }
-    if (fnc.rewrites and keepsOwn(lc, code.own_params)) try m.addRefusal(f, inst, .supply, "the function keeps a value that the callee changes later");
-    for (0..fnc.arity) |k| {
-        const pcov = try m.loc.cover(fnc.layouts[k], lc.layouts[k]);
-        const n = lc.off[k + 1] - lc.off[k];
-        for (0..n) |le| {
-            const fl = lc.flags[lc.off[k] + le];
-            if (fl & (flag_w | flag_e) == 0) continue;
-            const fe: u32 = if (pcov[le] >= Loc.all) none else pcov[le];
-            if (fl & flag_w != 0) {
-                var seen: [16]u32 = undefined;
-                var nseen: usize = 0;
-                try f.supplyOwn(.{ .inst = inst, .callee = callee, .c = c, .fnc = fnc, .code = code, .args = args, .arg_insts = arg_insts, .others = others, .fn_arg = j }, @intCast(k), @intCast(le), &seen, &nseen);
-            }
-            if (fl & flag_e != 0 and fe != none) {
-                for (fnc.supply[fnc.off[k] + fe]) |ss| if (ss.kind == .param and ss.a < args.len) {
-                    const start: u32 = @intCast(f.atoms.items.len);
-                    _ = try f.argLeaves(args[ss.a], c.layouts[ss.a], ss.e, &.{}, &f.atoms);
-                    try f.noteEscape(start, inst);
-                };
-            }
-        }
-    }
-    // The functions that the known function captured and calls: the frame's own are handed on.
-    for (0..code.ncaps) |k| {
-        const lf = lc.fns[code.own_params + k] orelse continue;
-        const cv = f.lists.items[code.caps + k];
-        const root = f.ownFnRoot(cv);
-        if (root != none) {
-            try f.throughClosure(inst, c, fnc, code, lf, root, j, args, others);
-            continue;
-        }
-        // Another function that the known function captured and calls. No
-        // rule composes its contract with what it is handed there. So it
-        // cannot write, and what it can keep is held from here on.
-        var keeps = true;
-        if (try f.codeOf(cv)) |cc| {
-            if (writesOwn(cc.contract, cc.own_params)) try m.addRefusal(f, inst, .call, "a function that writes its parameter is called by a function that goes to another function");
-            keeps = keepsOwn(cc.contract, cc.own_params);
-        }
-        if (!keeps) continue;
-        if (lf.rewrites or fnc.rewrites) try m.addRefusal(f, inst, .supply, "a function that can keep a value is handed one that changes later");
-        for (args) |a| try f.escape(a, inst);
-    }
-}
-
-/// The known function `s.code` answers its parameter `(a, e)`, the callee
-/// hands that answer back, and the function writes it then. A function that
-/// `s.code` handed the cell to must not keep it.
-fn handedBack(f: *Frame, s: Supply, a: u32, e: u32) Error!void {
-    const m = f.m;
-    const lc = s.code.contract;
-    for (lc.fns, 0..) |lfo, jj| {
-        const lf = lfo orelse continue;
-        var handed = false;
-        for (lf.supply) |srcs| for (srcs) |x| if (x.kind == .param and x.a == a and x.e == e) {
-            handed = true;
-        };
-        if (!handed) continue;
-        if (jj < s.code.own_params or jj - s.code.own_params >= s.code.ncaps) {
-            try m.addRefusal(f, s.inst, .supply, "the function hands on a value that it answers, and the callee hands it back");
-            continue;
-        }
-        const cv = f.lists.items[s.code.caps + jj - s.code.own_params];
-        const root = f.ownFnRoot(cv);
-        if (root != none) {
-            if (try f.draftOf(root, null)) |di| {
-                f.drafts.items[di].rewrites = true;
-                continue;
-            }
-        } else if (try f.codeOf(cv)) |cc| {
-            if (!keepsOwn(cc.contract, cc.own_params)) continue;
-        }
-        try m.addRefusal(f, s.inst, .supply, "the function hands a value to a function that can keep it, answers it, and the callee hands it back");
-    }
-}
-
-/// Each cell that the answer of the function at parameter `j` can hold escapes at the call `inst`.
-fn escapeAnswer(f: *Frame, inst: u32, c: *const Contract, fnc: *const CMod.Fn, j: usize, args: []const Val) Error!void {
-    const n = f.m.loc.layouts.items[fnc.layouts[fnc.arity]].len;
-    const start: u32 = @intCast(f.atoms.items.len);
-    var st: SrcState = .{ .inst = inst, .whole = true };
-    for (0..n) |ae| try f.expandAnswer(c, .{ .kind = .answer, .a = @intCast(j), .e = @intCast(ae) }, args, &st, 0);
-    try f.noteEscape(start, inst);
-}
-
-fn escapeSupplies(f: *Frame, inst: u32, c: *const Contract, fnc: *const CMod.Fn, args: []const Val) Error!void {
-    for (fnc.supply) |ss| for (ss) |s| if (s.kind == .param and s.a < args.len) {
-        const start: u32 = @intCast(f.atoms.items.len);
-        _ = try f.argLeaves(args[s.a], c.layouts[s.a], s.e, &.{}, &f.atoms);
-        try f.noteEscape(start, inst);
-    };
-}
-
-const Supply = struct {
-    inst: u32,
-    callee: u32,
-    c: *const Contract,
-    fnc: *const CMod.Fn,
-    code: Code,
-    args: []const Val,
-    arg_insts: []const Inst.Index,
-    others: []const Other,
-    fn_arg: usize,
-};
 
 /// The labels of `loc` below the location `above`, which is `loc` or above it.
 fn suffixOf(f: *Frame, loc: u32, above: u32, out: *std.ArrayList(u64)) Error!void {
@@ -2401,112 +2371,683 @@ fn suffixOf(f: *Frame, loc: u32, above: u32, out: *std.ArrayList(u64)) Error!voi
     out.shrinkRetainingCapacity(out.items.len - skip);
 }
 
-/// The known function `s.code` writes its parameter `k` at its entry `le`:
-/// every source of what the callee hands there must be `own`.
-fn supplyOwn(f: *Frame, s: Supply, k: u32, le: u32, seen: *[16]u32, nseen: *usize) Error!void {
+fn refuse(f: *Frame, use: *const Use, cause: Facts.Cause, detail: []const u8) Error!void {
+    try f.m.addRefusal(f, use.site.inst, cause, detail);
+}
+
+/// The function value `v` is in a location whose holder does `use`: the one
+/// rule for function values. It has one case for each thing that `v` can be,
+/// and none for where the location is.
+fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
+    if (v == v_none) return;
+    if (use.depth > 16) {
+        // Too deep to follow: the default.
+        const top: Use = .{ .kind = .top, .id = f.useId(), .site = use.site };
+        return f.flow(v, &top);
+    }
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        // One of several values: each of them is in the location.
+        for (0..n.b) |ki| try f.flow(f.lists.items[n.a + 2 * ki], use);
+        return;
+    }
+    // The holder lets the function's answer escape: each cell that the answer can hold escapes here.
+    if (use.kind != .top and use.fnc.ans_escapes) try f.escapeAnswer(v, use);
+    if (try f.codeOf(v)) |code| return f.flowCode(v, code, use);
+    const root = f.ownFnRoot(v);
+    if (f.isFnRoot(root)) return f.flowOwn(root, use);
+    return f.flowUnknown(v, use);
+}
+
+/// A known function meets a use: what it does with each parameter is judged
+/// against what the use hands there, and each function that it captured
+/// flows to the use that the two contracts compose to.
+fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
+    const lc = code.contract;
+    var use = use_in.*;
+    use.code = code;
+    const inst = use.site.inst;
+    if (use.kind == .top or use.fnc.lost or code.own_params != use.fnc.arity) {
+        // No contract describes the holder: the function must ask nothing.
+        if (writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
+        try f.captureEscapes(code, inst);
+        if (use.kind != .top) {
+            // A callee lost it. It can keep what it hands, and it can run the
+            // function at any later time: what the function captured is held from here on.
+            try f.escapeSupplies(&use);
+            try f.escape(v, inst);
+        }
+        const top: Use = .{ .kind = .top, .id = f.useId(), .site = use.site, .depth = use.depth, .code = code };
+        return f.flowCaptures(code, &top);
+    }
+    if (use.rewrites() and keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
+    if (use.fnc.called) try f.captureEscapes(code, inst);
+    for (0..use.fnc.arity) |k| {
+        const n = lc.off[k + 1] - lc.off[k];
+        for (0..n) |le| {
+            const fl = lc.flags[lc.off[k] + le];
+            if (fl & flag_w != 0) {
+                var seen: Seen = .{};
+                try f.ownSupply(&use, code, @intCast(k), @intCast(le), &seen);
+            }
+            if (fl & flag_e != 0) {
+                var sink: EscSink = .{ .inst = inst };
+                if (try f.slotOf(&use, @intCast(k), lc.layouts[k], @intCast(le))) |slot| {
+                    for (slot.srcs) |ss| try f.resolve(&use, ss, &.{}, &sink, 0);
+                } else for (use.fnc.off[k]..use.fnc.off[k + 1]) |i| {
+                    for (use.fnc.supply[i]) |ss| try f.resolve(&use, ss, &.{}, &sink, 0);
+                }
+            }
+        }
+    }
+    try f.flowCaptures(code, &use);
+}
+
+/// A captured value is a parameter of the known function's contract, and
+/// the function does to it what the contract says where it runs. A write is
+/// refused in the function's own frame. A captured value that the function
+/// lets escape escapes where the function goes to a holder that can run it.
+fn captureEscapes(f: *Frame, code: Code, inst: u32) Error!void {
+    const lc = code.contract;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        const n = lc.off[j + 1] - lc.off[j];
+        for (0..n) |e| if (lc.flags[lc.off[j] + e] & flag_e != 0) {
+            const start: u32 = @intCast(f.atoms.items.len);
+            _ = try f.argLeaves(f.lists.items[code.caps + k], lc.layouts[j], @intCast(e), &.{}, &f.atoms);
+            try f.noteEscape(start, inst);
+        };
+    }
+}
+
+/// Each function that the known function `code` captured is in a location
+/// of `code`: its use is `code`'s contract for it, composed with `use`.
+fn flowCaptures(f: *Frame, code: Code, use: *const Use) Error!void {
+    const lc = code.contract;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        const lf = lc.fns[j] orelse continue;
+        const inner = try f.innerUse(code, @intCast(j), lf, use);
+        try f.flow(f.lists.items[code.caps + k], &inner);
+    }
+}
+
+/// The use of capture `j` of the known function `code`, whose own use is `up`.
+fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) Error!Use {
+    const lc = code.contract;
+    const args = try f.gpa.alloc(Val, lc.arity);
+    @memset(args, v_none);
+    for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
+        args[code.own_params + k] = f.lists.items[code.caps + k];
+    };
+    return .{ .kind = .inner, .id = f.useId(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .site = up.site, .depth = up.depth + 1 };
+}
+
+/// The frame's own function parameter meets a use: what the use hands it,
+/// this frame hands it. The contract of the frame says so, and the caller
+/// that knows the function judges it.
+fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     const m = f.m;
-    const lc = s.code.contract;
-    const pcov = try m.loc.cover(s.fnc.layouts[k], lc.layouts[k]);
-    const fe: u32 = if (pcov[le] >= Loc.all) none else pcov[le];
-    if (fe == none or !s.fnc.free[s.fnc.off[k] + fe]) {
-        try m.addRefusal(f, s.inst, .supply, "the function writes a parameter that the callee reads again or does not hand as its own");
+    var use = use_in.*;
+    use.root = root;
+    const di = try f.draftOf(root, null);
+    const inst = use.site.inst;
+    f.drafts.items[di].used = true;
+    if (use.kind == .top or use.fnc.lost or f.drafts.items[di].lost or f.drafts.items[di].arity != use.fnc.arity) {
+        f.drafts.items[di].lost = true;
+        if (use.kind != .top) try f.escapeSupplies(&use);
         return;
     }
-    const key = (k << 16) | le;
-    for (seen[0..nseen.*]) |x| if (x == key) return;
-    if (nseen.* == seen.len) {
-        try m.addRefusal(f, s.inst, .supply, "the supply of a function parameter is too deep to follow");
-        return;
+    if (use.fnc.called) f.drafts.items[di].called = true;
+    if (use.rewrites()) f.drafts.items[di].rewrites = true;
+    for (0..use.fnc.arity) |k| {
+        const cov = try m.loc.cover(use.fnc.layouts[k], f.drafts.items[di].layouts[k]);
+        for (cov, 0..) |fe, me| {
+            const slot = f.drafts.items[di].off[k] + @as(u32, @intCast(me));
+            if (fe >= Loc.all) {
+                try f.supplyLost(di, slot, inst, &use);
+                continue;
+            }
+            if (!use.fnc.free[use.fnc.off[k] + fe]) f.drafts.items[di].free[slot] = false;
+            var sink: DraftSink = .{ .use = &use, .di = di, .slot = slot };
+            for (use.fnc.supply[use.fnc.off[k] + fe]) |s| try f.resolve(&use, s, &.{}, &sink, 0);
+        }
     }
-    seen[nseen.*] = key;
-    nseen.* += 1;
-    // The part below the callee's entry that the function writes.
+}
+
+/// A function in the default state meets a use. It asks nothing; it can keep what it is handed.
+fn flowUnknown(f: *Frame, v: Val, use: *const Use) Error!void {
+    if (use.kind == .top) return;
+    try f.escapeSupplies(use);
+    if (use.fnc.lost) try f.escape(v, use.site.inst);
+    if (use.rewrites()) try f.refuse(use, .supply, "the callee changes a value after it handed it to a function that the checker does not know");
+}
+
+/// What `use` hands the function at its parameter `k`, at entry `le` of
+/// `layout` (the function's own reading of that parameter). Null when no one
+/// entry of the use's layout covers it.
+fn slotOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32) Error!?Slot {
+    if (use.kind == .top) return .{ .fe = none, .free = false, .srcs = CMod.shared_only };
+    const fnc = use.fnc;
+    if (k >= fnc.arity) return null;
+    const pcov = try f.m.loc.cover(fnc.layouts[k], layout);
+    const fe = pcov[le];
+    if (fe >= Loc.all) {
+        // The function's type is wider here than the holder's (a function
+        // over `List a`, handed a `List Int`): no cell is there to hand.
+        if (f.m.loc.noObject(fnc.layouts[k], f.m.loc.layoutEntries(layout)[le].loc)) return .{ .fe = none, .free = true, .srcs = &.{} };
+        return null;
+    }
+    return .{ .fe = fe, .free = fnc.free[fnc.off[k] + fe], .srcs = fnc.supply[fnc.off[k] + fe] };
+}
+
+/// What the source `src` of `use`'s contract is in this frame: `sink` gets
+/// each part. `suffix`: only the part at these labels below the source's
+/// entry. A parameter of a known function that has the location is what that
+/// function's own use hands it: this is the composition.
+fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, sink: anytype, depth: u32) Error!void {
+    switch (src.kind) {
+        .fresh => try sink.fresh(f),
+        .shared => try sink.shared(f),
+        .answer => try sink.answer(f, use, src, suffix),
+        .param => {
+            if (src.a >= use.args.len) return sink.lost(f, use);
+            if (use.kind == .inner and src.a < use.own) {
+                const up = use.up.?;
+                // The default hands a value with no claim.
+                if (up.kind == .top) return sink.shared(f);
+                if (depth > 12) return sink.lost(f, use);
+                const lc = use.c;
+                const slot = (try f.slotOf(up, src.a, lc.layouts[src.a], src.e)) orelse return sink.lost(f, use);
+                if (slot.srcs.len == 0) return;
+                if (!slot.free) try sink.held(f);
+                var labels: std.ArrayList(u64) = .empty;
+                defer labels.deinit(f.gpa);
+                try f.suffixOf(f.m.loc.layoutEntries(lc.layouts[src.a])[src.e].loc, f.m.loc.layoutEntries(up.fnc.layouts[src.a])[slot.fe].loc, &labels);
+                try labels.appendSlice(f.gpa, suffix);
+                const part = try f.gpa.dupe(u64, labels.items);
+                for (slot.srcs) |ss| try f.resolve(up, ss, part, sink, depth + 1);
+                return;
+            }
+            const start: u32 = @intCast(f.atoms.items.len);
+            const dup = try f.argLeaves(use.args[src.a], use.c.layouts[src.a], src.e, suffix, &f.atoms);
+            try sink.atoms(f, .{ .start = start, .dup = dup, .use = use, .a = src.a, .e = src.e, .suffix = suffix, .captured = use.kind == .inner });
+        },
+    }
+}
+
+/// The parts of a source as atoms and flags: what an answer can hold.
+const FlatSink = struct {
+    st: *SrcState,
+    depth: u32,
+
+    fn fresh(s: *FlatSink, _: *Frame) Error!void {
+        s.st.fresh = true;
+    }
+    fn shared(s: *FlatSink, _: *Frame) Error!void {
+        s.st.shared = true;
+    }
+    /// The holder can hand one cell to two calls: two answers can be that cell.
+    fn held(s: *FlatSink, _: *Frame) Error!void {
+        s.st.dup = true;
+    }
+    fn lost(s: *FlatSink, f: *Frame, use: *const Use) Error!void {
+        try f.lostAnswer(use, s.st);
+    }
+    fn atoms(s: *FlatSink, f: *Frame, h: Handed) Error!void {
+        if (h.dup) s.st.dup = true;
+        if (h.captured) {
+            // Each run is handed the same cell: no claim. The answer still holds it.
+            s.st.shared = true;
+            return;
+        }
+        const c = h.use.c;
+        if (c.flags[c.off[h.a] + h.e] & (flag_w | flag_s) != 0) f.oldNames(h.start, s.st);
+    }
+    fn answer(s: *FlatSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+        try f.answerOfParam(level, src, suffix, s.st, s.depth + 1);
+    }
+};
+
+/// The parts of a source escape: the function keeps what it is handed there.
+const EscSink = struct {
+    inst: u32,
+
+    fn fresh(_: *EscSink, _: *Frame) Error!void {}
+    fn shared(_: *EscSink, _: *Frame) Error!void {}
+    fn held(_: *EscSink, _: *Frame) Error!void {}
+    fn lost(s: *EscSink, f: *Frame, use: *const Use) Error!void {
+        var u: ?*const Use = use;
+        while (u) |x| : (u = x.up) for (x.args) |v| try f.escape(v, s.inst);
+    }
+    fn atoms(s: *EscSink, f: *Frame, h: Handed) Error!void {
+        try f.noteEscape(h.start, s.inst);
+    }
+    fn answer(s: *EscSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+        // The own answer of a function that the frame does not know holds
+        // what the function is handed and what it captured: both are judged
+        // where they are handed and held.
+        if (src.a == level.j and level.code == null) return;
+        const start: u32 = @intCast(f.atoms.items.len);
+        var st: SrcState = .{ .inst = s.inst, .whole = true };
+        try f.answerOfParam(level, src, suffix, &st, 0);
+        try f.noteEscape(start, s.inst);
+    }
+};
+
+/// The parts of a source must be `own`: a known function writes what it is handed there.
+const OwnSink = struct {
+    level: *const Use,
+    seen: *Seen,
+
+    fn fresh(_: *OwnSink, _: *Frame) Error!void {}
+    fn shared(s: *OwnSink, f: *Frame) Error!void {
+        try f.refuse(s.level, .supply, "the callee hands the function a value that it does not own");
+    }
+    fn held(s: *OwnSink, f: *Frame) Error!void {
+        try f.refuse(s.level, .supply, "the function writes a parameter that the callee reads again or does not hand as its own");
+    }
+    fn lost(s: *OwnSink, f: *Frame, _: *const Use) Error!void {
+        try f.refuse(s.level, .supply, "the function writes a parameter, and the checker cannot follow what it is handed there");
+    }
+    fn atoms(s: *OwnSink, f: *Frame, h: Handed) Error!void {
+        const m = f.m;
+        if (h.captured) return f.refuse(s.level, .supply, "the function writes a parameter that is handed a captured value in each run");
+        if (f.atoms.items.len == h.start) return;
+        const site = s.level.site;
+        const sig = h.use.c.layouts[h.a];
+        var loc = m.loc.layoutEntries(sig)[h.e].loc;
+        for (h.suffix) |l| loc = try m.loc.extend(loc, @bitCast(l));
+        try f.demand(h.start, .{
+            .point = site.inst,
+            .callee_inst = site.callee,
+            .base_inst = if (h.a < site.arg_insts.len) site.arg_insts[h.a].int() else none,
+            .loc = loc,
+            .others = site.others,
+            .arg = h.a,
+            .se = h.e,
+            .suffix = h.suffix,
+            .dup = h.dup and !m.loc.layoutEntries(sig)[h.e].single,
+            .kind = .callsite,
+        });
+    }
+    fn answer(s: *OwnSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+        if (src.a != level.j) return f.refuse(s.level, .supply, "the callee hands the function the answer of another function");
+        // The function's own answer comes back to it (a fold): what it answers at the written part must be `own`.
+        try f.answerOwn(level, src.e, suffix, s.seen);
+    }
+};
+
+/// The parts of a source are what the frame hands its own function parameter.
+const DraftSink = struct {
+    use: *const Use,
+    di: u32,
+    slot: u32,
+
+    fn add(s: *DraftSink, f: *Frame, src: Src) Error!void {
+        try f.drafts.items[s.di].supply[s.slot].append(f.gpa, src);
+    }
+    fn fresh(s: *DraftSink, f: *Frame) Error!void {
+        try s.add(f, Src.fresh);
+    }
+    fn shared(s: *DraftSink, f: *Frame) Error!void {
+        try s.add(f, Src.shared);
+    }
+    fn held(s: *DraftSink, f: *Frame) Error!void {
+        f.drafts.items[s.di].free[s.slot] = false;
+    }
+    fn lost(s: *DraftSink, f: *Frame, _: *const Use) Error!void {
+        try f.supplyLost(s.di, s.slot, s.use.site.inst, s.use);
+    }
+    fn atoms(s: *DraftSink, f: *Frame, h: Handed) Error!void {
+        const site = s.use.site;
+        if (h.captured) {
+            // A captured value: handed in each run.
+            f.drafts.items[s.di].free[s.slot] = false;
+            return f.supplyAtoms(s.di, s.slot, h.start, site.inst, site.others, std.math.maxInt(usize), none, h.dup);
+        }
+        try f.supplyAtoms(s.di, s.slot, h.start, site.inst, site.others, h.a, h.e, h.dup);
+    }
+    fn answer(s: *DraftSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64) Error!void {
+        const m = f.m;
+        const site = s.use.site;
+        if (level.id == s.use.id and src.a == s.use.j) {
+            // The function's own answer comes back to it: the contract says so.
+            const dr = f.drafts.items[s.di];
+            const index: u16 = @intCast(f.roots.items[dr.root].index);
+            const acov = try m.loc.cover(s.use.fnc.layouts[s.use.fnc.arity], dr.layouts[dr.arity]);
+            for (acov, 0..) |cv, ae| if (Loc.hits(cv, src.e)) try s.add(f, .{ .kind = .answer, .a = index, .e = @intCast(ae) });
+            return;
+        }
+        // The answer of another function: what it can hold.
+        const w: u32 = @intCast(f.atoms.items.len);
+        var st: SrcState = .{ .inst = site.inst, .whole = true };
+        try f.answerOfParam(level, src, suffix, &st, 0);
+        if (st.fresh) try s.add(f, Src.fresh);
+        if (st.shared) try s.add(f, Src.shared);
+        if (st.shared or st.dup) f.drafts.items[s.di].free[s.slot] = false;
+        try f.supplyAtoms(s.di, s.slot, w, site.inst, site.others, std.math.maxInt(usize), none, st.dup);
+    }
+};
+
+/// The known function `code`, in the location of `level`, writes its
+/// parameter `k` at its entry `le`: each source of what `level` hands there
+/// must be `own`, and the holder must not read it again.
+fn ownSupply(f: *Frame, level: *const Use, code: Code, k: u32, le: u32, seen: *Seen) Error!void {
+    const m = f.m;
+    const lc = code.contract;
+    const not_own = "the function writes a parameter that the callee reads again or does not hand as its own";
+    const slot = (try f.slotOf(level, k, lc.layouts[k], le)) orelse return f.refuse(level, .supply, not_own);
+    if (!slot.free) return f.refuse(level, .supply, not_own);
+    if (slot.srcs.len == 0) return;
+    switch (seen.visit(level, k, le)) {
+        .new => {},
+        .old => return,
+        .full => return f.refuse(level, .supply, "the supply of a function parameter is too deep to follow"),
+    }
+    // The part below the holder's entry that the function writes.
     var suffix: std.ArrayList(u64) = .empty;
     defer suffix.deinit(f.gpa);
-    try f.suffixOf(m.loc.layoutEntries(lc.layouts[k])[le].loc, m.loc.layoutEntries(s.fnc.layouts[k])[fe].loc, &suffix);
-    for (s.fnc.supply[s.fnc.off[k] + fe]) |src| switch (src.kind) {
-        .fresh => {},
-        .shared => try m.addRefusal(f, s.inst, .supply, "the callee hands the function a value that it does not own"),
-        .param => {
-            if (src.a >= s.args.len) {
-                try m.addRefusal(f, s.inst, .supply, "the callee hands the function a captured value");
-                continue;
-            }
-            const w: u32 = @intCast(f.atoms.items.len);
-            const dup = try f.argLeaves(s.args[src.a], s.c.layouts[src.a], src.e, suffix.items, &f.atoms);
-            if (f.atoms.items.len == w) continue;
-            var loc = m.loc.layoutEntries(s.c.layouts[src.a])[src.e].loc;
-            for (suffix.items) |l| loc = try m.loc.extend(loc, @bitCast(l));
-            try f.demand(w, .{
-                .point = s.inst,
-                .callee_inst = s.callee,
-                .base_inst = if (src.a < s.arg_insts.len) s.arg_insts[src.a].int() else none,
-                .loc = loc,
-                .others = s.others,
-                .arg = src.a,
-                .se = src.e,
-                .suffix = suffix.items,
-                .dup = dup and !m.loc.layoutEntries(s.c.layouts[src.a])[src.e].single,
-                .kind = .callsite,
-            });
-        },
-        .answer => {
-            // The function's own answer comes back to it: what it answers at
-            // the written part must be `own`.
-            if (src.a != s.fn_arg) {
-                try m.addRefusal(f, s.inst, .supply, "the callee hands the function the answer of another function");
-                continue;
-            }
-            // The answer comes back as the function's parameter, whose
-            // locations are apart. So the answer must hold each cell once.
-            if (lc.nonlinear) {
-                try m.addRefusal(f, s.inst, .supply, "the function can answer one cell at two places, and the callee hands the answer back");
-                continue;
-            }
-            const rcov = try m.loc.cover(s.fnc.layouts[s.fnc.arity], lc.layouts[lc.arity]);
-            var want: ?u32 = m.loc.layoutEntries(s.fnc.layouts[s.fnc.arity])[src.e].loc;
-            for (suffix.items) |l| {
-                want = m.loc.find(want.?, l);
-                if (want == null) break;
-            }
-            var exact = false;
-            if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(rcov[re], src.e)) {
-                exact = true;
-            };
-            for (rcov, 0..) |cv, re| {
-                if (!Loc.hits(cv, src.e)) continue;
-                if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != want.?) continue;
-                for (lc.res[re]) |ls| switch (ls.kind) {
-                    .fresh => {},
-                    .shared, .answer => try m.addRefusal(f, s.inst, .supply, "the function answers a value that it does not own, and the callee hands it back"),
-                    .param => {
-                        if (ls.a >= s.code.own_params) {
-                            try m.addRefusal(f, s.inst, .supply, "the function answers a captured value, and the callee hands it back");
-                            continue;
-                        }
-                        if (lc.flags[lc.off[ls.a] + ls.e] & flag_e != 0) {
-                            try m.addRefusal(f, s.inst, .supply, "the function lets a value escape and answers it, and the callee hands it back");
-                            continue;
-                        }
-                        try f.handedBack(s, ls.a, ls.e);
-                        try f.supplyOwn(s, ls.a, ls.e, seen, nseen);
-                    },
-                };
-            }
-        },
+    try f.suffixOf(m.loc.layoutEntries(lc.layouts[k])[le].loc, m.loc.layoutEntries(level.fnc.layouts[k])[slot.fe].loc, &suffix);
+    const part = try f.gpa.dupe(u64, suffix.items);
+    var sink: OwnSink = .{ .level = level, .seen = seen };
+    for (slot.srcs) |src| try f.resolve(level, src, part, &sink, 0);
+}
+
+/// The answer of the function in the location of `level`, at entry `e`,
+/// comes back to it, and it is written then. So the answer must be `own`:
+/// made by the function, or a parameter that it was handed as its own and
+/// did not let go.
+fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, seen: *Seen) Error!void {
+    const m = f.m;
+    const not_own = "the function answers a value that it does not own, and the callee hands it back";
+    const code = level.code orelse return f.refuse(level, .supply, not_own);
+    const lc = code.contract;
+    const fnc = level.fnc;
+    switch (seen.visit(level, none, e)) {
+        .new => {},
+        // In work already: it is `own` if the rest is (the largest solution).
+        .old => return,
+        .full => return f.refuse(level, .supply, "the supply of a function parameter is too deep to follow"),
+    }
+    // The answer comes back as the function's parameter, whose locations are
+    // apart. So the answer must hold each cell once.
+    if (lc.nonlinear) return f.refuse(level, .supply, "the function can answer one cell at two places, and the callee hands the answer back");
+    const rcov = try m.loc.cover(fnc.layouts[fnc.arity], lc.layouts[lc.arity]);
+    var want: ?u32 = m.loc.layoutEntries(fnc.layouts[fnc.arity])[e].loc;
+    for (suffix) |l| {
+        want = m.loc.find(want.?, l);
+        if (want == null) break;
+    }
+    var exact = false;
+    if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(rcov[re], e)) {
+        exact = true;
     };
+    for (rcov, 0..) |cv, re| {
+        if (!Loc.hits(cv, e)) continue;
+        if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != want.?) continue;
+        if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc)) continue;
+        for (lc.res[re]) |ls| switch (ls.kind) {
+            .fresh => {},
+            .shared => try f.refuse(level, .supply, not_own),
+            .answer => {
+                // The answer of a function that this one captured: `own` in its turn.
+                if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
+                    try f.refuse(level, .supply, not_own);
+                    continue;
+                }
+                const lf = lc.fns[ls.a] orelse {
+                    try f.refuse(level, .supply, not_own);
+                    continue;
+                };
+                const cc = (try f.codeOf(f.lists.items[code.caps + ls.a - code.own_params])) orelse {
+                    try f.refuse(level, .supply, not_own);
+                    continue;
+                };
+                // The function lets that answer escape too: it is held somewhere else.
+                if (lf.ans_escapes or lf.lost or cc.own_params != lf.arity) {
+                    try f.refuse(level, .supply, not_own);
+                    continue;
+                }
+                var inner = try f.innerUse(code, ls.a, lf, level);
+                inner.code = cc;
+                try f.answerOwn(&inner, ls.e, &.{}, seen);
+            },
+            .param => {
+                if (ls.a >= code.own_params) {
+                    try f.refuse(level, .supply, "the function answers a captured value, and the callee hands it back");
+                    continue;
+                }
+                if (lc.flags[lc.off[ls.a] + ls.e] & flag_e != 0) {
+                    try f.refuse(level, .supply, "the function lets a value escape and answers it, and the callee hands it back");
+                    continue;
+                }
+                try f.handedBack(level, code, ls.a, ls.e);
+                try f.ownSupply(level, code, ls.a, ls.e, seen);
+            },
+        };
+    }
+}
+
+/// The known function `code` answers its parameter `(a, e)`, the holder
+/// hands that answer back, and the function writes it then. A function that
+/// `code` handed the cell to must not keep it.
+fn handedBack(f: *Frame, level: *const Use, code: Code, a: u32, e: u32) Error!void {
+    const lc = code.contract;
+    for (lc.fns, 0..) |lfo, jj| {
+        const lf = lfo orelse continue;
+        var handed = false;
+        for (lf.supply) |srcs| for (srcs) |x| if (x.kind == .param and x.a == a and x.e == e) {
+            handed = true;
+        };
+        if (!handed) continue;
+        if (jj < code.own_params or jj - code.own_params >= code.ncaps) {
+            try f.refuse(level, .supply, "the function hands on a value that it answers, and the callee hands it back");
+            continue;
+        }
+        const cv = f.lists.items[code.caps + jj - code.own_params];
+        const root = f.ownFnRoot(cv);
+        if (f.isFnRoot(root)) {
+            // The frame's own function: its contract says that the cell changes later.
+            const di = try f.draftOf(root, null);
+            f.drafts.items[di].rewrites = true;
+            continue;
+        }
+        if (try f.codeOf(cv)) |cc| {
+            if (!keepsOwn(cc.contract, cc.own_params)) continue;
+        }
+        try f.refuse(level, .supply, "the function hands a value to a function that can keep it, answers it, and the callee hands it back");
+    }
+}
+
+/// The answer root of the frame's own function parameter at `root`, in the
+/// call in work: its atoms at the entries that the answer entry `ae` of
+/// layout `alayout` covers.
+fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!void {
+    const di = try f.draftOf(root, null);
+    f.drafts.items[di].used = true;
+    const ai = try f.answerRoot(di, st.inst);
+    const root_id = f.answers.items[ai].root;
+    const ar = f.roots.items[root_id];
+    const dr = f.drafts.items[di];
+    const cov = try f.m.loc.cover(alayout, dr.layouts[dr.arity]);
+    for (cov, 0..) |cv, k| if (Loc.hits(cv, ae)) try f.atoms.append(f.gpa, .{ .root = root_id, .path = ar.path, .e = @intCast(k) });
+}
+
+/// No rule follows this answer. It has no claim, and it can hold a cell of
+/// each value in sight: each argument of the call, and each value that a
+/// known function on the way captured. A location with no claim keeps what
+/// it can hold (report 111 §3.5).
+fn lostAnswer(f: *Frame, use: *const Use, st: *SrcState) Error!void {
+    st.shared = true;
+    var u: ?*const Use = use;
+    while (u) |x| : (u = x.up) for (x.args) |a| {
+        _ = try f.allLeaves(a, &f.atoms);
+    };
+}
+
+/// The answer of the function at parameter `src.a` of `level`'s contract, at its entry `src.e`.
+fn answerOfParam(f: *Frame, level: *const Use, src: Src, suffix: []const u64, st: *SrcState, depth: u32) Error!void {
+    const outer = st.suffix;
+    st.suffix = try f.gpa.dupe(u64, suffix);
+    defer st.suffix = outer;
+    if (level.kind == .top) return f.lostAnswer(level, st);
+    if (src.a == level.j) {
+        // The function in the location itself.
+        if (level.code) |code| return f.answerOfCode(code, level, src.e, st, depth);
+        if (level.root != none) return f.ownAnswer(level.root, level.fnc.layouts[level.fnc.arity], src.e, st);
+        return f.lostAnswer(level, st);
+    }
+    // Another function of the same holder.
+    if (src.a >= level.args.len or src.a >= level.c.arity or (level.kind == .inner and src.a < level.own)) return f.lostAnswer(level, st);
+    const fnc = level.c.fns[src.a] orelse return f.lostAnswer(level, st);
+    var other = level.*;
+    other.fnc = fnc;
+    other.j = src.a;
+    other.code = null;
+    other.root = none;
+    try f.answerOf(level.args[src.a], &other, src.e, st, depth);
+}
+
+/// Append to `f.atoms` what the answer of the function value `v`, in the
+/// location of `use`, can hold at the answer entry `ae`.
+fn answerOf(f: *Frame, v: Val, use: *const Use, ae: u32, st: *SrcState, depth: u32) Error!void {
+    if (v == v_none) return;
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| try f.answerOf(f.lists.items[n.a + 2 * ki], use, ae, st, depth);
+        return;
+    }
+    if (try f.codeOf(v)) |code| {
+        var u = use.*;
+        u.code = code;
+        return f.answerOfCode(code, &u, ae, st, depth);
+    }
+    const root = f.ownFnRoot(v);
+    // The frame's own function parameter answers through its own contract; anything else has no claim.
+    if (f.isFnRoot(root) and use.kind != .top) return f.ownAnswer(root, use.fnc.layouts[use.fnc.arity], ae, st);
+    return f.lostAnswer(use, st);
+}
+
+/// What the known function `code`, in the location of `use`, answers at the entry `ae`.
+fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, depth: u32) Error!void {
+    const m = f.m;
+    if (use.kind == .top or depth > 8 or code.own_params != use.fnc.arity) return f.lostAnswer(use, st);
+    const fnc = use.fnc;
+    const lc = code.contract;
+    const cov = try m.loc.cover(fnc.layouts[fnc.arity], lc.layouts[lc.arity]);
+    // The known function's result entry at the same part below the answer, when it has one.
+    var want: ?u32 = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae].loc;
+    for (st.suffix) |l| {
+        want = m.loc.find(want.?, l);
+        if (want == null) break;
+    }
+    var exact = false;
+    if (!st.whole) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(cov[re], ae)) {
+        exact = true;
+    };
+    var psuffix: std.ArrayList(u64) = .empty;
+    defer psuffix.deinit(f.gpa);
+    for (cov, 0..) |cv, k| {
+        if (!Loc.hits(cv, ae)) continue;
+        if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
+        // The function's type is wider here than the holder's: no cell is there.
+        if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc)) continue;
+        switch (st.visit(use, @intCast(k))) {
+            .new => {},
+            // In work already: it adds no cell.
+            .old => continue,
+            .full => return f.lostAnswer(use, st),
+        }
+        for (lc.res[k]) |ls| switch (ls.kind) {
+            .fresh => st.fresh = true,
+            .shared => st.shared = true,
+            .answer => {
+                // The answer of a function that the known function captured:
+                // that function is in a location of this one.
+                if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
+                    try f.lostAnswer(use, st);
+                    continue;
+                }
+                const lf = lc.fns[ls.a] orelse {
+                    try f.lostAnswer(use, st);
+                    continue;
+                };
+                const inner = try f.innerUse(code, ls.a, lf, use);
+                const outer = st.suffix;
+                const outer_whole = st.whole;
+                st.suffix = &.{};
+                st.whole = true;
+                try f.answerOf(f.lists.items[code.caps + ls.a - code.own_params], &inner, ls.e, st, depth + 1);
+                st.suffix = outer;
+                st.whole = outer_whole;
+            },
+            .param => {
+                if (ls.a >= code.own_params) {
+                    // A captured value in the answer: each run answers the
+                    // same cell, so no claim. The answer still holds it.
+                    st.shared = true;
+                    if (ls.a - code.own_params < code.ncaps) {
+                        _ = try f.argLeaves(f.lists.items[code.caps + ls.a - code.own_params], lc.layouts[ls.a], ls.e, &.{}, &f.atoms);
+                    } else try f.lostAnswer(use, st);
+                    continue;
+                }
+                // What the holder hands that parameter.
+                const slot = (try f.slotOf(use, ls.a, lc.layouts[ls.a], ls.e)) orelse {
+                    try f.lostAnswer(use, st);
+                    continue;
+                };
+                if (slot.srcs.len == 0) continue;
+                // The holder can hand one cell to two calls: two answers can be that cell.
+                if (!slot.free) st.dup = true;
+                // The part of what is handed that the function's parameter entry is.
+                try f.suffixOf(m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc, m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc, &psuffix);
+                const part = try f.gpa.dupe(u64, psuffix.items);
+                var sink: FlatSink = .{ .st = st, .depth = depth };
+                for (slot.srcs) |ss| try f.resolve(use, ss, part, &sink, 0);
+            },
+        };
+    }
+}
+
+/// Each cell that the answer of the function value `v`, in the location of `use`, can hold escapes at the use's site.
+fn escapeAnswer(f: *Frame, v: Val, use: *const Use) Error!void {
+    const n = f.m.loc.layouts.items[use.fnc.layouts[use.fnc.arity]].len;
+    const start: u32 = @intCast(f.atoms.items.len);
+    var st: SrcState = .{ .inst = use.site.inst, .whole = true };
+    for (0..n) |ae| try f.answerOf(v, use, @intCast(ae), &st, 0);
+    try f.noteEscape(start, use.site.inst);
+}
+
+/// Each value that `use` hands the function escapes: the function can keep it.
+fn escapeSupplies(f: *Frame, use: *const Use) Error!void {
+    if (use.kind == .top) return;
+    var sink: EscSink = .{ .inst = use.site.inst };
+    for (use.fnc.supply) |srcs| for (srcs) |s| try f.resolve(use, s, &.{}, &sink, 0);
 }
 
 // ---- the frame's own function parameters ---------------------------------------------------
 
 /// The draft of the function at root `root`, made from its type on first use.
-fn draftOf(f: *Frame, root: u32, callee_inst: ?u32) Error!?u32 {
+fn draftOf(f: *Frame, root: u32, callee_inst: ?u32) Error!u32 {
     const m = f.m;
     for (f.drafts.items, 0..) |dr, i| if (dr.root == root) return @intCast(i);
     const r = f.roots.items[root];
     var fnt = if (callee_inst) |ci| m.fnType(m.typeOfInst(ci)) else null;
     if (fnt == null and r.index < f.param_ty.items.len) fnt = m.fnType(f.param_ty.items[r.index]);
-    const ft = fnt orelse return null;
+    const ft = fnt orelse {
+        // No function type to read: nothing is known of what the function is handed.
+        const places = try f.gpa.alloc(PlaceId, 1);
+        places[0] = m.var_place;
+        const layouts = try m.arena.alloc(u32, 1);
+        layouts[0] = try m.loc.layoutOf(m.var_place);
+        const off = try m.arena.alloc(u32, 1);
+        off[0] = 0;
+        try f.drafts.append(f.gpa, .{ .root = root, .arity = 0, .places = places, .layouts = layouts, .off = off, .supply = &.{}, .free = &.{}, .lost = true });
+        return @intCast(f.drafts.items.len - 1);
+    };
     const pvars = m.in.store.vars(ft.params);
     const arity: u32 = @intCast(pvars.len);
     const places = try f.gpa.alloc(PlaceId, arity + 1);
@@ -2531,7 +3072,7 @@ fn draftOf(f: *Frame, root: u32, callee_inst: ?u32) Error!?u32 {
 }
 
 /// The answer of the function at draft `di` in the call `inst`: its index in `answers`.
-fn answerAt(f: *Frame, di: u32, inst: u32) Error!u32 {
+fn answerRoot(f: *Frame, di: u32, inst: u32) Error!u32 {
     for (f.answers.items, 0..) |a, i| if (a.di == di and a.inst == inst) return @intCast(i);
     const place = f.drafts.items[di].places[f.drafts.items[di].arity];
     const root = try f.newRoot(.answer, place, inst);
@@ -2554,7 +3095,7 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
     defer srcs.deinit(f.gpa);
     for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs, 0);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
-    const ai = try f.answerAt(di, point);
+    const ai = try f.answerRoot(di, point);
     for (w..end) |i| try f.answers.items[ai].base.append(f.gpa, f.atoms.items[i]);
     if (dup) f.drafts.items[di].free[slot] = false;
     // Could the function write here: the check of a write, with no line.
@@ -2562,20 +3103,23 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
 }
 
 /// No rule follows what the function at draft `di` is handed at `slot` in the
-/// call `point`: no claim, and it can be a cell of each of `vals`. So the
-/// function's answer can hold them, and the contract says so.
-fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, vals: []const Val) Error!void {
+/// call `point`: no claim, and it can be a cell of each value in sight of
+/// `use`. So the function's answer can hold them, and the contract says so.
+fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, use: *const Use) Error!void {
     try f.drafts.items[di].supply[slot].append(f.gpa, Src.shared);
     f.drafts.items[di].free[slot] = false;
     const w = f.atoms.items.len;
-    for (vals) |v| _ = try f.allLeaves(v, &f.atoms);
+    var u: ?*const Use = use;
+    while (u) |x| : (u = x.up) for (x.args) |v| {
+        _ = try f.allLeaves(v, &f.atoms);
+    };
     try f.uniqueTail(&f.atoms, w);
     const end = f.atoms.items.len;
     var srcs: std.ArrayList(Src) = .empty;
     defer srcs.deinit(f.gpa);
     for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs, 0);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
-    const ai = try f.answerAt(di, point);
+    const ai = try f.answerRoot(di, point);
     try f.answers.items[ai].base.appendSlice(f.gpa, f.atoms.items[w..end]);
     f.atoms.shrinkRetainingCapacity(w);
 }
@@ -2583,10 +3127,8 @@ fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, vals: []const Val) Erro
 /// A call of the frame's own function parameter at root `root`.
 fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, arg_insts: []const Inst.Index) Error!Val {
     const m = f.m;
-    const di = (try f.draftOf(root, callee)) orelse {
-        for (vals) |v| try f.escape(v, inst);
-        return f.unknownResult(inst);
-    };
+    const di = try f.draftOf(root, callee);
+    f.drafts.items[di].used = true;
     if (f.drafts.items[di].arity != vals.len) {
         f.drafts.items[di].lost = true;
         for (vals) |v| try f.escape(v, inst);
@@ -2623,157 +3165,9 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
     }
     // The function reads what it is handed, and its own cells can be in its answer.
     for (vals) |v| try f.readAll(v, inst);
-    const ai = try f.answerAt(di, inst);
+    const ai = try f.answerRoot(di, inst);
     try f.answers.items[ai].base.append(f.gpa, .{ .root = root, .path = f.roots.items[root].path, .e = 0 });
     return f.rootVal(f.answers.items[ai].root);
-}
-
-/// The frame hands its own function parameter `root` to a callee that has a
-/// contract for it: what the callee hands it, this frame hands it.
-fn passFunction(f: *Frame, inst: u32, c: *const Contract, fnc: *const CMod.Fn, root: u32, args: []const Val, others: []const Other) Error!void {
-    const m = f.m;
-    const di = (try f.draftOf(root, null)) orelse {
-        try f.escapeSupplies(inst, c, fnc, args);
-        return;
-    };
-    if (fnc.lost or f.drafts.items[di].arity != fnc.arity) {
-        f.drafts.items[di].lost = true;
-        try f.escapeSupplies(inst, c, fnc, args);
-        return;
-    }
-    if (fnc.called) f.drafts.items[di].called = true;
-    if (fnc.rewrites) f.drafts.items[di].rewrites = true;
-    for (0..fnc.arity) |k| {
-        const cov = try m.loc.cover(fnc.layouts[k], f.drafts.items[di].layouts[k]);
-        for (cov, 0..) |fe, me| {
-            const slot = f.drafts.items[di].off[k] + @as(u32, @intCast(me));
-            if (fe >= Loc.all) {
-                try f.supplyLost(di, slot, inst, args);
-                continue;
-            }
-            if (!fnc.free[fnc.off[k] + fe]) f.drafts.items[di].free[slot] = false;
-            for (fnc.supply[fnc.off[k] + fe]) |s| switch (s.kind) {
-                .fresh, .shared => try f.drafts.items[di].supply[slot].append(f.gpa, s),
-                .answer => {
-                    // The answer of the function the callee was handed at `s.a`: this one's when it is this one.
-                    const av = if (s.a < args.len) args[s.a] else v_shared;
-                    if (f.ownFnRoot(av) == root) {
-                        const acov = try m.loc.cover(fnc.layouts[fnc.arity], f.drafts.items[di].layouts[fnc.arity]);
-                        for (acov, 0..) |cv, ae| if (Loc.hits(cv, s.e)) try f.drafts.items[di].supply[slot].append(f.gpa, .{ .kind = .answer, .a = @intCast(f.roots.items[root].index), .e = @intCast(ae) });
-                    } else try f.supplyLost(di, slot, inst, args);
-                },
-                .param => {
-                    if (s.a >= args.len) {
-                        try f.supplyLost(di, slot, inst, args);
-                        continue;
-                    }
-                    const w: u32 = @intCast(f.atoms.items.len);
-                    const dup = try f.argLeaves(args[s.a], c.layouts[s.a], s.e, &.{}, &f.atoms);
-                    try f.supplyAtoms(di, slot, w, inst, others, s.a, s.e, dup);
-                },
-            };
-        }
-    }
-}
-
-/// The known function `code`, handed to the callee at parameter `j`, calls a
-/// function that it captured: the frame's own function parameter at `root`.
-/// What `code` hands it (`lf`), in terms of what the callee hands `code`.
-fn throughClosure(f: *Frame, inst: u32, c: *const Contract, fnc: *const CMod.Fn, code: Code, lf: *const CMod.Fn, root: u32, j: usize, args: []const Val, others: []const Other) Error!void {
-    const m = f.m;
-    const lc = code.contract;
-    const di = (try f.draftOf(root, null)) orelse return;
-    if (lf.lost or f.drafts.items[di].arity != lf.arity or code.own_params != fnc.arity) {
-        f.drafts.items[di].lost = true;
-        return;
-    }
-    if (lf.called) f.drafts.items[di].called = true;
-    // What the callee changes after it handed it to `code`, `code` can have handed on.
-    if (lf.rewrites or fnc.rewrites) f.drafts.items[di].rewrites = true;
-    const my_index: u16 = @intCast(f.roots.items[root].index);
-    for (0..lf.arity) |k| {
-        const cov = try m.loc.cover(lf.layouts[k], f.drafts.items[di].layouts[k]);
-        for (cov, 0..) |le, me| {
-            const slot = f.drafts.items[di].off[k] + @as(u32, @intCast(me));
-            if (le >= Loc.all) {
-                try f.supplyLost(di, slot, inst, args);
-                continue;
-            }
-            if (!lf.free[lf.off[k] + le]) f.drafts.items[di].free[slot] = false;
-            for (lf.supply[lf.off[k] + le]) |s| switch (s.kind) {
-                .fresh, .shared => try f.drafts.items[di].supply[slot].append(f.gpa, s),
-                .answer => {
-                    // The answer of a function that `code` captured: this one's when it is this one.
-                    if (f.capturedIs(code, s.a, root)) {
-                        const acov = try m.loc.cover(lf.layouts[lf.arity], f.drafts.items[di].layouts[lf.arity]);
-                        for (acov, 0..) |cv, ae| if (Loc.hits(cv, s.e)) try f.drafts.items[di].supply[slot].append(f.gpa, .{ .kind = .answer, .a = my_index, .e = @intCast(ae) });
-                    } else try f.supplyLost(di, slot, inst, args);
-                },
-                .param => {
-                    if (s.a >= code.own_params) {
-                        // A value that `code` captured: handed in each run.
-                        f.drafts.items[di].free[slot] = false;
-                        if (s.a - code.own_params >= code.ncaps) {
-                            try f.supplyLost(di, slot, inst, args);
-                            continue;
-                        }
-                        const w: u32 = @intCast(f.atoms.items.len);
-                        const dup = try f.argLeaves(f.lists.items[code.caps + s.a - code.own_params], lc.layouts[s.a], s.e, &.{}, &f.atoms);
-                        try f.supplyAtoms(di, slot, w, inst, others, std.math.maxInt(usize), none, dup);
-                        f.drafts.items[di].free[slot] = false;
-                        continue;
-                    }
-                    // A parameter of `code`: what the callee hands `code` there.
-                    const pcov = try m.loc.cover(fnc.layouts[s.a], lc.layouts[s.a]);
-                    const fe = pcov[s.e];
-                    if (fe >= Loc.all) {
-                        try f.supplyLost(di, slot, inst, args);
-                        continue;
-                    }
-                    if (!fnc.free[fnc.off[s.a] + fe]) f.drafts.items[di].free[slot] = false;
-                    for (fnc.supply[fnc.off[s.a] + fe]) |ss| switch (ss.kind) {
-                        .fresh, .shared => try f.drafts.items[di].supply[slot].append(f.gpa, ss),
-                        .answer => {
-                            // The answer of `code` itself comes back: what `code` answers there.
-                            if (ss.a != j) {
-                                try f.supplyLost(di, slot, inst, args);
-                                continue;
-                            }
-                            const rcov = try m.loc.cover(fnc.layouts[fnc.arity], lc.layouts[lc.arity]);
-                            for (rcov, 0..) |cv, re| {
-                                if (!Loc.hits(cv, ss.e)) continue;
-                                for (lc.res[re]) |ls| {
-                                    if (ls.kind == .answer and f.capturedIs(code, ls.a, root)) {
-                                        const acov = try m.loc.cover(lf.layouts[lf.arity], f.drafts.items[di].layouts[lf.arity]);
-                                        for (acov, 0..) |cv2, ae| if (Loc.hits(cv2, ls.e)) try f.drafts.items[di].supply[slot].append(f.gpa, .{ .kind = .answer, .a = my_index, .e = @intCast(ae) });
-                                    } else if (ls.kind == .fresh) {
-                                        try f.drafts.items[di].supply[slot].append(f.gpa, Src.fresh);
-                                    } else if (ls.kind == .param and ls.a == s.a and ls.e == s.e) {
-                                        // `code` answers what it was handed here: no new source.
-                                    } else try f.supplyLost(di, slot, inst, args);
-                                }
-                            }
-                        },
-                        .param => {
-                            if (ss.a >= args.len) {
-                                try f.supplyLost(di, slot, inst, args);
-                                continue;
-                            }
-                            const w: u32 = @intCast(f.atoms.items.len);
-                            const dup = try f.argLeaves(args[ss.a], c.layouts[ss.a], ss.e, &.{}, &f.atoms);
-                            try f.supplyAtoms(di, slot, w, inst, others, ss.a, ss.e, dup);
-                        },
-                    };
-                },
-            };
-        }
-    }
-}
-
-/// Whether parameter `a` of the known function `code` is a capture that is the frame's own function at `root`.
-fn capturedIs(f: *Frame, code: Code, a: u32, root: u32) bool {
-    if (a < code.own_params or a - code.own_params >= code.ncaps) return false;
-    return f.ownFnRoot(f.lists.items[code.caps + a - code.own_params]) == root;
 }
 
 // ---- constructions -------------------------------------------------------------------------
@@ -2928,11 +3322,19 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             const v = try f.eval(fd.value.int(), .fn_arg, false);
             // The runtime keeps the record: what a function of it captured is read at any time.
             try f.escape(v, inst);
-            if (nfields == fields.len) {
-                try f.leak(v, inst);
+            const code = try f.codeOf(v);
+            if (nfields == fields.len or code == null) {
+                // No row of the entry describes this field: the default.
+                try f.flowTop(v, inst);
                 continue;
             }
-            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = try f.codeOf(v) };
+            // The rows below judge what the function does with its own
+            // parameters. No row describes what the runtime hands on to a
+            // function that it captured: those are in the default.
+            const site: Site = .{ .inst = inst };
+            const top: Use = .{ .kind = .top, .id = f.useId(), .site = &site, .code = code };
+            try f.flowCaptures(code.?, &top);
+            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = code };
             nfields += 1;
         }
     } else {

@@ -564,6 +564,24 @@ pub const Table = struct {
         return y == a;
     }
 
+    /// Whether the type of layout `sig` has no object at the location `loc`
+    /// or below it, where `loc` is a location of another reading of the same
+    /// type position (a wider one: a type variable where `sig` has `Int`).
+    /// True only when the label paths can be compared: `loc` is of no deep
+    /// level, and no deep level of `sig` starts above it.
+    pub fn noObject(t: *const Table, sig: u32, loc: u32) bool {
+        if (t.deepEntry(loc) != none) return false;
+        for (t.layoutEntries(sig)) |s| {
+            // An entry at the location or below it, or a wide entry above it.
+            if (t.isPrefix(loc, s.loc)) return false;
+            if (s.kind.wide() and t.isPrefix(s.loc, loc)) return false;
+            // A deep level that starts above the location names cells at each depth.
+            const entry = t.deepEntry(s.loc);
+            if (entry != none and t.isPrefix(entry, loc)) return false;
+        }
+        return true;
+    }
+
     // ---- the call map ----------------------------------------------------------
 
     /// Per entry of layout `of` (a caller's type), the entry of layout `sig`
