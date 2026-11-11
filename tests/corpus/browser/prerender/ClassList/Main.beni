@@ -1,0 +1,51 @@
+-- A class list in a prerendered page (docs/design/prerender.md §4.1,
+-- amended 2026-11-11, #2499): the string form writes the attribute as the
+-- client's first pass leaves it — the baked name, then each flag `init`
+-- makes true, in entry order — so the client that takes the page over
+-- toggles nothing on it; a span with no baked name and no flag on gets no
+-- attribute until a flag turns on.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    on : Bool
+    n : Int
+
+
+type Msg
+    = Toggle
+    | Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | on = not model.on }
+
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main data-role="app">
+        <p data-role="p" class={[ ( "base", True ), ( "on", model.on ), ( "many", model.n > 2 ) ]}>
+            {model.n}
+        </p>
+        <span data-role="s" class={[ ( "many", model.n > 2 ) ]}>s</span>
+        <button data-role="toggle" onClick={Toggle}>t</button>
+        <button data-role="inc" onClick={Inc}>i</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { on = True, n = 0 }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

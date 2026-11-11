@@ -593,6 +593,21 @@ prop node value key =
         writeProp node name value
 
 
+--| `(node, name, flag)`: a class list entry's binding (`browser-inline.md`
+--| §8.2, *A class list*) — the class `name` on the node, or off it, as
+--| `flag` says, written when the node differs. `classList.toggle` with a
+--| flag writes nothing when the node agrees in the DOM Standard, but a
+--| DOM that runs the update steps then makes `class=""` on a node with no
+--| class (happy-dom does), so the compare is this function's, as every
+--| binding's is.
+pub toggle : V, V, Bool → ⊤
+toggle node name flag =
+    list = Js.get node "classList"
+    if Js.to (Js.call list "contains" [ name ]) ≠ flag then
+        _ = Js.call list "toggle" [ name, Js.from flag ]
+        ⊤
+
+
 --| `(url)`: the value a URL binding writes (`browser-inline.md` §10.5,
 --| amended 2026-11-05) — `browser`'s `safeUrl` and its pattern, the same
 --| code (`platforms/browser/Rt.beni`). Elm's rule: a URL whose scheme is

@@ -1,0 +1,58 @@
+-- A class list that changes (docs/design/browser-inline.md §8.2, *A class
+-- list*, amended 2026-11-11, #2499): a constant `True` entry is baked into
+-- the markup, a `False` one writes nothing, and each entry whose flag
+-- changes is a toggle in entry order — so a class that turns on is
+-- appended after the element's others, as `browser-tea` appends it, and
+-- one that turns off leaves `class=""` behind when it was the last. The
+-- span has no constant entry, so its attribute is made by the first flag
+-- that turns on.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    on : Bool
+    n : Int
+
+
+type Msg
+    = Toggle
+    | Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | on = not model.on }
+
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p
+            data-role="p"
+            class={[ ( "base", True )
+                   , ( "off", False )
+                   , ( "on", model.on )
+                   , ( "many", model.n > 2 )
+                   ]
+                  }
+        >
+            {model.n}
+        </p>
+        <span data-role="s" class={[ ( "on", model.on ) ]}>s</span>
+        <button data-role="toggle" onClick={Toggle}>t</button>
+        <button data-role="inc" onClick={Inc}>i</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { on = False, n = 0 }, update = update, view = view })
+        "root"

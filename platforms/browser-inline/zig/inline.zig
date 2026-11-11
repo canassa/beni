@@ -68,6 +68,9 @@ pub const lowering: m.Lowering = .{
         // (§10.5, amended 2026-11-05).
         .{ .name = "safeUrl", .arity = 1 },
         .{ .name = "when", .arity = 2 },
+        // `(node, name, on)`: a class list entry's binding (§8.2, *A class
+        // list*, 2026-11-11).
+        .{ .name = "toggle", .arity = 3 },
         .{ .name = "on", .arity = 4 },
         // `on` for a handler inside eager arms, apart so that a page with
         // none ships neither it nor its arm walk (#874).
@@ -633,6 +636,11 @@ const Html = struct {
     /// program gives it: what an `option` is selected by (`prerender.md`
     /// §4.1).
     value: ?[]const u8 = null,
+    /// A class list with toggles (§8.2, *A class list*): where its baked
+    /// names end in `attributes`, which the string form writes itself,
+    /// with the toggles' names, from the `toggle` writes `dynamic` holds at
+    /// the attribute's start.
+    classes_end: u32 = 0,
 };
 
 /// A write of an attribute whose value changes, at byte `at` of its
@@ -689,6 +697,10 @@ const Write = struct {
         /// Hidden while the branch at `node` takes another arm than `shown`.
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
+        /// One entry of a class list whose flag changes (§8.2, *A class
+        /// list*, 2026-11-11): `classList.toggle(name, value)`, the DOM its
+        /// compare.
+        toggle: struct { name: []const u8, value: m.Value.Index },
         event: u32,
         /// Evaluate a choice whose only reachable markup is empty.
         observe: m.Node.Index,
@@ -1026,13 +1038,21 @@ const Page = struct {
         // written ones, and a written `value` (`prerender.md` §4.1).
         var dynamic: std.ArrayList(Dynamic) = .empty;
         var value: ?[]const u8 = null;
+        var classes_end: u32 = 0;
         for (tree.itemsOf(e.items), 0..) |it, i| {
             const before = pg.writes.items.len;
+            const start: u32 = @intCast(attributes.items.len);
             if (try pg.item(n, target, ctx, it, e.items.start + @as(u32, @intCast(i)), &attributes)) |v| value = v;
             if (pg.writes.items.len != before and pg.writes.items[before].what == .prop)
                 try dynamic.append(pg.a(), .{ .at = @intCast(attributes.items.len), .write = @intCast(before) });
+            // A class list's toggles stand at the attribute's start, its
+            // baked names (`start .. classes_end`) being the client's.
+            if (pg.writes.items.len != before and pg.writes.items[before].what == .toggle) {
+                for (before..pg.writes.items.len) |wi| try dynamic.append(pg.a(), .{ .at = start, .write = @intCast(wi) });
+                classes_end = @intCast(attributes.items.len);
+            }
         }
-        const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .ctx = ctx, .target = target, .dynamic = dynamic.items, .value = value };
+        const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .ctx = ctx, .target = target, .dynamic = dynamic.items, .value = value, .classes_end = classes_end };
         if (facts.void) {
             var out = base;
             out.void = true;
@@ -1314,7 +1334,8 @@ const Page = struct {
         if (it.attribute != .none) {
             const f = tree.attributeFacts(it.attribute);
             attribute_only = f.classes and it.class == .string;
-            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
+            if (f.classes and it.class == .class_list) return pg.classList(n, target, ctx, it, index, out);
+            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a style list");
             if (f.property) |prop| property = tree.string(prop);
             stateful = f.stateful;
         }
@@ -1391,6 +1412,52 @@ const Page = struct {
         else
             return later(cx, n, "an attribute that is not a DOM property and whose value changes");
         try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = .{ .value = v }, .key = key, .attribute = name, .boolean = it.class == .bool, .attribute_only = attribute_only } }, .stateful = stateful });
+        return null;
+    }
+
+    /// A class list written in place (§8.2, *A class list*, amended
+    /// 2026-11-11, #2499), split as the `dom` lowering splits it: an entry
+    /// whose flag is the constant `True` baked into the markup's `class`,
+    /// one whose flag changes a `toggle` write, in entry order, in the
+    /// list's group. A list held as a value, and one whose names the `dom`
+    /// lowering hands its runtime — empty, with whitespace, or repeated —
+    /// are limits of the compiler.
+    fn classList(pg: *Page, n: m.Node.Index, target: ?u32, ctx: u32, it: m.Item, index: u32, out: *std.ArrayList(u8)) m.Error!?[]const u8 {
+        const tree = pg.tree;
+        const cx = pg.cx;
+        switch (it.value.kind) {
+            .entries => {},
+            .dynamic => return later(cx, n, "a class list held as a value"),
+            else => return later(cx, n, "this class list"),
+        }
+        const entries = tree.entriesOf(it.value.entries);
+        const name = tree.string(it.name);
+        for (entries, 0..) |e, j| {
+            const entry_name = tree.string(e.name);
+            if (entry_name.len == 0 or std.mem.indexOfAny(u8, entry_name, "\t\n\x0c\r ") != null) return later(cx, n, "a class list whose names repeat, are empty or hold whitespace");
+            for (entries[0..j]) |earlier| if (std.mem.eql(u8, tree.string(earlier.name), entry_name)) return later(cx, n, "a class list whose names repeat, are empty or hold whitespace");
+        }
+        var baked: std.ArrayList(u8) = .empty;
+        var toggles: std.ArrayList(Write) = .empty;
+        for (entries) |e| switch (e.value.kind) {
+            .constant => {
+                if (e.value.constant.kind != .bool) return later(cx, n, "this class list");
+                if (!e.value.constant.bool) continue;
+                if (baked.items.len != 0) try baked.append(pg.a(), ' ');
+                try baked.appendSlice(pg.a(), tree.string(e.name));
+            },
+            .dynamic => try toggles.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = &.{}, .what = .{ .toggle = .{ .name = tree.string(e.name), .value = e.value.dynamic.? } } }),
+            else => return later(cx, n, "this class list"),
+        };
+        if (baked.items.len != 0) try writeValue(pg.a(), out, name, baked.items);
+        if (toggles.items.len == 0) return null;
+        const facts = try pg.known(n, cx.programHole(.{ .item = index }));
+        const groups = try sorted(pg.a(), &.{facts.group});
+        for (toggles.items) |t| {
+            var w = t;
+            w.groups = groups;
+            try pg.writes.append(pg.a(), w);
+        }
         return null;
     }
 
@@ -2406,6 +2473,7 @@ const Page = struct {
             },
             .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
             .observe => |n| try out.append(pg.a(), pg.tree.hole(n).value),
+            .toggle => |x| try out.append(pg.a(), x.value),
             .event => {},
         }
     }
@@ -2797,6 +2865,7 @@ const Page = struct {
                     .value => |v| try values.append(pg.a(), v),
                     .text => {},
                 },
+                .toggle => |x| try values.append(pg.a(), x.value),
                 .event => {},
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
                 .observe => |n| try reads.append(pg.a(), pg.tree.hole(n).value),
@@ -2965,6 +3034,10 @@ const Page = struct {
                         },
                         .text => |t| try js.string(t),
                     },
+                    .toggle => |x| value: {
+                        try cx.rootValues(into, r, &.{x.value});
+                        break :value try cx.value(x.value);
+                    },
                     .event => |ei| try pg.capturedArguments(ei, p.call_args.items),
                     .observe => |n| try p.branch(into, ctx, n),
                     .when => |x| value: {
@@ -3054,6 +3127,7 @@ const Page = struct {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
                 },
                 .when => try js.expression(into, try js.call(try js.name(try cx.runtime("when")), &.{ node, ready.value })),
+                .toggle => |x| try js.expression(into, try toggleCall(cx, node, x.name, ready.value)),
                 .observe => {},
             }
             if (ready.selected) |n| try js.@"if"(blk, try js.name(n), into, null);
@@ -3125,6 +3199,7 @@ const Page = struct {
                         .value => |v| if (cx.valueSafe(v)) try own.append(pg.a(), v),
                         .text => {},
                     },
+                    .toggle => |x| if (cx.valueSafe(x.value)) try own.append(pg.a(), x.value),
                     .when, .event, .observe => {},
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
@@ -3158,6 +3233,7 @@ const Page = struct {
                             try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value, try js.string(key) }));
                         } else try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value }));
                     },
+                    .toggle => |x| try js.expression(blk, try toggleCall(cx, node, x.name, try cx.value(x.value))),
                     .observe => |n| {
                         const prepared = for (early.items) |e| {
                             if (e.node == n) break true;
@@ -3608,11 +3684,53 @@ const Render = struct {
                 },
                 .text => |t| try js_.string(t),
             },
+            .toggle => |x| v: {
+                try cx.rootValues(blk, root_, &.{x.value});
+                break :v try cx.value(x.value);
+            },
             else => unreachable,
         };
         const name = try cx.fresh("value");
         try js_.constant(blk, name, v);
         return js_.name(name);
+    }
+
+    /// A class list's attribute in the string form: the baked names of
+    /// `n`'s `class` (`attributes[toggles[0].at .. n.classes_end]`, as the
+    /// markup writes them), then each toggle's name whose flag is true, in
+    /// entry order; with no baked name, the attribute only when some flag
+    /// is true, as `toggle` makes it.
+    fn classes(r: *Render, blk: m.Block, c: u32, n: Html, toggles: []const Dynamic) m.Error!void {
+        const pg = r.pg;
+        const js_ = r.js();
+        const constant = n.attributes[toggles[0].at..n.classes_end];
+        // ` class=…`: the names, unquoted or quoted by `writeValue`.
+        var baked: []const u8 = "";
+        if (constant.len != 0) {
+            const eq = std.mem.indexOfScalar(u8, constant, '=').?;
+            baked = constant[eq + 1 ..];
+            if (baked[0] == '"') baked = baked[1 .. baked.len - 1];
+        }
+        var parts: std.ArrayList(m.TemplatePart) = .empty;
+        for (toggles) |d| {
+            const x = pg.writes.items[d.write].what.toggle;
+            const v = try r.value(blk, c, d.write);
+            try parts.append(pg.a(), .{ .expr = try js_.cond(v, try js_.string(try std.fmt.allocPrint(pg.a(), " {s}", .{x.name})), try js_.string("")) });
+        }
+        if (baked.len != 0) {
+            try r.text(" class=\"");
+            try r.text(baked);
+            try r.append(blk, try js_.template(parts.items));
+            try r.text("\"");
+            return;
+        }
+        try r.flush(blk);
+        const names = try pg.cx.fresh("classes");
+        try js_.constant(blk, names, try js_.template(parts.items));
+        const yes = try js_.block();
+        const written = try js_.template(&.{ .{ .text = " class=\"" }, .{ .expr = try js_.call(try js_.member(try js_.name(names), "slice"), &.{try js_.number("1")}) }, .{ .text = "\"" } });
+        try js_.assign(yes, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), written));
+        try js_.@"if"(blk, try js_.binary(.strict_ne, try js_.name(names), try js_.string("")), yes, null);
     }
 
     /// ` name="value"`, the value a string of `v`, escaped.
@@ -3635,9 +3753,22 @@ const Render = struct {
         // A control's value that is its content, or its options'.
         var content: ?m.Expr = null;
         var chosen: ?m.Expr = null;
-        for (n.dynamic) |d| {
+        var i: usize = 0;
+        while (i < n.dynamic.len) : (i += 1) {
+            const d = n.dynamic[i];
             try r.text(n.attributes[at..d.at]);
             at = d.at;
+            // A class list's toggles, all at the attribute's start: the
+            // attribute as the first pass leaves it (`prerender.md` §4.1,
+            // amended 2026-11-11), in place of its baked names.
+            if (pg.writes.items[d.write].what == .toggle) {
+                var end = i;
+                while (end < n.dynamic.len and n.dynamic[end].at == d.at and pg.writes.items[n.dynamic[end].write].what == .toggle) end += 1;
+                try r.classes(blk, c, n, n.dynamic[i..end]);
+                at = n.classes_end;
+                i = end - 1;
+                continue;
+            }
             const x = pg.writes.items[d.write].what.prop;
             const v = try r.value(blk, c, d.write);
             if (!x.attribute_only and x.key == null and std.mem.eql(u8, n.name, "textarea")) {
@@ -3792,6 +3923,13 @@ test "a constant URL is checked as the browser runtime's safeUrl checks it" {
     try t.expectEqual(@as(?bool, false), scriptUrl("javascript.html"));
     try t.expectEqual(@as(?bool, null), scriptUrl("\xc2\xa0javascript:x"));
     try t.expectEqual(@as(?bool, false), scriptUrl("/caf\xc3\xa9"));
+}
+
+/// `toggle(node, name, flag)`: a class list entry's write (§8.2, *A class
+/// list*), through the runtime, which compares first.
+fn toggleCall(cx: *m.Context, node: m.Expr, name: []const u8, flag: m.Expr) m.Error!m.Expr {
+    const js = cx.js;
+    return js.call(try js.name(try cx.runtime("toggle")), &.{ node, try js.string(name), flag });
 }
 
 /// ` name=value`: unquoted where the parser reads it back so, bare when

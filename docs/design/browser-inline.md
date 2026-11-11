@@ -378,6 +378,34 @@ beni over `Js` in `Inline.beni`:
   constant URL is checked and written into the markup. *Amended 2026-11-05 (§10.5, #1169):* a URL
   that changes is a binding through the runtime's `safeUrl`, and so is a constant URL the build
   cannot decide.
+- **A class list** (*amended 2026-11-11, #2499; the owner's item 1 (e) for the page port*). A
+  `class` written as a list in place (`language.md` §11.19; `Item.class` is `class_list`, its value
+  `entries`) is split as the `dom` lowering splits it (`platforms/browser/zig/dom.zig`,
+  `entriesInPlace`, after dom-expressions), so that the page shows the attribute `browser-tea`
+  shows, its names in the same order: an entry whose flag is the constant `True` is baked into the
+  markup's `class`, in entry order, and one whose flag is `False` writes nothing; an entry whose
+  flag changes is a **toggle**, the runtime's `toggle(E[n], name, flag)`, in entry order: the
+  class on the node, or off it, as the flag says, written — `classList.toggle(name, flag)` — when
+  `classList.contains(name)` differs, one write guarded by a compare like the other bindings. The
+  compare is the runtime's and not the DOM's: `toggle` with a flag writes nothing when the node
+  agrees in the DOM Standard, but a DOM that runs the update steps then makes `class=""` on a node
+  with no class (happy-dom, which the gates run pages in; Chrome does not), and the transcript
+  would show it. A class that turns on is appended after the element's other classes, as
+  `browser`'s runtime appends it, and one that turns off leaves `class=""` behind when it was the
+  last, as there. The toggles of one list share one group, the list's: the write-set pass records
+  an attribute's whole value as one hole, so a write that any entry's flag reads runs every toggle
+  of the list, each writing nothing where its flag did not change; a flag no key's write reaches
+  is a toggle run by the first pass alone. `toggle` ships only on a page that calls it, as the
+  other runtime functions do. A list the `dom` lowering
+  hands its runtime's `classes` instead — an entry whose name is empty, holds whitespace, or is an
+  earlier entry's — is a limit of the compiler (§8.7, `ClassListNames/`), as is a list held as a
+  value, `class={model.classes}` (`ClassListValue/`): this platform ships no `classes`. The
+  string form writes the attribute as the first pass leaves it (`prerender.md` §4.1, amended the
+  same day). A `style` list stays a limit of the compiler. Rejected: one binding writing the whole
+  attribute from the list (`setAttribute("class", …)` behind a compare), which canonicalises the
+  order of names to the list's, where `browser-tea` — the oracle — appends a name that turns on,
+  so the transcripts would part after the first change (`browser/inline/ClassList`,
+  `emit/release/inline/ClassList`, `browser/prerender/ClassList`).
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
@@ -1569,8 +1597,15 @@ named for is withdrawn. Such an event of the program's own markup goes through t
 (§8.3), and `MessageValue/` is the page `browser/inline/MessageValue`. The row of another module's
 event (`PieceEventArgs/`) stays.
 
-*Amended 2026-11-11 (#2498):* the row *an `if` or `case` in markup that is not an eager `when`*
-holds for a helper whose body is the branch (`HelperCaseBinds/`, `HelperCaseValue/`).
+*Amended 2026-11-11 (#2498, #2499):* two rows are added, and one is narrowed. A class list held
+as a value (`class={model.classes}`): *"… does not compile a class list held as a value yet …"*,
+class 1, at the element, `ClassListValue/`; a class list with an entry whose name is empty,
+holds whitespace, or is an earlier entry's: *"… does not compile a class list whose names
+repeat, are empty or hold whitespace yet …"*, class 1, at the element, `ClassListNames/`. The
+row *an attribute written as raw HTML, or a class or style list* no longer covers a class list
+written in place (§8.2, *A class list*); `StringClassList/`, whose list was constant, is
+withdrawn, and `browser/inline/ClassList` has a constant entry. The row *an `if` or `case` in markup that is not an eager
+`when`* holds for a helper whose body is the branch (`HelperCaseBinds/`, `HelperCaseValue/`).
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.

@@ -93,6 +93,7 @@ module Inline
   value take : V, V, V, V → V  -- impure
   value text : V, V → ⊤  -- impure
   value title : String → ⊤  -- impure
+  value toggle : V, V, Bool → ⊤  -- impure
   value update : (⊤ → ⊤) → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Tea

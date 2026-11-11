@@ -1,0 +1,38 @@
+-- A class list held as a value (docs/design/browser-inline.md §8.2, *A
+-- class list*, amended 2026-11-11): its entries are not written in place,
+-- so none can be baked or toggled; refused at the element as a limit of
+-- the compiler, class 1 (§5, §8.7).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    classes : List (String × Bool)
+
+
+type Msg
+    = Flip
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | classes = [ ( "on", True ) ] }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p data-role="p" class={model.classes}>x</p>
+        <button data-role="flip" onClick={Flip}>flip</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { classes = [ ( "off", True ) ] }, update = update, view = view }
+        )
+        "root"

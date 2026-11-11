@@ -302,6 +302,10 @@ place:
   `safeUrl` of it, `""` for a script URL, so the page holds what the client's first pass writes.
 - **An event** — nothing. A listener is the client's (research 36 §2.12 records the same for
   Solid's `ssr`).
+- **A class list** (*amended 2026-11-11, `browser-inline.md` §8.2, #2499*) — the attribute as the
+  client's first pass leaves it: the baked names, then the name of each toggle whose flag `init`
+  makes true, in entry order, separated by spaces; with no baked name, the attribute is written
+  only when some flag is true, since `toggle` makes none otherwise.
 - **An eager `when`** (§8.2 there) — the arm `init`'s model shows is written; **an arm it hides is
   not**, as the owner asked. In its place the string writes a comment, `<!--n-->`, where `n` is the
   arm's ordinal among the unit's eager arms in document order. An arm inside a hidden arm writes

@@ -221,10 +221,14 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
-## String classes on `browser-inline`
+## Classes on `browser-inline`
 
 Scalar String `class` values may be constant or change with the model. Empty strings retain
-an empty attribute. Class-list syntax and style lists remain compiler limits on this platform.
+an empty attribute. A class list written in place, `class={[ ( "row", True ), ( "late", late ) ]}`,
+compiles: an entry whose flag is `True` is in the page's markup, and an entry whose flag changes
+is toggled on its element when the flag changes. These are still compiler limits: a class list
+held as a value (`class={model.classes}`); a list with an entry whose name is empty, holds
+whitespace, or is the name of an earlier entry; and style lists.
 
 ## Helpers on `browser-inline`
 
