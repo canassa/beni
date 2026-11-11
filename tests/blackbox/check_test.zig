@@ -2838,8 +2838,8 @@ test "ownership v3: the faults of round 2 are refused" {
 
 // The faults that a search by hand found after the convergence test of
 // research report 112 (§6.3). The test's family has flat lists only. These
-// are about the match between two readings of one type, and about an answer
-// that the callee cannot know.
+// are about the match between two readings of one type, and about a fact of
+// a contract that the callee cannot know.
 //
 // - `wider`: `idp : a → a` goes to a parameter of the type `List (List Int)
 //   → List (List Int)`. Its one location, the type variable, stands for the
@@ -2853,8 +2853,14 @@ test "ownership v3: the faults of round 2 are refused" {
 //   the two parts of its result are apart. The callee does not know its
 //   function. The caller does: the function answers its parameter, so the
 //   two parts are one list.
+// - `nestedAnswer`: the same, one function deeper. The function that the
+//   caller hands answers the answer of a function that it captured, so its
+//   own contract cannot say that the parts of its answer are apart.
+// - `argumentTwice`: no function value. The callee only rearranges what it
+//   takes, and the argument has one list at two places. The claim of the
+//   callee's contract rests on the arguments too.
 //
-// The prototype that passed the first gate accepted each of the 13 demands.
+// The prototype that passed the first gate accepted each of these demands.
 test "ownership v3: the faults that a search by hand found are refused" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -2941,6 +2947,34 @@ test "ownership v3: the faults that a search by hand found are refused" {
         \\    w = List.update v 0 λm → List.push m 9
         \\    List.length w
         \\
+        \\
+        \\mkv : (x → a), x → a
+        \\mkv build q =
+        \\    build q
+        \\
+        \\
+        \\pub nestedAnswer : Int → Int
+        \\nestedAnswer c =
+        \\    g = λl → l
+        \\    r = mkv (λq → ( q, g q )) [ c ]
+        \\    v = [ r.0, r.1 ]
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
+        \\
+        \\keep2 : List Int × List Int → List Int × List Int
+        \\keep2 p =
+        \\    ( p.0, p.1 )
+        \\
+        \\
+        \\pub argumentTwice : Int → Int
+        \\argumentTwice c =
+        \\    q = [ c ]
+        \\    r = keep2 ( q, q )
+        \\    v = [ r.0, r.1 ]
+        \\    w = List.update v 0 λm → List.push m 9
+        \\    List.length w
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Hand.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
@@ -2951,7 +2985,9 @@ test "ownership v3: the faults that a search by hand found are refused" {
         "  49:17 List.push m: rejected later-use: it is read again at 53:21 (<call List.length>)\n",
         "  65:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  80:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "total 13: accepted 9 (fresh 2, call 3, param 0, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 4\n",
+        "  94:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  108:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "total 19: accepted 13 (fresh 4, call 3, param 0, callback-param 6, once 0, entry 0; assumed 0), pending 0, rejected 6\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
