@@ -173,9 +173,16 @@ report 110 §6.5 says. The answer of a captured function is `own` by the same te
 
 ### 2.6 Why the rule is closed
 
-The rule has one invariant: **a known function becomes a default value only through `flow(v, top)`.**
-`flow(v, top)` refuses code that writes a parameter, and it sends each captured function to `inner(c, top)`.
-So each function in a default location keeps the default contract, by induction over the captures.
+The rule has one invariant, in two halves (amended after report 113, which found a fault in the second):
+
+1. **What a lost function asks.** A known function becomes a default value only through `flow(v, top)`.
+   `flow(v, top)` refuses code that writes a parameter, and it sends each captured function to
+   `inner(c, top)`. So each function in a default location keeps the default contract, by induction over
+   the captures.
+2. **What a lost value holds.** A value that the walk cannot follow holds each cell that it can hold. A
+   later read of it reaches each of those cells, and a write of one of them is judged against it. A value
+   that holds no cell is a fact too ("nothing reads this"), so the walk gives it only to a value that
+   holds no cell of the frame.
 
 The places where the walk can lose the code of a known function are a finite list, and each is a `flow` to
 `top` in `src/own3/Frame.zig`:
@@ -183,14 +190,38 @@ The places where the walk can lose the code of a known function are a finite lis
 - an expression that is evaluated for its value (`mention`);
 - a callee that is not one known function (`call`);
 - a call with the wrong number of arguments (`apply`);
-- a local function that an earlier local function names before it is bound (`usedEarly`);
 - a field of an entry record that the entry rule does not describe, and each function that a described field
   captured (`entryCall`);
 - a use that is too deep to follow (`flow`).
 
+A local function that an earlier local function names before it is bound was on this list (`usedEarly`).
+The `flow` to `top` there covered what the later function asks, and not what it holds: the earlier closure
+held nothing for it, so a later run of the closure read cells that no read counted (report 113 §4). Such a
+name is no loss now. Code that names a later binding of its `let` captures it as it captures any local, and
+the frame that binds it gives the closure the value from where it is bound. Code that names itself or other
+code in a cycle is one group, walked as a recursive group of declarations is (report 113 §6).
+
+The places where the walk cannot follow a value are a finite list too, and each gives a value that holds
+each cell that it can hold:
+
+- a part of a value that the walk cannot name (a projection that the place graph does not have, an argument
+  of a constructor with no row, a field with no name): no claim, and each cell of the whole value
+  (`unknown`);
+- a constructor that the walk has no row for: applied, no claim and each cell of its arguments (`unknown`);
+  as a function value, the default function. A record alias's constructor has a row: it builds the record;
+- the answer of a callee that no contract describes: no claim, and each argument and the callee itself
+  escape at the call, so no later write of a cell that the answer can hold is accepted;
+- the answer of a function in the default state: each cell of each value in sight (§2.5);
+- a later binding that is not bound where a closure is read: lowering refuses such a program
+  (`let_forward_reference`), and the walk gives up on the declaration.
+
+The value of markup is the one exception, and it is a rule of the platforms, not of the walk: the entry
+rule says that the runtime reads each value of a hole where it renders, so the value of the markup holds
+none of them (report 113 §6.4).
+
 A function-typed location that `call` and `inner` do not name is `top`. So a new way for a function value to
 travel (a new holder shape) is `top` until a contract describes it. It can lose precision. It cannot make a
-fact "nothing happens".
+fact "nothing happens": not of what a lost function asks, and not of what a lost function or value holds.
 
 This argument is about a function that is lost. It is not the whole safety argument. A first-order claim of
 a contract that is wrong for a function's answer or for an argument is another kind of fault, and §2.7 has

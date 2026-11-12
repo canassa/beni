@@ -186,6 +186,171 @@ or, at `usedEarly`, count each cell that `g` captured as read by each later read
   that it was handed. Each was refused or sound. These were a few dozen programs, not a sweep.
 - One generator fault: the three `tree.built.*.flat.live` programs are not live (§3).
 
+## 6. The fix
+
+*Added after the report, on the same pull request.*
+
+### 6.1 The design
+
+The cause of §4.3 is one confusion. The value `shared` meant two things: "known sources, and nobody may write
+through it", and "the walk does not know this value". The second reading is wrong for a reader: a value with
+no atom is read by nobody. So a value that the walk did not know held nothing.
+
+Of the two ways of §4.3, the fix takes the first, and gives the case with no cycle the capture that a
+binding above already has. It has three parts.
+
+1. **A later binding is a capture.** Code (a local function, or a lambda) that names a binding of an
+   enclosing `let` that is not bound yet captures it, as it captures any local (`capture`). Its contract says
+   what it does with that binding, as for a binding written above it. In the frame that binds the binding,
+   the closure keeps a `later` slot for it (`capSlot`). The slot is the value that the frame binds there, from
+   where it is bound (`capVal`). Each reader of a closure's captured values reads them through `capVal`.
+2. **A later local function is made where it is first needed.** A local function is hoisted, and nothing
+   runs where code is bound. Where the frame needs a later local function before its binding (a value binding
+   that calls it, or a closure that holds it and is read), the frame makes it there (`makeCode`). Lowering
+   refuses a value binding that reads a value bound below it, directly or through code (`language.md` §7,
+   `let_forward_reference`), so what the function reads is bound there. A slot that is not bound where it is
+   read would be such a program, and the walk gives up on the declaration.
+3. **Code that names code in a cycle is one group.** The code bindings of a `let` that name each other in a
+   cycle (a strongly connected group, by the references in their instructions: `findGroups`) are walked as a
+   recursive group of declarations is (`solveCodes`). Each member names each member, itself too, as the known
+   function with its contract so far and its captured values as the naming frame has them (`memberValue`,
+   which was `selfValue` for a function that names itself). The rounds start from the contract with no flag
+   and no source, and run until no contract changes. No member captures another, so no closure holds itself
+   through another, and each walk over values ends.
+
+Why this and not "a lost value holds each cell in sight". At the place where `h` is made, the cells that `g`
+will hold can be cells of a value that is bound after `h` (`g n = ints zs`, `zs` below it), so "in sight" there
+is not enough; a value that holds every cell, also of later values, refuses each write after any read of it.
+A capture is the precise answer, and it is the answer that the walk already has for a binding above: `h`'s
+contract describes the call of `g`, and `flow` judges `g` against it with `inner`, as for a function that is
+bound before `h`. The default "each cell in sight" stays the answer where the walk has nothing better: the
+answer of a function in the default state (report 112 §2.5).
+
+`shared` now means one thing: no claim, and no cell of this frame. A value that the walk cannot follow, but
+which can hold cells, is the new value `unknown`: no claim, and each cell of the values that it is made of
+(`unknownOf`). Each reader of a value has an arm for each kind, with no `else` arm: `leaves`, `leavesAs`,
+`allLeaves`, `reach`, `whole`, `placeOfVal`, `project`, `partsOf`, `argLeaves`, `mention`, `codeOf`, the
+callee of `call` and the values of markup. The `later` slot has an arm in each that says it is read through
+`capVal` only.
+
+### 6.2 Each place that was fixed
+
+| Place | Before | Now |
+|---|---|---|
+| `capture`: a local of an enclosing frame that is not bound yet | `shared`, and no capture | a capture, as for a local above |
+| a closure's captured value (`codeValue`, `selfValue`) | the parent's `capture`, so `shared` | `capSlot`: the value, a capture, or a `later` slot read by `capVal` |
+| a name of a later local function in the frame that binds it (`a = g 1` above `g`) | `shared`: an unknown callee whose answer has no claim and holds nothing | `makeCode` makes `g` there; the call is a known call |
+| `usedEarly`: the later function flows to `top` | covered what `g` asks, not what it holds | removed: `g` is a capture of `h`, and `flow` composes it with `inner` |
+| a lambda bound to a local that names itself, or a later function (`q = λu → q u`) | `shared` | a code binding: `memberValue`, or a capture |
+| local functions that call each other | the earlier one held `shared` for the later one | one group, walked to a fixed point (`solveCodes`) |
+| `project`: a step that the place graph does not have | `shared` | `unknown` over the whole value |
+| a constructor pattern with no row, a record pattern field with no name | `shared` | `unknown` over the whole value |
+| a constructor applied with no row (a record alias's constructor) | `smear`: cells with a claim, and no word that one cell is at two of its locations | a record alias's constructor builds the record (`ctorArgStep`); any other: `unknown` |
+| a constructor as a function value with no row (a record alias's constructor) | `none`: no function, so `flow` and the answer saw nothing | a record alias's constructor has its contract; any other is the default function (`shared`) |
+| `?` | `smear` of the scrutinee | the argument of `Ok` or `Just` (`trySuccess`); any other type: `unknown` |
+
+The readers of a value now say what each kind is, with no `else` arm (§6.1). A value that holds no cell
+of the frame is now one of: `none` (no object), `shared` (a value of the program, or the answer of a callee
+whose arguments and callee escaped), a function in the default state (it holds the values in sight where
+it answers, §2.5 of report 112), or `fnref` (a declaration, which captures nothing).
+
+### 6.3 The tests
+
+- `tests/blackbox/check_test.zig`, *code that names a later binding holds what it reads*: the four forms of
+  §4.2 and five more (a local function that reads a later value, a lambda bound to a local, a value binding
+  that calls a later function which answers the list, a chain of two later functions, a closure in a list
+  before the function that it names is bound, in the frame and in a local function that answers the list).
+  Each is refused, and each safe twin is accepted.
+- The same file, *a value that the walk cannot follow holds its cells*: the faults of the review (§6.4) and
+  their safe twins.
+- *The faults of round 2 are refused*: `later` (report 112 §3.3) is refused at a new place. Before, `b` went
+  to `top` and was refused there as a function that writes; now `a` and `b` are one group, and the call
+  `a 2 q` is refused because `q` is read again after `b` writes it. That is the write that the program would
+  make. The total has the two demands of the group's own frames more.
+- `tests/corpus/run/LaterBindingHeldByCode` (five forms of this section) and `UnfollowedValueHoldsCells`
+  (the first fault of §6.4): run fixtures with the `.sanitize-lists-v2` convention, so the gates check that
+  v2 refuses each edit, and the sanitiser corpus (`bench/ownership-step0-sanitiser.mjs`) runs them under the
+  prototype. The other two faults of §6.4 are not in a fixture: the corpus check that v1 and v2 agree fails on
+  them (v1 accepts the writes of `P xs xs` and traps, a fault of v1; on `?` the two group their lines in
+  another way).
+- `bench/ownership-sweeps/blind-faults/`: the twins of §4.2, and a live and a dead program for each other
+  form (24 programs: 13 `live`, 11 `dead`).
+
+Each new test fails on the code before the fix (`e484e18ec7`, the tests alone applied): the three
+`check_test.zig` tests each miss their first refusal line, the two corpus fixtures trap in the sanitiser
+corpus, and the 13 `live` programs of `blind-faults/` trap.
+
+| `blind-faults/` | before the fix | after | v2 |
+|---|---|---|---|
+| 13 `live` | 13 `TRAP` | 13 `REFUSED` | 13 `REFUSED` |
+| 11 `dead` | 11 `SAME` | 11 `SAME` | 5 `SAME`, 6 `REFUSED` |
+
+### 6.4 The review
+
+One reviewer read `src/own3/Frame.zig` after the fix, with the hole of §4 and no conclusion, and wrote
+programs against each place where a value that is unknown or not bound could hold nothing. It found no fault
+in the new parts (the `later` slots, `makeCode`, the groups and `memberValue`): later lambdas, later values
+from calls and from patterns, a later function that a `case` arm needs, forward names in nested frames and in
+returned functions, groups of lambdas and of functions, a cycle of four functions put in a list and mapped,
+and nests of 15 self-recursive local functions (no crash, no hang, 0.4 s). It found two faults of the
+first-order core, each a trap of v3 that v2 refuses, and the fix above now covers both:
+
+1. **A record alias's constructor as a function value** (`List.map [ xs ] R`). `ctorValue` gave no function
+   (`none`) for a constructor whose result is a record, so `flow` and the answer of `List.map` saw nothing,
+   and the elements held no cell of `xs`.
+2. **A `smear` loses that one cell is at two of its locations.** `P xs xs` (a record alias's constructor,
+   which had no row) and the success of `?` were each every cell of their parts at every location. Each
+   location then has the cells of `xs` once, and a write of `.a` beside `.b` was not judged against `.b`.
+
+It also named one suspicion that it could not make trap on Node: **the value of markup holds none of its
+holes' values.** A `For` that keeps its list until it renders would read the list after a later write of it.
+On Node the server-side lowering renders where the markup is made, so no program traps. To make the value of
+markup hold its holes is the sound default, and I tried it: it refuses 12 of the 299 real writes, each a
+write of a model list in an `update` (`entry`), because the view's markup holds the model. That is the entry
+rule of the platforms ("the runtime reads the values of a page's markup where it renders, and renders again
+after each `update`"), and it is a decision about the platforms' runtimes, not about this walk. So the
+prototype keeps the entry rule, and this is an open question for the owner: does each platform's runtime
+read a hole's value only where it renders, so that the markup value holds none?
+
+### 6.5 The gate
+
+All of the final code, with a ReleaseSafe compiler, against the branch before the fix (`e484e18ec7`) on the
+same programs.
+
+| Gate | Before the fix | After |
+|---|---|---|
+| The nine sweep generators and `blind-faults/`: `TRAP`, `DIFF`, `CRASH` | 13 (all in `blind-faults/`) | **0** |
+| Report 111's two generators, 2 000 programs each: same output, traps | 502 and 705, 0 | 502 and 705, **0** |
+| The sanitiser corpus, 347 fixtures: same, traps | 100, 2 (the two new fixtures) | 101, **0** |
+| The 308 real writes that v1 judges: accepted at the same position | 299 | **299** |
+| `zig build gates` | | green |
+
+| Generator | Programs | `SAME` before | `SAME` after | lost | gained |
+|---|---:|---:|---:|---:|---:|
+| `recursive-levels.mjs` | 16 131 | 4 282 | 4 282 | 0 | 0 |
+| `folds-callbacks.mjs` | 30 300 | 6 182 | 6 182 | 0 | 0 |
+| `callbacks-keep.mjs` | 720 | 108 | 108 | 0 | 0 |
+| `handed-back.mjs` | 2 592 | 0 | 0 | 0 | 0 |
+| `function-values.mjs` | 1 960 | 240 | 250 | 0 | 10 |
+| `wider-functions.mjs` | 354 | 171 | 171 | 0 | 0 |
+| `answers-beside.mjs` | 240 | 61 | 61 | 0 | 0 |
+| `aliased-arguments.mjs` | 5 160 | 861 | 861 | 0 | 0 |
+| `blind.mjs` | 9 792 | 1 323 | 1 323 | 0 | 0 |
+| `blind-faults/` | 24 | 11 | 11 | 0 | 0 |
+
+The figures before the fix are of a run of the branch before the fix on the same programs.
+
+**Precision.** The fix loses no `SAME` in any sweep. It gains the 10 `dead` twins of the carrier `later` of
+`function-values.mjs` (a local function called before it is bound): before, the later function went to
+`top`, which refuses a function that writes its parameter; now the earlier function's contract describes
+the call, and `flow` composes the two. In the sanitiser corpus it gains `SanitiserRecordCtorApart`, whose
+record alias's constructor now builds the record. The real writes and their two refusals at a position
+where v1 has no line are those of report 112 §5.4.
+
+**What stays open.** The question of §6.4 on the value of markup. And v1 accepts the in-place writes of
+`alias-twice.live` (a record alias's constructor applied to one list two times), and its sanitised build
+traps; v2 and the prototype refuse it.
+
 ## Appendix A. Commands
 
 ```sh
