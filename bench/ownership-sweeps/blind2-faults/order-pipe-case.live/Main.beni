@@ -1,0 +1,50 @@
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+cat : String, String → String
+cat a b = a ++ "/" ++ b
+
+
+mk : String → { f : String → String }
+mk s = { f = λt → s ++ "/" ++ t }
+
+
+mkf : String → (String → String)
+mkf s = λt → s ++ "/" ++ t
+
+
+mkT : String → (String → String) × Int
+mkT s = ( λt → s ++ "/" ++ t, 1 )
+
+
+type P
+    = P String String
+
+
+type alias R =
+    z : String
+    a : String
+
+
+go : Int → String
+go n =
+    q = [ n, 2 ]
+    (String.fromInt (List.length q))
+        ▷ (case n of
+              0 →
+                  mkf (show (List.push q 9))
+
+              _ →
+                  mkf ""
+          )
+
+
+main : Program
+main = Node.print (go 0)

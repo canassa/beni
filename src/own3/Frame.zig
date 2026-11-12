@@ -80,12 +80,12 @@ const Kid = struct { step: u32, val: Val };
 /// `via`: the root that the frame made through which this cell was read
 /// (a call's result that holds cells of its arguments), or `none`.
 ///
-/// `dead`: an old name of cells that have a new name since the instruction
-/// `dead` (a callee wrote them, or could, and answers them), or `none`. The
-/// value that holds the new name is no reader of the old value: a write at
-/// that instruction or before does not count it as a holder. The cells are
-/// the same: a write after that instruction counts it, and so does an
-/// overlap test for one cell at two places.
+/// `dead`: an old name of cells that have a new name since the time `dead`
+/// (`timeOf`: a callee wrote them, or could, and answers them), or `none`.
+/// The value that holds the new name is no reader of the old value: a write
+/// at that time or before does not count it as a holder. The cells are the
+/// same: a write after that time counts it, and so does an overlap test for
+/// one cell at two places.
 pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, dead: u32 = none };
 const RootKind = enum(u8) { shared, param, capture, local, answer };
 const Root = struct {
@@ -112,7 +112,8 @@ const Root = struct {
 /// `taken`, an element that a trusted loop of `core/` took out of its list.
 const EKind = enum(u8) { own, shared, alias, derived, taken, version };
 const REntry = struct { kind: EKind, start: u32 = 0, len: u32 = 0, fresh: bool = false };
-const Read = struct { point: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
+/// `point`: the consumer's instruction, for the text. `at`: the time of the read (`timeOf`).
+const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
 const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32 };
 
@@ -249,6 +250,8 @@ const Other = struct {
 
 const Demand = struct {
     point: u32,
+    /// The time of the write (`timeOf`).
+    at: u32,
     token: u32,
     ctx: u32,
     op: Op,
@@ -304,8 +307,8 @@ answers: std.ArrayList(Answer) = .empty,
 skip_answer: u32 = none,
 /// While a write is judged: its context. The value of another arm of the same `case` is not a holder.
 judge_ctx: u32 = none,
-/// While a write is judged: its instruction (`isOld`).
-judge_point: u32 = none,
+/// While a write is judged: its time (`isOld`).
+judge_at: u32 = none,
 /// Set by `argLeaves` when the fallback cover gave an entry.
 hit_all: bool = false,
 uses: std.ArrayList(Read) = .empty,
@@ -321,6 +324,13 @@ order: std.ArrayList(u32) = .empty,
 chain_root: u32 = none,
 /// The next `Use.id`.
 next_use: u32 = 1,
+/// The walk's clock (`timeOf`): the time of the last operation, its
+/// instruction, and the count of expressions entered when it was taken.
+clock: u32 = 0,
+clock_inst: u32 = none,
+clock_entered: u32 = 0,
+/// The count of expressions that the walk entered (`eval`).
+entered: u32 = 0,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -563,7 +573,7 @@ fn rootLeaves(f: *Frame, root: u32, path: u32, re: u32, out: *std.ArrayList(Atom
 }
 
 /// The atoms of `v` at entry `e` of its own place's layout. True when one
-/// cell can be there twice (a summary location fed by two parts that overlap).
+/// cell can be there twice (`leavesOwn`).
 fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
     const n = f.nodes.items[v];
     switch (n.tag) {
@@ -572,42 +582,7 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
             try out.append(f.gpa, shared_atom);
             return false;
         },
-        .ref => {
-            const re = f.m.loc.paths.items[n.b].to_root[e];
-            if (re == none) {
-                try out.append(f.gpa, shared_atom);
-                return false;
-            }
-            try f.rootLeaves(n.a, n.b, re, out);
-            return false;
-        },
-        .built => {
-            var dup = false;
-            const at = out.items.len;
-            const single = f.m.loc.layoutEntries(try f.m.loc.layoutOf(n.place))[e].single;
-            for (0..n.b) |ki| {
-                const k = f.kids.items[n.a + ki];
-                if (k.val == v_none) continue;
-                const before = out.items.len;
-                if (try f.m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
-                    for (pr.downOf(e)) |j| {
-                        if (try f.leavesAs(k.val, pr.child, j, out)) dup = true;
-                    }
-                } else if (try f.allLeaves(k.val, out)) {
-                    dup = true;
-                }
-                if (!single and before > at and f.dupOverlap(out.items[at..before], out.items[before..])) dup = true;
-            }
-            return dup;
-        },
-        .join => {
-            var dup = false;
-            for (0..n.b) |ki| {
-                if (!f.armLive(n, ki)) continue;
-                if (try f.leavesAs(f.lists.items[n.a + 2 * ki], n.place, e, out)) dup = true;
-            }
-            return dup;
-        },
+        .ref, .built, .join => return f.leavesOwn(v, &.{e}, out),
         .closure => {
             const c = f.codes.items[n.a];
             for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
@@ -625,6 +600,129 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
         },
         .later => unreachable, // read through `capVal` only
     }
+}
+
+/// A set of entries of one layout, in the order first added. Most sets
+/// have one or two entries, so it starts in place.
+const Entries = struct {
+    small: [8]u32 = undefined,
+    n: usize = 0,
+    more: std.ArrayList(u32) = .empty,
+
+    fn add(s: *Entries, gpa: Allocator, x: u32) Error!void {
+        for (s.slice()) |y| if (y == x) return;
+        if (s.more.items.len == 0 and s.n < s.small.len) {
+            s.small[s.n] = x;
+            s.n += 1;
+            return;
+        }
+        if (s.more.items.len == 0) try s.more.appendSlice(gpa, s.small[0..s.n]);
+        try s.more.append(gpa, x);
+    }
+
+    fn slice(s: *const Entries) []const u32 {
+        return if (s.more.items.len != 0) s.more.items else s.small[0..s.n];
+    }
+};
+
+/// The atoms of `v` at the entries `ks` of its own place's layout. True when
+/// one cell can be at two of these places, or twice in one of them.
+///
+/// **One list reachable two ways makes its location `shared`** (research
+/// report 114 §7). A summary location (the deep level of a recursive type)
+/// can be fed by two parts of a construction, and also by two entries of
+/// one part: the entry level and the deep level of the value that a
+/// constructor holds both fold into the deep level of the constructor's
+/// value. So this takes a set of entries, and asks each part for its own
+/// set once: a cell at two of them is found as a cell of two parts.
+///
+/// Two entries of one part of a root that are one entry of the root are
+/// that entry once: its atom names each of its cells, at every depth, and
+/// the root's own claim says that they are apart. Two entries of a root
+/// that hold one cell of another root are two places, unless the root
+/// says that it holds each such cell once (`linear`, in `dupOverlap`).
+fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Error!bool {
+    const m = f.m;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref => {
+            const p = m.loc.paths.items[n.b];
+            var res: Entries = .{};
+            var lost = false;
+            for (ks) |k| {
+                const re = p.to_root[k];
+                if (re == none) lost = true else try res.add(f.gpa, re);
+            }
+            if (lost) try out.append(f.gpa, shared_atom);
+            var dup = false;
+            const at = out.items.len;
+            for (res.slice()) |re| {
+                const before = out.items.len;
+                try f.rootLeaves(n.a, n.b, re, out);
+                if (before > at and f.dupOverlap(out.items[at..before], out.items[before..])) dup = true;
+            }
+            return dup;
+        },
+        .built => {
+            var dup = false;
+            const at = out.items.len;
+            const single = ks.len == 1 and m.loc.layoutEntries(try m.loc.layoutOf(n.place))[ks[0]].single;
+            for (0..n.b) |ki| {
+                const k = f.kids.items[n.a + ki];
+                if (k.val == v_none) continue;
+                const before = out.items.len;
+                if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
+                    // The kid's entries that these entries are made of.
+                    var js: Entries = .{};
+                    for (ks) |e| for (pr.downOf(e)) |j| try js.add(f.gpa, j);
+                    if (js.slice().len != 0 and try f.leavesSet(k.val, pr.child, js.slice(), out)) dup = true;
+                } else if (try f.allLeaves(k.val, out)) {
+                    dup = true;
+                }
+                if (!single and before > at and f.dupOverlap(out.items[at..before], out.items[before..])) dup = true;
+            }
+            return dup;
+        },
+        .join => {
+            // One of several values: each arm holds its own cells.
+            var dup = false;
+            for (0..n.b) |ki| {
+                if (!f.armLive(n, ki)) continue;
+                if (try f.leavesSet(f.lists.items[n.a + 2 * ki], n.place, ks, out)) dup = true;
+            }
+            return dup;
+        },
+        .none, .shared, .fnref, .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .later => unreachable, // read through `capVal` only
+    }
+}
+
+/// `leavesOwn` of `v` at the entries `js` of `place`'s layout, which can be
+/// another reading of `v`'s type: each entry of `v`'s own layout that the
+/// call map puts at one of them.
+fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.ArrayList(Atom)) Error!bool {
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .none, .fnref => return false,
+        .shared => {
+            try out.append(f.gpa, shared_atom);
+            return false;
+        },
+        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .ref, .built, .join => {},
+        .later => unreachable, // read through `capVal` only
+    }
+    if (n.place == place) return f.leavesOwn(v, js, out);
+    const view = try f.m.loc.layoutOf(place);
+    const own = try f.m.loc.layoutOf(n.place);
+    if (view == own) return f.leavesOwn(v, js, out);
+    const cov = try f.m.loc.cover(view, own);
+    var ks: Entries = .{};
+    for (cov, 0..) |c, k| for (js) |j| if (Loc.hits(c, j)) {
+        try ks.add(f.gpa, @intCast(k));
+        break;
+    };
+    return f.leavesOwn(v, ks.slice(), out);
 }
 
 fn whole(tag: Tag) bool {
@@ -648,29 +746,11 @@ fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
     return f.node(.{ .tag = .unknown, .place = place, .a = start, .b = count });
 }
 
-/// `leaves` of `v` seen at entry `e` of `place`'s layout, which can be another reading of `v`'s type.
+/// `leaves` of `v` seen at entry `e` of `place`'s layout, which can be
+/// another reading of `v`'s type. Two entries of `v` that the call map puts
+/// at `e` are one set (`leavesOwn`).
 fn leavesAs(f: *Frame, v: Val, place: PlaceId, e: u32, out: *std.ArrayList(Atom)) Error!bool {
-    const n = f.nodes.items[v];
-    switch (n.tag) {
-        .none, .fnref => return false,
-        .shared => {
-            try out.append(f.gpa, shared_atom);
-            return false;
-        },
-        .closure, .smear, .unknown => return f.leaves(v, 0, out),
-        .ref, .built, .join => {},
-        .later => unreachable, // read through `capVal` only
-    }
-    if (n.place == place) return f.leaves(v, e, out);
-    const view = try f.m.loc.layoutOf(place);
-    const own = try f.m.loc.layoutOf(n.place);
-    if (view == own) return f.leaves(v, e, out);
-    const cov = try f.m.loc.cover(view, own);
-    var dup = false;
-    for (cov, 0..) |c, k| if (Loc.hits(c, e)) {
-        if (try f.leaves(v, @intCast(k), out)) dup = true;
-    };
-    return dup;
+    return f.leavesSet(v, place, &.{e}, out);
 }
 
 fn allLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
@@ -769,7 +849,29 @@ fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
 /// read the value from before the write. A name that was old before the
 /// write is the cells themselves: the holder reads what the write changes.
 fn isOld(f: *const Frame, x: Atom) bool {
-    return x.dead != none and (f.judge_point == none or f.judge_point <= x.dead);
+    return x.dead != none and (f.judge_at == none or f.judge_at <= x.dead);
+}
+
+/// The time of an operation at `inst`: a read, a write, an escape, or the
+/// new name that a call gives. The walk goes in the order that the emitted
+/// JavaScript evaluates in (`language.md` §6, *Evaluation order*; the
+/// emitter's `orderedExprs`): a callee or a receiver, then the arguments in
+/// order; a `case`'s scrutinee, then one arm; a `let`'s bindings in order,
+/// then its body. It records each operation after the operands that the
+/// operation consumes. So the order of these times is the program's order.
+/// An instruction's number is not: lowering numbers the operand of `x ▷ e`
+/// before `e`, and a binding before its value (research report 114 §7).
+///
+/// What one operation records has one time: the records at one instruction
+/// with no expression entered between them. A record at another
+/// instruction, or after the walk entered an expression, has a later time.
+fn timeOf(f: *Frame, inst: u32) u32 {
+    if (inst != f.clock_inst or f.entered != f.clock_entered) {
+        f.clock += 1;
+        f.clock_inst = inst;
+        f.clock_entered = f.entered;
+    }
+    return f.clock;
 }
 
 fn placeOfVal(f: *Frame, v: Val) ?PlaceId {
@@ -850,7 +952,7 @@ fn compatible(f: *const Frame, a0: u32, b0: u32) bool {
 fn readAll(f: *Frame, v: Val, point: u32) Error!void {
     if (v == v_none or v == v_shared) return;
     if (f.nodes.items[v].tag == .fnref) return;
-    try f.uses.append(f.gpa, .{ .point = point, .val = v, .ctx = f.cur_ctx });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx });
 }
 
 /// `v` is read at `point` by a callee whose contract flags are `flags` over the signature layout `sig`.
@@ -882,7 +984,7 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     }
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = all });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = all });
 }
 
 fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
@@ -1040,6 +1142,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     if (f.chain_root != none and in.op != .supply) token_inst = f.chain_root;
     var d: Demand = .{
         .point = in.point,
+        .at = f.timeOf(in.point),
         .token = f.m.tokens[token_inst],
         .ctx = f.cur_ctx,
         .op = in.op,
@@ -1091,7 +1194,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     if (d.refused == null and in.dup) d.refused = .element;
     if (d.refused == null) {
         f.judge_ctx = f.cur_ctx;
-        f.judge_point = d.point;
+        f.judge_at = d.at;
         for (in.others, 0..) |o, k| {
             if (try f.otherReaches(o, f.atoms.items[w..][0..wn], if (k == in.arg) in.se else none, if (k == in.arg) in.suffix else &.{})) {
                 d.refused = .disjoint;
@@ -1099,7 +1202,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             }
         }
         f.judge_ctx = none;
-        f.judge_point = none;
+        f.judge_at = none;
     }
     if (d.refused == null) {
         for (f.escapes.items) |e| {
@@ -1145,10 +1248,10 @@ fn finishDemands(f: *Frame) Error!void {
         if (d.refused == null) {
             f.skip_answer = d.skip;
             f.judge_ctx = d.ctx;
-            f.judge_point = d.point;
+            f.judge_at = d.at;
             for (f.uses.items) |u| {
-                // A read at a later point: an instruction's number is after each of its operands'.
-                if (u.point <= d.point) continue;
+                // A read at a later time: the walk goes in the program's order (`timeOf`).
+                if (u.at <= d.at) continue;
                 if (!f.compatible(u.ctx, d.ctx)) continue;
                 if (try f.useReaches(u, ws)) {
                     d.refused = .later_use;
@@ -1158,7 +1261,7 @@ fn finishDemands(f: *Frame) Error!void {
             }
             f.skip_answer = none;
             f.judge_ctx = none;
-            f.judge_point = none;
+            f.judge_at = none;
         }
         if (d.op == .supply) {
             if (d.refused != null and d.draft != none) f.drafts.items[d.draft].free[d.slot] = false;
@@ -1252,6 +1355,8 @@ fn ev(f: *Frame, inst: u32) Error!Val {
 fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     const m = f.m;
     const data = m.datas[inst];
+    // Each expression entered starts a new time for the operation after it (`timeOf`).
+    f.entered += 1;
     switch (m.tags[inst]) {
         .let => {
             const bindings = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index);
@@ -1484,8 +1589,12 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // A value of the model is read. A message that the frame makes
             // here, or a function that answers one, is kept by the runtime
             // until the next render: what it holds escapes.
-            for (ops.items) |o| {
-                const v = try f.ev(o.int());
+            //
+            // The render reads each value after the markup has evaluated
+            // all of them: so the reads come after the last one (`timeOf`).
+            const vals = try f.gpa.alloc(Val, ops.items.len);
+            for (ops.items, vals) |o, *v| v.* = try f.ev(o.int());
+            for (vals) |v| {
                 const n = f.nodes.items[v];
                 const kept = switch (n.tag) {
                     .built => true,
@@ -1586,9 +1695,10 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
             if (base == v_none) {
                 if (front == v_none) continue;
                 const start: u32 = @intCast(f.atoms.items.len);
-                _ = try f.leavesAs(front, place, @intCast(e), &f.atoms);
+                const dup = try f.leavesAs(front, place, @intCast(e), &f.atoms);
                 try f.uniqueTail(&f.atoms, start);
-                var kind: EKind = .derived;
+                // One cell at two places of the storage: no claim (`leavesOwn`).
+                var kind: EKind = if (dup) .shared else .derived;
                 for (f.atoms.items[start..]) |a| if (a.root == 0) {
                     kind = .shared;
                 };
@@ -1596,12 +1706,12 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
                 continue;
             }
             const start: u32 = @intCast(f.atoms.items.len);
-            _ = try f.leavesAs(base, place, @intCast(e), &f.atoms);
+            const dup = try f.leavesAs(base, place, @intCast(e), &f.atoms);
             // The base's storage is the result's: its names here are old.
-            var kind: EKind = .version;
+            var kind: EKind = if (dup) .shared else .version;
             for (f.atoms.items[start..]) |*a| {
                 if (a.root == 0) kind = .shared;
-                a.dead = inst;
+                a.dead = f.timeOf(inst);
             }
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true };
@@ -1613,10 +1723,12 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
             if (v == v_none) continue;
             const before = f.atoms.items.len;
             if (pr) |p| {
-                for (p.downOf(@intCast(e))) |j| {
-                    if (try f.leavesAs(v, p.child, j, &f.atoms)) dup = true;
-                }
-            } else _ = try f.allLeaves(v, &f.atoms);
+                // The element's entries that fold into this one are one set (`leavesOwn`).
+                const js = p.downOf(@intCast(e));
+                if (js.len != 0 and try f.leavesSet(v, p.child, js, &f.atoms)) dup = true;
+            } else if (try f.allLeaves(v, &f.atoms)) {
+                dup = true;
+            }
             if (before > start and f.dupOverlap(f.atoms.items[start..before], f.atoms.items[before..])) dup = true;
         }
         for (spreads) |v| {
@@ -2420,23 +2532,27 @@ fn evidenceTerm(f: *Frame, inst: u32, ti: anytype, depth: u32) Error!void {
 /// The atoms of argument `v` at the callee's entry `se` of the signature
 /// layout `sig`. With `suffix`, only the part at that suffix below the entry
 /// (a function writes a part of what a type variable stands for). With
-/// `deep`, each cell below that part too.
+/// `deep`, each cell below that part too. The entries of `v` that this
+/// asks for are one set (`leavesOwn`).
 fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bool, out: *std.ArrayList(Atom)) Error!bool {
+    var ks: Entries = .{};
+    if (!try f.argEntries(v, sig, se, suffix, deep, &ks)) return f.leaves(v, 0, out);
+    return f.leavesOwn(v, ks.slice(), out);
+}
+
+/// The entries of the argument `v`'s own layout that `argLeaves` reads,
+/// added to `ks`. False when `v` has no entries to name: no object, no
+/// claim, or a value whose every cell is at each location (`leaves` at 0).
+fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bool, ks: *Entries) Error!bool {
     const m = f.m;
     const n = f.nodes.items[v];
     switch (n.tag) {
-        .none, .fnref => return false,
-        .shared => {
-            try out.append(f.gpa, shared_atom);
-            return false;
-        },
-        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .none, .fnref, .shared, .closure, .smear, .unknown => return false,
         .ref, .built, .join => {},
         .later => unreachable, // read through `capVal` only
     }
     const own = try m.loc.layoutOf(n.place);
     const cov = try m.loc.cover(sig, own);
-    var dup = false;
     if (suffix.len != 0) {
         var want: ?u32 = m.loc.layoutEntries(sig)[se].loc;
         for (suffix) |l| {
@@ -2444,23 +2560,25 @@ fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bo
             if (want == null) break;
         }
         if (want) |wl| {
-            var found = false;
+            var found: Entries = .{};
             // The cell at that part. `deep`: each cell below it too (the
             // part is a wide location of another reading of the type).
             for (m.loc.layoutEntries(own), 0..) |oe, k| if (Loc.hits(cov[k], se) and (oe.loc == wl or (deep and m.loc.isPrefix(wl, oe.loc)))) {
                 if (cov[k] != se and !deep) continue;
-                found = true;
-                if (try f.leaves(v, @intCast(k), out)) dup = true;
+                try found.add(f.gpa, @intCast(k));
             };
-            if (found) return dup;
+            if (found.slice().len != 0) {
+                for (found.slice()) |k| try ks.add(f.gpa, k);
+                return true;
+            }
         }
     }
     for (cov, 0..) |c, k| {
         if (!Loc.hits(c, se)) continue;
         if (c == Loc.all) f.hit_all = true;
-        if (try f.leaves(v, @intCast(k), out)) dup = true;
+        try ks.add(f.gpa, @intCast(k));
     }
-    return dup;
+    return true;
 }
 
 /// Apply contract `code.contract` to the arguments `vals` at the call `inst`.
@@ -2852,7 +2970,8 @@ const SrcState = struct {
 /// function that can, and answers them: their names here are old from this
 /// call on (`Atom.dead`).
 fn oldNames(f: *Frame, from: usize, st: *SrcState) void {
-    for (f.atoms.items[from..]) |*a| a.dead = st.inst;
+    const at = f.timeOf(st.inst);
+    for (f.atoms.items[from..]) |*a| a.dead = at;
     st.written = true;
 }
 
@@ -2905,7 +3024,6 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
         if (f.hit_all and before > group and f.dupOverlap(f.atoms.items[group..before], f.atoms.items[before..])) st.dup = true;
     }
 }
-
 /// The atoms of argument `v` at the callee's parameter entry `pe`, for the
 /// caller's result entry `e`: when both are below a type variable, the part
 /// of the argument at the same place below it.
@@ -3985,7 +4103,7 @@ fn readSelf(f: *Frame, v: Val, point: u32) Error!void {
     for (m.loc.layoutEntries(try m.loc.layoutOf(place)), 0..) |be, k| if (be.loc == self) try f.lists.append(f.gpa, @intCast(k));
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
 }
 
 /// Whether the value `v` of `inst` is an object that this instruction made

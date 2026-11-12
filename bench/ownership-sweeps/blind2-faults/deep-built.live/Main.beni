@@ -1,0 +1,35 @@
+import List
+import Node exposing (Program)
+import String
+
+
+type Lst
+    = Cons (List Int) Lst
+    | Nil
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+f : Lst → String
+f t =
+    case t of
+        Cons _ (Cons a (Cons b _)) →
+            w = List.set a 0 9
+            show w ++ "/" ++ show b
+
+        _ →
+            "-"
+
+
+lit : List Int → Lst
+lit q = Cons [ 0 ] (Cons q (Cons q Nil))
+
+
+go : Int → String
+go n = f (lit [ n, 2 ])
+
+
+main : Program
+main = Node.print (go 0)
