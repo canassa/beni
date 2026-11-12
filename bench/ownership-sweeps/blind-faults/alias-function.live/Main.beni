@@ -1,0 +1,21 @@
+-- A record alias's constructor as a function value: the elements of `bs` hold `xs`.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+type alias R =
+    zs : List Int
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    bs = List.map [ xs ] R
+    ys = List.set xs 0 9
+    Node.print "${ints ys} ${ints (List.concatMap bs .zs)}"

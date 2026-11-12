@@ -1,0 +1,19 @@
+-- The safe twin of early-push.live: `h 1` runs before the write.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    g n = List.length xs + n
+    s = h 1
+    ys = List.push xs 9
+    Node.print "${ints ys} ${String.fromInt s}"

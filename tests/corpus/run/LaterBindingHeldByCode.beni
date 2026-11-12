@@ -1,0 +1,71 @@
+-- Code that names a binding of its `let` written below it (language.md §7:
+-- a local function is hoisted, and code reads a value only when it runs).
+-- Each function edits a list that such code holds and then runs the code,
+-- so an in-place edit would change what the run reads. The checker must
+-- see that the code holds the list: research report 113 §4 and §6. Under
+-- `--sanitize-lists`, an accepted edit would trap at the later read.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+-- `h` calls `g`, which is bound after it and reads `xs`.
+call : Int → String
+call c =
+    xs = [ c, 2, 3 ]
+    h n = g n
+    g n = ints xs
+    ys = List.set xs 0 9
+    "${ints ys} ${h 1}"
+
+
+-- `h` and `g` call each other.
+mutual : Int → String
+mutual c =
+    xs = [ c, 2, 3 ]
+    h n = if n == 0 then "" else g (n - 1)
+    g n = if n == 0 then ints xs else h n
+    ys = List.set xs 0 9
+    "${ints ys} ${h 1}"
+
+
+bumpThen : List Int, (Int → String) → String
+bumpThen l k =
+    l2 = List.set l 0 9
+    "${ints l2} ${k 1}"
+
+
+-- One list at two places of one call: the argument, and `h` through `g`.
+argument : Int → String
+argument c =
+    xs = [ c, 2, 3 ]
+    h n = g n
+    g n = ints xs
+    bumpThen xs h
+
+
+-- A local function reads a value that is bound below it.
+laterValue : Int → String
+laterValue c =
+    g n = ints zs
+    zs = [ c, 2, 3 ]
+    ys = List.push zs 9
+    "${ints ys} ${g 1}"
+
+
+-- A value binding calls a later local function, which answers the list.
+answer : Int → String
+answer c =
+    xs = [ c, 2, 3 ]
+    a = g 1
+    g n = xs
+    ys = List.set xs 0 9
+    "${ints ys} ${ints a}"
+
+
+main : Program
+main = Node.print (String.join [ call 1, mutual 1, argument 1, laterValue 1, answer 1 ] "\n")

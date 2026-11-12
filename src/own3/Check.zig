@@ -92,8 +92,26 @@ pub const Mod = struct {
     /// Per local of the module: its value and its frame, while its declaration is walked.
     lv: []Frame.Val = &.{},
     lframe: []u32 = &.{},
-    /// Per local of the module: an instruction named it before a frame bound it.
-    early: []bool = &.{},
+    /// Per local of the module: the frame whose `let` binds it, set where
+    /// that frame enters the `let` (`Frame.enterLet`). A local that a frame
+    /// names before it is bound is the frame's own (a later binding of its
+    /// own `let`) or a capture (a later binding of an enclosing frame's).
+    lbinder: []u32 = &.{},
+    /// Per local of the module: the binding of a local function, or of a
+    /// value whose right side is a lambda (a code binding), or `none`.
+    lcode: []u32 = &.{},
+    /// Per local of the module: the cyclic group of code bindings that it is
+    /// in, an index of `groups`, or `none`.
+    lgroup: []u32 = &.{},
+    /// Per local of the module: scratch for `Frame.findGroups`, `none` outside it.
+    lindex: []u32 = &.{},
+    /// The cyclic groups of code bindings: their bindings, in written order.
+    groups: std.ArrayList([]const u32) = .empty,
+    /// Per `let` instruction: its code bindings and groups are known.
+    let_seen: std.DynamicBitSetUnmanaged = .{},
+    /// Per code instruction: a walk named the code while its rounds ran
+    /// (`Frame.memberValue`), so its contract so far was read.
+    recalled: []bool = &.{},
     /// Per instruction: the contract of the lambda or local function there.
     code_contract: []?*const Contract.Contract = &.{},
     /// Per instruction: the locals that the code there captured in its last
@@ -193,7 +211,8 @@ pub const Mod = struct {
 
     pub const CtorInfo = struct { ordinal: u32, arity: u32 };
 
-    pub fn ctorInfo(m: *const Mod, ref: u32) ?CtorInfo {
+    /// The module and the constructor that the reference `ref` names.
+    fn ctorAt(m: *const Mod, ref: u32) ?[2]u32 {
         const d = m.datas[ref];
         const at: [2]u32 = switch (m.tags[ref]) {
             .ctor => .{ m.in.module, d.lhs },
@@ -201,9 +220,49 @@ pub const Mod = struct {
             else => return null,
         };
         if (at[0] >= m.in.birs.len or at[1] >= m.in.birs[at[0]].ctors.len) return null;
+        return at;
+    }
+
+    pub fn ctorInfo(m: *const Mod, ref: u32) ?CtorInfo {
+        const at = m.ctorAt(ref) orelse return null;
         const owner = m.in.birs[at[0]];
         const c = owner.ctors[at[1]];
         return .{ .ordinal = at[1] - owner.decl(c.decl).ctors_start, .arity = @backingInt(c.args_end) - @backingInt(c.args_start) };
+    }
+
+    /// The step from a value that the constructor `ref` makes to its
+    /// argument `k`: the constructor's argument, or, for a record alias's
+    /// constructor, the field that its argument `k` is (the fields in the
+    /// order the alias writes them; backend.md §4: the constructor builds
+    /// the record). Null when neither describes it.
+    pub fn ctorArgStep(m: *Mod, ref: u32, place: PlaceId, k: u32) Allocator.Error!?Step {
+        const info = m.ctorInfo(ref) orelse return null;
+        if (k >= info.arity) return null;
+        switch (m.places.kind(place)) {
+            .ctor => return try m.ctorStep(info.ordinal, k),
+            .record => {
+                const at = m.ctorAt(ref).?;
+                const owner = m.in.birs[at[0]];
+                const body = owner.decl(owner.ctors[at[1]].decl).annotation.unwrap() orelse return null;
+                if (owner.instTag(body) != .type_record) return null;
+                const fields = owner.extraSlice(Bir.inlineRange(owner.instData(body)), Bir.Field);
+                if (fields.len != info.arity) return null;
+                return .{ .kind = .field, .payload = @intCast(m.adapter.rank(owner.symbol(fields[k].name))) };
+            },
+            else => return null,
+        }
+    }
+
+    /// The step from the scrutinee of a `try` to the value that it has when
+    /// it succeeds: the argument of `Ok` or `Just`, each its type's first
+    /// constructor (language.md §6.6). Null for another type.
+    pub fn trySuccess(m: *Mod, scrut: u32) Allocator.Error!?Step {
+        const at = try m.placeOfInst(scrut);
+        if (m.places.kind(at) != .ctor) return null;
+        const head = m.places.head(at);
+        const wk = m.in.types.well_known;
+        if (head != wk.result.int() and head != wk.maybe.int()) return null;
+        return try m.ctorStep(0, 0);
     }
 
     /// The declaration a reference runs, aliases followed.
@@ -619,7 +678,7 @@ pub const Mod = struct {
         const body = d.body.unwrap() orelse return null;
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_shared);
-        @memset(m.early[d.locals_start..d.locals_end], false);
+        @memset(m.lbinder[d.locals_start..d.locals_end], 0);
         var f = try Frame.init(m, null, di, false, none);
         const params = m.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
         const sig = try m.sigOf(di);
@@ -906,9 +965,24 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.lframe = try gpa.alloc(u32, bir.locals.len);
     defer gpa.free(m.lframe);
     @memset(m.lframe, 0);
-    m.early = try gpa.alloc(bool, bir.locals.len);
-    defer gpa.free(m.early);
-    @memset(m.early, false);
+    m.lbinder = try gpa.alloc(u32, bir.locals.len);
+    defer gpa.free(m.lbinder);
+    @memset(m.lbinder, 0);
+    m.lcode = try gpa.alloc(u32, bir.locals.len);
+    defer gpa.free(m.lcode);
+    @memset(m.lcode, Loc.none);
+    m.lgroup = try gpa.alloc(u32, bir.locals.len);
+    defer gpa.free(m.lgroup);
+    @memset(m.lgroup, Loc.none);
+    m.lindex = try gpa.alloc(u32, bir.locals.len);
+    defer gpa.free(m.lindex);
+    @memset(m.lindex, Loc.none);
+    defer m.groups.deinit(gpa);
+    m.let_seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
+    defer m.let_seen.deinit(gpa);
+    m.recalled = try gpa.alloc(bool, bir.insts.len);
+    defer gpa.free(m.recalled);
+    @memset(m.recalled, false);
     m.code_caps = try gpa.alloc([]const u32, bir.insts.len);
     defer gpa.free(m.code_caps);
     @memset(m.code_caps, &.{});

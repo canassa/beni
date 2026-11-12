@@ -1,0 +1,30 @@
+-- As alias-twice.live, through `?`.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+type alias P =
+    a : List Int
+    b : List Int
+
+
+bump : P → P
+bump p = { a = List.push p.a 1, b = List.push p.b 2 }
+
+
+go : List Int → Result String String
+go xs =
+    r = Ok { a = xs, b = xs }
+    p = r?
+    q = bump p
+    Ok "${ints q.a} ${ints q.b}"
+
+
+main : Program
+main = Node.print (Result.withDefault (go [ 1, 2, 3 ]) "")

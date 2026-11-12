@@ -1,0 +1,25 @@
+-- A closure goes into a list before the function that it names is bound.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    fs = [ h ]
+    g n = ints xs
+    ys = List.set xs 0 9
+    k =
+        case fs of
+            [ q, …_ ] →
+                q 1
+            _ →
+                ""
+    Node.print "${ints ys} ${k}"

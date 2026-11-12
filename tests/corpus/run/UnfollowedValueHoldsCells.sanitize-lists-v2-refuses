@@ -1,0 +1,2 @@
+# v2 refuses the edit: the elements of `bs` hold `xs`, and they are read again.
+24:10 list_still_used List.set

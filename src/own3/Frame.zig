@@ -9,7 +9,11 @@
 //! - `built`: a tuple, a record or a constructor application of this frame;
 //! - `join`: the value of one of several branches;
 //! - `closure`, `fnref`: a function value whose code is known;
-//! - `smear`: every cell of some values, at every location.
+//! - `smear`: every cell of some values, at every location;
+//! - `unknown`: a value that the walk cannot follow, with no claim: it can
+//!   hold every cell of some values, at every location;
+//! - `later`: in a closure, a local of this frame that is bound after the
+//!   closure is made (`capVal` reads it, and nothing else does).
 //!
 //! A **root** is a parameter, a captured local, a value that the frame made
 //! (a list literal, a call's result) or the answer of a function parameter.
@@ -70,7 +74,7 @@ pub const Val = u32;
 pub const v_none: Val = 0;
 pub const v_shared: Val = 1;
 
-const Tag = enum(u8) { none, shared, ref, built, join, closure, smear, fnref };
+const Tag = enum(u8) { none, shared, ref, built, join, closure, smear, fnref, unknown, later };
 const Node = struct { tag: Tag, place: PlaceId = @fromBackingInt(0), a: u32 = 0, b: u32 = 0 };
 const Kid = struct { step: u32, val: Val };
 /// `via`: the root that the frame made through which this cell was read
@@ -277,8 +281,6 @@ code_inst: u32,
 own_params: u32 = 0,
 depth: u32 = 0,
 failed: bool = false,
-/// A local function's frame: a call of the function itself was met.
-self_called: bool = false,
 /// An answer of the body can be an object that was there before (`Contract.old_result`).
 tail_old: bool = false,
 
@@ -608,18 +610,42 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
         },
         .closure => {
             const c = f.codes.items[n.a];
-            for (0..c.ncaps) |ki| _ = try f.allLeaves(f.lists.items[c.caps + ki], out);
+            for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
             return false;
         },
         .smear => {
             for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
             return false;
         },
+        .unknown => {
+            // No claim, and each cell of the values that it can be made of.
+            try out.append(f.gpa, shared_atom);
+            for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
+            return false;
+        },
+        .later => unreachable, // read through `capVal` only
     }
 }
 
 fn whole(tag: Tag) bool {
-    return tag == .closure or tag == .smear;
+    return switch (tag) {
+        .closure, .smear, .unknown => true,
+        .none, .shared, .ref, .built, .join, .fnref => false,
+        .later => unreachable, // read through `capVal` only
+    };
+}
+
+/// A value that the walk cannot follow, made of the values `vs`: no claim,
+/// and each cell of each of them at each location (research report 112
+/// §2.5, the default answer). It is never "holds nothing": a missing fact
+/// is the default (§2.2).
+fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
+    if (try f.layoutLen(place) == 0) return v_none;
+    const start: u32 = @intCast(f.lists.items.len);
+    for (vs) |v| if (v != v_none and v != v_shared) try f.lists.append(f.gpa, v);
+    const count: u32 = @intCast(f.lists.items.len - start);
+    if (count == 0) return v_shared;
+    return f.node(.{ .tag = .unknown, .place = place, .a = start, .b = count });
 }
 
 /// `leaves` of `v` seen at entry `e` of `place`'s layout, which can be another reading of `v`'s type.
@@ -631,8 +657,9 @@ fn leavesAs(f: *Frame, v: Val, place: PlaceId, e: u32, out: *std.ArrayList(Atom)
             try out.append(f.gpa, shared_atom);
             return false;
         },
-        .closure, .smear => return f.leaves(v, 0, out),
-        else => {},
+        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .ref, .built, .join => {},
+        .later => unreachable, // read through `capVal` only
     }
     if (n.place == place) return f.leaves(v, e, out);
     const view = try f.m.loc.layoutOf(place);
@@ -654,8 +681,9 @@ fn allLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
             try out.append(f.gpa, shared_atom);
             return false;
         },
-        .closure, .smear => return f.leaves(v, 0, out),
-        else => {},
+        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .ref, .built, .join => {},
+        .later => unreachable, // read through `capVal` only
     }
     var dup = false;
     const len = try f.layoutLen(n.place);
@@ -679,15 +707,16 @@ fn reach(f: *Frame, v: Val, w: []const Atom) Error!bool {
             for (0..n.b) |ki| if (f.armLive(n, ki) and try f.reach(f.lists.items[n.a + 2 * ki], w)) return true;
             return false;
         },
-        .smear => {
+        .smear, .unknown => {
             for (0..n.b) |ki| if (try f.reach(f.lists.items[n.a + ki], w)) return true;
             return false;
         },
         .closure => {
             const c = f.codes.items[n.a];
-            for (0..c.ncaps) |ki| if (try f.reach(f.lists.items[c.caps + ki], w)) return true;
+            for (0..c.ncaps) |ki| if (try f.reach(try f.capVal(c, ki), w)) return true;
             return false;
         },
+        .later => unreachable, // read through `capVal` only
     }
 }
 
@@ -747,30 +776,33 @@ fn placeOfVal(f: *Frame, v: Val) ?PlaceId {
     const n = f.nodes.items[v];
     return switch (n.tag) {
         .none, .shared, .fnref => null,
-        else => n.place,
+        .ref, .built, .join, .closure, .smear, .unknown => n.place,
+        .later => unreachable, // read through `capVal` only
     };
 }
 
-/// The part of `v` that step `s` reaches.
+/// The part of `v` that step `s` reaches. A part that the walk cannot name
+/// is `unknown`: it can hold each cell of `v`.
 fn project(f: *Frame, v: Val, s: Step) Error!Val {
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none => return v_none,
+        // A function has no part; a value with no claim has parts with none.
         .shared, .closure, .fnref => return v_shared,
         .ref => {
-            const np = (try f.m.loc.pathExtend(n.b, s)) orelse return v_shared;
+            const np = (try f.m.loc.pathExtend(n.b, s)) orelse return f.unknownOf(n.place, &.{v});
             const child = f.m.loc.paths.items[np].place;
             if (try f.layoutLen(child) == 0) return v_none;
             return f.refVal(n.a, np);
         },
         .built => {
             for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
-            // Another constructor's argument holds nothing here; any other
-            // step that the value does not name has no claim.
+            // Another constructor's argument holds nothing here, and so does
+            // a field that a record update left out: its part holds no object.
             return if (s.kind == .ctor_arg) v_none else v_shared;
         },
         .join => {
-            const pr = (try f.m.loc.proj(n.place, s)) orelse return v_shared;
+            const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
             var tmp: std.ArrayList(Val) = .empty;
             defer tmp.deinit(f.gpa);
             var ctxs: std.ArrayList(u32) = .empty;
@@ -781,11 +813,12 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             }
             return f.joinVal(pr.child, tmp.items, ctxs.items);
         },
-        .smear => {
-            const pr = (try f.m.loc.proj(n.place, s)) orelse return v_shared;
+        .smear, .unknown => {
+            const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
             if (try f.layoutLen(pr.child) == 0) return v_none;
-            return f.node(.{ .tag = .smear, .place = pr.child, .a = n.a, .b = n.b });
+            return f.node(.{ .tag = n.tag, .place = pr.child, .a = n.a, .b = n.b });
         },
+        .later => unreachable, // read through `capVal` only
     }
 }
 
@@ -1170,7 +1203,8 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
             if (args.len == 0) return;
             const info = m.ctorInfo(data.lhs);
             for (args, 0..) |p, k| {
-                const part = if (info) |ci| try f.project(v, try m.ctorStep(ci.ordinal, @intCast(k))) else v_shared;
+                // A constructor that the walk has no row for: its argument can be any part of `v`.
+                const part = if (info) |ci| try f.project(v, try m.ctorStep(ci.ordinal, @intCast(k))) else try f.unknownOf(try m.placeOfInst(p.int()), &.{v});
                 try f.bindPattern(p.int(), if (v == v_none) v_none else part);
             }
         },
@@ -1180,7 +1214,7 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
         },
         .pat_record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| {
             const name = m.bir.locals[f.d.locals_start + local].name;
-            const part = if (name == .none) v_shared else try f.project(v, .{ .kind = .field, .payload = @intCast(m.fieldRank(name)) });
+            const part = if (name == .none) try f.unknownOf(try m.placeOfLocal(f.d, local), &.{v}) else try f.project(v, .{ .kind = .field, .payload = @intCast(m.fieldRank(name)) });
             f.bindLocal(local, part);
         },
         else => {},
@@ -1220,7 +1254,9 @@ fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     const data = m.datas[inst];
     switch (m.tags[inst]) {
         .let => {
-            for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index)) |b| try f.binding(b.int());
+            const bindings = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index);
+            try f.enterLet(inst, bindings);
+            for (bindings) |b| try f.binding(b.int());
             return f.eval(data.rhs, mode, tail);
         },
         .case => return f.caseOf(inst, mode, tail),
@@ -1264,7 +1300,9 @@ fn mention(f: *Frame, v: Val, inst: u32) Error!void {
     switch (f.nodes.items[v].tag) {
         .closure, .fnref => {},
         .ref => if (!f.isFnRoot(f.ownFnRoot(v))) return,
-        else => return,
+        // A function in a value went to `top` where the value was made.
+        .none, .shared, .built, .join, .smear, .unknown => return,
+        .later => unreachable, // read through `capVal` only
     }
     try f.flowTop(v, inst);
 }
@@ -1293,11 +1331,18 @@ fn writesOwn(c: *const Contract, own: u32) bool {
     return false;
 }
 
-/// A local of an enclosing frame: a root of this one.
+/// A local of an enclosing frame: a root of this one. It is one also when
+/// the enclosing frame binds it after this code is made (a later local
+/// function, or a value that a later binding gives): the contract then says
+/// what the code does with it, and the frame that binds it reads that
+/// contract with the value it binds (`capSlot`).
 fn capture(f: *Frame, local: u32) Error!Val {
     const m = f.m;
-    // A local that no frame has bound yet (a later local function): nothing is known of it.
-    if (m.lframe[f.d.locals_start + local] == 0 or !f.is_lambda) return v_shared;
+    // A declaration's own frame binds each of its locals: it captures none.
+    if (!f.is_lambda or m.lbinder[f.d.locals_start + local] == f.id) {
+        f.failed = true;
+        return v_shared;
+    }
     for (f.cap_locals.items, 0..) |l, k| if (l == local) return f.rootVal(f.params.items[f.own_params + k]);
     const place = try m.placeOfLocal(f.d, local);
     // A local of no object needs no root.
@@ -1318,14 +1363,25 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .ctor, .ext_ctor => return f.ctorValue(inst),
         .local => {
             const l = f.d.locals_start + data.lhs;
-            // A local function that names itself, while it is walked: the
-            // known function, with its contract so far.
-            if (m.lframe[l] == none) return f.selfValue(data.lhs);
-            // A local that no frame has bound yet (a later local function):
-            // it is used here as a value that nothing is known of.
-            if (m.lframe[l] == 0) m.early[l] = true;
-            if (m.lframe[l] != f.id) return f.capture(data.lhs);
-            return m.lv[l];
+            // A code binding of a group whose rounds run (the code itself, or
+            // another code of its cycle): the known function, with its
+            // contract so far.
+            if (m.lframe[l] == none) return f.memberValue(data.lhs);
+            if (m.lframe[l] == f.id) return m.lv[l];
+            if (m.lbinder[l] == f.id) {
+                // A later binding of this frame's own `let`. A local function
+                // is hoisted, and nothing runs where code is bound, so it is
+                // made here: what it reads is bound by now (language.md §7,
+                // `let_forward_reference`).
+                if (m.lframe[l] == 0 and m.lcode[l] != none) {
+                    try f.makeCode(data.lhs);
+                    return m.lv[l];
+                }
+                // A value read before it is bound: lowering refuses that.
+                f.failed = true;
+                return v_shared;
+            }
+            return f.capture(data.lhs);
         },
         .field_access => {
             const base = try f.eval(data.lhs, .callee, false);
@@ -1406,7 +1462,11 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // The failure leaves the function with the scrutinee's other arm.
             try f.readAll(v, inst);
             try f.returns.append(f.gpa, v);
-            return f.smearVal(try m.placeOfInst(inst), &.{v});
+            // The success: the argument of `Ok` or `Just`, a part of the
+            // scrutinee. A `smear` of it would claim its cells and lose that
+            // one cell can be at two of its locations.
+            if (try m.trySuccess(data.lhs)) |s| return f.project(v, s);
+            return f.unknownOf(try m.placeOfInst(inst), &.{v});
         },
         .call => return f.call(inst, mode),
         .method_call => return f.methodCall(inst),
@@ -1435,10 +1495,15 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                         for (m.loc.layoutEntries(lc.layouts[lc.arity])) |e| if (e.kind != .@"opaque") break :blk true;
                         break :blk false;
                     },
-                    else => false,
+                    .none, .shared, .ref, .join, .smear, .fnref, .unknown => false,
+                    .later => unreachable, // read through `capVal` only
                 };
                 if (kept) try f.escape(v, inst) else try f.readAll(v, inst);
             }
+            // The markup's value holds no value of a hole: the entry rule
+            // says that the runtime reads them where it renders (above).
+            // That is a rule of the platforms, not a fact that the walk
+            // proves (research report 113 §6.4).
             return f.unknownResult(inst);
         },
         else => return v_shared,
@@ -1446,17 +1511,21 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
 }
 
 /// A constructor used as a function value: its contract says that the
-/// result's argument `k` is parameter `k`, location for location.
+/// result's argument `k` is parameter `k`, location for location (for a
+/// record alias's constructor, the field that argument `k` is). A
+/// constructor that the walk has no row for is a function in the default
+/// state (`v_shared`): it asks nothing, and its answer can hold each value
+/// in sight (research report 112 §2.5). It is never "no function".
 fn ctorValue(f: *Frame, inst: u32) Error!Val {
     const m = f.m;
-    const info = m.ctorInfo(inst) orelse return v_none;
-    if (info.arity == 0) return v_none;
     const ty = m.typeOfInst(inst);
+    // A constructor with no argument is a value of no object, not a function.
     const ft = m.fnType(ty) orelse return v_none;
+    const info = m.ctorInfo(inst) orelse return v_shared;
     const pvars = m.in.store.vars(ft.params);
-    if (pvars.len != info.arity) return v_none;
+    if (pvars.len != info.arity) return v_shared;
     const rplace = try m.placeOf(ft.result.toOptional());
-    if (m.places.kind(rplace) != .ctor or try f.layoutLen(rplace) == 0) return v_none;
+    if (try f.layoutLen(rplace) == 0) return v_none;
     if (m.code_contract[inst] == null) {
         const params = try f.gpa.alloc(PlaceId, pvars.len);
         for (params, pvars) |*p, v| p.* = try m.placeOf(v.toOptional());
@@ -1464,7 +1533,8 @@ fn ctorValue(f: *Frame, inst: u32) Error!Val {
         const lists = try f.gpa.alloc(std.ArrayList(Src), c.res.len);
         for (lists) |*l| l.* = .empty;
         for (0..info.arity) |k| {
-            const pr = (try m.loc.proj(rplace, try m.ctorStep(info.ordinal, @intCast(k)))) orelse continue;
+            const step = (try m.ctorArgStep(inst, rplace, @intCast(k))) orelse return v_shared;
+            const pr = (try m.loc.proj(rplace, step)) orelse return v_shared;
             const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
             const pes = m.loc.layoutEntries(c.layouts[k]);
             for (child, 0..) |ce, j| {
@@ -1616,17 +1686,12 @@ fn binding(f: *Frame, b: u32) Error!void {
     switch (m.tags[b]) {
         .let_def => {
             const def = m.bir.extraData(@fromBackingInt(data.lhs), Bir.LetDef);
-            if (@backingInt(def.params_end) != @backingInt(def.params_start)) {
-                // A local function: its own frame; the local names it inside too.
-                const params = m.bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Inst.Index);
-                const v = try f.codeValue(b, params, data.rhs, m.typeOfLocal(f.d, def.local), def.local);
-                f.bindLocal(def.local, v);
-                try f.usedEarly(def.local, v, b);
-                return;
-            }
+            const l = f.d.locals_start + def.local;
+            // Code that a binding above named is made already (`makeCode`).
+            if (m.lframe[l] == f.id) return;
+            if (m.lcode[l] != none) return f.makeCode(def.local);
             const v = try f.eval(data.rhs, .bind, false);
             f.bindLocal(def.local, v);
-            try f.usedEarly(def.local, v, b);
         },
         .let_pattern => {
             const v = try f.ev(data.rhs);
@@ -1638,14 +1703,245 @@ fn binding(f: *Frame, b: u32) Error!void {
     }
 }
 
-/// The local `local` was named before it was bound (an earlier local
-/// function calls it). There it was a value that nothing is known of, so the
-/// function that it is now flows to the `top` use.
-fn usedEarly(f: *Frame, local: u32, v: Val, inst: u32) Error!void {
-    if (!f.m.early[f.d.locals_start + local]) return;
-    // The arms of a `case` are mentions already.
-    const n = f.nodes.items[v];
-    if (n.tag == .closure or n.tag == .fnref) try f.flowTop(v, inst);
+// ---- the order of a `let` ----------------------------------------------------------------
+//
+// A `let` evaluates its value bindings in written order, and a local
+// function is hoisted (language.md §7, backend.md §4). So code can name a
+// binding that is written below it: a later local function, or a value
+// that it reads only when it runs. What that code holds is then not bound
+// where the code is made. Nothing reads it there either: lowering refuses a
+// value binding that reads a later value, directly or through code
+// (`let_forward_reference`). So:
+//
+// - In the code's own frame, the later binding is a capture like any other
+//   (`capture`), and the contract says what the code does with it.
+// - In the frame that binds it, the closure keeps the binding as a `later`
+//   slot (`capSlot`), which is the bound value from where it is bound on
+//   (`capVal`). A later local function that is named before it is bound is
+//   made where it is first needed (`makeCode`): its own captures are bound
+//   there, or are `later` slots in their turn.
+// - Code that names other code in a cycle (two local functions that call
+//   each other) is one group, walked as a recursive group of declarations
+//   is: each member names the others as known functions with their
+//   contracts so far, and no member captures another (`solveCodes`). So a
+//   closure never holds itself through another, and each walk over values
+//   ends.
+//
+// A value that the walk cannot follow is never "holds nothing" (research
+// report 112 §2.2, §2.6; report 113 §6).
+
+/// Whether binding `b` of a `let` binds code: a local function, or a value
+/// whose right side is a lambda. Nothing runs where either is bound.
+fn isCodeBinding(m: *Mod, b: u32) bool {
+    if (m.tags[b] != .let_def) return false;
+    const def = m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef);
+    if (@backingInt(def.params_end) != @backingInt(def.params_start)) return true;
+    return m.tags[m.datas[b].rhs] == .lambda;
+}
+
+/// The frame enters a `let`: each local that it binds is this frame's, and
+/// unbound until its binding runs.
+fn enterLet(f: *Frame, let_inst: u32, bindings: []const Inst.Index) Error!void {
+    const m = f.m;
+    for (bindings) |bi| {
+        const b = bi.int();
+        switch (m.tags[b]) {
+            .let_def => f.unbind(m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef).local),
+            .let_pattern => f.unbindPattern(m.datas[b].lhs),
+            else => {},
+        }
+    }
+    if (!m.let_seen.isSet(let_inst)) {
+        m.let_seen.set(let_inst);
+        try f.findGroups(bindings);
+    }
+}
+
+fn unbind(f: *Frame, local: u32) void {
+    const l = f.d.locals_start + local;
+    f.m.lframe[l] = 0;
+    f.m.lbinder[l] = f.id;
+}
+
+fn unbindPattern(f: *Frame, pat: u32) void {
+    const m = f.m;
+    const data = m.datas[pat];
+    switch (m.tags[pat]) {
+        .pat_var => f.unbind(data.lhs),
+        .pat_as => {
+            f.unbind(data.rhs);
+            f.unbindPattern(data.lhs);
+        },
+        .pat_tuple, .pat_list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| f.unbindPattern(p.int()),
+        .pat_spread => f.unbindPattern(data.lhs),
+        .pat_ctor => for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |p| f.unbindPattern(p.int()),
+        .pat_record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| f.unbind(local),
+        else => {},
+    }
+}
+
+/// The code bindings of one `let`, and its cyclic groups: the code
+/// bindings that name each other in a cycle (strongly connected, by the
+/// references in their instructions). A binding's instructions are one run,
+/// after the binding's own instruction and after the binding before it
+/// (`Lower.checkLetOrder` reads the same runs).
+fn findGroups(f: *Frame, bindings: []const Inst.Index) Error!void {
+    const m = f.m;
+    var codes: std.ArrayList([3]u32) = .empty; // binding, first instruction, last instruction
+    defer codes.deinit(f.gpa);
+    var prev: u32 = 0;
+    for (bindings, 0..) |bi, k| {
+        const b = bi.int();
+        var last = b;
+        switch (m.tags[b]) {
+            .let_def => {
+                last = @max(last, m.datas[b].rhs);
+                const def = m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef);
+                for (m.bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Inst.Index)) |p| last = @max(last, p.int());
+            },
+            .let_pattern => last = @max(last, @max(m.datas[b].lhs, m.datas[b].rhs)),
+            .let_stmt => last = @max(last, m.datas[b].rhs),
+            else => {},
+        }
+        const first = (if (k == 0) b else @max(prev, b)) + 1;
+        prev = @max(prev, last);
+        if (!isCodeBinding(m, b)) continue;
+        const def = m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef);
+        m.lcode[f.d.locals_start + def.local] = b;
+        try codes.append(f.gpa, .{ b, first, last });
+    }
+    if (codes.items.len < 2) return;
+    // The edges: which code bindings each one names.
+    const n = codes.items.len;
+    // Each code binding's index among them, in a column by local, cleared at the end.
+    for (codes.items, 0..) |c, i| {
+        const def = m.bir.extraData(@fromBackingInt(m.datas[c[0]].lhs), Bir.LetDef);
+        m.lindex[f.d.locals_start + def.local] = @intCast(i);
+    }
+    defer for (codes.items) |c| {
+        const def = m.bir.extraData(@fromBackingInt(m.datas[c[0]].lhs), Bir.LetDef);
+        m.lindex[f.d.locals_start + def.local] = none;
+    };
+    var edges: std.ArrayList(std.ArrayList(u32)) = .empty;
+    defer {
+        for (edges.items) |*e| e.deinit(f.gpa);
+        edges.deinit(f.gpa);
+    }
+    for (codes.items) |c| {
+        var out: std.ArrayList(u32) = .empty;
+        var i = c[1];
+        while (i <= c[2]) : (i += 1) {
+            if (m.tags[i] != .local) continue;
+            const j = m.lindex[f.d.locals_start + m.datas[i].lhs];
+            if (j != none) try out.append(f.gpa, j);
+        }
+        try edges.append(f.gpa, out);
+    }
+    // Tarjan's strongly connected components.
+    var t: Tarjan = .{ .gpa = f.gpa, .edges = edges.items };
+    defer t.deinit();
+    try t.init(n);
+    for (0..n) |v| if (t.index[v] == none) try t.visit(@intCast(v));
+    for (t.comps.items) |comp| {
+        if (comp.len < 2) continue;
+        const members = try m.arena.alloc(u32, comp.len);
+        for (members, comp) |*mb, ci| mb.* = codes.items[ci][0];
+        std.mem.sortUnstable(u32, members, {}, std.sort.asc(u32));
+        const gid: u32 = @intCast(m.groups.items.len);
+        try m.groups.append(m.gpa, members);
+        for (members) |b| {
+            const def = m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef);
+            m.lgroup[f.d.locals_start + def.local] = gid;
+        }
+    }
+}
+
+const Tarjan = struct {
+    gpa: Allocator,
+    edges: []const std.ArrayList(u32),
+    index: []u32 = &.{},
+    low: []u32 = &.{},
+    on: []bool = &.{},
+    stack: std.ArrayList(u32) = .empty,
+    comps: std.ArrayList([]const u32) = .empty,
+    next: u32 = 0,
+
+    fn init(t: *Tarjan, n: usize) Error!void {
+        t.index = try t.gpa.alloc(u32, n);
+        @memset(t.index, none);
+        t.low = try t.gpa.alloc(u32, n);
+        t.on = try t.gpa.alloc(bool, n);
+        @memset(t.on, false);
+    }
+
+    fn deinit(t: *Tarjan) void {
+        t.gpa.free(t.index);
+        t.gpa.free(t.low);
+        t.gpa.free(t.on);
+        t.stack.deinit(t.gpa);
+        for (t.comps.items) |c| t.gpa.free(c);
+        t.comps.deinit(t.gpa);
+    }
+
+    fn visit(t: *Tarjan, v: u32) Error!void {
+        t.index[v] = t.next;
+        t.low[v] = t.next;
+        t.next += 1;
+        try t.stack.append(t.gpa, v);
+        t.on[v] = true;
+        for (t.edges[v].items) |w| {
+            if (t.index[w] == none) {
+                try t.visit(w);
+                t.low[v] = @min(t.low[v], t.low[w]);
+            } else if (t.on[w]) t.low[v] = @min(t.low[v], t.index[w]);
+        }
+        if (t.low[v] != t.index[v]) return;
+        var comp: std.ArrayList(u32) = .empty;
+        while (true) {
+            const w = t.stack.pop().?;
+            t.on[w] = false;
+            try comp.append(t.gpa, w);
+            if (w == v) break;
+        }
+        try t.comps.append(t.gpa, try comp.toOwnedSlice(t.gpa));
+    }
+};
+
+/// One code to walk: a local function, a lambda bound to a local, or a lambda.
+const Member = struct {
+    inst: u32,
+    params: []const Inst.Index,
+    body: u32,
+    ty: Var.Optional,
+    /// The local that the code is bound to, or `none`.
+    local: u32 = none,
+};
+
+fn memberOf(f: *Frame, b: u32) Member {
+    const m = f.m;
+    const data = m.datas[b];
+    const def = m.bir.extraData(@fromBackingInt(data.lhs), Bir.LetDef);
+    if (@backingInt(def.params_end) != @backingInt(def.params_start)) {
+        const params = m.bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Inst.Index);
+        return .{ .inst = b, .params = params, .body = data.rhs, .ty = m.typeOfLocal(f.d, def.local), .local = def.local };
+    }
+    const lam = data.rhs;
+    const params = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[lam].lhs)), Inst.Index);
+    return .{ .inst = lam, .params = params, .body = m.datas[lam].rhs, .ty = m.typeOfInst(lam), .local = def.local };
+}
+
+/// Make the code bound to `local` in this frame, with the rest of its
+/// group, and bind it.
+fn makeCode(f: *Frame, local: u32) Error!void {
+    const m = f.m;
+    const l = f.d.locals_start + local;
+    if (m.lframe[l] == f.id) return;
+    const one = [1]u32{m.lcode[l]};
+    const bs: []const u32 = if (m.lgroup[l] != none) m.groups.items[m.lgroup[l]] else &one;
+    const ms = try f.gpa.alloc(Member, bs.len);
+    for (ms, bs) |*mb, b| mb.* = f.memberOf(b);
+    const vals = try f.solveCodes(ms);
+    for (ms, vals) |mb, v| f.bindLocal(mb.local, v);
 }
 
 fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
@@ -1677,69 +1973,130 @@ fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
 
 /// Walk the code at `inst` in its own frame, to its contract; the value is a closure over its captures.
 fn codeValue(f: *Frame, inst: u32, params: []const Inst.Index, body: u32, ty: Var.Optional, self_local: u32) Error!Val {
+    const one = [1]Member{.{ .inst = inst, .params = params, .body = body, .ty = ty, .local = self_local }};
+    const vals = try f.solveCodes(&one);
+    return vals[0];
+}
+
+/// Walk the codes `ms`, each in its own frame, to their contracts, and make
+/// a closure of each. A code bound to a local can name itself, and the
+/// members of a group name each other: each such name is the known function
+/// with its contract so far (`memberValue`). The rounds start from the
+/// contract with no flag and no source and run until no contract changes,
+/// as a group of declarations does.
+fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
     const m = f.m;
-    const fnt = m.fnType(ty);
-    var rounds: u32 = 0;
-    var cap_locals: []const u32 = &.{};
-    const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
-    if (self_local != none and m.code_contract[inst] == null and pvars.len == params.len) {
-        // The function can name itself: its rounds start from the contract
-        // with no flag and no source, as a group of declarations does.
-        const places = try f.gpa.alloc(PlaceId, params.len);
-        const tys = try f.gpa.alloc(Var.Optional, params.len);
+    const caps = try f.gpa.alloc([]const u32, ms.len);
+    @memset(caps, &.{});
+    const vals = try f.gpa.alloc(Val, ms.len);
+    @memset(vals, v_shared);
+    for (ms) |mb| {
+        const fnt = m.fnType(mb.ty);
+        const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
+        if (mb.local == none or m.code_contract[mb.inst] != null or pvars.len != mb.params.len) continue;
+        const places = try f.gpa.alloc(PlaceId, mb.params.len);
+        const tys = try f.gpa.alloc(Var.Optional, mb.params.len);
         for (places, tys, pvars) |*p, *t, pv| {
             p.* = try m.placeOf(pv.toOptional());
             t.* = pv.toOptional();
         }
-        m.code_contract[inst] = try m.bottomContract(places, tys, try m.placeOf(fnt.?.result.toOptional()));
-        m.code_caps[inst] = &.{};
+        m.code_contract[mb.inst] = try m.bottomContract(places, tys, try m.placeOf(fnt.?.result.toOptional()));
+        m.code_caps[mb.inst] = &.{};
     }
+    const mark = m.lines.items.len;
+    var rounds: u32 = 0;
     while (true) : (rounds += 1) {
-        const mark = m.lines.items.len;
-        var child = try Frame.init(m, f, f.decl, true, inst);
-        child.own_params = @intCast(params.len);
-        if (child.depth > 200) {
-            f.failed = true;
-            return v_shared;
+        // The codes are in work: a name of one is the code with its contract so far.
+        for (ms) |mb| if (mb.local != none) {
+            m.lv[f.d.locals_start + mb.local] = v_none;
+            m.lframe[f.d.locals_start + mb.local] = none;
+        };
+        for (ms) |mb| m.recalled[mb.inst] = false;
+        var changed = false;
+        for (ms, 0..) |mb, i| {
+            const fnt = m.fnType(mb.ty);
+            const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
+            var child = try Frame.init(m, f, f.decl, true, mb.inst);
+            child.own_params = @intCast(mb.params.len);
+            if (child.depth > 200) {
+                f.failed = true;
+                return vals;
+            }
+            for (mb.params, 0..) |p, k| {
+                const place = if (k < pvars.len) try m.placeOf(pvars[k].toOptional()) else m.var_place;
+                try child.addParam(place, p.int(), if (k < pvars.len) pvars[k].toOptional() else .none);
+            }
+            try child.walkBody(mb.body);
+            const rplace = if (fnt) |ft| try m.placeOf(ft.result.toOptional()) else m.var_place;
+            const c = try child.finish(rplace);
+            if (child.failed) f.failed = true;
+            caps[i] = try f.gpa.dupe(u32, child.cap_locals.items);
+            const old = m.code_contract[mb.inst];
+            const joined = if (old) |o| try CMod.join(m.arena, o, c) else c;
+            if (if (old) |o| !CMod.eql(o, joined) else true) changed = true;
+            m.code_contract[mb.inst] = joined;
+            m.code_caps[mb.inst] = try m.arena.dupe(u32, caps[i]);
         }
-        if (self_local != none) {
-            // The function names itself: a reference is the function with its contract so far.
-            m.lv[f.d.locals_start + self_local] = v_none;
-            m.lframe[f.d.locals_start + self_local] = none;
-        }
-        for (params, 0..) |p, k| {
-            const place = if (k < pvars.len) try m.placeOf(pvars[k].toOptional()) else m.var_place;
-            try child.addParam(place, p.int(), if (k < pvars.len) pvars[k].toOptional() else .none);
-        }
-        try child.walkBody(body);
-        const rplace = if (fnt) |ft| try m.placeOf(ft.result.toOptional()) else m.var_place;
-        const c = try child.finish(rplace);
-        if (child.failed) f.failed = true;
-        cap_locals = try f.gpa.dupe(u32, child.cap_locals.items);
-        const old = m.code_contract[inst];
-        const joined = if (old) |o| try CMod.join(m.arena, o, c) else c;
-        const changed = if (old) |o| !CMod.eql(o, joined) else true;
-        m.code_contract[inst] = joined;
-        m.code_caps[inst] = try m.arena.dupe(u32, cap_locals);
-        // A local function that calls itself is walked again until its contract holds.
-        if (!changed or !child.self_called or rounds > 16) {
+        // A code that names itself or a member of its group is walked again until the contracts hold.
+        var again = false;
+        for (ms) |mb| if (m.recalled[mb.inst]) {
+            again = true;
+        };
+        if (!changed or !again or rounds > 16) {
             if (rounds > 16) f.failed = true;
             break;
         }
         m.lines.shrinkRetainingCapacity(mark);
     }
-    const c = m.code_contract[inst].?;
-    // The captured locals, as this frame has them: the closure holds them.
+    for (ms, 0..) |mb, i| vals[i] = try f.closureOf(mb, caps[i]);
+    return vals;
+}
+
+/// The closure of the walked code `mb`: its contract, and the captured
+/// locals as this frame has them.
+fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
+    const m = f.m;
+    const c = m.code_contract[mb.inst].?;
     var tmp: std.ArrayList(Val) = .empty;
     defer tmp.deinit(f.gpa);
-    for (cap_locals) |l| {
-        const abs = f.d.locals_start + l;
-        try tmp.append(f.gpa, if (m.lframe[abs] != f.id) try f.capture(l) else m.lv[abs]);
-    }
+    for (cap_locals) |l| try tmp.append(f.gpa, try f.capSlot(l));
     const start: u32 = @intCast(f.lists.items.len);
     try f.lists.appendSlice(f.gpa, tmp.items);
-    try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(cap_locals.len), .inst = inst, .own_params = @intCast(params.len) });
-    return f.node(.{ .tag = .closure, .place = try m.placeOf(ty), .a = @intCast(f.codes.items.len - 1) });
+    try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(cap_locals.len), .inst = mb.inst, .own_params = @intCast(mb.params.len) });
+    return f.node(.{ .tag = .closure, .place = try m.placeOf(mb.ty), .a = @intCast(f.codes.items.len - 1) });
+}
+
+/// What a closure that this frame makes holds of the captured local `local`:
+/// its value; a capture of this frame; or, for a binding of this frame that
+/// is not bound yet (code in work, or a later binding of its `let`), a
+/// `later` slot that `capVal` reads as the value bound there.
+fn capSlot(f: *Frame, local: u32) Error!Val {
+    const m = f.m;
+    const l = f.d.locals_start + local;
+    if (m.lframe[l] == f.id) return m.lv[l];
+    if (m.lbinder[l] == f.id) return f.node(.{ .tag = .later, .place = try m.placeOfLocal(f.d, local), .a = local });
+    return f.capture(local);
+}
+
+/// Captured value `k` of the known function `code`. A `later` slot is the
+/// value that the frame binds there; a later code binding that is needed
+/// before it is bound is made now (what it reads is bound, by lowering's
+/// order rule). A slot that is not bound where it is read is a value that
+/// lowering would refuse there: the walk gives up.
+fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
+    const m = f.m;
+    const i = code.caps + k;
+    const v = f.lists.items[i];
+    const n = f.nodes.items[v];
+    if (n.tag != .later) return v;
+    const l = f.d.locals_start + n.a;
+    if (m.lframe[l] == 0 and m.lcode[l] != none) try f.makeCode(n.a);
+    if (m.lframe[l] != f.id) {
+        f.failed = true;
+        return v_shared;
+    }
+    f.lists.items[i] = m.lv[l];
+    return m.lv[l];
 }
 
 /// The frame's contract, once its body is walked.
@@ -1895,17 +2252,22 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     switch (m.tags[callee]) {
         .ctor, .ext_ctor => {
             const place = try m.placeOfInst(inst);
-            const info = m.ctorInfo(callee);
             var tmp: std.ArrayList(Kid) = .empty;
             defer tmp.deinit(f.gpa);
             var vals: std.ArrayList(Val) = .empty;
             defer vals.deinit(f.gpa);
+            var known = true;
             for (args, 0..) |a, k| {
                 const v = try f.ev(a.int());
                 try vals.append(f.gpa, v);
-                if (info) |ci| try tmp.append(f.gpa, .{ .step = (try m.ctorStep(ci.ordinal, @intCast(k))).word(), .val = v });
+                if (try m.ctorArgStep(callee, place, @intCast(k))) |s| {
+                    try tmp.append(f.gpa, .{ .step = s.word(), .val = v });
+                } else known = false;
             }
-            if (info == null or m.places.kind(place) != .ctor) return f.smearVal(place, vals.items);
+            // A constructor that no row describes: no claim, and each cell of
+            // its arguments. A `smear` would claim its cells, and lose that
+            // one cell can be at two of its locations.
+            if (!known) return f.unknownOf(place, vals.items);
             return f.built(place, tmp.items);
         },
         else => {},
@@ -1932,7 +2294,8 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
                     if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
                 },
                 .ref => fn_root = f.ownFnRoot(callee_val),
-                else => {},
+                .none, .shared, .built, .join, .smear, .unknown => {},
+                .later => unreachable, // read through `capVal` only
             }
             // One of several functions, or a function with no contract: no
             // rule follows which code runs, so each of them goes to the `top` use.
@@ -1956,33 +2319,33 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     return f.unknownResult(inst);
 }
 
-/// The local function `local`, named inside its own body: the known function
+/// A code binding whose rounds run, named in a walk: the code itself, or
+/// another member of its group (`solveCodes`). It is the known function
 /// with its contract so far and the values that it captured, as this frame
 /// has them. So a call of it, and each place that it goes to, is judged as
-/// for any known function.
-fn selfValue(f: *Frame, local: u32) Error!Val {
+/// for any known function, and no member holds another.
+fn memberValue(f: *Frame, local: u32) Error!Val {
     const m = f.m;
-    var at: ?*Frame = f;
-    while (at) |fr| : (at = fr.parent) {
-        if (!fr.is_lambda) break;
-        if (m.tags[fr.code_inst] != .let_def) continue;
-        const def = m.bir.extraData(@fromBackingInt(m.datas[fr.code_inst].lhs), Bir.LetDef);
-        if (def.local != local) continue;
-        fr.self_called = true;
-        const c = m.code_contract[fr.code_inst] orelse break;
-        const caps = m.code_caps[fr.code_inst];
-        if (c.arity != fr.own_params + caps.len) break;
-        // The captures of the last round, in its order: the same values in each call.
-        var tmp: std.ArrayList(Val) = .empty;
-        defer tmp.deinit(f.gpa);
-        for (caps) |l| {
-            const abs = f.d.locals_start + l;
-            try tmp.append(f.gpa, if (m.lframe[abs] != f.id) try f.capture(l) else m.lv[abs]);
+    const b = m.lcode[f.d.locals_start + local];
+    if (b != none) {
+        const mb = f.memberOf(b);
+        m.recalled[mb.inst] = true;
+        if (m.code_contract[mb.inst]) |c| {
+            const caps = m.code_caps[mb.inst];
+            if (c.arity == mb.params.len + caps.len) {
+                // The captures of the last round, in its order: the same values in each call.
+                var tmp: std.ArrayList(Val) = .empty;
+                defer tmp.deinit(f.gpa);
+                for (caps) |l| {
+                    const abs = f.d.locals_start + l;
+                    try tmp.append(f.gpa, if (m.lframe[abs] != f.id) try f.capture(l) else m.lv[abs]);
+                }
+                const start: u32 = @intCast(f.lists.items.len);
+                try f.lists.appendSlice(f.gpa, tmp.items);
+                try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(caps.len), .inst = mb.inst, .own_params = @intCast(mb.params.len) });
+                return f.node(.{ .tag = .closure, .place = try m.placeOfLocal(f.d, local), .a = @intCast(f.codes.items.len - 1) });
+            }
         }
-        const start: u32 = @intCast(f.lists.items.len);
-        try f.lists.appendSlice(f.gpa, tmp.items);
-        try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(caps.len), .inst = fr.code_inst, .own_params = fr.own_params });
-        return f.node(.{ .tag = .closure, .place = try m.placeOfLocal(f.d, local), .a = @intCast(f.codes.items.len - 1) });
     }
     // No contract to read: the walk gives up on the declaration.
     f.failed = true;
@@ -2067,8 +2430,9 @@ fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bo
             try out.append(f.gpa, shared_atom);
             return false;
         },
-        .closure, .smear => return f.leaves(v, 0, out),
-        else => {},
+        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .ref, .built, .join => {},
+        .later => unreachable, // read through `capVal` only
     }
     const own = try m.loc.layoutOf(n.place);
     const cov = try m.loc.cover(sig, own);
@@ -2107,7 +2471,7 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
     var all: std.ArrayList(Val) = .empty;
     defer all.deinit(f.gpa);
     try all.appendSlice(f.gpa, vals);
-    for (0..code.ncaps) |k| try all.append(f.gpa, f.lists.items[code.caps + k]);
+    for (0..code.ncaps) |k| try all.append(f.gpa, try f.capVal(code, k));
     if (all.items.len != c.arity) {
         // A partial or an over-application: no rule follows it.
         for (all.items) |v| {
@@ -2424,7 +2788,8 @@ fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
 /// - a function value: what it captured is one part. An answer never has a
 ///   claim on a captured cell, so two captured locals that are one cell need
 ///   no check here;
-/// - every cell at every location (`smear`): one cell can be at two.
+/// - every cell at every location (`smear`), or a value that the walk
+///   cannot follow (`unknown`): one cell can be at two.
 fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2]u32), depth: u32) Error!bool {
     if (v == v_none or v == v_shared) return true;
     const n = f.nodes.items[v];
@@ -2447,11 +2812,12 @@ fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2
             if (r.kind == .local and !r.linear) return false;
         },
         .closure => {},
-        .smear => {
+        .smear, .unknown => {
             const start = buf.items.len;
             _ = try f.allLeaves(v, buf);
             return buf.items.len == start;
         },
+        .later => unreachable, // read through `capVal` only
     }
     const start: u32 = @intCast(buf.items.len);
     _ = try f.allLeaves(v, buf);
@@ -2618,7 +2984,8 @@ fn codeOf(f: *Frame, v: Val) Error!?Code {
             const c = (try f.m.declContract(.{ n.a, n.b })) orelse break :blk null;
             break :blk .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
         },
-        else => null,
+        .none, .shared, .ref, .built, .join, .smear, .unknown => null,
+        .later => unreachable, // read through `capVal` only
     };
 }
 
@@ -2725,7 +3092,7 @@ fn captureEscapes(f: *Frame, code: Code, inst: u32) Error!void {
         const n = lc.off[j + 1] - lc.off[j];
         for (0..n) |e| if (lc.flags[lc.off[j] + e] & flag_e != 0) {
             const start: u32 = @intCast(f.atoms.items.len);
-            _ = try f.argLeaves(f.lists.items[code.caps + k], lc.layouts[j], @intCast(e), &.{}, false, &f.atoms);
+            _ = try f.argLeaves(try f.capVal(code, k), lc.layouts[j], @intCast(e), &.{}, false, &f.atoms);
             try f.noteEscape(start, inst);
         };
     }
@@ -2740,7 +3107,7 @@ fn flowCaptures(f: *Frame, code: Code, use: *const Use) Error!void {
         if (j >= lc.arity) break;
         const lf = lc.fns[j] orelse continue;
         const inner = try f.innerUse(code, @intCast(j), lf, use);
-        try f.flow(f.lists.items[code.caps + k], &inner);
+        try f.flow(try f.capVal(code, k), &inner);
     }
 }
 
@@ -2750,7 +3117,7 @@ fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) E
     const args = try f.gpa.alloc(Val, lc.arity);
     @memset(args, v_none);
     for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
-        args[code.own_params + k] = f.lists.items[code.caps + k];
+        args[code.own_params + k] = try f.capVal(code, k);
     };
     return .{ .kind = .inner, .id = f.useId(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .site = up.site, .depth = up.depth + 1 };
 }
@@ -3183,7 +3550,7 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
                     try f.refuse(level, .supply, not_own);
                     continue;
                 };
-                const cc = (try f.codeOf(f.lists.items[code.caps + ls.a - code.own_params])) orelse {
+                const cc = (try f.codeOf(try f.capVal(code, ls.a - code.own_params))) orelse {
                     try f.refuse(level, .supply, not_own);
                     continue;
                 };
@@ -3254,7 +3621,7 @@ fn handedBack(f: *Frame, level: *const Use, code: Code, a: u32, e: u32) Error!vo
             try f.refuse(level, .supply, "the function hands on a value that it answers, and the callee hands it back");
             continue;
         }
-        const cv = f.lists.items[code.caps + jj - code.own_params];
+        const cv = try f.capVal(code, jj - code.own_params);
         const root = f.ownFnRoot(cv);
         if (f.isFnRoot(root)) {
             // The frame's own function: its contract says that the cell changes later.
@@ -3387,7 +3754,7 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
                 const outer_whole = st.whole;
                 st.suffix = &.{};
                 st.whole = true;
-                try f.answerOf(f.lists.items[code.caps + ls.a - code.own_params], &inner, ls.e, st, depth + 1);
+                try f.answerOf(try f.capVal(code, ls.a - code.own_params), &inner, ls.e, st, depth + 1);
                 st.suffix = outer;
                 st.whole = outer_whole;
             },
@@ -3397,7 +3764,7 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
                     // same cell, so no claim. The answer still holds it.
                     st.shared = true;
                     if (ls.a - code.own_params < code.ncaps) {
-                        _ = try f.argLeaves(f.lists.items[code.caps + ls.a - code.own_params], lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
+                        _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
                     } else try f.lostAnswer(use, st);
                     continue;
                 }

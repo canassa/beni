@@ -1,0 +1,18 @@
+-- A lambda bound to a local names a later local function.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h = λn → g n
+    g n = ints xs
+    ys = List.set xs 0 9
+    Node.print "${ints ys} ${h 1}"

@@ -1,0 +1,18 @@
+-- The safe twin of later-value.live.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    g n = ints zs
+    zs = [ 1, 2, 3 ]
+    s = g 1
+    ys = List.set zs 0 9
+    Node.print "${ints ys} ${s}"

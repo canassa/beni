@@ -2817,8 +2817,10 @@ test "ownership v3: the faults of round 2 are refused" {
         // `joinArg`: each arm flows to the parameter of `List.map`, so the write is a demand on `xs`.
         "  45:9 call List.map xs[*]: rejected later-use: it is read again at 53:22 (<call List.length>)\n",
         "  60:9 value <call>: rejected call: a function that writes its parameter goes where the checker does not follow it\n",
-        // `later`: `b` was called before it was bound.
-        "  73:5 value <expression>: rejected call: a function that writes its parameter goes where the checker does not follow it\n",
+        // `later`: `b` was called before it was bound. `a` and `b` call each
+        // other, so they are walked as one group: `a` hands `q` to `b`, which
+        // writes it, and `q` is read again.
+        "  76:9 call a q: rejected later-use: it is read again at 77:21 (<call List.length>)\n",
         // `selfPass`: the lists of the deeper nodes are a demand on `t` too.
         "  95:9 call walk t⟨List⟩: rejected later-use: it is read again at 96:13 (<call Round2.sum>)\n",
         "  107:10 List.push k: rejected escaped: it escaped before the write\n",
@@ -2827,7 +2829,386 @@ test "ownership v3: the faults of round 2 are refused" {
         // `ansTwice`: the two elements are one answer of `f`.
         "  136:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         // Report 111's prototype accepted each of the 14 demands that it made here.
-        "total 24: accepted 14 (fresh 2, call 1, param 0, callback-param 11, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
+        // The two more are the writes of `later`'s group in its own frames.
+        "total 26: accepted 16 (fresh 2, call 1, param 0, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The faults of a blind test of the prototype (research report 113 §4, §6).
+// Code can name a binding of its `let` that is written below it: a later
+// local function (a local function is hoisted), or a value that the code
+// reads only when it runs. Where the closure was made, that binding had no
+// value, and the prototype gave it the value with no claim, which holds no
+// cell. So a later run of the closure read a list that nothing counted as
+// read, and an edit of that list in place was accepted. Each program below
+// traps under `--sanitize-lists` with that prototype.
+//
+// - `call`: `h` calls `g`, which is bound after it and reads `xs`.
+// - `mutual`: `h` and `g` call each other.
+// - `argument`: one list at two places of one call, `bumpThen xs h`.
+// - `push`: as `call`, with `List.push` and a read of the length.
+// - `laterValue`: a local function reads a value that is bound below it.
+// - `lambda`: a lambda bound to a local names a later local function.
+// - `answer`: a value binding calls a later local function, which answers
+//   the list that it captured.
+// - `chain`: `h` calls `g`, which calls `k`; both are bound after `h`.
+// - `held`, `answered`: a closure goes into a list before the function that
+//   it names is bound, in the frame itself and in a local function that
+//   answers the list.
+//
+// Each `…Dead` function is the safe twin: nothing reads the list after the
+// edit, and it stays accepted.
+test "ownership v3: code that names a later binding holds what it reads" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Early.beni",
+        \\import List
+        \\import String
+        \\
+        \\
+        \\ints : List Int → String
+        \\ints xs = String.join (List.map xs String.fromInt) ","
+        \\
+        \\
+        \\pub call : Int → String
+        \\call c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = ints xs
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${h 1}"
+        \\
+        \\
+        \\pub callDead : Int → String
+        \\callDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = ints xs
+        \\    ys = List.set xs 0 9
+        \\    ints ys
+        \\
+        \\
+        \\pub mutual : Int → String
+        \\mutual c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = if n == 0 then "" else g (n - 1)
+        \\    g n = if n == 0 then ints xs else h n
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${h 1}"
+        \\
+        \\
+        \\pub mutualDead : Int → String
+        \\mutualDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = if n == 0 then "" else g (n - 1)
+        \\    g n = if n == 0 then ints xs else h n
+        \\    s = h 1
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${s}"
+        \\
+        \\
+        \\bumpThen : List Int, (Int → String) → String
+        \\bumpThen l k =
+        \\    l2 = List.set l 0 9
+        \\    "${ints l2} ${k 1}"
+        \\
+        \\
+        \\pub argument : Int → String
+        \\argument c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = ints xs
+        \\    bumpThen xs h
+        \\
+        \\
+        \\pub argumentDead : Int → String
+        \\argumentDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = ints xs
+        \\    bumpThen [ c, 2, 3 ] h
+        \\
+        \\
+        \\pub push : Int → String
+        \\push c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = List.length xs + n
+        \\    ys = List.push xs 9
+        \\    "${ints ys} ${String.fromInt (h 1)}"
+        \\
+        \\
+        \\pub pushDead : Int → String
+        \\pushDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = List.length xs + n
+        \\    s = h 1
+        \\    ys = List.push xs 9
+        \\    "${ints ys} ${String.fromInt s}"
+        \\
+        \\
+        \\pub laterValue : Int → String
+        \\laterValue c =
+        \\    g n = ints zs
+        \\    zs = [ c, 2, 3 ]
+        \\    ys = List.set zs 0 9
+        \\    "${ints ys} ${g 1}"
+        \\
+        \\
+        \\pub laterValueDead : Int → String
+        \\laterValueDead c =
+        \\    g n = ints zs
+        \\    zs = [ c, 2, 3 ]
+        \\    s = g 1
+        \\    ys = List.set zs 0 9
+        \\    "${ints ys} ${s}"
+        \\
+        \\
+        \\pub lambda : Int → String
+        \\lambda c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h = λn → g n
+        \\    g n = ints xs
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${h 1}"
+        \\
+        \\
+        \\pub lambdaDead : Int → String
+        \\lambdaDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h = λn → g n
+        \\    g n = ints xs
+        \\    s = h 1
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${s}"
+        \\
+        \\
+        \\pub answer : Int → String
+        \\answer c =
+        \\    xs = [ c, 2, 3 ]
+        \\    a = g 1
+        \\    g n = xs
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${ints a}"
+        \\
+        \\
+        \\pub answerDead : Int → String
+        \\answerDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    a = g 1
+        \\    g n = xs
+        \\    s = ints a
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${s}"
+        \\
+        \\
+        \\pub chain : Int → String
+        \\chain c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = k n
+        \\    k n = ints xs
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${h 1}"
+        \\
+        \\
+        \\pub chainDead : Int → String
+        \\chainDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    g n = k n
+        \\    k n = ints xs
+        \\    s = h 1
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${s}"
+        \\
+        \\
+        \\first : List (Int → String) → String
+        \\first fs =
+        \\    case fs of
+        \\        [ q, …_ ] →
+        \\            q 1
+        \\
+        \\        _ →
+        \\            ""
+        \\
+        \\
+        \\pub held : Int → String
+        \\held c =
+        \\    xs = [ c, 2, 3 ]
+        \\    h n = g n
+        \\    fs = [ h ]
+        \\    g n = ints xs
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${first fs}"
+        \\
+        \\
+        \\pub answered : Int → String
+        \\answered c =
+        \\    xs = [ c, 2, 3 ]
+        \\    mk u =
+        \\        h n = g n
+        \\        fs = [ h ]
+        \\        g n = ints xs
+        \\        fs
+        \\    fs2 = mk 0
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${first fs2}"
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Early.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        // `call` and its twin: `h 1` runs `g`, which reads `xs`.
+        "  14:10 List.set xs: rejected later-use: it is read again at 15:19 (<call>)\n",
+        "  23:10 List.set xs: accepted fresh\n",
+        // `mutual`.
+        "  32:10 List.set xs: rejected later-use: it is read again at 33:19 (<call>)\n",
+        "  42:10 List.set xs: accepted fresh\n",
+        // `argument`: `h` holds `xs` through `g`, so the two operands are one list.
+        "  48:10 List.set l: accepted param\n",
+        "  57:5 call Early.bumpThen xs: rejected disjoint: another operand of the same operation reaches it\n",
+        "  65:5 call Early.bumpThen <literal>: accepted fresh\n",
+        // `push`.
+        "  73:10 List.push xs: rejected later-use: it is read again at 74:35 (<call>)\n",
+        "  83:10 List.push xs: accepted fresh\n",
+        // `laterValue`: `g` holds `zs` from where `zs` is bound.
+        "  91:10 List.set zs: rejected later-use: it is read again at 92:19 (<call>)\n",
+        "  100:10 List.set zs: accepted fresh\n",
+        // `lambda`.
+        "  109:10 List.set xs: rejected later-use: it is read again at 110:19 (<call>)\n",
+        "  119:10 List.set xs: accepted fresh\n",
+        // `answer`: `g` is made where `a` names it, and its answer is `xs`.
+        "  128:10 List.set xs: rejected later-use: it is read again at 129:19 (<call Early.ints>)\n",
+        "  138:10 List.set xs: accepted fresh\n",
+        // `chain`.
+        "  148:10 List.set xs: rejected later-use: it is read again at 149:19 (<call>)\n",
+        "  159:10 List.set xs: accepted fresh\n",
+        // `held`, `answered`: the list of closures holds `xs`. Their twins with the
+        // functions in written order are refused too: the list loses its closure.
+        "  179:10 List.set xs: rejected later-use: it is read again at 180:19 (<call Early.first>)\n",
+        "  192:10 List.set xs: rejected later-use: it is read again at 193:19 (<call Early.first>)\n",
+        "total 19: accepted 9 (fresh 8, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The faults that the review of the fix of report 113 found (§6). A value
+// that the walk cannot follow was read as holding nothing, or as holding its
+// cells with a claim and no word that one cell is at two of its locations.
+//
+// - `aliasFunction`: a record alias's constructor as a function value. The
+//   walk had no row for it and gave no function, so the answer of `List.map`
+//   held nothing. `aliasFunctionDead` is the safe twin.
+// - `aliasTwice`: a record alias's constructor applied to one list two
+//   times. Its value was every cell at every location (`smear`), which says
+//   nothing of one cell at two places. `aliasTwiceApart` is the safe twin.
+// - `tryTwice`: the same through `?`, whose success was a `smear` of the
+//   scrutinee. `tryApart` is the safe twin.
+test "ownership v3: a value that the walk cannot follow holds its cells" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Unfollowed.beni",
+        \\import List
+        \\import String
+        \\
+        \\
+        \\ints : List Int → String
+        \\ints xs = String.join (List.map xs String.fromInt) ","
+        \\
+        \\
+        \\type alias R =
+        \\    zs : List Int
+        \\
+        \\
+        \\type alias P =
+        \\    a : List Int
+        \\    b : List Int
+        \\
+        \\
+        \\bump : P → P
+        \\bump p = { a = List.push p.a 1, b = List.push p.b 2 }
+        \\
+        \\
+        \\pub aliasFunction : Int → String
+        \\aliasFunction c =
+        \\    xs = [ c, 2, 3 ]
+        \\    bs = List.map [ xs ] R
+        \\    ys = List.set xs 0 9
+        \\    "${ints ys} ${ints (List.concatMap bs .zs)}"
+        \\
+        \\
+        \\pub aliasFunctionDead : Int → String
+        \\aliasFunctionDead c =
+        \\    xs = [ c, 2, 3 ]
+        \\    bs = List.map [ xs ] R
+        \\    ys = List.set xs 0 9
+        \\    ints ys
+        \\
+        \\
+        \\pub aliasTwice : Int → String
+        \\aliasTwice c =
+        \\    xs = [ c, 2, 3 ]
+        \\    q = bump (P xs xs)
+        \\    "${ints q.a} ${ints q.b}"
+        \\
+        \\
+        \\pub aliasTwiceApart : Int → String
+        \\aliasTwiceApart c =
+        \\    xs = [ c, 2, 3 ]
+        \\    q = bump (P xs [ 4 ])
+        \\    "${ints q.a} ${ints q.b}"
+        \\
+        \\
+        \\twiceThrough : List Int → Result String String
+        \\twiceThrough xs =
+        \\    r = Ok { a = xs, b = xs }
+        \\    p = r?
+        \\    q = bump p
+        \\    Ok "${ints q.a} ${ints q.b}"
+        \\
+        \\
+        \\pub tryTwice : Int → String
+        \\tryTwice c = Result.withDefault (twiceThrough [ c, 2, 3 ]) ""
+        \\
+        \\
+        \\apartThrough : List Int → Result String String
+        \\apartThrough xs =
+        \\    r = Ok { a = xs, b = [ 5 ] }
+        \\    p = r?
+        \\    q = bump p
+        \\    Ok "${ints q.a} ${ints q.b}"
+        \\
+        \\
+        \\pub tryApart : Int → String
+        \\tryApart c = Result.withDefault (apartThrough [ c, 2, 3 ]) ""
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Unfollowed.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        // `aliasFunction` and its twin: the elements of `bs` hold `xs`.
+        "  26:10 List.set xs: rejected later-use: it is read again at 27:25 (<call List.concatMap>)\n",
+        "  34:10 List.set xs: accepted fresh\n",
+        // `aliasTwice` and its twin.
+        "  41:9 call Unfollowed.bump <constructor …>.a: rejected disjoint: another operand of the same operation reaches it\n",
+        "  41:9 call Unfollowed.bump <constructor …>.b: rejected disjoint: another operand of the same operation reaches it\n",
+        "  48:9 call Unfollowed.bump <constructor …>.a: accepted fresh\n",
+        "  48:9 call Unfollowed.bump <constructor …>.b: accepted fresh\n",
+        // `tryTwice` and its twin.
+        "  56:9 call Unfollowed.bump p.a: rejected disjoint: another operand of the same operation reaches it\n",
+        "  56:9 call Unfollowed.bump p.b: rejected disjoint: another operand of the same operation reaches it\n",
+        "  68:9 call Unfollowed.bump p.a: accepted param\n",
+        "  68:9 call Unfollowed.bump p.b: accepted fresh\n",
+        "total 14: accepted 9 (fresh 6, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });

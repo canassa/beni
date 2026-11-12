@@ -1,0 +1,20 @@
+-- The safe twin of later-chain.live.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    g n = k n
+    k n = ints xs
+    s = h 1
+    ys = List.set xs 0 9
+    Node.print "${ints ys} ${s}"
