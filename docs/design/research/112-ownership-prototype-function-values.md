@@ -247,7 +247,9 @@ and the first-order core, and the rule needs both of these to be right:
      checks that of its arguments, with one case for each kind of value (`argsApart`, `partsOf`). When it
      holds, two parameter sources are two cells. When it does not, the callee's claim has no ground: the
      locations of the result are not apart, and a location that holds many cells and has an answer or two
-     sources has no claim.
+     sources has no claim. *Amended after report 114 (§8):* a location with two parameter sources and no
+     answer keeps what it holds and is `twice`: its parts are not apart, and a callee that writes it is
+     refused. A location with an answer still has no claim.
   2. *Each pair with an answer.* The caller reads what the function answers in its own frame. If the two
      sources can be one cell, the claim does not hold there.
 
