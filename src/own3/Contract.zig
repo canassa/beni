@@ -1,15 +1,20 @@
-//! own3, layer 2: contracts (research report 110 §6.4, §6.5; report 111 §2).
+//! own3, layer 2: contracts (`ownership-v3-kernel.md` §4; research report
+//! 110 §6.4, §6.5; report 111 §2).
 //!
 //! A contract is a table over the locations of a signature:
 //!
 //! - for each parameter location, whether the body **reads** it, **writes**
 //!   it (the caller must hand it `own`) and lets it **escape**;
-//! - for each result location, what it is made of: `fresh`, `shared`, a
-//!   parameter location, or the answer of a function parameter;
+//! - for each result location, its **sources**: the cells it can hold, each
+//!   a named, positive fact (`Src`);
 //! - for each function parameter, what the body hands it (`Fn`).
 //!
-//! A location with no source holds no cell (a recursion that never ends, an
-//! empty list). `shared` is the answer for everything a rule does not name.
+//! A location with no source holds no cell: the body's frame had no atom
+//! there (a recursion that never ends, `Nil`'s lists). That is a positive
+//! fact of the body's walk, never a default. A walk that gives up publishes
+//! no contract at all (`Check.walkDecl`), and a caller reads a callee with
+//! no contract as unknown code: each argument escapes and the answer holds
+//! every argument.
 //!
 //! Layout numbers are those of the module that owns the contract
 //! (`Loc.Table`). `Published` holds the layouts as label paths, so another
@@ -21,26 +26,34 @@ const Loc = @import("Loc.zig");
 
 pub const none = Loc.none;
 
+/// One source of a result location, or of what a body hands a function
+/// parameter. Every kind names cells (`ownership-v3-kernel.md` §4.2):
+///
+/// - `outside`: a cell that is outside every frame of the program's walk —
+///   a top-level value's, a cell's contents, JavaScript's. No frame may
+///   write it, and it holds no cell of any frame: what went into a cell or
+///   to JavaScript escaped in the frame that put it there.
+/// - `fresh`: a cell the body made, named by its allocation site `a` in the
+///   body's frame. Two sources with one `a` may be one cell. `e` is 1 when
+///   the body let that cell escape (a cell, a task, unknown code holds it).
+/// - `param`: the cells of parameter `a` at entry `e` of its layout.
+/// - `answer`: the cells that the function at parameter `a` answers at
+///   entry `e` of its result layout.
+/// - `twice`: the location is a summary location, and one of its cells can
+///   be at two of its places. It keeps its claim; its parts are not apart,
+///   so a part of it is all of it, and a callee that writes it is refused.
 pub const Src = struct {
     kind: Kind,
-    /// `param`: the parameter. `answer`: the function parameter.
     a: u16 = 0,
-    /// The entry of that parameter's layout, or of the function's result
-    /// layout. `also`: the result entry.
     e: u16 = 0,
 
-    /// `twice` and `also` say where one cell can be at two places of the
-    /// result, and keep the location's claim (research report 114 §8):
-    ///
-    /// - `twice`: the location is a summary location, and one of its cells
-    ///   can be at two places of it. Its parts are not apart: a part of it
-    ///   is all of it. A callee that writes such a location is refused.
-    /// - `also`: the location can hold a cell that the body made and put at
-    ///   the result entry `e` too. The two locations hold that one cell.
-    pub const Kind = enum(u8) { fresh, shared, param, answer, twice, also };
-    pub const fresh: Src = .{ .kind = .fresh };
-    pub const shared: Src = .{ .kind = .shared };
+    pub const Kind = enum(u8) { outside, fresh, param, answer, twice };
+    pub const outside: Src = .{ .kind = .outside };
     pub const twice: Src = .{ .kind = .twice };
+
+    pub fn fresh(k: u32, escaped: bool) Src {
+        return .{ .kind = .fresh, .a = @intCast(@min(k, std.math.maxInt(u16))), .e = @intFromBool(escaped) };
+    }
 
     pub fn key(s: Src) u64 {
         return (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
@@ -68,7 +81,10 @@ pub const Fn = struct {
     layouts: []const u32,
     /// Per parameter `k`, where its entries start in `supply`; one more for the end.
     off: []const u32,
-    /// Per `(k, entry)`: what the owner hands there.
+    /// Per `(k, entry)`: what the owner hands there. A worded row that does
+    /// not say what it hands a function hands it every cell of every
+    /// parameter, not `free` (`Check.wordedFn`): a missing fact is the
+    /// pessimistic one.
     supply: []const []const Src,
     /// Per `(k, entry)`: the owner does not read what it handed after the
     /// call, and nothing else that it handed can reach it. So the function
@@ -122,14 +138,18 @@ pub const Contract = struct {
         for (c.flags) |f| if (f & flag_w != 0) return true;
         return false;
     }
+
+    pub fn escapes(c: *const Contract) bool {
+        for (c.flags) |f| if (f & flag_e != 0) return true;
+        return false;
+    }
 };
 
 fn srcLess(_: void, x: Src, y: Src) bool {
     return x.key() < y.key();
 }
 
-/// `xs` sorted, each source once. `shared` among them says that the location
-/// has no claim; the other sources still say what it can hold.
+/// `xs` sorted, each source once.
 pub fn normal(arena: Allocator, xs: []const Src) Allocator.Error![]const Src {
     if (xs.len == 0) return &.{};
     const out = try arena.dupe(Src, xs);
@@ -142,9 +162,6 @@ pub fn normal(arena: Allocator, xs: []const Src) Allocator.Error![]const Src {
     }
     return out[0..n];
 }
-
-pub const shared_only: []const Src = &.{Src.shared};
-pub const fresh_only: []const Src = &.{Src.fresh};
 
 fn srcsEql(a: []const Src, b: []const Src) bool {
     if (a.len != b.len) return false;

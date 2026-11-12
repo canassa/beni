@@ -1,28 +1,40 @@
-//! own3, layer 3: one walk of one code (research report 110 §6.3, §6.7;
-//! report 111 §2). A code is a declaration's body, a lambda or a local
-//! function. The walk goes over the expression tree once, in evaluation
-//! order, and gives each expression a **value**:
+//! own3, layer 3: one walk of one code (`docs/design/ownership-v3-kernel.md`,
+//! the normative text; research report 110 §6.3, §6.7; report 111 §2). A
+//! code is a declaration's body, a lambda or a local function. The walk goes
+//! over the expression tree once, in evaluation order, and gives each
+//! expression a **value** (kernel §3):
 //!
-//! - `none`: no object;
-//! - `shared`: an object with no claim (the default);
+//! - `none`: no object, by the type;
+//! - `outside`: an object whose every cell is outside this frame — a
+//!   top-level value, or a function that captured nothing (a constructor, a
+//!   function in the default state). It holds no cell of the frame, and the
+//!   reason is in the kind: the position rule;
 //! - `ref(root, path)`: a part of a root of this frame;
-//! - `built`: a tuple, a record or a constructor application of this frame;
+//! - `built`: a tuple, a record or a constructor application of this frame.
+//!   It names every part that holds a cell; a part it does not name holds
+//!   none;
 //! - `join`: the value of one of several branches;
 //! - `closure`, `fnref`: a function value whose code is known;
-//! - `smear`: every cell of some values, at every location;
-//! - `unknown`: a value that the walk cannot follow, with no claim: it can
-//!   hold every cell of some values, at every location;
+//! - `unknown(V)`: a value that the walk cannot follow: no claim, and it can
+//!   hold every cell of each value of `V`, at every location;
 //! - `later`: in a closure, a local of this frame that is bound after the
 //!   closure is made (`capVal` reads it, and nothing else does).
 //!
+//! There is no value that means "I do not know what this holds" and reads as
+//! "holds nothing": a value the walk cannot follow is `unknown` over what it
+//! was made of, and a walk that cannot go on gives up (`giveUp`), so its
+//! declaration publishes no contract and accepts no write.
+//!
 //! A **root** is a parameter, a captured local, a value that the frame made
-//! (a list literal, a call's result) or the answer of a function parameter.
-//! An **atom** `(root, path, entry)` names the cells of one location of a
-//! root at or below a path. Two atoms can be one cell only when they have one
-//! root and one entry, and one path is a prefix of the other.
+//! (a list literal, a call's result), a cell that a callee made (`fresh`,
+//! named by the call and the callee's allocation site: kernel §4.2), or the
+//! answer of a function parameter. An **atom** `(root, path, entry)` names
+//! the cells of one location of a root at or below a path. Two atoms can be
+//! one cell only when they have one root and one entry, and one path is a
+//! prefix of the other.
 //!
 //! **A write makes a new name.** Where a callee writes a location and
-//! answers it, the result's location is a new atom (`taken`), not the old
+//! answers it, the result's location is a new atom (`version`), not the old
 //! one. So each reference made before the write names the old cells, and
 //! "nothing reads the old value later" is one test: no read after the write
 //! reaches a target atom.
@@ -33,11 +45,10 @@
 //! binding, a field access and a construction read nothing: they only make
 //! another holder.
 //!
-//! **The write rule.** A write is accepted when no target atom is `shared`,
-//! a capture or a function parameter's answer, no value that escaped before
-//! the write reaches a target, no other operand that the operation reads
-//! reaches a target, and no read after the write reaches a target. A
-//! forgotten case gives `shared`, which refuses.
+//! **The write rule** (kernel §5). A write is accepted when no target atom is
+//! outside, a capture or a function parameter's answer, no value that escaped
+//! before the write reaches a target, no other operand that the operation
+//! reads reaches a target, and no read after the write reaches a target.
 //!
 //! **Function values** (research report 112 §2). A function value is known
 //! (the frame has its code, or it is the frame's own function parameter) or
@@ -72,9 +83,12 @@ const flag_s = CMod.flag_s;
 
 pub const Val = u32;
 pub const v_none: Val = 0;
-pub const v_shared: Val = 1;
+pub const v_outside: Val = 1;
+/// The value of a local before its binding runs. Nothing reads it: a local
+/// is read through `evalInner` only where its frame bound it (kernel §3.3).
+pub const v_unbound: Val = std.math.maxInt(u32);
 
-const Tag = enum(u8) { none, shared, ref, built, join, closure, smear, fnref, unknown, later };
+const Tag = enum(u8) { none, outside, ref, built, join, closure, fnref, unknown, later };
 const Node = struct { tag: Tag, place: PlaceId = @fromBackingInt(0), a: u32 = 0, b: u32 = 0 };
 const Kid = struct { step: u32, val: Val };
 /// `via`: the root that the frame made through which this cell was read
@@ -87,7 +101,15 @@ const Kid = struct { step: u32, val: Val };
 /// same: a write after that time counts it, and so does an overlap test for
 /// one cell at two places.
 pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, dead: u32 = none };
-const RootKind = enum(u8) { shared, param, capture, local, answer };
+/// `outside`: root 0, the one root of every cell outside the frame (kernel
+/// §3.1). `fresh`: a cell a callee made, named by the call and the callee's
+/// allocation site (kernel §4.2); it has no layout and no value, only atoms.
+const RootKind = enum(u8) { outside, param, capture, local, answer, fresh };
+/// Whether no cell of another root is at two places of a root the frame
+/// made. It is `undecided` until `deriveLinear` ran over the root's entries,
+/// and a reader that meets `undecided` reads it as `no` (kernel §4.4,
+/// *linear is derived, never assumed*; a safe build asserts it never does).
+const Linear = enum(u8) { undecided, no, yes };
 const Root = struct {
     kind: RootKind,
     place: PlaceId = @fromBackingInt(0),
@@ -97,25 +119,42 @@ const Root = struct {
     index: u32 = none,
     /// `local`: its entries. `param`, `capture`: its flags in `pflags`.
     ent: u32 = 0,
-    /// `local`: a call's result (the ground of a verdict).
+    /// `local`, `fresh`: a call's result (the ground of a verdict).
     call: bool = false,
-    /// `local`: no cell of another root is at two places of this one (the
-    /// callee's contract says so, or the frame made it so).
-    linear: bool = true,
+    linear: Linear = .undecided,
     path: u32 = 0,
+    /// `fresh`: the cell's name in this frame's contract (`freshId`), and
+    /// whether its escape in the callee was noted here (`freshAtom`).
+    site: u64 = 0,
+    escaped: bool = false,
 };
-/// What a location of a root that the frame made holds: `own` cells of its
-/// own; `shared`; `alias`, the cells of other roots and no other; `derived`,
-/// cells of other roots in an order of its own (and its own when `fresh`);
-/// `version`, the new name of cells that the callee wrote and answers (the
-/// old names are in the entry: a write of the new name is a write of them);
-/// `taken`, an element that a trusted loop of `core/` took out of its list.
-const EKind = enum(u8) { own, shared, alias, derived, taken, version };
+/// What a location of a root that the frame made holds. Each kind is a run
+/// of atoms (`start`, `len`), and some have an **own atom** `(root, path,
+/// entry)` beside it: `own`, a cell the frame made and nothing else;
+/// `alias`, the cells of the run and no other (a call's result: its fresh
+/// cells are `fresh` roots in the run); `derived`, an own cell or the run's
+/// (a prepend that may answer the array of its base); `version`, the new
+/// name of cells that a callee wrote and answers (the old names are in the
+/// run, `dead`: a write of the new name is a write of them); `taken`, an
+/// element that a trusted loop of `core/` took out of its list.
+const EKind = enum(u8) { own, alias, derived, taken, version };
 /// `twice`: the location is a summary location that can hold one of its
-/// cells at two of its places (research report 114 §8). It keeps its claim,
-/// but its parts are not apart: a part of it is all of it, and a callee
-/// that writes it is refused (`leavesOwn` says so).
-const REntry = struct { kind: EKind, start: u32 = 0, len: u32 = 0, fresh: bool = false, twice: bool = false };
+/// cells at two of its places (kernel §4.4). It keeps its claim, but its
+/// parts are not apart: a part of it is all of it, and a callee that writes
+/// it is refused (`leavesOwn` says so).
+const REntry = struct {
+    kind: EKind,
+    start: u32 = 0,
+    len: u32 = 0,
+    twice: bool = false,
+
+    fn hasOwn(e: REntry) bool {
+        return switch (e.kind) {
+            .own, .derived, .taken, .version => true,
+            .alias => false,
+        };
+    }
+};
 /// `point`: the consumer's instruction, for the text. `at`: the time of the read (`timeOf`).
 const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
@@ -131,6 +170,13 @@ const Code = struct {
     inst: u32 = none,
     decl: [2]u32 = .{ none, none },
     own_params: u32,
+
+    /// The code's name among the holders of one frame: a lambda or a local
+    /// function by its instruction, a declaration by its module and index.
+    /// The same in every round of a group (`freshAtom`).
+    fn id(c: Code) u64 {
+        return if (c.inst != none) std.hash.Wyhash.hash(1, std.mem.asBytes(&c.inst)) else std.hash.Wyhash.hash(2, std.mem.asBytes(&c.decl));
+    }
 };
 
 /// What the frame hands one function parameter, while it is walked.
@@ -179,6 +225,14 @@ const Use = struct {
     /// default). With `j` it names the location: an answer or a supply in
     /// work is known by the two.
     id: u32 = 0,
+    /// The name of the location among the locations of one call: the call's
+    /// instruction for the call itself, and for a captured function the
+    /// holder's key and the capture's index (`innerUse`). With `holder`, the
+    /// code whose contract `c` is (`Code.id`), a `fresh` cell read at this use
+    /// is one root by `(key, holder, k)` (`freshAtom`), so every reader of one
+    /// call names one cell once, and two codes read at one call never share a name.
+    key: u64 = 0,
+    holder: u64 = 0,
     c: *const Contract = undefined,
     fnc: *const CMod.Fn = undefined,
     j: u32 = none,
@@ -317,6 +371,8 @@ judge_at: u32 = none,
 hit_all: bool = false,
 uses: std.ArrayList(Read) = .empty,
 escapes: std.ArrayList(Escape) = .empty,
+/// The atoms of each escape, a run per `Escape`: a copy, so a run of `atoms` under construction can be compacted after it noted one.
+esc_atoms: std.ArrayList(Atom) = .empty,
 demands: std.ArrayList(Demand) = .empty,
 ctxs: std.ArrayList(Ctx) = .empty,
 cur_ctx: u32 = 0,
@@ -328,8 +384,9 @@ order: std.ArrayList(u32) = .empty,
 chain_root: u32 = none,
 /// The next `Use.id`.
 next_use: u32 = 1,
-/// The values of markup holes, and their markup: read again at the frame's end.
-late: std.ArrayList([3]u32) = .empty,
+/// The `fresh` roots of this frame, by the holder's key, the contract the
+/// source was read from and its allocation site (`freshAtom`).
+fresh_roots: std.AutoHashMapUnmanaged(FreshKey, u32) = .empty,
 /// The last call whose arguments `call` evaluated, and their values.
 call_inst: u32 = none,
 call_vals: []const Val = &.{},
@@ -343,16 +400,29 @@ entered: u32 = 0,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
+const safety = std.debug.runtime_safety;
+
+const FreshKey = struct { key: u64, holder: u64, k: u32 };
 
 pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32) Error!Frame {
     var f: Frame = .{ .m = m, .gpa = m.walk_arena.allocator(), .parent = parent, .id = m.next_frame, .decl = decl, .d = m.bir.decls[decl], .is_lambda = is_lambda, .code_inst = code_inst };
     m.next_frame += 1;
     f.depth = if (parent) |p| p.depth + 1 else 0;
     try f.nodes.append(f.gpa, .{ .tag = .none });
-    try f.nodes.append(f.gpa, .{ .tag = .shared });
-    try f.roots.append(f.gpa, .{ .kind = .shared });
+    try f.nodes.append(f.gpa, .{ .tag = .outside });
+    try f.roots.append(f.gpa, .{ .kind = .outside, .linear = .yes });
     try f.ctxs.append(f.gpa, .{ .parent = none, .case = none, .arm = 0, .depth = 0 });
     return f;
+}
+
+/// The walk cannot go on (a value read before it is bound, code with no
+/// contract to read): the declaration publishes no contract and accepts no
+/// write (`finish`, `Check.walkDecl`). The value stands for the expression
+/// at `inst` while the walk completes, so that every later line of this
+/// frame is still made and refused.
+fn giveUp(f: *Frame, inst: u32) Error!Val {
+    f.failed = true;
+    return f.unknownOf(try f.m.placeOfInst(inst), &.{});
 }
 
 pub fn addParam(f: *Frame, place: PlaceId, pat: u32, ty: Var.Optional) Error!void {
@@ -416,18 +486,6 @@ fn armLive(f: *const Frame, n: Node, ki: usize) bool {
     return f.judge_ctx == none or ctx == none or f.compatible(ctx, f.judge_ctx);
 }
 
-fn smearVal(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
-    var any = false;
-    for (vs) |v| if (v != v_none) {
-        any = true;
-    };
-    if (!any) return v_none;
-    if (try f.layoutLen(place) == 0) return v_none;
-    const start: u32 = @intCast(f.lists.items.len);
-    for (vs) |v| if (v != v_none) try f.lists.append(f.gpa, v);
-    return f.node(.{ .tag = .smear, .place = place, .a = start, .b = @intCast(f.lists.items.len - start) });
-}
-
 fn newRoot(f: *Frame, kind: RootKind, place: PlaceId, inst: u32) Error!u32 {
     const layout = try f.m.loc.layoutOf(place);
     const n = f.m.loc.layouts.items[layout].len;
@@ -436,18 +494,70 @@ fn newRoot(f: *Frame, kind: RootKind, place: PlaceId, inst: u32) Error!u32 {
         .param, .capture => {
             r.ent = @intCast(f.pflags.items.len);
             try f.pflags.appendNTimes(f.gpa, 0, n);
+            r.linear = .yes;
         },
         .local => {
             r.ent = @intCast(f.rents.items.len);
             try f.rents.appendNTimes(f.gpa, .{ .kind = .own }, n);
         },
-        .answer, .shared => {},
+        // One cell: nothing of it is at two places.
+        .answer, .fresh => r.linear = .yes,
+        .outside => unreachable, // root 0, made by `init`
     }
     try f.roots.append(f.gpa, r);
     return @intCast(f.roots.items.len - 1);
 }
 
-const shared_atom: Atom = .{ .root = 0, .path = 0, .e = 0 };
+/// The root of the cell that the code `holder`'s contract, read at the
+/// location `key`, names `fresh(k)`: one root for each `(key, holder, k)` in
+/// this frame, so the same cell read through two sources of one call is one
+/// atom (kernel §4.2). The atom is appended to `out`; `escaped` notes its
+/// escape. `draft` says the contract is a draft of a group in its rounds.
+fn freshAtom(f: *Frame, key: u64, holder: u64, draft: bool, k: u32, escaped: bool, point: u32, out: *std.ArrayList(Atom)) Error!void {
+    const fk: FreshKey = .{ .key = key, .holder = holder, .k = k };
+    const got = try f.fresh_roots.getOrPut(f.gpa, fk);
+    if (!got.found_existing) {
+        // One place for every fresh root: its atoms have one path to compare,
+        // and the root is never a value, so its layout is not read.
+        const root = try f.newRoot(.fresh, f.m.var_place, none);
+        f.roots.items[root].call = true;
+        got.value_ptr.* = root;
+        // The cell's name in this frame's own contract: the location, the
+        // holder and the holder's site. A holder whose contract is a draft
+        // names its cells by the location and itself alone, so the names of a
+        // recursion do not grow with the rounds and the rounds settle.
+        const kh = std.hash.Wyhash.hash(key, std.mem.asBytes(&holder));
+        f.roots.items[root].site = if (draft) kh else std.hash.Wyhash.hash(kh, std.mem.asBytes(&k));
+    }
+    const root = got.value_ptr.*;
+    const a: Atom = .{ .root = root, .path = f.roots.items[root].path, .e = 0 };
+    try out.append(f.gpa, a);
+    // The cell escaped in the callee: it is held there, so no write of it is
+    // accepted here. Once per root: a joined contract can name one site both ways.
+    if (escaped and !f.roots.items[root].escaped) {
+        f.roots.items[root].escaped = true;
+        const at: u32 = @intCast(f.esc_atoms.items.len);
+        try f.esc_atoms.append(f.gpa, a);
+        try f.escapes.append(f.gpa, .{ .start = at, .len = 1, .point = point, .ctx = f.cur_ctx });
+    }
+}
+
+/// The allocation site of this frame's contract that the own cell of root
+/// `root` at entry `e` is (kernel §4.2): a cell the frame made is named by
+/// the instruction that made it and the entry; a cell a callee made by the
+/// call and the callee's site (`freshAtom`). The same name gives the same
+/// number in every round of a group (`Mod.siteId`).
+fn freshId(f: *Frame, root: u32, e: u32) Error!u16 {
+    const r = f.roots.items[root];
+    const name = switch (r.kind) {
+        .fresh => r.site,
+        .local => std.hash.Wyhash.hash(r.inst, std.mem.asBytes(&e)),
+        .outside, .param, .capture, .answer => unreachable, // no own cell
+    };
+    return try f.m.siteId(name);
+}
+
+const outside_atom: Atom = .{ .root = 0, .path = 0, .e = 0 };
 
 fn overlap(f: *const Frame, a: Atom, b: Atom) bool {
     return a.root == b.root and a.root != 0 and a.e == b.e and f.m.loc.comparable(a.path, b.path);
@@ -456,6 +566,15 @@ fn overlap(f: *const Frame, a: Atom, b: Atom) bool {
 fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
     for (xs) |x| for (ys) |y| if (f.overlap(x, y)) return true;
     return false;
+}
+
+/// Whether root `root` holds each cell of another root once, as `deriveLinear`
+/// decided. An undecided root is read as `no`; a safe build asserts that no
+/// reader meets one (kernel §4.4).
+fn isLinear(f: *const Frame, root: u32) bool {
+    const l = f.roots.items[root].linear;
+    if (safety) std.debug.assert(l != .undecided);
+    return l == .yes;
 }
 
 /// Whether one cell can be in both parts of one summary location. Two
@@ -469,11 +588,49 @@ fn dupOverlap(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
     for (xs) |x| {
         for (ys) |y| {
             if (!f.overlap(x, y)) continue;
-            if (x.via != none and x.via == y.via and f.roots.items[x.via].linear) continue;
+            if (x.via != none and x.via == y.via and f.isLinear(x.via)) continue;
             return true;
         }
     }
     return false;
+}
+
+/// The one duplicate test of a run that parts build (kernel §4.4): whether
+/// the part `out[before..]` holds a cell that the earlier parts `out[at..before]`
+/// hold too.
+fn partDup(f: *const Frame, out: []const Atom, at: usize, before: usize) bool {
+    return before > at and f.dupOverlap(out[at..before], out[before..]);
+}
+
+/// Decide `linear` for root `root`, the one writer of it (kernel §4.4): no
+/// entry is `twice`, and no two entries hold one cell. `claim` is the claim
+/// of a callee's contract for a call's result, which the frame's atoms
+/// cannot see inside of (the callee splits one summary location of its
+/// argument over two of its result's): `null` where the frame made the root
+/// itself and its own atoms decide. The claim covers the sources the callee
+/// saw as atoms, never an answer of a function parameter: `answers` says
+/// which entries hold one, and a pair of entries with one is tested here.
+fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) void {
+    const r = f.roots.items[root];
+    var linear = claim orelse true;
+    const n = f.m.loc.layouts.items[r.layout].len;
+    for (0..n) |e| if (f.rents.items[r.ent + e].twice) {
+        linear = false;
+    };
+    if (linear) outer: for (0..n) |e1| {
+        const a1 = f.rents.items[r.ent + e1];
+        if (a1.len == 0) continue;
+        for (e1 + 1..n) |e2| {
+            const a2 = f.rents.items[r.ent + e2];
+            if (a2.len == 0) continue;
+            if (claim != null and !answers[e1] and !answers[e2]) continue;
+            if (f.dupOverlap(f.atoms.items[a1.start..][0..a1.len], f.atoms.items[a2.start..][0..a2.len])) {
+                linear = false;
+                break :outer;
+            }
+        }
+    };
+    f.roots.items[root].linear = if (linear) .yes else .no;
 }
 
 /// Append `f.atoms[start..][0..len]` to `out`, which can be `f.atoms` itself, as cells read through root `via`.
@@ -537,7 +694,7 @@ fn uniqueTail(f: *Frame, list: *std.ArrayList(Atom), from: usize) Error!void {
     try f.order.ensureTotalCapacity(f.gpa, run.len);
     for (0..run.len) |i| f.order.appendAssumeCapacity(@intCast(i));
     std.mem.sortUnstable(u32, f.order.items, @as([]const Atom, run), atomLess);
-    // `via` is free to mark an atom that goes: no atom is read through root 0, the `shared` root.
+    // `via` is free to mark an atom that goes: no atom is read through root 0, the `outside` root.
     const gone: u32 = 0;
     var first = f.order.items[0];
     var any = false;
@@ -561,29 +718,19 @@ fn uniqueTail(f: *Frame, list: *std.ArrayList(Atom), from: usize) Error!void {
 fn rootLeaves(f: *Frame, root: u32, path_in: u32, re: u32, out: *std.ArrayList(Atom)) Error!void {
     const r = f.roots.items[root];
     switch (r.kind) {
-        .shared => try out.append(f.gpa, shared_atom),
+        .outside => try out.append(f.gpa, outside_atom),
         .param, .capture, .answer => try out.append(f.gpa, .{ .root = root, .path = path_in, .e = re }),
+        .fresh => try out.append(f.gpa, .{ .root = root, .path = r.path, .e = 0 }),
         .local => {
             const ent = f.rents.items[r.ent + re];
             // A part of a location whose parts are not apart is all of it.
             const path = if (ent.twice) r.path else path_in;
+            if (ent.hasOwn()) try out.append(f.gpa, .{ .root = root, .path = path, .e = re });
             switch (ent.kind) {
-                .own, .taken => try out.append(f.gpa, .{ .root = root, .path = path, .e = re }),
-                .version => {
-                    // The new name, the old names (`dead`), and what the location holds beside them.
-                    try out.append(f.gpa, .{ .root = root, .path = path, .e = re });
-                    try f.copyAtoms(ent.start, ent.len, root, out);
-                },
-                .shared => {
-                    // No claim on the location, but what it can hold is still held.
-                    try out.append(f.gpa, shared_atom);
-                    try f.copyAtoms(ent.start, ent.len, root, out);
-                },
-                .alias => try f.copyAtoms(ent.start, ent.len, none, out),
-                .derived => {
-                    try out.append(f.gpa, .{ .root = root, .path = path, .e = re });
-                    try f.copyAtoms(ent.start, ent.len, root, out);
-                },
+                // An element taken out of its list is apart from it: its old names are not read here.
+                .own, .taken => {},
+                // The run: the old names (`dead`) of a new name, or the cells of other roots.
+                .version, .derived, .alias => try f.copyAtoms(ent.start, ent.len, root, out),
             }
         },
     }
@@ -595,8 +742,8 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .fnref => return false,
-        .shared => {
-            try out.append(f.gpa, shared_atom);
+        .outside => {
+            try out.append(f.gpa, outside_atom);
             return false;
         },
         .ref, .built, .join => return f.leavesOwn(v, &.{e}, out),
@@ -605,13 +752,9 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
             for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
             return false;
         },
-        .smear => {
-            for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
-            return false;
-        },
         .unknown => {
             // No claim, and each cell of the values that it can be made of.
-            try out.append(f.gpa, shared_atom);
+            try out.append(f.gpa, outside_atom);
             for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
             return false;
         },
@@ -645,7 +788,7 @@ const Entries = struct {
 /// The atoms of `v` at the entries `ks` of its own place's layout. True when
 /// one cell can be at two of these places, or twice in one of them.
 ///
-/// **One list reachable two ways makes its location `shared`** (research
+/// **One list reachable two ways makes its location `twice`** (research
 /// report 114 §7). A summary location (the deep level of a recursive type)
 /// can be fed by two parts of a construction, and also by two entries of
 /// one part: the entry level and the deep level of the value that a
@@ -670,7 +813,7 @@ fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Erro
                 const re = p.to_root[k];
                 if (re == none) lost = true else try res.add(f.gpa, re);
             }
-            if (lost) try out.append(f.gpa, shared_atom);
+            if (lost) try out.append(f.gpa, outside_atom);
             var dup = false;
             const at = out.items.len;
             const r = f.roots.items[n.a];
@@ -678,7 +821,7 @@ fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Erro
                 const before = out.items.len;
                 try f.rootLeaves(n.a, n.b, re, out);
                 if (r.kind == .local and f.rents.items[r.ent + re].twice) dup = true;
-                if (before > at and f.dupOverlap(out.items[at..before], out.items[before..])) dup = true;
+                if (f.partDup(out.items, at, before)) dup = true;
             }
             return dup;
         },
@@ -698,7 +841,7 @@ fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Erro
                 } else if (try f.allLeaves(k.val, out)) {
                     dup = true;
                 }
-                if (!single and before > at and f.dupOverlap(out.items[at..before], out.items[before..])) dup = true;
+                if (!single and f.partDup(out.items, at, before)) dup = true;
             }
             return dup;
         },
@@ -711,7 +854,7 @@ fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Erro
             }
             return dup;
         },
-        .none, .shared, .fnref, .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .none, .outside, .fnref, .closure, .unknown => return f.leaves(v, 0, out),
         .later => unreachable, // read through `capVal` only
     }
 }
@@ -723,11 +866,11 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .fnref => return false,
-        .shared => {
-            try out.append(f.gpa, shared_atom);
+        .outside => {
+            try out.append(f.gpa, outside_atom);
             return false;
         },
-        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .closure, .unknown => return f.leaves(v, 0, out),
         .ref, .built, .join => {},
         .later => unreachable, // read through `capVal` only
     }
@@ -746,22 +889,23 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
 
 fn whole(tag: Tag) bool {
     return switch (tag) {
-        .closure, .smear, .unknown => true,
-        .none, .shared, .ref, .built, .join, .fnref => false,
+        .closure, .unknown => true,
+        .none, .outside, .ref, .built, .join, .fnref => false,
         .later => unreachable, // read through `capVal` only
     };
 }
 
 /// A value that the walk cannot follow, made of the values `vs`: no claim,
 /// and each cell of each of them at each location (research report 112
-/// §2.5, the default answer). It is never "holds nothing": a missing fact
-/// is the default (§2.2).
+/// §2.5, the default answer). It is never "holds nothing" by default: it is
+/// `outside` only when each value it is made of holds no cell of the frame,
+/// which is then a fact of those values (kernel §3.2).
 fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
     if (try f.layoutLen(place) == 0) return v_none;
     const start: u32 = @intCast(f.lists.items.len);
-    for (vs) |v| if (v != v_none and v != v_shared) try f.lists.append(f.gpa, v);
+    for (vs) |v| if (v != v_none and v != v_outside) try f.lists.append(f.gpa, v);
     const count: u32 = @intCast(f.lists.items.len - start);
-    if (count == 0) return v_shared;
+    if (count == 0) return v_outside;
     return f.node(.{ .tag = .unknown, .place = place, .a = start, .b = count });
 }
 
@@ -776,11 +920,11 @@ fn allLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .fnref => return false,
-        .shared => {
-            try out.append(f.gpa, shared_atom);
+        .outside => {
+            try out.append(f.gpa, outside_atom);
             return false;
         },
-        .closure, .smear, .unknown => return f.leaves(v, 0, out),
+        .closure, .unknown => return f.leaves(v, 0, out),
         .ref, .built, .join => {},
         .later => unreachable, // read through `capVal` only
     }
@@ -796,7 +940,7 @@ fn allLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
 fn reach(f: *Frame, v: Val, w: []const Atom) Error!bool {
     const n = f.nodes.items[v];
     switch (n.tag) {
-        .none, .shared, .fnref => return false,
+        .none, .outside, .fnref => return false,
         .ref => return f.rootReach(n.a, n.b, w),
         .built => {
             for (0..n.b) |ki| if (try f.reach(f.kids.items[n.a + ki].val, w)) return true;
@@ -806,7 +950,7 @@ fn reach(f: *Frame, v: Val, w: []const Atom) Error!bool {
             for (0..n.b) |ki| if (f.armLive(n, ki) and try f.reach(f.lists.items[n.a + 2 * ki], w)) return true;
             return false;
         },
-        .smear, .unknown => {
+        .unknown => {
             for (0..n.b) |ki| if (try f.reach(f.lists.items[n.a + ki], w)) return true;
             return false;
         },
@@ -835,7 +979,10 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
             const len = f.m.loc.layouts.items[r.layout].len;
             for (0..len) |i| {
                 const ent = f.rents.items[r.ent + i];
-                if (ent.kind == .own or ent.kind == .taken) continue;
+                switch (ent.kind) {
+                    .own, .taken => continue,
+                    .alias, .derived, .version => {},
+                }
                 if (f.atomsReach(f.atoms.items[ent.start..][0..ent.len], w)) return true;
             }
         },
@@ -843,7 +990,7 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
             // What the function was handed can be in its answer.
             if (root != f.skip_answer and f.atomsReach(f.answers.items[r.ent].base.items, w)) return true;
         },
-        else => {},
+        .outside, .param, .capture, .fresh => {},
     }
     return false;
 }
@@ -896,8 +1043,8 @@ fn timeOf(f: *Frame, inst: u32) u32 {
 fn placeOfVal(f: *Frame, v: Val) ?PlaceId {
     const n = f.nodes.items[v];
     return switch (n.tag) {
-        .none, .shared, .fnref => null,
-        .ref, .built, .join, .closure, .smear, .unknown => n.place,
+        .none, .outside, .fnref => null,
+        .ref, .built, .join, .closure, .unknown => n.place,
         .later => unreachable, // read through `capVal` only
     };
 }
@@ -908,8 +1055,11 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none => return v_none,
-        // A function has no part; a value with no claim has parts with none.
-        .shared, .closure, .fnref => return v_shared,
+        // A part of a value outside the frame is outside the frame.
+        .outside => return v_outside,
+        // A function has no part that the type names: whatever is read of it can hold what it captured.
+        .closure => return f.unknownOf(n.place, &.{v}),
+        .fnref => return v_outside,
         .ref => {
             const np = (try f.m.loc.pathExtend(n.b, s)) orelse return f.unknownOf(n.place, &.{v});
             const child = f.m.loc.paths.items[np].place;
@@ -918,9 +1068,10 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
         },
         .built => {
             for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
-            // Another constructor's argument holds nothing here, and so does
-            // a field that a record update left out: its part holds no object.
-            return if (s.kind == .ctor_arg) v_none else v_shared;
+            // A construction names every part that holds a cell (`built`,
+            // `recordUpdate`): another constructor's argument, and a field
+            // whose value held no object, hold none.
+            return v_none;
         },
         .join => {
             const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
@@ -934,10 +1085,10 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             }
             return f.joinVal(pr.child, tmp.items, ctxs.items);
         },
-        .smear, .unknown => {
+        .unknown => {
             const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
             if (try f.layoutLen(pr.child) == 0) return v_none;
-            return f.node(.{ .tag = n.tag, .place = pr.child, .a = n.a, .b = n.b });
+            return f.node(.{ .tag = .unknown, .place = pr.child, .a = n.a, .b = n.b });
         },
         .later => unreachable, // read through `capVal` only
     }
@@ -969,14 +1120,14 @@ fn compatible(f: *const Frame, a0: u32, b0: u32) bool {
 
 /// All of `v` is read at `point`.
 fn readAll(f: *Frame, v: Val, point: u32) Error!void {
-    if (v == v_none or v == v_shared) return;
+    if (v == v_none or v == v_outside) return;
     if (f.nodes.items[v].tag == .fnref) return;
     try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx });
 }
 
 /// `v` is read at `point` by a callee whose contract flags are `flags` over the signature layout `sig`.
 fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void {
-    if (v == v_none or v == v_shared) return;
+    if (v == v_none or v == v_outside) return;
     const n = f.nodes.items[v];
     if (n.tag == .fnref) return;
     if (whole(n.tag)) {
@@ -1017,37 +1168,46 @@ fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
 }
 
 fn escape(f: *Frame, v: Val, point: u32) Error!void {
-    if (v == v_none or v == v_shared) return;
+    if (v == v_none or v == v_outside) return;
     try f.readAll(v, point);
     const start: u32 = @intCast(f.atoms.items.len);
     _ = try f.allLeaves(v, &f.atoms);
     try f.noteEscape(start, point);
 }
 
+/// The atoms `f.atoms[start..]` escape at `point`: they are held by something
+/// the walk does not follow, so no later write of them is accepted (`demand`).
 fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     try f.uniqueTail(&f.atoms, start);
     const len: u32 = @intCast(f.atoms.items.len - start);
     if (len == 0) return;
-    for (start..start + len) |i| f.markAtom(f.atoms.items[i], flag_e, 0);
-    try f.escapes.append(f.gpa, .{ .start = start, .len = len, .point = point, .ctx = f.cur_ctx });
+    for (start..start + len) |i| f.markAtom(f.atoms.items[i], flag_e);
+    const at: u32 = @intCast(f.esc_atoms.items.len);
+    try f.esc_atoms.appendSlice(f.gpa, f.atoms.items[start..]);
+    try f.escapes.append(f.gpa, .{ .start = at, .len = len, .point = point, .ctx = f.cur_ctx });
 }
 
-/// Set `flag` on the parameter location that atom `a` is, or was taken from.
-fn markAtom(f: *Frame, a: Atom, flag: u8, depth: u32) void {
+/// Set `flag` on the parameter location that atom `a` is, or was taken
+/// from. The run of a `version` or `taken` entry holds atoms of roots made
+/// before its own, so the recursion ends.
+fn markAtom(f: *Frame, a: Atom, flag: u8) void {
     const r = f.roots.items[a.root];
     switch (r.kind) {
         .param, .capture => f.pflags.items[r.ent + a.e] |= flag,
         .local => {
             const ent = f.rents.items[r.ent + a.e];
-            if ((ent.kind != .taken and ent.kind != .version) or depth > 8) return;
-            for (0..ent.len) |i| f.markAtom(f.atoms.items[ent.start + i], flag, depth + 1);
+            switch (ent.kind) {
+                .own, .alias, .derived => return,
+                .taken, .version => {},
+            }
+            for (0..ent.len) |i| f.markAtom(f.atoms.items[ent.start + i], flag);
         },
         // The answer of a function parameter escapes: the contract says so,
         // and the caller that knows the function lets what it answers escape.
         .answer => if (flag & flag_e != 0) {
             f.drafts.items[r.index].ans_escapes = true;
         },
-        .shared => {},
+        .outside, .fresh => {},
     }
 }
 
@@ -1080,7 +1240,7 @@ const DemandIn = struct {
 /// written part below it. Another part below the same entry is another
 /// operand: a cell at two parts of one value is no `own` cell.
 fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []const u64) Error!bool {
-    if (o.v == v_none or o.v == v_shared) return false;
+    if (o.v == v_none or o.v == v_outside) return false;
     const n = f.nodes.items[o.v];
     if (n.tag == .fnref) return false;
     if (o.self_only) {
@@ -1140,7 +1300,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
             // whose parts are not apart (`REntry.twice`) is no two sets.
             for (f.scratch.items) |x| for (ws) |w| {
                 if (!f.overlap(x, w)) continue;
-                if (x.via == w.via and (x.via == none or f.roots.items[x.via].linear) and !f.twiceAt(x)) continue;
+                if (x.via == w.via and (x.via == none or f.isLinear(x.via)) and !f.twiceAt(x)) continue;
                 return true;
             };
             continue;
@@ -1199,15 +1359,17 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             return;
         }
     }
+    // The permission (kernel §5, test 1): a cell outside the frame, a
+    // capture and the answer of a function parameter are never `own`.
     for (0..wn) |i| {
         const a = f.atoms.items[w + i];
         switch (f.roots.items[a.root].kind) {
-            .shared => d.refused = .unknown,
+            .outside => d.refused = .unknown,
             .capture => d.refused = .captured,
             .answer => if (in.op != .supply) {
                 d.refused = .call;
             },
-            .param, .local => {},
+            .param, .local, .fresh => {},
         }
         if (d.refused != null) break;
     }
@@ -1227,14 +1389,14 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     if (d.refused == null) {
         for (f.escapes.items) |e| {
             if (!f.compatible(e.ctx, f.cur_ctx)) continue;
-            if (f.overlapAny(f.atoms.items[e.start..][0..e.len], f.atoms.items[w..][0..wn])) {
+            if (f.overlapAny(f.esc_atoms.items[e.start..][0..e.len], f.atoms.items[w..][0..wn])) {
                 d.refused = .escaped;
                 break;
             }
         }
     }
     // The contract asks the caller for what the body writes of a parameter.
-    if (in.op != .supply) for (0..wn) |i| f.markAtom(f.atoms.items[w + i], flag_w, 0);
+    if (in.op != .supply) for (0..wn) |i| f.markAtom(f.atoms.items[w + i], flag_w);
     // A write of a cell that a function parameter was handed before: a function that keeps it reads the edit.
     if (in.op != .supply and wn != 0) for (f.answers.items) |an| {
         if (f.overlapAny(an.base.items, f.atoms.items[w..][0..wn])) f.drafts.items[an.di].rewrites = true;
@@ -1244,20 +1406,27 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
 
 const Ground = enum(u8) { fresh, call, param };
 
-fn groundOf(f: *Frame, a: Atom, depth: u32) Ground {
+fn groundOf(f: *Frame, a: Atom) Ground {
     const r = f.roots.items[a.root];
+    // A cell read through a call's result rests on the callee's contract.
+    const via: Ground = if (a.via != none and f.roots.items[a.via].call) .call else .fresh;
     switch (r.kind) {
         .param, .capture => return .param,
+        .fresh => return .call,
         .local => {
             const ent = f.rents.items[r.ent + a.e];
-            var g: Ground = if (r.call) .call else .fresh;
-            if ((ent.kind == .taken or ent.kind == .version) and depth < 8) for (0..ent.len) |i| {
-                const b = f.groundOf(f.atoms.items[ent.start + i], depth + 1);
-                if (@backingInt(b) > @backingInt(g)) g = b;
-            };
+            var g: Ground = if (r.call) .call else via;
+            switch (ent.kind) {
+                .own, .alias, .derived => {},
+                .taken, .version => for (0..ent.len) |i| {
+                    const b = f.groundOf(f.atoms.items[ent.start + i]);
+                    if (@backingInt(b) > @backingInt(g)) g = b;
+                },
+            }
             return g;
         },
-        else => return .fresh,
+        // Refused before a ground is asked for.
+        .outside, .answer => return via,
     }
 }
 
@@ -1265,6 +1434,11 @@ fn groundOf(f: *Frame, a: Atom, depth: u32) Ground {
 fn finishDemands(f: *Frame) Error!void {
     for (f.demands.items) |*d| {
         const ws = f.atoms.items[d.w..][0..d.wn];
+        // A walk that gave up accepts nothing (kernel §3.3).
+        if (f.failed and d.refused == null) {
+            d.refused = .limit;
+            d.detail = "the walk of this declaration gave up";
+        }
         if (d.refused == null) {
             f.skip_answer = d.skip;
             f.judge_ctx = d.ctx;
@@ -1289,7 +1463,7 @@ fn finishDemands(f: *Frame) Error!void {
         }
         var g: Ground = .fresh;
         for (ws) |a| {
-            const x = f.groundOf(a, 0);
+            const x = f.groundOf(a);
             if (@backingInt(x) > @backingInt(g)) g = x;
         }
         const ground: Facts.Verdict.Accepted = switch (g) {
@@ -1426,7 +1600,7 @@ fn mention(f: *Frame, v: Val, inst: u32) Error!void {
         .closure, .fnref => {},
         .ref => if (!f.isFnRoot(f.ownFnRoot(v))) return,
         // A function in a value went to `top` where the value was made.
-        .none, .shared, .built, .join, .smear, .unknown => return,
+        .none, .outside, .built, .join, .unknown => return,
         .later => unreachable, // read through `capVal` only
     }
     try f.flowTop(v, inst);
@@ -1434,7 +1608,7 @@ fn mention(f: *Frame, v: Val, inst: u32) Error!void {
 
 fn flowTop(f: *Frame, v: Val, inst: u32) Error!void {
     const site: Site = .{ .inst = inst };
-    const top: Use = .{ .kind = .top, .id = f.useId(), .site = &site };
+    const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site };
     try f.flow(v, &top);
 }
 
@@ -1466,7 +1640,7 @@ fn capture(f: *Frame, local: u32) Error!Val {
     // A declaration's own frame binds each of its locals: it captures none.
     if (!f.is_lambda or m.lbinder[f.d.locals_start + local] == f.id) {
         f.failed = true;
-        return v_shared;
+        return f.unknownOf(try m.placeOfLocal(f.d, local), &.{});
     }
     for (f.cap_locals.items, 0..) |l, k| if (l == local) return f.rootVal(f.params.items[f.own_params + k]);
     const place = try m.placeOfLocal(f.d, local);
@@ -1491,8 +1665,11 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // A code binding of a group whose rounds run (the code itself, or
             // another code of its cycle): the known function, with its
             // contract so far.
-            if (m.lframe[l] == none) return f.memberValue(data.lhs);
-            if (m.lframe[l] == f.id) return m.lv[l];
+            if (m.lframe[l] == none) return f.memberValue(data.lhs, inst);
+            if (m.lframe[l] == f.id) {
+                if (safety) std.debug.assert(m.lv[l] != v_unbound);
+                return m.lv[l];
+            }
             if (m.lbinder[l] == f.id) {
                 // A later binding of this frame's own `let`. A local function
                 // is hoisted, and nothing runs where code is bound, so it is
@@ -1503,8 +1680,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                     return m.lv[l];
                 }
                 // A value read before it is bound: lowering refuses that.
-                f.failed = true;
-                return v_shared;
+                return f.giveUp(inst);
             }
             return f.capture(data.lhs);
         },
@@ -1525,17 +1701,21 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             return v_none;
         },
         .top, .ext_value => {
-            const t = m.calleeOf(inst) orelse return f.unknownResult(inst);
+            // A name that resolves to no declaration: unknown code, with nothing in sight.
+            const t = m.calleeOf(inst) orelse return f.unknownResult(inst, &.{});
             try f.evidence(inst);
             if (try m.isFunction(t)) return f.node(.{ .tag = .fnref, .a = t[0], .b = t[1] });
             // A top-level value: every reader has it, so each cell of it is
-            // `shared`. A location that it holds no cell at (`Dict.empty`) holds none here.
+            // outside every frame (the position rule, kernel §3.1). Its
+            // contract says which locations hold a cell; a location that
+            // holds none (`Dict.empty`'s lists) holds none here. With no
+            // contract (its walk gave up), each location can.
             const place = try m.placeOfInst(inst);
             const layout = try m.loc.layoutOf(place);
             const es = m.loc.layoutEntries(layout);
             if (es.len == 0) return v_none;
-            const c = (try m.declContract(t)) orelse return v_shared;
-            if (c.arity != 0) return v_shared;
+            const c = (try m.declContract(t)) orelse return v_outside;
+            if (c.arity != 0) return v_outside;
             const cov = try m.loc.cover(c.layouts[0], layout);
             var any = false;
             for (cov) |cr| if (cr >= Loc.all or c.res[cr].len != 0) {
@@ -1544,7 +1724,10 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             if (!any) return v_none;
             const root = try f.newRoot(.local, place, inst);
             const ent0 = f.roots.items[root].ent;
-            for (cov, 0..) |cr, e| f.rents.items[ent0 + e] = if (cr >= Loc.all or c.res[cr].len != 0) .{ .kind = .shared } else .{ .kind = .alias };
+            const start: u32 = @intCast(f.atoms.items.len);
+            try f.atoms.append(f.gpa, outside_atom);
+            for (cov, 0..) |cr, e| f.rents.items[ent0 + e] = if (cr >= Loc.all or c.res[cr].len != 0) .{ .kind = .alias, .start = start, .len = 1 } else .{ .kind = .alias };
+            f.deriveLinear(root, null, &.{});
             return f.rootVal(root);
         },
         .tuple => {
@@ -1596,40 +1779,41 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .call => return f.call(inst, mode),
         .method_call => return f.methodCall(inst),
         .type_dispatch => {
+            // Code of the compiler's own that the walk does not follow: each argument escapes, and the answer can hold each.
             const t = m.bir.extraData(@fromBackingInt(data.rhs), Bir.TypeDispatch);
-            for (m.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index)) |a| try f.escape(try f.ev(a.int()), inst);
-            return f.unknownResult(inst);
+            var vals: std.ArrayList(Val) = .empty;
+            defer vals.deinit(f.gpa);
+            for (m.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index)) |a| try vals.append(f.gpa, try f.ev(a.int()));
+            for (vals.items) |v| try f.escape(v, inst);
+            return f.unknownResult(inst, vals.items);
         },
         .markup => {
             var ops: std.ArrayList(Inst.Index) = .empty;
             defer ops.deinit(f.gpa);
             try m.bir.markupValues(f.gpa, @fromBackingInt(data.lhs), &ops);
-            // A page's markup reads its values when it is rendered (v1's entry
-            // rule): the runtime renders again after each `update`.
-            // A value of the model is read. A message that the frame makes
-            // here, or a function that answers one, is kept by the runtime
-            // until the next render: what it holds escapes.
-            //
-            // The render reads each value after the markup has evaluated
-            // all of them: so the reads come after the last one (`timeOf`).
+            // The value of markup holds the value of each of its holes
+            // (kernel §6.12): a platform's runtime reads them where it
+            // renders, after this frame, and a `For` keeps its list. So the
+            // markup is `unknown` over them, and whoever holds the markup
+            // holds them. A message that the frame makes here, or a function
+            // that answers one, is kept by the runtime beyond the markup's
+            // own life (it is sent back on an event): what it holds escapes.
             //
             // A hole that calls a function of the top level is a helper: the
-            // platform makes the call where it renders, after the markup's
-            // other values (`language.md` §6, *Evaluation order*; §11.6). The
-            // call stays where it is written, so its writes are at the
-            // earliest place where they can run, and what it reads of its
-            // arguments is read again with the other values, at the latest.
+            // platform may make the call where it renders (`language.md` §6,
+            // *Evaluation order*; §11.6), so what the call was handed is held
+            // by the markup too, as the call's value is.
             const vals = try f.gpa.alloc(Val, ops.items.len);
-            var late: std.ArrayList(Val) = .empty;
-            defer late.deinit(f.gpa);
+            var held: std.ArrayList(Val) = .empty;
+            defer held.deinit(f.gpa);
             var helpers: std.ArrayList(u32) = .empty;
             defer helpers.deinit(f.gpa);
             try f.helperHoles(@fromBackingInt(data.lhs), &helpers);
             for (ops.items, vals) |o, *v| {
                 v.* = try f.ev(o.int());
-                if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try late.appendSlice(f.gpa, f.call_vals);
+                try held.append(f.gpa, v.*);
+                if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try held.appendSlice(f.gpa, f.call_vals);
             }
-            for (late.items) |v| try f.readAll(v, inst);
             for (vals) |v| {
                 const n = f.nodes.items[v];
                 const kept = switch (n.tag) {
@@ -1640,23 +1824,75 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                         for (m.loc.layoutEntries(lc.layouts[lc.arity])) |e| if (e.kind != .@"opaque") break :blk true;
                         break :blk false;
                     },
-                    .none, .shared, .ref, .join, .smear, .fnref, .unknown => false,
+                    .none, .outside, .ref, .join, .fnref, .unknown => false,
                     .later => unreachable, // read through `capVal` only
                 };
                 if (kept) try f.escape(v, inst) else try f.readAll(v, inst);
             }
-            // The markup's value holds no value of a hole: the entry rule
-            // says that the runtime reads them where it renders (above).
-            // That is a rule of the platforms, not a fact that the walk
-            // proves (research report 113 §6.4). But a platform can keep
-            // them in the markup's value (the `dom` lowering of the browser
-            // platform does) and read them where it renders, after this
-            // frame: so each is read again at the frame's end (`finish`;
-            // research report 114 §9).
-            for (vals) |v| try f.late.append(f.gpa, .{ v, inst, f.cur_ctx });
-            return f.unknownResult(inst);
+            return f.unknownOf(try m.placeOfInst(inst), held.items);
         },
-        else => return v_shared,
+        // Not an expression: a reference the resolver did not rewrite, a
+        // type, a schema plan, a pattern, a binding, a branch. The walk
+        // cannot say what is here, so it gives up on the declaration.
+        .import_value,
+        .import_ctor,
+        .qualified,
+        .qualified_ctor,
+        .schema_type_ref,
+        .schema_value_ref,
+        .schema_ctor_ref,
+        .type_var,
+        .type_top,
+        .type_import,
+        .type_qualified,
+        .ext_type,
+        .schema_type_top,
+        .ext_schema_type,
+        .type_app,
+        .type_fn,
+        .type_unit,
+        .type_tuple,
+        .type_record,
+        .type_record_ext,
+        .schema_ref,
+        .schema_app,
+        .schema_paren,
+        .schema_record,
+        .schema_field,
+        .schema_value,
+        .schema_tagged,
+        .schema_variant,
+        .schema_as,
+        .schema_via,
+        .schema_optional,
+        .schema_nullable,
+        .schema_expr_ref,
+        .schema_parameter,
+        .schema_primitive,
+        .schema_target_top,
+        .ext_schema_target,
+        .let,
+        .let_def,
+        .let_pattern,
+        .let_stmt,
+        .case,
+        .branch,
+        .pat_wild,
+        .pat_var,
+        .pat_ctor,
+        .pat_int,
+        .pat_char,
+        .pat_string,
+        .pat_unit,
+        .pat_tuple,
+        .pat_list,
+        .pat_spread,
+        .pat_record,
+        .pat_as,
+        => return f.giveUp(inst),
+        // A schema's member or constructor is a function of the compiler's
+        // own: it captures nothing of the frame, and it is in the default state.
+        .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => return v_outside,
     }
 }
 
@@ -1707,18 +1943,19 @@ fn helperHoles(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!
 
 /// A constructor used as a function value: its contract says that the
 /// result's argument `k` is parameter `k`, location for location (for a
-/// record alias's constructor, the field that argument `k` is). A
-/// constructor that the walk has no row for is a function in the default
-/// state (`v_shared`): it asks nothing, and its answer can hold each value
-/// in sight (research report 112 §2.5). It is never "no function".
+/// record alias's constructor, the field that argument `k` is; backend.md
+/// §4). A constructor that the walk has no row for is a function in the
+/// default state: it captured nothing of the frame (`outside`), it asks
+/// nothing, and its answer can hold each value in sight (research report
+/// 112 §2.5). It is never "no function".
 fn ctorValue(f: *Frame, inst: u32) Error!Val {
     const m = f.m;
     const ty = m.typeOfInst(inst);
     // A constructor with no argument is a value of no object, not a function.
     const ft = m.fnType(ty) orelse return v_none;
-    const info = m.ctorInfo(inst) orelse return v_shared;
+    const info = m.ctorInfo(inst) orelse return v_outside;
     const pvars = m.in.store.vars(ft.params);
-    if (pvars.len != info.arity) return v_shared;
+    if (pvars.len != info.arity) return v_outside;
     const rplace = try m.placeOf(ft.result.toOptional());
     if (try f.layoutLen(rplace) == 0) return v_none;
     if (m.code_contract[inst] == null) {
@@ -1728,8 +1965,8 @@ fn ctorValue(f: *Frame, inst: u32) Error!Val {
         const lists = try f.gpa.alloc(std.ArrayList(Src), c.res.len);
         for (lists) |*l| l.* = .empty;
         for (0..info.arity) |k| {
-            const step = (try m.ctorArgStep(inst, rplace, @intCast(k))) orelse return v_shared;
-            const pr = (try m.loc.proj(rplace, step)) orelse return v_shared;
+            const step = (try m.ctorArgStep(inst, rplace, @intCast(k))) orelse return v_outside;
+            const pr = (try m.loc.proj(rplace, step)) orelse return v_outside;
             const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
             const pes = m.loc.layoutEntries(c.layouts[k]);
             for (child, 0..) |ce, j| {
@@ -1746,8 +1983,10 @@ fn ctorValue(f: *Frame, inst: u32) Error!Val {
     return f.node(.{ .tag = .closure, .place = try m.placeOf(ty), .a = @intCast(f.codes.items.len - 1) });
 }
 
-fn unknownResult(f: *Frame, inst: u32) Error!Val {
-    return if (try f.layoutLen(try f.m.placeOfInst(inst)) == 0) v_none else v_shared;
+/// The answer of code the walk does not follow at `inst`: no claim, and it
+/// can hold each cell of the values `in_sight` (kernel §3.2).
+fn unknownResult(f: *Frame, inst: u32, in_sight: []const Val) Error!Val {
+    return f.unknownOf(try f.m.placeOfInst(inst), in_sight);
 }
 
 fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
@@ -1777,32 +2016,28 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
     const pr = try m.loc.proj(place, Step.elem);
     for (0..es.len) |e| {
         if (es[e].loc == self) {
-            f.rents.items[r.ent + e].fresh = true;
+            // The storage: the frame's own cell (`own`), or the base's array
+            // under a new name (`version`), or its own or the array of a
+            // prepend's base (`derived`). An outside atom among them refuses
+            // a write by itself (`demand`).
             if (base == v_none) {
                 if (front == v_none) continue;
                 const start: u32 = @intCast(f.atoms.items.len);
                 const dup = try f.leavesAs(front, place, @intCast(e), &f.atoms);
                 try f.uniqueTail(&f.atoms, start);
-                var kind: EKind = .derived;
-                for (f.atoms.items[start..]) |a| if (a.root == 0) {
-                    kind = .shared;
-                };
                 // One cell at two places of the storage: its parts are not apart (`leavesOwn`).
-                f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true, .twice = dup };
+                f.rents.items[r.ent + e] = .{ .kind = .derived, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
                 continue;
             }
             const start: u32 = @intCast(f.atoms.items.len);
             const dup = try f.leavesAs(base, place, @intCast(e), &f.atoms);
             // The base's storage is the result's: its names here are old.
-            var kind: EKind = .version;
-            for (f.atoms.items[start..]) |*a| {
-                if (a.root == 0) kind = .shared;
-                a.dead = f.timeOf(inst);
-            }
+            for (f.atoms.items[start..]) |*a| a.dead = f.timeOf(inst);
             try f.uniqueTail(&f.atoms, start);
-            f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true, .twice = dup };
+            f.rents.items[r.ent + e] = .{ .kind = .version, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
             continue;
         }
+        // The elements: the cells of other roots, each element one part.
         const start: u32 = @intCast(f.atoms.items.len);
         var dup = false;
         for (elems) |v| {
@@ -1815,40 +2050,20 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
             } else if (try f.allLeaves(v, &f.atoms)) {
                 dup = true;
             }
-            if (before > start and f.dupOverlap(f.atoms.items[start..before], f.atoms.items[before..])) dup = true;
+            if (f.partDup(f.atoms.items, start, before)) dup = true;
         }
         for (spreads) |v| {
             if (v == v_none) continue;
             const before = f.atoms.items.len;
             if (try f.leavesAs(v, place, @intCast(e), &f.atoms)) dup = true;
-            if (before > start and f.dupOverlap(f.atoms.items[start..before], f.atoms.items[before..])) dup = true;
+            if (f.partDup(f.atoms.items, start, before)) dup = true;
         }
         try f.uniqueTail(&f.atoms, start);
-        var kind: EKind = .derived;
-        for (f.atoms.items[start..]) |a| if (a.root == 0) {
-            kind = .shared;
-        };
         // One cell at two places of the location: it keeps what it holds,
-        // and its parts are not apart (research report 114 §8).
-        f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
+        // and its parts are not apart (kernel §4.4).
+        f.rents.items[r.ent + e] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
     }
-    // A cell at two places of one location, or of another root at two
-    // locations of the new list: its parts are not apart.
-    for (0..es.len) |e| if (f.rents.items[r.ent + e].twice) {
-        f.roots.items[root].linear = false;
-    };
-    outer: for (0..es.len) |e1| {
-        const a1 = f.rents.items[r.ent + e1];
-        if (a1.len == 0) continue;
-        for (e1 + 1..es.len) |e2| {
-            const a2 = f.rents.items[r.ent + e2];
-            if (a2.len == 0) continue;
-            if (f.dupOverlap(f.atoms.items[a1.start..][0..a1.len], f.atoms.items[a2.start..][0..a2.len])) {
-                f.roots.items[root].linear = false;
-                break :outer;
-            }
-        }
-    }
+    f.deriveLinear(root, null, &.{});
     return f.rootVal(root);
 }
 
@@ -1868,7 +2083,6 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     // The update copies the record: each other field is the base's.
     const bplace = f.placeOfVal(base) orelse place;
     const st = m.places.steps(bplace);
-    if (base == v_shared and st.steps.len == 0) return v_shared;
     const updated = tmp.items.len;
     for (st.steps) |s| {
         if (s.kind == .level) continue;
@@ -2193,7 +2407,8 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
     const caps = try f.gpa.alloc([]const u32, ms.len);
     @memset(caps, &.{});
     const vals = try f.gpa.alloc(Val, ms.len);
-    @memset(vals, v_shared);
+    // Read only where the walk gives up on the whole declaration (below).
+    @memset(vals, v_outside);
     for (ms) |mb| {
         const fnt = m.fnType(mb.ty);
         const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
@@ -2205,6 +2420,7 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
             t.* = pv.toOptional();
         }
         m.code_contract[mb.inst] = try m.bottomContract(places, tys, try m.placeOf(fnt.?.result.toOptional()));
+        try m.drafts.put(m.gpa, @intFromPtr(m.code_contract[mb.inst].?), {});
         m.code_caps[mb.inst] = &.{};
     }
     const mark = m.lines.items.len;
@@ -2240,6 +2456,8 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
             if (if (old) |o| !CMod.eql(o, joined) else true) changed = true;
             m.code_contract[mb.inst] = joined;
             m.code_caps[mb.inst] = try m.arena.dupe(u32, caps[i]);
+            // A draft while the rounds run: a fresh cell of it is named by its call alone (`freshAtom`).
+            try m.drafts.put(m.gpa, @intFromPtr(joined), {});
         }
         // A code that names itself or a member of its group is walked again until the contracts hold.
         var again = false;
@@ -2252,6 +2470,9 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
         }
         m.lines.shrinkRetainingCapacity(mark);
     }
+    for (ms) |mb| if (m.code_contract[mb.inst]) |c| {
+        _ = m.drafts.remove(@intFromPtr(c));
+    };
     for (ms, 0..) |mb, i| vals[i] = try f.closureOf(mb, caps[i]);
     return vals;
 }
@@ -2297,8 +2518,9 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
     if (m.lframe[l] == 0 and m.lcode[l] != none) try f.makeCode(n.a);
     if (m.lframe[l] != f.id) {
         f.failed = true;
-        return v_shared;
+        return f.unknownOf(n.place, &.{});
     }
+    if (safety) std.debug.assert(m.lv[l] != v_unbound);
     f.lists.items[i] = m.lv[l];
     return m.lv[l];
 }
@@ -2306,13 +2528,6 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
 /// The frame's contract, once its body is walked.
 pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const m = f.m;
-    // A platform can read the values of a page's holes where it renders,
-    // after each operation of this frame (`markup`).
-    if (f.late.items.len != 0) {
-        f.clock += 1;
-        f.clock_inst = none;
-        for (f.late.items) |x| try f.uses.append(f.gpa, .{ .point = x[1], .at = f.clock, .val = x[0], .ctx = x[2] });
-    }
     try f.finishDemands();
     // What the body reads of each parameter.
     var tmp: std.ArrayList(Atom) = .empty;
@@ -2324,7 +2539,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         } else for (0..u.nmask) |i| {
             _ = try f.leaves(u.val, f.lists.items[u.mask + i], &tmp);
         }
-        for (tmp.items) |a| f.markAtom(a, flag_r, 0);
+        for (tmp.items) |a| f.markAtom(a, flag_r);
     }
     const arity: u32 = @intCast(f.params.items.len);
     const layouts = try m.arena.alloc(u32, arity + 1);
@@ -2366,30 +2581,12 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         srcs.clearRetainingCapacity();
         const mine = all.items[runs.items[e][0]..runs.items[e][1]];
         // One cell at two places of a summary location: the location keeps
-        // its claim, and its parts are not apart (research report 114 §8).
+        // its claim, and its parts are not apart (kernel §4.4).
         const twice = dups.items[e] and !m.loc.layoutEntries(layouts[arity])[e].single;
-        var shared = false;
-        for (mine) |a| {
-            try f.atomSrcs(a, &srcs, 0);
-            const r = f.roots.items[a.root];
-            // An answer that the body let escape is held somewhere else too.
-            if (r.kind == .answer and f.drafts.items[r.index].ans_escapes) shared = true;
-            if (r.kind != .local) continue;
-            const ent = f.rents.items[r.ent + a.e];
-            if (ent.kind != .own and !ent.fresh) continue;
-            // A cell that the frame made and put at another location of the
-            // result too: the later location says that it holds a cell of
-            // the earlier one (`also`), and the caller gives both one atom.
-            for (0..e) |e2| {
-                if (f.overlapAny(&.{a}, all.items[runs.items[e2][0]..runs.items[e2][1]])) try srcs.append(f.gpa, .{ .kind = .also, .e = @intCast(e2) });
-            }
-            // A cell that the frame made is `fresh` for the caller only when it did not escape.
-            for (f.escapes.items) |esc| if (f.overlapAny(&.{a}, f.atoms.items[esc.start..][0..esc.len])) {
-                shared = true;
-            };
-        }
-        // A location with no claim still says what it can hold: a caller's holder check needs it.
-        if (shared) try srcs.append(f.gpa, Src.shared);
+        // Each atom is a named source (kernel §4.2): a cell the frame made
+        // is `fresh(k)`, with its escape, so one cell at two entries is one
+        // `k` at two entries, and an escaped cell is escaped where the caller reads it.
+        for (mine) |a| try f.atomSrcs(a, &srcs);
         if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
         for (res[e]) |s| if (s.kind == .param) {
@@ -2437,22 +2634,40 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     return c;
 }
 
-/// What atom `a` is for a contract: a parameter location, `fresh`, `shared`, an answer.
-fn atomSrcs(f: *Frame, a: Atom, out: *std.ArrayList(Src), depth: u32) Error!void {
+/// What atom `a` is for a contract: a parameter location, a named fresh
+/// cell, an outside cell, an answer (kernel §4.2).
+fn atomSrcs(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
     const r = f.roots.items[a.root];
     switch (r.kind) {
-        .shared => try out.append(f.gpa, Src.shared),
+        .outside => try out.append(f.gpa, Src.outside),
         .param, .capture => try out.append(f.gpa, .{ .kind = .param, .a = @intCast(r.index), .e = @intCast(a.e) }),
         .answer => try out.append(f.gpa, .{ .kind = .answer, .a = @intCast(f.roots.items[f.drafts.items[r.index].root].index), .e = @intCast(a.e) }),
+        // A cell a callee made is a cell this frame made, for its caller.
+        .fresh => try out.append(f.gpa, try f.freshSrc(a)),
         .local => {
             const ent = f.rents.items[r.ent + a.e];
-            if ((ent.kind == .taken or ent.kind == .version) and depth < 8) {
-                for (0..ent.len) |i| try f.atomSrcs(f.atoms.items[ent.start + i], out, depth + 1);
+            switch (ent.kind) {
+                // A new name of cells that exist: its sources are theirs. The
+                // run of `alias` and `derived` is in the list on its own
+                // (`rootLeaves` puts it there).
+                .taken, .version => for (0..ent.len) |i| try f.atomSrcs(f.atoms.items[ent.start + i], out),
+                .alias => {},
+                // A cell the frame made.
+                .own, .derived => try out.append(f.gpa, try f.freshSrc(a)),
             }
-            // The cells of other roots (`alias`, `derived`) are in the list on their own.
-            if (ent.kind == .own or ent.fresh) try out.append(f.gpa, Src.fresh);
         },
     }
+}
+
+/// The source of the own cell that atom `a` names: its allocation site in
+/// this frame's contract, and whether the frame let it escape.
+fn freshSrc(f: *Frame, a: Atom) Error!Src {
+    const k = try f.freshId(a.root, a.e);
+    var escaped = false;
+    for (f.escapes.items) |esc| if (f.overlapAny(&.{a}, f.esc_atoms.items[esc.start..][0..esc.len])) {
+        escaped = true;
+    };
+    return Src.fresh(k, escaped);
 }
 
 // ---- calls -----------------------------------------------------------------------------
@@ -2480,9 +2695,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
                     try tmp.append(f.gpa, .{ .step = s.word(), .val = v });
                 } else known = false;
             }
-            // A constructor that no row describes: no claim, and each cell of
-            // its arguments. A `smear` would claim its cells, and lose that
-            // one cell can be at two of its locations.
+            // A constructor that no row describes: no claim, and each cell of its arguments.
             if (!known) return f.unknownOf(place, vals.items);
             return f.built(place, tmp.items);
         },
@@ -2510,7 +2723,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
                     if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
                 },
                 .ref => fn_root = f.ownFnRoot(callee_val),
-                .none, .shared, .built, .join, .smear, .unknown => {},
+                .none, .outside, .built, .join, .unknown => {},
                 .later => unreachable, // read through `capVal` only
             }
             // One of several functions, or a function with no contract: no
@@ -2532,10 +2745,11 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     f.call_vals = try f.gpa.dupe(Val, vals.items);
     if (code) |c| return f.apply(inst, callee, c, vals.items, args);
     if (fn_root != none) return f.callParam(inst, callee, fn_root, vals.items, args);
-    // An unknown function: it can keep each argument, and its answer has no claim.
+    // Unknown code: it can keep each argument, and its answer can hold each of them and the callee's captures.
     for (vals.items) |v| try f.escape(v, inst);
-    if (callee_val != v_none) try f.escape(callee_val, inst);
-    return f.unknownResult(inst);
+    try f.escape(callee_val, inst);
+    try vals.append(f.gpa, callee_val);
+    return f.unknownResult(inst, vals.items);
 }
 
 /// A code binding whose rounds run, named in a walk: the code itself, or
@@ -2543,7 +2757,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
 /// with its contract so far and the values that it captured, as this frame
 /// has them. So a call of it, and each place that it goes to, is judged as
 /// for any known function, and no member holds another.
-fn memberValue(f: *Frame, local: u32) Error!Val {
+fn memberValue(f: *Frame, local: u32, inst: u32) Error!Val {
     const m = f.m;
     const b = m.lcode[f.d.locals_start + local];
     if (b != none) {
@@ -2567,24 +2781,36 @@ fn memberValue(f: *Frame, local: u32) Error!Val {
         }
     }
     // No contract to read: the walk gives up on the declaration.
-    f.failed = true;
-    return v_shared;
+    return f.giveUp(inst);
 }
 
+/// A method call, `x.m a` or an operator (`==`, `<`, …): the dispatch table
+/// says which code runs (kernel §6.11, *no fact by a name*). A declaration
+/// of the program is a call of its contract, as any call. A function the
+/// compiler derives (`eq`, `compare` of a type that declares none) reads its
+/// operands and calls its evidence, each of which is judged (`evidence`). A
+/// receiver's field, and a target the table does not name, is unknown code.
 fn methodCall(f: *Frame, inst: u32) Error!Val {
     const m = f.m;
     const data = m.datas[inst];
     const mc = m.bir.extraData(@fromBackingInt(data.rhs), Bir.MethodCall);
     const args = m.bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
-    // `==`, `<` and their kin call a type's `eq` and `compare`, which only
-    // read (language.md §6.5); `Check` refuses one that does more.
-    const name = m.symbolText(mc.name);
-    const reads = mc.origin != .none or std.mem.eql(u8, name, "compare") or std.mem.eql(u8, name, "eq");
+    const Target = enum { decl, reads, unknown };
+    var target: Target = .unknown;
     var code: ?Code = null;
-    if (!reads) if (m.methodTarget(inst)) |t| {
-        if (try m.declContract(t)) |c| {
-            if (c.arity == args.len + 1) code = .{ .contract = c, .decl = t, .own_params = c.arity };
-        }
+    if (m.in.dispatch) |dt| if (dt.siteOf(@fromBackingInt(inst))) |site| if (site.callee.unwrap()) |ti| switch (dt.term(ti)) {
+        .top, .ext => if (m.methodTarget(inst)) |t| {
+            target = .decl;
+            if (try m.declContract(t)) |c| {
+                if (c.arity == args.len + 1) code = .{ .contract = c, .decl = t, .own_params = c.arity };
+            }
+        },
+        // Code of the compiler's own: it reads its operands (language.md
+        // §6.5), and what it calls is its evidence. An evidence parameter
+        // (`a.eq` under `where a.eq`) is a function the caller handed, and
+        // `evidence` refused one that writes or keeps at that call: it reads.
+        .derived, .ext_derived, .codec, .primitive, .undetermined, .param => target = .reads,
+        .field, .identity, .text => {},
     };
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
@@ -2598,16 +2824,21 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
     try f.evidence(inst);
-    if (reads) {
-        for (vals.items) |v| try f.readAll(v, inst);
-        return f.unknownResult(inst);
+    switch (target) {
+        .reads => {
+            for (vals.items) |v| try f.readAll(v, inst);
+            return f.unknownResult(inst, vals.items);
+        },
+        .decl, .unknown => {},
     }
     if (code) |c| return f.apply(inst, inst, c, vals.items, all.items);
     for (vals.items) |v| try f.escape(v, inst);
-    return f.unknownResult(inst);
+    return f.unknownResult(inst, vals.items);
 }
 
-/// A function handed as evidence (`where`) is called by code that the checker does not follow.
+/// A function handed as evidence (`where`) is called by code that the
+/// checker does not follow, any number of times, with values it does not
+/// own: it must write no parameter and let none escape (kernel §6.11).
 fn evidence(f: *Frame, inst: u32) Error!void {
     const m = f.m;
     const dt = m.in.dispatch orelse return;
@@ -2619,15 +2850,16 @@ fn evidence(f: *Frame, inst: u32) Error!void {
 fn evidenceTerm(f: *Frame, inst: u32, ti: anytype, depth: u32) Error!void {
     const m = f.m;
     const dt = m.in.dispatch.?;
-    if (depth > 8) return;
+    if (depth > 8) return m.addRefusal(f, inst, .limit, "the evidence of this call is nested too deep to judge");
     const t: ?[2]u32 = switch (dt.term(ti)) {
         .top => |u| .{ m.in.module, u.decl.int() },
         .ext => |u| if (u.module.int() < m.in.provenance.len) (if (m.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| .{ u.module.int(), d.int() } else null) else null,
-        else => null,
+        .param, .derived, .ext_derived, .codec, .primitive, .undetermined, .field, .identity, .text => null,
     };
     if (t) |target| {
         if (try m.declContract(target)) |c| {
             if (c.writes()) try m.addRefusal(f, inst, .call, "a function that writes its parameter is handed as evidence");
+            if (c.escapes()) try m.addRefusal(f, inst, .call, "a function that keeps its parameter is handed as evidence");
         } else if (try m.isFunction(target)) {
             // No contract: the checker cannot say that it writes nothing.
             try m.addRefusal(f, inst, .call, "a function with no contract is handed as evidence");
@@ -2654,7 +2886,7 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
     const m = f.m;
     const n = f.nodes.items[v];
     switch (n.tag) {
-        .none, .fnref, .shared, .closure, .smear, .unknown => return false,
+        .none, .fnref, .outside, .closure, .unknown => return false,
         .ref, .built, .join => {},
         .later => unreachable, // read through `capVal` only
     }
@@ -2704,7 +2936,7 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
             try f.escape(v, inst);
         }
         if (c.writes()) try m.addRefusal(f, inst, .call, "a function that writes its parameter is not called with all its arguments");
-        return f.unknownResult(inst);
+        return f.unknownResult(inst, all.items);
     }
     const args = all.items;
     // A function that answers its one parameter as it is (`Js.from`, `Js.to`,
@@ -2749,234 +2981,91 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
     const site: Site = .{ .inst = inst, .callee = callee, .arg_insts = arg_insts, .others = others };
     for (0..c.arity) |j| {
         const fnc = c.fns[j] orelse continue;
-        const use: Use = .{ .kind = .call, .id = f.useId(), .c = c, .fnc = fnc, .j = @intCast(j), .args = args, .site = &site };
+        const use: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .fnc = fnc, .j = @intCast(j), .args = args, .site = &site };
         try f.flow(args[j], &use);
     }
     // What it reads.
     for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
     // The level that the result's sources are read at: no function of it is in work.
-    const base: Use = .{ .kind = .call, .id = f.useId(), .c = c, .args = args, .site = &site };
+    const base: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .args = args, .site = &site };
     // The result.
     const place = try m.placeOfInst(inst);
     const layout = try m.loc.layoutOf(place);
     const es = m.loc.layoutEntries(layout);
     if (es.len == 0) return v_none;
+    // The contract is written for arguments of which no cell is at two
+    // places (kernel §4.4). Where that does not hold, its claims that two
+    // sources are two cells have no ground: no two locations of the result
+    // are apart, and a summary location fed by two sources, or by an
+    // answer, is `twice`.
+    const args_apart = try f.argsApart(args);
     const root = try f.newRoot(.local, place, inst);
     f.roots.items[root].call = true;
-    f.roots.items[root].linear = !c.nonlinear;
     const cov = try m.loc.cover(c.layouts[c.arity], layout);
     const ent0 = f.roots.items[root].ent;
+    // Per entry: it holds the answer of a function parameter, which the callee's claims do not cover (`deriveLinear`).
+    const has_answer = try f.gpa.alloc(bool, es.len);
+    @memset(has_answer, false);
     for (0..es.len) |e| {
         const cr = cov[e];
+        const start: u32 = @intCast(f.atoms.items.len);
+        var st: SrcState = .{ .inst = inst };
+        // No entry of the callee's result covers this one (its result type
+        // has no object at all, and the caller's has): nothing is known of
+        // it, so it is the lost answer, outside and every argument (§3.2).
         if (cr == none) {
-            f.rents.items[ent0 + e] = .{ .kind = .shared };
+            try f.lostAnswer(&base, &st);
+            try f.uniqueTail(&f.atoms, start);
+            f.rents.items[ent0 + e] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !es[e].single };
+            has_answer[e] = true;
             continue;
         }
-        const start: u32 = @intCast(f.atoms.items.len);
-        var st: SrcState = .{ .inst = inst, .root = root, .cov = cov };
+        var sources: u32 = 0;
+        var answers = false;
         if (cr == Loc.all) {
-            for (c.res, 0..) |srcs, ri| try f.expandSrcs(&base, srcs, c.layouts[c.arity], @intCast(ri), layout, @intCast(e), &st);
-        } else try f.expandSrcs(&base, c.res[cr], c.layouts[c.arity], cr, layout, @intCast(e), &st);
-        // The cells of the arguments that the result holds, in an order of its own.
-        var kind: EKind = .derived;
-        const single = es[e].single;
+            for (c.res, 0..) |srcs, ri| {
+                try f.expandSrcs(&base, srcs, c.layouts[c.arity], @intCast(ri), layout, @intCast(e), &st);
+                for (srcs) |s| switch (s.kind) {
+                    .param => sources += 1,
+                    .answer => {
+                        sources += 1;
+                        answers = true;
+                    },
+                    .fresh, .outside, .twice => {},
+                };
+            }
+        } else {
+            try f.expandSrcs(&base, c.res[cr], c.layouts[c.arity], cr, layout, @intCast(e), &st);
+            for (c.res[cr]) |s| switch (s.kind) {
+                .param => sources += 1,
+                .answer => {
+                    sources += 1;
+                    answers = true;
+                },
+                .fresh, .outside, .twice => {},
+            };
+        }
         // A written location that the callee answers has a new name; so has
-        // an element that a trusted loop took out.
+        // an element that a trusted loop took out. Any other is the run.
+        var kind: EKind = .alias;
         if (st.written) kind = .version;
         if (c.taken) kind = .taken;
-        if (st.shared or (st.dup and !single)) kind = .shared;
         try f.uniqueTail(&f.atoms, start);
-        for (f.atoms.items[start..]) |a| if (a.root == 0) {
-            kind = .shared;
-        };
-        // One cell of the arguments, or one that the callee made, at two
-        // places of a summary location: it keeps its claim, and its parts
-        // are not apart (research report 114 §8).
-        const twice = st.twice and !single;
-        if (twice) f.roots.items[root].linear = false;
-        // A location with no source holds no cell: nothing is in it.
-        f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = st.fresh, .twice = twice };
+        const single = es[e].single;
+        // One cell at two places of a summary location: it keeps its claim,
+        // and its parts are not apart (kernel §4.4).
+        const twice = !single and (st.twice or (!args_apart and (sources > 1 or answers)));
+        f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
+        has_answer[e] = answers;
     }
-    try f.sourcesApart(&base, root, layout, cov);
+    f.deriveLinear(root, !c.nonlinear and args_apart, has_answer);
     return f.rootVal(root);
-}
-
-/// A contract says which sources each location of the result has. It says
-/// in two ways that two sources are two cells: two locations of the result
-/// are apart (`nonlinear` is false), and one summary location holds each
-/// cell once. The callee can know that of one source that it puts at two
-/// places. It cannot know it of two sources: that rests on the arguments,
-/// which can be one cell (`keep2 ( q, q )`), and on the functions that it
-/// was handed, whose answers can be any cell that they were handed
-/// (`( f xs, xs )` with a function that answers its parameter). This frame
-/// knows both, and it reads the claim in two steps.
-///
-/// 1. **The arguments** (`argsApart`). When no cell is at two places of the
-///    arguments, two parameter sources are two cells: two arguments have no
-///    cell in common, and two locations of one argument are apart by that
-///    argument's own claim. When a cell is at two places, the callee's claim
-///    has no ground: the locations of the result are not apart, and a
-///    summary location with an answer or with two sources has no claim.
-/// 2. **Each pair with an answer.** What the function answers is read here
-///    (`answerOfParam`). If the two sources can be one cell, the claim does
-///    not hold: two locations are not apart, or the summary location has no
-///    claim.
-///
-/// Pairs with an answer that need no check:
-///
-/// - an answer and a parameter location that the function was handed, in
-///   one summary location: they are alternatives, or the supply is not
-///   `free` (which `answerOfCode` reads as one cell at two places);
-/// - one answer source at one summary location: the callee hands the
-///   function a cell once, or its supply is not `free`. (Step 1 has the
-///   case of two calls that are handed one cell: `[ f x, f y ]` with one
-///   list as `x` and `y`.)
-/// - two entries of one answer, when the function is known, its contract
-///   says that they are apart, and what it was handed is apart;
-/// - an answer and another source in two parts of one wide entry of the
-///   callee's result (a type variable): the callee cannot make a value of
-///   that type from two sources, so they are alternatives, each a whole
-///   value.
-fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []const u32) Error!void {
-    const m = f.m;
-    const c = base.c;
-    const es = m.loc.layoutEntries(layout);
-    // Nothing to compare: no source that is a cell of this frame, or one
-    // source at one location (one wide source can be at several locations).
-    var count: u32 = 0;
-    for (c.res) |srcs| for (srcs) |s| if (s.kind == .param or s.kind == .answer) {
-        count += 1;
-    };
-    if (count == 0 or (count < 2 and es.len < 2)) return;
-    const rsig = c.layouts[c.arity];
-    const ent0 = f.roots.items[root].ent;
-    // Per result entry: the atoms of each source, as runs of `buf`.
-    const Run = struct { e: u32, ri: u32, src: Src, start: u32, end: u32 };
-    var buf: std.ArrayList(Atom) = .empty;
-    defer buf.deinit(f.gpa);
-    var runs: std.ArrayList(Run) = .empty;
-    defer runs.deinit(f.gpa);
-    var suffix: std.ArrayList(u64) = .empty;
-    defer suffix.deinit(f.gpa);
-    const w = f.atoms.items.len;
-    defer f.atoms.shrinkRetainingCapacity(w);
-    for (0..es.len) |e| {
-        // No source: the entry has no claim already.
-        if (cov[e] == none) continue;
-        // The fallback cover gives the entry each source of each location, as `apply` does.
-        const lo: usize = if (cov[e] == Loc.all) 0 else cov[e];
-        const hi: usize = if (cov[e] == Loc.all) c.res.len else cov[e] + 1;
-        for (lo..hi) |cr| {
-            // The part of the callee's result entry that this entry is, as in `expandSrcs`.
-            suffix.clearRetainingCapacity();
-            const cloc = m.loc.layoutEntries(rsig)[cr].loc;
-            if (m.loc.isPrefix(cloc, es[e].loc)) try f.suffixOf(es[e].loc, cloc, &suffix);
-            for (c.res[cr]) |s| {
-                f.atoms.shrinkRetainingCapacity(w);
-                switch (s.kind) {
-                    .fresh, .shared, .twice, .also => continue,
-                    .param => {
-                        if (s.a >= base.args.len) continue;
-                        // A cell that is two times in this one location of the one
-                        // argument is `apply`'s to see: `expandSrcs` ran for this entry.
-                        _ = try f.pairedLeaves(base.args[s.a], c.layouts[s.a], s.e, rsig, @intCast(cr), layout, @intCast(e));
-                    },
-                    .answer => {
-                        var st: SrcState = .{ .inst = base.site.inst };
-                        try f.answerOfParam(base, s, suffix.items, &st, 0);
-                    },
-                }
-                if (f.atoms.items.len == w) continue;
-                const start: u32 = @intCast(buf.items.len);
-                try buf.appendSlice(f.gpa, f.atoms.items[w..]);
-                try runs.append(f.gpa, .{ .e = @intCast(e), .ri = @intCast(cr), .src = s, .start = start, .end = @intCast(buf.items.len) });
-            }
-        }
-    }
-    if (runs.items.len == 0) return;
-    var answers = false;
-    for (runs.items) |x| if (x.src.kind == .answer) {
-        answers = true;
-    };
-    if (!answers and runs.items.len < 2) return;
-    // Step 1: the arguments.
-    const args_apart = try f.argsApart(base.args);
-    if (!args_apart) {
-        if (es.len > 1) f.roots.items[root].linear = false;
-        for (runs.items, 0..) |x, xi| {
-            if (es[x.e].single) continue;
-            var two = x.src.kind == .answer;
-            var answer = x.src.kind == .answer;
-            for (runs.items, 0..) |y, yi| if (yi != xi and y.e == x.e) {
-                two = true;
-                if (y.src.kind == .answer) answer = true;
-            };
-            if (!two) continue;
-            // Two arguments that share a cell: the atoms show it, and the
-            // location keeps its claim (`REntry.twice`). An answer has none.
-            if (answer) f.rents.items[ent0 + x.e].kind = .shared else {
-                f.rents.items[ent0 + x.e].twice = true;
-                f.roots.items[root].linear = false;
-            }
-        }
-        return;
-    }
-    if (!answers) return;
-    // Step 2: each pair with an answer.
-    for (runs.items, 0..) |x, xi| for (runs.items[xi + 1 ..]) |y| {
-        const xa = x.src.kind == .answer;
-        const ya = y.src.kind == .answer;
-        if (!xa and !ya) continue;
-        const same_e = x.e == y.e;
-        // A location that names one value holds one of its sources.
-        if (same_e and es[x.e].single) continue;
-        if (!same_e and !f.roots.items[root].linear) continue;
-        const same_fn = xa and ya and x.src.a == y.src.a;
-        const fn_apart = same_fn and x.src.a < base.args.len and try f.linearFn(base.args[x.src.a]);
-        if (!same_e and x.ri == y.ri and m.loc.layoutEntries(rsig)[x.ri].kind.wide()) {
-            // Two parts of one value.
-            if (!same_fn or fn_apart) continue;
-        } else if (xa and ya) {
-            if (same_fn and x.src.e == y.src.e and same_e) continue;
-            if (same_fn and x.src.e != y.src.e and fn_apart) continue;
-        } else if (same_e) {
-            const ans = if (xa) x.src else y.src;
-            const par = if (xa) y.src else x.src;
-            if (handsOn(c.fns[ans.a], par)) continue;
-        }
-        if (!f.overlapAny(buf.items[x.start..x.end], buf.items[y.start..y.end])) continue;
-        if (same_e) {
-            f.rents.items[ent0 + x.e].kind = .shared;
-        } else f.roots.items[root].linear = false;
-    };
-}
-
-/// Whether the function contract `fnc` hands the function the parameter location `par`.
-fn handsOn(fnc: ?*const CMod.Fn, par: Src) bool {
-    const g = fnc orelse return false;
-    for (g.supply) |srcs| for (srcs) |x| if (x.kind == .param and x.a == par.a and x.e == par.e) return true;
-    return false;
-}
-
-/// Whether the function value `v` is known code whose contract says that
-/// two parts of its answer are apart, and that contract can know it: no part
-/// of the answer is the answer of another function.
-fn linearFn(f: *Frame, v: Val) Error!bool {
-    const n = f.nodes.items[v];
-    if (n.tag == .join) {
-        for (0..n.b) |ki| if (!try f.linearFn(f.lists.items[n.a + 2 * ki])) return false;
-        return true;
-    }
-    const code = (try f.codeOf(v)) orelse return false;
-    if (code.contract.nonlinear) return false;
-    for (code.contract.res) |srcs| for (srcs) |x| if (x.kind == .answer) return false;
-    return true;
 }
 
 /// Whether no cell is at two places of the arguments `args`: in two
 /// arguments, or in two parts of one argument (`( q, q )`). A callee's
 /// contract is written for arguments that are so, and its claims about two
-/// sources of its result hold only then (`sourcesApart`).
+/// sources of its result hold only then (`apply`).
 fn argsApart(f: *Frame, args: []const Val) Error!bool {
     var buf: std.ArrayList(Atom) = .empty;
     defer buf.deinit(f.gpa);
@@ -3006,33 +3095,29 @@ fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
 /// The parts of the value `v` as runs of atoms. False when `v` cannot claim
 /// that its own parts are apart. One case for each kind of value:
 ///
-/// - no object, a function with no captured value: no cell;
-/// - no claim (`shared`): its cells are no atoms, and a location that gets
-///   them has no claim either;
+/// - no object, a function with no captured value, a value outside the
+///   frame: no cell of the frame;
 /// - a part of a root: one part. A root that the frame made says if its
 ///   parts are apart (`linear`); a parameter and a captured local are apart
 ///   by the rule that this function checks at each call: two parameters,
 ///   and two parts of one, are sources of the frame's result, and the caller
 ///   judges them with its own arguments. The answer of the frame's own
-///   function parameter is one part too. The frame cannot know if its parts
-///   are apart, and it does not claim that: its contract names them as
-///   answers, and the caller that knows the function decides
-///   (`sourcesApart`, step 2);
+///   function parameter is one part too: its contract names it as an
+///   answer, and the caller that knows the function reads what it holds;
 /// - a tuple, a record or a constructor application: each item is a part,
 ///   and each item must be apart in itself. A nest that is too deep to
-///   follow has no claim;
+///   follow has no claim (a resource limit, on the pessimistic side);
 /// - one of several values: each of them must be apart in itself. Two of
 ///   them are never one value, so together they are one part;
 /// - a function value: what it captured is one part. An answer never has a
 ///   claim on a captured cell, so two captured locals that are one cell need
 ///   no check here;
-/// - every cell at every location (`smear`), or a value that the walk
-///   cannot follow (`unknown`): one cell can be at two.
+/// - a value that the walk cannot follow (`unknown`): one cell can be at two.
 fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2]u32), depth: u32) Error!bool {
-    if (v == v_none or v == v_shared) return true;
+    if (v == v_none or v == v_outside) return true;
     const n = f.nodes.items[v];
     switch (n.tag) {
-        .none, .shared, .fnref => return true,
+        .none, .outside, .fnref => return true,
         .built => {
             if (depth >= 8) return false;
             for (0..n.b) |ki| if (!try f.partsOf(f.kids.items[n.a + ki].val, buf, runs, depth + 1)) return false;
@@ -3047,10 +3132,10 @@ fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2
         },
         .ref => {
             const r = f.roots.items[n.a];
-            if (r.kind == .local and !r.linear) return false;
+            if (r.kind == .local and !f.isLinear(n.a)) return false;
         },
         .closure => {},
-        .smear, .unknown => {
+        .unknown => {
             const start = buf.items.len;
             _ = try f.allLeaves(v, buf);
             return buf.items.len == start;
@@ -3063,20 +3148,17 @@ fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2
     return true;
 }
 
+/// What the expansion of a result entry's sources found beside the atoms
+/// (`expandSrcs`, `answerOfParam`).
 const SrcState = struct {
-    fresh: bool = false,
-    shared: bool = false,
-    /// One cell can be twice here, by a rule that no atom shows (the
-    /// answers of a function): no claim.
-    dup: bool = false,
-    /// One cell can be twice here, and the atoms show it, or the callee's
-    /// contract says `twice`: the location keeps its claim (`REntry.twice`).
+    /// One cell can be twice here: the atoms show it (two sources, or two
+    /// parts of one, hold one cell), the callee's contract says `twice`, or
+    /// an answer can be one cell in two runs (a captured cell; a cell the
+    /// holder hands to each run, `held`). The location keeps its claim; its
+    /// parts are not apart (`REntry.twice`).
     twice: bool = false,
     written: bool = false,
     inst: u32 = none,
-    /// `apply`'s result root and call map: where an `also` source points.
-    root: u32 = none,
-    cov: []const u32 = &.{},
     /// The labels of the caller's result entry below the callee's result entry in work.
     suffix: []const u64 = &.{},
     /// The answers in work: `(holder, location, result entry of the function there)`.
@@ -3116,58 +3198,75 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
     if (f.m.loc.isPrefix(cloc, rloc)) try f.suffixOf(rloc, cloc, &suffix);
     st.suffix = suffix.items;
     defer st.suffix = &.{};
-    // Two locations of one argument are two sets of cells, though one atom
-    // of the caller can name both (the entry level and the deep level of a
-    // part of a recursive value). So the overlap test is between arguments.
-    var group = first;
+    // Each source is a part of the run, and the one duplicate test is
+    // between parts (`dupOverlap`, below). Two locations of one argument are
+    // two sets of cells, though one atom of the caller can name both (the
+    // entry level and the deep level of a part of a recursive value): the
+    // sources of one parameter are one part, unless the fallback cover gave
+    // one of them each location (`hit_all`).
+    const Part = struct { start: u32, end: u32, src: Src };
+    var parts: std.ArrayList(Part) = .empty;
+    defer parts.deinit(f.gpa);
     var group_param: u32 = none;
-    f.hit_all = false;
     for (srcs) |s| {
-        const before = f.atoms.items.len;
-        if (s.kind != .param or s.a != group_param or f.hit_all) {
-            group = before;
-            group_param = if (s.kind == .param) s.a else none;
-            f.hit_all = false;
-        }
+        const before: u32 = @intCast(f.atoms.items.len);
+        f.hit_all = false;
         switch (s.kind) {
-            .fresh => st.fresh = true,
-            .shared => st.shared = true,
+            // A cell the callee made: one root for its name at this call (kernel §4.2).
+            .fresh => try f.freshAtom(base.key, base.holder, f.m.isDraft(c), s.a, s.e != 0, st.inst, &f.atoms),
+            .outside => try f.atoms.append(f.gpa, outside_atom),
             .param => {
+                // A parameter the call did not hand (a contract of another
+                // arity): nothing is known of it, so each argument.
                 if (s.a >= args.len) {
-                    st.shared = true;
-                    continue;
+                    try f.lostAnswer(base, st);
+                } else {
+                    if (try f.pairedLeaves(args[s.a], c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
+                    if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
                 }
-                if (try f.pairedLeaves(args[s.a], c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
-                if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
             },
             .twice => st.twice = true,
-            .also => {
-                // A cell that the callee made and put at its result entry
-                // `s.e` too: the cells of this frame's entries there.
-                st.fresh = true;
-                if (st.root == none) {
-                    st.shared = true;
-                    continue;
-                }
-                const r = f.roots.items[st.root];
-                for (st.cov, 0..) |cv, ce| if (Loc.hits(cv, s.e)) {
-                    // Both of the callee's entries are this one (the fallback cover): the cell is here twice.
-                    if (ce == e) st.twice = true;
-                    try f.atoms.append(f.gpa, .{ .root = st.root, .path = r.path, .e = @intCast(ce) });
-                };
-                continue;
-            },
             .answer => {
-                // An answer that is a cell the callee handed out as its own
-                // is not in the callee's other sources (`answerOfCode` says
-                // `dup` when the callee could hand a cell twice).
+                // The answer of a function parameter, read off the function
+                // that flowed there; its cells are atoms as any other's.
                 try f.answerOfParam(base, s, st.suffix, st, 0);
-                continue;
             },
         }
-        if (group > first and f.dupOverlap(f.atoms.items[first..group], f.atoms.items[before..])) st.twice = true;
-        if (f.hit_all and before > group and f.dupOverlap(f.atoms.items[group..before], f.atoms.items[before..])) st.twice = true;
+        const end: u32 = @intCast(f.atoms.items.len);
+        if (end == before) continue;
+        if (s.kind == .param and s.a == group_param and !f.hit_all and parts.items.len != 0) {
+            parts.items[parts.items.len - 1].end = end;
+        } else try parts.append(f.gpa, .{ .start = before, .end = end, .src = s });
+        group_param = if (s.kind == .param and !f.hit_all) s.a else none;
     }
+    _ = first;
+    // One cell in two parts of one location is one cell at two places,
+    // unless the two parts are alternatives (`alternatives`).
+    for (parts.items, 0..) |x, i| for (parts.items[0..i]) |y| {
+        if (alternatives(c, x.src, y.src)) continue;
+        if (f.dupOverlap(f.atoms.items[x.start..x.end], f.atoms.items[y.start..y.end])) st.twice = true;
+    };
+}
+
+/// Whether two sources of one summary location of a callee's result are
+/// alternatives: each cell is at one of them, so the same atom in both is
+/// not one cell at two places. That is the case for the answer of a
+/// function `g` and a parameter location the callee hands `g` `free`: a cell
+/// handed `free` is read by the callee no more, so it is in the answer or it
+/// stays, never both (a `taken` row of `core/`, or a callee whose own frame
+/// showed no later read of it: the supply's demand). Any other pair is
+/// tested as atoms.
+fn alternatives(c: *const Contract, x: Src, y: Src) bool {
+    if (x.kind == .answer and y.kind == .param) return handsFree(c.fns[x.a], y);
+    if (y.kind == .answer and x.kind == .param) return handsFree(c.fns[y.a], x);
+    return false;
+}
+
+/// Whether the function contract `fnc` hands the function the parameter location `par`, `free`.
+fn handsFree(fnc: ?*const CMod.Fn, par: Src) bool {
+    const g = fnc orelse return false;
+    for (g.supply, g.free) |srcs, free| if (free) for (srcs) |x| if (x.kind == .param and x.a == par.a and x.e == par.e) return true;
+    return false;
 }
 /// The atoms of argument `v` at the callee's parameter entry `pe`, for the
 /// caller's result entry `e`: when both are below a type variable, the part
@@ -3247,7 +3346,7 @@ fn codeOf(f: *Frame, v: Val) Error!?Code {
             const c = (try f.m.declContract(.{ n.a, n.b })) orelse break :blk null;
             break :blk .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
         },
-        .none, .shared, .ref, .built, .join, .smear, .unknown => null,
+        .none, .outside, .ref, .built, .join, .unknown => null,
         .later => unreachable, // read through `capVal` only
     };
 }
@@ -3277,7 +3376,7 @@ fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
     if (v == v_none) return;
     if (use.depth > 16) {
         // Too deep to follow: the default.
-        const top: Use = .{ .kind = .top, .id = f.useId(), .site = use.site };
+        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site };
         return f.flow(v, &top);
     }
     const n = f.nodes.items[v];
@@ -3315,7 +3414,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             try f.escapeSupplies(&use);
             try f.escape(v, inst);
         }
-        const top: Use = .{ .kind = .top, .id = f.useId(), .site = use.site, .depth = use.depth, .code = code };
+        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code };
         return f.flowCaptures(code, &top);
     }
     if (use.rewrites() and keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
@@ -3382,7 +3481,7 @@ fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) E
     for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
         args[code.own_params + k] = try f.capVal(code, k);
     };
-    return .{ .kind = .inner, .id = f.useId(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .site = up.site, .depth = up.depth + 1 };
+    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .site = up.site, .depth = up.depth + 1 };
 }
 
 /// The frame's own function parameter meets a use: what the use hands it,
@@ -3449,7 +3548,7 @@ fn flowUnknown(f: *Frame, v: Val, use: *const Use) Error!void {
 fn slotsOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32, rel: ?[]const u64, out: *std.ArrayList(Slot)) Error!bool {
     const m = f.m;
     if (use.kind == .top) {
-        try out.append(f.gpa, .{ .fe = none, .free = false, .srcs = CMod.shared_only });
+        try out.append(f.gpa, .{ .fe = none, .free = false, .srcs = &.{Src.outside} });
         return true;
     }
     const fnc = use.fnc;
@@ -3518,16 +3617,26 @@ fn answersAt(f: *const Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) bool
 /// that function's own use hands it: this is the composition.
 fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool, sink: anytype, depth: u32) Error!void {
     switch (src.kind) {
-        .fresh => try sink.fresh(f),
-        // A supply has neither: what a function is handed is never a result entry.
-        .shared, .twice, .also => try sink.shared(f),
+        // A cell the holder made: its one root at this call, an atom like any other (kernel §4.2).
+        .fresh => {
+            const start: u32 = @intCast(f.atoms.items.len);
+            try f.freshAtom(use.key, use.holder, f.m.isDraft(use.c), src.a, src.e != 0, use.site.inst, &f.atoms);
+            try sink.atoms(f, .{ .start = start, .dup = false, .use = use, .a = none, .e = 0, .suffix = suffix, .captured = false });
+        },
+        .outside => try sink.outside(f),
+        // A supply is never a result entry, so `twice` does not reach here
+        // (`supplyAtoms` makes supplies from atoms); read as `outside` if it did.
+        .twice => {
+            if (safety) std.debug.assert(false);
+            try sink.outside(f);
+        },
         .answer => try sink.answer(f, use, src, suffix, deep),
         .param => {
             if (src.a >= use.args.len) return sink.lost(f, use);
             if (use.kind == .inner and src.a < use.own) {
                 const up = use.up.?;
-                // The default hands a value with no claim.
-                if (up.kind == .top) return sink.shared(f);
+                // The default hands a value outside the frame.
+                if (up.kind == .top) return sink.outside(f);
                 if (depth > 12) return sink.lost(f, use);
                 const lc = use.c;
                 var slots: std.ArrayList(Slot) = .empty;
@@ -3557,26 +3666,24 @@ const FlatSink = struct {
     st: *SrcState,
     depth: u32,
 
-    fn fresh(s: *FlatSink, _: *Frame) Error!void {
-        s.st.fresh = true;
-    }
-    fn shared(s: *FlatSink, _: *Frame) Error!void {
-        s.st.shared = true;
+    fn outside(_: *FlatSink, f: *Frame) Error!void {
+        try f.atoms.append(f.gpa, outside_atom);
     }
     /// The holder can hand one cell to two calls: two answers can be that cell.
     fn held(s: *FlatSink, _: *Frame) Error!void {
-        s.st.dup = true;
+        s.st.twice = true;
     }
     fn lost(s: *FlatSink, f: *Frame, use: *const Use) Error!void {
         try f.lostAnswer(use, s.st);
     }
     fn atoms(s: *FlatSink, f: *Frame, h: Handed) Error!void {
-        if (h.dup) s.st.dup = true;
+        if (h.dup) s.st.twice = true;
         if (h.captured) {
-            // Each run is handed the same cell: no claim. The answer still holds it.
-            s.st.shared = true;
+            // Each run is handed the same cell: two runs can answer it. The answer holds it.
+            s.st.twice = true;
             return;
         }
+        if (h.a == none) return;
         const c = h.use.c;
         if (c.flags[c.off[h.a] + h.e] & (flag_w | flag_s) != 0) f.oldNames(h.start, s.st);
     }
@@ -3593,8 +3700,8 @@ const FlatSink = struct {
 const EscSink = struct {
     inst: u32,
 
-    fn fresh(_: *EscSink, _: *Frame) Error!void {}
-    fn shared(_: *EscSink, _: *Frame) Error!void {}
+    /// A cell outside the frame is held outside it already.
+    fn outside(_: *EscSink, _: *Frame) Error!void {}
     fn held(_: *EscSink, _: *Frame) Error!void {}
     fn lost(s: *EscSink, f: *Frame, use: *const Use) Error!void {
         var u: ?*const Use = use;
@@ -3620,8 +3727,7 @@ const OwnSink = struct {
     level: *const Use,
     seen: *Seen,
 
-    fn fresh(_: *OwnSink, _: *Frame) Error!void {}
-    fn shared(s: *OwnSink, f: *Frame) Error!void {
+    fn outside(s: *OwnSink, f: *Frame) Error!void {
         try f.refuse(s.level, .supply, "the callee hands the function a value that it does not own");
     }
     fn held(s: *OwnSink, f: *Frame) Error!void {
@@ -3635,19 +3741,26 @@ const OwnSink = struct {
         if (h.captured) return f.refuse(s.level, .supply, "the function writes a parameter that is handed a captured value in each run");
         if (f.atoms.items.len == h.start) return;
         const site = s.level.site;
-        const sig = h.use.c.layouts[h.a];
-        var loc = m.loc.layoutEntries(sig)[h.e].loc;
-        for (h.suffix) |l| loc = try m.loc.extend(loc, @bitCast(l));
+        // A cell the callee made (`h.a == none`): the write is judged as a
+        // write of that cell, with no argument to name.
+        var loc: u32 = 0;
+        var single = true;
+        if (h.a != none) {
+            const sig = h.use.c.layouts[h.a];
+            loc = m.loc.layoutEntries(sig)[h.e].loc;
+            for (h.suffix) |l| loc = try m.loc.extend(loc, @bitCast(l));
+            single = m.loc.layoutEntries(sig)[h.e].single;
+        }
         try f.demand(h.start, .{
             .point = site.inst,
             .callee_inst = site.callee,
-            .base_inst = if (h.a < site.arg_insts.len) site.arg_insts[h.a].int() else none,
+            .base_inst = if (h.a != none and h.a < site.arg_insts.len) site.arg_insts[h.a].int() else none,
             .loc = loc,
             .others = site.others,
-            .arg = h.a,
-            .se = h.e,
+            .arg = if (h.a == none) std.math.maxInt(usize) else h.a,
+            .se = if (h.a == none) none else h.e,
             .suffix = h.suffix,
-            .dup = h.dup and !m.loc.layoutEntries(sig)[h.e].single,
+            .dup = h.dup and !single,
             .kind = .callsite,
         });
     }
@@ -3667,11 +3780,8 @@ const DraftSink = struct {
     fn add(s: *DraftSink, f: *Frame, src: Src) Error!void {
         try f.drafts.items[s.di].supply[s.slot].append(f.gpa, src);
     }
-    fn fresh(s: *DraftSink, f: *Frame) Error!void {
-        try s.add(f, Src.fresh);
-    }
-    fn shared(s: *DraftSink, f: *Frame) Error!void {
-        try s.add(f, Src.shared);
+    fn outside(s: *DraftSink, f: *Frame) Error!void {
+        try s.add(f, Src.outside);
     }
     fn held(s: *DraftSink, f: *Frame) Error!void {
         f.drafts.items[s.di].free[s.slot] = false;
@@ -3686,7 +3796,7 @@ const DraftSink = struct {
             f.drafts.items[s.di].free[s.slot] = false;
             return f.supplyAtoms(s.di, s.slot, h.start, site.inst, site.others, std.math.maxInt(usize), none, h.dup);
         }
-        try f.supplyAtoms(s.di, s.slot, h.start, site.inst, site.others, h.a, h.e, h.dup);
+        try f.supplyAtoms(s.di, s.slot, h.start, site.inst, site.others, if (h.a == none) std.math.maxInt(usize) else h.a, if (h.a == none) none else h.e, h.dup);
     }
     fn answer(s: *DraftSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, deep: bool) Error!void {
         const m = f.m;
@@ -3713,14 +3823,12 @@ const DraftSink = struct {
             }
             return;
         }
-        // The answer of another function: what it can hold.
+        // The answer of another function: what it can hold, each cell an atom.
         const w: u32 = @intCast(f.atoms.items.len);
         var st: SrcState = .{ .inst = site.inst, .whole = true };
         try f.answerOfParam(level, src, suffix, &st, 0);
-        if (st.fresh) try s.add(f, Src.fresh);
-        if (st.shared) try s.add(f, Src.shared);
-        if (st.shared or st.dup) f.drafts.items[s.di].free[s.slot] = false;
-        try f.supplyAtoms(s.di, s.slot, w, site.inst, site.others, std.math.maxInt(usize), none, st.dup);
+        if (st.twice) f.drafts.items[s.di].free[s.slot] = false;
+        try f.supplyAtoms(s.di, s.slot, w, site.inst, site.others, std.math.maxInt(usize), none, st.twice);
     }
 };
 
@@ -3786,7 +3894,9 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
     }
     // The answer comes back as the function's parameter, whose locations are
     // apart. So the answer must hold each cell once.
-    if (lc.nonlinear) return f.refuse(level, .supply, "the function can answer one cell at two places, and the callee hands the answer back");
+    if (lc.nonlinear) {
+        return f.refuse(level, .supply, "the function can answer one cell at two places, and the callee hands the answer back");
+    }
     const rcov = try m.loc.cover(fnc.layouts[fnc.arity], lc.layouts[lc.arity]);
     var want: ?u32 = m.loc.layoutEntries(fnc.layouts[fnc.arity])[e].loc;
     for (suffix) |l| {
@@ -3803,7 +3913,7 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
         if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc)) continue;
         for (lc.res[re]) |ls| switch (ls.kind) {
             .fresh => {},
-            .shared, .twice, .also => try f.refuse(level, .supply, not_own),
+            .outside, .twice => try f.refuse(level, .supply, not_own),
             .answer => {
                 // The answer of a function that this one captured: `own` in its turn.
                 if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
@@ -3919,7 +4029,8 @@ fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!v
 /// known function on the way captured. A location with no claim keeps what
 /// it can hold (report 111 §3.5).
 fn lostAnswer(f: *Frame, use: *const Use, st: *SrcState) Error!void {
-    st.shared = true;
+    _ = st;
+    try f.atoms.append(f.gpa, outside_atom);
     var u: ?*const Use = use;
     while (u) |x| : (u = x.up) for (x.args) |a| {
         _ = try f.allLeaves(a, &f.atoms);
@@ -3946,6 +4057,8 @@ fn answerOfParam(f: *Frame, level: *const Use, src: Src, suffix: []const u64, st
     other.j = src.a;
     other.code = null;
     other.root = none;
+    // The same holder, another of its function parameters: the same key, so
+    // a fresh cell of that function's answer is one root wherever it is read.
     try f.answerOf(level.args[src.a], &other, src.e, st, depth);
 }
 
@@ -4000,15 +4113,10 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
             .full => return f.lostAnswer(use, st),
         }
         for (lc.res[k]) |ls| switch (ls.kind) {
-            .fresh => st.fresh = true,
-            .shared => st.shared = true,
-            // The answer of a function value has no claim where one cell
-            // can be at two places (as before `twice` and `also`).
-            .twice => st.shared = true,
-            .also => {
-                st.fresh = true;
-                st.shared = true;
-            },
+            // A cell the function made: one root at this holder for its name (kernel §4.2).
+            .fresh => try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
+            .outside => try f.atoms.append(f.gpa, outside_atom),
+            .twice => st.twice = true,
             .answer => {
                 // The answer of a function that the known function captured:
                 // that function is in a location of this one.
@@ -4032,8 +4140,8 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
             .param => {
                 if (ls.a >= code.own_params) {
                     // A captured value in the answer: each run answers the
-                    // same cell, so no claim. The answer still holds it.
-                    st.shared = true;
+                    // same cell, so two runs can answer one cell. The answer holds it.
+                    st.twice = true;
                     if (ls.a - code.own_params < code.ncaps) {
                         _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
                     } else try f.lostAnswer(use, st);
@@ -4059,7 +4167,7 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
                 const wide = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].kind.wide();
                 for (slots.items) |slot| {
                     // The holder can hand one cell to two calls: two answers can be that cell.
-                    if (!slot.free) st.dup = true;
+                    if (!slot.free) st.twice = true;
                     // The part of what is handed that the function's parameter entry is.
                     const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, &psuffix);
                     for (slot.srcs) |ss| try f.resolve(use, ss, part, wide, &sink, 0);
@@ -4150,7 +4258,7 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
     if (end == w) return;
     var srcs: std.ArrayList(Src) = .empty;
     defer srcs.deinit(f.gpa);
-    for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs, 0);
+    for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
     const ai = try f.answerRoot(di, point);
     for (w..end) |i| try f.answers.items[ai].base.append(f.gpa, f.atoms.items[i]);
@@ -4163,7 +4271,7 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
 /// call `point`: no claim, and it can be a cell of each value in sight of
 /// `use`. So the function's answer can hold them, and the contract says so.
 fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, use: *const Use) Error!void {
-    try f.drafts.items[di].supply[slot].append(f.gpa, Src.shared);
+    try f.drafts.items[di].supply[slot].append(f.gpa, Src.outside);
     f.drafts.items[di].free[slot] = false;
     const w = f.atoms.items.len;
     var u: ?*const Use = use;
@@ -4174,7 +4282,7 @@ fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, use: *const Use) Error!
     const end = f.atoms.items.len;
     var srcs: std.ArrayList(Src) = .empty;
     defer srcs.deinit(f.gpa);
-    for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs, 0);
+    for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
     const ai = try f.answerRoot(di, point);
     try f.answers.items[ai].base.appendSlice(f.gpa, f.atoms.items[w..end]);
@@ -4189,10 +4297,11 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
     if (f.drafts.items[di].arity != vals.len) {
         f.drafts.items[di].lost = true;
         for (vals) |v| try f.escape(v, inst);
-        return f.unknownResult(inst);
+        return f.unknownResult(inst, vals);
     }
     f.drafts.items[di].called = true;
-    // The runtime's `send`: the message is given up, so each cell of it must be the sender's own.
+    // The runtime's `send` (the word `sender` on the platform's alias): the
+    // message is given up, so each cell of it must be the sender's own.
     const r0 = f.roots.items[root];
     const sender = r0.index < f.param_ty.items.len and m.isSender(f.param_ty.items[r0.index]);
     const before_demands = f.demands.items.len;
@@ -4233,7 +4342,7 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
 fn selfAtoms(f: *Frame, v: Val) Error!void {
     const m = f.m;
     const place = f.placeOfVal(v) orelse {
-        if (v == v_shared) try f.atoms.append(f.gpa, shared_atom);
+        if (v == v_outside) try f.atoms.append(f.gpa, outside_atom);
         return;
     };
     if (whole(f.nodes.items[v].tag)) {
@@ -4260,12 +4369,12 @@ fn readSelf(f: *Frame, v: Val, point: u32) Error!void {
 }
 
 /// Whether the value `v` of `inst` is an object that this instruction made
-/// (`makesObject`), or a list that a call answers and made (its storage has
-/// the source `fresh` alone).
+/// (`makesObject`), or a list that a call answers and made: its storage is
+/// the frame's own cell, or cells the callee made and nothing else.
 fn newItem(f: *Frame, inst: u32, v: Val) Error!bool {
     const m = f.m;
     if (try f.makesObject(inst)) return true;
-    if (v == v_none or v == v_shared) return false;
+    if (v == v_none or v == v_outside) return false;
     const n = f.nodes.items[v];
     if (n.tag != .ref) return false;
     const r = f.roots.items[n.a];
@@ -4273,7 +4382,16 @@ fn newItem(f: *Frame, inst: u32, v: Val) Error!bool {
     const self = try m.selfLoc(r.place);
     for (m.loc.layoutEntries(r.layout), 0..) |e, k| if (e.loc == self) {
         const ent = f.rents.items[r.ent + k];
-        return ent.kind == .own or (ent.len == 0 and ent.fresh and ent.kind != .shared);
+        switch (ent.kind) {
+            .own => return true,
+            .derived => return ent.len == 0,
+            // A new name of an array that exists.
+            .version, .taken => return false,
+            .alias => {
+                for (f.atoms.items[ent.start..][0..ent.len]) |a| if (f.roots.items[a.root].kind != .fresh) return false;
+                return true;
+            },
+        }
     };
     return false;
 }
@@ -4374,9 +4492,13 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     const Field = struct { name: []const u8, code: ?Code };
     var fields: [12]Field = undefined;
     var nfields: usize = 0;
+    // The program's value holds the record: what the runtime was handed.
+    var held: std.ArrayList(Val) = .empty;
+    defer held.deinit(f.gpa);
     if (m.tags[arg] == .record) {
         for (m.bir.extraSlice(Bir.inlineRange(m.datas[arg]), Bir.Field)) |fd| {
             const v = try f.eval(fd.value.int(), .fn_arg, false);
+            try held.append(f.gpa, v);
             // The runtime keeps the record: what a function of it captured is read at any time.
             try f.escape(v, inst);
             const code = try f.codeOf(v);
@@ -4389,13 +4511,15 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             // parameters. No row describes what the runtime hands on to a
             // function that it captured: those are in the default.
             const site: Site = .{ .inst = inst };
-            const top: Use = .{ .kind = .top, .id = f.useId(), .site = &site, .code = code };
+            const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = code };
             try f.flowCaptures(code.?, &top);
             fields[nfields] = .{ .name = m.symbolText(fd.name), .code = code };
             nfields += 1;
         }
     } else {
-        try f.escape(try f.ev(arg), inst);
+        const v = try f.ev(arg);
+        try held.append(f.gpa, v);
+        try f.escape(v, inst);
     }
     var update: ?Code = null;
     var init_c: ?Code = null;
@@ -4416,10 +4540,10 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     if (init_c) |c| if (writesOwn(c.contract, c.own_params)) try m.addRefusal(f, inst, .unknown, "the runtime calls `init` with a value that the function does not own");
     const up = update orelse {
         if (settle) |c| if (writesOwn(c.contract, c.own_params)) try m.addRefusal(f, inst, .unknown, "the record has no `update`");
-        return f.unknownResult(inst);
+        return f.unknownResult(inst, held.items);
     };
     const uc = up.contract;
-    if (up.own_params == 0) return f.unknownResult(inst);
+    if (up.own_params == 0) return f.unknownResult(inst, held.items);
     const ml = uc.layouts[up.own_params - 1];
     const mes = m.loc.layoutEntries(ml);
     const own = try f.gpa.alloc(bool, mes.len);
@@ -4528,5 +4652,5 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             }
         }
     }
-    return f.unknownResult(inst);
+    return f.unknownResult(inst, held.items);
 }

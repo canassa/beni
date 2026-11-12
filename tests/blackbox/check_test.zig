@@ -3678,7 +3678,7 @@ test "ownership v3: the faults of the review of report 114 are refused" {
             "  20:19 List.push a: accepted param\n",
             "  42:13 call Review.h r#Cons.0: rejected disjoint: another operand of the same operation reaches it\n",
             "  52:13 call Review.h r#Cons.0: accepted call\n",
-            "  65:37 List.push q: rejected later-use: it is read again at 65:17 (<expression>)\n",
+            "  65:37 List.push q: rejected later-use: it is read again at 65:5 (<call Ssr.render>)\n",
             "  71:41 List.push q: accepted fresh\n",
             "  77:29 List.push q: accepted fresh\n",
             "  83:44 List.push q: accepted fresh\n",
@@ -3728,7 +3728,7 @@ test "ownership v3: the faults of the review of report 114 are refused" {
         const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser", "Page.beni" }, .{ .raw_diagnostics = true });
         try testing.expectEqual(@as(u8, 0), r.exit_code);
         for ([_][]const u8{
-            "  27:9 List.push q: rejected later-use: it is read again at 26:9 (<expression>)\n",
+            "  27:9 List.push q: rejected later-use: it is read again at 28:5 (<expression>)\n",
             "total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1\n",
         }) |line| {
             if (std.mem.indexOf(u8, r.stdout, line) == null) {
@@ -4085,10 +4085,10 @@ test "ownership v3: the faults that a search by hand found are refused" {
         "  94:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         "  108:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         "  121:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
-        "  134:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "  147:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  134:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
+        "  147:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         "  154:9 call List.update v[*]: accepted call\n",
-        "  168:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  168:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         "  176:9 call List.update v[*]: accepted call\n",
         "total 37: accepted 27 (fresh 4, call 11, param 0, callback-param 12, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
     }) |line| {
@@ -4167,6 +4167,152 @@ test "ownership v3 (the step 0 prototype): the two faults that the generator fou
     for ([_][]const u8{
         "  18:21 List.push v0.a: rejected later-use: it is read again at 19:5 (<call List.length>)\n",
         "  25:12 construction q: rejected later-use: it is read again at 26:22 (<call List.length>)\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The three classes of research report 115, each a state of the holder model
+// that meant "unknown" and read as "empty" (report 116 §2), closed by the
+// kernel of `docs/design/ownership-v3-kernel.md`:
+//
+// - `twoOf`, `withG`, `both`: a cell a callee made had no name (`fresh` was a
+//   flag), so one answer at two places was two cells, a cell handed to a
+//   function and answered was apart from the list, and a cell that escaped
+//   into a `Ref` escaped nowhere. Now a fresh cell is named by its allocation
+//   site (kernel §4.2): `twoOf`'s and `withG`'s writes are refused where the
+//   other place is read, and `both`'s cell is escaped at the call. The safe
+//   twins of the first two are accepted; `bothDead` stays refused, because an
+//   escaped cell is never written (§5, test 3).
+// - `eq` with no annotation: `==` dispatches to it, and the method was read
+//   by its name as "only reads". Now a method call is a call of the code the
+//   dispatch table names (kernel §6.11): `eq`'s write of its operand is a
+//   demand at `==`, refused where `q` is read again, accepted where not.
+// - `List.sortWith`'s comparator: the worded row handed it `shared`, which
+//   escaped nothing. Now a function parameter the words do not describe is
+//   handed every cell of every parameter, not `free` (kernel §6.10): the
+//   elements escape, and the later writes are refused.
+test "ownership v3: the faults of the third blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Third.beni",
+        \\import List
+        \\import Ref
+        \\
+        \\
+        \\type Bag
+        \\    = Bag (List Int)
+        \\
+        \\
+        \\eq a b =
+        \\    case a of
+        \\        Bag xs →
+        \\            List.length (List.set xs 0 9) == 0
+        \\
+        \\
+        \\twoOf : (⊤ → a) → a × a
+        \\twoOf g =
+        \\    x = g ⊤
+        \\    ( x, x )
+        \\
+        \\
+        \\withG : (List Int → a) → a × List Int
+        \\withG g =
+        \\    x = [ 1 ]
+        \\    ( g x, x )
+        \\
+        \\
+        \\both : (List Int → ⊤) → List Int
+        \\both h =
+        \\    x = [ 1 ]
+        \\    h x
+        \\    x
+        \\
+        \\
+        \\pub twoOfLive : Int → Int
+        \\twoOfLive n =
+        \\    p = twoOf λ_ → [ n ]
+        \\    w = List.set p.0 0 9
+        \\    List.sum w + List.sum p.1
+        \\
+        \\
+        \\pub twoOfDead : Int → Int
+        \\twoOfDead n =
+        \\    p = twoOf λ_ → [ n ]
+        \\    w = List.set p.0 0 9
+        \\    List.sum w
+        \\
+        \\
+        \\pub withGLive : Int → Int
+        \\withGLive n =
+        \\    p = withG λl → l
+        \\    w = List.set p.0 0 n
+        \\    List.sum w + List.sum p.1
+        \\
+        \\
+        \\pub withGDead : Int → Int
+        \\withGDead n =
+        \\    p = withG λl → l
+        \\    w = List.set p.0 0 n
+        \\    List.sum w
+        \\
+        \\
+        \\pub bothLive : Int → Int
+        \\bothLive n =
+        \\    cell = Ref.make [ 0 ]
+        \\    y = both λl → Ref.set cell l
+        \\    w = List.set y 0 n
+        \\    List.sum w + List.sum (Ref.get cell)
+        \\
+        \\
+        \\pub bothDead : Int → Int
+        \\bothDead n =
+        \\    cell = Ref.make [ 0 ]
+        \\    y = both λl → Ref.set cell l
+        \\    w = List.set y 0 n
+        \\    List.sum w
+        \\
+        \\
+        \\pub eqLive : Int → Int
+        \\eqLive n =
+        \\    q = [ n ]
+        \\    t = Bag q == Bag []
+        \\    if t then 1 else List.sum q
+        \\
+        \\
+        \\pub eqDead : Int → Int
+        \\eqDead n =
+        \\    q = [ n ]
+        \\    t = Bag q == Bag []
+        \\    if t then 1 else 2
+        \\
+        \\
+        \\pub sortKeep : Int → Int
+        \\sortKeep n =
+        \\    cell = Ref.make [ 0 ]
+        \\    xss = [ [ n ], [ 2 ] ]
+        \\    s = List.sortWith xss λa _ →
+        \\        Ref.set cell a
+        \\        EQ
+        \\    w = List.update xss 0 λm → List.set m 0 9
+        \\    List.length s + List.length w + List.sum (Ref.get cell)
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Third.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  37:9 List.set p.0: rejected later-use: it is read again at 38:18 (<call List.sum>)\n",
+        "  44:9 List.set p.0: accepted call\n",
+        "  51:9 List.set p.0: rejected later-use: it is read again at 52:18 (<call List.sum>)\n",
+        "  58:9 List.set p.0: accepted call\n",
+        "  66:9 List.set y: rejected escaped: it escaped before the write\n",
+        "  74:9 List.set y: rejected escaped: it escaped before the write\n",
+        "  81:15 call Third.eq <constructor …>#Bag.0: rejected later-use: it is read again at 82:22 (<call List.sum>)\n",
+        "  88:15 call Third.eq <constructor …>#Bag.0: accepted fresh\n",
+        "  99:9 call List.update xss[*]: rejected escaped: it escaped before the write\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
