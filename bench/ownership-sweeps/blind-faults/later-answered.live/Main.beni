@@ -1,0 +1,28 @@
+-- As later-held.live, in a local function that answers the list.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    mk u =
+        h n = g n
+        fs = [ h ]
+        g n = ints xs
+        fs
+    fs2 = mk 0
+    ys = List.set xs 0 9
+    k =
+        case fs2 of
+            [ q, …_ ] →
+                q 1
+            _ →
+                ""
+    Node.print "${ints ys} ${k}"

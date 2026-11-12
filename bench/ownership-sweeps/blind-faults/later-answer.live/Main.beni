@@ -1,0 +1,18 @@
+-- A value binding calls a later local function, which answers the list that it captured.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    a = g 1
+    g n = xs
+    ys = List.set xs 0 9
+    Node.print "${ints ys} ${ints a}"

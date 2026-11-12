@@ -1,0 +1,23 @@
+-- The safe twin of early-argument.live: the argument is another list.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+bumpThen : List Int, (Int → String) → String
+bumpThen l k =
+    l2 = List.set l 0 9
+    "${ints l2} ${k 1}"
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    g n = ints xs
+    Node.print (bumpThen [ 1, 2, 3 ] h)

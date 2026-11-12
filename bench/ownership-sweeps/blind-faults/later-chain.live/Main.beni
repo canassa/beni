@@ -1,0 +1,19 @@
+-- `h` calls `g`, which calls `k`; both are bound after `h`.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    g n = k n
+    k n = ints xs
+    ys = List.set xs 0 9
+    Node.print "${ints ys} ${h 1}"

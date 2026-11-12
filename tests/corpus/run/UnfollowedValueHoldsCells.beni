@@ -1,0 +1,29 @@
+-- A value that the ownership walk cannot follow: a record alias's
+-- constructor as a function value. Its answers hold the list that they are
+-- given (research report 113 §6), so the in-place edit below is judged
+-- against the later read. Under `--sanitize-lists`, an accepted edit would
+-- trap at that read.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+type alias R =
+    zs : List Int
+
+
+-- The elements of `bs` hold `xs`.
+aliasFunction : Int → String
+aliasFunction c =
+    xs = [ c, 2, 3 ]
+    bs = List.map [ xs ] R
+    ys = List.set xs 0 9
+    "${ints ys} ${ints (List.concatMap bs .zs)}"
+
+
+main : Program
+main = Node.print (aliasFunction 1)

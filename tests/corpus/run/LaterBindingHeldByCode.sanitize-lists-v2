@@ -1,0 +1,2 @@
+Code that names a later binding of its `let` (language.md §7), under --ownership=v2 and the list stale-read sanitiser. v2 refuses each
+edit of a list that such code holds; were one accepted, the sanitised run would trap where the code reads the list.

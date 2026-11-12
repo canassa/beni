@@ -1,0 +1,2 @@
+A record alias's constructor as a function value, under --ownership=v2 and the list stale-read sanitiser. v2 refuses the edit
+below; were it accepted, the sanitised run would trap where the list is read again.

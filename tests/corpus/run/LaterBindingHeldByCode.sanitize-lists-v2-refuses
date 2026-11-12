@@ -1,0 +1,6 @@
+# v2 refuses each edit: the code that names the later binding reads the list after it.
+22:10 list_still_used List.set
+32:10 list_still_used List.set
+48:5 list_may_be_shared LaterBindingHeldByCode.bumpThen
+56:10 list_still_used List.push
+66:10 list_still_used List.set
