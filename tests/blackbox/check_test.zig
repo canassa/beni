@@ -3102,6 +3102,315 @@ test "ownership v3: code that names a later binding holds what it reads" {
     }
 }
 
+// The first fault of a second blind test of the prototype (research report
+// 114 §4.1, §7). In `x ▷ e` lowering numbers the instructions of `x` before
+// those of `e`, but JavaScript evaluates `e` first when it is not a name:
+// a field of a call, an `if`, a `case`, an item of a tuple, the receiver
+// of a method. The write rule compared instruction numbers, so a read in
+// `x` looked earlier than a write in `e`, and the write was accepted. Now
+// the times of the walk order the reads and the writes, and the walk goes
+// in the order of the emitted JavaScript.
+//
+// - `field`, `ifCallee`, `caseCallee`, `tupleCallee`, `receiver`: the
+//   callee or the receiver writes `q`, and the operand reads it after.
+//   Each `…Dead` twin reads another list, and is accepted.
+// - `fieldBefore`, `receiverBefore`: the callee or the receiver reads `q`,
+//   and the operand writes it after. Safe, and accepted.
+// - `rows`: a `For` reads its list where the page renders, after each
+//   hole, so a hole that writes the list runs first. `rowsDead` is the twin.
+test "ownership v3: the walk reads and writes in the order of the program" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Order.beni",
+        \\import Html exposing (Html)
+        \\import List
+        \\import Maybe
+        \\import Ssr
+        \\import String
+        \\
+        \\
+        \\show : List Int → String
+        \\show l = String.join (List.map l String.fromInt) ","
+        \\
+        \\
+        \\mk : List Int → { f : String → String }
+        \\mk w = { f = λs → s ++ "/" ++ show w }
+        \\
+        \\
+        \\mkf : List Int → (String → String)
+        \\mkf w = λs → s ++ "/" ++ show w
+        \\
+        \\
+        \\mkT : List Int → (String → String) × Int
+        \\mkT w = ( λs → s ++ "/" ++ show w, 1 )
+        \\
+        \\
+        \\pub field : Int → String
+        \\field n =
+        \\    q = [ n, 2 ]
+        \\    show q ▷ (mk (List.push q 9)).f
+        \\
+        \\
+        \\pub fieldDead : Int → String
+        \\fieldDead n =
+        \\    q = [ n, 2 ]
+        \\    show [ 4 ] ▷ (mk (List.push q 9)).f
+        \\
+        \\
+        \\pub fieldBefore : Int → String
+        \\fieldBefore n =
+        \\    q = [ n, 2 ]
+        \\    show (List.push q 9) ▷ (mk2 (show q)).f
+        \\
+        \\
+        \\mk2 : String → { f : String → String }
+        \\mk2 s = { f = λt → s ++ "/" ++ t }
+        \\
+        \\
+        \\pub ifCallee : Int → String
+        \\ifCallee n =
+        \\    q = [ n, 2 ]
+        \\    show q ▷ (if n == 0 then mkf (List.push q 9) else mkf [])
+        \\
+        \\
+        \\pub ifCalleeDead : Int → String
+        \\ifCalleeDead n =
+        \\    q = [ n, 2 ]
+        \\    show [ 4 ] ▷ (if n == 0 then mkf (List.push q 9) else mkf [])
+        \\
+        \\
+        \\pub caseCallee : Int → String
+        \\caseCallee n =
+        \\    q = [ n, 2 ]
+        \\    show q
+        \\        ▷ (case n of
+        \\            0 →
+        \\                mkf (List.push q 9)
+        \\
+        \\            _ →
+        \\                mkf []
+        \\          )
+        \\
+        \\
+        \\pub caseCalleeDead : Int → String
+        \\caseCalleeDead n =
+        \\    q = [ n, 2 ]
+        \\    show [ 4 ]
+        \\        ▷ (case n of
+        \\            0 →
+        \\                mkf (List.push q 9)
+        \\
+        \\            _ →
+        \\                mkf []
+        \\          )
+        \\
+        \\
+        \\pub tupleCallee : Int → String
+        \\tupleCallee n =
+        \\    q = [ n, 2 ]
+        \\    show q ▷ (mkT (List.push q 9)).0
+        \\
+        \\
+        \\pub tupleCalleeDead : Int → String
+        \\tupleCalleeDead n =
+        \\    q = [ n, 2 ]
+        \\    show [ 4 ] ▷ (mkT (List.push q 9)).0
+        \\
+        \\
+        \\pub receiver : Int → String
+        \\receiver n =
+        \\    q = [ n, 2 ]
+        \\    show ([ List.length q ] ▷ (List.push q 9).append)
+        \\
+        \\
+        \\pub receiverDead : Int → String
+        \\receiverDead n =
+        \\    q = [ n, 2 ]
+        \\    show ([ List.length [ 4 ] ] ▷ (List.push q 9).append)
+        \\
+        \\
+        \\pub receiverBefore : Int → String
+        \\receiverBefore n =
+        \\    q = [ n, 2 ]
+        \\    show (List.push q 9 ▷ [ List.length q ].append)
+        \\
+        \\
+        \\pub rows : Int → String
+        \\rows n =
+        \\    q = [ n, 2 ]
+        \\    Ssr.render (<div><ul><For each={q}>{λi → <li>{String.fromInt i}</li>}</For></ul>{show (List.push q 9)}</div>)
+        \\
+        \\
+        \\pub rowsDead : Int → String
+        \\rowsDead n =
+        \\    q = [ n, 2 ]
+        \\    Ssr.render (<div><ul><For each={[ 4 ]}>{λi → <li>{String.fromInt i}</li>}</For></ul>{show (List.push q 9)}</div>)
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Order.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  27:19 List.push q: rejected later-use: it is read again at 27:5 (<call Order.show>)\n",
+        "  33:23 List.push q: accepted fresh\n",
+        "  39:11 List.push q: accepted fresh\n",
+        "  49:35 List.push q: rejected later-use: it is read again at 49:5 (<call Order.show>)\n",
+        "  55:39 List.push q: accepted fresh\n",
+        "  64:22 List.push q: rejected later-use: it is read again at 61:5 (<call Order.show>)\n",
+        "  77:22 List.push q: accepted fresh\n",
+        "  87:20 List.push q: rejected later-use: it is read again at 87:5 (<call Order.show>)\n",
+        "  93:24 List.push q: accepted fresh\n",
+        "  99:32 List.push q: rejected later-use: it is read again at 99:13 (<call List.length>)\n",
+        "  99:46 List.append <call List.push>: accepted call\n",
+        "  105:36 List.push q: accepted fresh\n",
+        "  105:50 List.append <call List.push>: accepted call\n",
+        "  111:11 List.push q: accepted fresh\n",
+        "  111:44 List.append <literal>: accepted fresh\n",
+        "  117:92 List.push q: rejected later-use: it is read again at 117:17 (<expression>)\n",
+        "  123:96 List.push q: accepted fresh\n",
+        "total 17: accepted 11 (fresh 9, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The second fault of report 114 (§4.2, §7). The deep level of a recursive
+// type is one summary location. One argument of a constructor can put a
+// list at two places of it: its own entry level and its own deep level both
+// fold into the deep level of the constructor's value. The test for one
+// cell at two places ran only between two arguments, so `f` was called
+// with `q` twice in that location, wrote one place and read the other.
+//
+// - `direct`: the value is built at the call.
+// - `built`: a callee builds it. `repeated`: a recursive callee puts its
+//   parameter in each node.
+// - `wrapped`: a callee puts the value one level down.
+// - `tree`: the same through a list of children.
+//
+// Each `…Apart` twin has two lists, and is accepted. A twin with one list
+// at two places that writes one and does not read the other is refused:
+// the callee's contract does not say which cells of the location it reads.
+test "ownership v3: one list twice in a deep level makes the location shared" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Deep.beni",
+        \\import List
+        \\import String
+        \\
+        \\
+        \\type Lst
+        \\    = Cons (List Int) Lst
+        \\    | Nil
+        \\
+        \\
+        \\type Tree
+        \\    = Tree (List Int) (List Tree)
+        \\
+        \\
+        \\show : List Int → String
+        \\show l = String.join (List.map l String.fromInt) ","
+        \\
+        \\
+        \\f : Lst → String
+        \\f t =
+        \\    case t of
+        \\        Cons _ (Cons a (Cons b _)) →
+        \\            w = List.set a 0 9
+        \\            show w ++ "/" ++ show b
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\pub direct : Int → String
+        \\direct n =
+        \\    q = [ n, 2 ]
+        \\    f (Cons [ 0 ] (Cons q (Cons q Nil)))
+        \\
+        \\
+        \\pub directApart : Int → String
+        \\directApart n =
+        \\    q = [ n, 2 ]
+        \\    f (Cons [ 0 ] (Cons q (Cons [ 5 ] Nil)))
+        \\
+        \\
+        \\lit : List Int → Lst
+        \\lit q = Cons [ 0 ] (Cons q (Cons q Nil))
+        \\
+        \\
+        \\pub built : Int → String
+        \\built n = f (lit [ n, 2 ])
+        \\
+        \\
+        \\rep : Int, List Int → Lst
+        \\rep k x = if k == 0 then Nil else Cons x (rep (k - 1) x)
+        \\
+        \\
+        \\pub repeated : Int → String
+        \\repeated n = f (rep 3 [ n, 2 ])
+        \\
+        \\
+        \\wrap : Lst → Lst
+        \\wrap t = Cons [ 0 ] t
+        \\
+        \\
+        \\pub wrapped : Int → String
+        \\wrapped n =
+        \\    q = [ n, 2 ]
+        \\    f (wrap (Cons q (Cons q Nil)))
+        \\
+        \\
+        \\pub wrappedApart : Int → String
+        \\wrappedApart n =
+        \\    q = [ n, 2 ]
+        \\    f (wrap (Cons q (Cons [ 5 ] Nil)))
+        \\
+        \\
+        \\g : Tree → String
+        \\g t =
+        \\    case t of
+        \\        Tree _ [ Tree a [ Tree b _ ] ] →
+        \\            w = List.set a 0 9
+        \\            show w ++ "/" ++ show b
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\pub tree : Int → String
+        \\tree n =
+        \\    q = [ n, 2 ]
+        \\    g (Tree [ 0 ] [ Tree q [ Tree q [] ] ])
+        \\
+        \\
+        \\pub treeApart : Int → String
+        \\treeApart n =
+        \\    q = [ n, 2 ]
+        \\    g (Tree [ 0 ] [ Tree q [ Tree [ 5 ] [] ] ])
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Deep.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  22:17 List.set a: accepted param\n",
+        "  32:5 call Deep.f <constructor …>#Cons.0: rejected element: one cell can be at two positions of it\n",
+        "  38:5 call Deep.f <constructor …>#Cons.0: accepted fresh\n",
+        "  46:11 call Deep.f <call Deep.lit>#Cons.0: rejected unknown: the checker has no claim on this value\n",
+        "  54:14 call Deep.f <call Deep.rep>#Cons.0: rejected unknown: the checker has no claim on this value\n",
+        "  64:5 call Deep.f <call Deep.wrap>#Cons.0: rejected unknown: the checker has no claim on this value\n",
+        "  70:5 call Deep.f <call Deep.wrap>#Cons.0: accepted call\n",
+        "  77:17 List.set a: accepted param\n",
+        "  87:5 call Deep.g <constructor …>#Tree.0: rejected element: one cell can be at two positions of it\n",
+        "  93:5 call Deep.g <constructor …>#Tree.0: accepted fresh\n",
+        "total 10: accepted 5 (fresh 2, call 1, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
 // The faults that the review of the fix of report 113 found (§6). A value
 // that the walk cannot follow was read as holding nothing, or as holding its
 // cells with a claim and no word that one cell is at two of its locations.

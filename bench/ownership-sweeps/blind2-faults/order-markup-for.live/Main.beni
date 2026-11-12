@@ -1,0 +1,47 @@
+import Html exposing (Html)
+import List
+import Maybe
+import Node
+import Ssr
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+cat : String, String → String
+cat a b = a ++ "/" ++ b
+
+
+mk : String → { f : String → String }
+mk s = { f = λt → s ++ "/" ++ t }
+
+
+mkf : String → (String → String)
+mkf s = λt → s ++ "/" ++ t
+
+
+mkT : String → (String → String) × Int
+mkT s = ( λt → s ++ "/" ++ t, 1 )
+
+
+type P
+    = P String String
+
+
+type alias R =
+    z : String
+    a : String
+
+
+go : Int → String
+go n =
+    q = [ n, 2 ]
+    Ssr.render
+        (<div><ul><For each={q}>{λi → <li>{String.fromInt i}</li>}</For></ul>{show (List.push q 9)}</div>
+        )
+
+
+main : Node.Program
+main = Node.print (go 0)
