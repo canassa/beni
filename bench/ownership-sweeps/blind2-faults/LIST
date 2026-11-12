@@ -3,6 +3,8 @@ bench/ownership-sweeps/blind2-faults/deep-rep.live
 bench/ownership-sweeps/blind2-faults/deep-summary-apart.none
 bench/ownership-sweeps/blind2-faults/deep-summary-twice.dead
 bench/ownership-sweeps/blind2-faults/deep-summary-twice.live
+bench/ownership-sweeps/blind2-faults/markup-helper.dead
+bench/ownership-sweeps/blind2-faults/markup-helper.live
 bench/ownership-sweeps/blind2-faults/order-markup-for.dead
 bench/ownership-sweeps/blind2-faults/order-markup-for.live
 bench/ownership-sweeps/blind2-faults/order-pipe-callee.dead
@@ -15,3 +17,4 @@ bench/ownership-sweeps/blind2-faults/order-pipe-if.live
 bench/ownership-sweeps/blind2-faults/order-pipe-method-before.none
 bench/ownership-sweeps/blind2-faults/order-pipe-tuple.dead
 bench/ownership-sweeps/blind2-faults/order-pipe-tuple.live
+bench/ownership-sweeps/blind2-faults/twice-levels.live
