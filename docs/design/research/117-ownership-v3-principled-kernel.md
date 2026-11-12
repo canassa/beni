@@ -75,9 +75,10 @@ The value of markup is `unknown` over the values of its holes and the arguments 
 
 ## 2. What was learned while building
 
-### 2.1 Three holes the first version of this work had
+### 2.1 Six holes the first version of this work had
 
-Each was found by the existing black-box tests and the sanitiser corpus before any sweep ran, and each is a
+The first three were found by the existing black-box tests and the sanitiser corpus before any sweep ran; the
+adversarial reviewer found the other three (§7) after every sweep was at 0 traps. Each is a
 state that read "unknown" as "empty" in a new place:
 
 1. **An escape recorded inside a run under construction.** `freshAtom` noted the escape of a callee's cell
@@ -118,9 +119,9 @@ capture bound after the closure is made is the value bound there), `twice` (§4.
 
 | | before | after |
 |---|---:|---:|
-| `src/own3/` | 6 800 | 6 978 |
+| `src/own3/` | 6 800 | 7 036 |
 
-The deletions are about 400 lines; the additions are the exhaustive `evalInner` (every BIR tag named), the
+The deletions are about 450 lines; the additions are the exhaustive `evalInner` (every BIR tag named), the
 three-valued `linear`, the fresh roots, and a doc comment on each rule naming its kernel section.
 
 ## 3. The gate
@@ -135,14 +136,14 @@ ReleaseSafe compilers; the same generated programs; `run.mjs --checker=v3`.
 | blind3 | 417 | 172 | 122 | 123 | 0 | 0 | 160 | 257 | 0 | 0 | 0 |
 | blind2 | 1202 | 502 | 700 | 0 | 0 | 0 | 502 | 700 | 0 | 0 | 0 |
 | evaluation-order | 440 | 288 | 152 | 0 | 0 | 0 | 288 | 152 | 0 | 0 | 0 |
-| answers-beside | 240 | 62 | 178 | 0 | 0 | 0 | 78 | 162 | 0 | 0 | 0 |
-| wider-functions | 354 | 171 | 183 | 0 | 0 | 0 | 152 | 202 | 0 | 0 | 0 |
+| answers-beside | 240 | 62 | 178 | 0 | 0 | 0 | 77 | 163 | 0 | 0 | 0 |
+| wider-functions | 354 | 171 | 183 | 0 | 0 | 0 | 144 | 210 | 0 | 0 | 0 |
 | callbacks-keep | 720 | 108 | 612 | 0 | 0 | 0 | 108 | 612 | 0 | 0 | 0 |
 | function-values | 1960 | 250 | 1710 | 0 | 0 | 0 | 304 | 1656 | 0 | 0 | 0 |
 | handed-back | 2592 | 0 | 2592 | 0 | 0 | 0 | 0 | 2592 | 0 | 0 | 0 |
-| aliased-arguments | 5160 | 963 | 4197 | 0 | 0 | 0 | 1195 | 3965 | 0 | 0 | 0 |
-| recursive-levels | 16131 | 4291 | 11840 | 0 | 0 | 0 | 4526 | 11605 | 0 | 0 | 0 |
-| folds-callbacks | 30300 | 6182 | 24118 | 0 | 0 | 0 | 6146 | 24154 | 0 | 0 | 0 |
+| aliased-arguments | 5160 | 963 | 4197 | 0 | 0 | 0 | 1183 | 3977 | 0 | 0 | 0 |
+| recursive-levels | 16131 | 4291 | 11840 | 0 | 0 | 0 | 4231 | 11900 | 0 | 0 | 0 |
+| folds-callbacks | 30300 | 6182 | 24118 | 0 | 0 | 0 | 5392 | 24908 | 0 | 0 | 0 |
 
 The 5 `live` programs of `blind3-faults/` are refused: `answer-twice` and `answer-supply` as `later-use`,
 `answer-escape` and `sortwith-keep` as `escaped`, `compare-unannotated` as `later-use` at the `==`. Their
@@ -157,50 +158,133 @@ Safe twins (`dead`, `none`) refused, before → after, of the twins in the gener
 - `blind2`: 35 → 35 of 468
 - `evaluation-order`: 4 → 4 of 292
 - `answers-beside`: 0 → 0 of 0
-- `wider-functions`: 6 → 25 of 177
+- `wider-functions`: 6 → 33 of 177
 - `callbacks-keep`: 0 → 0 of 0
 - `function-values`: 786 → 732 of 980
 - `handed-back`: 0 → 0 of 0
 - `aliased-arguments`: 468 → 0 of 960
-- `recursive-levels`: 1086 → 851 of 5377
-- `folds-callbacks`: 6256 → 6292 of 10476
+- `recursive-levels`: 1086 → 1146 of 5377
+- `folds-callbacks`: 6256 → 6676 of 10476
 
-Where the kernel refuses a safe twin that the old code accepted, the cause is a named one: `wider-functions` (19,
-`disjoint`/`element`) and `recursive-levels` (42, `element`) are summary locations read through a type
+Where the kernel refuses a safe twin that the old code accepted, the cause is a named one (one more is
+the fix of review finding 1, §7: two elements of one list the frame made, read by a pattern and put into
+another list, are one atom, so \`[ a, b ]\` from \`case r of [ a, b ]\` is \`twice\` — a coarseness of the summary
+location, not of the rule): `wider-functions` (27,
+`disjoint`/`element`) and `recursive-levels` (60, `element`) are summary locations read through a type
 variable, where one reading of the type now contributes the same atom to two parts and the location is
-`twice`; `folds-callbacks` (36, `supply`) are nested folds whose accumulator is a list of lists written
-through a callback; `blind3` (35) are comparators and `eq`s that keep an operand, refused as `escaped`
+`twice`; `folds-callbacks` (420, `supply` and `element`) are nested folds whose accumulator is a list of lists
+written through a callback, most of them refused by the fix of review finding 1 (two elements of one list
+read by a pattern are one atom); `blind3` (35) are comparators and `eq`s that keep an operand, refused as `escaped`
 whether or not the program reads the cell again. Where it accepts more: `aliased-arguments` (468 safe twins
-won back, every one), `recursive-levels` (277), `function-values` (54), `blind3` (23): the fresh names and
+won back, every one), `function-values` (54), `blind3` (23), `answers-beside` (15 programs): the fresh names and
 the atom test replaced `shared`, which refused every write of a location it touched.
 
 Sanitiser corpus (`bench/ownership-step0-sanitiser.mjs`, 347 fixtures):
 
-SANITISER_TABLE
+| | before | after |
+|---|---:|---:|
+| same (accepted, same output) | 101 | 97 |
+| refused | 246 | 250 |
+| trap, differs, crash | 0 | 0 |
+| losses against v2, by cause | supply 18, call 22, unknown 15, captured 7, later-use 6, escaped 3, element 3, disjoint 1 | supply 18, call 22, later-use 14, unknown 10, captured 7, escaped 6, element 5, disjoint 1 |
+
+Four fixtures v2 accepts moved from accepted to refused; none moved the other way; no fixture traps.
 
 ## 4. Real writes
 
 `bench/ownership-v2-review.mjs --checkers=v1,v3 --roots=real`, the 32 real roots of report 110, the 308 list
 writes v1 judges.
 
-REAL_WRITES
+| | before (`8c63889ffc`) | after |
+|---|---:|---:|
+| accepted at v1's position | 299 | **279** |
+| refused | 9 | 28 |
+| no line (the write is of a location that holds no cell) | 0 | 1 |
+| by v1's ground: fresh | 34 of 36 | 34 of 36 |
+| call | 44 of 51 | 42 of 51 |
+| param | 185 of 185 | 181 of 185 |
+| entry | 16 of 16 | 3 of 16 |
+| callback-param | 20 of 20 | 19 of 20 |
+
+The 9 refusals of before stay refused for the same reasons (two `send`s of a feed that `Js.get` answers, seven
+in `FormValidation`), except `FormValidation 275:13`, a write of `Dict.empty`'s empty location, which now has no
+line (a location that holds no cell asks nothing). The 20 new refusals, each with the fact that would win it back:
+
+| Writes | Where | Cause | What would win them back |
+|---:|---|---|---|
+| 13 | `update` of every TEA program: `model.todos`, `model.rows`, `model.lines`, `model.log`, the four `errors` of `conduit`, `sternhalma`'s `board.cells` | `entry`: the view's markup holds the model (kernel §6.12), so another function of the record keeps it and the runtime does not hand it as `update`'s own | the owner's decision of §5: a platform row saying that its runtime reads a hole's value only where it renders |
+| 4 | `Tea.tableRemove`, `tableInsert` ×3 (`state.jobs#Table.0`, `d#Table.0`) | the evidence `Hosted.compare` keeps its operand: it hands it to `Js.get`, a `foreign` with no word, so the operand escapes (kernel §6.11; the escape half of report 115 §4.2) | a word on `Js.get` saying that it reads and keeps nothing (report 112 §5.4 asked for it) |
+| 2 | `Tea.tableFoldl` (505:12, 506:5) | the lambda handed to the fold answers a table that can hold one cell at two places, and the fold hands the answer back (`answerOwn`, kernel §6.8) | the lambda builds its answer through `tableInsert`, whose evidence escapes (the row above); with it the answer is linear |
+| 1 | `FormValidation 276:17`, `Dict.update acc…` | `Dict.focus` is no longer trusted by its name: its inferred contract hands the callback a value it reads again (kernel §6.11) | words on `Dict.focus` that say what its comment asserts, as `List.focus` has (`once taken stored`) |
+
+The two `send`s have a line again: the alias chain `Cmd.Send msg = Browser.Send msg` is followed to the word
+`sender` (`Check.aliasIsSender`). Five `more` lines are refusals at a position v1 does not judge, all `Tea`'s
+`tableGet`/`tableLower`/`tableMember` with the same `Hosted.compare` evidence.
 
 ## 5. Markup: the owner's decision
 
 The sound default makes a markup value hold its holes' values. Measured on the 308 real writes:
 
-MARKUP_TABLE
+| Markup value | accepted of 308 | entry writes |
+|---|---:|---:|
+| holds its holes' values (the kernel, built) | 279 | 3 of 16 |
+| holds nothing (a one-line local toggle, not committed) | 292 | 16 of 16 |
+
+So the sound default costs **exactly 13 real writes**, every one an `update` that writes a list of the model
+in place in a TEA program (`examples/todo`, `chat`, `conduit` ×4, `sternhalma`, the three TodoMVC apps, the
+js-framework-benchmark app ×2, `ApiAndRoutes`). Nothing else moves between the two rows. The task's estimate
+was 12 with no exemption and 4 with one for `Html.map`; the measured cost is 13, and no `Html.map` exemption
+is needed to reach it: the 13 are the `view` holding the model, which is the rule itself. The owner decides
+whether a platform may declare that its runtime reads a hole's value only where it renders (and never after
+`update` runs): with that row the 13 come back, and the walk changes nowhere else.
 
 ## 6. Speed
 
 ReleaseFast LLVM compiler, `bench/ownership-v2-review.mjs --checkers=v1,v2,v3 --roots=real --runs=3 --jobs=1`,
 best of three, one machine.
 
-SPEED_TABLE
+| | lines | ms | lines per second | report 116 (before) |
+|---|---:|---:|---:|---:|
+| type check (for scale) | 169 830 | 245.5 | 692 000 | 714 000 |
+| v1 | 169 830 | 1 035.4 | 164 000 | 170 000 |
+| v2 | 169 830 | 1 283.1 | 132 000 | 138 000 |
+| v3, on the modules v2 walked | 169 830 | 193.2 | **879 000** | 1 026 000 |
+| v3, on all it walks | 556 436 | 516.6 | 1 077 000 | 1 284 000 |
+
+The machine ran 3 to 4 % slower than at report 116 on the type check, v1 and v2, so the ratio is the figure:
+v3 is 6.6× v2 and 5.4× v1 on the same modules, against 7.4× and 6.0× before. The kernel costs about 12 %
+of v3's own time: the fresh roots, the duplicate tests over a result's entries, and the part each atom
+records. The compiler timed is the final commit.
 
 ## 7. The review
 
-REVIEW
+One fresh Opus reviewer read the kernel document and `src/own3/` with the fault folders, no conclusions, and
+was asked for a state that reads "unknown" as "empty" or a rule whose argument does not hold. It wrote about
+30 probe programs on the node platform and proved two traps end to end; a third finding it could not run.
+
+1. **Two reads of one part of a linear root were two cells.** `r = [ [ 0 ] ]; case r of [ a ] → [ a, a ]`
+   then a write of `ys[0]`: accepted, and the plain and in-place builds printed different lines.
+   `Atom.via` recorded only the root a cell was read through, and `dupOverlap` took two overlapping atoms
+   with one linear `via` for two cells, whatever part of the root each came from. Six variants trapped
+   (through a call, a recursive function, a pair handed to a writer). Fix: an atom records the part it was
+   read through (`via_path`, `via_e`), and the trust applies only to two apart parts (`viaApart`, kernel
+   §4.4). The reviewer's reading named the exact clause of §4.4 that did not hold.
+2. **An escaped answer did not protect what the function was handed.** `keep cell g x = y = g x; Ref.set
+   cell y; List.set x 0 9` with `g` the identity: accepted in the callee (the escape held the answer root's
+   one atom, and `demand`'s escape test does not expand an answer to its base as `atomsReach` does) and in
+   the caller (`apply` judged the write demand before `flow` noted the answer's escape). Fix: an escape of
+   an answer carries `Answer.base` (`noteEscape`), and `apply` records escapes and flows before it judges
+   writes (kernel §5 test 3, §6.2).
+3. **`update`'s message was `own` by the runtime's word.** A message built in `view` as `Push model.items`
+   holds the model's list; `update` could write `msg.items` in place while the model held it. Not run (a
+   browser program), but the argument held against the code. Fix: the message is `own` only when every
+   location of the model is (kernel §6.13).
+
+Each is a hole of the kind the kernel is meant to make impossible, in a place the five forms did not name: a
+fact that was recorded too coarsely (the root, not the part), too late (after the demand), or trusted by a
+word (the runtime's). Each fix is one named fact, and `tests/blackbox/check_test.zig` pins the three shapes.
+The reviewer found no case where `project` on a construction, `unknownOf`, `giveUp` or a null contract read
+as "holds nothing", and none in the views, the core rows, recursion and drafts, `later` slots or markup.
 
 ## 8. What this report does not show
 

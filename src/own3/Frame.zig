@@ -100,7 +100,10 @@ const Kid = struct { step: u32, val: Val };
 /// at that time or before does not count it as a holder. The cells are the
 /// same: a write after that time counts it, and so does an overlap test for
 /// one cell at two places.
-pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, dead: u32 = none };
+/// `via_path`, `via_e`: the part of `via` that was read (its path and entry), so
+/// that two reads of one part of a linear root are one cell and two reads of
+/// two parts of it are two (`viaApart`).
+pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none };
 /// `outside`: root 0, the one root of every cell outside the frame (kernel
 /// §3.1). `fresh`: a cell a callee made, named by the call and the callee's
 /// allocation site (kernel §4.2); it has no layout and no value, only atoms.
@@ -588,11 +591,21 @@ fn dupOverlap(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
     for (xs) |x| {
         for (ys) |y| {
             if (!f.overlap(x, y)) continue;
-            if (x.via != none and x.via == y.via and f.isLinear(x.via)) continue;
+            if (f.viaApart(x, y)) continue;
             return true;
         }
     }
     return false;
+}
+
+/// Whether two overlapping atoms were read through two apart parts of one
+/// root the frame made that holds each cell once (`linear`): then they are
+/// two cells though one atom names both. Two reads of one part of it (or of
+/// a part and a part below it) are one cell: `[ a, a ]` with `a` read out of
+/// a list the frame made.
+fn viaApart(f: *const Frame, x: Atom, y: Atom) bool {
+    if (x.via == none or x.via != y.via or !f.isLinear(x.via)) return false;
+    return x.via_e != y.via_e or !f.m.loc.comparable(x.via_path, y.via_path);
 }
 
 /// The one duplicate test of a run that parts build (kernel §4.4): whether
@@ -634,12 +647,16 @@ fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) void 
 }
 
 /// Append `f.atoms[start..][0..len]` to `out`, which can be `f.atoms` itself, as cells read through root `via`.
-fn copyAtoms(f: *Frame, start: u32, len: u32, via: u32, out: *std.ArrayList(Atom)) Error!void {
+fn copyAtoms(f: *Frame, start: u32, len: u32, via: u32, via_path: u32, via_e: u32, out: *std.ArrayList(Atom)) Error!void {
     try out.ensureUnusedCapacity(f.gpa, len);
     for (0..len) |i| {
         var a = f.atoms.items[start + i];
         // The first root that held the cell is the one whose parts tell two readings apart.
-        if (via != none and a.via == none) a.via = via;
+        if (via != none and a.via == none) {
+            a.via = via;
+            a.via_path = via_path;
+            a.via_e = via_e;
+        }
         out.appendAssumeCapacity(a);
     }
 }
@@ -651,7 +668,7 @@ fn twiceAt(f: *const Frame, a: Atom) bool {
 }
 
 fn atomEql(a: Atom, b: Atom) bool {
-    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.dead == b.dead;
+    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead;
 }
 
 fn atomLess(run: []const Atom, x: u32, y: u32) bool {
@@ -661,6 +678,8 @@ fn atomLess(run: []const Atom, x: u32, y: u32) bool {
     if (a.path != b.path) return a.path < b.path;
     if (a.e != b.e) return a.e < b.e;
     if (a.via != b.via) return a.via < b.via;
+    if (a.via_path != b.via_path) return a.via_path < b.via_path;
+    if (a.via_e != b.via_e) return a.via_e < b.via_e;
     if (a.dead != b.dead) return a.dead < b.dead;
     return x < y;
 }
@@ -730,7 +749,7 @@ fn rootLeaves(f: *Frame, root: u32, path_in: u32, re: u32, out: *std.ArrayList(A
                 // An element taken out of its list is apart from it: its old names are not read here.
                 .own, .taken => {},
                 // The run: the old names (`dead`) of a new name, or the cells of other roots.
-                .version, .derived, .alias => try f.copyAtoms(ent.start, ent.len, root, out),
+                .version, .derived, .alias => try f.copyAtoms(ent.start, ent.len, root, path, re, out),
             }
         },
     }
@@ -1179,11 +1198,19 @@ fn escape(f: *Frame, v: Val, point: u32) Error!void {
 /// the walk does not follow, so no later write of them is accepted (`demand`).
 fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     try f.uniqueTail(&f.atoms, start);
-    const len: u32 = @intCast(f.atoms.items.len - start);
-    if (len == 0) return;
-    for (start..start + len) |i| f.markAtom(f.atoms.items[i], flag_e);
+    const n: u32 = @intCast(f.atoms.items.len - start);
+    if (n == 0) return;
+    for (start..start + n) |i| f.markAtom(f.atoms.items[i], flag_e);
     const at: u32 = @intCast(f.esc_atoms.items.len);
     try f.esc_atoms.appendSlice(f.gpa, f.atoms.items[start..]);
+    // The answer of a function parameter can hold what the function was
+    // handed (`Answer.base`): where the answer escapes, so does that.
+    for (start..start + n) |i| {
+        const a = f.atoms.items[i];
+        const r = f.roots.items[a.root];
+        if (r.kind == .answer) try f.esc_atoms.appendSlice(f.gpa, f.answers.items[r.ent].base.items);
+    }
+    const len: u32 = @intCast(f.esc_atoms.items.len - at);
     try f.escapes.append(f.gpa, .{ .start = at, .len = len, .point = point, .ctx = f.cur_ctx });
 }
 
@@ -1293,14 +1320,22 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         _ = try f.leaves(o.v, @intCast(k), &f.scratch);
         if (skip != none and n.tag == .ref) {
             // Another location of the written operand itself, which is a part
-            // of one root: two locations of it are two sets of cells, though
-            // one atom of the frame can name both (the entry level and the
-            // deep level of a part of a recursive value). Only a cell that it
-            // holds through another root can be a target too. A location
-            // whose parts are not apart (`REntry.twice`) is no two sets.
+            // of one root N: two locations of it are two places of N, so they
+            // hold two sets of cells when N holds each cell once (`linear`),
+            // though one atom of the frame can name both (the entry level and
+            // the deep level of a part of a recursive value). A parameter is
+            // so by the apart-arguments rule (kernel §4.4); a root the frame
+            // made says so itself; the answer of a function parameter can
+            // hold one cell at two places, and says nothing. A location whose
+            // parts are not apart (`REntry.twice`) is no two sets.
+            const apart = switch (f.roots.items[n.a].kind) {
+                .local => f.isLinear(n.a),
+                .param, .capture => true,
+                .answer, .fresh, .outside => false,
+            };
             for (f.scratch.items) |x| for (ws) |w| {
                 if (!f.overlap(x, w)) continue;
-                if (x.via == w.via and (x.via == none or f.isLinear(x.via)) and !f.twiceAt(x)) continue;
+                if (apart and !f.twiceAt(x)) continue;
                 return true;
             };
             continue;
@@ -2948,41 +2983,45 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
     }
     const others = try f.gpa.alloc(Other, c.arity);
     for (others, 0..) |*o, j| o.* = .{ .v = args[j], .sig = c.layouts[j], .flags = c.flags[c.off[j]..c.off[j + 1]] };
-    // What the callee writes and lets escape.
+    // What the callee lets escape, and the functions it is handed (each
+    // flows to the contract of its parameter), before what it writes: a
+    // write is judged against every escape of the call, including the one a
+    // function's answer makes (`escapeAnswer`).
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];
-        for (0..n) |se| {
-            const fl = c.flags[c.off[j] + se];
-            if (fl & flag_w != 0) {
-                const w: u32 = @intCast(f.atoms.items.len);
-                const dup = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
-                // A written argument of no cell asks nothing, and is accepted.
-                try f.demand(w, .{
-                    .point = inst,
-                    .callee_inst = callee,
-                    .base_inst = if (j < arg_insts.len) arg_insts[j].int() else none,
-                    .loc = m.loc.layoutEntries(sig)[se].loc,
-                    .others = others,
-                    .arg = j,
-                    .se = @intCast(se),
-                    .dup = dup and !m.loc.layoutEntries(sig)[se].single,
-                    .kind = if (code.decl[0] != none and m.isWorded(code.decl)) .writer else .callsite,
-                });
-            }
-            if (fl & flag_e != 0) {
-                const start: u32 = @intCast(f.atoms.items.len);
-                _ = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
-                try f.noteEscape(start, inst);
-            }
-        }
+        for (0..n) |se| if (c.flags[c.off[j] + se] & flag_e != 0) {
+            const start: u32 = @intCast(f.atoms.items.len);
+            _ = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
+            try f.noteEscape(start, inst);
+        };
     }
-    // The functions it is handed: each flows to the contract of its parameter.
     const site: Site = .{ .inst = inst, .callee = callee, .arg_insts = arg_insts, .others = others };
     for (0..c.arity) |j| {
         const fnc = c.fns[j] orelse continue;
         const use: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .fnc = fnc, .j = @intCast(j), .args = args, .site = &site };
         try f.flow(args[j], &use);
+    }
+    // What the callee writes.
+    for (0..c.arity) |j| {
+        const sig = c.layouts[j];
+        const n = c.off[j + 1] - c.off[j];
+        for (0..n) |se| if (c.flags[c.off[j] + se] & flag_w != 0) {
+            const w: u32 = @intCast(f.atoms.items.len);
+            const dup = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
+            // A written argument of no cell asks nothing, and is accepted.
+            try f.demand(w, .{
+                .point = inst,
+                .callee_inst = callee,
+                .base_inst = if (j < arg_insts.len) arg_insts[j].int() else none,
+                .loc = m.loc.layoutEntries(sig)[se].loc,
+                .others = others,
+                .arg = j,
+                .se = @intCast(se),
+                .dup = dup and !m.loc.layoutEntries(sig)[se].single,
+                .kind = if (code.decl[0] != none and m.isWorded(code.decl)) .writer else .callsite,
+            });
+        };
     }
     // What it reads.
     for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
@@ -4643,8 +4682,16 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             const pes = m.loc.layoutEntries(c.layouts[pj]);
             for (pes, 0..) |pe, e| {
                 if (c.flags[c.off[pj] + e] & flag_w == 0) continue;
-                // The message is the function's own; the model where the rounds keep it so.
+                // The model is the function's own where the rounds keep it so.
+                // The message is: a `send` is checked (`callParam`), and a
+                // message built in `view` from the model can hold a cell of
+                // the model only where `view` keeps the model, which is a
+                // location that is not own. So the message is own only when
+                // every location of the model is (kernel §6.13).
                 var ok = pj != c0.own_params - 1;
+                if (ok) for (own) |o| if (!o) {
+                    ok = false;
+                };
                 if (pj == c0.own_params - 1) for (mes, 0..) |me, k| if (me.loc == pe.loc and own[k]) {
                     ok = true;
                 };
