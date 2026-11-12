@@ -25,12 +25,22 @@ pub const Src = struct {
     kind: Kind,
     /// `param`: the parameter. `answer`: the function parameter.
     a: u16 = 0,
-    /// The entry of that parameter's layout, or of the function's result layout.
+    /// The entry of that parameter's layout, or of the function's result
+    /// layout. `also`: the result entry.
     e: u16 = 0,
 
-    pub const Kind = enum(u8) { fresh, shared, param, answer };
+    /// `twice` and `also` say where one cell can be at two places of the
+    /// result, and keep the location's claim (research report 114 §8):
+    ///
+    /// - `twice`: the location is a summary location, and one of its cells
+    ///   can be at two places of it. Its parts are not apart: a part of it
+    ///   is all of it. A callee that writes such a location is refused.
+    /// - `also`: the location can hold a cell that the body made and put at
+    ///   the result entry `e` too. The two locations hold that one cell.
+    pub const Kind = enum(u8) { fresh, shared, param, answer, twice, also };
     pub const fresh: Src = .{ .kind = .fresh };
     pub const shared: Src = .{ .kind = .shared };
+    pub const twice: Src = .{ .kind = .twice };
 
     pub fn key(s: Src) u64 {
         return (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
