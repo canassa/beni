@@ -1,0 +1,13 @@
+import List
+import Node exposing (Program)
+import String
+
+
+go : Int → String
+go n =
+    q = [ n, 2 ]
+    String.join (List.map ([ List.length q ] ▷ (List.push q 9).append) String.fromInt) ","
+
+
+main : Program
+main = Node.print (go 0)
