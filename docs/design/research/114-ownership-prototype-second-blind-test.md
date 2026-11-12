@@ -28,6 +28,9 @@ and callbacks of 33 functions of `core/`.
 The main precision loss: one list at two places of a value makes both places unwritable, even when nothing
 reads the second place. v3 refuses 136 such safe programs, and v2 accepts 134 of them.
 
+*Added after the fix:* §7 says how each hole was fixed and what an audit of the order found, §8 how the 136
+are won back, §9 the faults that a review of the fixes found, and §10 the measurements.
+
 ## 2. What was probed, and how
 
 **Reading.** The tester read `src/own3/` in full (Loc, Contract, Frame, Check, Enforce). The search looked for
@@ -210,3 +213,185 @@ through `?`.
   (`Frame.zig:1007-1009`). The tester read this and did not build a program that reaches it.
 - Methods of user types and `where` evidence, beyond `List.append` as a method.
 - v1 and v2 on the whole sweep. They ran on the 130 traps and on the 149 refused safe twins only.
+
+## 7. How the two holes were fixed
+
+*Added after the fix, on branch `ownership-v2-design-review`. The commits are on the branch; the measurements
+are in §10.*
+
+### 7.1 The order of reads and writes
+
+**The cause.** The write rule asked "is this read after the write?" by comparing instruction numbers. Lowering
+numbers instructions in source order. That is not the order in which the program runs: in `x ▷ e` the operand
+`x` is numbered first, and JavaScript evaluates `e` first when `e` is not a name.
+
+**Where the order comes from.** `language.md` §6, *Evaluation order*, says that a pipe is rewritten before
+anything runs, and that the rewritten form's order holds: the callee or the receiver, then the arguments. The
+emitter does this. `orderedExprs` and `callExpr` in `src/js/Lower.zig` evaluate a call's head and then its
+arguments in slot order, and they pin each value to a constant before a later operand hoists statements. The
+checker's walk already goes in the same order: the callee, then the arguments; a `case`'s scrutinee, then one
+arm; a `let`'s bindings in order. Only the numbers were wrong.
+
+**The fix.** Each read, write, escape and new name now has a time from the walk's own clock (`Frame.timeOf`),
+not an instruction number. What one operation records has one time. A record at another instruction, or after
+the walk entered another expression, has a later time. The write rule and the rule of old names (`isOld`)
+compare these times. This is the existing rule ("no read after the write"); only "after" changed. It needs no
+new kind of fact.
+
+**The audit.** Two checks.
+
+1. A log of every pair of a read and a write whose order by number and by time differ, and where the read
+   reaches the write. Over the 5 225 `.beni` files of `tests/corpus/` and the 22 020 programs of eight
+   generators (all but `recursive-levels.mjs` and `folds-callbacks.mjs`), the only such pairs were the 28
+   `order` programs of §4.1.
+2. A new generator, `bench/ownership-sweeps/evaluation-order.mjs` (440 programs): one read and one write of `q`
+   in two parts of 42 constructs, in both orders, run under the sanitiser. Before the fix, 20 programs trapped
+   (16 pipes and 4 method receivers) and 20 safe programs were refused. After it, none traps, and the only safe
+   programs refused are four where a lambda writes a list that it captured (refused by design).
+
+| Construct | Number order = run order? |
+|---|---|
+| a call's arguments, a constructor's, a record alias's constructor | yes |
+| tuple, list and record literals (a record's fields in written order), record update | yes |
+| interpolation, `++`, `==`, `<`, `&&` | yes |
+| `case` scrutinee (also a tuple), `if` condition, `let` bindings and body | yes |
+| a lambda applied, a computed callee `(f a) b`, a field of a call `(mk a).f b` | yes |
+| `?` alone, in an argument, after an argument | yes |
+| `x ▷ f a` (a named callee), `e ◁ x` | yes |
+| **`x ▷ e` with `e` a field of a call, an `if`, a `case`, a tuple item** | **no: fixed** |
+| **`x ▷ r.m`, a method of a computed receiver** | **no: fixed** |
+| spreads, `++` on lists, methods with arguments | yes |
+| markup holes; a `For`'s list | yes before; see below |
+| **a markup hole that calls a function of the top level** | **no: found by the review (§9)** |
+
+Two more things the audit found.
+
+- The first version of the fix read each markup value right after the hole that made it. The render reads
+  the values after all holes, so a later hole that wrote a `For`'s list was accepted. Under numbers this was
+  right by luck: the markup instruction comes after its holes. The walk now reads the values after all holes.
+- Lowering numbers a `let` binding before its value (`findGroups` says so). The only read at a binding is a
+  list pattern, and a list pattern in a `let` is refused as refutable. So no program reaches it.
+
+`language.md` §6's row for pipes says that for `|>` "the two agree": `e |> f a` is `f e a`, so `e` is first.
+That is true when the callee is a name. When it is a computed expression, the callee runs first. The emitter
+does that, and so does the checker now. The row's sentence could say so; it was not changed.
+
+### 7.2 One list twice in a deep level
+
+**The cause.** `leaves` gave the cells of a value at one entry of its layout. A summary location can be fed by
+two entries of one part: the entry level and the deep level of the value that a constructor holds. The test
+for one cell at two places compared two parts of a construction, never two entries of one part.
+
+**The fix.** `leaves` now takes a set of entries (`leavesOwn`, `leavesSet`). Each part of a construction is
+asked once for its own set, so a list at two of its entries is found as a list in two parts, and the location
+becomes `shared` (later: `twice`, §8). Two entries of one part of a root that are one entry of the root are
+read once: the atom names each cell of that entry, at every depth. Two entries of a root that hold one cell of
+another root count as two places unless the root says that it holds each cell once (`linear`).
+
+The other places that fold now use the same sets: `leavesAs` (two readings of a type), `argLeaves` (a callee's
+entry that covers two entries of the argument), and `listOf` (a list's entries, and the storage of a prepend's
+or a spread's base). `finish` and `apply` read `leaves`, so they follow. This is the existing rule ("a list
+reachable two ways makes its location `shared`"); it needed no new kind of fact. No program was found that
+needs the sets in `listOf` and `argLeaves`; they apply the same rule.
+
+## 8. The precision losses
+
+**The 136 safe `two` programs.** All of them were refused because a location that holds one list at two places
+was `shared`, and `shared` refuses each write. The fix of §7.2 made 88 more safe programs of `two` and `deep`
+refused the same way. `shared` says two things at once: "no claim" (the checker does not know the cells) and
+"not apart" (one cell can be at two places). These programs need only the second.
+
+Two new kinds of fact say the second without the first.
+
+- **`twice`** (`REntry.twice`, the source `twice` of a contract): a summary location that can hold one of its
+  cells at two places. It keeps its claim and what it holds. Its parts are not apart: an atom of it names all
+  of it, so a write of one part and a read of another overlap. A callee that writes such a location is
+  refused (`leavesOwn` reports one cell at two places), so hole 2 stays closed. A root with such a location is
+  not `linear`.
+- **`also`** (the source `also` of a contract): a result location that holds a list that the body made and put
+  at another result location too. Before, both locations were `shared`. Now the caller gives the two
+  locations one atom, so a write of one and a read of the other overlap, as they do for a value built in the
+  caller's own frame.
+
+Where the checker cannot see the cells (the answer of a function value), the location stays `shared`. Where a
+function value's answer has `twice` or `also`, it is read as before (`shared`).
+
+**The result.** v3 accepts all 136 safe `two` programs now (v2 accepts 134). Of the 237 refused safe programs
+of `blind2.mjs` after §7, 35 stay refused:
+
+- 22 `deep.*.callee.dead`: a callee writes one place of a summary location, and the caller hands it a value
+  with one list at two places of that location. To accept them, a contract would need a finer fact: which
+  cells of a location the callee reads after it writes one. `twice` cannot say it; it is about the caller's
+  value, not the callee's reads. This was not added.
+- 13 `hof.*.dead`, as in §5.
+
+The real writes stay at 299 of 308, and no other gate moved (§10).
+
+## 9. A review of the fixes
+
+A reviewer who did not write the fixes searched the code for another order mismatch and another merge without
+`shared`. It found three faults. Each is fixed and has a black-box test and a program in `blind2-faults/`.
+
+1. **A part of a `twice` location handed to a callee.** `mk3` answers a value whose deep level holds `q` twice.
+   A part of it goes to `h`, which writes its own top level and reads its deep level. In the caller both are
+   the one `twice` location. The test of the other operands took two locations of one part of a root as two
+   sets of cells. It does not now for a `twice` location. (The old prototype trapped too, through hole 2.)
+2. **A helper call in a markup hole.** `language.md` §6 and §11.6 say that a hole that calls a function of the
+   top level is called where the platform renders, after the other holes. The emitter does that. The walk
+   made the call where the hole is written, so `{item q}{show (List.push q 9)}` was accepted. The call stays
+   where it is written, which is the earliest place its writes can run, and what it reads of its arguments is
+   read again after the other holes. A hole of text is no helper. (The old prototype and v2 trapped too.)
+3. **The browser platform keeps the values of a page's holes.** The `dom` lowering keeps them in the markup's
+   value and reads them where it renders, after the frame. Report 113 §6.4 has the markup hold none of them,
+   by a rule of the platforms. So a write after the markup was built, in the same frame, was accepted. Each
+   hole's value is now read again at the end of the frame (`finish`). (The old prototype accepted it; v2
+   refuses it.)
+
+**Not fixed, and why.** Fault 3 has a second form: a local function builds the markup, and the caller writes
+the list after the call. The frame's end is the local function's, which is too early. v1 and v2 refuse it.
+To refuse it, the markup's value must hold its holes, and then a contract says so. That costs 12 of the 308 real
+writes (each `entry` write of a page whose `view` answers markup that holds the model), and 4 more after the
+entry rule ignores markup in an answer, because `Html.map` is a `foreign` with no word and lets what it is
+handed escape. Rule 10 of `CLAUDE.md` applies: this is a decision about the platforms' rule for markup, not a
+patch. The owner should decide it. A program: `view model` with `mk u = <ul><For each={q}>…</For></ul>`,
+`v = mk 0`, `w = List.push q 9`, `<div>{v}<p>{show w}</p></div>`.
+
+The reviewer also suspected that the release optimiser's single-use inlining (`src/js/Opt.zig`) could move a
+pure read past an in-place write. A reading of its rule says no: a value that calls something moves only into
+the next statement, and only past names, literals and field reads. It was not tested: `--sanitize-lists` runs
+on development builds only.
+
+## 10. Measurements
+
+A ReleaseSafe compiler (self-hosted backend) of the base `db354a1de7` ("before"), of the order and hole 2 fixes
+alone ("§7"), and of the branch with §8 and §9 ("after"). The same programs for each.
+
+| Programs | n | SAME before → §7 → after | REFUSED before → after | TRAP / DIFF / CRASH before → after |
+|---|---:|---|---|---|
+| `evaluation-order.mjs` | 440 | 268 → 288 → 288 | 152 → 152 | 20 / 0 / 0 → 0 |
+| `blind2-faults/` | 20 | 8 → 9 → 9 | 3 → 11 | 9 / 0 / 0 → 0 |
+| `blind-faults/` | 24 | 11 → 11 → 11 | 13 → 13 | 0 → 0 |
+| `blind2.mjs` | 1 202 | 388 → 300 → 502 | 684 → 700 | 130 / 0 / 0 → 0 |
+| `blind.mjs` | 9 792 | 1 323 → 1 323 → 1 564 | 8 469 → 8 228 | 0 → 0 |
+| `answers-beside.mjs` | 240 | 61 → 61 → 62 | 179 → 178 | 0 → 0 |
+| `wider-functions.mjs` | 354 | 171 → 171 → 171 | 183 → 183 | 0 → 0 |
+| `callbacks-keep.mjs` | 720 | 108 → 108 → 108 | 612 → 612 | 0 → 0 |
+| `function-values.mjs` | 1 960 | 250 → 250 → 250 | 1 710 → 1 710 | 0 → 0 |
+| `handed-back.mjs` | 2 592 | 0 → 0 → 0 | 2 592 → 2 592 | 0 → 0 |
+| `aliased-arguments.mjs` | 5 160 | 861 → 861 → 963 | 4 299 → 4 197 | 0 → 0 |
+| `recursive-levels.mjs` | 16 131 | 4 282 → 4 282 → 4 291 | 11 849 → 11 840 | 0 → 0 |
+| `folds-callbacks.mjs` | 30 300 | 6 182 → 6 182 → 6 182 | 24 118 → 24 118 | 0 → 0 |
+
+The 23 programs that were SAME before and are refused after are the safe twins of hole 2 that were accepted
+through it: 22 `deep.*.callee.dead` of `blind2.mjs` (§8) and `deep-summary-twice.dead`.
+
+| Gate | before | after |
+|---|---|---|
+| real writes (`--checkers=v1,v3`): accepted of the 308 that v1 judges | 299 | 299 (the same nine refused) |
+| sanitiser corpus: same / refused / trap / differs | 101 / 246 / 0 / 0 | 101 / 246 / 0 / 0 |
+| report 111's first family, 2 000: v3 same / trap | 502 / 0 | 502 / 0 |
+| report 111's second family, 2 000: v3 same / trap | 705 / 0 | 705 / 0 |
+
+The black-box tests are in `tests/blackbox/check_test.zig`: "the walk reads and writes in the order of the
+program", "one list twice in a deep level makes the location shared", "one list at two places keeps its claim"
+and "the faults of the review of report 114 are refused". The first two fail on the base.
