@@ -1,0 +1,18 @@
+-- The safe twin: nothing reads the cell.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+main : Program
+main =
+    cell = Ref.make [ 0 ]
+    xss = [ [ 1 ], [ 2 ] ]
+    s = List.sortWith xss λa _ →
+        Ref.set cell a
+        EQ
+    n = List.length s
+    w = List.update xss 0 λm → List.set m 0 9
+    w2 = List.update w 1 λm → List.set m 0 9
+    Node.print (String.fromInt (n + List.length w2))

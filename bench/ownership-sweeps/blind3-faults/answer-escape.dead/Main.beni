@@ -1,0 +1,20 @@
+-- The safe twin: nothing reads the cell.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+both : (List Int → ⊤) → List Int
+both h =
+    x = [ 1 ]
+    h x
+    x
+
+
+main : Program
+main =
+    cell = Ref.make [ 0 ]
+    y = both λl → Ref.set cell l
+    w = List.set y 0 9
+    Node.print (String.fromInt (List.sum w))

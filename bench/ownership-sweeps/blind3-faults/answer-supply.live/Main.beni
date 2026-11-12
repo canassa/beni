@@ -1,0 +1,17 @@
+-- The callee hands its own new list to `g`, which answers it: the answer and the list are one list.
+import List
+import Node exposing (Program)
+import String
+
+
+withG : (List Int → a) → a × List Int
+withG g =
+    x = [ 1 ]
+    ( g x, x )
+
+
+main : Program
+main =
+    p = withG λl → l
+    w = List.set p.0 0 9
+    Node.print (String.fromInt (List.sum w + List.sum p.1))

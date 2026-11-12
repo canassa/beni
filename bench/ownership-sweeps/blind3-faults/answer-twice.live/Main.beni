@@ -1,0 +1,17 @@
+-- One answer of `g` at two places of the result: v3 reads them as two lists.
+import List
+import Node exposing (Program)
+import String
+
+
+twoOf : (⊤ → a) → a × a
+twoOf g =
+    x = g ⊤
+    ( x, x )
+
+
+main : Program
+main =
+    p = twoOf λ_ → [ 1 ]
+    w = List.set p.0 0 9
+    Node.print (String.fromInt (List.sum w + List.sum p.1))

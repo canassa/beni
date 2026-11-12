@@ -1,0 +1,17 @@
+-- The safe twin: nothing reads the other place.
+import List
+import Node exposing (Program)
+import String
+
+
+twoOf : (⊤ → a) → a × a
+twoOf g =
+    x = g ⊤
+    ( x, x )
+
+
+main : Program
+main =
+    p = twoOf λ_ → [ 1 ]
+    w = List.set p.0 0 9
+    Node.print (String.fromInt (List.sum w))

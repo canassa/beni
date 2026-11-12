@@ -1,0 +1,20 @@
+-- The callee hands its own new list to `h`, which keeps it in a cell, and answers the list: the escape is lost.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+both : (List Int → ⊤) → List Int
+both h =
+    x = [ 1 ]
+    h x
+    x
+
+
+main : Program
+main =
+    cell = Ref.make [ 0 ]
+    y = both λl → Ref.set cell l
+    w = List.set y 0 9
+    Node.print (String.fromInt (List.sum w + List.sum (Ref.get cell)))
