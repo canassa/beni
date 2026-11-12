@@ -134,7 +134,11 @@ in the run). In the contract, an own atom of `own` or `derived` is `fresh(k)`; a
 A **summary** location names the cells of many positions (list elements, a deep level). One cell at two of
 its places cannot be seen by atoms alone, so it is a fact of the entry: `REntry.twice`, and `Src.twice` in a
 contract. It is derived in **one test**, `partDup`, where a run is built from parts: a part that holds a
-cell an earlier part holds (`dupOverlap`, which trusts a root's `linear` only). `leavesOwn` applies it to
+cell an earlier part holds (`dupOverlap`). Two overlapping atoms are two cells only when they were read
+through two **apart parts** of one root the frame made that holds each cell once (`viaApart`: the same
+`via`, `linear`, and two parts with different entries or incomparable paths). An atom records the part it
+was read through (`Atom.via`, `via_path`, `via_e`, set in `copyAtoms`), so two reads of one part of a list
+the frame made — `[ a, a ]` with `a` read out of it — are one cell. `leavesOwn` applies the test to
 the parts of a construction and the entries of one part; `listOf` to the items of a literal; `expandSrcs` to
 the sources of a result entry; `finish` to the result's entries. A `twice` entry keeps its claim; its parts
 are not apart (`rootLeaves` reads a part of it as all of it), and a callee that writes it is refused
@@ -160,8 +164,13 @@ A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
 
 1. **permission**: no atom of W has root `outside`, `capture` or `answer` (a function parameter's answer is
    never the frame's own), and W is not a `twice` summary location written by a callee;
-2. **no other operand**: no other operand that the operation reads reaches W (`otherReaches`);
-3. **no escape**: no escape whose context is compatible with the write's overlaps W;
+2. **no other operand**: no other operand that the operation reads reaches W (`otherReaches`). Another
+   location of the written operand itself, when the operand is a part of one root N, is another place of N:
+   its cells are apart from W when N holds each cell once — a parameter by the apart-arguments rule, a root
+   the frame made by its own `linear`, never the answer of a function parameter;
+3. **no escape**: no escape whose context is compatible with the write's overlaps W. An escape owns a copy
+   of its atoms (`esc_atoms`), and where the answer of a function parameter escapes, so does what the
+   function was handed (`Answer.base`, in `noteEscape`): the answer can hold it;
 4. **no later read**: no read at a time after t, in a compatible context, reaches W (`useReaches`).
 
 **Theorem.** If the four tests pass, no live reference reads the old value, and the in-place program prints
@@ -197,8 +206,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    A list pattern reads its list (`readsList`); a pattern a row does not describe binds `unknown` over the
    scrutinee. *Invariant: the bound value's leaves are the scrutinee's part's leaves.*
 2. **Call** (`call`, `apply`): the callee's contract says, per parameter location, read, written, escaped,
-   handed to a function; each written location is a demand at the call with the other arguments as
-   operands; each escaped location escapes; the result's entries are the contract's sources expanded to
+   handed to a function; each escaped location escapes and each function handed flows (`flow`, which can
+   escape a function's answer) **before** each written location is a demand at the call with the other
+   arguments as operands, so a write is judged against every escape of the call; the result's entries are the contract's sources expanded to
    atoms (`expandSrcs`: a parameter source to the argument's leaves, `fresh` to a `fresh` root, `outside`
    to `outside_atom`, an answer to what the function there answers). A callee with no contract is unknown
    code (§3.2). A contract of another arity is a partial application: every value flows to `top` and
@@ -254,8 +264,10 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     declare that its markup holds nothing is the owner's open decision** (report 117 §5 has the cost).
 13. **The entry** (`entryCall`): the runtime hands `update` a model that is `own` where `init`, `update`
     and `settle` answer it `own`, no location is answered twice, and no other function of the record keeps
-    it (a `view` whose markup holds the model keeps it, by rule 12). The record's functions escape; the
-    program's value is `unknown` over the record.
+    it (a `view` whose markup holds the model keeps it, by rule 12). `update`'s message is `own` only when
+    every location of the model is: a `send` is checked (`callParam`), and a message built in `view` from
+    the model can hold a cell of the model only where `view` keeps the model, which is a location that is
+    not own. The record's functions escape; the program's value is `unknown` over the record.
 
 ## 7. The module
 

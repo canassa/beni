@@ -2553,7 +2553,7 @@ test "ownership v3 (the step 0 prototype): the sanitiser fixtures that the first
         .{ .name = "SanitiserCellStaleLength", .at = "27:11", .cause = "supply", .count = 1 },
         .{ .name = "SanitiserCellStoredCapture", .at = "28:22", .cause = "escaped", .count = 4 },
         .{ .name = "SanitiserFoldAlternativesShared", .at = "51:16", .cause = "disjoint", .count = 8 },
-        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 2 },
+        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 3 },
         .{ .name = "SanitiserFoldHandsLabelKeeps", .at = "32:29", .cause = "supply", .count = 1 },
         .{ .name = "SanitiserFoldKeepsAnswer", .at = "28:10", .cause = "supply", .count = 6 },
         .{ .name = "SanitiserLabelRounds", .at = "26:9", .cause = "later-use", .count = 1 },
@@ -4313,6 +4313,72 @@ test "ownership v3: the faults of the third blind test are refused" {
         "  81:15 call Third.eq <constructor …>#Bag.0: rejected later-use: it is read again at 82:22 (<call List.sum>)\n",
         "  88:15 call Third.eq <constructor …>#Bag.0: accepted fresh\n",
         "  99:9 call List.update xss[*]: rejected escaped: it escaped before the write\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The two traps the adversarial review of the kernel proved (research report
+// 117 §7), and the fact each needed:
+//
+// - `twiceRead`: `a` is read out of a list the frame made and put at two
+//   places of `ys`. The atom of `a` is "the elements of `r`", read through
+//   `r` both times, and `r` holds each cell once; so the two reads were taken
+//   for two cells. An atom now records the part it was read through, and two
+//   reads of one part are one cell (kernel §4.4, `viaApart`).
+// - `answerKept`: `keep` hands `x` to `g`, keeps `g`'s answer in a cell, and
+//   writes `x`. The answer of a function parameter can hold what the function
+//   was handed, so its escape is an escape of `x` (kernel §5, test 3); and the
+//   caller judges its writes after every escape of the call (§6.2). Both the
+//   callee's write and the caller's are refused.
+test "ownership v3: the faults that the review of the kernel proved are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Fourth.beni",
+        \\import List
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\all : List (List Int) → Int
+        \\all xss = List.sum (List.map xss List.sum)
+        \\
+        \\
+        \\keep : Ref (List Int), (List Int → List Int), List Int → List Int
+        \\keep cell g x =
+        \\    y = g x
+        \\    Ref.set cell y
+        \\    List.set x 0 9
+        \\
+        \\
+        \\pub twiceRead : Int → Int
+        \\twiceRead n =
+        \\    r = [ [ n ] ]
+        \\    ys =
+        \\        case r of
+        \\            [ a ] →
+        \\                [ a, a ]
+        \\
+        \\            _ →
+        \\                []
+        \\    w = List.update ys 0 λm → List.set m 0 9
+        \\    all w
+        \\
+        \\
+        \\pub answerKept : Int → Int
+        \\answerKept n =
+        \\    cell = Ref.make [ 0 ]
+        \\    w = keep cell (λl → l) [ n, 2 ]
+        \\    List.sum w + List.sum (Ref.get cell)
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Fourth.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  13:5 List.set x: rejected escaped: it escaped before the write\n",
+        "  26:9 call List.update ys[*]: rejected element: one cell can be at two positions of it\n",
+        "  33:9 call Fourth.keep <literal>: rejected escaped: it escaped before the write\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
