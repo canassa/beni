@@ -1,0 +1,29 @@
+-- The callback pushes onto its accumulator in place and answers a new list
+-- that it put in a `Ref`. The fold hands that answer back as the next
+-- accumulator, and the checker reads a new list as the callback's own even
+-- when it escaped: the second push edits the list the `Ref` holds.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    r = Ref.make [ n ]
+    out = List.foldl [ 1, 2 ] [ 0 ] λx acc →
+        _ = List.push acc x
+        k = [ x ]
+        if x == 1 then
+            Ref.set r k
+
+        k
+    show out
+
+
+main : Program
+main = Node.print (go 9)

@@ -1,0 +1,31 @@
+-- The message holds a top-level list. The entry rule takes the message as
+-- `update`'s own because every model location is, so `update` pushes onto the
+-- top-level list in place. The second click sends it again. (The dead twin
+-- clicks once.)
+import List
+import Page exposing (Node)
+
+
+type Msg
+    = Add (List Int)
+
+
+base : List Int
+base = [ 5 ]
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Add l →
+            List.length (List.push l 9)
+
+
+view : Int → Node Msg
+view n =
+    Page.element "button" [ Page.attribute "id" "add", Page.onClick (Add base) ]
+        [ Page.text (String.fromInt n) ]
+
+
+main : Page.Program
+main = Page.sandbox { init = λ⊤ → 0, update = update, view = view }

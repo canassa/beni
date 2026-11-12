@@ -1,0 +1,22 @@
+-- `==` on a tuple runs the derived `eq` of the tuple, which calls `Tm.eq` on the
+-- first parts. The checker reads a derived method as code that reads its
+-- operands; it does not see that it calls `Tm.eq`, which writes `xs` in place.
+import List
+import Node exposing (Program)
+import String
+import Tm exposing (T)
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    r = if ( T xs, 1 ) == ( T [ 5 ], 1 ) then "eq" else "ne"
+    r ++ "/" ++ show [ 4 ]
+
+
+main : Program
+main = Node.print (go 1)

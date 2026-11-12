@@ -1,0 +1,30 @@
+-- `init` lets its new list escape into a `Ref` and answers it as the model's `items`.
+-- The entry rule takes `items` as `own`, so `update` pushes onto it in place.
+import List
+import Page exposing (Node)
+import Ref exposing (Ref)
+
+
+type alias Model =
+    items : List Int
+    keep : Ref (List Int)
+
+
+init : ⊤ → Model
+init _ =
+    xs = [ 1, 2 ]
+    { items = xs, keep = Ref.make xs }
+
+
+update : Int, Model → Model
+update n model = { model | items = List.push model.items n }
+
+
+view : Model → Node Int
+view model =
+    Page.element "button" [ Page.attribute "id" "add", Page.onClick 7 ]
+        [ Page.text (String.fromInt (List.length (model.items))) ]
+
+
+main : Page.Program
+main = Page.sandbox { init = init, update = update, view = view }
