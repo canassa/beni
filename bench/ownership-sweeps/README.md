@@ -18,6 +18,7 @@ node bench/ownership-sweeps/run.mjs --beni=zig-out/safe/bin/beni --checker=v3 --
   `--ownership=<checker> --ownership-everywhere --sanitize-lists`. It runs both outputs and compares them.
   Results go to `<outdir>.<checker>.txt`, one line per program. A rerun skips the programs that already have
   a line.
+- A program with a `PLATFORM` file is built for the platform it names (a directory below the repository root), and one with a `steps` file is run as a page: `tests/browser/driver.mjs` drives it under happy-dom, and its transcript is the output.
 - A generator takes an optional second argument, a filter: only the programs whose name contains it.
 - Use a ReleaseSafe or ReleaseFast beni. A Debug one is several times slower. Point `--tmp` at a disk, not a
   RAM file system: each program writes two builds.
@@ -57,6 +58,7 @@ The last part of a program's name is its twin kind:
 | `blind2.mjs` | 1 202 | research report 114, a second blind test of first-order values: one list at two places of 19 shapes × 14 makers; a pipe `x ▷ e` whose callee or receiver writes; one list twice in the deep level of four recursive types; callbacks of `core/` that write an element; answers of `core/` made from a list. Its faults and their safe twins are in `blind2-faults/` |
 | `blind3.mjs` | 417 | research report 115, a third blind test: one fresh list that reaches two places of a result through the answer of a function parameter (`answer`, `supply`), or reaches a function that keeps it (`handon`); a type's `eq` or `compare` that writes or keeps its operand; a `List.sortWith` comparator that keeps an element; one list at two places of a `Dict`; a prepend whose item is a literal. Its faults and their safe twins are in `blind3-faults/` |
 | `evaluation-order.mjs` | 440 | research report 114 §7: one read and one write of a list in two parts of one construct that JavaScript evaluates in a known order: 42 constructs (the arguments of a call and of a constructor, tuple, list, record and record update literals, interpolation, operators, `&&`, a `case` and an `if`, `let` bindings, a lambda applied, a computed callee, `?` in three places, markup and `For`, pipes into a computed callee or receiver, spreads, `++`, methods) × write first or read first × `List.set` or `List.push` × two reads × live/dead |
+| `blind4a.mjs` | 160 | research report 118, a fourth blind test (reader A): a derived `eq` or `compare` that calls the writing method of a part's type (8 shapes × 5 ops); a fold callback that answers a new list it let escape into a `Ref` (5 folds × 3 escapes × 2 writes); a page program whose `update` gets a model or a message that another holder keeps (10 cases, on `tests/platforms/page`). Its faults and their safe twins are in `blind4a-faults/` |
 
 ## Baseline: report 111's prototype
 

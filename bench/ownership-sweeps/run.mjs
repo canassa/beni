@@ -29,6 +29,7 @@ if (!dir || !opt.beni || !opt.checker) {
 const beni = path.resolve(opt.beni);
 const jobs = Number(opt.jobs ?? Math.max(1, os.cpus().length >> 1));
 const tmpRoot = path.resolve(opt.tmp ?? os.tmpdir());
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
 const results = `${path.resolve(dir)}.${opt.tag ?? opt.checker}.txt`;
 
 function run(cmd, args, cwd, timeoutMs) {
@@ -46,13 +47,19 @@ async function judge(prog) {
   const tmp = fs.mkdtempSync(path.join(tmpRoot, 'sweep-'));
   try {
     const files = fs.readdirSync(prog).filter((f) => f.endsWith('.beni'));
+    const pf = path.join(prog, 'PLATFORM');
+    const platform = fs.existsSync(pf) ? path.join(root, fs.readFileSync(pf, 'utf8').trim()) : 'node';
+    const page = fs.existsSync(path.join(prog, 'steps'));
+    const exec = (dir) => page
+      ? run('node', [path.join(root, 'tests/browser/driver.mjs'), `--dom=${path.join(root, 'tests/browser/happy-dom.mjs')}`, path.join(tmp, dir, '_main.mjs'), path.join(prog, 'steps')], prog, 20_000)
+      : run('node', [path.join(tmp, dir, '_main.mjs')], prog, 20_000);
     const build = (extra, out, ms) =>
-      run(beni, ['build', '--no-cache', '--jobs=1', '--platform=node', ...extra, `--out=${path.join(tmp, out)}`, ...files], prog, ms);
+      run(beni, ['build', '--no-cache', '--jobs=1', `--platform=${platform}`, ...extra, `--out=${path.join(tmp, out)}`, ...files], prog, ms);
     const plain = await build([], 'p', 60_000);
     if (plain.code !== 0) {
       return plain.code === 1 && !plain.out.includes('panic:') ? `PLAINFAIL` : `CRASH plain ${plain.code}`;
     }
-    const plainRun = await run('node', [path.join(tmp, 'p', '_main.mjs')], prog, 20_000);
+    const plainRun = await exec('p');
     const flags = [`--ownership=${opt.checker}`, '--ownership-everywhere', '--sanitize-lists'];
     const checked = await build(flags, 's', 120_000);
     if (checked.code !== 0) {
@@ -62,7 +69,7 @@ async function judge(prog) {
       const where = checked.out.match(/^-- [A-Z ]+ -+ (\S+:\d+:\d+)/m)?.[1] ?? '';
       return `REFUSED ${code} ${where}`.trim();
     }
-    const checkedRun = await run('node', [path.join(tmp, 's', '_main.mjs')], prog, 20_000);
+    const checkedRun = await exec('s');
     if (checkedRun.code !== 0 && plainRun.code !== 0) return 'BOTHFAIL';
     if (checkedRun.code !== 0) return `TRAP ${checkedRun.out.split('\n').find((l) => /stale|sanit|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
     return checkedRun.out === plainRun.out ? 'SAME' : 'DIFF';

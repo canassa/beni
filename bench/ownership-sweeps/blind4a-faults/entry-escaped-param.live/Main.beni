@@ -1,0 +1,37 @@
+-- `update` puts the model's `items` in a `Ref` and answers it unchanged. The entry
+-- rule does not ask whether `update` lets a model location escape, so the next
+-- `update` pushes onto `items` in place while the `Ref` holds it.
+import List
+import Page exposing (Node)
+import Ref exposing (Ref)
+
+
+type alias Model =
+    items : List Int
+    keep : Ref (List Int)
+
+
+init : ⊤ → Model
+init _ = { items = [ 1, 2 ], keep = Ref.make [] }
+
+
+update : Int, Model → Model
+update n model =
+    if n == 0 then
+        Ref.set model.keep model.items
+        model
+    else
+        { model | items = List.push model.items n }
+
+
+view : Model → Node Int
+view model =
+    Page.element "main" []
+        [ Page.element "button" [ Page.attribute "id" "keep", Page.onClick 0 ] [ Page.text "keep" ]
+        , Page.element "button" [ Page.attribute "id" "add", Page.onClick 7 ]
+            [ Page.text (String.fromInt (List.length (Ref.get model.keep))) ]
+        ]
+
+
+main : Page.Program
+main = Page.sandbox { init = init, update = update, view = view }

@@ -1,0 +1,29 @@
+-- `init` answers one new list at two fields of the model. The entry rule
+-- tests "one cell at two places" for parameters only, so `items` is `own`.
+import List
+import Page exposing (Node)
+
+
+type alias Model =
+    items : List Int
+    other : List Int
+
+
+init : ⊤ → Model
+init _ =
+    xs = [ 1, 2 ]
+    { items = xs, other = xs }
+
+
+update : Int, Model → Model
+update n model = { model | items = List.push model.items n }
+
+
+view : Model → Node Int
+view model =
+    Page.element "button" [ Page.attribute "id" "add", Page.onClick 7 ]
+        [ Page.text (String.fromInt (List.length model.items)) ]
+
+
+main : Page.Program
+main = Page.sandbox { init = init, update = update, view = view }

@@ -1,0 +1,13 @@
+import List
+
+
+pub type T
+    = T (List Int)
+
+
+-- A declared `eq` that pushes onto its operand. Its write rests on its callers.
+pub eq : T, T → Bool
+eq x y =
+    case ( x, y ) of
+        ( T a, T b ) →
+            List.length (List.push a 0) == List.length b
