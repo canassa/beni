@@ -1,0 +1,23 @@
+import Html exposing (Html)
+import List
+import Node
+import Ssr
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+item : List Int → Html msg
+item l = <span>{show l}</span>
+
+
+go : Int → String
+go n =
+    q = [ n, 2 ]
+    Ssr.render (<div>{item q}{show (List.push q 9)}</div>)
+
+
+main : Node.Program
+main = Node.print (go 0)

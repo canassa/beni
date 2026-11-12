@@ -328,6 +328,11 @@ order: std.ArrayList(u32) = .empty,
 chain_root: u32 = none,
 /// The next `Use.id`.
 next_use: u32 = 1,
+/// The values of markup holes, and their markup: read again at the frame's end.
+late: std.ArrayList([3]u32) = .empty,
+/// The last call whose arguments `call` evaluated, and their values.
+call_inst: u32 = none,
+call_vals: []const Val = &.{},
 /// The walk's clock (`timeOf`): the time of the last operation, its
 /// instruction, and the count of expressions entered when it was taken.
 clock: u32 = 0,
@@ -480,6 +485,12 @@ fn copyAtoms(f: *Frame, start: u32, len: u32, via: u32, out: *std.ArrayList(Atom
         if (via != none and a.via == none) a.via = via;
         out.appendAssumeCapacity(a);
     }
+}
+
+/// Whether atom `a` names a location of a root that the frame made whose parts are not apart.
+fn twiceAt(f: *const Frame, a: Atom) bool {
+    const r = f.roots.items[a.root];
+    return r.kind == .local and f.rents.items[r.ent + a.e].twice;
 }
 
 fn atomEql(a: Atom, b: Atom) bool {
@@ -1125,10 +1136,11 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
             // of one root: two locations of it are two sets of cells, though
             // one atom of the frame can name both (the entry level and the
             // deep level of a part of a recursive value). Only a cell that it
-            // holds through another root can be a target too.
+            // holds through another root can be a target too. A location
+            // whose parts are not apart (`REntry.twice`) is no two sets.
             for (f.scratch.items) |x| for (ws) |w| {
                 if (!f.overlap(x, w)) continue;
-                if (x.via == w.via and (x.via == none or f.roots.items[x.via].linear)) continue;
+                if (x.via == w.via and (x.via == none or f.roots.items[x.via].linear) and !f.twiceAt(x)) continue;
                 return true;
             };
             continue;
@@ -1600,8 +1612,24 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             //
             // The render reads each value after the markup has evaluated
             // all of them: so the reads come after the last one (`timeOf`).
+            //
+            // A hole that calls a function of the top level is a helper: the
+            // platform makes the call where it renders, after the markup's
+            // other values (`language.md` §6, *Evaluation order*; §11.6). The
+            // call stays where it is written, so its writes are at the
+            // earliest place where they can run, and what it reads of its
+            // arguments is read again with the other values, at the latest.
             const vals = try f.gpa.alloc(Val, ops.items.len);
-            for (ops.items, vals) |o, *v| v.* = try f.ev(o.int());
+            var late: std.ArrayList(Val) = .empty;
+            defer late.deinit(f.gpa);
+            var helpers: std.ArrayList(u32) = .empty;
+            defer helpers.deinit(f.gpa);
+            try f.helperHoles(@fromBackingInt(data.lhs), &helpers);
+            for (ops.items, vals) |o, *v| {
+                v.* = try f.ev(o.int());
+                if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try late.appendSlice(f.gpa, f.call_vals);
+            }
+            for (late.items) |v| try f.readAll(v, inst);
             for (vals) |v| {
                 const n = f.nodes.items[v];
                 const kept = switch (n.tag) {
@@ -1620,10 +1648,60 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // The markup's value holds no value of a hole: the entry rule
             // says that the runtime reads them where it renders (above).
             // That is a rule of the platforms, not a fact that the walk
-            // proves (research report 113 §6.4).
+            // proves (research report 113 §6.4). But a platform can keep
+            // them in the markup's value (the `dom` lowering of the browser
+            // platform does) and read them where it renders, after this
+            // frame: so each is read again at the frame's end (`finish`;
+            // research report 114 §9).
+            for (vals) |v| try f.late.append(f.gpa, .{ v, inst, f.cur_ctx });
             return f.unknownResult(inst);
         },
         else => return v_shared,
+    }
+}
+
+/// The values of the holes of the markup at `root` that call a function of
+/// the top level and that a platform may call where it renders (the
+/// emitter's `helperCallee`, `language.md` §11.6). A hole whose value is
+/// text is not one. A function of another module is taken to be one: a
+/// markup primitive among them only reads later than it does.
+fn helperHoles(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
+    const m = f.m;
+    const bir = m.bir;
+    switch (bir.markupKind(root)) {
+        .element => {
+            const e = bir.extraData(root, Bir.MarkupElement);
+            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| try f.helperHoles(c, out);
+        },
+        .fragment => {
+            const fr = bir.extraData(root, Bir.MarkupFragment);
+            for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| try f.helperHoles(c, out);
+        },
+        .component => {
+            const c = bir.extraData(root, Bir.MarkupComponent);
+            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try f.helperHoles(ch, out);
+        },
+        .text, .@"for", .show => {},
+        .hole => {
+            const v = bir.extraData(root, Bir.MarkupHole).value.int();
+            if (m.tags[v] != .call) return;
+            // A hole of text is written where it is; one with no row is markup.
+            if (m.in.dispatch) |dt| for (dt.markup) |row| if (row.kind == .hole and row.node == @backingInt(root)) {
+                if (row.detail < 4) return;
+            };
+            const callee = m.datas[v].lhs;
+            switch (m.tags[callee]) {
+                .top => {
+                    const d = m.datas[callee].lhs;
+                    if (d >= bir.decls.len) return;
+                    const k = bir.decls[d].kind;
+                    if (!k.isValue() or k == .vocab_markup) return;
+                },
+                .ext_value => {},
+                else => return,
+            }
+            try out.append(f.gpa, v);
+        },
     }
 }
 
@@ -2228,6 +2306,13 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
 /// The frame's contract, once its body is walked.
 pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const m = f.m;
+    // A platform can read the values of a page's holes where it renders,
+    // after each operation of this frame (`markup`).
+    if (f.late.items.len != 0) {
+        f.clock += 1;
+        f.clock_inst = none;
+        for (f.late.items) |x| try f.uses.append(f.gpa, .{ .point = x[1], .at = f.clock, .val = x[0], .ctx = x[2] });
+    }
     try f.finishDemands();
     // What the body reads of each parameter.
     var tmp: std.ArrayList(Atom) = .empty;
@@ -2442,6 +2527,9 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         const is_fn = if (code) |c| k < c.contract.arity and (c.contract.fns[k] != null or f.isIdentity(c.contract)) else false;
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
+    // A call in a hole of markup can run after the other holes (`markup`).
+    f.call_inst = inst;
+    f.call_vals = try f.gpa.dupe(Val, vals.items);
     if (code) |c| return f.apply(inst, callee, c, vals.items, args);
     if (fn_root != none) return f.callParam(inst, callee, fn_root, vals.items, args);
     // An unknown function: it can keep each argument, and its answer has no claim.

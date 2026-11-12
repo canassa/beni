@@ -1,0 +1,46 @@
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+showAll : List (List Int) → String
+showAll ls = String.join (List.map ls show) "|"
+
+
+type Lst
+    = Cons (List Int) Lst
+    | Nil
+
+
+h : Lst → String
+h t =
+    case t of
+        Cons a (Cons b _) →
+            show (List.push a 1) ++ "/" ++ show b
+
+        _ →
+            "-"
+
+
+mk3 : Int → Lst
+mk3 n =
+    q = [ n, 2 ]
+    Cons [ 0 ] (Cons q (Cons q Nil))
+
+
+go : Int → String
+go n =
+    case mk3 n of
+        Cons _ r →
+            h r
+
+        Nil →
+            "-"
+
+
+main : Program
+main = Node.print (go 0)

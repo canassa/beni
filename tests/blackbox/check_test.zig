@@ -3568,6 +3568,177 @@ test "ownership v3: one list at two places keeps its claim" {
     }
 }
 
+// The faults that the review of the fixes of report 114 found (§9).
+//
+// - `levels`: `mk3` answers a value whose deep level holds one list
+//   twice (`twice`). A part of it goes to `h`, which writes its own top
+//   level and reads its deep level. Both are that one location of the
+//   caller, so the two operands are one list. `levelsApart` is the twin.
+// - `helper`: a hole that calls a function of the top level is a helper:
+//   the platform calls it where it renders, after the other holes. So it
+//   reads `q` after the push of the next hole. `helperDead` and
+//   `helperAfter` are the twins; `attribute` is no helper, and stays
+//   accepted.
+// - `Page.view`: the browser platform keeps the values of a page's holes
+//   in the markup's value, and reads them where it renders, after the
+//   frame. So `q` is read again at the frame's end, and the push after
+//   the markup is refused.
+test "ownership v3: the faults of the review of report 114 are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Review.beni",
+        \\import Html exposing (Html)
+        \\import List
+        \\import Ssr
+        \\import String
+        \\
+        \\
+        \\type Lst
+        \\    = Cons (List Int) Lst
+        \\    | Nil
+        \\
+        \\
+        \\show : List Int → String
+        \\show l = String.join (List.map l String.fromInt) ","
+        \\
+        \\
+        \\h : Lst → String
+        \\h t =
+        \\    case t of
+        \\        Cons a (Cons b _) →
+        \\            show (List.push a 1) ++ "/" ++ show b
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\mk3 : Int → Lst
+        \\mk3 n =
+        \\    q = [ n, 2 ]
+        \\    Cons [ 0 ] (Cons q (Cons q Nil))
+        \\
+        \\
+        \\mkApart : Int → Lst
+        \\mkApart n =
+        \\    q = [ n, 2 ]
+        \\    Cons [ 0 ] (Cons q (Cons [ 5 ] Nil))
+        \\
+        \\
+        \\pub levels : Int → String
+        \\levels n =
+        \\    case mk3 n of
+        \\        Cons _ r →
+        \\            h r
+        \\
+        \\        Nil →
+        \\            "-"
+        \\
+        \\
+        \\pub levelsApart : Int → String
+        \\levelsApart n =
+        \\    case mkApart n of
+        \\        Cons _ r →
+        \\            h r
+        \\
+        \\        Nil →
+        \\            "-"
+        \\
+        \\
+        \\item : List Int → Html msg
+        \\item l = <span>{show l}</span>
+        \\
+        \\
+        \\pub helper : Int → String
+        \\helper n =
+        \\    q = [ n, 2 ]
+        \\    Ssr.render (<div>{item q}{show (List.push q 9)}</div>)
+        \\
+        \\
+        \\pub helperDead : Int → String
+        \\helperDead n =
+        \\    q = [ n, 2 ]
+        \\    Ssr.render (<div>{item [ 4 ]}{show (List.push q 9)}</div>)
+        \\
+        \\
+        \\pub helperAfter : Int → String
+        \\helperAfter n =
+        \\    q = [ n, 2 ]
+        \\    Ssr.render (<div>{show (List.push q 9)}{item [ 4 ]}</div>)
+        \\
+        \\
+        \\pub attribute : Int → String
+        \\attribute n =
+        \\    q = [ n, 2 ]
+        \\    Ssr.render (<div title={show q}>{show (List.push q 9)}</div>)
+    );
+    {
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Review.beni" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        for ([_][]const u8{
+            "  20:19 List.push a: accepted param\n",
+            "  42:13 call Review.h r#Cons.0: rejected disjoint: another operand of the same operation reaches it\n",
+            "  52:13 call Review.h r#Cons.0: accepted call\n",
+            "  65:37 List.push q: rejected later-use: it is read again at 65:17 (<expression>)\n",
+            "  71:41 List.push q: accepted fresh\n",
+            "  77:29 List.push q: accepted fresh\n",
+            "  83:44 List.push q: accepted fresh\n",
+            "total 7: accepted 5 (fresh 3, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2\n",
+        }) |line| {
+            if (std.mem.indexOf(u8, r.stdout, line) == null) {
+                std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+                return error.TestExpectedLine;
+            }
+        }
+    }
+    try w.write("Page.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\import String
+        \\
+        \\
+        \\type Msg
+        \\    = Next
+        \\
+        \\
+        \\type alias Model =
+        \\    step : Int
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model = { model | step = model.step + 1 }
+        \\
+        \\
+        \\show : List Int → String
+        \\show l = String.join (List.map l String.fromInt) ","
+        \\
+        \\
+        \\pub view : Model → Html Msg
+        \\view model =
+        \\    q = [ model.step, 2 ]
+        \\    v = <ul><For each={q}>{λi → <li>{String.fromInt i}</li>}</For></ul>
+        \\    w = List.push q 9
+        \\    <div>{v}<p>{show w}</p></div>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → { step = 0 }, update = update, view = view }
+    );
+    {
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser", "Page.beni" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        for ([_][]const u8{
+            "  27:9 List.push q: rejected later-use: it is read again at 26:9 (<expression>)\n",
+            "total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1\n",
+        }) |line| {
+            if (std.mem.indexOf(u8, r.stdout, line) == null) {
+                std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+                return error.TestExpectedLine;
+            }
+        }
+    }
+}
+
 // The faults that the review of the fix of report 113 found (§6). A value
 // that the walk cannot follow was read as holding nothing, or as holding its
 // cells with a claim and no word that one cell is at two of its locations.
