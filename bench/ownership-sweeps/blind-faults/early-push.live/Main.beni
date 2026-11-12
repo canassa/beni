@@ -1,0 +1,18 @@
+-- As early-call.live, with `List.push` and a read of the length.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    g n = List.length xs + n
+    ys = List.push xs 9
+    Node.print "${ints ys} ${String.fromInt (h 1)}"

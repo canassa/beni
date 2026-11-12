@@ -1,0 +1,23 @@
+-- One list at two places of one call: the argument `xs`, and the cells of `h` through `g`, bound after `h`.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+bumpThen : List Int, (Int → String) → String
+bumpThen l k =
+    l2 = List.set l 0 9
+    "${ints l2} ${k 1}"
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = g n
+    g n = ints xs
+    Node.print (bumpThen xs h)

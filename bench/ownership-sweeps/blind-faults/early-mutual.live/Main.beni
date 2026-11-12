@@ -1,0 +1,18 @@
+-- As early-call.live, with `h` and `g` calling each other.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    h n = if n == 0 then "" else g (n - 1)
+    g n = if n == 0 then ints xs else h n
+    ys = List.set xs 0 9
+    Node.print "${ints ys} ${h 1}"
