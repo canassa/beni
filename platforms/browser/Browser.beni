@@ -104,8 +104,10 @@ programs list =
 
 --| A function that sends a message to a running program: what a command's
 --| or a subscription's body is handed. Calling it runs `update` and never
---| waits. `update` has the program's log context, not the caller's.
-pub type alias Send msg =
+--| waits. `update` has the program's log context, not the caller's. The
+--| word `sender` is the ownership row: a message is given up to the runtime,
+--| so each list in it must be the sender's own.
+pub sender type alias Send msg =
     msg → ⊤
 
 

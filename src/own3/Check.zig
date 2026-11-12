@@ -1,12 +1,14 @@
-//! own3, layer 4: one module (research report 110 §6.7; report 111 §2).
+//! own3, layer 4: one module (`ownership-v3-kernel.md` §7; research report
+//! 110 §6.7; report 111 §2).
 //!
 //! The declarations of a module are walked in dependency order, callees
 //! first (`own2/Prepass.zig` gives the groups). A group that calls itself is
 //! walked again until no contract of it changes: the contracts start empty
 //! and only grow, so the last round's verdicts stand on the least fixed
 //! point. A declaration with ownership words is not walked: its words are
-//! its contract (`wordedContract`). A `foreign` with no word has no contract:
-//! a call of it lets each argument escape, and its answer is `shared`.
+//! its contract (`wordedContract`). A `foreign` with no word has no contract,
+//! and so has a declaration whose walk gave up: a call of either lets each
+//! argument escape, and its answer can hold each argument.
 //!
 //! The place graph is `own2/Place.zig`'s, read through `own2/Groups.zig`'s
 //! adapter. Nothing else of the ownership checker v2 runs here.
@@ -118,6 +120,15 @@ pub const Mod = struct {
     /// walk, in the order of its contract's parameters after its own.
     code_caps: [][]const u32 = &.{},
     contracts: []?*const Contract.Contract = &.{},
+    /// Per declaration: its last walk gave up, so it must publish no contract (kernel §3.3; asserted at `publish`).
+    failed_decl: []bool = &.{},
+    /// The contracts of a group whose rounds run (`solveGroup`,
+    /// `Frame.solveCodes`): a fresh cell of one of them is named by the call
+    /// alone (`Frame.freshAtom`), so the rounds settle (kernel §4.2).
+    drafts: std.AutoHashMapUnmanaged(usize, void) = .empty,
+    /// The allocation sites of this module's contracts: a small number for
+    /// each site name, the same in each round (`siteId`).
+    sites: std.AutoHashMapUnmanaged(u64, u16) = .empty,
     state: []State = &.{},
     worded_done: []bool = &.{},
     readers: []?Contract.Reader = &.{},
@@ -166,20 +177,40 @@ pub const Mod = struct {
         };
     }
 
-    /// Whether a function parameter of type `v` is the runtime's `send`: the
-    /// platform's alias `Send msg`. The word `sender` on the alias is the row
-    /// that says so (ownership-v2.md §2.13.5); no platform has it yet, so the
-    /// prototype reads the alias by its name.
+    /// Whether a function parameter of type `v` is the runtime's `send`: an
+    /// alias with the word `sender` (`pub sender type alias Send msg = msg →
+    /// ⊤`, ownership-v2.md §2.13.5), which a platform puts on it. The word
+    /// is the row; no name is read (kernel §6.11).
     pub fn isSender(m: *const Mod, v: Var.Optional) bool {
         const t = v.unwrap() orelse return false;
         const store = m.in.store;
-        return switch (store.content(store.find(t))) {
-            .alias => |a| blk: {
+        switch (store.content(store.find(t))) {
+            .alias => |a| {
                 const id = a.type.int();
-                if (id >= m.in.types.entries.len) break :blk false;
+                if (id >= m.in.types.entries.len) return false;
                 const e = m.in.types.entries[id];
-                break :blk e.package != .app and std.mem.eql(u8, m.names.interner.slice(e.name), "Send");
+                if (e.package == .app) return false;
+                return m.aliasIsSender(.{ e.module.int(), e.decl.int() }, 0);
             },
+            else => return false,
+        }
+    }
+
+    /// Whether the type alias at `t` has the word `sender`, or is an alias of
+    /// one that has it (`Cmd.Send msg = Browser.Send msg`): its body is a
+    /// reference to another alias, followed to the declaration.
+    fn aliasIsSender(m: *const Mod, t: [2]u32, depth: u32) bool {
+        if (depth > 8 or t[0] >= m.in.birs.len) return false;
+        const owner = m.in.birs[t[0]];
+        if (t[1] >= owner.decls.len) return false;
+        const d = owner.decls[t[1]];
+        if (d.own_kind == .sender) return true;
+        var body = (d.annotation.unwrap() orelse return false).int();
+        if (owner.instTag(@fromBackingInt(body)) == .type_app) body = owner.instData(@fromBackingInt(body)).lhs;
+        const data = owner.instData(@fromBackingInt(body));
+        return switch (owner.instTag(@fromBackingInt(body))) {
+            .type_top => m.aliasIsSender(.{ t[0], data.lhs }, depth + 1),
+            .ext_type => if (data.lhs < m.in.provenance.len) (if (m.in.provenance[data.lhs].typeDecl(data.rhs)) |td| m.aliasIsSender(.{ data.lhs, td.int() }, depth + 1) else false) else false,
             else => false,
         };
     }
@@ -205,6 +236,19 @@ pub const Mod = struct {
     /// The location of a place's own cell.
     pub fn selfLoc(m: *Mod, place: PlaceId) Allocator.Error!u32 {
         return m.loc.selfLoc(place);
+    }
+
+    /// The allocation site number of the site named `name` in a contract of
+    /// this module (kernel §4.2): the same number for the same name, in every
+    /// round of a group.
+    pub fn siteId(m: *Mod, name: u64) Allocator.Error!u16 {
+        const got = try m.sites.getOrPut(m.gpa, name);
+        if (!got.found_existing) got.value_ptr.* = @intCast(@min(m.sites.count() - 1, std.math.maxInt(u16)));
+        return got.value_ptr.*;
+    }
+
+    pub fn isDraft(m: *const Mod, c: *const Contract.Contract) bool {
+        return m.drafts.contains(@intFromPtr(c));
     }
 
     // ---- names of the program --------------------------------------------------
@@ -514,14 +558,17 @@ pub const Mod = struct {
                 }
             }
         }
-        // The result's own words.
+        // The result's own words. `fresh` says that each location of the
+        // result holds new cells: one allocation site for each location, so a
+        // builder's storage and its elements are two cells, not one. A row
+        // that makes one new list (`copyof` and its kin) has one site, `0`.
         if (has(rw, .fresh) or has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty)) {
             described = true;
-            for (res) |*r| try r.append(gpa, Src.fresh);
+            for (res, 0..) |*r, ri| try r.append(gpa, Src.fresh(@intCast(ri), false));
         }
         if (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .prepended)) {
             described = true;
-            for (res_es, 0..) |re, ri| if (re.loc == rself) try res[ri].append(gpa, Src.fresh);
+            for (res_es, 0..) |re, ri| if (re.loc == rself) try res[ri].append(gpa, Src.fresh(0, false));
             if (arity > 0 and !has(rw, .prepended)) try m.elemsToElems(res, sig, c, 0);
             if (arity > 1 and !has(rw, .copyof)) try m.elemsToElems(res, sig, c, 1);
             if (has(rw, .concatenated) and arity > 0) try m.selfToSelf(res, sig, c, 0);
@@ -548,17 +595,26 @@ pub const Mod = struct {
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
                 }
-            } else for (res) |*r| try r.append(gpa, Src.shared);
+            } else try m.undescribed(c, res);
         }
-        if (has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown)) {
-            described = true;
-            for (res) |*r| try r.append(gpa, Src.shared);
-        }
-        // A result that no word describes has no claim.
-        if (!described) for (res) |*r| try r.append(gpa, Src.shared);
+        // A result that comes from behind a cell or from JavaScript, or
+        // that no word describes: the pessimistic row (`undescribed`).
+        if (has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown) or !described) try m.undescribed(c, res);
         const out = @constCast(c.res);
         for (out, res) |*o, r| o.* = try Contract.normal(m.arena, r.items);
         return c;
+    }
+
+    /// The result of a worded row that the words do not describe: it can be
+    /// a cell outside every frame (JavaScript's, a cell's contents), so no
+    /// frame may write it, and it can hold every cell of every parameter, at
+    /// any place (kernel §6.10: a missing fact is the pessimistic one).
+    fn undescribed(m: *Mod, c: *Contract.Contract, res: []std.ArrayList(Src)) Allocator.Error!void {
+        c.nonlinear = true;
+        for (res) |*r| {
+            try r.append(m.gpa, Src.outside);
+            for (0..c.arity) |j| for (0..m.loc.layoutEntries(c.layouts[j]).len) |e| try r.append(m.gpa, .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) });
+        }
     }
 
     fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, loc: u32, src: Src) Allocator.Error!void {
@@ -625,7 +681,13 @@ pub const Mod = struct {
         const free = try m.arena.alloc(bool, total);
         const taken = has(w, .taken);
         @memset(free, taken);
-        @memset(supply, Contract.shared_only);
+        // What the words do not say the row hands the function, the
+        // pessimistic row does: every cell of every parameter, not `free`
+        // (kernel §6.10). `taken` names the elements below.
+        var every: std.ArrayList(Src) = .empty;
+        defer every.deinit(m.gpa);
+        for (0..c.arity) |pj| for (0..m.loc.layoutEntries(c.layouts[pj]).len) |pe| try every.append(m.gpa, .{ .kind = .param, .a = @intCast(pj), .e = @intCast(pe) });
+        @memset(supply, try Contract.normal(m.arena, every.items));
         if (taken and arity > 0 and sig.params.len > 0) {
             // The function is handed one element of parameter 0, taken out of the list.
             if (try m.loc.proj(sig.params[0], Step.elem)) |pr| {
@@ -673,11 +735,14 @@ pub const Mod = struct {
 
     // ---- one declaration --------------------------------------------------------------
 
+    /// Walk declaration `di` to its contract, or null: it has no body, no
+    /// signature, or its walk gave up (kernel §3.3; then its lines are all
+    /// refused, and `limits` says so).
     fn walkDecl(m: *Mod, di: u32) Allocator.Error!?*const Contract.Contract {
         const d = m.bir.decls[di];
         const body = d.body.unwrap() orelse return null;
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
-        @memset(m.lv[d.locals_start..d.locals_end], Frame.v_shared);
+        @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
         var f = try Frame.init(m, null, di, false, none);
         const params = m.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
@@ -691,42 +756,27 @@ pub const Mod = struct {
         const result_place = if (sig) |s| (if (params.len == s.params.len) s.result else try m.placeOfInst(body.int())) else try m.placeOfInst(body.int());
         try f.walkBody(body.int());
         const c = try f.finish(result_place);
-        if (f.failed) try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
+        if (f.failed) {
+            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
+            m.failed_decl[di] = true;
+            return null;
+        }
         if (params.len == 0) {
             // A function value declared with no parameter: a call of it runs the lambda its body is.
             if (m.tags[body.int()] == .lambda) return m.code_contract[body.int()];
             // A constant: its contract says which locations it holds a cell at.
             return c;
         }
-        if (m.isDictFocus(di)) trustFocus(c);
         return c;
-    }
-
-    /// `Dict.focus` of `core/` hands its function the value at a key, taken
-    /// out of the tree, and puts the answer back. Its row is asserted
-    /// (`core/Dict.beni`, ownership-checker.md §20.8), as `List.focus`'s is by
-    /// its words `once taken stored`. `Dict.focus` has no word, so the
-    /// prototype reads the row by the function's name, as v1 does.
-    fn isDictFocus(m: *const Mod, di: u32) bool {
-        if (!m.in.isCore(m.in.module)) return false;
-        if (!std.mem.eql(u8, m.names.module_names[m.in.module], "Dict")) return false;
-        return std.mem.eql(u8, m.names.declName(m.in.module, di), "focus");
-    }
-
-    fn trustFocus(c: *const Contract.Contract) void {
-        if (c.arity != 3) return;
-        const fnc = c.fns[2] orelse return;
-        for (@constCast(fnc.free)) |*x| x.* = true;
-        for (fnc.supply) |srcs| for (srcs) |s| if (s.kind == .param) {
-            @constCast(c.flags)[c.off[s.a] + s.e] |= Contract.flag_s;
-        };
     }
 
     fn solveGroup(m: *Mod, members: []const u32, recursive: bool) Allocator.Error!void {
         for (members) |di| {
             m.state[di] = .working;
             m.contracts[di] = if (recursive) try m.bottom(di) else null;
+            if (m.contracts[di]) |c| try m.drafts.put(m.gpa, @intFromPtr(c), {});
         }
+        defer m.drafts.clearRetainingCapacity();
         const mark = m.lines.items.len;
         const lmark = m.limits.items.len;
         var rounds: u32 = 0;
@@ -734,15 +784,17 @@ pub const Mod = struct {
             var changed = false;
             m.lines.shrinkRetainingCapacity(mark);
             m.limits.shrinkRetainingCapacity(lmark);
+            for (members) |di| m.failed_decl[di] = false;
             for (members) |di| {
                 const got = try m.walkDecl(di);
                 _ = m.walk_arena.reset(.retain_capacity);
                 const old = m.contracts[di];
-                const next = if (old != null and got != null) try Contract.join(m.arena, old.?, got.?) else got orelse old;
-                if (next) |n| {
-                    if (old == null or !Contract.eql(old.?, n)) changed = true;
-                }
+                // A walk that gave up has no contract, whatever the rounds
+                // before found: a callee with no contract is unknown code.
+                const next: ?*const Contract.Contract = if (got) |g| (if (old) |o| try Contract.join(m.arena, o, g) else g) else null;
+                if ((old == null) != (next == null) or (old != null and !Contract.eql(old.?, next.?))) changed = true;
                 m.contracts[di] = next;
+                if (recursive) if (next) |c| try m.drafts.put(m.gpa, @intFromPtr(c), {});
             }
             if (!recursive or !changed) break;
             if (rounds > 64) {
@@ -918,12 +970,11 @@ pub const Mod = struct {
     fn srcsText(m: *Mod, w: *std.Io.Writer, srcs: []const Src) Allocator.Error!void {
         _ = m;
         for (srcs) |s| switch (s.kind) {
-            .fresh => w.writeAll(" fresh") catch return error.OutOfMemory,
-            .shared => w.writeAll(" shared") catch return error.OutOfMemory,
+            .fresh => w.print(" fresh{d}{s}", .{ s.a, if (s.e != 0) "!" else "" }) catch return error.OutOfMemory,
+            .outside => w.writeAll(" outside") catch return error.OutOfMemory,
             .param => w.print(" π{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
             .answer => w.print(" answer{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
             .twice => w.writeAll(" twice") catch return error.OutOfMemory,
-            .also => w.print(" also@{d}", .{s.e}) catch return error.OutOfMemory,
         };
     }
 };
@@ -994,6 +1045,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.contracts = try gpa.alloc(?*const Contract.Contract, nd);
     defer gpa.free(m.contracts);
     @memset(m.contracts, null);
+    m.failed_decl = try gpa.alloc(bool, nd);
+    defer gpa.free(m.failed_decl);
+    @memset(m.failed_decl, false);
     m.state = try gpa.alloc(State, nd);
     defer gpa.free(m.state);
     @memset(m.state, .todo);
@@ -1002,6 +1056,8 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     @memset(m.worded_done, false);
     m.readers = try gpa.alloc(?Contract.Reader, in.birs.len);
     defer gpa.free(m.readers);
+    defer m.drafts.deinit(gpa);
+    defer m.sites.deinit(gpa);
     @memset(m.readers, null);
     m.spread_root = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
     for (bir.decls) |d| for (bir.spreads(d)) |s| if (s.root < bir.insts.len) m.spread_root.set(s.root);
@@ -1026,22 +1082,14 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         _ = try m.declContract(.{ in.module, @intCast(di) });
         if (d.kind != .value or d.body == .none) continue;
         _ = try m.walkDecl(@intCast(di));
+        // Its contract is its words, a trusted row, whatever its walk found.
+        m.failed_decl[di] = false;
         _ = m.walk_arena.reset(.retain_capacity);
-    }
-    // A type's `eq` and `compare` only read: `==` and `<` rest on it (language.md §6.5).
-    for (bir.decls, 0..) |d, di| {
-        if (di >= m.prepass.method_of.len) break;
-        const role = m.prepass.method_of[di];
-        if (!role.eq and !role.compare) continue;
-        const c = m.contracts[di] orelse continue;
-        var bad = false;
-        for (c.flags) |x| if (x & (Contract.flag_w | Contract.flag_e) != 0) {
-            bad = true;
-        };
-        if (bad) try m.lines.append(gpa, .{ .inst = d.inst_start.int(), .token = d.name_token, .kind = .callsite, .op = "value", .base = names.declName(in.module, @intCast(di)), .refused = true, .cause = .comparison, .detail = "a comparison writes its operand or lets it escape" });
     }
     var summaries: std.ArrayList([]const u8) = .empty;
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
+    // A walk that gave up publishes nothing (kernel §3.3).
+    if (std.debug.runtime_safety) for (m.contracts, m.failed_decl) |c, failed| std.debug.assert(!(failed and c != null));
     const published = try Contract.publish(gpa, &m.loc, m.contracts);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };
 }
