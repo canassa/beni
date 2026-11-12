@@ -922,6 +922,8 @@ pub const Mod = struct {
             .shared => w.writeAll(" shared") catch return error.OutOfMemory,
             .param => w.print(" π{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
             .answer => w.print(" answer{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
+            .twice => w.writeAll(" twice") catch return error.OutOfMemory,
+            .also => w.print(" also@{d}", .{s.e}) catch return error.OutOfMemory,
         };
     }
 };

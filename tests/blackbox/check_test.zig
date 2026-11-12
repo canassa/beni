@@ -2827,7 +2827,7 @@ test "ownership v3: the faults of round 2 are refused" {
         // `capEsc2`: the function that answers the closure lets its parameter escape.
         "  123:10 List.push k: rejected escaped: it escaped before the write\n",
         // `ansTwice`: the two elements are one answer of `f`.
-        "  136:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  136:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         // Report 111's prototype accepted each of the 14 demands that it made here.
         // The two more are the writes of `later`'s group in its own frames.
         "total 26: accepted 16 (fresh 2, call 1, param 0, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
@@ -3395,14 +3395,171 @@ test "ownership v3: one list twice in a deep level makes the location shared" {
         "  22:17 List.set a: accepted param\n",
         "  32:5 call Deep.f <constructor …>#Cons.0: rejected element: one cell can be at two positions of it\n",
         "  38:5 call Deep.f <constructor …>#Cons.0: accepted fresh\n",
-        "  46:11 call Deep.f <call Deep.lit>#Cons.0: rejected unknown: the checker has no claim on this value\n",
-        "  54:14 call Deep.f <call Deep.rep>#Cons.0: rejected unknown: the checker has no claim on this value\n",
-        "  64:5 call Deep.f <call Deep.wrap>#Cons.0: rejected unknown: the checker has no claim on this value\n",
+        "  46:11 call Deep.f <call Deep.lit>#Cons.0: rejected element: one cell can be at two positions of it\n",
+        "  54:14 call Deep.f <call Deep.rep>#Cons.0: rejected element: one cell can be at two positions of it\n",
+        "  64:5 call Deep.f <call Deep.wrap>#Cons.0: rejected element: one cell can be at two positions of it\n",
         "  70:5 call Deep.f <call Deep.wrap>#Cons.0: accepted call\n",
         "  77:17 List.set a: accepted param\n",
         "  87:5 call Deep.g <constructor …>#Tree.0: rejected element: one cell can be at two positions of it\n",
         "  93:5 call Deep.g <constructor …>#Tree.0: accepted fresh\n",
         "total 10: accepted 5 (fresh 2, call 1, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// One list at two places of a value keeps its claim (research report 114
+// §8). The location of such a list was `shared`, which refuses each write,
+// also when nothing reads the other place. Two facts say it now:
+//
+// - `also`: a callee answers a list that it made at two locations
+//   (`make`, and `further` one call away). The caller gives both
+//   locations one atom, so a write of one and a read of the other overlap.
+// - `twice`: a summary location holds one list at two places (`[ q, q ]`,
+//   `makeDeep`). It keeps what it holds, and a part of it is all of it.
+//
+// Each `…Dead` twin writes one place and does not read the other, and is
+// accepted. `deepCallee` hands such a value to a callee that writes one
+// place of the location: it is refused, because the callee's contract does
+// not say which cells of the location it reads.
+test "ownership v3: one list at two places keeps its claim" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Two.beni",
+        \\import List
+        \\import Maybe
+        \\import String
+        \\
+        \\
+        \\type Lst
+        \\    = Cons (List Int) Lst
+        \\    | Nil
+        \\
+        \\
+        \\show : List Int → String
+        \\show l = String.join (List.map l String.fromInt) ","
+        \\
+        \\
+        \\make : Int → List Int × List Int
+        \\make n =
+        \\    q = [ n, 2 ]
+        \\    ( q, q )
+        \\
+        \\
+        \\pub pair : Int → String
+        \\pair n =
+        \\    r = make n
+        \\    w = List.set r.0 0 9
+        \\    show w ++ "/" ++ show r.1
+        \\
+        \\
+        \\pub pairDead : Int → String
+        \\pairDead n =
+        \\    r = make n
+        \\    w = List.set r.0 0 9
+        \\    show w
+        \\
+        \\
+        \\further : Int → List Int × List Int
+        \\further n = make n
+        \\
+        \\
+        \\pub pairFurther : Int → String
+        \\pairFurther n =
+        \\    r = further n
+        \\    w = List.set r.1 0 9
+        \\    show w ++ "/" ++ show r.0
+        \\
+        \\
+        \\pub pairFurtherDead : Int → String
+        \\pairFurtherDead n =
+        \\    r = further n
+        \\    w = List.set r.1 0 9
+        \\    show w
+        \\
+        \\
+        \\pub elems : Int → String
+        \\elems n =
+        \\    q = [ n, 2 ]
+        \\    case [ q, q ] of
+        \\        [ a, b ] →
+        \\            w = List.set a 0 9
+        \\            show w ++ "/" ++ show b
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\pub elemsDead : Int → String
+        \\elemsDead n =
+        \\    q = [ n, 2 ]
+        \\    case [ q, q ] of
+        \\        [ a, _ ] →
+        \\            w = List.set a 0 9
+        \\            show w
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\makeDeep : Int → Lst
+        \\makeDeep n =
+        \\    q = [ n, 2 ]
+        \\    Cons [ 0 ] (Cons q (Cons q Nil))
+        \\
+        \\
+        \\pub deep : Int → String
+        \\deep n =
+        \\    case makeDeep n of
+        \\        Cons _ (Cons a (Cons b _)) →
+        \\            w = List.set a 0 9
+        \\            show w ++ "/" ++ show b
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\pub deepDead : Int → String
+        \\deepDead n =
+        \\    case makeDeep n of
+        \\        Cons _ (Cons a (Cons _ _)) →
+        \\            w = List.set a 0 9
+        \\            show w
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\touch : Lst → String
+        \\touch t =
+        \\    case t of
+        \\        Cons _ (Cons a _) →
+        \\            show (List.set a 0 9)
+        \\
+        \\        _ →
+        \\            "-"
+        \\
+        \\
+        \\pub deepCallee : Int → String
+        \\deepCallee n = touch (makeDeep n)
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Two.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  24:9 List.set r.0: rejected later-use: it is read again at 25:22 (<call Two.show>)\n",
+        "  31:9 List.set r.0: accepted call\n",
+        "  42:9 List.set r.1: rejected later-use: it is read again at 43:22 (<call Two.show>)\n",
+        "  49:9 List.set r.1: accepted call\n",
+        "  58:17 List.set a: rejected later-use: it is read again at 59:30 (<call Two.show>)\n",
+        "  70:17 List.set a: accepted fresh\n",
+        "  87:17 List.set a: rejected later-use: it is read again at 88:30 (<call Two.show>)\n",
+        "  98:17 List.set a: accepted call\n",
+        "  109:19 List.set a: accepted param\n",
+        "  116:16 call Two.touch <call Two.makeDeep>#Cons.0: rejected element: one cell can be at two positions of it\n",
+        "total 10: accepted 5 (fresh 1, call 3, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -3752,11 +3909,11 @@ test "ownership v3: the faults that a search by hand found are refused" {
         "  19:9 call List.update r[*]: rejected later-use: it is read again at 20:21 (<call List.length>)\n",
         "  28:9 call List.update r[*]: accepted call\n",
         "  49:17 List.push m: rejected later-use: it is read again at 53:21 (<call List.length>)\n",
-        "  65:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "  80:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "  94:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "  108:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
-        "  121:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
+        "  65:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
+        "  80:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
+        "  94:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
+        "  108:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
+        "  121:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         "  134:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  147:9 call List.update v[*]: rejected unknown: the checker has no claim on this value\n",
         "  154:9 call List.update v[*]: accepted call\n",

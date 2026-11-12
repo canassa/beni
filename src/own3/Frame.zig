@@ -111,7 +111,11 @@ const Root = struct {
 /// old names are in the entry: a write of the new name is a write of them);
 /// `taken`, an element that a trusted loop of `core/` took out of its list.
 const EKind = enum(u8) { own, shared, alias, derived, taken, version };
-const REntry = struct { kind: EKind, start: u32 = 0, len: u32 = 0, fresh: bool = false };
+/// `twice`: the location is a summary location that can hold one of its
+/// cells at two of its places (research report 114 §8). It keeps its claim,
+/// but its parts are not apart: a part of it is all of it, and a callee
+/// that writes it is refused (`leavesOwn` says so).
+const REntry = struct { kind: EKind, start: u32 = 0, len: u32 = 0, fresh: bool = false, twice: bool = false };
 /// `point`: the consumer's instruction, for the text. `at`: the time of the read (`timeOf`).
 const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
@@ -543,13 +547,15 @@ fn uniqueTail(f: *Frame, list: *std.ArrayList(Atom), from: usize) Error!void {
 }
 
 /// The atoms of root `root` at entry `re` of its layout, at or below `path`.
-fn rootLeaves(f: *Frame, root: u32, path: u32, re: u32, out: *std.ArrayList(Atom)) Error!void {
+fn rootLeaves(f: *Frame, root: u32, path_in: u32, re: u32, out: *std.ArrayList(Atom)) Error!void {
     const r = f.roots.items[root];
     switch (r.kind) {
         .shared => try out.append(f.gpa, shared_atom),
-        .param, .capture, .answer => try out.append(f.gpa, .{ .root = root, .path = path, .e = re }),
+        .param, .capture, .answer => try out.append(f.gpa, .{ .root = root, .path = path_in, .e = re }),
         .local => {
             const ent = f.rents.items[r.ent + re];
+            // A part of a location whose parts are not apart is all of it.
+            const path = if (ent.twice) r.path else path_in;
             switch (ent.kind) {
                 .own, .taken => try out.append(f.gpa, .{ .root = root, .path = path, .e = re }),
                 .version => {
@@ -656,9 +662,11 @@ fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Erro
             if (lost) try out.append(f.gpa, shared_atom);
             var dup = false;
             const at = out.items.len;
+            const r = f.roots.items[n.a];
             for (res.slice()) |re| {
                 const before = out.items.len;
                 try f.rootLeaves(n.a, n.b, re, out);
+                if (r.kind == .local and f.rents.items[r.ent + re].twice) dup = true;
                 if (before > at and f.dupOverlap(out.items[at..before], out.items[before..])) dup = true;
             }
             return dup;
@@ -1697,24 +1705,24 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
                 const start: u32 = @intCast(f.atoms.items.len);
                 const dup = try f.leavesAs(front, place, @intCast(e), &f.atoms);
                 try f.uniqueTail(&f.atoms, start);
-                // One cell at two places of the storage: no claim (`leavesOwn`).
-                var kind: EKind = if (dup) .shared else .derived;
+                var kind: EKind = .derived;
                 for (f.atoms.items[start..]) |a| if (a.root == 0) {
                     kind = .shared;
                 };
-                f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true };
+                // One cell at two places of the storage: its parts are not apart (`leavesOwn`).
+                f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true, .twice = dup };
                 continue;
             }
             const start: u32 = @intCast(f.atoms.items.len);
             const dup = try f.leavesAs(base, place, @intCast(e), &f.atoms);
             // The base's storage is the result's: its names here are old.
-            var kind: EKind = if (dup) .shared else .version;
+            var kind: EKind = .version;
             for (f.atoms.items[start..]) |*a| {
                 if (a.root == 0) kind = .shared;
                 a.dead = f.timeOf(inst);
             }
             try f.uniqueTail(&f.atoms, start);
-            f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true };
+            f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = true, .twice = dup };
             continue;
         }
         const start: u32 = @intCast(f.atoms.items.len);
@@ -1738,13 +1746,19 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
             if (before > start and f.dupOverlap(f.atoms.items[start..before], f.atoms.items[before..])) dup = true;
         }
         try f.uniqueTail(&f.atoms, start);
-        var kind: EKind = if (dup) .shared else .derived;
+        var kind: EKind = .derived;
         for (f.atoms.items[start..]) |a| if (a.root == 0) {
             kind = .shared;
         };
-        f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start) };
+        // One cell at two places of the location: it keeps what it holds,
+        // and its parts are not apart (research report 114 §8).
+        f.rents.items[r.ent + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
     }
-    // A cell of another root at two locations of the new list: its parts are not apart.
+    // A cell at two places of one location, or of another root at two
+    // locations of the new list: its parts are not apart.
+    for (0..es.len) |e| if (f.rents.items[r.ent + e].twice) {
+        f.roots.items[root].linear = false;
+    };
     outer: for (0..es.len) |e1| {
         const a1 = f.rents.items[r.ent + e1];
         if (a1.len == 0) continue;
@@ -2266,7 +2280,10 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     for (0..rn) |e| {
         srcs.clearRetainingCapacity();
         const mine = all.items[runs.items[e][0]..runs.items[e][1]];
-        var shared = dups.items[e] and !m.loc.layoutEntries(layouts[arity])[e].single;
+        // One cell at two places of a summary location: the location keeps
+        // its claim, and its parts are not apart (research report 114 §8).
+        const twice = dups.items[e] and !m.loc.layoutEntries(layouts[arity])[e].single;
+        var shared = false;
         for (mine) |a| {
             try f.atomSrcs(a, &srcs, 0);
             const r = f.roots.items[a.root];
@@ -2275,18 +2292,20 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             if (r.kind != .local) continue;
             const ent = f.rents.items[r.ent + a.e];
             if (ent.kind != .own and !ent.fresh) continue;
-            // A cell that the frame made is `fresh` for the caller only when
-            // no other location of the result has it and it did not escape.
-            for (0..rn) |e2| {
-                if (e2 == e) continue;
-                if (f.overlapAny(&.{a}, all.items[runs.items[e2][0]..runs.items[e2][1]])) shared = true;
+            // A cell that the frame made and put at another location of the
+            // result too: the later location says that it holds a cell of
+            // the earlier one (`also`), and the caller gives both one atom.
+            for (0..e) |e2| {
+                if (f.overlapAny(&.{a}, all.items[runs.items[e2][0]..runs.items[e2][1]])) try srcs.append(f.gpa, .{ .kind = .also, .e = @intCast(e2) });
             }
+            // A cell that the frame made is `fresh` for the caller only when it did not escape.
             for (f.escapes.items) |esc| if (f.overlapAny(&.{a}, f.atoms.items[esc.start..][0..esc.len])) {
                 shared = true;
             };
         }
         // A location with no claim still says what it can hold: a caller's holder check needs it.
         if (shared) try srcs.append(f.gpa, Src.shared);
+        if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
         for (res[e]) |s| if (s.kind == .param) {
             flags[off[s.a] + s.e] |= flag_r;
@@ -2666,7 +2685,7 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
             continue;
         }
         const start: u32 = @intCast(f.atoms.items.len);
-        var st: SrcState = .{ .inst = inst };
+        var st: SrcState = .{ .inst = inst, .root = root, .cov = cov };
         if (cr == Loc.all) {
             for (c.res, 0..) |srcs, ri| try f.expandSrcs(&base, srcs, c.layouts[c.arity], @intCast(ri), layout, @intCast(e), &st);
         } else try f.expandSrcs(&base, c.res[cr], c.layouts[c.arity], cr, layout, @intCast(e), &st);
@@ -2682,8 +2701,13 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
         for (f.atoms.items[start..]) |a| if (a.root == 0) {
             kind = .shared;
         };
+        // One cell of the arguments, or one that the callee made, at two
+        // places of a summary location: it keeps its claim, and its parts
+        // are not apart (research report 114 §8).
+        const twice = st.twice and !single;
+        if (twice) f.roots.items[root].linear = false;
         // A location with no source holds no cell: nothing is in it.
-        f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = st.fresh };
+        f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .fresh = st.fresh, .twice = twice };
     }
     try f.sourcesApart(&base, root, layout, cov);
     return f.rootVal(root);
@@ -2762,7 +2786,7 @@ fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []cons
             for (c.res[cr]) |s| {
                 f.atoms.shrinkRetainingCapacity(w);
                 switch (s.kind) {
-                    .fresh, .shared => continue,
+                    .fresh, .shared, .twice, .also => continue,
                     .param => {
                         if (s.a >= base.args.len) continue;
                         // A cell that is two times in this one location of the one
@@ -2794,10 +2818,18 @@ fn sourcesApart(f: *Frame, base: *const Use, root: u32, layout: u32, cov: []cons
         for (runs.items, 0..) |x, xi| {
             if (es[x.e].single) continue;
             var two = x.src.kind == .answer;
+            var answer = x.src.kind == .answer;
             for (runs.items, 0..) |y, yi| if (yi != xi and y.e == x.e) {
                 two = true;
+                if (y.src.kind == .answer) answer = true;
             };
-            if (two) f.rents.items[ent0 + x.e].kind = .shared;
+            if (!two) continue;
+            // Two arguments that share a cell: the atoms show it, and the
+            // location keeps its claim (`REntry.twice`). An answer has none.
+            if (answer) f.rents.items[ent0 + x.e].kind = .shared else {
+                f.rents.items[ent0 + x.e].twice = true;
+                f.roots.items[root].linear = false;
+            }
         }
         return;
     }
@@ -2946,9 +2978,17 @@ fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2
 const SrcState = struct {
     fresh: bool = false,
     shared: bool = false,
+    /// One cell can be twice here, by a rule that no atom shows (the
+    /// answers of a function): no claim.
     dup: bool = false,
+    /// One cell can be twice here, and the atoms show it, or the callee's
+    /// contract says `twice`: the location keeps its claim (`REntry.twice`).
+    twice: bool = false,
     written: bool = false,
     inst: u32 = none,
+    /// `apply`'s result root and call map: where an `also` source points.
+    root: u32 = none,
+    cov: []const u32 = &.{},
     /// The labels of the caller's result entry below the callee's result entry in work.
     suffix: []const u64 = &.{},
     /// The answers in work: `(holder, location, result entry of the function there)`.
@@ -3009,8 +3049,25 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                     st.shared = true;
                     continue;
                 }
-                if (try f.pairedLeaves(args[s.a], c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.dup = true;
+                if (try f.pairedLeaves(args[s.a], c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                 if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
+            },
+            .twice => st.twice = true,
+            .also => {
+                // A cell that the callee made and put at its result entry
+                // `s.e` too: the cells of this frame's entries there.
+                st.fresh = true;
+                if (st.root == none) {
+                    st.shared = true;
+                    continue;
+                }
+                const r = f.roots.items[st.root];
+                for (st.cov, 0..) |cv, ce| if (Loc.hits(cv, s.e)) {
+                    // Both of the callee's entries are this one (the fallback cover): the cell is here twice.
+                    if (ce == e) st.twice = true;
+                    try f.atoms.append(f.gpa, .{ .root = st.root, .path = r.path, .e = @intCast(ce) });
+                };
+                continue;
             },
             .answer => {
                 // An answer that is a cell the callee handed out as its own
@@ -3020,8 +3077,8 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                 continue;
             },
         }
-        if (group > first and f.dupOverlap(f.atoms.items[first..group], f.atoms.items[before..])) st.dup = true;
-        if (f.hit_all and before > group and f.dupOverlap(f.atoms.items[group..before], f.atoms.items[before..])) st.dup = true;
+        if (group > first and f.dupOverlap(f.atoms.items[first..group], f.atoms.items[before..])) st.twice = true;
+        if (f.hit_all and before > group and f.dupOverlap(f.atoms.items[group..before], f.atoms.items[before..])) st.twice = true;
     }
 }
 /// The atoms of argument `v` at the callee's parameter entry `pe`, for the
@@ -3374,7 +3431,8 @@ fn answersAt(f: *const Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) bool
 fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool, sink: anytype, depth: u32) Error!void {
     switch (src.kind) {
         .fresh => try sink.fresh(f),
-        .shared => try sink.shared(f),
+        // A supply has neither: what a function is handed is never a result entry.
+        .shared, .twice, .also => try sink.shared(f),
         .answer => try sink.answer(f, use, src, suffix, deep),
         .param => {
             if (src.a >= use.args.len) return sink.lost(f, use);
@@ -3657,7 +3715,7 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
         if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc)) continue;
         for (lc.res[re]) |ls| switch (ls.kind) {
             .fresh => {},
-            .shared => try f.refuse(level, .supply, not_own),
+            .shared, .twice, .also => try f.refuse(level, .supply, not_own),
             .answer => {
                 // The answer of a function that this one captured: `own` in its turn.
                 if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
@@ -3856,6 +3914,13 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
         for (lc.res[k]) |ls| switch (ls.kind) {
             .fresh => st.fresh = true,
             .shared => st.shared = true,
+            // The answer of a function value has no claim where one cell
+            // can be at two places (as before `twice` and `also`).
+            .twice => st.shared = true,
+            .also => {
+                st.fresh = true;
+                st.shared = true;
+            },
             .answer => {
                 // The answer of a function that the known function captured:
                 // that function is in a location of this one.
