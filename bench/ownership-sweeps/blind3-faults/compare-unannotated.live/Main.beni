@@ -1,0 +1,21 @@
+-- `==` calls `eq`, which v3 takes to only read. The check that refuses an `eq` that writes skips one with no annotation.
+import List
+import Node exposing (Program)
+import String
+
+
+type Bag
+    = Bag (List Int)
+
+
+eq a b =
+    case a of
+        Bag xs →
+            List.length (List.set xs 0 9) == 0
+
+
+main : Program
+main =
+    q = [ 1 ]
+    t = Bag q == Bag []
+    Node.print (if t then "y" else String.fromInt (List.sum q))

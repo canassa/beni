@@ -1,0 +1,17 @@
+-- The safe twin: nothing reads the other place.
+import List
+import Node exposing (Program)
+import String
+
+
+withG : (List Int → a) → a × List Int
+withG g =
+    x = [ 1 ]
+    ( g x, x )
+
+
+main : Program
+main =
+    p = withG λl → l
+    w = List.set p.0 0 9
+    Node.print (String.fromInt (List.sum w))
