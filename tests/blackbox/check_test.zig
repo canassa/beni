@@ -5310,9 +5310,11 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   the deep level of another, which alone was tested.
 // - `CycleMerged` (the review's fifth pass): one deep location of the
 //   caller stands for two places, two cycles, and a sample path saw one.
-//   The map now pairs a deep location only where no type argument at a
-//   variable or row of the signature in that region holds an object
-//   (`Loc.cycleWider`).
+//   The map now pairs a deep location only where the signature has no type
+//   variable or row in that region (`Loc.cycleWider`).
+// - `CycleAboveVariable` (the review's seventh pass): the caller enters its
+//   cycle above the signature's variable (`List (Tree2 T)`), so a rule that
+//   looked for the argument's objects under the variable's path missed them.
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
@@ -5814,6 +5816,52 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    r = Ref.make []
         \\    keepB r t
         \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleAboveVariable", .why = "call Main.grow l⟨List⟩ is refused: escaped", .write = "List.push ts", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepA : Ref (List a), List (Tree2 a) → ⊤
+        \\keepA r l =
+        \\    case l of
+        \\        [ Node a _ ] →
+        \\            Ref.set r [ a ]
+        \\
+        \\        _ →
+        \\            ⊤
+        \\
+        \\
+        \\grow : List (Tree2 T) → List (Tree2 T)
+        \\grow l =
+        \\    case l of
+        \\        [ Node (T ts) _ ] →
+        \\            List.push ts (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    l = [ Node (T [ Node (T []) [] ]) [] ]
+        \\    r = Ref.make []
+        \\    keepA r l
+        \\    g = grow l
         \\    Debug.log (Debug.toString (Ref.get r)) ⊤
         \\    Debug.log (String.fromInt (List.length g)) ⊤
         \\    Node.done

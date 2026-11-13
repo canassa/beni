@@ -633,23 +633,18 @@ pub const Table = struct {
 
     // ---- the call map ----------------------------------------------------------
 
-    /// Whether the caller's cycle whose deep level starts at location `entry`
-    /// of layout `of` can be wider than the signature's (layout `sig`): a
-    /// type argument at a type variable or a row of the signature in that
-    /// region holds an object. Only then can the argument name the container
-    /// again and put more cells at one deep location of the caller than the
-    /// signature's same location names. Every place of a cycle is reached once
-    /// at its entry level, by a path that repeats no place, so each variable of
-    /// the region has a location there; the caller's type holds an object at
-    /// or below it exactly when the caller's layout has an entry there (a row
-    /// stands for each field at its place, `within`). Read on the side of
-    /// "yes": an object there that never comes back to the cycle counts too.
-    fn cycleWider(t: *const Table, sig: u32, of: u32, entry: u32) bool {
-        const oe = t.layoutEntries(of);
-        for (t.layoutEntries(sig)) |s| {
-            if (s.kind != .@"var" or !t.isPrefix(entry, s.loc)) continue;
-            for (oe) |o| if (t.within(s.loc, o.loc)) return true;
-        }
+    /// Whether the signature's layout `sig` reads the region at or below the
+    /// location `entry`, where a deep level starts, through a type variable
+    /// or a row. If it does not, the type there is concrete: the caller's type
+    /// is the same type, with the same cycles and the same cells at each deep
+    /// location, and a label path names one set of cells in both. If it does,
+    /// a type argument can name the container again, at that variable or in a
+    /// cycle nested below it, and one deep location of the caller can hold
+    /// cells the signature names at several entries. No sample path decides
+    /// that, since a location can stand for several places: so it is the
+    /// pessimistic answer, and no match inside the deep level stands.
+    fn cycleWider(t: *const Table, sig: u32, entry: u32) bool {
+        for (t.layoutEntries(sig)) |s| if (s.kind == .@"var" and t.isPrefix(entry, s.loc)) return true;
         return false;
     }
 
@@ -681,7 +676,7 @@ pub const Table = struct {
             // wide entry of the signature. Then one label path names two sets
             // of cells, and no entry covers it (research report 125 §6).
             const deep = t.deepEntry(e.loc);
-            const wider = deep != none and t.cycleWider(sig, of, deep);
+            const wider = deep != none and t.cycleWider(sig, deep);
             // Every match the walk can take — the location itself, a wide
             // entry above it, a row that holds its field — is one test: when
             // the caller's cycle is wider, a signature entry inside the deep

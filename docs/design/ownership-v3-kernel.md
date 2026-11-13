@@ -115,17 +115,14 @@ positions, the answer decides whether the two meet. Where neither direction deci
 paths are compared only inside one layout, or to narrow a wide entry to a part that the type names at
 exactly that path, with all of the entry as the fallback.
 
-The map itself pairs a location of a deep level by its label path only where the caller's cycle cannot be
-wider than the signature's (`Loc.cycleWider`). It can be wider only where a type argument at a type
-variable or a row of the signature in that cycle's region holds an object: then the argument can name the
-container again (`Tree2 T`, where `T` holds a `List (Tree2 T)`), at that variable or in a cycle nested
-below it, and one deep location of the caller can hold cells that the signature names at several entries.
-A location can stand for several places, so no sample path decides it; the fact read is positive: every
-place of a cycle is reached once at its entry level by a path that repeats no place, so each variable of the
-region has a location there, and the type argument holds an object exactly where the caller's layout has an
-entry at or below that location (a row standing for each field at its place). Where it does, every match
-the map can take inside that deep level — the location itself, a wide entry above it, or a row that holds
-its field — answers `Loc.all`.
+The map itself pairs a location of a deep level by its label path only where the signature reads that
+cycle's region with no type variable and no row (`Loc.cycleWider`). Then the region's type is concrete,
+the caller's type there is the same type, and each deep location names the same cells in both. Where the
+signature has a variable or a row there, a type argument can name the container again (`Tree2 T`, where
+`T` holds a `List (Tree2 T)`), at that variable or in a cycle nested below it, and one deep location of the
+caller can hold cells that the signature names at several entries; a location can stand for several
+places, so no sample path decides it. Every match the map can take inside that deep level — the location
+itself, a wide entry above it, or a row that holds its field — then answers `Loc.all`.
 
 *Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held
