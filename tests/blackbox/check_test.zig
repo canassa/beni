@@ -5304,6 +5304,8 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   the caller's deep location is below a wide entry of the signature's
 //   deep level, and where the caller's cycle passes through a row, a step
 //   the caller's place graph cannot follow.
+// - `CycleRowField` (the review's third pass): a field of the caller's deep
+//   level that the signature holds in a row inside its own deep level.
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
@@ -5639,6 +5641,54 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    g = grow t
         \\    Debug.log (Debug.toString (Ref.get r)) ⊤
         \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleRowField", .why = "call Main.grow t#Node.1.extra is refused: escaped", .write = "List.push b.extra", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree4 a b
+        \\    = Node a b (List (Tree4 a b))
+        \\
+        \\
+        \\type alias Rec =
+        \\    n : Int
+        \\    extra : List Int
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree4 T Rec))
+        \\
+        \\
+        \\keepA : Ref (List a), Tree4 a { r | n : Int } → ⊤
+        \\keepA r t =
+        \\    case t of
+        \\        Node a _ _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree4 T Rec → List Int
+        \\grow t =
+        \\    case t of
+        \\        Node (T [ Node _ b _ ]) _ _ →
+        \\            List.push b.extra 9
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    t = Node (T [ Node (T []) { n = 1, extra = [ 1 ] } [] ]) { n = 0, extra = [ 0 ] } []
+        \\    r = Ref.make []
+        \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (Debug.toString g) ⊤
         \\    Node.done
         \\
         },

@@ -122,7 +122,8 @@ and the caller's deep location holds cells that the signature names at two entri
 location and that wide one. No entry covers it, so the map answers `Loc.all` (`Loc.cycleWider`: the
 caller's place at a wide entry's path inside the cycle is in the caller's cycle). The same holds for a
 caller location below a wide entry of the signature's deep level, and a step of that path that the
-caller's place graph cannot follow (a row's) counts as one the cycle passes.
+caller's place graph cannot follow (a row's) counts as one the cycle passes. Every match the map can
+take there is one test: the location itself, a wide entry above it, or a row that holds its field.
 
 *Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held

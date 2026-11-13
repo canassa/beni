@@ -694,16 +694,18 @@ pub const Table = struct {
             // of cells, and no entry covers it (research report 125 §6).
             const deep = t.deepEntry(e.loc);
             const wider = deep != none and t.cycleWider(sig, of, deep);
+            // Every match the walk can take — the location itself, a wide
+            // entry above it, a row that holds its field — is one test: when
+            // the caller's cycle is wider, a signature entry inside the deep
+            // level names fewer cells than the caller's location holds.
             var two_sets = false;
             while (true) {
                 const i = indexOfLoc(se, a);
-                // An entry at the location, or a wide one inside the deep
-                // level above it: the caller's cells there are more than it names.
-                if (i != none and wider and (a == e.loc or (a != deep and t.isPrefix(deep, a)))) {
-                    two_sets = true;
-                    break;
-                }
                 if (i != none and (a == e.loc or se[i].kind.wide())) {
+                    if (wider and a != deep and t.isPrefix(deep, a)) {
+                        two_sets = true;
+                        break;
+                    }
                     x.* = i;
                     break;
                 }
@@ -713,6 +715,10 @@ pub const Table = struct {
                 if (t.find(a, row.word())) |r| {
                     const ri = indexOfLoc(se, r);
                     if (ri != none) {
+                        if (wider and r != deep and t.isPrefix(deep, r)) {
+                            two_sets = true;
+                            break;
+                        }
                         x.* = ri;
                         break;
                     }
