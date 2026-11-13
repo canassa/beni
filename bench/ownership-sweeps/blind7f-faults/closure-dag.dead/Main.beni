@@ -1,0 +1,99 @@
+-- Fault 1 of research report 126: a compile that does not end. Each level
+-- makes three closures, and each captures the three of the level below.
+-- The checker follows every path through what a closure captured
+-- (`flow`, `flowCaptures`), with no memo, so the work triples with each
+-- level: 16 levels take 6.8 s, 24 levels take hours. The plain build takes
+-- 15 ms.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    a0 = λl → List.take l n
+    b0 = λl → List.reverse l
+    c0 = λl → List.drop l 1
+    a1 = λl → a0 (b0 (c0 l))
+    b1 = λl → b0 (c0 (a0 l))
+    c1 = λl → c0 (a0 (b0 l))
+    a2 = λl → a1 (b1 (c1 l))
+    b2 = λl → b1 (c1 (a1 l))
+    c2 = λl → c1 (a1 (b1 l))
+    a3 = λl → a2 (b2 (c2 l))
+    b3 = λl → b2 (c2 (a2 l))
+    c3 = λl → c2 (a2 (b2 l))
+    a4 = λl → a3 (b3 (c3 l))
+    b4 = λl → b3 (c3 (a3 l))
+    c4 = λl → c3 (a3 (b3 l))
+    a5 = λl → a4 (b4 (c4 l))
+    b5 = λl → b4 (c4 (a4 l))
+    c5 = λl → c4 (a4 (b4 l))
+    a6 = λl → a5 (b5 (c5 l))
+    b6 = λl → b5 (c5 (a5 l))
+    c6 = λl → c5 (a5 (b5 l))
+    a7 = λl → a6 (b6 (c6 l))
+    b7 = λl → b6 (c6 (a6 l))
+    c7 = λl → c6 (a6 (b6 l))
+    a8 = λl → a7 (b7 (c7 l))
+    b8 = λl → b7 (c7 (a7 l))
+    c8 = λl → c7 (a7 (b7 l))
+    a9 = λl → a8 (b8 (c8 l))
+    b9 = λl → b8 (c8 (a8 l))
+    c9 = λl → c8 (a8 (b8 l))
+    a10 = λl → a9 (b9 (c9 l))
+    b10 = λl → b9 (c9 (a9 l))
+    c10 = λl → c9 (a9 (b9 l))
+    a11 = λl → a10 (b10 (c10 l))
+    b11 = λl → b10 (c10 (a10 l))
+    c11 = λl → c10 (a10 (b10 l))
+    a12 = λl → a11 (b11 (c11 l))
+    b12 = λl → b11 (c11 (a11 l))
+    c12 = λl → c11 (a11 (b11 l))
+    a13 = λl → a12 (b12 (c12 l))
+    b13 = λl → b12 (c12 (a12 l))
+    c13 = λl → c12 (a12 (b12 l))
+    a14 = λl → a13 (b13 (c13 l))
+    b14 = λl → b13 (c13 (a13 l))
+    c14 = λl → c13 (a13 (b13 l))
+    a15 = λl → a14 (b14 (c14 l))
+    b15 = λl → b14 (c14 (a14 l))
+    c15 = λl → c14 (a14 (b14 l))
+    a16 = λl → a15 (b15 (c15 l))
+    b16 = λl → b15 (c15 (a15 l))
+    c16 = λl → c15 (a15 (b15 l))
+    a17 = λl → a16 (b16 (c16 l))
+    b17 = λl → b16 (c16 (a16 l))
+    c17 = λl → c16 (a16 (b16 l))
+    a18 = λl → a17 (b17 (c17 l))
+    b18 = λl → b17 (c17 (a17 l))
+    c18 = λl → c17 (a17 (b17 l))
+    a19 = λl → a18 (b18 (c18 l))
+    b19 = λl → b18 (c18 (a18 l))
+    c19 = λl → c18 (a18 (b18 l))
+    a20 = λl → a19 (b19 (c19 l))
+    b20 = λl → b19 (c19 (a19 l))
+    c20 = λl → c19 (a19 (b19 l))
+    a21 = λl → a20 (b20 (c20 l))
+    b21 = λl → b20 (c20 (a20 l))
+    c21 = λl → c20 (a20 (b20 l))
+    a22 = λl → a21 (b21 (c21 l))
+    b22 = λl → b21 (c21 (a21 l))
+    c22 = λl → c21 (a21 (b21 l))
+    a23 = λl → a22 (b22 (c22 l))
+    b23 = λl → b22 (c22 (a22 l))
+    c23 = λl → c22 (a22 (b22 l))
+    a24 = λl → a23 (b23 (c23 l))
+    b24 = λl → b23 (c23 (a23 l))
+    c24 = λl → c23 (a23 (b23 l))
+    xs = [ n, 2 ]
+    ys = List.push xs 3
+    show ys ++ show (a24 [ 4, 5 ])
+
+
+main : Program
+main = Node.print (go 1)
