@@ -1,7 +1,8 @@
 # The ownership checker v3: the soundness kernel
 
 *Normative for `src/own3/`, 2026-11-12; §6.4, §6.8, §6.11 to §6.13 and §8 revised 2026-11-13 (research
-report 120); §6.12 and §6.13 revised again the same day (research report 123). The owner ordered it after research report 116: "Write the rules
+report 120); §6.12 and §6.13 revised again the same day (research report 123); §4.1, §6.2, §6.8 and
+§6.13 revised again the same day (research report 125). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -104,6 +105,20 @@ location for the entry level of a type cycle and one for its deep level (`Loc.zi
 call map (`Loc.cover`) maps a caller's locations to a callee's; a location it cannot map is covered by
 every signature entry (`Loc.all`), the pessimistic side.
 
+**Two layouts' locations are compared only through the call map** (`Frame.locsMeet`, `anyMeets`). Two
+layouts are two readings of one type position, and one can be wider than the other: a type variable
+where the other has `List Int`, or a row `{ r | n : Int }` where the other names `items`. The row's
+location is no prefix of the field's, so a label path says nothing about whether two locations share a
+cell. The map, read in both directions, does: where it maps an entry to an entry of the other layout that
+is no narrower, that entry holds every cell of it, and since the entries of one layout name apart
+positions, the answer decides whether the two meet. Where neither direction decides, the two meet. Label
+paths are compared only inside one layout, or to narrow a wide entry to a part that the type names at
+exactly that path, with all of the entry as the fallback. *Research report 124 F1: the entry compared a
+model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held
+nothing of the model; report 125 found the same in the composition of answers and of supplies
+(`answersAt`, `slotsOf`, and the label tests `Loc.noObject` and `Loc.belowWide`, now deleted) and in a
+constructor's row (`ctorValue`).*
+
 ### 4.2 A fresh cell has a name
 
 A cell a body makes is `Src.fresh(k, escaped)` in its contract: `k` is its **allocation site**, `escaped`
@@ -178,7 +193,8 @@ A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
 what the copying program prints. Argument: every cell the frame can observe is an atom of some root (§2);
 every consumer records a read of every atom it can observe (`readAll`, `readBy`, a list pattern, the
 frame's result); every holder the walk does not follow records an escape of every atom it can hold (§3.2,
-§6.10); a write by a callee is a demand at the call (§6.2); and a call that the runtime makes into the
+§6.10), and so does the default that a holder hands a function's function parameters (§6.2); a
+write by a callee is a demand at the call (§6.2); and a call that the runtime makes into the
 program's code is a call too, applied where the program hands the runtime what it calls the code with (the
 rows of markup, §6.12; the record of an entry, §6.13). So an observation of W after t is a read after
 t, an escape, or another operand — each refused.
@@ -215,7 +231,17 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    atoms (`expandSrcs`: a parameter source to the argument's leaves, `fresh` to a `fresh` root, `outside`
    to `outside_atom`, an answer to what the function there answers). A callee with no contract is unknown
    code (§3.2). A contract of another arity is a partial application: every value flows to `top` and
-   escapes. *Invariant: every cell the callee can hold or answer is in a demand, an escape or the result.*
+   escapes, and the callee is at `top` (rule 8's invariant). **A function that a holder runs is handed, at
+   each of its own function parameters, a function in the default state** (`defaultParams`): whatever a
+   holder's frame hands a function parameter is a value that no contract follows there, so it went to
+   `top` (`mention`), and the default hands one too. So each such parameter is the default meeting its
+   use: what the function hands it escapes, and a function that writes a cell after it handed the cell
+   there (`Fn.rewrites`) is refused. This holds wherever the holder can run the function — it calls it
+   (`Fn.called`), it loses it, or it is the default. Only a direct call, where the frame flows each
+   argument to the callee's contract for it, hands a function parameter a known function. *Invariant:
+   every cell the callee can hold or answer is in a demand, an escape or the result.* *Research report
+   124 F2 and report 125: a function that hands a list to its callback and then writes it was judged
+   only where it was called directly, and never where a holder runs it.*
 3. **Capture** (`capture`, `codeValue`, `solveCodes`): a lambda or a local function is walked in its own
    frame, its captures are parameters of its contract, and the closure value holds them (`closureOf`). A
    capture bound after the closure is made is a `later` slot read as the value bound there (`capVal`;
@@ -250,8 +276,24 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    keeps it (`handedBack`), or the answer of a function that it captured which passes that answer on
    once. *Report 118 §4.5: the text asked "did not let go" of a parameter only, and a new list that the
    function put in a `Ref` and answered came back as `own`. A cell the function made is one source
-   among the others, and the same three facts are read for it.* *Invariant: a function in a default
-   location asks nothing and keeps what it is handed (`flowUnknown`, `flowCode` with `top`).*
+   among the others, and the same three facts are read for it.*
+
+   **What a function in a default location may ask.** The code that runs a function in a default
+   location (`flowCode` with `top`, a holder that lost it, a partial application) runs it at any time,
+   any number of times; it hands each parameter a value with no claim, each function parameter a
+   function in the default state (which keeps what it is handed and runs at any later time), and it
+   keeps the answer. Of the facts a contract carries, two ask something of the code that runs it, and
+   both are refused there: a written parameter location (`writesOwn`), since the value has no claim;
+   and a function parameter whose `Fn.rewrites` is set, since the function there keeps the cell that is
+   written after (`defaultParams`). The other facts ask nothing: a read; an escape; an answer, which
+   the default keeps; what it hands a function parameter, `free` or not, which escapes, since the default
+   writes nothing; whether it calls it; a captured function, which goes to the use the two
+   contracts compose to (`flowCaptures`). `Use.rewrites` is false at `top` as a derived fact, not a
+   default: the default hands only cells outside every frame, so it writes no cell after it handed it.
+   *Invariant: a function in a default location asks nothing and keeps what it is handed (`flowUnknown`,
+   `flowCode` with `top`, `defaultParams`).* *Research report 124 F2: the text said "asks nothing", the
+   code asked only `writesOwn`, and a function that wrote what it had handed its callback was accepted
+   in a `Ref` or as a command's body.*
 9. **Recursion** (`Check.solveGroup`, `solveCodes`): a group starts from the contract with no flag and no
    source and is walked until no contract changes; contracts only grow (`Contract.join`), so the last
    round's verdicts stand on the least fixed point. Fresh names of drafts are bounded (§4.2). A member
@@ -381,9 +423,19 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 
     Every other source has another holder or no fact, and is not `own`: a top-level value
     (`outside`), the answer of a function, a capture (the record holds it for as long as the program
-    runs), the `Host`, and **the message**. A location answered through a wide location of the answer
-    has no fact of its own. The consumers keep what they write, let escape, hand to a function, or
-    (except a `view`) answer; a location they keep is not `own`. A `view` (a function of the record
+    runs), the `Host`, and **the message**.
+
+    **Every comparison of a model location with a location of a function's contract goes through the
+    call map** (`locsMeet`, §4.1). The contract's layouts are those of the function's declared type,
+    which can be wider than the model's: a type variable, or `{ r | n : Int }`, whose row holds the
+    model's `items`. The sources of a model location in a producer's answer are the sources of every
+    entry of the answer that can hold a cell of it, as at a call (rule 2): a wide entry holds each cell
+    below it or in its row, so each of its sources is one of the location's. A parameter source names
+    every model location that its entry meets, and each must be `own`. The consumers keep what they
+    write, let escape, hand to a function, or (except a `view`) answer; every model location that a
+    location they keep meets is not `own`. A write by a producer is accepted only where every model
+    location that the written location meets is `own`. The runtime hands a function parameter of a
+    function of the record the default (rule 2, `defaultParams`). A `view` (a function of the record
     whose answer is the build's markup type, or a record or tuple with markup in it,
     `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the answer before it
     runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**: a handler of
@@ -397,7 +449,13 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     *The argument.* "No other holder" of a model location is a universal statement over every
     function the runtime calls with the model and every function that makes it. It is derived only
     from a contract of each, read at the place the declared type gives; a function with no contract,
-    or a place no type gives, leaves the statement without a ground, so it does not hold. *Report 118
+    or a place no type gives, leaves the statement without a ground, so it does not hold. Each of
+    those contracts names its locations by the function's own type, so the statement is read at every
+    location of the contract that can share a cell with the model location: a comparison that fails for
+    any reason but "apart" (a label path that a row or a type variable changes) leaves it without a
+    ground too. *Research report 124 F1: a view, a subscription body, an `update` or a `settle` over
+    `{ r | n : Int }` kept the model, and the entry read the row's location as no model location.*
+    *Report 118
     §4.1–§4.4: the text took a new list of `init` as `own` without its escape bit, compared two
     locations of the answer only for a parameter source of `update`, did not read the escape of a
     model location that `update` answers, and made the message `own` where every model location was.

@@ -5218,3 +5218,263 @@ test "ownership v3: the siblings of the fifth blind test are refused" {
         }
     }
 }
+
+// Research report 124, reader E: two faults, each a missing fact read as
+// "nothing" (kernel §1), each shown by two programs in
+// `bench/ownership-sweeps/blind6e-faults/` that the prototype accepted and
+// that then trapped.
+//
+// - `entry-row-*`: a function of the program's record takes the model as
+//   `{ r | n : Int }` and keeps it. The entry matched model locations with
+//   the contract's by label path, and the row's location is no prefix of a
+//   field's, so the function kept nothing. Every comparison now goes
+//   through the call map (kernel §6.13).
+// - `top-rewrite*`: a function hands a list to its function parameter,
+//   writes it, and goes where the checker does not follow it. The code that
+//   runs it hands a function that keeps what it is handed (kernel §6.8).
+//
+// Each `.live` twin is refused and each `.dead` twin is accepted.
+test "ownership v3: the faults of the sixth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
+    const tea = "platforms/browser-tea";
+    const page = "platforms/browser";
+    const cases = [_]Case{
+        .{ .name = "entry-row-view", .platform = page, .accepted = false, .why = "entry Main.update model.items is refused" },
+        .{ .name = "entry-row-view.live", .platform = page, .accepted = false, .why = "entry Main.update model.items is refused" },
+        .{ .name = "entry-row-view.dead", .platform = page, .accepted = true },
+        .{ .name = "entry-row-update", .platform = page, .accepted = false, .why = "entry Main.settle model.items is refused" },
+        .{ .name = "entry-row-update.live", .platform = page, .accepted = false, .why = "entry Main.settle model.items is refused" },
+        .{ .name = "entry-row-update.dead", .platform = page, .accepted = true },
+        .{ .name = "top-rewrite", .platform = "node", .accepted = false, .why = "value Main.body is refused: supply: the function changes a value" },
+        .{ .name = "top-rewrite.live", .platform = "node", .accepted = false, .why = "value <call Main.body> is refused: supply: the function keeps a value" },
+        .{ .name = "top-rewrite.dead", .platform = "node", .accepted = true },
+        .{ .name = "top-rewrite-send", .platform = tea, .accepted = false, .why = "value <call Cmd.perform> is refused: supply: the function changes a value" },
+        .{ .name = "top-rewrite-send.live", .platform = tea, .accepted = false, .why = "send <constructor" },
+        .{ .name = "top-rewrite-send.dead", .platform = tea, .accepted = true },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const r = try w.runWith(&.{
+            "check",
+            "--ownership=v3",
+            "--ownership-everywhere",
+            "--no-cache",
+            try std.fmt.allocPrint(a, "--platform={s}", .{c.platform}),
+            try std.fmt.allocPrint(a, "--root=bench/ownership-sweeps/blind6e-faults/{s}", .{c.name}),
+            try std.fmt.allocPrint(a, "bench/ownership-sweeps/blind6e-faults/{s}/Main.beni", .{c.name}),
+        }, .{ .raw_diagnostics = true, .cwd = .inherit });
+        const ok = if (c.accepted) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// The siblings of the sixth blind test's faults that the audit of research
+// report 125 found. Each is accepted before and traps; each is refused now,
+// and its twin that writes a copy is accepted:
+//
+// - `HolderRewrite`: a known function runs `body`, and what it hands
+//   `body`'s function parameter is a function in the default state, which
+//   keeps what it is handed: `body` writes a list after it handed it there
+//   (kernel §6.8, `defaultParams`).
+// - `HolderAnswer`: the same holder, and `body` answers the list it handed
+//   its function parameter: the list escaped there, and the caller writes
+//   the answer.
+// - `AnswerRow`: a function over `{ r | n : Int }` in a location whose type
+//   is `Model`: its answer's row holds the model's `items`, which the
+//   composition read as "no object" by label path (`answersAt`, `anyMeets`).
+// - `SupplyRow`: the same function keeps its parameter in a fiber: what the
+//   holder hands its row is the model's `items` (`slotsOf`).
+// - `EvidenceRewrite`: a method handed as evidence writes a list after it
+//   handed it to its function parameter; the code that runs evidence hands
+//   it the default (kernel §6.11, `Contract.Effect.rewrites`).
+test "ownership v3: the siblings of the sixth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, why: []const u8, text: []const u8, write: []const u8 };
+    const cases = [_]Case{
+        .{ .name = "HolderRewrite", .why = "value <call Main.runWith> is refused: supply: the function changes a value", .write = "ys = List.push xs 2", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\body : (List Int → ⊤) → ⊤
+        \\body send =
+        \\    xs = [ 1 ]
+        \\    send xs
+        \\    ys = List.push xs 2
+        \\    send ys
+        \\
+        \\
+        \\runWith : ((List Int → ⊤) → ⊤), Ref (List (List Int)) → ⊤
+        \\runWith b r = b λl → Ref.set r (List.concat [ Ref.get r, [ l ] ])
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    runWith body r
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "HolderAnswer", .why = "List.push ys is refused: escaped", .write = "zs = List.push ys 2", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\body : (List Int → ⊤) → List Int
+        \\body send =
+        \\    xs = [ 1 ]
+        \\    send xs
+        \\    xs
+        \\
+        \\
+        \\runWith : ((List Int → ⊤) → List Int), Ref (List (List Int)) → List Int
+        \\runWith b r = b λl → Ref.set r [ l ]
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    ys = runWith body r
+        \\    zs = List.push ys 2
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (Debug.toString zs) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "AnswerRow", .why = "List.push m0.items is refused: later-use", .write = "ys = List.push m0.items 2", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    n : Int
+        \\
+        \\
+        \\bump : { r | n : Int } → { r | n : Int }
+        \\bump m = { m | n = m.n + 1 }
+        \\
+        \\
+        \\apply : (Model → Model), Model → Model
+        \\apply g m = g m
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    m0 = { items = [ 1 ], n = 0 }
+        \\    m1 = apply bump m0
+        \\    ys = List.push m0.items 2
+        \\    Debug.log (Debug.toString m1.items) ⊤
+        \\    Debug.log (Debug.toString ys) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "EvidenceRewrite", .why = "value <call Main.walk> is refused: call: a function that changes a value", .write = "ys = List.push xs 2", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Box
+        \\    = Box Int
+        \\
+        \\
+        \\pub each : Box, (List Int → ⊤) → ⊤
+        \\each _ f =
+        \\    xs = [ 1 ]
+        \\    f xs
+        \\    ys = List.push xs 2
+        \\    f ys
+        \\
+        \\
+        \\walk : a, (List Int → ⊤) → ⊤ where a.each : a, (List Int → ⊤) → ⊤
+        \\walk x f = x.each f
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    walk (Box 1) λl → Ref.set r (List.concat [ Ref.get r, [ l ] ])
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "SupplyRow", .why = "List.push m0.items is refused: escaped", .write = "ys = List.push m0.items 2", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Task
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    n : Int
+        \\
+        \\
+        \\keep : { r | n : Int } → ⊤
+        \\keep m =
+        \\    _ = Task.spawn λ⊤ →
+        \\        Io.sleep 5
+        \\        Debug.log (Debug.toString m) ⊤
+        \\    ⊤
+        \\
+        \\
+        \\apply : (Model → ⊤), Model → ⊤
+        \\apply g m = g m
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    m0 = { items = [ 1 ], n = 0 }
+        \\    apply keep m0
+        \\    ys = List.push m0.items 2
+        \\    Debug.log (Debug.toString ys) ⊤
+        \\    Io.sleep 20
+        \\    Node.done
+        \\
+        },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        // The program, then its twin that writes a copy: refused, then accepted.
+        for ([_]bool{ false, true }) |dead| {
+            const dir = try std.fmt.allocPrint(a, "{s}{s}", .{ c.name, if (dead) ".dead" else "" });
+            const file = try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir});
+            var text = c.text;
+            if (dead) {
+                const at = std.mem.indexOf(u8, text, c.write).?;
+                const eq = std.mem.indexOf(u8, c.write, "List.push ").? + "List.push ".len;
+                const arg_end = std.mem.lastIndexOfScalar(u8, c.write, ' ').?;
+                text = try std.fmt.allocPrint(a, "{s}{s}(List.copy {s}){s}{s}", .{ text[0..at], c.write[0..eq], c.write[eq..arg_end], c.write[arg_end..], text[at + c.write.len ..] });
+            }
+            try w.write(file, text);
+            const root = try std.fs.path.join(a, &.{ try w.projectPath(), dir });
+            const main = try std.fs.path.join(a, &.{ try w.projectPath(), file });
+            const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", try std.fmt.allocPrint(a, "--root={s}", .{root}), main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+            const ok = if (dead) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+            if (!ok) {
+                std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ dir, if (dead) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+                bad = true;
+            }
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}

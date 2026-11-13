@@ -1,0 +1,1 @@
+A view over an extensible record whose row holds a list of the model (research report 124 F1, report 125): update pushes onto both lists in place under --ownership=v3, and the dom runtime keeps no list of a hole past the render (boundary.md §9.4.8).

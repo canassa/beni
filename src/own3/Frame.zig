@@ -1691,8 +1691,9 @@ fn keepsOwn(c: *const Contract, own: u32) bool {
 }
 
 fn writesOwn(c: *const Contract, own: u32) bool {
-    if (own > c.arity) return false;
-    for (c.flags[0..c.off[own]]) |x| if (x & flag_w != 0) return true;
+    // No such parameter list: every location is one of them (the pessimistic side).
+    const n = if (own <= c.arity) c.off[own] else c.flags.len;
+    for (c.flags[0..n]) |x| if (x & flag_w != 0) return true;
     return false;
 }
 
@@ -2206,11 +2207,12 @@ fn ctorValue(f: *Frame, inst: u32) Error!Val {
         for (0..info.arity) |k| {
             const step = (try m.ctorArgStep(inst, rplace, @intCast(k))) orelse return v_outside;
             const pr = (try m.loc.proj(rplace, step)) orelse return v_outside;
-            const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
-            const pes = m.loc.layoutEntries(c.layouts[k]);
-            for (child, 0..) |ce, j| {
+            const cl = try m.loc.layoutOf(pr.child);
+            const child = m.loc.layoutEntries(cl);
+            for (0..child.len) |j| {
                 if (pr.up[j] == none) continue;
-                for (pes, 0..) |pe, pj| if (pe.loc == ce.loc) try lists[pr.up[j]].append(f.gpa, .{ .kind = .param, .a = @intCast(k), .e = @intCast(pj) });
+                // The argument's entries that can be this part's: the call map, not label paths.
+                for (0..m.loc.layoutEntries(c.layouts[k]).len) |pj| if (try f.locsMeet(c.layouts[k], @intCast(pj), cl, @intCast(j))) try lists[pr.up[j]].append(f.gpa, .{ .kind = .param, .a = @intCast(k), .e = @intCast(pj) });
             }
         }
         const res = @constCast(c.res);
@@ -3172,7 +3174,9 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
 /// cell at two places of the operands is refused (`element`): the derived
 /// code reads the second place after the method wrote the first.
 fn derivedEffect(f: *Frame, inst: u32, x: CMod.Effect, vals: []const Val, arg_insts: []const Inst.Index) Error!void {
-    if (x.keeps or x.no_contract) for (vals) |v| try f.escape(v, inst);
+    // A method that writes what it handed a function parameter: the derived
+    // code hands it the default, which keeps it (kernel §6.8).
+    if (x.keeps or x.no_contract or x.rewrites) for (vals) |v| try f.escape(v, inst);
     if (!x.writes) return;
     const others = try f.gpa.alloc(Other, vals.len);
     defer f.gpa.free(others);
@@ -3296,6 +3300,11 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             try f.escape(v, inst);
         }
         if (c.writes()) try m.addRefusal(f, inst, .call, "a function that writes its parameter is not called with all its arguments");
+        // The code that runs it later hands its function parameters functions
+        // in the default state, which keep what they are handed (kernel §6.8).
+        const site: Site = .{ .inst = inst };
+        const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = code };
+        try f.defaultParams(code, &top);
         return f.unknownResult(inst, all.items);
     }
     const args = all.items;
@@ -3685,6 +3694,30 @@ fn isFnRoot(f: *const Frame, root: u32) bool {
     return r.index < f.param_ty.items.len and f.m.fnType(f.param_ty.items[r.index]) != null;
 }
 
+/// Whether entry `ea` of layout `la` and entry `eb` of layout `lb`, two
+/// readings of one type position, can name one cell. The call map
+/// (`Loc.cover`) maps an entry of one layout to the entry of the other that
+/// covers it: the same location, a wide one above it, or the row of a record
+/// that does not name its field. An answer of the map holds every cell of the
+/// mapped entry when that entry is no wider than it (a type variable mapped
+/// to a list at its own location is wider: it is the list and its elements).
+/// Such an answer decides, since the entries of one layout name apart cells;
+/// where neither direction decides, the pair is one cell (kernel §4.1: the
+/// pessimistic side). Every comparison of two layouts' locations goes
+/// through this, never through their label paths.
+fn locsMeet(f: *Frame, la: u32, ea: u32, lb: u32, eb: u32) Error!bool {
+    const m = f.m;
+    const las = m.loc.layoutEntries(la);
+    const lbs = m.loc.layoutEntries(lb);
+    const ab = (try m.loc.cover(la, lb))[eb];
+    const ba = (try m.loc.cover(lb, la))[ea];
+    const ab_decides = ab < Loc.all and (!lbs[eb].kind.wide() or las[ab].kind.wide());
+    const ba_decides = ba < Loc.all and (!las[ea].kind.wide() or lbs[ba].kind.wide());
+    if (ab_decides and ab == ea) return true;
+    if (ba_decides and ba == eb) return true;
+    return !(ab_decides or ba_decides);
+}
+
 /// Whether the contract is that of a function that answers its one parameter
 /// as it is and does nothing else with it.
 fn isIdentity(f: *const Frame, c: *const Contract) bool {
@@ -3768,7 +3801,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     use.code = code;
     const inst = use.site.inst;
     if (use.kind == .top or use.fnc.lost or code.own_params != use.fnc.arity) {
-        // No contract describes the holder: the function must ask nothing.
+        // No contract describes the holder: the function must ask nothing
+        // (kernel §6.8). It writes no parameter, and the holder hands each of
+        // its function parameters a function in the default state, which
+        // keeps what it is handed (`defaultParams`).
         if (writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
         try f.captureEscapes(code, inst);
         if (use.kind != .top) {
@@ -3778,10 +3814,16 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             try f.escape(v, inst);
         }
         const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code };
+        try f.defaultParams(code, &top);
         return f.flowCaptures(code, &top);
     }
     if (use.rewrites() and keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
-    if (use.fnc.called) try f.captureEscapes(code, inst);
+    if (use.fnc.called) {
+        try f.captureEscapes(code, inst);
+        // A holder that runs the function hands its function parameters
+        // what the holder's frame let go of: a function in the default state.
+        try f.defaultParams(code, &use);
+    }
     for (0..use.fnc.arity) |k| {
         const n = lc.off[k + 1] - lc.off[k];
         for (0..n) |le| {
@@ -3803,6 +3845,26 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         }
     }
     try f.flowCaptures(code, &use);
+}
+
+/// The holder of `use` can run the known function `code`, and what it hands
+/// each function parameter of `code` is a function in the default state: a
+/// function that a holder's frame hands on goes to the `top` use there
+/// (`mention`), and the default hands one too. So each is the default meeting
+/// that parameter's use (`flowUnknown`): what `code` hands it escapes, and a
+/// `code` that writes a cell after it handed the cell there is refused, since
+/// the default keeps what it is handed (kernel §6.8, report 124 §4 F2). A
+/// fresh cell of `code` is named at the holder's key, as in its answer
+/// (`answerOfCode`), so a cell handed there and answered is one root.
+fn defaultParams(f: *Frame, code: Code, use: *const Use) Error!void {
+    const lc = code.contract;
+    for (0..@min(code.own_params, lc.arity)) |k| {
+        const lf = lc.fns[k] orelse continue;
+        var inner = try f.innerUse(code, @intCast(k), lf, use);
+        inner.key = use.key;
+        try f.escapeSupplies(&inner);
+        if (inner.rewrites()) try f.refuse(&inner, .supply, "the function changes a value after it handed it to a function parameter, and the code that runs it hands a function that can keep it");
+    }
 }
 
 /// A captured value is a parameter of the known function's contract, and
@@ -3923,7 +3985,13 @@ fn slotsOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32, rel: ?[]con
     if (entry.kind.wide()) {
         var below: std.ArrayList(u32) = .empty;
         defer below.deinit(f.gpa);
-        try m.loc.belowWide(sig, entry.loc, fe, &below, f.gpa);
+        // Each entry of the use's type that the function's wide entry can
+        // hold a cell of: the call map, never label paths (a row covers the
+        // fields its record does not name).
+        for (0..m.loc.layoutEntries(sig).len) |i| {
+            if (i == fe) continue;
+            if (try f.locsMeet(sig, @intCast(i), layout, le)) try below.append(f.gpa, @intCast(i));
+        }
         if (below.items.len != 0) {
             // The location that is asked for, when the use's type has it.
             var at: ?u32 = if (rel != null) entry.loc else null;
@@ -3933,17 +4001,17 @@ fn slotsOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32, rel: ?[]con
             };
             const es = m.loc.layoutEntries(sig);
             if (at) |t| {
-                // Only the use's entry at that location, or a wide one above it.
+                // Only the use's entry at that location, or a wide one above it or whose row holds it.
                 var n: usize = 0;
                 for (out.items) |slot| {
-                    if (es[slot.fe].loc != t and !(es[slot.fe].kind.wide() and m.loc.isPrefix(es[slot.fe].loc, t))) continue;
+                    if (es[slot.fe].loc != t and !(es[slot.fe].kind.wide() and m.loc.within(es[slot.fe].loc, t))) continue;
                     out.items[n] = slot;
                     n += 1;
                 }
                 out.shrinkRetainingCapacity(n);
             }
             for (below.items) |i| {
-                if (at) |t| if (es[i].loc != t and !(es[i].kind.wide() and m.loc.isPrefix(es[i].loc, t))) continue;
+                if (at) |t| if (es[i].loc != t and !(es[i].kind.wide() and m.loc.within(es[i].loc, t))) continue;
                 try out.append(f.gpa, .{ .fe = i, .free = fnc.free[fnc.off[k] + i], .srcs = fnc.supply[fnc.off[k] + i] });
             }
             if (out.items.len == 0) {
@@ -3956,21 +4024,25 @@ fn slotsOf(f: *Frame, use: *const Use, k: u32, layout: u32, le: u32, rel: ?[]con
     }
     if (fe < Loc.all) return true;
     // No entry of the use's type is there. A type with no object at the
-    // location (a function over `List a`, handed a `List Int`) hands no cell.
-    return m.loc.noObject(sig, entry.loc);
+    // location (a function over `List a`, handed a `List Int`) hands no
+    // cell: no entry of it meets the function's entry.
+    return !try f.anyMeets(sig, layout, le);
+}
+
+/// Whether some entry of layout `ul` can name a cell of entry `k` of layout `fl` (`locsMeet`).
+fn anyMeets(f: *Frame, ul: u32, fl: u32, k: u32) Error!bool {
+    for (0..f.m.loc.layoutEntries(ul).len) |i| if (try f.locsMeet(ul, @intCast(i), fl, k)) return true;
+    return false;
 }
 
 /// Whether the function's result entry `k` of layout `fl` can hold a cell
 /// of the use's answer entry `ae` of layout `ul`; `cv` is the call map's
 /// entry for `k`. The other direction of `slotsOf`: a wide entry of the
-/// function holds each cell of the use's entries below it.
-fn answersAt(f: *const Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) bool {
-    const m = f.m;
+/// function holds each cell of the use's entries below it, or in its row
+/// (`locsMeet`).
+fn answersAt(f: *Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) Error!bool {
     if (Loc.hits(cv, ae)) return true;
-    const fe = m.loc.layoutEntries(fl)[k];
-    if (!fe.kind.wide()) return false;
-    const ue = m.loc.layoutEntries(ul)[ae];
-    return m.loc.isPrefix(fe.loc, ue.loc) or m.loc.startsAbove(ue.loc, fe.loc);
+    return f.locsMeet(ul, ae, fl, @intCast(k));
 }
 
 /// What the source `src` of `use`'s contract is in this frame: `sink` gets
@@ -4271,9 +4343,9 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
         exact = true;
     };
     for (rcov, 0..) |cv, re| {
-        if (!f.answersAt(fnc.layouts[fnc.arity], e, lc.layouts[lc.arity], re, cv)) continue;
+        if (!try f.answersAt(fnc.layouts[fnc.arity], e, lc.layouts[lc.arity], re, cv)) continue;
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != want.?) continue;
-        if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc)) continue;
+        if (cv >= Loc.all and !try f.anyMeets(fnc.layouts[fnc.arity], lc.layouts[lc.arity], @intCast(re))) continue;
         for (lc.res[re]) |ls| switch (ls.kind) {
             // A cell the function made is its own only where the contract
             // names no other holder of it: it did not escape, it is at no
@@ -4511,10 +4583,10 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
     var psuffix: std.ArrayList(u64) = .empty;
     defer psuffix.deinit(f.gpa);
     for (cov, 0..) |cv, k| {
-        if (!f.answersAt(fnc.layouts[fnc.arity], ae, lc.layouts[lc.arity], k, cv)) continue;
+        if (!try f.answersAt(fnc.layouts[fnc.arity], ae, lc.layouts[lc.arity], k, cv)) continue;
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
         // The function's type is wider here than the holder's: no cell is there.
-        if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc)) continue;
+        if (cv >= Loc.all and !try f.anyMeets(fnc.layouts[fnc.arity], lc.layouts[lc.arity], @intCast(k))) continue;
         switch (st.visit(use, @intCast(k))) {
             .new => {},
             // In work already: it adds no cell.
@@ -4979,6 +5051,8 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 const site: Site = .{ .inst = inst };
                 const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c };
                 try f.flowCaptures(c, &top);
+                // What the runtime hands a function parameter is the default (kernel §6.8).
+                try f.defaultParams(c, &top);
             }
             const ty = m.typeOfInst(fd.value.int());
             const view = if (m.fnType(ty)) |ft| try m.isView(ft.result.toOptional(), 0) else false;
@@ -5018,12 +5092,20 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
         };
         return f.unknownResult(inst, held.items);
     }
-    const mes = m.loc.layoutEntries(try m.loc.layoutOf(try m.placeOf(model_ty)));
+    const ml = try m.loc.layoutOf(try m.placeOf(model_ty));
+    const mes = m.loc.layoutEntries(ml);
     const own = try f.gpa.alloc(bool, mes.len);
     defer f.gpa.free(own);
     // With no producer handed no model, the runtime makes the first one, and
     // no fact names its holder.
     @memset(own, !no_fact and has_first);
+    // Every comparison below of a model location with a location of a
+    // function's contract goes through the call map (`locsMeet`): the
+    // contract's layouts are those of the function's own type, which can be
+    // wider than the model's (`{ r | n : Int }`, a type variable), and a pair
+    // that the map cannot decide counts as one cell (kernel §4.1, §6.13;
+    // report 124 §4 F1).
+    //
     // Kernel §6.13. A model location is `own` for `update` only where a
     // positive fact names its one holder, the model, in every producer of
     // the model (each function whose answer has it: `init`, `update`,
@@ -5034,9 +5116,11 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
     // holder or no fact: a top-level value (`outside`), the answer of a
     // function, a capture (the record holds it for ever), the message (the
     // runtime can hand one message twice: a handler keeps its message until
-    // the next render), the `Host`. A location answered through a wide
-    // location has no fact of its own. The largest solution: start from
-    // `own` everywhere and take away.
+    // the next render), the `Host`. The sources are those of every entry of
+    // the answer that can hold a cell of the location, as at a call
+    // (`expandSrcs`): a wide entry holds each cell of the locations below it,
+    // so each of its sources is one of the location's. The largest
+    // solution: start from `own` everywhere and take away.
     var changed = true;
     while (changed) {
         changed = false;
@@ -5048,20 +5132,22 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 .index => try m.loc.extend(0, .{ .kind = .index, .payload = @intCast(fd.shape.index), .cyc = false, .head = 0 }),
             };
             const model_param = fd.shape.model_param;
+            // The answer's type as the record has it: the model's locations in it.
+            const rl: ?u32 = if (m.fnType(fd.ty)) |ft| try m.loc.layoutOf(try m.placeOf(ft.result.toOptional())) else null;
             for (codes.items[fd.from..][0..fd.len]) |code| {
                 const c = code.contract;
                 const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
-                const pes: []const Loc.Entry = if (model_param == none) &.{} else m.loc.layoutEntries(c.layouts[model_param]);
                 for (mes, 0..) |me, k| {
                     if (!own[k]) continue;
                     const want = if (at == 0) me.loc else try m.loc.concat(at, me.loc);
-                    var ok = true;
-                    for (res_es, 0..) |re, ri| {
-                        if (re.loc != want) {
-                            // A wide location above it: no fact for this location alone.
-                            if (re.kind.wide() and m.loc.isPrefix(re.loc, want) and c.res[ri].len != 0) ok = false;
-                            continue;
-                        }
+                    // The model location's entry in the answer's layout; none: no fact.
+                    var wi: u32 = none;
+                    if (rl) |l| for (m.loc.layoutEntries(l), 0..) |re, i| if (re.loc == want) {
+                        wi = @intCast(i);
+                    };
+                    var ok = wi != none;
+                    if (ok) for (res_es, 0..) |_, ri| {
+                        if (!try f.locsMeet(c.layouts[c.arity], @intCast(ri), rl.?, wi)) continue;
                         for (c.res[ri]) |s| switch (s.kind) {
                             .fresh => if (!freshOwn(c, @intCast(ri), s)) {
                                 ok = false;
@@ -5071,10 +5157,9 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                                     ok = false;
                                     continue;
                                 }
-                                // From another model location: `own` only when that one is.
-                                const from = pes[s.e].loc;
+                                // From model locations: `own` only when each of them is.
                                 var found = false;
-                                for (mes, 0..) |me2, k2| if (me2.loc == from or (pes[s.e].kind.wide() and m.loc.isPrefix(from, me2.loc))) {
+                                for (mes, 0..) |_, k2| if (try f.locsMeet(c.layouts[model_param], s.e, ml, @intCast(k2))) {
                                     found = true;
                                     if (!own[k2]) ok = false;
                                 };
@@ -5082,7 +5167,7 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                             },
                             .outside, .answer, .twice => ok = false,
                         };
-                    }
+                    };
                     if (!ok) {
                         own[k] = false;
                         changed = true;
@@ -5105,14 +5190,14 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
             const c = c0.contract;
             for (0..c0.own_params) |pj| {
                 const pes = m.loc.layoutEntries(c.layouts[pj]);
-                for (pes, 0..) |pe, e| {
+                for (0..pes.len) |e| {
                     var kept = c.flags[c.off[pj] + e] & (flag_w | flag_e) != 0;
                     if (!fd.view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
                         kept = true;
                     };
                     if (handsOn(c, @intCast(pj), @intCast(e))) kept = true;
                     if (!kept) continue;
-                    for (mes, 0..) |me, k| if (me.loc == pe.loc or (pe.kind.wide() and m.loc.isPrefix(pe.loc, me.loc))) {
+                    for (0..mes.len) |k| if (try f.locsMeet(c.layouts[pj], @intCast(e), ml, @intCast(k))) {
                         own[k] = false;
                     };
                 }
@@ -5120,7 +5205,8 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
         }
     }
     // The verdicts: one for each location that a producer handed the model
-    // (`update`, `settle`) writes.
+    // (`update`, `settle`) writes. A write is `own` only where each model
+    // location it can write is.
     // The message is never `own`: no fact names its one holder. A handler
     // of the rendered markup keeps its message until the next render and can
     // send it twice, and a message can hold a top-level value or anything a
@@ -5135,9 +5221,15 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 for (pes, 0..) |pe, e| {
                     if (c.flags[c.off[pj] + e] & flag_w == 0) continue;
                     var ok = false;
-                    if (pj == fd.shape.model_param) for (mes, 0..) |me, k| if (me.loc == pe.loc and own[k]) {
-                        ok = true;
-                    };
+                    if (pj == fd.shape.model_param) {
+                        var any = false;
+                        var all_own = true;
+                        for (0..mes.len) |k| if (try f.locsMeet(c.layouts[pj], @intCast(e), ml, @intCast(k))) {
+                            any = true;
+                            if (!own[k]) all_own = false;
+                        };
+                        ok = any and all_own;
+                    }
                     try m.addEntryLine(f, inst, c0, pj == fd.shape.model_param, pe.loc, ok);
                 }
             }

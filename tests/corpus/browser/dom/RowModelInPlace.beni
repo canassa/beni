@@ -1,0 +1,54 @@
+-- A view that takes the model as an extensible record
+-- (`{ r | n : Int, items : List Int }`): its row holds `saved`, which it
+-- does not read. The entry compares the model's locations with the view's
+-- through the call map (kernel §6.13), so the view keeps neither list, and
+-- `update` pushes onto both in place (`--ownership=v3`). The outer handler
+-- runs when a click on the button bubbles; it keeps nothing of the model.
+-- Each render shows `items` as it is then.
+import Browser
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+    | Noop
+
+
+type alias Model =
+    items : List Int
+    saved : List Int
+    n : Int
+
+
+init : ⊤ → Model
+init ⊤ = { items = List.copy [ 1 ], saved = List.copy [ 0 ], n = 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | items = List.push model.items (model.n + 1)
+                , saved = List.push model.saved model.n
+                , n = model.n + 1
+            }
+
+        Noop →
+            model
+
+
+view : { r | n : Int, items : List Int } → Html Msg
+view model =
+    <main id="outer" onClick={λ_ → Noop}>
+        <button id="add" onClick={λ_ → Add}>add</button>
+        <ul>
+            <For each={model.items}>{λi → <li>{i}</li>}</For>
+        </ul>
+        <output>{model.n}</output>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = init, update = update, view = view }

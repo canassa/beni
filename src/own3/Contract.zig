@@ -292,14 +292,25 @@ pub const Effect = struct {
     writes: bool = false,
     keeps: bool = false,
     no_contract: bool = false,
+    /// The function writes a cell after it handed the cell to one of its
+    /// function parameters (`Fn.rewrites`). The code that runs it hands
+    /// that parameter a function in the default state, which keeps what it
+    /// is handed (`ownership-v3-kernel.md` §6.8).
+    rewrites: bool = false,
 
     pub fn join(x: Effect, y: Effect) Effect {
-        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract };
+        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract, .rewrites = x.rewrites or y.rewrites };
     }
     pub fn any(x: Effect) bool {
-        return x.writes or x.keeps or x.no_contract;
+        return x.writes or x.keeps or x.no_contract or x.rewrites;
     }
 };
+
+/// Whether a function parameter of `c` has `rewrites`.
+pub fn rewritesFn(c: *const Contract) bool {
+    for (c.fns) |fo| if (fo) |g| if (g.rewrites) return true;
+    return false;
+}
 
 /// What a module says of one derived method it emits (`Published.derived`):
 /// the type (a `TypeId`), the method (`Dispatch.Derived.Kind`), and what

@@ -573,7 +573,7 @@ pub const Mod = struct {
             // operands; what they call is an edge of its own.
             .primitive, .undetermined, .codec => return .{},
         };
-        if (try m.declContract(target)) |c| return .{ .writes = c.writes(), .keeps = c.escapes() };
+        if (try m.declContract(target)) |c| return .{ .writes = c.writes(), .keeps = c.escapes(), .rewrites = Contract.rewritesFn(c) };
         if (try m.isFunction(target)) return .{ .no_contract = true };
         return .{};
     }
@@ -582,6 +582,7 @@ pub const Mod = struct {
     pub fn evidenceText(x: Contract.Effect) []const u8 {
         if (x.writes) return "a function that writes its parameter is handed as evidence";
         if (x.keeps) return "a function that keeps its parameter is handed as evidence";
+        if (x.rewrites) return "a function that changes a value after it handed it to a function parameter is handed as evidence";
         return "a function with no contract is handed as evidence";
     }
 

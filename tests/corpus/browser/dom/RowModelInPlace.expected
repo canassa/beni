@@ -1,0 +1,33 @@
+-- load
+<body>
+  <main id="outer">
+    <button id="add">"add"</button>
+    <ul>
+      <li>"1"</li>
+    </ul>
+    <output>"1"</output>
+  </main>
+</body>
+-- click #add
+<body>
+  <main id="outer">
+    <button id="add">"add"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <output>"2"</output>
+  </main>
+</body>
+-- click #add
+<body>
+  <main id="outer">
+    <button id="add">"add"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+    <output>"3"</output>
+  </main>
+</body>

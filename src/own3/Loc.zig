@@ -609,41 +609,26 @@ pub const Table = struct {
         return y == a;
     }
 
-    /// Whether the type of layout `sig` has no object at the location `loc`
-    /// or below it, where `loc` is a location of another reading of the same
-    /// type position (a wider one: a type variable where `sig` has `Int`).
-    /// True only when the label paths can be compared: `loc` is of no deep
-    /// level, and no deep level of `sig` starts above it.
-    pub fn noObject(t: *const Table, sig: u32, loc: u32) bool {
-        if (t.deepEntry(loc) != none) return false;
-        for (t.layoutEntries(sig)) |s| {
-            // An entry at the location or below it, or a wide entry above it.
-            if (t.isPrefix(loc, s.loc)) return false;
-            if (s.kind.wide() and t.isPrefix(s.loc, loc)) return false;
-            // A deep level that starts above the location names cells at each depth.
-            const entry = t.deepEntry(s.loc);
-            if (entry != none and t.isPrefix(entry, loc)) return false;
+    /// Whether the cells at location `b` are cells at location `a` or below
+    /// it, where the two are locations of two readings of one type position:
+    /// `a` is `b` or above it, and a `row` label of `a` stands for each field
+    /// label at its place (a record keeps in its row the fields it does not
+    /// name). On the side of "yes": a row is read as holding every field,
+    /// named or not. Never used to say that two locations are apart.
+    pub fn within(t: *const Table, a: u32, b: u32) bool {
+        const da = t.loc_depth.items[a];
+        var y = b;
+        if (t.loc_depth.items[y] < da) return false;
+        while (t.loc_depth.items[y] > da) y = t.loc_parent.items[y];
+        var x = a;
+        while (x != y) {
+            const lx: Label = @bitCast(t.loc_label.items[x]);
+            const ly: Label = @bitCast(t.loc_label.items[y]);
+            if (lx.word() != ly.word() and !(lx.kind == .row and (ly.kind == .field or ly.kind == .row))) return false;
+            x = t.loc_parent.items[x];
+            y = t.loc_parent.items[y];
         }
         return true;
-    }
-
-    /// The entries of layout `sig` that are parts of the location `loc`,
-    /// where `loc` is a wide location of another reading of the same type
-    /// position (a type variable where `sig` has `List (List Int)`): each
-    /// cell below a wide location is a cell of it. `skip` is an entry that
-    /// the caller has already. An entry of a deep level that starts above
-    /// `loc` names cells at each depth, so it is one of them.
-    pub fn belowWide(t: *const Table, sig: u32, loc: u32, skip: u32, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
-        for (t.layoutEntries(sig), 0..) |s, i| {
-            if (i == skip) continue;
-            if (t.isPrefix(loc, s.loc) or t.startsAbove(s.loc, loc)) try out.append(gpa, @intCast(i));
-        }
-    }
-
-    /// Whether `deep` is a location of a deep level that starts at `loc` or above it.
-    pub fn startsAbove(t: *const Table, deep: u32, loc: u32) bool {
-        const entry = t.deepEntry(deep);
-        return entry != none and t.isPrefix(entry, loc);
     }
 
     // ---- the call map ----------------------------------------------------------
