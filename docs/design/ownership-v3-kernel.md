@@ -226,9 +226,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    place has no element step — a literal typed by a callee's type variable, as `Js.call`'s argument list
    and `Js.object`'s fields are — has no location for its elements, so it is `unknown` over every value
    it was made of (§3.2); before, its elements went nowhere, and a list handed to JavaScript inside one
-   did not escape (report 117 §10; research report 120 §5 found the same hole
-   through `Hosted.tap`, where a subscription's body lost what it captured). *Invariant: a part the construction does not name holds none, and a
-   construction that cannot name its parts is `unknown`.*
+   did not escape (report 117 §10; research report 120 §5 found the same hole through `Hosted.tap`, where
+   a subscription's body lost what it captured). *Invariant: a part the construction does not name holds
+   none, and a construction that cannot name its parts is `unknown`.*
 5. **Project** (`project`): a step on a root extends its path; on a construction takes the named part or
    `none`; on `unknown` stays `unknown`; on a closure is `unknown` over it. *Invariant: a part's leaves are
    a subset of the whole's.*

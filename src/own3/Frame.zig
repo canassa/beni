@@ -2209,22 +2209,6 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
         f.rents.items[r.ent + e] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
     }
     f.deriveLinear(root, null, &.{});
-    // A literal whose place has no element step (a type variable: an
-    // argument of a `Js` intrinsic, whose items each have a type of their
-    // own) names no part for its items. A part the place graph does not
-    // name is `unknown` over its values (kernel §3.2, §6.4): so is the
-    // literal, over its own storage and every item.
-    if (pr == null) {
-        var vs: std.ArrayList(Val) = .empty;
-        defer vs.deinit(f.gpa);
-        for (elems) |v| if (v != v_none) try vs.append(f.gpa, v);
-        for (spreads) |v| if (v != v_none) try vs.append(f.gpa, v);
-        for ([_]Val{ base, front }) |v| if (v != v_none) try vs.append(f.gpa, v);
-        if (vs.items.len != 0) {
-            try vs.append(f.gpa, try f.rootVal(root));
-            return f.unknownOf(place, vs.items);
-        }
-    }
     return f.rootVal(root);
 }
 
