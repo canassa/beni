@@ -293,6 +293,107 @@ as "holds nothing", and none in the views, the core rows, recursion and drafts, 
 - Records, cells and fibers (report 116 §5.4): the same five forms, not built.
 - The resource limits are still a prototype's constants (kernel §8); each falls to the pessimistic side.
 
+## 9. The markup rule, adopted (2026-11-13)
+
+The owner took §5's decision: **a `view`'s markup holds none of the lists in its holes, and in
+return every platform's runtime reads a hole's value only while it renders, and keeps no list from a
+hole to read after that render.** The platform rule is `boundary.md` §9.4.8; kernel rules 12 and 13
+say how the checker uses it.
+
+### 9.1 The setting of §5 was not sound, and what was built instead
+
+§5's measurement made every markup value hold nothing (`unknownOf(place, &.{})`). Built that way, the
+checker accepts report 114 §9's fault 3 again: a `view` that puts a fresh list in markup and then
+pushes onto it, in the same function or in the caller of a helper that answers the markup. On
+`browser-tea` the sanitised page traps on load, and the existing pin `check_test.zig` "the faults of
+the review of report 114 are refused" fails. The runtime reads the hole when it renders, which is
+after the program wrote the list. The rule is about what a runtime keeps **after** a render, so it
+cannot excuse a write **before** the render.
+
+So the walk is unchanged: markup holds its holes until it is rendered. The rule is used in one
+place, the entry (`entryCall`). A function of the record whose answer is the build's markup type,
+or a closed record or tuple with markup in it whose other parts hold no cell (`Tea.Document`;
+`Mod.isView`), does not keep what its answer holds. What it writes or lets escape still counts. A
+markup primitive (`Html.map`, a `vocab_markup` declaration) answers markup that holds its arguments,
+and every argument that is not markup escapes. Before, it was unknown code, so the markup it was
+handed escaped. Without this, conduit's four `errors` stayed refused (288 of 308).
+
+### 9.2 Real writes
+
+`bench/ownership-v2-review.mjs --checkers=v1,v3 --roots=real`: **279 → 292** of 308. Entry writes are
+16 of 16. The contract agent's +7 (`Js.get`, `Dict.focus`) had not landed on the branch. The 13 are
+§4's: every TEA `update` that writes a model list. Nothing else moved.
+
+### 9.3 The gate
+
+ReleaseSafe compilers, `ca2fc63410` (before) and this change (after), the same generated programs,
+`run.mjs --checker=v3`:
+
+| Generator | Programs | before SAME | before REFUSED | before TRAP/DIFF/CRASH | after SAME | after REFUSED | after TRAP/DIFF/CRASH |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| blind-faults | 24 | 11 | 13 | 0 | 11 | 13 | 0 |
+| blind2-faults | 20 | 9 | 11 | 0 | 9 | 11 | 0 |
+| blind3-faults | 10 | 3 | 7 | 0 | 3 | 7 | 0 |
+| blind | 9792 | 1675 | 8117 | 0 | 1675 | 8117 | 0 |
+| blind2 | 1202 | 502 | 700 | 0 | 502 | 700 | 0 |
+| blind3 | 417 | 160 | 257 | 0 | 160 | 257 | 0 |
+| evaluation-order | 440 | 288 | 152 | 0 | 288 | 152 | 0 |
+| answers-beside | 240 | 77 | 163 | 0 | 77 | 163 | 0 |
+| wider-functions | 354 | 144 | 210 | 0 | 144 | 210 | 0 |
+| callbacks-keep | 720 | 108 | 612 | 0 | 108 | 612 | 0 |
+| function-values | 1960 | 304 | 1656 | 0 | 304 | 1656 | 0 |
+| handed-back | 2592 | 0 | 2592 | 0 | 0 | 2592 | 0 |
+| aliased-arguments | 5160 | 1183 | 3977 | 0 | 1183 | 3977 | 0 |
+| recursive-levels | 16131 | 4231 | 11900 | 0 | 4231 | 11900 | 0 |
+| folds-callbacks | 30300 | 5392 | 24908 | 0 | 5392 | 24908 | 0 |
+
+The sweeps write no markup, so no verdict moved. The sanitiser corpus (347 fixtures): 97 same, 250
+refused, 0 traps, differences or crashes, before and after. `zig build gates` is green.
+
+### 9.4 The audit of each runtime
+
+| Platform | Renders markup | When it reads a hole | What it keeps after the render | Keeps the rule |
+|---|---|---|---|---|
+| `browser` (`dom`) | yes | `view` runs in the microtask flush and its answer is rendered at once (`Rt.beni:794-799`, `808-835`). A root that escapes is a block `{ t, v: [inputs] }` whose patch reads the inputs at render (`backend.md` §15.4). | DOM; identity-safe previous values only (`dom.zig:897-917, 2485-2541, 2659-2666`; `RenderIdentity.zig:78-103`); event messages and `Html.map`'s function on nodes (`dom.zig:2346`, `Rt.beni:2259-2343`); hosted `shown`, re-shown only when no `update` ran (`Browser.beni:358-360`) | **no**: `update` can run inside a render (#2502), a helper's `let` cache keeps lists (`dom.zig:889-899`, #2503), a by-reference `For` keeps old items and compares them by identity (`Rt.beni:1342-1350`, #2504) |
+| `browser-tea` | through `dom` | as `browser` | as `browser`; its commands and subscriptions are beni state that the checker sees | as `browser` (#2502 traps on `Tea.element` too) |
+| `browser-inline` | yes | a binding reads the model's paths while it runs, after each handler (`browser-inline.md` §8.3); holes are text only (`inline.zig:985`) | DOM; a handler's retained helper arguments, refreshed when their path is written (`inline.zig:1585-1591`) | yes. The specified, not built, keyed rows compare by identity (`browser-inline.md` lines 1678, 1777; #2504) |
+| `node` (`ssr`) | yes | as the markup is made: `{ t: string }` (`Ssr.beni:17-21`, `Rt.beni:101-120`) | nothing | yes |
+| `html` | no: vocabulary only (`text`, `map`; each lowering implements them) | — | — | — |
+| `cloudflare` | no markup lowering (`beni.json`) | — | — | — |
+
+### 9.5 The tests
+
+One fixture for each platform that renders markup, with a `.sanitize-lists-v3` file. Each is built
+under `--ownership=v3 --ownership-everywhere --sanitize-lists` and must show its golden:
+`run/SsrHolesInPlace`, `browser/dom/HolesInPlace`, `browser/tea/HolesInPlace` (with `Html.map` and
+subscriptions) and `browser/inline/HolesInPlace`. In a second worktree, each runtime was broken on
+purpose: `node`'s `Rt.list` kept its list and read the last one at the next call, `browser`'s
+`Rt.forPosition` did the same, and `browser-inline`'s lowering kept the model in each binding and
+read its lists at the next run. All four fixtures then failed, each with `a stale read of a list`,
+and their ordinary pages still passed. A second break, a `forKeyed` that skips a render when the
+kept list is the same object, failed no fixture: the sanitiser's copy is a new object, and
+`List.push` still copies below 32 elements (`core/List.beni:287`), so no build writes in place yet.
+§9.4.8 says this, and #2504 is that class of fault.
+
+### 9.6 The review
+
+One fresh Opus reviewer had the rule and the runtimes' code, and was asked for a path that reads a
+hole's list after rendering. It proved five faults with probe programs:
+
+1. **New, caused by this change:** in Chrome, removing a focused input fires `blur` inside the
+   render; `$$root` runs `update` at once, and the patch then reads the old block. v3 refused the
+   program before and accepts it now (#2502). happy-dom fires no such blur, so the gates cannot see
+   it. Fixing it changes the dispatch order of `boundary.md` §9.8.4, so it was filed, not fixed.
+2. **Older:** a hole's expression runs at render from the root's inputs, but the walk holds its
+   result: `m = <p>{List.sum xs}</p>`, then `List.push xs 9`, is accepted and traps (#2505).
+3. **Older:** markup kept in the model has no layout entry at the entry (#2506).
+4. **Older, no markup:** `init` can answer one fresh list at two model locations (#2507).
+5. **Older:** the `dom` lowering's `let` cache keeps a helper's list between renders (#2503).
+
+It found the identity skips, hosted `shown`, after-render work, `Html.map`'s context, subscriptions,
+`Tea.application`'s handlers, `ssr` and `browser-inline` safe. `Browser.programs` with nested mounts,
+workers and prerender hydration were not tested.
+
 ## Appendix A. Commands
 
 All from the worktree root, `ZIG_GLOBAL_CACHE_DIR` as `flake.nix` sets it.
