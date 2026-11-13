@@ -346,8 +346,9 @@ ReleaseSafe compilers, `ca2fc63410` (before) and this change (after), the same g
 | aliased-arguments | 5160 | 1183 | 3977 | 0 | 1183 | 3977 | 0 |
 | recursive-levels | 16131 | 4231 | 11900 | 0 | 4231 | 11900 | 0 |
 | folds-callbacks | 30300 | 5392 | 24908 | 0 | 5392 | 24908 | 0 |
+| blind4a-faults | 12 | 6 | 0 | 6 | 6 | 0 | 6 |
 
-The sweeps write no markup, so no verdict moved. The sanitiser corpus (347 fixtures): 97 same, 250
+The sweeps write no markup, so no verdict moved. `blind4a-faults` landed on the branch during this work (report 118): its six `live` traps are report 118's open faults, the same before and after. The sanitiser corpus (347 fixtures): 97 same, 250
 refused, 0 traps, differences or crashes, before and after. `zig build gates` is green.
 
 ### 9.4 The audit of each runtime
@@ -387,7 +388,7 @@ hole's list after rendering. It proved five faults with probe programs:
 2. **Older:** a hole's expression runs at render from the root's inputs, but the walk holds its
    result: `m = <p>{List.sum xs}</p>`, then `List.push xs 9`, is accepted and traps (#2505).
 3. **Older:** markup kept in the model has no layout entry at the entry (#2506).
-4. **Older, no markup:** `init` can answer one fresh list at two model locations (#2507).
+4. **Older, no markup:** `init` can answer one fresh list at two model locations (#2507; report 118 §4.2 found it too).
 5. **Older:** the `dom` lowering's `let` cache keeps a helper's list between renders (#2503).
 
 It found the identity skips, hosted `shown`, after-render work, `Html.map`'s context, subscriptions,
