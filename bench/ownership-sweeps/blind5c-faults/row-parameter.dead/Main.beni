@@ -1,0 +1,46 @@
+-- A `For` row's function puts its parameter, a list of the model, in
+-- the message of an outer element (dead twin). A click on the inner
+-- button runs `update`, which pushes onto that list; the click then
+-- bubbles to the outer element.
+import Browser
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+    | Report (List Int)
+
+
+type alias Model =
+    rows : List (List Int)
+    seen : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows = List.update model.rows 0 λr → List.push r 9 }
+
+        Report l →
+            { model | seen = List.length l }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <For each={model.rows} keyed={False}>
+            {λl →
+                <div class="outer" onClick={Report [ List.length l ]}>
+                    <button class="add" onClick={Add}>add</button>
+                </div>
+            }
+        </For>
+        <p id="seen">{model.seen}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = λ⊤ → { rows = [ [ 1, 2 ] ], seen = 0 }, update = update, view = view }
