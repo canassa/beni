@@ -1,0 +1,25 @@
+-- v1 accepts this and the edit shows at both places (research report 119 §4.3):
+-- the callback of `List.update` answers `e0`, which is the list's element 0.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+go : Int → String
+go n =
+    e0 = [ n ]
+    r = List.update [ e0, [] ] 1 λ_ → e0
+    s = List.update r 0 λl → List.push l 9
+    shows s
+
+
+main : Program
+main = Node.print (go 0)

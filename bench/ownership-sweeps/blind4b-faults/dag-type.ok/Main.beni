@@ -1,0 +1,19 @@
+-- The safe twin of dag-type.hang: w4's result is 8 levels deep, 256 leaves.
+-- ownership v3 builds it in 50 ms (research report 119, fault 2).
+import Node exposing (Program)
+
+
+w1 x = ( x, x )
+
+
+w2 x = w1 (w1 x)
+
+
+w3 x = w2 (w2 x)
+
+
+w4 x = w3 (w3 x)
+
+
+main : Program
+main = Node.print "F"
