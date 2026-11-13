@@ -1,7 +1,7 @@
 # The ownership checker v3: the soundness kernel
 
 *Normative for `src/own3/`, 2026-11-12; §6.4, §6.8, §6.11 to §6.13 and §8 revised 2026-11-13 (research
-report 120). The owner ordered it after research report 116: "Write the rules
+report 120); §6.12 and §6.13 revised again the same day (research report 123). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -178,7 +178,9 @@ A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
 what the copying program prints. Argument: every cell the frame can observe is an atom of some root (§2);
 every consumer records a read of every atom it can observe (`readAll`, `readBy`, a list pattern, the
 frame's result); every holder the walk does not follow records an escape of every atom it can hold (§3.2,
-§6.10); a write by a callee is a demand at the call (§6.2). So an observation of W after t is a read after
+§6.10); a write by a callee is a demand at the call (§6.2); and a call that the runtime makes into the
+program's code is a call too, applied where the program hands the runtime what it calls the code with (the
+rows of markup, §6.12; the record of an entry, §6.13). So an observation of W after t is a read after
 t, an escape, or another operand — each refused.
 
 ### 5.1 New names
@@ -299,33 +301,78 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     its name, and no method is read as read-only because it is derived. *Report 118 §4.6: the text said
     that a derived method calls its evidence, and the walk read it as code that only reads its operands;
     a derived `eq` of a tuple or of `type W = W T Int` calls `T.eq`, which no walk saw.*
-12. **Markup** (`evalInner .markup`, `call` of a markup primitive): the value of markup is `unknown`
-    over the values of its holes and over the arguments of a hole that calls a top-level function (a
-    helper the platform may call where it renders, `language.md` §11.6): the runtime reads them when it
-    renders the markup, after the frame that made it, so until then whoever holds the markup holds
-    them, and a write of one of them before the render is refused. A lowering may evaluate a hole's
-    expression where it renders, from the values the expression reads (the `dom` lowering's block of a
-    root's inputs, `backend.md` §15.4), so the markup holds the value of every local and capture that a
-    hole reads, not only the hole's value (#2505). **Every value at an item of markup that no row of
-    the dispatch table names as an attribute** — an event's handler or message, a component's prop, a
-    spread of attributes — escapes, whatever expression made it (`keptItems`): the runtime keeps it
-    after the render, and calls or sends it after `update` has run (two clicks in one task, an event
-    that bubbles through two handlers; `boundary.md` §9.4.8 counts each as escaped where the markup is
-    made). A hole's value that is built here, or a function that answers markup, escapes too. *Research
-    report 120 §5: only a message built in the hole, or a function whose answer holds a cell, escaped,
-    so a handler `λ_ → if … then Push else Nop` that captured the model left it `own`.* A markup primitive of the vocabulary (`Html.map`) answers markup that holds each of its
-    arguments; the markup it is handed does not escape, and every other argument (`map`'s function)
-    does. **The markup the runtime renders holds none of its holes after the render.** This rests on
-    the platform rule of `boundary.md` §9.4.8 (the owner's decision, 2026-11-13): a runtime reads a
-    hole's value only while it renders the markup, and keeps no list from a hole to read after that.
-    The checker cannot see a runtime, so it trusts that rule, and each platform's fixture tests it.
-    The rule is used at one place: the entry (rule 13).
-13. **The entry** (`entryCall`, `freshOwn`, `paramOwn`, `handsOn`): the runtime holds the model and
-    the record's functions, and hands `update` the model and a message; a location of the model is
-    `update`'s own only where a positive fact names its one holder, the model, at every place the model
-    comes from. That place is the answer of each producer of the model (`init`, `update`, `settle`),
-    and a location is `own` (the largest solution, from `own` everywhere, taking away) only where
-    each source of it there is
+12. **Markup** (`evalInner .markup`, `formCalls`, `runtimeCall`, `call` of a markup primitive): the value
+    of markup is `unknown` over the values of its holes and over the arguments of a hole that calls a
+    top-level function (a helper the platform may call where it renders, `language.md` §11.6; a hole
+    of text is one too): the runtime reads them when it renders the markup, after the frame that made
+    it, so until then whoever holds the markup holds them, and a write of one of them before the
+    render is refused. A lowering may evaluate a hole's expression where it renders, from the values
+    the expression reads (the `dom` lowering's block of a root's inputs, `backend.md` §15.4), so the
+    markup holds **everything a hole's evaluation can read**: every local and capture it reads, and
+    every closure it makes, which holds what it captured (`closureOf`; #2505, research report 123).
+    **Every value at an item of markup that no row of the dispatch table names as an attribute** — an
+    event's handler or message, a component's prop, a spread of attributes — escapes, whatever
+    expression made it (`keptItems`): the runtime keeps it after the render, and calls or sends it
+    after `update` has run (two clicks in one task, an event that bubbles through two handlers;
+    `boundary.md` §9.4.8 counts each as escaped where the markup is made). A component's children are
+    a prop (`children`, `language.md` §11.8): everything their holes read escapes. A hole's value
+    that is built here, or a function that answers anything but markup, escapes too. **The runtime
+    calls the functions the markup gives it with items of the markup's own values** (`boundary.md`
+    §9.4.8, *The render*): a `For`'s row function and key function with each item of `each` (and a
+    row's position), a `Show`'s body and key function with the value in `when`. Each is **applied to
+    those items as at a call site** (`formCalls`, `runtimeCall`, rule 2): what its contract lets
+    escape escapes, what it hands a function is supplied, and a function with no contract is unknown
+    code, so the items and the function escape. The function is also in the default use (`mention`),
+    so one that writes its parameter is refused: the runtime can call it more than once with one
+    item. The other functions the runtime calls are handed nothing of the frame: an event's handler
+    gets the event, and `Html.map`'s function gets a message, which is an event's message or a
+    handler's answer and so holds only escaped cells and new ones. A markup primitive of the
+    vocabulary (`Html.map`) answers markup that holds each of its arguments; the markup it is handed
+    does not escape, and every other argument (`map`'s function) does. **The markup the runtime
+    renders holds none of its holes after the render.** This rests on the platform rule of
+    `boundary.md` §9.4.8 (the owner's decision, 2026-11-13): a runtime reads a hole's value only
+    while it renders the markup, and keeps no list from a hole to read after that. The checker cannot
+    see a runtime, so it trusts that rule, and each platform's fixture tests it. The rule is used at
+    one place: the entry (rule 13).
+
+    *The argument.* The runtime is a holder that the walk does not follow, and it does two things
+    with markup: it reads the values the markup holds while it renders, and it calls code the markup
+    gives it. The first is covered by the markup holding every value its holes can read until it is
+    rendered, and by the platform rule after that. The second is a call: the callee's contract says
+    what it keeps of its arguments, and the arguments are the items the runtime takes out of the
+    markup's values. So each such call is applied, and the theorem of §5 holds with the runtime's
+    calls as calls. *Research report 121 §4.3–§4.4, report 122 §3.3: the text counted what markup
+    holds and what escapes, and left out that the runtime calls rows, keys and `Show` bodies with
+    items; a row that put its item in an event's message, or a key function that put it in a `Ref`,
+    kept a list the entry called `own`. A closure made in a hole was not held, because its captures
+    were read through `capSlot`, not as locals.*
+13. **The entry** (`entryCall`, `fnMembers`, `Mod.entryShape`, `freshOwn`, `paramOwn`, `handsOn`): the
+    runtime holds the model and the record's functions, and calls each function of the record with
+    the model or with what it makes; a location of the model is `update`'s own only where a positive
+    fact names its one holder, the model, at every place the model comes from.
+
+    **Every function of the record is accounted for by a contract.** The value of a field is a known
+    function, or a `join` of known functions, each of which is applied as that field (`fnMembers`).
+    A field whose value has no known code — the answer of a call, a field of a top-level record,
+    `Maybe.withDefault`, a function value that no rule names — is the default: it can write nothing
+    (`flowTop` refuses that), and it can keep each thing the runtime hands it, so **no location of
+    the model is `own`**. So is a field the entry's type does not name, a record that is not written
+    at the call, and an entry with no producer that is handed no model (the runtime then makes the
+    first model). A constructor whose answer holds no cell is the one function value of no object,
+    and keeps nothing.
+
+    **Where each function has the model is read off the entry's declared type** (`Mod.entryShape`,
+    the `entry` parameter's record type in the platform's source), never guessed from locations. The
+    model is the type variable of `update`'s last parameter. A field whose answer type is that
+    variable answers the model; one whose answer is a tuple with that variable at item *k*
+    (`model × Cmd msg`) has the model at *k*; a parameter that is that variable is the model
+    parameter. A field that names the variable in any other way (inside a list, twice) has no fact,
+    and no location is `own`. A field whose answer has the model is a **producer** (`init`, `update`,
+    `settle`); every other function field is a **consumer** (`view`, `subscriptions`,
+    `onUrlRequest`, …).
+
+    A location is `own` (the largest solution, from `own` everywhere, taking away) only where each
+    source of it, at the model's place in the answer of each value of each producer, is
     - a cell that the producer made, whose site has no escape bit, is at no other location of the
       answer (another model location, a command, the rest of a pair) and is in no supply to a function
       (`freshOwn`, as rule 8); or
@@ -335,20 +382,28 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     Every other source has another holder or no fact, and is not `own`: a top-level value
     (`outside`), the answer of a function, a capture (the record holds it for as long as the program
     runs), the `Host`, and **the message**. A location answered through a wide location of the answer
-    has no fact of its own. The other functions of the record keep what they write, let escape, hand
-    to a function, or (except a `view`) answer; a location they keep is not `own`. A `view` (a
-    function of the record whose answer is the build's markup type, or a record or tuple with markup
-    in it, `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the answer
-    before it runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**: a
-    handler of the rendered markup keeps its message until the next render and can send it twice, a
-    message can hold a top-level value, and the runtime's commands, subscriptions and platform events
-    make messages that no rule of the checker follows; a `send` written in the program is checked
-    where it is written (`callParam`), but it is one source among these. The record's functions
-    escape; the program's value is `unknown` over the record. *Report 118 §4.1–§4.4: the text took a
-    new list of `init` as `own` without its escape bit, compared two locations of the answer only for
-    a parameter source of `update`, did not read the escape of a model location that `update`
-    answers, and made the message `own` where every model location was, an argument that covered the
-    model's cells only and missed top-level values and a message sent twice.*
+    has no fact of its own. The consumers keep what they write, let escape, hand to a function, or
+    (except a `view`) answer; a location they keep is not `own`. A `view` (a function of the record
+    whose answer is the build's markup type, or a record or tuple with markup in it,
+    `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the answer before it
+    runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**: a handler of
+    the rendered markup keeps its message until the next render and can send it twice, a message can
+    hold a top-level value, and the runtime's commands, subscriptions and platform events make
+    messages that no rule of the checker follows; a `send` written in the program is checked where it
+    is written (`callParam`), but it is one source among these. A function that is not a producer
+    handed the model and writes a parameter is refused: the runtime hands it a value it does not own.
+    The record's functions escape; the program's value is `unknown` over the record.
+
+    *The argument.* "No other holder" of a model location is a universal statement over every
+    function the runtime calls with the model and every function that makes it. It is derived only
+    from a contract of each, read at the place the declared type gives; a function with no contract,
+    or a place no type gives, leaves the statement without a ground, so it does not hold. *Report 118
+    §4.1–§4.4: the text took a new list of `init` as `own` without its escape bit, compared two
+    locations of the answer only for a parameter source of `update`, did not read the escape of a
+    model location that `update` answers, and made the message `own` where every model location was.
+    Research report 121 §4.1–§4.2 and report 122 §3.1–§3.2, §3.4: a field with no known code was
+    dropped (neither producer nor consumer), and whether an answer was the model or a pair was guessed
+    from its locations, so a tuple model was read at the wrong place.*
 
 ## 7. The module
 

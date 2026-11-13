@@ -420,6 +420,90 @@ pub const Mod = struct {
         return m.in.birs[t[0]].decls[t[1]];
     }
 
+    /// Where a function of an entry's record has the model, read off the
+    /// entry's declared type (kernel §6.13): the model is the type variable
+    /// of `update`'s last parameter.
+    pub const EntryField = struct {
+        name: InternPool.Symbol,
+        /// The field's declared type is a function, of this many parameters.
+        is_fn: bool,
+        arity: u32 = 0,
+        /// The parameter that is the model, or `none`.
+        model_param: u32 = none,
+        /// Where the answer has the model: `none` (it has none), `whole` (the
+        /// answer is the model), `index` (the item `index` of a tuple).
+        answer: enum { none, whole, index } = .none,
+        index: u32 = 0,
+        /// The model is in a parameter or the answer in another shape: no
+        /// fact says where, and the entry has none of its lists `own`.
+        unknown: bool = false,
+    };
+
+    /// The fields of the record that the entry `t` takes (its first
+    /// parameter), or null where the declared type is not one that this
+    /// reads (no fact: the caller takes no location as `own`).
+    pub fn entryShape(m: *Mod, t: [2]u32) Allocator.Error!?[]const EntryField {
+        const d = m.declOf(t) orelse return null;
+        const bir = m.in.birs[t[0]];
+        const ann = d.annotation.unwrap() orelse return null;
+        if (bir.instTag(ann) != .type_fn) return null;
+        const ps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Inst.Index);
+        if (ps.len == 0 or bir.instTag(ps[0]) != .type_record) return null;
+        const fields = bir.extraSlice(Bir.inlineRange(bir.instData(ps[0])), Bir.Field);
+        const interner = m.in.interner orelse return null;
+        const update_sym = interner.find("update") orelse return null;
+        // The model: the type variable of `update`'s last parameter.
+        var model: ?InternPool.Symbol = null;
+        for (fields) |fd| if (bir.symbol(fd.name) == update_sym and bir.instTag(fd.value) == .type_fn) {
+            const up = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(fd.value).lhs)), Inst.Index);
+            if (up.len != 0 and bir.instTag(up[up.len - 1]) == .type_var) model = bir.symbol(@fromBackingInt(bir.instData(up[up.len - 1]).lhs));
+        };
+        const mv = model orelse return null;
+        const out = try m.walk_arena.allocator().alloc(EntryField, fields.len);
+        for (fields, out) |fd, *o| {
+            o.* = .{ .name = bir.symbol(fd.name), .is_fn = bir.instTag(fd.value) == .type_fn };
+            if (!o.is_fn) {
+                if (try m.mentionsVar(bir, fd.value, mv)) o.unknown = true;
+                continue;
+            }
+            const fps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(fd.value).lhs)), Inst.Index);
+            o.arity = @intCast(fps.len);
+            for (fps, 0..) |p, k| {
+                if (isVar(bir, p, mv)) {
+                    if (o.model_param != none) o.unknown = true;
+                    o.model_param = @intCast(k);
+                } else if (try m.mentionsVar(bir, p, mv)) o.unknown = true;
+            }
+            const r: Inst.Index = @fromBackingInt(bir.instData(fd.value).rhs);
+            if (isVar(bir, r, mv)) {
+                o.answer = .whole;
+            } else if (bir.instTag(r) == .type_tuple) {
+                for (bir.extraSlice(Bir.inlineRange(bir.instData(r)), Inst.Index), 0..) |item, k| {
+                    if (isVar(bir, item, mv)) {
+                        if (o.answer != .none) o.unknown = true;
+                        o.answer = .index;
+                        o.index = @intCast(k);
+                    } else if (try m.mentionsVar(bir, item, mv)) o.unknown = true;
+                }
+            } else if (try m.mentionsVar(bir, r, mv)) o.unknown = true;
+        }
+        return out;
+    }
+
+    fn isVar(bir: *const Bir, t: Inst.Index, v: InternPool.Symbol) bool {
+        return bir.instTag(t) == .type_var and bir.symbol(@fromBackingInt(bir.instData(t).lhs)) == v;
+    }
+
+    /// Whether the type written at `t` names the type variable `v`.
+    fn mentionsVar(m: *Mod, bir: *const Bir, t: Inst.Index, v: InternPool.Symbol) Allocator.Error!bool {
+        if (isVar(bir, t, v)) return true;
+        var ops: std.ArrayList(Inst.Index) = .empty;
+        defer ops.deinit(m.gpa);
+        try bir.operands(m.gpa, t, &ops);
+        for (ops.items) |o| if (try m.mentionsVar(bir, o, v)) return true;
+        return false;
+    }
+
     pub fn isWorded(m: *const Mod, t: [2]u32) bool {
         const d = m.declOf(t) orelse return false;
         return m.in.birs[t[0]].ownSlotsV2(d).len != 0;

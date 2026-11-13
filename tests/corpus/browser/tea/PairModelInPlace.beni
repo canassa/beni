@@ -1,0 +1,64 @@
+-- The model is a pair of lists, and `update` answers `model × Cmd msg`:
+-- where the answer has the model is read off `Tea.element`'s declared
+-- type (ownership-v3-kernel.md §6.13). `view` is one of two functions, and
+-- each is judged as a function of the record. Its rows and its key
+-- function are called by the runtime with each item, and keep none of it
+-- (§6.12). `update` pushes onto the first list in place
+-- (`--ownership=v3`), and each render shows both lists as they are then.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import List
+import Sub
+import Tea
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    List Int × List Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg ( items, other ) =
+    case msg of
+        Add →
+            ( ( List.push items (List.length items + 1), other ), Cmd.none )
+
+
+row : Int → Html Msg
+row x = <li>{x}</li>
+
+
+viewRows : Model → Html Msg
+viewRows ( items, other ) =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <ul id="items">
+            <For each={items} keyed={λx → String.fromInt x}>{row}</For>
+        </ul>
+        <p id="other">{List.length other}</p>
+    </main>
+
+
+viewCount : Model → Html Msg
+viewCount ( items, _ ) =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p id="count">{List.length items}</p>
+    </main>
+
+
+wide : Bool
+wide = True
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( ( [ 1, 2 ], [ 7 ] ), Cmd.none )
+        , update = update
+        , view = if wide then viewRows else viewCount
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,2 @@
+# v3 refuses the write below: the row kept its item in a `Ref`, so an edit in place would change what the program prints.
+25:14 list_still_used call
