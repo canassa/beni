@@ -638,29 +638,39 @@ pub const Table = struct {
 
     // ---- the call map ----------------------------------------------------------
 
-    /// Whether the caller's cycle whose deep level starts at location `entry`
-    /// of layout `of` passes through a place where the signature's layout
-    /// `sig` has a wide entry at or below `entry`: the caller's place at that
-    /// entry's path is in the same component as its place at `entry`. With
-    /// no place to read, it is (the pessimistic side).
-    fn cycleWider(t: *Table, sig: u32, of: u32, entry: u32) bool {
+    /// Whether the caller's location at entry `ei` of layout `of`, in the deep
+    /// level that starts at location `entry`, is in a cycle wider than the
+    /// signature's: a wide entry of `sig` at or below `entry` is, in the
+    /// caller's type, at a place of a cycle on the caller's path to the
+    /// location — the outer cycle or one nested in its deep level. Read by
+    /// places, never by label paths. With no place to read, or a step the
+    /// caller's type has no child for (a row's, which stands for fields), it
+    /// is (the pessimistic side).
+    fn cycleWider(t: *Table, sig: u32, of: u32, ei: usize, entry: u32) bool {
         const root = t.layout_place.items[of] orelse return true;
+        const oreps = t.reps.items[of];
+        if (ei >= oreps.len) return true;
+        // The components of the cycles on the caller's path to the location.
+        var comps: [16]u32 = undefined;
+        var n: usize = 0;
+        var cur = root;
+        for (0..oreps[ei].len + 1) |k| {
+            if (k > 0) cur = t.places.child(cur, Step.fromWord(oreps[ei][k - 1])) orelse return true;
+            if (!t.places.cyclic(cur)) continue;
+            const c = t.places.sccOf(cur);
+            if (std.mem.indexOfScalar(u32, comps[0..n], c) != null) continue;
+            if (n == comps.len) return true;
+            comps[n] = c;
+            n += 1;
+        }
         const se = t.layoutEntries(sig);
         const reps = t.reps.items[sig];
-        const de = t.loc_depth.items[entry];
         for (se, 0..) |s, i| {
             if (!s.kind.wide() or !t.isPrefix(entry, s.loc)) continue;
             if (i >= reps.len) return true;
-            var cur = root;
-            var at_entry: ?PlaceId = if (de == 0) root else null;
-            for (reps[i], 0..) |w, k| {
-                // A step the caller's type has no child for (a row's, which
-                // stands for fields): no fact, so the cycle may pass there.
-                cur = t.places.child(cur, Step.fromWord(w)) orelse return true;
-                if (k + 1 == de) at_entry = cur;
-            }
-            const pe = at_entry orelse return true;
-            if (t.places.sameComponent(cur, pe)) return true;
+            cur = root;
+            for (reps[i]) |w| cur = t.places.child(cur, Step.fromWord(w)) orelse return true;
+            if (t.places.cyclic(cur) and std.mem.indexOfScalar(u32, comps[0..n], t.places.sccOf(cur)) != null) return true;
         }
         return false;
     }
@@ -682,7 +692,7 @@ pub const Table = struct {
         const oe = t.layoutEntries(of);
         const m = try t.arena.alloc(u32, oe.len);
         const row: Label = .{ .kind = .row, .payload = 0, .cyc = false, .head = 0 };
-        for (m, oe) |*x, e| {
+        for (m, oe, 0..) |*x, e, ei| {
             x.* = none;
             var a = e.loc;
             // A location of a deep level names one cell of each member of the
@@ -693,7 +703,7 @@ pub const Table = struct {
             // wide entry of the signature. Then one label path names two sets
             // of cells, and no entry covers it (research report 125 §6).
             const deep = t.deepEntry(e.loc);
-            const wider = deep != none and t.cycleWider(sig, of, deep);
+            const wider = deep != none and t.cycleWider(sig, of, ei, deep);
             // Every match the walk can take — the location itself, a wide
             // entry above it, a row that holds its field — is one test: when
             // the caller's cycle is wider, a signature entry inside the deep

@@ -123,7 +123,10 @@ location and that wide one. No entry covers it, so the map answers `Loc.all` (`L
 caller's place at a wide entry's path inside the cycle is in the caller's cycle). The same holds for a
 caller location below a wide entry of the signature's deep level, and a step of that path that the
 caller's place graph cannot follow (a row's) counts as one the cycle passes. Every match the map can
-take there is one test: the location itself, a wide entry above it, or a row that holds its field.
+take there is one test: the location itself, a wide entry above it, or a row that holds its field. The
+test reads places, not label paths: a wide entry of the signature inside the deep level, followed in the
+caller's place graph, is at a place of a cycle on the caller's path to the location — the outer one or
+one nested in its deep level.
 
 *Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held

@@ -5306,6 +5306,8 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   the caller's place graph cannot follow.
 // - `CycleRowField` (the review's third pass): a field of the caller's deep
 //   level that the signature holds in a row inside its own deep level.
+// - `CycleNested` (the review's fourth pass): the wider cycle is nested in
+//   the deep level of another, which alone was tested.
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
@@ -5689,6 +5691,57 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    g = grow t
         \\    Debug.log (Debug.toString (Ref.get r)) ⊤
         \\    Debug.log (Debug.toString g) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleNested", .why = "call Main.grow t#O.1⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type Outer a
+        \\    = O (List (Outer a)) (Tree2 a)
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepNested : Ref (List a), Outer a → ⊤
+        \\keepNested r t =
+        \\    case t of
+        \\        O [ O _ (Node a _) ] _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\        _ →
+        \\            ⊤
+        \\
+        \\
+        \\grow : Outer T → List (Tree2 T)
+        \\grow t =
+        \\    case t of
+        \\        O [ O _ (Node (T [ Node _ kids ]) _) ] _ →
+        \\            List.push kids (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    inner = T [ Node (T []) [ Node (T []) [] ] ]
+        \\    t = O [ O [] (Node inner []) ] (Node (T []) [])
+        \\    r = Ref.make []
+        \\    keepNested r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
         \\    Node.done
         \\
         },
