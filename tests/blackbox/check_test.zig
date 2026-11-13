@@ -5310,8 +5310,9 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   the deep level of another, which alone was tested.
 // - `CycleMerged` (the review's fifth pass): one deep location of the
 //   caller stands for two places, two cycles, and a sample path saw one.
-//   The map now pairs a deep location only where the signature has no type
-//   variable or row in that region (`Loc.cycleWider`).
+//   The map now pairs a deep location only where no type argument at a
+//   variable or row of the signature in that region holds an object
+//   (`Loc.cycleWider`).
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
