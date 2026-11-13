@@ -143,6 +143,8 @@ pub const Table = struct {
     layouts: std.ArrayList([]const Entry) = .empty,
     /// Per layout of a place, per entry: the steps of one path from the place to a cell there.
     reps: std.ArrayList([]const []const u32) = .empty,
+    /// Per layout: the place it is the layout of, or null (the empty and the over layout).
+    layout_place: std.ArrayList(?PlaceId) = .empty,
     /// Per place: its layout, or `none` while not built.
     layout_of: std.ArrayList(u32) = .empty,
 
@@ -185,6 +187,7 @@ pub const Table = struct {
         t.loc_index.deinit(gpa);
         t.layouts.deinit(gpa);
         t.reps.deinit(gpa);
+        t.layout_place.deinit(gpa);
         t.layout_of.deinit(gpa);
         t.projs.deinit(gpa);
         t.proj_index.deinit(gpa);
@@ -255,6 +258,7 @@ pub const Table = struct {
         const id: u32 = @intCast(t.layouts.items.len);
         try t.layouts.append(t.gpa, try t.arena.dupe(Entry, es));
         try t.reps.append(t.gpa, &.{});
+        try t.layout_place.append(t.gpa, null);
         return id;
     }
 
@@ -350,6 +354,7 @@ pub const Table = struct {
             const reps = try t.arena.alloc([]const u32, b.out.items.len);
             for (reps, b.rep_at.items) |*r, at| r.* = try t.arena.dupe(u32, b.rep_steps.items[at[0]..][0..at[1]]);
             t.reps.items[id] = reps;
+            t.layout_place.items[id] = place;
         }
         t.layout_of.items[pi] = id;
         return id;
@@ -633,6 +638,37 @@ pub const Table = struct {
 
     // ---- the call map ----------------------------------------------------------
 
+    /// Whether the caller's cycle whose deep level starts at location `entry`
+    /// of layout `of` passes through a place where the signature's layout
+    /// `sig` has a wide entry at or below `entry`: the caller's place at that
+    /// entry's path is in the same component as its place at `entry`. With
+    /// no place to read, it is (the pessimistic side).
+    fn cycleWider(t: *Table, sig: u32, of: u32, entry: u32) bool {
+        const root = t.layout_place.items[of] orelse return true;
+        const se = t.layoutEntries(sig);
+        const reps = t.reps.items[sig];
+        const de = t.loc_depth.items[entry];
+        for (se, 0..) |s, i| {
+            if (!s.kind.wide() or !t.isPrefix(entry, s.loc)) continue;
+            if (i >= reps.len) return true;
+            var cur = root;
+            var at_entry: ?PlaceId = if (de == 0) root else null;
+            var reached = true;
+            for (reps[i], 0..) |w, k| {
+                cur = t.places.child(cur, Step.fromWord(w)) orelse {
+                    reached = false;
+                    break;
+                };
+                if (k + 1 == de) at_entry = cur;
+            }
+            // The caller's type has no place there: no cell of its cycle.
+            if (!reached) continue;
+            const pe = at_entry orelse return true;
+            if (t.places.sameComponent(cur, pe)) return true;
+        }
+        return false;
+    }
+
     /// Per entry of layout `of` (a caller's type), the entry of layout `sig`
     /// (a signature's type) that covers it: the same location, or a wide
     /// location (a type variable, a row) above it.
@@ -653,8 +689,22 @@ pub const Table = struct {
         for (m, oe) |*x, e| {
             x.* = none;
             var a = e.loc;
+            // A location of a deep level names one cell of each member of the
+            // caller's cycle. Its label path in the signature names the
+            // signature's cycle, which can be smaller: a type argument that
+            // names the container again (`Tree2 T`, where `T` holds a
+            // `List (Tree2 T)`) puts places of the caller's cycle under a
+            // wide entry of the signature. Then one label path names two sets
+            // of cells, and no entry covers it (research report 125 §6).
+            const deep = t.deepEntry(e.loc);
+            const wider = deep != none and t.cycleWider(sig, of, deep);
+            var two_sets = false;
             while (true) {
                 const i = indexOfLoc(se, a);
+                if (i != none and a == e.loc and wider) {
+                    two_sets = true;
+                    break;
+                }
                 if (i != none and (a == e.loc or se[i].kind.wide())) {
                     x.* = i;
                     break;
@@ -673,7 +723,7 @@ pub const Table = struct {
             if (x.* != none or se.len == 0) continue;
             x.* = all;
             const entry = t.deepEntry(e.loc);
-            if (entry == none) continue;
+            if (entry == none or two_sets) continue;
             var one: u32 = none;
             var count: u32 = 0;
             for (se, 0..) |s, i| if (s.kind.wide() and t.isPrefix(entry, s.loc)) {

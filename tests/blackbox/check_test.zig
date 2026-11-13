@@ -5292,6 +5292,14 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   composition read as "no object" by label path (`answersAt`, `anyMeets`).
 // - `SupplyRow`: the same function keeps its parameter in a fiber: what the
 //   holder hands its row is the model's `items` (`slotsOf`).
+// - `PartialRewrite`: the same `body` as a partial application, `body 1 _`,
+//   kept in a `Ref`: a lambda whose own parameter is `body`'s callback.
+// - `CycleAnswer`, `CycleEscape` (found by this round's review): a type
+//   argument names the container again (`Tree2 T`, where `T` holds a
+//   `List (Tree2 T)`), so the caller's deep level holds lists that the
+//   signature `Tree2 a` has under `a`. The call map paired the two deep
+//   locations by label path; a function's answer or escape of `a` missed
+//   the caller's deep lists (`Loc.cover`, `cycleWider`).
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
@@ -5301,7 +5309,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
     const a = w.arena.allocator();
     const Case = struct { name: []const u8, why: []const u8, text: []const u8, write: []const u8 };
     const cases = [_]Case{
-        .{ .name = "HolderRewrite", .why = "value <call Main.runWith> is refused: supply: the function changes a value", .write = "ys = List.push xs 2", .text =
+        .{ .name = "HolderRewrite", .why = "value <call Main.runWith> is refused: supply: the function changes a value", .write = "List.push xs", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5328,7 +5336,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "HolderAnswer", .why = "List.push ys is refused: escaped", .write = "zs = List.push ys 2", .text =
+        .{ .name = "HolderAnswer", .why = "List.push ys is refused: escaped", .write = "List.push ys", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5356,7 +5364,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "AnswerRow", .why = "List.push m0.items is refused: later-use", .write = "ys = List.push m0.items 2", .text =
+        .{ .name = "AnswerRow", .why = "List.push m0.items is refused: later-use", .write = "List.push m0.items", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5385,7 +5393,32 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "EvidenceRewrite", .why = "value <call Main.walk> is refused: call: a function that changes a value", .write = "ys = List.push xs 2", .text =
+        .{ .name = "PartialRewrite", .why = "value <lambda> is refused: supply: the function changes a value", .write = "List.push xs", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\body : Int, (List Int → ⊤) → ⊤
+        \\body n send =
+        \\    xs = [ n ]
+        \\    send xs
+        \\    ys = List.push xs 2
+        \\    send ys
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    cell = Ref.make (body 1 _)
+        \\    g = Ref.get cell
+        \\    g λl → Ref.set r (List.concat [ Ref.get r, [ l ] ])
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "EvidenceRewrite", .why = "value <call Main.walk> is refused: call: a function that changes a value", .write = "List.push xs", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5416,7 +5449,107 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "SupplyRow", .why = "List.push m0.items is refused: escaped", .write = "ys = List.push m0.items 2", .text =
+        .{ .name = "CycleAnswer", .why = "call Main.grow t⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
+        \\import List
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\getA : Tree2 a → a
+        \\getA t =
+        \\    case t of
+        \\        Node a _ →
+        \\            a
+        \\
+        \\
+        \\grow : Tree2 T → List (Tree2 T)
+        \\grow t =
+        \\    case getA t of
+        \\        T [ Node _ kids ] →
+        \\            List.push kids (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\kidsLen : Tree2 T → Int
+        \\kidsLen x =
+        \\    case x of
+        \\        Node _ k →
+        \\            List.length k
+        \\
+        \\
+        \\otherKids : Tree2 T → Int
+        \\otherKids t =
+        \\    case t of
+        \\        Node _ l →
+        \\            List.foldl l 0 λx acc → acc + kidsLen x
+        \\
+        \\
+        \\use : Tree2 T → String
+        \\use t =
+        \\    g = grow t
+        \\    "${String.fromInt (List.length g)} ${String.fromInt (otherKids t)}"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    shared = [ Node (T []) [] ]
+        \\    inner = Node (T []) shared
+        \\    Node.print (use (Node (T [ inner ]) [ inner ]))
+        \\
+        },
+        .{ .name = "CycleEscape", .why = "call Main.grow t⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepA : Ref (List a), Tree2 a → ⊤
+        \\keepA r t =
+        \\    case t of
+        \\        Node a _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree2 T → List (Tree2 T)
+        \\grow t =
+        \\    case t of
+        \\        Node (T [ Node _ kids ]) _ →
+        \\            List.push kids (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    t = Node (T [ Node (T []) [ Node (T []) [] ] ]) []
+        \\    r = Ref.make []
+        \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "SupplyRow", .why = "List.push m0.items is refused: escaped", .write = "List.push m0.items", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5460,10 +5593,10 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
             const file = try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir});
             var text = c.text;
             if (dead) {
+                // `List.push x` becomes `List.push (List.copy x)`.
                 const at = std.mem.indexOf(u8, text, c.write).?;
-                const eq = std.mem.indexOf(u8, c.write, "List.push ").? + "List.push ".len;
-                const arg_end = std.mem.lastIndexOfScalar(u8, c.write, ' ').?;
-                text = try std.fmt.allocPrint(a, "{s}{s}(List.copy {s}){s}{s}", .{ text[0..at], c.write[0..eq], c.write[eq..arg_end], c.write[arg_end..], text[at + c.write.len ..] });
+                const arg = c.write["List.push ".len..];
+                text = try std.fmt.allocPrint(a, "{s}List.push (List.copy {s}){s}", .{ text[0..at], arg, text[at + c.write.len ..] });
             }
             try w.write(file, text);
             const root = try std.fs.path.join(a, &.{ try w.projectPath(), dir });

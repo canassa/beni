@@ -113,11 +113,21 @@ cell. The map, read in both directions, does: where it maps an entry to an entry
 is no narrower, that entry holds every cell of it, and since the entries of one layout name apart
 positions, the answer decides whether the two meet. Where neither direction decides, the two meet. Label
 paths are compared only inside one layout, or to narrow a wide entry to a part that the type names at
-exactly that path, with all of the entry as the fallback. *Research report 124 F1: the entry compared a
+exactly that path, with all of the entry as the fallback.
+
+The map itself pairs a location of a deep level by its label path only where the caller's cycle is the
+signature's. A type argument can name the container again (`Tree2 T`, where `T` holds a
+`List (Tree2 T)`): the caller's cycle then passes through a place where the signature has a wide entry,
+and the caller's deep location holds cells that the signature names at two entries, its own deep
+location and that wide one. No entry covers it, so the map answers `Loc.all` (`Loc.cycleWider`: the
+caller's place at a wide entry's path inside the cycle is in the caller's cycle).
+
+*Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held
 nothing of the model; report 125 found the same in the composition of answers and of supplies
 (`answersAt`, `slotsOf`, and the label tests `Loc.noObject` and `Loc.belowWide`, now deleted) and in a
-constructor's row (`ctorValue`).*
+constructor's row (`ctorValue`); its review found the call map pairing two deep levels of different
+cycles (`Loc.cover`).*
 
 ### 4.2 A fresh cell has a name
 
