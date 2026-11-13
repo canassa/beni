@@ -398,7 +398,7 @@ workers and prerender hydration were not tested.
 
 §4 named two missing rows as the facts that would win back 7 of the lost writes: a word on `Js.get` (6, in
 `Tea`) and words on `Dict.focus` (1, `FormValidation 276:17`). Each was written, measured and refused on
-its argument. **None of the 7 is won back; real writes stay at 279 of 308**, every line as before. The work
+its argument. **None of the 7 is won back; real writes do not move**, every line as before (279 of 308 on `ca2fc63410`, 292 on `c9b784cef3`, which has §9's markup rule). The work
 found three soundness holes instead, two of them fixed here.
 
 ### 10.1 `Js.get` has no true narrower row
@@ -489,7 +489,7 @@ ReleaseSafe compilers, `ca2fc63410` (before) and this work (after), on the same 
 
 Every program has the same verdict and position before and after: the generators write no platform code,
 and both fixes are about JavaScript. The sanitiser corpus is the same before and after (same 97, refused
-250, 0 traps). Real writes: 279 of 308 before and after, every line the same. One fresh Opus reviewer was
+250, 0 traps). Real writes: 279 of 308 before and after on `ca2fc63410`, and 292 before and after once rebased onto `c9b784cef3` (§9), every line the same; the sweeps on the rebased head match the table program for program. One fresh Opus reviewer was
 given the diff, the code of `Js.get`, `Dict.focus` and `Hosted.compare`, and the two rows; its findings are
 §10.1 (two traps of the proposed `Js.get` row), §10.3 item 2 (a trap of a committed row) and §10.2 item 3.
 
