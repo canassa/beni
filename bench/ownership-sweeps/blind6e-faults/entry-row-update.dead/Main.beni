@@ -1,0 +1,35 @@
+import Browser exposing (Host)
+import Html exposing (Html)
+import List
+import Task
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    items : List Int
+    n : Int
+
+
+init : Host Msg → Model
+init _ = { items = [ 1 ], n = 1 }
+
+
+update : Host Msg, Msg, { r | n : Int } → { r | n : Int }
+update _ _ m =
+    _ = Task.soon λ⊤ → Debug.log "soon" ⊤
+    { m | n = m.n + 1 }
+
+
+settle : Host Msg, Model → Model
+settle _ m = { m | items = List.push m.items m.n }
+
+
+view : Model → Html Msg
+view model = <button id="add" onClick={λ_ → Add}>{List.length model.items}</button>
+
+
+main : Browser.Program
+main = Browser.hosted { init = init, update = update, settle = settle, view = view }
