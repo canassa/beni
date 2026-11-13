@@ -4628,10 +4628,10 @@ test "ownership v3: a chain of writes and a type of repeated halves finish" {
     try testing.expect(std.mem.indexOf(u8, chain.stdout, "List.push v39: accepted call") != null);
     const dag = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "bench/ownership-sweeps/blind4b-faults/dag-type.hang/Main.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = quick });
     try testing.expectEqual(@as(u8, 0), dag.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dag.stdout, "a type has more than 16384 locations") != null);
+    try testing.expect(std.mem.indexOf(u8, dag.stdout, "a type has more than 4096 locations") != null);
     const corpus = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "tests/corpus/run/EvidenceDagBuildDepth32.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = quick });
     try testing.expectEqual(@as(u8, 1), corpus.exit_code);
-    try testing.expect(std.mem.indexOf(u8, corpus.stderr, "a type has more than 16384 locations") != null);
+    try testing.expect(std.mem.indexOf(u8, corpus.stderr, "a type has more than 4096 locations") != null);
 }
 
 // The siblings of report 118's entry faults that the sibling audit of research
@@ -4782,11 +4782,131 @@ test "ownership v3: the entry's siblings and markup's inputs are refused" {
         \\    xs = List.repeat n 1
         \\    m = <p id="a">{List.sum xs}</p>
         \\    ys = List.push xs 9
-        \\    <div>{m}<p id="b">{List.length ys}</p></div>
+        \\    <div><button id="add" onClick={1}>add</button>{m}<p id="b">{List.length ys}</p></div>
         \\
         \\
         \\main : Browser.Program
-        \\main = Browser.program { init = λ⊤ → 3, update = λ_ n → n, view = helper }
+        \\main = Browser.program { init = λ⊤ → 3, update = λd n → n + d, view = helper }
+        },
+    };
+    for (cases) |c| {
+        const file = try std.fmt.allocPrint(a, "{s}/Main.beni", .{c.name});
+        try w.write(file, c.text);
+        const main = try std.fs.path.join(a, &.{ try w.projectPath(), file });
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", c.platform, main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, c.line) == null) {
+            std.debug.print("{s}: missing line {s}; exit {d}:\n{s}{s}\n", .{ c.name, c.line, r.exit_code, r.stdout, r.stderr });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// The two faults that the adversarial review of research report 120 proved
+// (§5), each accepted and a trap under `--sanitize-lists` before:
+//
+// - `Burst`: a handler closure in a markup hole captures the model and is
+//   called after `update` ran (three clicks in one task). Every value at an
+//   item that no row names as an attribute is kept by the runtime past the
+//   render, so it escapes (kernel §6.12).
+// - `Listen`: `Hosted.tap` builds `Js.array [ … ]`, a literal whose place
+//   is a type variable with no element step, so the subscription body's
+//   captures were dropped. A literal whose place names no part for its
+//   items is `unknown` over them (kernel §3.2, §6.4).
+test "ownership v3: the faults of the review of report 120 are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, platform: []const u8, text: []const u8, line: []const u8 };
+    const cases = [_]Case{
+        .{ .name = "Burst", .platform = "--platform=browser", .line = "entry Main.update model: rejected", .text =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\
+        \\
+        \\type Msg
+        \\    = Push
+        \\    | Nop
+        \\
+        \\
+        \\update : Msg, List Int → List Int
+        \\update msg items =
+        \\    case msg of
+        \\        Push →
+        \\            List.push items 1
+        \\
+        \\        Nop →
+        \\            items
+        \\
+        \\
+        \\view : List Int → Html Msg
+        \\view items =
+        \\    <main>
+        \\        <button id="b" onClick={λ_ → if List.length items < 3 then Push else Nop}>b</button>
+        \\        <p id="out">{String.fromInt (List.length items)}</p>
+        \\    </main>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → [ 5 ], update = update, view = view }
+        },
+        .{ .name = "Listen", .platform = "--platform=browser-tea", .line = "entry Main.update model.items: rejected", .text =
+        \\import Browser
+        \\import Cmd exposing (Cmd)
+        \\import Html exposing (Html)
+        \\import List
+        \\import Sub exposing (Sub)
+        \\import Tea
+        \\import Time
+        \\
+        \\
+        \\type Msg
+        \\    = Push
+        \\    | Seen Int
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    seen : Int
+        \\
+        \\
+        \\update : Msg, Model → Model × Cmd Msg
+        \\update msg m =
+        \\    case msg of
+        \\        Push →
+        \\            ( { m | items = List.push m.items 1 }, Cmd.none )
+        \\
+        \\        Seen n →
+        \\            ( { m | seen = n }, Cmd.none )
+        \\
+        \\
+        \\subscriptions : Model → Sub Msg
+        \\subscriptions m =
+        \\    Sub.listen "k" (λsend → body send m.items) Seen
+        \\
+        \\
+        \\body : Browser.Send Int, List Int → ⊤
+        \\body send xs =
+        \\    Time.sleep (Time.millis 10)
+        \\    send (List.length xs)
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view m =
+        \\    <main>
+        \\        <p id="out">{String.fromInt m.seen}</p>
+        \\        <button id="push" onClick={Push}>push</button>
+        \\    </main>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main =
+        \\    Tea.element
+        \\        { init = λ⊤ → ( { items = [ 5 ], seen = 0 }, Cmd.none )
+        \\        , update = update
+        \\        , view = view
+        \\        , subscriptions = subscriptions
+        \\        }
         },
     };
     for (cases) |c| {

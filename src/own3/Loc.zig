@@ -47,7 +47,7 @@ pub const all: u32 = std.math.maxInt(u32) - 1;
 /// place graph is small. Past the limit the layout is `Table.over_layout`, the
 /// module authorises no write and publishes no contract, and its report has an
 /// `ownership_limit` line: a loud refusal, never a silent cut.
-pub const max_layout_entries: usize = 1 << 14;
+pub const max_layout_entries: usize = 1 << 12;
 
 /// Whether cover value `c` says that signature entry `se` covers the entry.
 pub fn hits(c: u32, se: u32) bool {
