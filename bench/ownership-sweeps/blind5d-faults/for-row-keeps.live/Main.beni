@@ -1,0 +1,25 @@
+-- Report 122, fault 3. A For row function keeps its item; nothing hands the items of each to it (kernel 6.12).
+-- live: v3 accepts it and the in-place build reads a stale list. It must be refused.
+
+import Html exposing (Html)
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Ssr
+
+
+keep : Ref (List Int), List Int → Html msg
+keep seen r =
+    Ref.set seen r
+    <li>{List.length r}</li>
+
+
+main : Program
+main =
+    rows = [ List.copy [ 1 ], List.copy [ 2 ] ]
+    seen = Ref.make []
+    list = <ul><For each={rows} keyed={False}>{λr → keep seen r}</For></ul>
+    page = Ssr.render list
+    edited = List.update rows 1 λr → List.push r 9
+    Node.printLines
+        [ page, String.fromInt (List.length (Ref.get seen)), String.fromInt (List.length edited) ]

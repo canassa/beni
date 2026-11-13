@@ -1,0 +1,3 @@
+# Pick the first row, then edit it.
+click .row
+click #edit

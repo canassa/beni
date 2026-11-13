@@ -1,0 +1,50 @@
+-- Report 122, fault 2. settle is a join, so the entry has no code for it and skips it as a producer (kernel 6.13).
+-- dead: the safe twin, with a copy where the live one keeps the list.
+
+import Browser exposing (Host)
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+    | Mark
+
+
+type alias Model =
+    items : List Int
+    saved : List Int
+    mark : Bool
+
+
+update : Host Msg, Msg, Model → Model
+update _ msg model =
+    case msg of
+        Add →
+            { model | items = List.push model.items 3 }
+
+        Mark →
+            { model | mark = True }
+
+
+settle : Host Msg, Model → Model
+settle _ model =
+    if model.mark then { model | saved = List.copy model.items, mark = False } else model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="mark" onClick={Mark}>mark</button>
+        <p>{List.length model.saved}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → { items = List.copy [ 1, 2 ], saved = [], mark = False }
+        , update = update
+        , settle = if True then settle else settle
+        , view = view
+        }

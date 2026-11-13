@@ -1,0 +1,45 @@
+-- Report 122, fault 4. The model is a pair and update answers (model, Cmd): the entry reads the wrong place (kernel 6.13).
+-- dead: the safe twin, with a copy where the live one keeps the list.
+
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Add
+    | Snap
+
+
+type alias Model =
+    List Int × List Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg ( items, saved ) =
+    case msg of
+        Add →
+            ( ( List.push items 3, saved ), Cmd.none )
+
+        Snap →
+            ( ( items, List.copy items ), Cmd.none )
+
+
+view : Model → Html Msg
+view ( _, saved ) =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="snap" onClick={Snap}>snap</button>
+        <p>{List.length saved}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( ( List.copy [ 1, 2 ], [] ), Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
