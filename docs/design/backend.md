@@ -11932,6 +11932,11 @@ patches are written as statements, because `JsIr` has no assignment expression (
 shape and their inputs (Â§15.5), `Show` (Â§15.5), the class and style lists (Â§15.3, Â§15.6) and decoded
 text (Â§15.3, Â§15.6) are compiled; and the differential oracle has a harness (Â§15.10).
 
+*Amended 2026-11-13* (the owner's decision): every runtime below reads a hole's value only while it
+renders the markup that holds it, and keeps no list from a hole to read after that render
+([`boundary.md`](boundary.md) §9.4.8, which says what a runtime may keep and how each platform is
+tested). The ownership checker trusts that rule where a `view` hands its markup to the runtime.
+
 ### 15.1 What the compiler emits around a lowering
 
 - **Where.** In `Emit`, per module, inside `Lower`: a surviving declaration is lowered as today, and
