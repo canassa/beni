@@ -6000,3 +6000,103 @@ test "ownership v3: walks that reach one function or value by many paths end" {
     }
     if (bad) return error.TestUnexpectedVerdict;
 }
+
+// Research report 128's fault and slow checks, and the siblings that
+// research report 129 found. Each check ends in well under a second
+// (kernel §8, one step budget for each declaration):
+//
+// - `schema-via*`, `via-*`: a function named in a `schema` declaration's
+//   `via` is called by the schema's compiled print worker with a value the
+//   program still holds. No walk read a schema declaration, so a write of
+//   the function's parameter was accepted. A `via` conversion is now a value
+//   in the default location (kernel §6.14): a function in it that writes
+//   its parameter is refused, at the `via`, also from another module, as a
+//   partial application, as a lambda and in a schema that another one
+//   names. `schema-via.dead` is refused too: the default asks nothing of
+//   the code that runs the function, so the rule cannot see that nothing
+//   reads the printed value after (a precision loss). A conversion that
+//   writes a copy is accepted (`via-copy.dead`).
+// - `entry-shift-*`: `update` shifts 800 list fields of the model. The
+//   entry's largest solution took one round per field over every pair of
+//   locations (18.7 s); it reads each fact once now and takes away along a
+//   worklist, and every step counts against the declaration's budget.
+// - `group-rounds-slow`: a recursive group re-walked its member 60 times,
+//   each walk with a fresh step budget (6.5 s). The rounds share one budget
+//   now: past it the check stops with the loud limit.
+// - `constant-method.*` (the give-up audit): a method written as a constant,
+//   `pub eq = keeper`, called by a derived `eq` with its operands. The
+//   constant's contract says what its value holds, and the derived code read
+//   it as code that only reads, so `keeper` kept a list that was then written
+//   in place. A constant method has no fact now (kernel §6.11).
+test "ownership v3: runtime calls into the program, and one step budget per declaration" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { dir: []const u8, name: []const u8, platform: []const u8 = "node", accepted: bool, why: []const u8 = "" };
+    const g = "blind8g-faults";
+    const r = "runtime-calls-faults";
+    const tea = "platforms/browser-tea";
+    const via = "value <call Schema.conversion> is refused: call: a function that writes its";
+    const limit = "the walk took more than 1048576 steps";
+    const cases = [_]Case{
+        .{ .dir = g, .name = "schema-via.live", .accepted = false, .why = via },
+        .{ .dir = g, .name = "schema-via.dead", .accepted = false, .why = via },
+        .{ .dir = g, .name = "schema-via-tea.live", .platform = tea, .accepted = false, .why = via },
+        .{ .dir = g, .name = "schema-via-tea.dead", .platform = tea, .accepted = true },
+        .{ .dir = g, .name = "entry-shift-slow.dead", .platform = tea, .accepted = true },
+        .{ .dir = g, .name = "entry-shift-control.dead", .platform = tea, .accepted = true },
+        .{ .dir = g, .name = "group-rounds-slow.dead", .accepted = false, .why = limit },
+        .{ .dir = g, .name = "group-rounds-control.dead", .accepted = true },
+        .{ .dir = r, .name = "via-module.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-partial.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-lambda.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-nested.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-copy.dead", .accepted = true },
+        .{ .dir = r, .name = "constant-method.live", .accepted = false, .why = "List.push xs is refused: escaped" },
+        .{ .dir = r, .name = "constant-method.dead", .accepted = true },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const dir = try std.fmt.allocPrint(a, "bench/ownership-sweeps/{s}/{s}", .{ c.dir, c.name });
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", try std.fmt.allocPrint(a, "--platform={s}", .{c.platform}), try std.fmt.allocPrint(a, "--root={s}", .{dir}) });
+        try args.append(a, try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir}));
+        if (std.mem.eql(u8, c.name, "via-module.live")) try args.append(a, try std.fmt.allocPrint(a, "{s}/Util.beni", .{dir}));
+        const res = w.runWith(args.items, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.accepted) res.exit_code == 0 else res.exit_code == 1 and std.mem.indexOf(u8, res.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, res.exit_code, res.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// Research report 129: a `--library` build exports its `pub` functions, and
+// host JavaScript calls them with arrays that it still holds and reads
+// after. An export is a function in the default location (kernel §6.14), so
+// one that writes its parameter is refused; one that writes a copy is not.
+test "ownership v3: a library's exported function is called by the host" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub push3 : List Int → List Int
+        \\push3 l = List.push l 3
+        \\
+    );
+    const live = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--ownership=v3", "--ownership-everywhere", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), live.exit_code);
+    try testing.expect(std.mem.indexOf(u8, live.stderr, "is refused: call: a function that writes its") != null);
+    try w.write("Main.beni",
+        \\pub push3 : List Int → List Int
+        \\push3 l = List.push (List.copy l) 3
+        \\
+    );
+    const dead = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--ownership=v3", "--ownership-everywhere", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dead.exit_code);
+}

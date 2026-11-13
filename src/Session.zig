@@ -416,6 +416,10 @@ pub const Options = struct {
     /// for `dump --stage=ownership`.
     ownership_v3: bool = false,
     ownership_v3_dump: ?struct { summaries: bool } = null,
+    /// `build --library`: host JavaScript calls every value the root
+    /// package's modules export, with values that it may still hold
+    /// (`Reach.collectRoots`). The checker v3 reads it (kernel §6.14).
+    library: bool = false,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and

@@ -1,0 +1,21 @@
+-- A partial application in a `via`: the print worker calls `back 3 _` with
+-- `v.items`, which `main` reads after (research report 129 §2).
+import Io
+import Node exposing (Program)
+import Schema
+
+
+back : Int, List Int → Result (List Schema.Issue) (List Int)
+back n l = Ok (List.push l n)
+
+
+schema Box =
+    items : List Int via (Schema.conversion Ok (back 3 _))
+
+
+main : Program
+main = Io.run λ⊤ →
+    v = { items = [ 1, 2 ] }
+    _ = Box.print v
+    Debug.log (String.fromInt (List.length v.items)) ⊤
+    Node.done

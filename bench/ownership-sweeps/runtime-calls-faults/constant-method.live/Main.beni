@@ -1,0 +1,37 @@
+-- A method written as a constant, `pub eq = keeper`: the derived `eq` of a
+-- tuple calls it with its operands, and `keeper` keeps one in a `Ref`. The
+-- constant's contract says what its value holds, not what a call of it
+-- does, and the derived code read it as code that only reads (found by the
+-- give-up audit of research report 129).
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+
+
+type T
+    = T (Ref (List Int)) (List Int)
+
+
+keeper : T, T → Bool
+keeper (T r a) (T _ b) =
+    Ref.set r a
+    List.length a == List.length b
+
+
+pub eq : T, T → Bool
+eq = keeper
+
+
+grow : Ref (List Int), List Int → Int
+grow r xs =
+    same = ( T r xs, 0 ) == ( T r [], 0 )
+    ys = List.push xs 9
+    List.length ys
+
+
+main : Program
+main = Io.run λ⊤ →
+    r = Ref.make []
+    n = grow r [ 1, 2 ]
+    Debug.log (String.fromInt (List.length (Ref.get r))) ⊤
+    Node.done

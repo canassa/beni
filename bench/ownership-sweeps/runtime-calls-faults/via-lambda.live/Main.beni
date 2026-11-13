@@ -1,0 +1,17 @@
+-- A lambda in a `via` that writes its parameter: before research report 129
+-- no walk read a schema declaration, so its write had no line at all.
+import Io
+import Node exposing (Program)
+import Schema
+
+
+schema Box =
+    items : List Int via (Schema.conversion Ok λl → Ok (List.push l 3))
+
+
+main : Program
+main = Io.run λ⊤ →
+    v = { items = [ 1, 2 ] }
+    _ = Box.print v
+    Debug.log (String.fromInt (List.length v.items)) ⊤
+    Node.done

@@ -165,7 +165,11 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     const kept = session.options.ownership_v3_dump;
     const mk = session.graph.markup;
     const markup_type: ?Check.MarkupType = if (mk.type_module.unwrap()) |mm| if (mk.type_name.unwrap()) |mn| .{ .module = mm, .name = mn } else null else null;
-    const r = try Check.checkModule(gpa, arena, &mi, &ctx.state.shared, nc.names(), .{ .summaries = if (kept) |k| k.summaries else false, .markup_type = markup_type });
+    const r = try Check.checkModule(gpa, arena, &mi, &ctx.state.shared, nc.names(), .{
+        .summaries = if (kept) |k| k.summaries else false,
+        .markup_type = markup_type,
+        .library = session.options.library and session.graph.modulePackage(m) == .app,
+    });
     ctx.state.shared.published[mi_u] = r.published;
 
     const lines = try arena.alloc(Facts.Line, r.lines.len);

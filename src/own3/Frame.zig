@@ -418,6 +418,9 @@ markup_reads: ?*std.ArrayList(Val) = null,
 /// The entries of runs that one call of `markAtom`, `groundOf` or
 /// `atomSrcs` visited: each once (`runKey`).
 run_seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
+/// Per pair of layouts: which entries of the second meet each entry of the
+/// first (`meetsOf`), built once from the two call maps.
+meet_index: std.AutoHashMapUnmanaged([2]u32, *const MeetIndex) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -470,6 +473,45 @@ pub fn addParam(f: *Frame, place: PlaceId, pat: u32, ty: Var.Optional) Error!voi
 
 pub fn walkBody(f: *Frame, body: u32) Error!void {
     try f.returns.append(f.gpa, try f.eval(body, .value, true));
+}
+
+/// A value that the program hands to code of the compiler's own, which keeps
+/// it for as long as the program runs and calls each function in it at any
+/// time, any number of times, with values that have no claim: a `schema`
+/// declaration's `via` conversion, which its compiled workers and its
+/// `S.schema` value hold (kernel §6.14). The expression is walked as any
+/// other; its value is in a location with the default contract, so a
+/// function in it goes to the `top` use (`mention`, rule 8), and every cell
+/// it holds escapes.
+pub fn walkHeld(f: *Frame, root: u32) Error!void {
+    const v = try f.eval(root, .value, false);
+    try f.escape(v, root);
+}
+
+/// In safe builds: the instruction is accounted for by a walk (`Check.checkCovered`, kernel §9).
+fn noteWalked(f: *Frame, inst: u32) void {
+    if (!safety) return;
+    const w = &f.m.walked;
+    if (inst < w.bit_length) w.set(inst);
+}
+
+/// A spread chain's calls and their callees, down to its items: the
+/// construction rule (rule 4) accounts for them, not a call of their code.
+fn noteChain(f: *Frame, inst: u32, items: []const [2]u32) void {
+    if (!safety) return;
+    for (items) |it| if (it[0] == inst) return;
+    f.noteWalked(inst);
+    const m = f.m;
+    if (m.tags[inst] != .call) return;
+    f.noteWalked(m.datas[inst].lhs);
+    for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[inst].rhs)), Inst.Index)) |a| f.noteChain(a.int(), items);
+}
+
+/// The function declaration `t`, which host JavaScript can call with values
+/// that it still holds (a `--library` build exports it, kernel §6.14): a
+/// function in the default location, where `inst` names it.
+pub fn walkExported(f: *Frame, t: [2]u32, inst: u32) Error!void {
+    try f.flowTop(try f.node(.{ .tag = .fnref, .a = t[0], .b = t[1] }), inst);
 }
 
 fn layoutLen(f: *Frame, place: PlaceId) Error!usize {
@@ -1565,6 +1607,12 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     if (d.refused == null) {
         for (f.escapes.items) |e| {
             if (!f.compatible(e.ctx, f.cur_ctx)) continue;
+            // Each pair of a write and an escape is a step (kernel §8).
+            if (f.tick()) {
+                d.refused = .limit;
+                d.detail = "the walk of this declaration gave up";
+                break;
+            }
             if (f.overlapAny(f.esc_atoms.items[e.start..][0..e.len], f.atoms.items[w..][0..wn])) {
                 d.refused = .escaped;
                 break;
@@ -1619,8 +1667,9 @@ fn groundIn(f: *Frame, a: Atom) Error!Ground {
 fn finishDemands(f: *Frame) Error!void {
     for (f.demands.items) |*d| {
         const ws = f.atoms.items[d.w..][0..d.wn];
-        // A walk that gave up accepts nothing (kernel §3.3).
-        if (f.failed and d.refused == null) {
+        // A walk that gave up, or a declaration past its steps, accepts
+        // nothing (kernel §3.3, §8).
+        if ((f.failed or f.m.steps_over) and d.refused == null) {
             d.refused = .limit;
             d.detail = "the walk of this declaration gave up";
         }
@@ -1632,6 +1681,12 @@ fn finishDemands(f: *Frame) Error!void {
                 // A read at a later time: the walk goes in the program's order (`timeOf`).
                 if (u.at <= d.at) continue;
                 if (!f.compatible(u.ctx, d.ctx)) continue;
+                // Each pair of a write and a later read is a step (kernel §8).
+                if (f.tick()) {
+                    d.refused = .limit;
+                    d.detail = "the walk of this declaration gave up";
+                    break;
+                }
                 if (try f.useReaches(u, ws)) {
                     d.refused = .later_use;
                     d.detail = try f.m.useText(f, u.point);
@@ -1736,6 +1791,11 @@ fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     const data = m.datas[inst];
     // Each expression entered starts a new time for the operation after it (`timeOf`).
     f.entered += 1;
+    // Each expression evaluated is a step (kernel §8): the rounds of nested
+    // groups walk a body again and again. Past the budget the walk goes no
+    // deeper; the declaration gave up, and a write it did not reach has no
+    // line, so it is not authorised.
+    if (f.tick()) return f.giveUp(inst);
     switch (m.tags[inst]) {
         .let => {
             const bindings = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index);
@@ -1843,6 +1903,7 @@ fn capture(f: *Frame, local: u32) Error!Val {
 fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
     const m = f.m;
     const data = m.datas[inst];
+    f.noteWalked(inst);
     switch (m.tags[inst]) {
         .int, .float, .char, .string, .chunk, .unit, .@"error" => return v_none,
         .ctor, .ext_ctor => return f.ctorValue(inst),
@@ -2773,6 +2834,8 @@ fn codeValue(f: *Frame, inst: u32, params: []const Inst.Index, body: u32, ty: Va
 /// as a group of declarations does.
 fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
     const m = f.m;
+    // Each code is walked here, in its own frame (rule 3).
+    for (ms) |mb| f.noteWalked(mb.inst);
     const caps = try f.gpa.alloc([]const u32, ms.len);
     @memset(caps, &.{});
     const vals = try f.gpa.alloc(Val, ms.len);
@@ -3094,6 +3157,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     var primitive = false;
     switch (m.tags[callee]) {
         .top, .ext_value => {
+            f.noteWalked(callee);
             // The evidence of a call is at the call; that of a reference is at the reference.
             _ = try f.evidence(callee);
             _ = try f.evidence(inst);
@@ -3837,6 +3901,93 @@ fn locsMeet(f: *Frame, la: u32, ea: u32, lb: u32, eb: u32) Error!bool {
     if (ab_decides and ab == ea) return true;
     if (ba_decides and ba == eb) return true;
     return !(ab_decides or ba_decides);
+}
+
+/// `locsMeet` of one pair of layouts `la`, `lb`, read the other way: for an
+/// entry of `la`, every entry of `lb` that it meets. `locsMeet(ea, eb)` holds
+/// when the map from `lb` decides `eb` and names `ea`, or the map from `la`
+/// decides `ea` and names `eb`, or neither decides. So the entries of `lb`
+/// that `ea` meets are those whose decided image is `ea` (`inv`), the image
+/// of `ea` when it is decided, and, when it is not, every entry of `lb`
+/// whose image is not decided (`undecided`).
+const MeetIndex = struct {
+    /// Per entry of `la`: the entries of `lb` that the map from `lb` decides and maps to it.
+    inv_start: []u32,
+    inv: []u32,
+    /// Per entry of `la`: its decided image in `lb`, or `none`.
+    image: []u32,
+    /// The entries of `lb` whose image in `la` is not decided.
+    undecided: []u32,
+};
+
+fn meetIndex(f: *Frame, la: u32, lb: u32) Error!*const MeetIndex {
+    if (f.meet_index.get(.{ la, lb })) |x| return x;
+    const m = f.m;
+    const las = m.loc.layoutEntries(la);
+    const lbs = m.loc.layoutEntries(lb);
+    const ab = try m.loc.cover(la, lb);
+    const ba = try m.loc.cover(lb, la);
+    const x = try f.gpa.create(MeetIndex);
+    x.inv_start = try f.gpa.alloc(u32, las.len + 1);
+    @memset(x.inv_start, 0);
+    var undecided: std.ArrayList(u32) = .empty;
+    for (lbs, 0..) |eb_e, eb| {
+        const a = ab[eb];
+        if (a < Loc.all and (!eb_e.kind.wide() or las[a].kind.wide())) x.inv_start[a + 1] += 1 else try undecided.append(f.gpa, @intCast(eb));
+    }
+    for (1..las.len + 1) |i| x.inv_start[i] += x.inv_start[i - 1];
+    x.inv = try f.gpa.alloc(u32, x.inv_start[las.len]);
+    const fill = try f.gpa.alloc(u32, las.len);
+    defer f.gpa.free(fill);
+    @memcpy(fill, x.inv_start[0..las.len]);
+    for (lbs, 0..) |eb_e, eb| {
+        const a = ab[eb];
+        if (a < Loc.all and (!eb_e.kind.wide() or las[a].kind.wide())) {
+            x.inv[fill[a]] = @intCast(eb);
+            fill[a] += 1;
+        }
+    }
+    x.image = try f.gpa.alloc(u32, las.len);
+    for (las, 0..) |ea_e, ea| {
+        const b = ba[ea];
+        x.image[ea] = if (b < Loc.all and (!ea_e.kind.wide() or lbs[b].kind.wide())) b else none;
+    }
+    x.undecided = undecided.items;
+    try f.meet_index.put(f.gpa, .{ la, lb }, x);
+    return x;
+}
+
+/// Every entry of layout `lb` that entry `ea` of layout `la` meets
+/// (`locsMeet`), each once, in no order. Each entry is a step of the
+/// declaration's budget (kernel §8); null past it, which a caller reads as
+/// the walk giving up.
+fn meetsOf(f: *Frame, la: u32, ea: u32, lb: u32, out: *std.ArrayList(u32)) Error!bool {
+    const x = try f.meetIndex(la, lb);
+    out.clearRetainingCapacity();
+    for (x.inv[x.inv_start[ea]..x.inv_start[ea + 1]]) |eb| {
+        if (f.tick()) return false;
+        try out.append(f.gpa, eb);
+    }
+    const img = x.image[ea];
+    if (img != none) {
+        // The image is listed already when the map from `lb` names `ea` too.
+        if (std.mem.indexOfScalar(u32, out.items, img) == null) try out.append(f.gpa, img);
+    } else for (x.undecided) |eb| {
+        if (f.tick()) return false;
+        try out.append(f.gpa, eb);
+    }
+    if (safety and smallLayout(f, lb)) {
+        // The index says what `locsMeet` says, pair for pair.
+        for (0..f.m.loc.layoutEntries(lb).len) |eb| {
+            const in_out = std.mem.indexOfScalar(u32, out.items, @intCast(eb)) != null;
+            std.debug.assert(in_out == try f.locsMeet(la, ea, lb, @intCast(eb)));
+        }
+    }
+    return true;
+}
+
+fn smallLayout(f: *Frame, l: u32) bool {
+    return f.m.loc.layoutEntries(l).len <= 64;
 }
 
 /// Whether the contract is that of a function that answers its one parameter
@@ -5093,6 +5244,7 @@ fn newItem(f: *Frame, inst: u32, v: Val) Error!bool {
 fn spreadChain(f: *Frame, inst: u32, sp: Bir.Spread) Error!Val {
     const m = f.m;
     const items = m.bir.spreadItems(sp);
+    f.noteChain(inst, items);
     const place = try m.placeOfInst(inst);
     var elems: std.ArrayList(Val) = .empty;
     defer elems.deinit(f.gpa);
@@ -5149,6 +5301,8 @@ fn appendChain(f: *Frame, inst: u32) Error!Val {
     defer insts.deinit(f.gpa);
     var at = inst;
     while (true) {
+        f.noteWalked(at);
+        f.noteWalked(m.datas[at].lhs);
         const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[at].rhs)), Inst.Index);
         try insts.append(f.gpa, args[0].int());
         const right = args[1].int();
@@ -5332,60 +5486,114 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
     // (`expandSrcs`): a wide entry holds each cell of the locations below it,
     // so each of its sources is one of the location's. The largest
     // solution: start from `own` everywhere and take away.
-    var changed = true;
-    while (changed) {
-        changed = false;
-        for (fields.items) |fd| {
-            // Where the answer has the model: the answer, or one item of a tuple.
-            const at: u32 = switch (fd.shape.answer) {
-                .none => continue,
-                .whole => 0,
-                .index => try m.loc.extend(0, .{ .kind = .index, .payload = @intCast(fd.shape.index), .cyc = false, .head = 0 }),
-            };
-            const model_param = fd.shape.model_param;
-            // The answer's type as the record has it: the model's locations in it.
-            const rl: ?u32 = if (m.fnType(fd.ty)) |ft| try m.loc.layoutOf(try m.placeOf(ft.result.toOptional())) else null;
-            for (codes.items[fd.from..][0..fd.len]) |code| {
-                const c = code.contract;
-                const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
-                for (mes, 0..) |me, k| {
-                    if (!own[k]) continue;
-                    const want = if (at == 0) me.loc else try m.loc.concat(at, me.loc);
-                    // The model location's entry in the answer's layout; none: no fact.
-                    var wi: u32 = none;
-                    if (rl) |l| for (m.loc.layoutEntries(l), 0..) |re, i| if (re.loc == want) {
-                        wi = @intCast(i);
-                    };
-                    var ok = wi != none;
-                    if (ok) for (res_es, 0..) |_, ri| {
-                        if (!try f.locsMeet(c.layouts[c.arity], @intCast(ri), rl.?, wi)) continue;
-                        for (c.res[ri]) |s| switch (s.kind) {
-                            .fresh => if (!freshOwn(c, @intCast(ri), s)) {
-                                ok = false;
-                            },
-                            .param => {
-                                if (s.a != model_param or !paramOwn(c, @intCast(ri), s)) {
-                                    ok = false;
-                                    continue;
+    //
+    // The facts of each producer are read once (`bad`: a source with another
+    // holder or no fact; `deps`: the model locations whose `own` it needs),
+    // and the largest solution is then found by taking away along `deps`
+    // (a worklist): each fact and each pair of locations once, and each a
+    // step of the declaration's budget (kernel §8). Past the budget no
+    // location is `own`: the walk gave up, and a give-up accepts nothing.
+    const bad = try f.gpa.alloc(bool, mes.len);
+    defer f.gpa.free(bad);
+    @memset(bad, false);
+    // Pairs (k, k2): location k is `own` only when k2 is.
+    var deps: std.ArrayList([2]u32) = .empty;
+    defer deps.deinit(f.gpa);
+    var over = false;
+    var ris: std.ArrayList(u32) = .empty;
+    defer ris.deinit(f.gpa);
+    if (own.len != 0 and own[0]) facts: for (fields.items) |fd| {
+        // Where the answer has the model: the answer, or one item of a tuple.
+        const at: u32 = switch (fd.shape.answer) {
+            .none => continue,
+            .whole => 0,
+            .index => try m.loc.extend(0, .{ .kind = .index, .payload = @intCast(fd.shape.index), .cyc = false, .head = 0 }),
+        };
+        const model_param = fd.shape.model_param;
+        // The answer's type as the record has it: the model's locations in it.
+        const rl: ?u32 = if (m.fnType(fd.ty)) |ft| try m.loc.layoutOf(try m.placeOf(ft.result.toOptional())) else null;
+        // The answer layout's entries, sorted by location, for a binary search.
+        var rl_at: std.ArrayList([2]u32) = .empty;
+        defer rl_at.deinit(f.gpa);
+        if (rl) |l| for (m.loc.layoutEntries(l), 0..) |re, i| try rl_at.append(f.gpa, .{ re.loc, @intCast(i) });
+        std.mem.sort([2]u32, rl_at.items, {}, struct {
+            fn lessThan(_: void, x: [2]u32, y: [2]u32) bool {
+                return x[0] < y[0];
+            }
+        }.lessThan);
+        for (codes.items[fd.from..][0..fd.len]) |code| {
+            const c = code.contract;
+            // Per entry of the model parameter: the model locations it meets, once.
+            const pe_len: usize = if (model_param != none and model_param < c.arity) m.loc.layoutEntries(c.layouts[model_param]).len else 0;
+            const meets = try f.gpa.alloc(?[]const u32, pe_len);
+            defer f.gpa.free(meets);
+            @memset(meets, null);
+            for (mes, 0..) |me, k| {
+                if (bad[k]) continue;
+                const want = if (at == 0) me.loc else try m.loc.concat(at, me.loc);
+                // The model location's entry in the answer's layout; none: no fact.
+                const wi: u32 = entryAt(rl_at.items, want);
+                if (wi == none) {
+                    bad[k] = true;
+                    continue;
+                }
+                // The entries of the contract's answer that meet it (`locsMeet`).
+                if (!try f.meetsOf(rl.?, wi, c.layouts[c.arity], &ris)) {
+                    over = true;
+                    break :facts;
+                }
+                for (ris.items) |ri| {
+                    for (c.res[ri]) |s| switch (s.kind) {
+                        .fresh => if (!freshOwn(c, ri, s)) {
+                            bad[k] = true;
+                        },
+                        .param => {
+                            if (s.a != model_param or !paramOwn(c, ri, s)) {
+                                bad[k] = true;
+                                continue;
+                            }
+                            // From model locations: `own` only when each of them is.
+                            if (meets[s.e] == null) {
+                                var ks: std.ArrayList(u32) = .empty;
+                                if (!try f.meetsOf(c.layouts[model_param], s.e, ml, &ks)) {
+                                    over = true;
+                                    break :facts;
                                 }
-                                // From model locations: `own` only when each of them is.
-                                var found = false;
-                                for (mes, 0..) |_, k2| if (try f.locsMeet(c.layouts[model_param], s.e, ml, @intCast(k2))) {
-                                    found = true;
-                                    if (!own[k2]) ok = false;
-                                };
-                                if (!found) ok = false;
-                            },
-                            .outside, .answer, .twice => ok = false,
-                        };
+                                meets[s.e] = ks.items;
+                            }
+                            const ks = meets[s.e].?;
+                            if (ks.len == 0) bad[k] = true;
+                            for (ks) |k2| try deps.append(f.gpa, .{ @intCast(k), k2 });
+                        },
+                        .outside, .answer, .twice => bad[k] = true,
                     };
-                    if (!ok) {
-                        own[k] = false;
-                        changed = true;
-                    }
                 }
             }
         }
+    };
+    if (over) {
+        @memset(own, false);
+    } else {
+        // Take away: a location that is not `own` takes away each location that needs it.
+        const needed_by = try f.gpa.alloc(std.ArrayList(u32), mes.len);
+        defer f.gpa.free(needed_by);
+        @memset(needed_by, .empty);
+        for (deps.items) |p| try needed_by[p[1]].append(f.gpa, p[0]);
+        var work: std.ArrayList(u32) = .empty;
+        defer work.deinit(f.gpa);
+        for (own, bad, 0..) |*o, b, k| if (b or !o.*) {
+            o.* = false;
+            try work.append(f.gpa, @intCast(k));
+        };
+        take: while (work.pop()) |k2| for (needed_by[k2].items) |k| {
+            if (f.tick()) {
+                @memset(own, false);
+                break :take;
+            }
+            if (!own[k]) continue;
+            own[k] = false;
+            try work.append(f.gpa, k);
+        };
     }
     // What the other functions keep of the model is not `own`: the runtime
     // holds their answers. A `view`'s answer is markup, and a platform's
@@ -5399,18 +5607,26 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
         if (fd.shape.answer != .none) continue;
         for (codes.items[fd.from..][0..fd.len]) |c0| {
             const c = c0.contract;
+            // The parameter locations that the answer holds, once.
+            const answered = try f.gpa.alloc(bool, c.flags.len);
+            defer f.gpa.free(answered);
+            @memset(answered, false);
+            if (!fd.view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a < c.arity and c.off[s.a] + s.e < c.off[s.a + 1]) {
+                answered[c.off[s.a] + s.e] = true;
+            };
             for (0..c0.own_params) |pj| {
                 const pes = m.loc.layoutEntries(c.layouts[pj]);
                 for (0..pes.len) |e| {
                     var kept = c.flags[c.off[pj] + e] & (flag_w | flag_e) != 0;
-                    if (!fd.view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
-                        kept = true;
-                    };
+                    if (answered[c.off[pj] + e]) kept = true;
                     if (handsOn(c, @intCast(pj), @intCast(e))) kept = true;
                     if (!kept) continue;
-                    for (0..mes.len) |k| if (try f.locsMeet(c.layouts[pj], @intCast(e), ml, @intCast(k))) {
-                        own[k] = false;
-                    };
+                    // Past the budget no location is `own` (kernel §8).
+                    if (!try f.meetsOf(c.layouts[pj], @intCast(e), ml, &ris)) {
+                        @memset(own, false);
+                        continue;
+                    }
+                    for (ris.items) |k| own[k] = false;
                 }
             }
         }
@@ -5432,14 +5648,12 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 for (pes, 0..) |pe, e| {
                     if (c.flags[c.off[pj] + e] & flag_w == 0) continue;
                     var ok = false;
-                    if (pj == fd.shape.model_param) {
-                        var any = false;
-                        var all_own = true;
-                        for (0..mes.len) |k| if (try f.locsMeet(c.layouts[pj], @intCast(e), ml, @intCast(k))) {
-                            any = true;
-                            if (!own[k]) all_own = false;
+                    // Past the budget, or where the walk gave up, the write is refused (kernel §3.3, §8).
+                    if (pj == fd.shape.model_param and try f.meetsOf(c.layouts[pj], @intCast(e), ml, &ris)) {
+                        ok = ris.items.len != 0 and !f.failed and !m.steps_over;
+                        for (ris.items) |k| if (!own[k]) {
+                            ok = false;
                         };
-                        ok = any and all_own;
                     }
                     try m.addEntryLine(f, inst, c0, pj == fd.shape.model_param, pe.loc, ok);
                 }
@@ -5447,4 +5661,15 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
         }
     }
     return f.unknownResult(inst, held.items);
+}
+
+/// The index that `want` has in `sorted` (pairs of a location and an index, by location), or `none`.
+fn entryAt(sorted: []const [2]u32, want: u32) u32 {
+    var lo: usize = 0;
+    var hi = sorted.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (sorted[mid][0] < want) lo = mid + 1 else hi = mid;
+    }
+    return if (lo < sorted.len and sorted[lo][0] == want) sorted[lo][1] else none;
 }

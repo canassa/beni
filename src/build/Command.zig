@@ -95,6 +95,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // lists in place, and not otherwise.
     options.ownership = true;
     options.records_in_place = build.records_in_place;
+    options.library = build.library;
 
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();

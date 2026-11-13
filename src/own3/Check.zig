@@ -78,7 +78,13 @@ pub const Result = struct {
 /// (`boundary.md` §9.4.8, kernel §6.12).
 pub const MarkupType = struct { module: InternPool.Symbol, name: InternPool.Symbol };
 
-pub const Options = struct { summaries: bool = false, markup_type: ?MarkupType = null };
+pub const Options = struct {
+    summaries: bool = false,
+    markup_type: ?MarkupType = null,
+    /// A `--library` build of a module of the root package: host
+    /// JavaScript calls each value it exports (kernel §6.14).
+    library: bool = false,
+};
 
 const State = enum(u8) { todo, working, done };
 
@@ -151,10 +157,21 @@ pub const Mod = struct {
     spread_root: std.DynamicBitSetUnmanaged = .{},
     lines: std.ArrayList(Line) = .empty,
     limits: std.ArrayList([]const u8) = .empty,
-    /// The steps that the walk of the declaration in work took (`Frame.tick`),
-    /// and whether it passed `max_walk_steps` (kernel §8).
+    /// The steps that the declaration in work took so far, over all of its
+    /// walks (`Frame.tick`), and whether it passed `max_walk_steps` (kernel
+    /// §8). One budget for each declaration: every round of its group, the
+    /// entry's fixed point and every other loop that no memo bounds count
+    /// against it (`decl_steps`).
     steps: u64 = 0,
     steps_over: bool = false,
+    /// Per declaration: the steps that its walks took so far, in every round.
+    decl_steps: []u64 = &.{},
+    /// Per declaration: a walk of it gave up or passed its steps, so some
+    /// of its instructions may not have been evaluated (`checkCovered`).
+    incomplete: []bool = &.{},
+    /// In safe builds, per instruction: a walk evaluated it, or a rule
+    /// accounted for it (`Frame.noteWalked`; `checkCovered`).
+    walked: std.DynamicBitSetUnmanaged = .{},
     /// Each refusal line by its instruction, cause and detail: its index in `lines` (`addRefusal`).
     refusals: std.AutoHashMapUnmanaged(RefusalKey, u32) = .empty,
 
@@ -584,9 +601,24 @@ pub const Mod = struct {
             // operands; what they call is an edge of its own.
             .primitive, .undetermined, .codec => return .{},
         };
-        if (try m.declContract(target)) |c| return .{ .writes = c.writes(), .keeps = c.escapes(), .rewrites = Contract.rewritesFn(c) };
+        // A function's contract says what a call of it does.
+        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes(), .keeps = c.escapes(), .rewrites = Contract.rewritesFn(c) };
+        // A constant's contract says what its value holds, not what a call
+        // of it does: a method written `pub eq = keeper` has no fact here,
+        // nor has a function whose walk gave up. Only a declaration whose
+        // own type is no function names no code (research report 129 §6).
         if (try m.isFunction(target)) return .{ .no_contract = true };
-        return .{};
+        if (m.valueIsFunction(target)) |is_fn| if (!is_fn) return .{};
+        return .{ .no_contract = true };
+    }
+
+    /// Whether the value of declaration `t` is a function, by its type
+    /// scheme; null where this module has no scheme of it (another module).
+    fn valueIsFunction(m: *const Mod, t: [2]u32) ?bool {
+        if (t[0] != m.in.module or t[1] >= m.in.decl_scheme.len) return null;
+        const scheme = m.in.decl_scheme[t[1]];
+        if (scheme == .none) return null;
+        return m.fnType(scheme) != null;
     }
 
     /// The text of a refusal of evidence with effect `x` (`Frame.evidence`).
@@ -993,19 +1025,24 @@ pub const Mod = struct {
             try f.addParam(place, p.int(), ty);
         }
         const result_place = if (sig) |s| (if (params.len == s.params.len) s.result else try m.placeOfInst(body.int())) else try m.placeOfInst(body.int());
-        m.steps = 0;
-        m.steps_over = false;
+        // One budget for the declaration, whatever the number of its walks
+        // (kernel §8): the rounds of its group count against it together.
+        m.steps = m.decl_steps[di];
+        m.steps_over = m.steps > max_walk_steps;
         try f.walkBody(body.int());
         const c = try f.finish(result_place);
+        m.decl_steps[di] = m.steps;
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
             try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
             m.failed_decl[di] = true;
+            m.incomplete[di] = true;
             return null;
         }
         if (f.failed) {
             try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
             m.failed_decl[di] = true;
+            m.incomplete[di] = true;
             return null;
         }
         if (params.len == 0) {
@@ -1015,6 +1052,69 @@ pub const Mod = struct {
             return c;
         }
         return c;
+    }
+
+    /// Walk the `via` conversions of schema declaration `di` (kernel
+    /// §6.14). The compiled workers of the schema (`S.print`, `S.parse`,
+    /// …) and its `S.schema` value hold each conversion for as long as the
+    /// program runs, and call its functions with values that the program
+    /// may still hold. No walk of the program follows those calls, so each
+    /// conversion is a value in the default location: each function in it
+    /// goes to the `top` use, where one that writes its parameter is
+    /// refused, and each cell it holds escapes. The declaration has no
+    /// contract; a walk that gives up or passes its steps is a limit line.
+    fn walkSchema(m: *Mod, di: u32) Allocator.Error!void {
+        const d = m.bir.decls[di];
+        var any = false;
+        for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) {
+            any = true;
+        };
+        if (!any) return;
+        @memset(m.lframe[d.locals_start..d.locals_end], 0);
+        @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
+        @memset(m.lbinder[d.locals_start..d.locals_end], 0);
+        var f = try Frame.init(m, null, di, false, none);
+        m.steps = m.decl_steps[di];
+        m.steps_over = m.steps > max_walk_steps;
+        for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) try f.walkHeld(m.datas[i].lhs);
+        _ = try f.finish(m.var_place);
+        m.decl_steps[di] = m.steps;
+        if (m.steps_over or f.failed) m.incomplete[di] = true;
+        if (m.steps_over) {
+            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
+        } else if (f.failed) {
+            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
+        }
+    }
+
+    /// A `--library` build: host JavaScript can call each function that the
+    /// module exports, at any time, with values that it still holds (kernel
+    /// §6.14; `Reach.collectRoots` roots the same names). Each is a function
+    /// in the default location (rule 8): one that writes its parameter is
+    /// refused. A constant that holds a function put it there where it was
+    /// made, and its walk sent it to the `top` use already.
+    fn walkExports(m: *Mod) Allocator.Error!void {
+        var dis: std.ArrayList(u32) = .empty;
+        defer dis.deinit(m.gpa);
+        for (m.bir.interface) |index| try dis.append(m.gpa, index.int());
+        // The entry declaration is exported too.
+        for (m.bir.decls, 0..) |d, i| {
+            if (d.kind == .value and d.body != .none and m.bir.symbol(d.name) == InternPool.WellKnown.main.symbol()) try dis.append(m.gpa, @intCast(i));
+        }
+        for (dis.items) |di| {
+            const d = m.bir.decls[di];
+            if (d.kind != .value) continue;
+            const body = d.body.unwrap() orelse continue;
+            if (!try m.isFunction(.{ m.in.module, di })) continue;
+            var f = try Frame.init(m, null, di, false, none);
+            m.steps = m.decl_steps[di];
+            m.steps_over = m.steps > max_walk_steps;
+            try f.walkExported(.{ m.in.module, di }, body.int());
+            _ = try f.finish(m.var_place);
+            m.decl_steps[di] = m.steps;
+            if (m.steps_over or f.failed) try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk of the export gave up", .{m.names.declName(m.in.module, di)}));
+            _ = m.walk_arena.reset(.retain_capacity);
+        }
     }
 
     fn solveGroup(m: *Mod, members: []const u32, recursive: bool) Allocator.Error!void {
@@ -1029,11 +1129,13 @@ pub const Mod = struct {
         var rounds: u32 = 0;
         while (true) : (rounds += 1) {
             var changed = false;
+            var over = false;
             m.lines.shrinkRetainingCapacity(mark);
             m.limits.shrinkRetainingCapacity(lmark);
             for (members) |di| m.failed_decl[di] = false;
             for (members) |di| {
                 const got = try m.walkDecl(di);
+                if (m.steps_over) over = true;
                 _ = m.walk_arena.reset(.retain_capacity);
                 const old = m.contracts[di];
                 // A walk that gave up has no contract, whatever the rounds
@@ -1044,6 +1146,17 @@ pub const Mod = struct {
                 if (recursive) if (next) |c| try m.drafts.put(m.gpa, @intFromPtr(c), {});
             }
             if (!recursive or !changed) break;
+            if (over) {
+                // A member passed its steps in this round (kernel §8): its
+                // walk gave up and its limit line is made. The rounds stop;
+                // a contract of a round before the fixed point says less
+                // than the group does, so no member publishes one.
+                for (members) |di| {
+                    m.contracts[di] = null;
+                    m.failed_decl[di] = true;
+                }
+                break;
+            }
             if (rounds > 64) {
                 try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the group did not settle", .{m.names.declName(m.in.module, members[0])}));
                 // A contract of a round that is not the last says less than the
@@ -1247,6 +1360,140 @@ pub const Mod = struct {
     }
 };
 
+/// Whether an instruction names or runs code: a reference to a value or a
+/// function, a function the program makes, a call of any kind, markup (whose
+/// runtime calls what it is given). A call into the program's code starts at
+/// one of these, or at a name the compiler makes up (kernel §6.14, the list).
+/// No `else`: a new kind of instruction compiles only once it is named here.
+fn namesCode(t: Inst.Tag) bool {
+    return switch (t) {
+        .local,
+        .top,
+        .ext_value,
+        .import_value,
+        .qualified,
+        .schema_value_ref,
+        .schema_expr_ref,
+        .schema_member_top,
+        .ext_schema_member,
+        .schema_ctor_top,
+        .ext_schema_ctor,
+        .call,
+        .method_call,
+        .type_dispatch,
+        .lambda,
+        .markup,
+        => true,
+        // A constructor runs no code of the program; a literal, a
+        // construction, a projection, a binding, a type, a pattern or a
+        // schema plan names none of its own (its operands are instructions
+        // of their own).
+        .ctor,
+        .ext_ctor,
+        .import_ctor,
+        .qualified_ctor,
+        .schema_ctor_ref,
+        .schema_type_ref,
+        .type_var,
+        .type_top,
+        .type_import,
+        .type_qualified,
+        .ext_type,
+        .schema_type_top,
+        .ext_schema_type,
+        .type_app,
+        .type_fn,
+        .type_unit,
+        .type_tuple,
+        .type_record,
+        .type_record_ext,
+        .schema_ref,
+        .schema_app,
+        .schema_paren,
+        .schema_record,
+        .schema_field,
+        .schema_value,
+        .schema_tagged,
+        .schema_variant,
+        .schema_as,
+        .schema_via,
+        .schema_optional,
+        .schema_nullable,
+        .schema_parameter,
+        .schema_primitive,
+        .schema_target_top,
+        .ext_schema_target,
+        .int,
+        .float,
+        .char,
+        .string,
+        .chunk,
+        .interp,
+        .unit,
+        .tuple,
+        .list,
+        .record,
+        .record_update,
+        .field_access,
+        .tuple_index,
+        .let,
+        .let_def,
+        .let_pattern,
+        .let_stmt,
+        .case,
+        .branch,
+        .@"try",
+        .pat_wild,
+        .pat_var,
+        .pat_ctor,
+        .pat_int,
+        .pat_char,
+        .pat_string,
+        .pat_unit,
+        .pat_tuple,
+        .pat_list,
+        .pat_spread,
+        .pat_record,
+        .pat_as,
+        .@"error",
+        => false,
+    };
+}
+
+/// The mechanical check of kernel §6.14 (safe builds): every instruction
+/// that names or runs code (`namesCode`), in every declaration whose code
+/// the backend emits, was evaluated by a walk or accounted for by a rule
+/// (`Frame.noteWalked`). The kinds of declaration are a `switch` with no
+/// `else`: a new kind compiles only once it says whether it has code and
+/// which walk covers it. So a part of the program that the backend emits
+/// and no walk reads — a schema's `via` before research report 129 — fails
+/// here on the first program that has one, not in a blind test.
+fn checkCovered(m: *Mod) void {
+    if (!std.debug.runtime_safety) return;
+    // A module past the layout limit publishes nothing and authorises no write.
+    if (m.loc.over.items.len != 0) return;
+    for (m.bir.decls, 0..) |d, di| {
+        const has_code = switch (d.kind) {
+            // Its body (`walkDecl`; a worded one is walked for its lines).
+            .value => d.body != .none,
+            // Its `via` conversions (`walkSchema`); the rest is a plan the
+            // compiler turns into workers, which call only the `via`s
+            // (rule 14) and the workers of other schemas.
+            .schema => true,
+            // The body is a sibling's JavaScript (rule 10) or the markup
+            // runtime's (rule 12); none is a walk's.
+            .foreign_value, .vocab_markup => false,
+            // No code.
+            .annotation_only, .type, .type_alias, .foreign_type, .vocab_element, .vocab_attribute, .vocab_event => false,
+        };
+        if (!has_code or m.incomplete[di]) continue;
+        for (d.inst_start.int()..d.inst_end.int()) |i| {
+            if (!namesCode(m.tags[i]) or m.walked.isSet(i)) continue;
+            std.debug.panic("ownership v3: instruction {d} ({t}) of {s} names code that no walk evaluated: a call into the program's code with no rule (kernel §6.14)", .{ i, m.tags[i], m.names.declName(m.in.module, @intCast(di)) });
+        }
+    }
+}
+
 /// Check module `in`. The result lives in `arena`, the published contracts in `gpa`.
 pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, shared: *const Shared, names: Names, options: Options) Allocator.Error!Result {
     const bir = in.bir;
@@ -1318,6 +1565,14 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.failed_decl = try gpa.alloc(bool, nd);
     defer gpa.free(m.failed_decl);
     @memset(m.failed_decl, false);
+    m.decl_steps = try gpa.alloc(u64, nd);
+    defer gpa.free(m.decl_steps);
+    @memset(m.decl_steps, 0);
+    m.incomplete = try gpa.alloc(bool, nd);
+    defer gpa.free(m.incomplete);
+    @memset(m.incomplete, false);
+    if (std.debug.runtime_safety) m.walked = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
+    defer if (std.debug.runtime_safety) m.walked.deinit(gpa);
     m.state = try gpa.alloc(State, nd);
     defer gpa.free(m.state);
     @memset(m.state, .todo);
@@ -1356,6 +1611,15 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         m.failed_decl[di] = false;
         _ = m.walk_arena.reset(.retain_capacity);
     }
+    // A schema declaration's `via` conversions (kernel §6.14), when every
+    // contract of the module is known.
+    for (bir.decls, 0..) |d, di| {
+        if (d.kind != .schema) continue;
+        try m.walkSchema(@intCast(di));
+        _ = m.walk_arena.reset(.retain_capacity);
+    }
+    if (options.library) try m.walkExports();
+    checkCovered(&m);
     var summaries: std.ArrayList([]const u8) = .empty;
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     // A walk that gave up publishes nothing (kernel §3.3).
