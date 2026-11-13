@@ -1,0 +1,26 @@
+-- v1 accepts this and the edit shows at both places (research report 119 §4.3):
+-- the callback of `Dict.map` answers `e0` for both keys.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+go : Int → String
+go n =
+    e0 = [ n ]
+    r = Dict.values (Dict.map (Dict.fromList [ ( 1, 0 ), ( 2, 0 ) ]) λ_ _ → e0)
+    s = List.update r 0 λl → List.push l 9
+    shows s
+
+
+main : Program
+main = Node.print (go 0)

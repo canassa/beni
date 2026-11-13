@@ -1,0 +1,27 @@
+-- The safe twin of version-chain.hang: 12 writes in a row. ownership v3
+-- builds it in 50 ms (research report 119, fault 1).
+import List
+import Node exposing (Program)
+import String
+
+
+go : Int → String
+go n =
+    v0 = [ n ]
+    v1 = List.push v0 1
+    v2 = List.push v1 2
+    v3 = List.push v2 3
+    v4 = List.push v3 4
+    v5 = List.push v4 5
+    v6 = List.push v5 6
+    v7 = List.push v6 7
+    v8 = List.push v7 8
+    v9 = List.push v8 9
+    v10 = List.push v9 10
+    v11 = List.push v10 11
+    v12 = List.push v11 12
+    String.fromInt (List.length v12)
+
+
+main : Program
+main = Node.print (go 0)
