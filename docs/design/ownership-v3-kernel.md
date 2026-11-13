@@ -225,7 +225,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    place has no element step — a literal typed by a callee's type variable, as `Js.call`'s argument list
    and `Js.object`'s fields are — has no location for its elements, so it is `unknown` over every value
    it was made of (§3.2); before, its elements went nowhere, and a list handed to JavaScript inside one
-   did not escape (report 117 §9). *Invariant: a part the construction does not name holds none, and a
+   did not escape (report 117 §10). *Invariant: a part the construction does not name holds none, and a
    construction that cannot name its parts is `unknown`.*
 5. **Project** (`project`): a step on a root extends its path; on a construction takes the named part or
    `none`; on `unknown` stays `unknown`; on a closure is `unknown` over it. *Invariant: a part's leaves are
@@ -257,7 +257,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     read (`Lower.recordOwnWords`, `Bir.ownSlotsV2`). So a row is written only where its words are true
     and **v1 and v2 read them as before**: v1 is frozen, and v2 judges the same programs in the gates. A true row that fails this is
     not written, and the function stays walked or unknown code — the pessimistic side. `Dict.focus` is
-    one (report 117 §9): `taken` names an element of a list, and v2's reader of rows knows no other
+    one (report 117 §10): `taken` names an element of a list, and v2's reader of rows knows no other
     value to take, so a row there changes v2's verdicts.
 
     A row of JavaScript is true only of what the operation can run. A property read (`Js.get`) runs a
