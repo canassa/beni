@@ -394,6 +394,104 @@ hole's list after rendering. It proved five faults with probe programs:
 It found the identity skips, hosted `shown`, after-render work, `Html.map`'s context, subscriptions,
 `Tea.application`'s handlers, `ssr` and `browser-inline` safe. `Browser.programs` with nested mounts,
 workers and prerender hydration were not tested.
+## 10. The rows of `Js.get` and `Dict.focus`
+
+§4 named two missing rows as the facts that would win back 7 of the lost writes: a word on `Js.get` (6, in
+`Tea`) and words on `Dict.focus` (1, `FormValidation 276:17`). Each was written, measured and refused on
+its argument. **None of the 7 is won back; real writes stay at 279 of 308**, every line as before. The work
+found three soundness holes instead, two of them fixed here.
+
+### 10.1 `Js.get` has no true narrower row
+
+`get o name` is `o[name]`. A property read runs a getter or a proxy's `get` trap with `o` as receiver, and
+turns an object `name` into a key with its `toString`. Each can keep what it is handed. The row first
+proposed, `borrowed Value, borrowed name → unknown Value`, claims that neither escapes: the adversarial
+review (§10.4) declared it on a probe platform and proved two traps, a getter on `Array.prototype` that keeps
+the list and a `toString` that keeps the name object. `platforms/browser/Rt.beni` defines an accessor
+already. So `Js.get` stays unknown code, which is its true row.
+
+It would not have won the writes either. `Hosted.compare` hands its keys to `Js.apply` (the key's own
+comparer, read with `Js.get`, and the two keys' values), which runs code nobody can describe. Measured with
+the row in place, both operands of `compare` still escape and `Tea` keeps all 9 evidence refusals. A
+trusted row on `Hosted.compare` itself (`borrowed Key, borrowed Key → Order`) clears the 4 `tableInsert`
+and `tableRemove` refusals in the review's copy of the platforms. It rests on every `Key` being built by
+`Hosted.key`, whose evidence is judged where it is handed (checked: a keeping `compare` is refused at
+`Cmd.cancel`). That is a platform invariant, not a fact the checker sees, and its words (`borrowed`) are
+v1's, so v1 would read a row it never saw. It is the owner's call. The 2 `tableFoldl` writes do not move
+with it: their cause is the `twice` on the value location of `tableInsert`'s result.
+
+### 10.2 `Dict.focus`: a true row, and why it is not committed
+
+The row `aliased Dict k v, stored k, once taken stored (Maybe v → Maybe v) → Dict k v` is true of the code,
+and the review could not break it. `alter` is handed the value at the key and nothing else, and `insertHelp`
+(at `EQ`) or `removeHelpEQGT` (at `EQ`) drops it. Every `Node` pairs a key with its own node's value, so
+each value is at one place. It needs `taken` beyond lists (every entry of a non-list parameter 0, `free`)
+and a lowering rule that lets a `stored` callback stand beside an `aliased` first parameter. Built, it
+accepts the callback's write (`bump d k = Dict.update d k …` on a parameter). Three facts stop it:
+
+1. **v2 reads the same words.** A signature with a v2-only word is in one column for v2 and v3. v2's row
+   reader knows `taken` only for a list, so it reads `Dict.focus`'s callback as unknown code: the gates'
+   v1/v2 parity refuses `DictTupleFocus 10:5`, and `DictFocus` and `FoldAccumulators` reach v2's limit.
+   The enum of words is full (`enum(u5)`), so there is no word for v3 alone.
+2. **The write is not won.** In `FormValidation`, the callback's write is accepted and the fold is then
+   refused: `275:13 value <call List.foldl>: rejected supply: the function can answer one cell at two
+   places`. A dictionary's values are at two locations, the root's and the deep level's (kernel §4.1), and
+   a rotation moves a value between them. So the callback's answer and each value are at both, and the
+   answer the fold hands back can hold one cell at two of them. This is a coarseness of §4.1 for a tree
+   that rebalances, and no row removes it.
+3. **The `alternatives` rule's own argument does not cover it.** The review found that `alternatives` (§4.4)
+   skips the duplicate test between a callback's answer and a `free` supply, also when the callback
+   captured the dictionary and answers another of its values. What kept every probe sound is the
+   arguments-apart rule and the caller's own atom test of a function parameter's answer. A row that marks
+   a non-list supply `free` must name these in §4.4 first.
+
+Kernel §6.10 now states the rule that refused it: a row is written only where v1 and v2 read its words as
+before.
+
+### 10.3 The holes
+
+1. **A list literal with no element location held nothing** (fixed, `Frame.listOf`). A literal typed by a
+   callee's type variable — `Js.call`'s argument list, `Js.object`'s fields — has a place with no element
+   step, and its items went to no location. So a list handed to JavaScript inside one did not escape, and
+   `Hosted.key` did not hold the key it was made from: a program could write a list in place while a
+   command's key held it. Such a literal is now `unknown` over its items (kernel §3.2, §6.4). The review
+   tried 20 constructions after the fix (tuples, records, nested literals, joins, spreads, closures,
+   `Js.array`, `Js.construct`, record updates) and found none that drops a cell; base accepted 12 of them.
+2. **`Js.lt`, `gt`, `le`, `ge` were `unused a, unused a`** (fixed, `core/Js.beni`). `<` runs an object
+   operand's `valueOf`, which can keep it; the review proved a trap. The operands have no word now, and
+   escape. These words are v1's, so v1 reads the change too: the one verdict that moves is `JsWords 56:12`,
+   accepted before and refused now, in v1 and v2 alike. It is a soundness fix of the frozen checker, and no
+   real write depends on it.
+3. **The `alternatives` rule** (§10.2 item 3): not exploitable through any row committed today, which hand a
+   `free` supply only of a list that the row also writes (`List.focus`, where a capture of the list is
+   another operand of the write). Open.
+
+### 10.4 The gate
+
+ReleaseSafe compilers, `ca2fc63410` (before) and this work (after), on the same generated programs.
+
+| Generator | Programs | SAME before → after | REFUSED before → after | TRAP / DIFF / CRASH |
+|---|---:|---:|---:|---:|
+| blind-faults | 24 | 11 → 11 | 13 → 13 | 0 |
+| blind2-faults | 20 | 9 → 9 | 11 → 11 | 0 |
+| blind3-faults | 10 | 3 → 3 | 7 → 7 | 0 |
+| blind3 | 417 | 160 → 160 | 257 → 257 | 0 |
+| blind2 | 1202 | 502 → 502 | 700 → 700 | 0 |
+| evaluation-order | 440 | 288 → 288 | 152 → 152 | 0 |
+| answers-beside | 240 | 77 → 77 | 163 → 163 | 0 |
+| wider-functions | 354 | 144 → 144 | 210 → 210 | 0 |
+| callbacks-keep | 720 | 108 → 108 | 612 → 612 | 0 |
+| function-values | 1960 | 304 → 304 | 1656 → 1656 | 0 |
+| handed-back | 2592 | 0 → 0 | 2592 → 2592 | 0 |
+| aliased-arguments | 5160 | 1183 → 1183 | 3977 → 3977 | 0 |
+| recursive-levels | 16131 | 4231 → 4231 | 11900 → 11900 | 0 |
+| folds-callbacks | 30300 | 5392 → 5392 | 24908 → 24908 | 0 |
+
+Every program has the same verdict and position before and after: the generators write no platform code,
+and both fixes are about JavaScript. The sanitiser corpus is the same before and after (same 97, refused
+250, 0 traps). Real writes: 279 of 308 before and after, every line the same. One fresh Opus reviewer was
+given the diff, the code of `Js.get`, `Dict.focus` and `Hosted.compare`, and the two rows; its findings are
+§10.1 (two traps of the proposed `Js.get` row), §10.3 item 2 (a trap of a committed row) and §10.2 item 3.
 
 ## Appendix A. Commands
 
