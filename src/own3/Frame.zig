@@ -386,7 +386,8 @@ chain_root: u32 = none,
 next_use: u32 = 1,
 /// The judgments of `flow` that the walk in work made, by what each read
 /// (`FlowKey`), and the ones in work. Kept while one walk of `flow` runs.
-flow_memo: std.AutoHashMapUnmanaged(FlowKey, void) = .empty,
+flow_memo: std.AutoHashMapUnmanaged(FlowKey, [2]u32) = .empty,
+flow_args: std.ArrayList(Val) = .empty,
 /// The values that the walk of values in work found (`leafHit`), and the values that `reach` in work reached.
 leaf_memo: std.AutoHashMapUnmanaged(LeafKey, LeafHit) = .empty,
 leaf_buf: std.ArrayList(Atom) = .empty,
@@ -394,7 +395,7 @@ leaf_ks: std.ArrayList(u32) = .empty,
 leaf_nest: u32 = 0,
 reach_seen: std.AutoHashMapUnmanaged(Val, void) = .empty,
 reach_nest: u32 = 0,
-flow_active: std.ArrayList(FlowKey) = .empty,
+flow_active: std.ArrayList(struct { key: FlowKey, args: []const Val }) = .empty,
 /// The lowest depth of a use whose context the judgments in work read: the
 /// use above it, or its key (`upOf`, `freshAtom`).
 ctx_floor: u32 = std.math.maxInt(u32),
@@ -3883,15 +3884,17 @@ fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
     }
     // Each judgment once (kernel §8): a function judged at a use equal in
     // all that the judgment read is not judged again in this walk.
+    // The values are compared, not only their hash: a judgment is never
+    // skipped for another's.
     const key = f.flowKey(v, use);
-    if (f.flow_memo.contains(key)) return;
+    if (f.flow_memo.get(key)) |run| if (std.mem.eql(Val, f.flow_args.items[run[0]..][0..run[1]], use.args)) return;
     // The same judgment inside itself: a function that its own captures
     // reach. No rule follows it, and the walk gives up (kernel §3.3).
-    for (f.flow_active.items) |x| if (std.meta.eql(x, key)) {
+    for (f.flow_active.items) |x| if (std.meta.eql(x.key, key) and std.mem.eql(Val, x.args, use.args)) {
         f.failed = true;
         return;
     };
-    try f.flow_active.append(f.gpa, key);
+    try f.flow_active.append(f.gpa, .{ .key = key, .args = use.args });
     const outer = f.ctx_floor;
     f.ctx_floor = std.math.maxInt(u32);
     try f.judge(v, use);
@@ -3899,8 +3902,15 @@ fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
     f.ctx_floor = @min(outer, floor);
     _ = f.flow_active.pop();
     // It read nothing above its use: each use equal to this one gets the same judgment.
-    if (floor > use.depth) try f.flow_memo.put(f.gpa, key, {});
-    if (f.flow_active.items.len == 0) f.flow_memo.clearRetainingCapacity();
+    if (floor > use.depth) {
+        const at: u32 = @intCast(f.flow_args.items.len);
+        try f.flow_args.appendSlice(f.gpa, use.args);
+        try f.flow_memo.put(f.gpa, key, .{ at, @intCast(use.args.len) });
+    }
+    if (f.flow_active.items.len == 0) {
+        f.flow_memo.clearRetainingCapacity();
+        f.flow_args.clearRetainingCapacity();
+    }
 }
 
 fn judge(f: *Frame, v: Val, use: *const Use) Error!void {

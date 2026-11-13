@@ -82,6 +82,8 @@ pub const Options = struct { summaries: bool = false, markup_type: ?MarkupType =
 
 const State = enum(u8) { todo, working, done };
 
+const RefusalKey = struct { inst: u32, cause: u32, detail: u64 };
+
 pub const Mod = struct {
     gpa: Allocator,
     /// Lives as long as the module's result.
@@ -153,6 +155,8 @@ pub const Mod = struct {
     /// and whether it passed `max_walk_steps` (kernel §8).
     steps: u64 = 0,
     steps_over: bool = false,
+    /// Each refusal line by its instruction, cause and detail: its index in `lines` (`addRefusal`).
+    refusals: std.AutoHashMapUnmanaged(RefusalKey, u32) = .empty,
 
     // ---- types ------------------------------------------------------------------
 
@@ -1171,6 +1175,18 @@ pub const Mod = struct {
     }
 
     pub fn addRefusal(m: *Mod, f: *const Frame, inst: u32, cause: Facts.Cause, detail: []const u8) Allocator.Error!void {
+        // One line for each refusal: a walk can meet one refusal on each of
+        // many paths (kernel §8), and each would be a diagnostic.
+        const key: RefusalKey = .{ .inst = inst, .cause = @backingInt(cause), .detail = std.hash.Wyhash.hash(0, detail) };
+        const got = try m.refusals.getOrPut(m.gpa, key);
+        if (got.found_existing) {
+            const i = got.value_ptr.*;
+            if (i < m.lines.items.len) {
+                const l = m.lines.items[i];
+                if (l.inst == inst and l.refused and l.kind == .callsite and std.mem.eql(u8, l.op, "value") and l.cause == cause and std.mem.eql(u8, l.detail, detail)) return;
+            }
+        }
+        got.value_ptr.* = @intCast(m.lines.items.len);
         try m.lines.append(m.gpa, .{ .inst = inst, .token = m.tokens[inst], .kind = .callsite, .op = "value", .base = try m.baseText(f, inst), .refused = true, .cause = cause, .detail = detail });
     }
 
@@ -1256,6 +1272,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.loc = try Loc.Table.init(gpa, arena, &m.places);
     defer m.loc.deinit();
     defer m.lines.deinit(gpa);
+    defer m.refusals.deinit(gpa);
     defer m.spread_root.deinit(gpa);
     m.var_place = m.adapter.placeOfVar(.none) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
