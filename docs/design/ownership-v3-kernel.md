@@ -256,10 +256,16 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     own, which v2 and v3 read and v1 does not; any other signature is in v1's column, which all three
     read (`Lower.recordOwnWords`, `Bir.ownSlotsV2`). So a row is written only where its words are true
     and **v1 and v2 read them as before**: v1 is frozen, and v2 judges the same programs in the gates. A true row that fails this is
-    not written, and the function stays walked or unknown code — the pessimistic side. Two do (report
-    117 §9): `Js.get` (`borrowed Value, borrowed name → unknown Value` is true, but its words are all
-    v1's) and `Dict.focus` (`taken` names an element of a list, and v2's reader of rows knows no other
-    value to take, so a row there changes v2's verdicts).
+    not written, and the function stays walked or unknown code — the pessimistic side. `Dict.focus` is
+    one (report 117 §9): `taken` names an element of a list, and v2's reader of rows knows no other
+    value to take, so a row there changes v2's verdicts.
+
+    A row of JavaScript is true only of what the operation can run. A property read (`Js.get`) runs a
+    getter or a proxy's trap with the object as receiver, and turns an object name into a key with its
+    `toString`; a comparison (`Js.lt`, `gt`, `le`, `ge`) runs an object operand's `valueOf`. Each can
+    keep what it is handed, so each operand has no word and escapes: `Js.get` is unknown code, and the
+    comparisons are `a, a → fresh bool`. `unused` is true only of an operation that coerces nothing
+    (`Js.same`, `isNull`, `typeIs`).
 11. **No fact by a name** (`methodCall`, `evidence`, `Check.isSender`): a method call or an operator runs
     the code the dispatch table names: a declaration is a call of its contract; a function the compiler
     derives (`eq`, `compare` of a type that declares none, a codec) reads its operands and calls its

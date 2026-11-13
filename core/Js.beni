@@ -67,20 +67,22 @@ pub foreign pure isNullish : unused Value → fresh bool
 --| by value and two strings by their UTF-16 code units. Hand it nothing
 --| else: two objects compare as their text (`le` and `ge` are both true of
 --| two records), and a null-prototype object or a `Symbol` throws
---| `TypeError` (`boundary.md` §4.2, *The comparisons*).
-pub foreign pure lt : unused a, unused a → fresh bool
+--| `TypeError` (`boundary.md` §4.2, *The comparisons*). An object operand
+--| has its `valueOf` or `toString` run, which can keep it, so the operands
+--| carry no ownership word: they escape (`ownership-v3-kernel.md` §6.10).
+pub foreign pure lt : a, a → fresh bool
 
 
 --| `a > b`.
-pub foreign pure gt : unused a, unused a → fresh bool
+pub foreign pure gt : a, a → fresh bool
 
 
 --| `a <= b`.
-pub foreign pure le : unused a, unused a → fresh bool
+pub foreign pure le : a, a → fresh bool
 
 
 --| `a >= b`.
-pub foreign pure ge : unused a, unused a → fresh bool
+pub foreign pure ge : a, a → fresh bool
 
 
 --| `a & b`.
