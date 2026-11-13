@@ -846,6 +846,14 @@ fn leafHit(f: *Frame, v: Val, ks: []const u32, all: bool, out: *std.ArrayList(At
 
 /// The walk of `v` at `ks` found `out[start..]` and `dup`: keep it, without repeats.
 fn leafKeep(f: *Frame, v: Val, ks: []const u32, all: bool, out: *std.ArrayList(Atom), start: usize, dup: bool) Error!void {
+    if (f.leaf_nest == 1) {
+        // The value that the walk started at: no walk reaches it again.
+        f.leaf_nest = 0;
+        f.leaf_memo.clearRetainingCapacity();
+        f.leaf_buf.clearRetainingCapacity();
+        f.leaf_ks.clearRetainingCapacity();
+        return;
+    }
     try f.uniqueTail(out, start);
     const hit: LeafHit = .{
         .start = @intCast(f.leaf_buf.items.len),
@@ -906,6 +914,8 @@ const Entries = struct {
 /// says that it holds each such cell once (`linear`, in `dupOverlap`).
 fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Error!bool {
     if (f.tick()) return false;
+    // A part of a root walks nothing below it.
+    if (f.nodes.items[v].tag == .ref) return f.leavesOwnWalk(v, ks, out);
     if (try f.leafHit(v, ks, false, out)) |dup| return dup;
     const start = out.items.len;
     f.leaf_nest += 1;
@@ -1052,6 +1062,12 @@ fn allLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
 /// Whether `v` can hold a cell of `w`.
 fn reach(f: *Frame, v: Val, w: []const Atom) Error!bool {
     if (f.tick()) return true;
+    switch (f.nodes.items[v].tag) {
+        // No value below it.
+        .none, .outside, .fnref, .ref => return f.reachWalk(v, w),
+        .built, .join, .unknown, .closure => {},
+        .later => unreachable, // read through `capVal` only
+    }
     // A value that this walk reached already did not reach `w` (kernel §8).
     if (f.reach_nest != 0 and (try f.reach_seen.getOrPut(f.gpa, v)).found_existing) return false;
     if (f.reach_nest == 0) try f.reach_seen.put(f.gpa, v, {});
