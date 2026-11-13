@@ -1897,9 +1897,17 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                 if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try held.appendSlice(f.gpa, f.call_vals);
             }
             f.markup_reads = outer_reads;
-            for (vals) |v| {
+            // A value at an item that no row names as an attribute — an
+            // event's handler or message, a component's prop, a spread — is
+            // kept by the runtime past the render, and called or sent after
+            // `update` runs (`boundary.md` §9.4.8): it escapes, whatever
+            // made it. An attribute's value is read where it is rendered.
+            var unrendered: std.ArrayList(u32) = .empty;
+            defer unrendered.deinit(f.gpa);
+            try f.keptItems(@fromBackingInt(data.lhs), &unrendered);
+            for (ops.items, vals) |o, v| {
                 const n = f.nodes.items[v];
-                const kept = switch (n.tag) {
+                const kept = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null or switch (n.tag) {
                     .built => true,
                     .closure => blk: {
                         // A function that answers markup is a part of the view.
@@ -1976,6 +1984,51 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         // A schema's member or constructor is a function of the compiler's
         // own: it captures nothing of the frame, and it is in the default state.
         .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => return v_outside,
+    }
+}
+
+/// The values of the items of the markup at `root` that the runtime can keep
+/// past the render: every item that no row of the dispatch table names as an
+/// attribute or a quoted attribute (an event's handler or message, a
+/// component's prop, a spread of attributes). A missing row is the
+/// pessimistic fact: kept.
+fn keptItems(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
+    const m = f.m;
+    const bir = m.bir;
+    switch (bir.markupKind(root)) {
+        .element => {
+            const e = bir.extraData(root, Bir.MarkupElement);
+            try f.keptOf(e.items_start, e.items_end, out);
+            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| try f.keptItems(c, out);
+        },
+        .fragment => {
+            const fr = bir.extraData(root, Bir.MarkupFragment);
+            for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| try f.keptItems(c, out);
+        },
+        .component => {
+            const c = bir.extraData(root, Bir.MarkupComponent);
+            // A component's props and spread go to code that the walk does not follow here.
+            for (bir.extraSlice(.{ .start = c.props_start, .end = c.props_end }, Bir.ExtraIndex)) |at| {
+                if (bir.extraData(at, Bir.MarkupItem).value.unwrap()) |v| try out.append(f.gpa, v.int());
+            }
+            if (c.spread.unwrap()) |s| try out.append(f.gpa, s.int());
+            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try f.keptItems(ch, out);
+        },
+        .text, .hole, .@"for", .show => {},
+    }
+}
+
+fn keptOf(f: *Frame, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
+    const m = f.m;
+    const bir = m.bir;
+    for (bir.extraSlice(.{ .start = start, .end = end }, Bir.ExtraIndex)) |at| {
+        const v = bir.extraData(at, Bir.MarkupItem).value.unwrap() orelse continue;
+        var rendered = false;
+        if (m.in.dispatch) |dt| for (dt.markup) |row| if (row.node == @backingInt(at)) switch (row.kind) {
+            .attribute, .escape => rendered = true,
+            .event, .element, .hole, .@"for", .show => {},
+        };
+        if (!rendered) try out.append(f.gpa, v.int());
     }
 }
 
@@ -2156,6 +2209,22 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
         f.rents.items[r.ent + e] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
     }
     f.deriveLinear(root, null, &.{});
+    // A literal whose place has no element step (a type variable: an
+    // argument of a `Js` intrinsic, whose items each have a type of their
+    // own) names no part for its items. A part the place graph does not
+    // name is `unknown` over its values (kernel §3.2, §6.4): so is the
+    // literal, over its own storage and every item.
+    if (pr == null) {
+        var vs: std.ArrayList(Val) = .empty;
+        defer vs.deinit(f.gpa);
+        for (elems) |v| if (v != v_none) try vs.append(f.gpa, v);
+        for (spreads) |v| if (v != v_none) try vs.append(f.gpa, v);
+        for ([_]Val{ base, front }) |v| if (v != v_none) try vs.append(f.gpa, v);
+        if (vs.items.len != 0) {
+            try vs.append(f.gpa, try f.rootVal(root));
+            return f.unknownOf(place, vs.items);
+        }
+    }
     return f.rootVal(root);
 }
 
