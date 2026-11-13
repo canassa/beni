@@ -653,16 +653,12 @@ pub const Table = struct {
             if (i >= reps.len) return true;
             var cur = root;
             var at_entry: ?PlaceId = if (de == 0) root else null;
-            var reached = true;
             for (reps[i], 0..) |w, k| {
-                cur = t.places.child(cur, Step.fromWord(w)) orelse {
-                    reached = false;
-                    break;
-                };
+                // A step the caller's type has no child for (a row's, which
+                // stands for fields): no fact, so the cycle may pass there.
+                cur = t.places.child(cur, Step.fromWord(w)) orelse return true;
                 if (k + 1 == de) at_entry = cur;
             }
-            // The caller's type has no place there: no cell of its cycle.
-            if (!reached) continue;
             const pe = at_entry orelse return true;
             if (t.places.sameComponent(cur, pe)) return true;
         }
@@ -701,7 +697,9 @@ pub const Table = struct {
             var two_sets = false;
             while (true) {
                 const i = indexOfLoc(se, a);
-                if (i != none and a == e.loc and wider) {
+                // An entry at the location, or a wide one inside the deep
+                // level above it: the caller's cells there are more than it names.
+                if (i != none and wider and (a == e.loc or (a != deep and t.isPrefix(deep, a)))) {
                     two_sets = true;
                     break;
                 }

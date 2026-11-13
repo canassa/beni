@@ -5300,6 +5300,10 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   signature `Tree2 a` has under `a`. The call map paired the two deep
 //   locations by label path; a function's answer or escape of `a` missed
 //   the caller's deep lists (`Loc.cover`, `cycleWider`).
+// - `CycleAncestor`, `CycleRow` (the review's second pass): the same, where
+//   the caller's deep location is below a wide entry of the signature's
+//   deep level, and where the caller's cycle passes through a row, a step
+//   the caller's place graph cannot follow.
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
@@ -5543,6 +5547,95 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    t = Node (T [ Node (T []) [ Node (T []) [] ] ]) []
         \\    r = Ref.make []
         \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleAncestor", .why = "call Main.grow t#Node.1[*] is refused: escaped", .write = "List.push l", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a b
+        \\    = Node a b (List (Tree2 a b))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T (List (List Int))))
+        \\
+        \\
+        \\keepA : Ref (List a), Tree2 a b → ⊤
+        \\keepA r t =
+        \\    case t of
+        \\        Node a _ _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree2 T (List (List Int)) → List Int
+        \\grow t =
+        \\    case t of
+        \\        Node (T [ Node _ [ l ] _ ]) _ _ →
+        \\            List.push l 9
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    t = Node (T [ Node (T []) [ [ 1 ] ] [] ]) [ [ 0 ] ] []
+        \\    r = Ref.make []
+        \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (Debug.toString g) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleRow", .why = "call Main.grow t⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree3 a
+        \\    = Node a (List (Tree3 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree3 { n : Int, sub : T }))
+        \\
+        \\
+        \\keepR : Ref (List { r | n : Int }), Tree3 { r | n : Int } → ⊤
+        \\keepR r t =
+        \\    case t of
+        \\        Node a _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree3 { n : Int, sub : T } → List (Tree3 { n : Int, sub : T })
+        \\grow t =
+        \\    case t of
+        \\        Node top _ →
+        \\            case top.sub of
+        \\                T [ Node _ kids ] →
+        \\                    List.push kids (Node { n = 9, sub = T [] } [])
+        \\
+        \\                _ →
+        \\                    []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    leaf = Node { n = 2, sub = T [] } []
+        \\    t = Node { n = 0, sub = T [ Node { n = 1, sub = T [] } [ leaf ] ] } []
+        \\    r = Ref.make []
+        \\    keepR r t
         \\    g = grow t
         \\    Debug.log (Debug.toString (Ref.get r)) ⊤
         \\    Debug.log (String.fromInt (List.length g)) ⊤

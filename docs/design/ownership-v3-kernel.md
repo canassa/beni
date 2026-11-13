@@ -120,7 +120,9 @@ signature's. A type argument can name the container again (`Tree2 T`, where `T` 
 `List (Tree2 T)`): the caller's cycle then passes through a place where the signature has a wide entry,
 and the caller's deep location holds cells that the signature names at two entries, its own deep
 location and that wide one. No entry covers it, so the map answers `Loc.all` (`Loc.cycleWider`: the
-caller's place at a wide entry's path inside the cycle is in the caller's cycle).
+caller's place at a wide entry's path inside the cycle is in the caller's cycle). The same holds for a
+caller location below a wide entry of the signature's deep level, and a step of that path that the
+caller's place graph cannot follow (a row's) counts as one the cycle passes.
 
 *Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held
