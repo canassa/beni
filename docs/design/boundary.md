@@ -2774,6 +2774,91 @@ knows what its runtime writes through a sink; `check` does not read the key, and
 depends on it (§9.6). The key reaches the lowering as an option, never through the cache: no emitted
 byte is cached (§9.6).
 
+#### 9.4.8 A hole's value is read while the markup renders, and never kept
+
+*Added 2026-11-13, the owner's decision.* **The checker counts a `view`'s markup as holding none of
+the lists in its holes once the runtime has it. In return, every platform's runtime reads a hole's
+value only while it renders the markup that holds it, and keeps no list from a hole to read after
+that render.** The compiler cannot see a runtime's code, so it trusts this rule. Every platform that
+renders markup must keep it, and a test for each one shows that it does (below).
+
+**The render.** A runtime renders a markup value from the time it has the value (the answer of a
+`view`, or of a markup primitive in it) until the page or the string shows that value. A render
+always ends before the runtime runs `update` again, or any other function of the program's record,
+or a command's or a subscription's callback. During the render, the runtime calls the code the
+markup gives it: a helper in a hole (`language.md` §11.6), a `For` row's function, a key function.
+The `dom` runtime renders in its microtask flush (§9.8.4, `backend.md` §15.11). It calls `view` there
+and renders the answer at once, so no `update` runs between the two. The `ssr` runtime renders as
+the markup is made (`backend.md` §15.6). The `inline` runtime has no `view` at run time: a binding
+reads the model's paths while the binding runs (`browser-inline.md` §8.3).
+
+**What a runtime may do with a hole's value during the render:** read it and everything it holds, as
+often as it must. This includes a `For`'s list, a `class` or `style` list, the arguments of a helper
+call, and a row's item.
+
+**What a runtime may keep after the render:**
+
+- the DOM nodes it made, and its own state;
+- a value whose type holds no list and no record: a string, a number, a boolean, a key that a key
+  function made of those. §9.4.4 still applies: a skip by `===` is allowed only for these;
+- the messages and functions that the markup gives for events: an `on…` message or handler, and
+  `Html.map`'s function. The runtime keeps these after the render and sends them to `update`. The
+  checker counts each of them as **escaped** where the markup is made (`ownership-v3-kernel.md`
+  §6.12). So no list they hold is written in place while the runtime holds it.
+
+**What a runtime must not do:** keep a list that it got from a hole, or a value that holds one (a
+record, a tuple, a constructor, a closure that is not an event's), and read it after the render. In
+particular, a runtime must not:
+
+- compare it with the next render's value, by content or by identity, to skip a patch or to match
+  rows (§9.4.4 says the same about identity);
+- render a row, a block or a `Show` body again later from its kept item or inputs, when an `update`
+  ran since;
+- read it on the next frame, in after-render work (§9.8.6), or when it diffs subscriptions;
+- give it to the program later, other than in an event's message or function above.
+
+A runtime that needs a value from one render in the next keeps a value that holds no list. If it
+cannot, the compiler must not treat the program's lists as unshared; the rule is changed in this
+section first.
+
+**What the checker concludes from the rule** (`ownership-v3-kernel.md` §6.12, §6.13). The rule is
+about the runtime, so the checker uses it only where the program gives markup to the runtime:
+
+- In the program, a markup value holds its holes' values until it is rendered. A program that
+  writes a list in place after it put the list in markup, and before the markup is rendered, is
+  refused. This includes a write in the same function, a write in the caller of a helper that
+  answers the markup, and a write while the markup is in the model.
+- What a `view` answers (markup, or a record or tuple with markup in it, as `Tea.Document`) is
+  rendered before `update` runs again. So at the entry it holds no part of the model. `update` can
+  then own the model's lists and write them in place.
+- A markup primitive of the vocabulary (`Html.map`) answers markup that holds its arguments. The
+  markup it gets is not escaped. Its other arguments (`map`'s function) escape.
+
+**The tests.** A fixture with a `.sanitize-lists-v3` file is built again under `--ownership=v3
+--ownership-everywhere --sanitize-lists`, and must print or show its `.expected`
+(`tests/corpus/README.md`). Its model's lists are in holes, and `update` pushes onto them in place.
+Under the sanitiser each accepted write poisons the old list. So a runtime that kept a list from an
+earlier render and reads it traps. One fixture for each platform that renders markup:
+`run/SsrHolesInPlace` (`node`, `ssr`), `browser/dom/HolesInPlace` (`browser`, `dom`),
+`browser/tea/HolesInPlace` (`browser-tea`, through `dom`), and `browser/inline/HolesInPlace`
+(`browser-inline`). `html` renders nothing of its own, and `cloudflare` has no markup lowering. The
+sanitiser cannot see a comparison by identity, because a poisoned list's copy is a new object. Only
+a build that writes lists in place, as shipped, can show that kind of fault. Research report 117 §9
+has the audit of each runtime against this rule.
+
+**Known breaches, 2026-11-13** (research report 117 §9). Each is a defect to fix, not a reason to
+weaken the rule:
+
+- the `dom` runtime runs `update` inside a render when removing a focused node fires `blur` there
+  (Chrome), and then renders the old view's answer (#2502);
+- the `dom` lowering keeps a helper's `let` value, which can be a list, from one render to the next
+  (#2503);
+- a `For` keyed by reference over list or record items compares the kept old item by identity
+  (#2504);
+- on the checker side, a markup value holds a hole's result where the `dom` lowering reads the
+  hole's inputs at render time (#2505), and markup kept in the model is not seen at the entry
+  (#2506), so two of the refusals promised above are not yet made.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
