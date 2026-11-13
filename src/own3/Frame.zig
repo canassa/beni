@@ -1828,9 +1828,11 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             try m.bir.markupValues(f.gpa, @fromBackingInt(data.lhs), &ops);
             // The value of markup holds the value of each of its holes
             // (kernel §6.12): a platform's runtime reads them where it
-            // renders, after this frame, and a `For` keeps its list. So the
-            // markup is `unknown` over them, and whoever holds the markup
-            // holds them. A message that the frame makes here, or a function
+            // renders, after this frame. So the markup is `unknown` over
+            // them, and whoever holds the markup holds them until it is
+            // rendered; the runtime keeps none of them after the render
+            // (`boundary.md` §9.4.8, read at the entry: `entryCall`). A
+            // message that the frame makes here, or a function
             // that answers one, is kept by the runtime beyond the markup's
             // own life (it is sent back on an event): what it holds escapes.
             //
@@ -2740,6 +2742,9 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     var code: ?Code = null;
     var fn_root: u32 = none;
     var callee_val: Val = v_none;
+    // A markup primitive of the vocabulary (`pub markup map`), which each
+    // lowering's runtime implements (`boundary.md` §9.4.8).
+    var primitive = false;
     switch (m.tags[callee]) {
         .top, .ext_value => {
             // The evidence of a call is at the call; that of a reference is at the reference.
@@ -2747,6 +2752,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
             try f.evidence(inst);
             if (m.calleeOf(callee)) |t| {
                 if (try m.declContract(t)) |c| code = .{ .contract = c, .decl = t, .own_params = c.arity };
+                if (t[0] < m.in.birs.len and t[1] < m.in.birs[t[0]].decls.len) primitive = m.in.birs[t[0]].decls[t[1]].kind == .vocab_markup;
             }
         },
         else => {
@@ -2780,6 +2786,14 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     f.call_vals = try f.gpa.dupe(Val, vals.items);
     if (code) |c| return f.apply(inst, callee, c, vals.items, args);
     if (fn_root != none) return f.callParam(inst, callee, fn_root, vals.items, args);
+    // A markup primitive answers markup (kernel §6.12): the answer holds
+    // each argument, the markup it is handed is read only where the platform
+    // renders it, and what else it is handed (`map`'s function) the runtime
+    // keeps past the render, so that escapes.
+    if (primitive) {
+        for (args, vals.items) |a, v| if (!m.isMarkup(m.typeOfInst(a.int()))) try f.escape(v, inst);
+        return f.unknownOf(try m.placeOfInst(inst), vals.items);
+    }
     // Unknown code: it can keep each argument, and its answer can hold each of them and the callee's captures.
     for (vals.items) |v| try f.escape(v, inst);
     try f.escape(callee_val, inst);
@@ -4528,7 +4542,8 @@ fn appendChain(f: *Frame, inst: u32) Error!Val {
 /// answer it `own` and no other function of the record keeps it.
 fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     const m = f.m;
-    const Field = struct { name: []const u8, code: ?Code };
+    // `view`: the field is a function that answers markup (`Mod.isView`).
+    const Field = struct { name: []const u8, code: ?Code, view: bool };
     var fields: [12]Field = undefined;
     var nfields: usize = 0;
     // The program's value holds the record: what the runtime was handed.
@@ -4552,7 +4567,8 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             const site: Site = .{ .inst = inst };
             const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = code };
             try f.flowCaptures(code.?, &top);
-            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = code };
+            const view = if (m.fnType(m.typeOfInst(fd.value.int()))) |ft| try m.isView(ft.result.toOptional(), 0) else false;
+            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = code, .view = view };
             nfields += 1;
         }
     } else {
@@ -4564,11 +4580,13 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     var init_c: ?Code = null;
     var settle: ?Code = null;
     var others: [12]Code = undefined;
+    var views: [12]bool = undefined;
     var nothers: usize = 0;
     for (fields[0..nfields]) |fd| {
         const c = fd.code orelse continue;
         if (std.mem.eql(u8, fd.name, "update")) update = c else if (std.mem.eql(u8, fd.name, "init")) init_c = c else if (std.mem.eql(u8, fd.name, "settle")) settle = c else {
             others[nothers] = c;
+            views[nothers] = fd.view;
             nothers += 1;
         }
     }
@@ -4657,14 +4675,20 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             }
         }
     }
-    // What the other functions keep of the model is not `own`: the runtime holds their answers.
-    for (others[0..nothers]) |c0| {
+    // What the other functions keep of the model is not `own`: the runtime
+    // holds their answers. A `view`'s answer is markup, and a platform's
+    // runtime reads the values of its holes only while it renders it,
+    // which it does before it runs `update` again, and keeps none of their
+    // lists past that (`boundary.md` §9.4.8, kernel §6.12): so what a
+    // `view` answers is no holder of the model here. What it lets escape
+    // (a message built in a hole, a function that answers one) still is.
+    for (others[0..nothers], views[0..nothers]) |c0, is_view| {
         const c = c0.contract;
         for (0..c0.own_params) |pj| {
             const pes = m.loc.layoutEntries(c.layouts[pj]);
             for (pes, 0..) |pe, e| {
                 var kept = c.flags[c.off[pj] + e] & (flag_w | flag_e) != 0;
-                for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
+                if (!is_view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
                     kept = true;
                 };
                 if (!kept) continue;
