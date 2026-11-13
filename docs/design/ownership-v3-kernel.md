@@ -515,7 +515,7 @@ paths:
   once, the declaration gives up (§3.3) and publishes no contract, and the module's report has an
   `ownership_limit` line that names the limit: a loud refusal. It bounds what no memo bounds: a judgment
   that reads the chain of holders above it on every path, an answer, a supply. The largest walk of every
-  ownership root and corpus program took 49 383 steps (report 127 §2).
+  ownership root and corpus program took 49 383 steps (report 127 §1.4).
 
 **The complexity argument.** A memo-kept judgment costs one step for each equal use, so a DAG of `n`
 closures with `e` captures costs O(e) judgments and O(n) value walks per root walk; whatever the memos do
