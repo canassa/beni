@@ -2046,11 +2046,24 @@ fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
 /// pattern took off), so its storage is the spread's too.
 fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []const Val, base: Val, front: Val) Error!Val {
     const m = f.m;
+    const pr = try m.loc.proj(place, Step.elem);
+    if (pr == null) {
+        // A list whose place has no element step (a literal typed by a
+        // callee's type variable: `Js.apply f [ x ]`, `Js.object [ … ]`)
+        // has no location for its elements, so it is `unknown` over every
+        // value it was made of (kernel §3.2, §6.4): dropping them would read
+        // "no location" as "no cell".
+        var made: std.ArrayList(Val) = .empty;
+        defer made.deinit(f.gpa);
+        try made.appendSlice(f.gpa, elems);
+        try made.appendSlice(f.gpa, spreads);
+        for ([_]Val{ base, front }) |v| if (v != v_none) try made.append(f.gpa, v);
+        return f.unknownOf(place, made.items);
+    }
     const root = try f.newRoot(.local, place, inst);
     const r = f.roots.items[root];
     const es = m.loc.layoutEntries(r.layout);
     const self = try m.selfLoc(place);
-    const pr = try m.loc.proj(place, Step.elem);
     for (0..es.len) |e| {
         if (es[e].loc == self) {
             // The storage: the frame's own cell (`own`), or the base's array
@@ -2080,13 +2093,9 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
         for (elems) |v| {
             if (v == v_none) continue;
             const before = f.atoms.items.len;
-            if (pr) |p| {
-                // The element's entries that fold into this one are one set (`leavesOwn`).
-                const js = p.downOf(@intCast(e));
-                if (js.len != 0 and try f.leavesSet(v, p.child, js, &f.atoms)) dup = true;
-            } else if (try f.allLeaves(v, &f.atoms)) {
-                dup = true;
-            }
+            // The element's entries that fold into this one are one set (`leavesOwn`).
+            const js = pr.?.downOf(@intCast(e));
+            if (js.len != 0 and try f.leavesSet(v, pr.?.child, js, &f.atoms)) dup = true;
             if (f.partDup(f.atoms.items, start, before)) dup = true;
         }
         for (spreads) |v| {

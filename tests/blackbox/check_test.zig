@@ -4386,3 +4386,54 @@ test "ownership v3: the faults that the review of the kernel proved are refused"
         }
     }
 }
+
+// A list literal typed by a callee's type variable (an argument list of
+// `Js.call`, the fields of `Js.object`) has no element location. The walk
+// put its elements nowhere, so a list handed to JavaScript inside one did
+// not escape, and an object that held it did not hold it: `handed` and
+// `held` wrote it in place while JavaScript could read it. It is `unknown`
+// over its elements now (kernel §3.2, §6.4). `bound` names the literal
+// first, which gave it a list type, and was refused before.
+test "ownership v3: a list literal with no element location holds its elements" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json",
+        \\{ "platform": true, "name": "probe" }
+    );
+    try w.write("Probe.beni",
+        \\import Js
+        \\import List
+        \\
+        \\
+        \\pub handed : Js.Value, List Int → List Int
+        \\handed store xs =
+        \\    _ = Js.call store "push" [ Js.from xs ]
+        \\    List.set xs 0 9
+        \\
+        \\
+        \\pub held : List Int → Js.Value
+        \\held xs =
+        \\    o = Js.object [ ( "v", Js.from xs ) ]
+        \\    _ = List.set xs 0 9
+        \\    o
+        \\
+        \\
+        \\pub bound : Js.Value, List Int → List Int
+        \\bound store xs =
+        \\    args = [ Js.from xs ]
+        \\    _ = Js.call store "push" args
+        \\    List.set xs 0 9
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=.", "Probe.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  8:5 List.set xs: rejected escaped: it escaped before the write\n",
+        "  14:9 List.set xs: rejected later-use: it is read again at 15:5 (o)\n",
+        "  22:5 List.set xs: rejected escaped: it escaped before the write\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}

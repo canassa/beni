@@ -73,9 +73,9 @@ such a cell holds nothing any frame may still write.
 ### 3.2 `unknown(V)`: no claim, and every cell of V
 
 A value the walk cannot follow is `unknown` over the values it was made of (`unknownOf`): a part the place
-graph does not name, a constructor with no row, the answer of unknown code, a `?` on a type that is not
-`Result` or `Maybe`, the value of markup (§6.12). Its leaves are `outside_atom` and every leaf of V. It is
-`outside` only when each value of V holds no cell of the frame, which is then a fact of those values, not a
+graph does not name, a constructor with no row, a list literal whose place has no element step (§6.4),
+the answer of unknown code, a `?` on a type that is not `Result` or `Maybe`, the value of markup (§6.12).
+Its leaves are `outside_atom` and every leaf of V. It is `outside` only when each value of V holds no cell of the frame, which is then a fact of those values, not a
 default. The answer of unknown code is `unknown` over its arguments and the callee (`call`, `methodCall`,
 `type_dispatch`), after each of them escaped.
 
@@ -221,8 +221,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 4. **Construct** (`built`, `listOf`, `spreadChain`, `appendChain`): a tuple, record or constructor names
    each part that holds a cell; a list literal's storage is the frame's own cell, its elements are the
    items' leaves as one run with `partDup`; a spread's base is written (a demand) and its storage is a new
-   name; a prepend may answer its base's array unless the item is a new object (`newItem`). *Invariant: a
-   part the construction does not name holds none.*
+   name; a prepend may answer its base's array unless the item is a new object (`newItem`). A list whose
+   place has no element step — a literal typed by a callee's type variable, as `Js.call`'s argument list
+   and `Js.object`'s fields are — has no location for its elements, so it is `unknown` over every value
+   it was made of (§3.2); before, its elements went nowhere, and a list handed to JavaScript inside one
+   did not escape (report 117 §9). *Invariant: a part the construction does not name holds none, and a
+   construction that cannot name its parts is `unknown`.*
 5. **Project** (`project`): a step on a root extends its path; on a construction takes the named part or
    `none`; on `unknown` stays `unknown`; on a closure is `unknown` over it. *Invariant: a part's leaves are
    a subset of the whole's.*
@@ -247,6 +251,15 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     parameter, not `free`. The word `fresh` names one site for each location of the result (a builder's
     storage and its elements are two cells); `copyof` and its kin name one site, the new list. A `foreign`
     with no word has no contract: unknown code. *The missing fact is the pessimistic one.*
+
+    The words are shared: a signature with a word that only v2 and v3 read is kept in a column of its
+    own, which v2 and v3 read and v1 does not; any other signature is in v1's column, which all three
+    read (`Lower.recordOwnWords`, `Bir.ownSlotsV2`). So a row is written only where its words are true
+    and **v1 and v2 read them as before**: v1 is frozen, and v2 judges the same programs in the gates. A true row that fails this is
+    not written, and the function stays walked or unknown code — the pessimistic side. Two do (report
+    117 §9): `Js.get` (`borrowed Value, borrowed name → unknown Value` is true, but its words are all
+    v1's) and `Dict.focus` (`taken` names an element of a list, and v2's reader of rows knows no other
+    value to take, so a row there changes v2's verdicts).
 11. **No fact by a name** (`methodCall`, `evidence`, `Check.isSender`): a method call or an operator runs
     the code the dispatch table names: a declaration is a call of its contract; a function the compiler
     derives (`eq`, `compare` of a type that declares none, a codec) reads its operands and calls its
