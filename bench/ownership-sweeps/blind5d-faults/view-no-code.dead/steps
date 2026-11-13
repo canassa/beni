@@ -1,0 +1,3 @@
+# The view puts the model's list in a message; update keeps it, then pushes onto the model's list.
+click #snap
+click #add

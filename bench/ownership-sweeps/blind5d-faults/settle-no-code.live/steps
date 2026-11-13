@@ -1,0 +1,3 @@
+# settle keeps the model's list at a second field; update then pushes onto it.
+click #mark
+click #add

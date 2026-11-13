@@ -1,0 +1,45 @@
+-- Report 122, fault 3 in an application. A row's message holds its row; update keeps it, then edits the row.
+-- live: v3 accepts it and the in-place build reads a stale list. It must be refused.
+
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Edit
+    | Pick (List Int)
+
+
+type alias Model =
+    rows : List (List Int)
+    picked : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Edit →
+            { model | rows = List.update model.rows 0 λr → List.push r 9 }
+
+        Pick r →
+            { model | picked = r }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="edit" onClick={Edit}>edit</button>
+        <For each={model.rows} keyed={False}>
+            {λr → <button class="row" onClick={Pick r}>pick</button>}
+        </For>
+        <p>{List.length model.picked}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { rows = [ List.copy [ 1 ], List.copy [ 2 ] ], picked = [] }
+        , update = update
+        , view = view
+        }

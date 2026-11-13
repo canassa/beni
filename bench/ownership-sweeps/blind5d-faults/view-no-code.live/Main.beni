@@ -1,0 +1,43 @@
+-- Report 122, fault 1. The view is a join, so the entry has no code for it and skips what it keeps (kernel 6.13).
+-- live: v3 accepts it and the in-place build reads a stale list. It must be refused.
+
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+    | Snap (List Int)
+
+
+type alias Model =
+    items : List Int
+    saved : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | items = List.push model.items 3 }
+
+        Snap xs →
+            { model | saved = xs }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="snap" onClick={Snap model.items}>snap</button>
+        <p>{List.length model.saved}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { items = List.copy [ 1, 2 ], saved = [] }
+        , update = update
+        , view = if True then view else view
+        }
