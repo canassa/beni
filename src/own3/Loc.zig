@@ -133,6 +133,10 @@ pub const Table = struct {
     loc_label: std.ArrayList(u64) = .empty,
     loc_summary: std.ArrayList(bool) = .empty,
     loc_depth: std.ArrayList(u32) = .empty,
+    /// Per location: the layout in build that has an entry there (`build_gen`) and the entry's index,
+    /// so that `addEntry` finds a location of the layout in one step.
+    entry_of: std.ArrayList([2]u32) = .empty,
+    build_gen: u32 = 0,
     loc_index: std.AutoHashMapUnmanaged(LocKey, u32) = .empty,
 
     /// Each layout's entries, in `arena`: a slice of them stays good while the table grows.
@@ -177,6 +181,7 @@ pub const Table = struct {
         t.loc_label.deinit(gpa);
         t.loc_summary.deinit(gpa);
         t.loc_depth.deinit(gpa);
+        t.entry_of.deinit(gpa);
         t.loc_index.deinit(gpa);
         t.layouts.deinit(gpa);
         t.reps.deinit(gpa);
@@ -291,8 +296,6 @@ pub const Table = struct {
 
     const Building = struct {
         out: std.ArrayList(Entry) = .empty,
-        /// Per location in `out`: its index there.
-        index: std.AutoHashMapUnmanaged(u32, u32) = .empty,
         /// The type has more than `max_layout_entries` locations: the visit stops.
         over: bool = false,
         /// Per entry of `out`: its path, a run of `rep_steps`.
@@ -308,7 +311,6 @@ pub const Table = struct {
 
         fn deinit(b: *Building, gpa: Allocator) void {
             b.out.deinit(gpa);
-            b.index.deinit(gpa);
             b.rep_at.deinit(gpa);
             b.rep_steps.deinit(gpa);
             b.steps.deinit(gpa);
@@ -330,6 +332,7 @@ pub const Table = struct {
         }
         var b: Building = .{};
         defer b.deinit(t.gpa);
+        t.build_gen += 1;
         try t.visit(&b, place, 0);
         var id = t.empty_layout;
         if (b.over) {
@@ -354,9 +357,10 @@ pub const Table = struct {
 
     fn addEntry(t: *Table, b: *Building, loc: u32, kind: Kind) Allocator.Error!void {
         if (b.over) return;
-        const got = try b.index.getOrPut(t.gpa, loc);
-        if (got.found_existing) {
-            const e = &b.out.items[got.value_ptr.*];
+        if (loc >= t.entry_of.items.len) try t.entry_of.appendNTimes(t.gpa, .{ 0, 0 }, t.loc_parent.items.len - t.entry_of.items.len);
+        const slot = &t.entry_of.items[loc];
+        if (slot[0] == t.build_gen) {
+            const e = &b.out.items[slot[1]];
             // Two places at one location (the deep level of a cycle): the wider kind.
             if (e.kind != kind) e.kind = .@"var";
             return;
@@ -365,7 +369,7 @@ pub const Table = struct {
             b.over = true;
             return;
         }
-        got.value_ptr.* = @intCast(b.out.items.len);
+        slot.* = .{ t.build_gen, @intCast(b.out.items.len) };
         try b.out.append(t.gpa, .{ .loc = loc, .kind = kind, .single = !t.loc_summary.items[loc] });
         try b.rep_at.append(t.gpa, .{ @intCast(b.rep_steps.items.len), @intCast(b.steps.items.len) });
         try b.rep_steps.appendSlice(t.gpa, b.steps.items);
