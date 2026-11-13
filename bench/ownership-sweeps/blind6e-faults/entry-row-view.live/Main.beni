@@ -1,0 +1,38 @@
+import Browser
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+    | Noop
+
+
+type alias Model =
+    items : List Int
+    n : Int
+
+
+init : ⊤ → Model
+init ⊤ = { items = [ 1 ], n = 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | items = List.push model.items 7, n = model.n + 1 }
+
+        Noop →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <div id="outer" onClick={λ_ → Debug.log (Debug.toString model) Noop}>
+        <button id="add" onClick={λ_ → Add}>{model.n}</button>
+    </div>
+
+
+main : Browser.Program
+main = Browser.program { init = init, update = update, view = view }

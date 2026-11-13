@@ -1,0 +1,51 @@
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import List
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Add
+    | Got (List Int)
+
+
+type alias Out =
+    Browser.Send Msg
+
+
+type alias Model =
+    log : List (List Int)
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { log = [] }, Cmd.none )
+
+
+body : Out → ⊤
+body send =
+    xs = [ 1 ]
+    send (Got xs)
+    Time.sleep (Time.millis 10)
+    ys = List.push xs 2
+    send (Got ys)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Add →
+            ( model, Cmd.perform body )
+
+        Got xs →
+            ( { model | log = List.push model.log xs }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <button id="add" onClick={Add}>{Debug.toString model.log}</button>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
