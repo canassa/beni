@@ -3,9 +3,9 @@
 -- with no words escapes every argument (§24.5), so each acceptance below is
 -- the row's. `from` and `to` return what they are handed, and `pure`,
 -- `finally` and `catchIf` what their function returns: the value is the
--- list, read after the edit (`alias`). The comparisons — `same` and the
--- null tests, `lt`, `gt`, `le`, `ge` — `typeOf`, `typeIs` and `fingerprint`
--- keep nothing: accepted. `array` and `object` hold what
+-- list, read after the edit (`alias`). `same`, the null tests, `typeOf`, `typeIs` and `fingerprint` keep
+-- nothing; `lt`, `gt`, `le`, `ge` run an operand's `valueOf`, which can keep it, so they have no word
+-- and `compares` is refused (escaped). `array` and `object` hold what
 -- they are handed in a new value: an edit while the new value is no longer
 -- read is accepted. `each`, `pure`, `finally`, `catchIf` and `suspending`
 -- call their functions during the call and keep them not, so what the

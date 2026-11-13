@@ -4437,3 +4437,43 @@ test "ownership v3: a list literal with no element location holds its elements" 
         }
     }
 }
+
+// `Js.lt` and its kin ran no code by their rows (`unused a, unused a`), but
+// JavaScript's `<` runs an object operand's `valueOf`, which can keep it.
+// So a list handed to a comparison and then written in place could be read
+// by what kept it. The operands carry no word now, and escape (kernel
+// §6.10). `same` coerces nothing and keeps its row: `identical` is accepted.
+test "ownership v3: a JavaScript comparison can keep its operands" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json",
+        \\{ "platform": true, "name": "probe" }
+    );
+    try w.write("Probe.beni",
+        \\import Js
+        \\import List
+        \\
+        \\
+        \\pub compared : Js.Value, List Int → List Int
+        \\compared n xs =
+        \\    _ = Js.lt (Js.from xs) n
+        \\    List.set xs 0 9
+        \\
+        \\
+        \\pub identical : Js.Value, List Int → List Int
+        \\identical n xs =
+        \\    _ = Js.same (Js.from xs) n
+        \\    List.set xs 0 9
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=.", "Probe.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        "  8:5 List.set xs: rejected escaped: it escaped before the write\n",
+        "  14:5 List.set xs: accepted param\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
