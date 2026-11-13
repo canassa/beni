@@ -1,6 +1,7 @@
 # The ownership checker v3: the soundness kernel
 
-*Normative for `src/own3/`, 2026-11-12. The owner ordered it after research report 116: "Write the rules
+*Normative for `src/own3/`, 2026-11-12; §6.4, §6.8, §6.11 to §6.13 and §8 revised 2026-11-13 (research
+report 120). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -38,7 +39,7 @@ The five forms report 116 §5.2 named are the five places where the old code had
 | "no claim" and "no cell" are two values, the second with its reason | `Frame.Tag.outside` and `.unknown`; `Frame.giveUp` | §3 |
 | a summary location is `twice` until shown otherwise; `linear` is derived | `Frame.partDup`, `Frame.deriveLinear`, `Frame.Linear` | §4.4 |
 | one clock, the walk's | `Frame.timeOf` | §5.3 |
-| no fact by a name | `Frame.methodCall`, `Frame.evidence`, `Check.isSender`, `Check.wordedFn`, `Check.undescribed` | §6.10, §6.11 |
+| no fact by a name | `Frame.methodCall`, `Frame.evidence`, `Frame.derivedEffect`, `Check.edgeEffect`, `Check.isSender`, `Check.wordedFn`, `Check.undescribed` | §6.10, §6.11 |
 
 ## 2. The facts and their kinds
 
@@ -225,7 +226,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    place has no element step — a literal typed by a callee's type variable, as `Js.call`'s argument list
    and `Js.object`'s fields are — has no location for its elements, so it is `unknown` over every value
    it was made of (§3.2); before, its elements went nowhere, and a list handed to JavaScript inside one
-   did not escape (report 117 §10). *Invariant: a part the construction does not name holds none, and a
+   did not escape (report 117 §10; research report 120 §5 found the same hole
+   through `Hosted.tap`, where a subscription's body lost what it captured). *Invariant: a part the construction does not name holds none, and a
    construction that cannot name its parts is `unknown`.*
 5. **Project** (`project`): a step on a root extends its path; on a construction takes the named part or
    `none`; on `unknown` stays `unknown`; on a closure is `unknown` over it. *Invariant: a part's leaves are
@@ -237,9 +239,17 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    arms of one `case` are never one run (`compatible`), so a holder in another arm is no holder.
 8. **Loops** are recursion and the worded loops of `core/`: a function handed to a callee flows to the
    callee's contract for it (`flow`); where the callee hands the function its own answer (a fold), the
-   answer must be the function's own (`answerOwn`): made by it, or a parameter handed `free` that it did
-   not let go (report 112 §2.5). *Invariant: a function in a default location asks nothing and keeps what
-   it is handed (`flowUnknown`, `flowCode` with `top`).*
+   answer must be the function's own (`answerOwn`), because the callee hands it back as a parameter that
+   the function may write. Its own means that no other holder of it exists, and every holder that the
+   function's contract can name is a source of the same cells somewhere in that contract: so the answer
+   is its own where each source of it is a cell the function made whose site has no escape bit, is at no
+   other result location and is in no supply to a function (`freshOwn`), or a parameter handed `free`
+   that the function did not let escape, answers at no other location, and handed to no function that
+   keeps it (`handedBack`), or the answer of a function that it captured which passes that answer on
+   once. *Report 118 §4.5: the text asked "did not let go" of a parameter only, and a new list that the
+   function put in a `Ref` and answered came back as `own`. A cell the function made is one source
+   among the others, and the same three facts are read for it.* *Invariant: a function in a default
+   location asks nothing and keeps what it is handed (`flowUnknown`, `flowCode` with `top`).*
 9. **Recursion** (`Check.solveGroup`, `solveCodes`): a group starts from the contract with no flag and no
    source and is walked until no contract changes; contracts only grow (`Contract.join`), so the last
    round's verdicts stand on the least fixed point. Fresh names of drafts are bounded (§4.2). A member
@@ -266,38 +276,79 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     keep what it is handed, so each operand has no word and escapes: `Js.get` is unknown code, and the
     comparisons are `a, a → fresh bool`. `unused` is true only of an operation that coerces nothing
     (`Js.same`, `isNull`, `typeIs`).
-11. **No fact by a name** (`methodCall`, `evidence`, `Check.isSender`): a method call or an operator runs
-    the code the dispatch table names: a declaration is a call of its contract; a function the compiler
-    derives (`eq`, `compare` of a type that declares none, a codec) reads its operands and calls its
-    evidence; a call of an evidence parameter (`a.eq` under `where a.eq`) reads its operands, because the
-    caller that handed the evidence was judged; anything else is unknown code. Evidence (`where`) is called
-    by code the walk does not follow, any number of times, with values it does not own: a function that
-    writes or keeps a parameter is refused where it is handed, and so is one with no contract. The runtime's `send` is the alias with the word `sender`
-    (`platforms/browser/Browser.beni`), followed through aliases of it; a message sent is given up, so
-    each cell of it is a demand (`callParam`). No declaration is read by its name.
+11. **No fact by a name** (`methodCall`, `evidence`, `derivedEffect`, `Check.edgeEffect`, `Check.isSender`):
+    a method call or an operator runs the code the dispatch table names: a declaration is a call of its
+    contract; a function the compiler derives (`eq`, `compare` of a type that declares none, a codec)
+    reads its operands and calls its evidence **and the declared methods of the parts of its type,
+    directly, at any depth** (`static-dispatch-spike.md` §3.3: derivation is structural and recursive);
+    a call of an evidence parameter (`a.eq` under `where a.eq`) reads its operands, because the caller
+    that handed the evidence was judged; anything else is unknown code. The functions that derived code
+    calls are the edges of the site's terms, through the body of each derived row of the module, each
+    term once (`Check.termEdges` over `Edges.termsEdges`); a derived row of another module is read by
+    the fact that its module published for it (`Contract.DerivedFact`), and a row with no fact can write
+    and keep. What those functions can do (`Contract.Effect`, read off each one's contract) is applied
+    to the operands, which each is handed a part of once: where one keeps, or has no contract, each
+    operand escapes; where one writes, every cell of each operand is a demand at the call, with the
+    other operands as its other operands, and a cell at two places of an operand is refused (the
+    derived code reads the second place after the method wrote the first). Return-type dispatch
+    (`type_dispatch`) runs its callee the same way. Evidence (`where`) is called by code the walk does
+    not follow, any number of times, with values it does not own: a function that writes or keeps a
+    parameter is refused where it is handed, and so is one with no contract. The runtime's `send` is
+    the alias with the word `sender` (`platforms/browser/Browser.beni`), followed through aliases of it;
+    a message sent is given up, so each cell of it is a demand (`callParam`). No declaration is read by
+    its name, and no method is read as read-only because it is derived. *Report 118 §4.6: the text said
+    that a derived method calls its evidence, and the walk read it as code that only reads its operands;
+    a derived `eq` of a tuple or of `type W = W T Int` calls `T.eq`, which no walk saw.*
 12. **Markup** (`evalInner .markup`, `call` of a markup primitive): the value of markup is `unknown`
     over the values of its holes and over the arguments of a hole that calls a top-level function (a
     helper the platform may call where it renders, `language.md` §11.6): the runtime reads them when it
     renders the markup, after the frame that made it, so until then whoever holds the markup holds
-    them, and a write of one of them before the render is refused. A message built in a hole, or a
-    function that answers one, escapes: the runtime keeps it after the render and sends it to
-    `update`. A markup primitive of the vocabulary (`Html.map`) answers markup that holds each of its
+    them, and a write of one of them before the render is refused. A lowering may evaluate a hole's
+    expression where it renders, from the values the expression reads (the `dom` lowering's block of a
+    root's inputs, `backend.md` §15.4), so the markup holds the value of every local and capture that a
+    hole reads, not only the hole's value (#2505). **Every value at an item of markup that no row of
+    the dispatch table names as an attribute** — an event's handler or message, a component's prop, a
+    spread of attributes — escapes, whatever expression made it (`keptItems`): the runtime keeps it
+    after the render, and calls or sends it after `update` has run (two clicks in one task, an event
+    that bubbles through two handlers; `boundary.md` §9.4.8 counts each as escaped where the markup is
+    made). A hole's value that is built here, or a function that answers markup, escapes too. *Research
+    report 120 §5: only a message built in the hole, or a function whose answer holds a cell, escaped,
+    so a handler `λ_ → if … then Push else Nop` that captured the model left it `own`.* A markup primitive of the vocabulary (`Html.map`) answers markup that holds each of its
     arguments; the markup it is handed does not escape, and every other argument (`map`'s function)
     does. **The markup the runtime renders holds none of its holes after the render.** This rests on
     the platform rule of `boundary.md` §9.4.8 (the owner's decision, 2026-11-13): a runtime reads a
     hole's value only while it renders the markup, and keeps no list from a hole to read after that.
     The checker cannot see a runtime, so it trusts that rule, and each platform's fixture tests it.
     The rule is used at one place: the entry (rule 13).
-13. **The entry** (`entryCall`): the runtime hands `update` a model that is `own` where `init`, `update`
-    and `settle` answer it `own`, no location is answered twice, and no other function of the record keeps
-    it. A `view` (a function of the record whose answer is the build's markup type, or a record or tuple
-    with markup in it, `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the
-    answer before it runs `update` again (rule 12, `boundary.md` §9.4.8). What a `view` writes or lets
-    escape is kept, as for any other function. `update`'s message is `own` only when
-    every location of the model is: a `send` is checked (`callParam`), and a message built in `view` from
-    the model can hold a cell of the model only where `view` keeps the model, which is a location that is
-    not own (a message built in a hole escapes, rule 12). The record's functions escape; the program's
-    value is `unknown` over the record.
+13. **The entry** (`entryCall`, `freshOwn`, `paramOwn`, `handsOn`): the runtime holds the model and
+    the record's functions, and hands `update` the model and a message; a location of the model is
+    `update`'s own only where a positive fact names its one holder, the model, at every place the model
+    comes from. That place is the answer of each producer of the model (`init`, `update`, `settle`),
+    and a location is `own` (the largest solution, from `own` everywhere, taking away) only where
+    each source of it there is
+    - a cell that the producer made, whose site has no escape bit, is at no other location of the
+      answer (another model location, a command, the rest of a pair) and is in no supply to a function
+      (`freshOwn`, as rule 8); or
+    - a location of the producer's own model parameter that is `own` in its turn, that the producer
+      did not let escape, answers at no other location and hands to no function (`paramOwn`).
+
+    Every other source has another holder or no fact, and is not `own`: a top-level value
+    (`outside`), the answer of a function, a capture (the record holds it for as long as the program
+    runs), the `Host`, and **the message**. A location answered through a wide location of the answer
+    has no fact of its own. The other functions of the record keep what they write, let escape, hand
+    to a function, or (except a `view`) answer; a location they keep is not `own`. A `view` (a
+    function of the record whose answer is the build's markup type, or a record or tuple with markup
+    in it, `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the answer
+    before it runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**: a
+    handler of the rendered markup keeps its message until the next render and can send it twice, a
+    message can hold a top-level value, and the runtime's commands, subscriptions and platform events
+    make messages that no rule of the checker follows; a `send` written in the program is checked
+    where it is written (`callParam`), but it is one source among these. The record's functions
+    escape; the program's value is `unknown` over the record. *Report 118 §4.1–§4.4: the text took a
+    new list of `init` as `own` without its escape bit, compared two locations of the answer only for
+    a parameter source of `update`, did not read the escape of a model location that `update`
+    answers, and made the message `own` where every model location was, an argument that covered the
+    model's cells only and missed top-level values and a message sent twice.*
 
 ## 7. The module
 
@@ -312,9 +363,17 @@ module, authorises no in-place write (`Enforce.checkModule`, `Hoists.finish`).
 Each limit falls to the pessimistic side, so it costs precision and never soundness: a `flow` deeper than
 16 is the `top` use; a `resolve` deeper than 12, an `answerOfCode` deeper than 8, or more than 24 answers in
 work, is a lost answer (`lostAnswer`: `outside` and every argument in sight); more than 32 supplies in work
-is a refusal; a `partsOf` deeper than 8 claims nothing; evidence nested past 8 is refused; a frame nested
+is a refusal; a `partsOf` deeper than 8 claims nothing; a frame nested
 past 200 or a group of local functions past 16 rounds gives up (§3.3); a group of declarations past 64
-rounds is a `limit` line. None of these is a hole; each is a prototype's constant, and R-7.4 asks that each
+rounds is a `limit` line. A type with more than 4 096 locations (`Loc.max_layout_entries`: a location
+for each path of labels, so `( x, x )` nested 32 times has 2³²) has the layout of one summary location of
+a type variable; the module then authorises no write, publishes no contract and no derived fact, and its
+report has an `ownership_limit` line naming the limit (`Loc.Table.over`, `Check.checkModule`): a loud
+refusal, never a cut toward "holds nothing". A principled layout exists — the repeated halves of a type
+past a bound given one summary location for each object place below them, as the deep level of a cycle
+has (§4.1) — and is not built (research report 120 §2). Evidence and the rows of derived methods are
+walked each term once (`Edges.termsEdges`), so a doubling evidence term costs its distinct nodes and has
+no limit. None of these is a hole; each is a prototype's constant, and R-7.4 asks that each
 become a loud `ownership_limit` before the checker leaves the prototype stage.
 
 ## 9. Checks that run in safe builds
