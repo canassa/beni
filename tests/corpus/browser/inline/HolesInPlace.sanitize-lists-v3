@@ -1,0 +1,1 @@
+browser-inline keeps no list of the model past a binding's run (boundary.md §9.4.8): lists read by text holes and a helper, pushed in place under --ownership=v3.

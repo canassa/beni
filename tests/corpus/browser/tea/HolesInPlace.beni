@@ -1,0 +1,78 @@
+-- `browser-tea` renders through the `dom` runtime, which reads the lists in
+-- a view's holes only while it renders the view (boundary.md §9.4.8). The
+-- model's lists are in a keyed `For`, a positional `For`, a `class`, text,
+-- a helper's argument under `Html.map` and the subscriptions; `update`
+-- pushes onto both lists in place (`--ownership=v3`), and each render shows
+-- the lists as they are then.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Add
+    | Inner Inner
+    | Tick
+
+
+type Inner
+    = Picked
+
+
+type alias Model =
+    items : List Int
+    classes : List (String × Bool)
+    n : Int
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { items = [ 1, 2 ], classes = [ ( "a", True ) ], n = 3 }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Add →
+            ( { model
+                | items = List.push model.items model.n
+                , classes = List.push model.classes ( "c${String.fromInt model.n}", True )
+                , n = model.n + 1
+              }
+            , Cmd.none
+            )
+
+        Inner Picked →
+            ( model, Cmd.none )
+
+        Tick →
+            ( model, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if List.length model.items > 100 then Time.every (Time.millis 1000) λ_ → Tick else Sub.none
+
+
+total : List Int → Html Inner
+total xs = <output onClick={Picked}>{List.sum xs}</output>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <ul id="keyed">
+            <For each={model.items} keyed={λx → String.fromInt x}>{λx → <li>{x}</li>}</For>
+        </ul>
+        <ul id="position">
+            <For each={model.items} keyed={False}>{λx → <li>{x}</li>}</For>
+        </ul>
+        <p class={model.classes}>{List.length model.items}</p>
+        {Html.map (total model.items) Inner}
+    </main>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = subscriptions }

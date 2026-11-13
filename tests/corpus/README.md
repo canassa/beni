@@ -320,6 +320,17 @@ must refuse it under the pass's flags, and when it accepts the program instead
 the sanitised build is run anyway and the case fails, its trap or its other
 output the evidence.
 
+A `<name>.sanitize-lists-v3` file (its reason) gives the same pass under the
+ownership prototype (`--ownership=v3 --ownership-everywhere`), checked against
+its `dump --stage=ownership --ownership=v3`. A `browser/` page may carry one too,
+on any platform: the page is built once more under `--ownership=v3
+--ownership-everywhere --sanitize-lists` and must show `.expected`, and the
+build must wrap at least one list write. These are the tests of
+`boundary.md` §9.4.8, one per platform that renders markup
+(`run/SsrHolesInPlace`, `browser/dom/HolesInPlace`, `browser/tea/HolesInPlace`,
+`browser/inline/HolesInPlace`): a runtime that kept a list from a hole and
+reads it after `update` wrote it traps.
+
 The `-refuses` file names the refusal it expects. A line that starts with `#`
 is the reason. Every other line is one refusal, `line:col code writer`: the
 position of its diagnostic, the ownership code, and the first word of its

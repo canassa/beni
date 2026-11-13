@@ -1,0 +1,58 @@
+-- The `dom` runtime reads the lists in a view's holes only while it renders
+-- the view (boundary.md §9.4.8). The model's lists are in a keyed `For`, a
+-- positional `For`, a `class`, text and a helper's argument; `update`
+-- pushes onto both lists in place (`--ownership=v3`), and each render
+-- shows the lists as they are then. A runtime that kept a list from an
+-- earlier render and read it after the push traps under the sanitiser;
+-- one that compared it with the new list by identity shows a stale page.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    items : List Int
+    classes : List (String × Bool)
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | items = List.push model.items model.n
+                , classes = List.push model.classes ( "c${String.fromInt model.n}", True )
+                , n = model.n + 1
+            }
+
+
+total : List Int → Html Msg
+total xs = <output>{List.sum xs}</output>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <ul id="keyed">
+            <For each={model.items} keyed={λx → String.fromInt x}>{λx → <li>{x}</li>}</For>
+        </ul>
+        <ul id="position">
+            <For each={model.items} keyed={False}>{λx → <li>{x}</li>}</For>
+        </ul>
+        <p class={model.classes}>{List.length model.items}</p>
+        {total model.items}
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { items = [ 1, 2 ], classes = [ ( "a", True ) ], n = 3 }
+        , update = update
+        , view = view
+        }

@@ -1,0 +1,56 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <ul id="keyed">
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <ul id="position">
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <p class="a">"2"</p>
+    <output>"3"</output>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <ul id="keyed">
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+    <ul id="position">
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+    <p class="a c3">"3"</p>
+    <output>"6"</output>
+  </main>
+</body>
+-- click output
+(the DOM did not change)
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <ul id="keyed">
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+    </ul>
+    <ul id="position">
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+    </ul>
+    <p class="a c3 c4">"4"</p>
+    <output>"10"</output>
+  </main>
+</body>

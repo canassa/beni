@@ -1,0 +1,27 @@
+-- The `ssr` runtime reads the lists in a view's holes only while it renders
+-- the view (boundary.md §9.4.8). A list rendered in a `For`, in a `class`
+-- and in text, then pushed in place (`--ownership=v3`), then rendered
+-- again: each render shows its own list, and the first render keeps none
+-- of them, so the push makes no read of the old list stale.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+view : List Int, List (String × Bool) → Html msg
+view xs classes =
+    <ul class={classes}>
+        <For each={xs}>{λx → <li>{x}</li>}</For>
+        <li>{List.length xs}</li>
+    </ul>
+
+
+main : Node.Program
+main =
+    xs = List.copy [ 1, 2 ]
+    classes = List.copy [ ( "a", True ) ]
+    first = Ssr.render (view xs classes)
+    ys = List.push xs 3
+    more = List.push classes ( "b", True )
+    second = Ssr.render (view ys more)
+    Node.print "${first}\n${second}"
