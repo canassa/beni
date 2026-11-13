@@ -256,18 +256,29 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     writes or keeps a parameter is refused where it is handed, and so is one with no contract. The runtime's `send` is the alias with the word `sender`
     (`platforms/browser/Browser.beni`), followed through aliases of it; a message sent is given up, so
     each cell of it is a demand (`callParam`). No declaration is read by its name.
-12. **Markup** (`evalInner .markup`): the value of markup is `unknown` over the values of its holes and
-    over the arguments of a hole that calls a top-level function (a helper the platform may call where it
-    renders, `language.md` §11.6): a platform's runtime reads them where it renders, after the frame, and
-    a `For` keeps its list. A message built in a hole, or a function that answers markup, escapes: the
-    runtime keeps it beyond the markup's own life. **This is the sound default; whether a platform may
-    declare that its markup holds nothing is the owner's open decision** (report 117 §5 has the cost).
+12. **Markup** (`evalInner .markup`, `call` of a markup primitive): the value of markup is `unknown`
+    over the values of its holes and over the arguments of a hole that calls a top-level function (a
+    helper the platform may call where it renders, `language.md` §11.6): the runtime reads them when it
+    renders the markup, after the frame that made it, so until then whoever holds the markup holds
+    them, and a write of one of them before the render is refused. A message built in a hole, or a
+    function that answers one, escapes: the runtime keeps it after the render and sends it to
+    `update`. A markup primitive of the vocabulary (`Html.map`) answers markup that holds each of its
+    arguments; the markup it is handed does not escape, and every other argument (`map`'s function)
+    does. **The markup the runtime renders holds none of its holes after the render.** This rests on
+    the platform rule of `boundary.md` §9.4.8 (the owner's decision, 2026-11-13): a runtime reads a
+    hole's value only while it renders the markup, and keeps no list from a hole to read after that.
+    The checker cannot see a runtime, so it trusts that rule, and each platform's fixture tests it.
+    The rule is used at one place: the entry (rule 13).
 13. **The entry** (`entryCall`): the runtime hands `update` a model that is `own` where `init`, `update`
     and `settle` answer it `own`, no location is answered twice, and no other function of the record keeps
-    it (a `view` whose markup holds the model keeps it, by rule 12). `update`'s message is `own` only when
+    it. A `view` (a function of the record whose answer is the build's markup type, or a record or tuple
+    with markup in it, `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the
+    answer before it runs `update` again (rule 12, `boundary.md` §9.4.8). What a `view` writes or lets
+    escape is kept, as for any other function. `update`'s message is `own` only when
     every location of the model is: a `send` is checked (`callParam`), and a message built in `view` from
     the model can hold a cell of the model only where `view` keeps the model, which is a location that is
-    not own. The record's functions escape; the program's value is `unknown` over the record.
+    not own (a message built in a hole escapes, rule 12). The record's functions escape; the program's
+    value is `unknown` over the record.
 
 ## 7. The module
 

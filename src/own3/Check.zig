@@ -24,6 +24,7 @@ const Groups = @import("../own2/Groups.zig");
 const Prepass = @import("../own2/Prepass.zig");
 const Facts = @import("../own2/Facts.zig");
 const Message = @import("../own2/Message.zig");
+const InternPool = @import("../InternPool.zig");
 const Loc = @import("Loc.zig");
 const Contract = @import("Contract.zig");
 const Frame = @import("Frame.zig");
@@ -66,7 +67,13 @@ pub const Result = struct {
     summaries: []const []const u8,
 };
 
-pub const Options = struct { summaries: bool = false };
+/// The build's markup type (`boundary.md` §9.2), by the names the manifest
+/// gives: a function of an entry's record that answers it is a `view`, and
+/// what its answer holds is rendered before the runtime runs `update` again
+/// (`boundary.md` §9.4.8, kernel §6.12).
+pub const MarkupType = struct { module: InternPool.Symbol, name: InternPool.Symbol };
+
+pub const Options = struct { summaries: bool = false, markup_type: ?MarkupType = null };
 
 const State = enum(u8) { todo, working, done };
 
@@ -82,6 +89,8 @@ pub const Mod = struct {
     tokens: []const u32,
     names: Names,
     shared: *const Shared,
+    /// The build's markup type, when it has one (`Options.markup_type`).
+    markup_type: ?MarkupType = null,
 
     places: Place.Table = .{},
     account: Ids.Account = .{ .allowance = std.math.maxInt(u32) },
@@ -175,6 +184,62 @@ pub const Mod = struct {
             },
             else => null,
         };
+    }
+
+    /// Whether a value of type `v` is the build's markup: an application of
+    /// the type the manifest names (`Options.markup_type`). The type is the
+    /// platform's row; no declaration is read by its name (kernel §6.11).
+    pub fn isMarkup(m: *const Mod, v: Var.Optional) bool {
+        const mt = m.markup_type orelse return false;
+        const t = v.unwrap() orelse return false;
+        switch (m.in.store.resolvedContent(t)) {
+            .structure => |s| switch (s) {
+                .app => |a| {
+                    const id = a.type.int();
+                    if (id >= m.in.types.entries.len) return false;
+                    const e = m.in.types.entries[id];
+                    return e.package == .platform and e.module_name == mt.module and e.name == mt.name;
+                },
+                else => return false,
+            },
+            else => return false,
+        }
+    }
+
+    /// Whether a value of type `v` is what a `view` answers: markup, or a
+    /// record or tuple with markup in it whose other parts hold no cell
+    /// (`Tea.Document`'s title and body). The runtime renders such a value
+    /// whole, and keeps none of it (`boundary.md` §9.4.8).
+    pub fn isView(m: *Mod, v: Var.Optional, depth: u32) Allocator.Error!bool {
+        if (m.isMarkup(v)) return true;
+        if (depth >= 4) return false;
+        const t = v.unwrap() orelse return false;
+        const store = m.in.store;
+        const parts: []const Var = switch (store.resolvedContent(t)) {
+            .structure => |s| switch (s) {
+                .tuple => |r| store.vars(r),
+                .record => |rec| blk: {
+                    // A closed record: its fields, with no extension.
+                    switch (store.resolvedContent(rec.ext)) {
+                        .structure => |es| if (es != .empty_record) return false,
+                        else => return false,
+                    }
+                    const fs = store.fields(rec.fields);
+                    const out = try m.walk_arena.allocator().alloc(Var, fs.len);
+                    for (out, fs) |*o, fld| o.* = fld.value;
+                    break :blk out;
+                },
+                else => return false,
+            },
+            else => return false,
+        };
+        var markup = false;
+        for (parts) |p| {
+            if (try m.isView(p.toOptional(), depth + 1)) {
+                markup = true;
+            } else if (m.loc.layouts.items[try m.loc.layoutOf(try m.placeOf(p.toOptional()))].len != 0) return false;
+        }
+        return markup;
     }
 
     /// Whether a function parameter of type `v` is the runtime's `send`: an
@@ -993,6 +1058,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .tokens = bir.insts.items(.main_token),
         .names = names,
         .shared = shared,
+        .markup_type = options.markup_type,
     };
     defer m.walk_arena.deinit();
     defer m.places.deinit(gpa);
