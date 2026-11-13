@@ -3,7 +3,8 @@
 *Normative for `src/own3/`, 2026-11-12; §6.4, §6.8, §6.11 to §6.13 and §8 revised 2026-11-13 (research
 report 120); §6.12 and §6.13 revised again the same day (research report 123); §4.1, §6.2, §6.8 and
 §6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
-(research report 127). The owner ordered it after research report 116: "Write the rules
+(research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
+129). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -207,10 +208,20 @@ what the copying program prints. Argument: every cell the frame can observe is a
 every consumer records a read of every atom it can observe (`readAll`, `readBy`, a list pattern, the
 frame's result); every holder the walk does not follow records an escape of every atom it can hold (§3.2,
 §6.10), and so does the default that a holder hands a function's function parameters (§6.2); a
-write by a callee is a demand at the call (§6.2); and a call that the runtime makes into the
-program's code is a call too, applied where the program hands the runtime what it calls the code with (the
-rows of markup, §6.12; the record of an entry, §6.13). So an observation of W after t is a read after
-t, an escape, or another operand — each refused.
+write by a callee is a demand at the call (§6.2); and every call into the program's code that no walked
+body makes — by the markup runtime, the entry's runtime, derived code, a schema's compiled workers, host
+JavaScript, or a callee of `core/` or a platform — is in the list of §6.14, each with the rule that
+applies it: as a call where the program hands the caller what it calls the code with, or as a function
+in the default location (§6.8), which writes nothing. The list is derived from where the backend emits
+and roots code, and safe builds check that every instruction that names code in an emitted declaration
+was walked (§6.14, §9). So an observation of W after t is a read after t, an escape, or another operand
+— each refused.
+
+*Research report 128: the theorem named two callers of this kind (the rows of markup, the record of an
+entry), and a schema's print worker, a third, called a `via` function that no walk read. It was the
+third time a hand-written list of these callers proved incomplete (markup rows and keys, report 121; the
+entry's functions, reports 121 and 122). Report 129 found a fourth, host JavaScript in a `--library`
+build.*
 
 ### 5.1 New names
 
@@ -312,7 +323,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    round's verdicts stand on the least fixed point. Fresh names of drafts are bounded (§4.2). A member
    whose walk gave up has no contract in that round and after. A group that has not settled after 64
    rounds publishes no contract for any member (§8): a contract of a round before the fixed point says
-   less than the group does.
+   less than the group does. The rounds of a member share its one step budget (§8): a member past it
+   stops the rounds, and no member publishes a contract.
 10. **`foreign` and the rows of `core/`** (`Check.wordedContract`, `Check.wordedFn`): a declaration with
     ownership words is not walked; its words are its contract, a trusted row. A result the words do not
     describe is `undescribed`: `outside` (no frame may write it) and every cell of every parameter at any
@@ -340,6 +352,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     contract; a function the compiler derives (`eq`, `compare` of a type that declares none, a codec)
     reads its operands and calls its evidence **and the declared methods of the parts of its type,
     directly, at any depth** (`static-dispatch-spike.md` §3.3: derivation is structural and recursive);
+    a derived codec (`Edges.Edge.codec`) is a function of `⊤` that answers a codec, so a call of it
+    reads nothing: the code that later runs the codec's workers on a value runs a function it has no
+    contract for, so the value escapes there (§3.2), and every function those workers run — a `via`, a
+    function in a `codec` value that a type's module declares — is in the default location (§6.14);
+    a method declared as a constant (`pub eq = keeper`) has no fact here, since its contract says what
+    its value holds, not what a call of it does, and is read as code with no contract;
     a call of an evidence parameter (`a.eq` under `where a.eq`) reads its operands, because the caller
     that handed the evidence was judged; anything else is unknown code. The functions that derived code
     calls are the edges of the site's terms, through the body of each derived row of the module, each
@@ -477,6 +495,76 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     Research report 121 §4.1–§4.2 and report 122 §3.1–§3.2, §3.4: a field with no known code was
     dropped (neither producer nor consumer), and whether an answer was the model or a pair was guessed
     from its locations, so a tuple model was read at the wrong place.*
+14. **Calls into the program that no walked body makes** (`Check.walkSchema`, `Check.walkExports`,
+    `Check.checkCovered`). The theorem of §5 needs every call of the program's code to be applied by a
+    rule. Code that is not a walked body of the program calls it in the places below, and only there.
+    The list is read off the backend — every edge and root of `js/Reach.zig` that reaches a declaration
+    of the program, and every call that `js/Lower.zig`, `js/SchemaLower.zig` and the markup lowerings
+    emit that is not the lowering of a call in a body — and not written from memory. Research report 129
+    §2 gives the evidence for each row.
+
+    | Caller | What it calls, and with what | Rule |
+    |---|---|---|
+    | the program's own body | a function, with the arguments written | rule 2 |
+    | a function of `core/` or a platform, walked or worded, or a `foreign` (a callback of `List.map`, `Ref.update`, `Task`, `Cmd`, `Sub`, `Io`, `Hosted`, `Browser.Worker.program`, a Cloudflare `Worker.program`) | the function it was handed, with what its contract says | rules 2 and 8 (the contract, or the default where it loses it), rule 10 (words; no word is unknown code) |
+    | the markup runtime | a `For`'s row and key function and a `Show`'s body and key function, with items of the markup's values | rule 12: applied as at a call site |
+    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape |
+    | the markup runtime | a top-level function in a hole (a helper, `language.md` §11.6), re-made where it renders | rule 12: the markup holds what the call is handed |
+    | the entry's runtime | each function of the entry's record, with the model, a message or what it makes | rule 13 |
+    | derived `eq` and `compare`, `==` and `<`, a method call, return-type dispatch, `where` evidence, `core/`'s derived JavaScript (`listEq` calls the element's comparator) | the methods the dispatch table names, with the operands or their parts | rule 11 |
+    | the compiled workers of a `schema` (`S.print`, `S.parse`, `S.encode`, `S.decode`, `S.read`, `S.write`, `S.valid`, the description) and `S.schema`, which `core/Schema`'s runners run; the workers of every schema that names it; a derived codec that names it | each function of a `via` conversion, with a part of the value the worker was handed, or with a new value the worker made | **this rule**, below |
+    | a derived codec | the `codec` value that the type's module declares, by name, with `⊤` | rule 2 for its body: it is a declaration of the program, walked; the functions in the codec it answers went to the `top` use where the codec was made (rule 8, through `Schema.conversion`) |
+    | host JavaScript, in a `--library` build | each value that the root package exports (`Reach.collectRoots`: `pub` values, the entry declaration, the members of a `pub schema`, the derived rows of its types), with values it may still hold | **this rule**, below |
+    | the module loader | each top-level constant, with nothing | §7: its body is walked; its value is `outside` (§3.1) |
+    | the entry file | `main`'s value, handed to the platform's `run` (and its `exports`, `"exports": "program"`) | rule 2 or 10: `main`'s value went to the platform function it was handed to |
+    | a lowering that rewrites the program: the `browser-inline` program hook (the record is never built; its parts are inlined into the mount), a function's suspendable twin (its rest is a continuation), a helper re-made at render | the same functions, with the same values, in the order `language.md` §6 gives | the rule of the call it rewrites. The checker trusts each lowering to keep the program's calls and their order, as it trusts the platform rule of §6.12 |
+
+    **A schema's `via`.** A `via` conversion is evaluated once, where the module loads, and the schema's
+    compiled workers and its `S.schema` value hold it for as long as the program runs. They call its
+    functions at any time, any number of times: a print or encode worker with a part of the value the
+    program handed the worker, which the program can still hold; a parse or decode worker with a value it
+    made. So the conversion is a **value in the default location**: the expression of each `via` is walked
+    in a frame of the schema declaration (`walkSchema`), its value goes where no contract follows it, so
+    each function in it goes to the `top` use (`mention`, rule 8) and each cell it holds escapes. A
+    function at `top` that writes its parameter is refused (`writesOwn`), at the `via`. The program's call
+    of a worker is a call of code that the walk does not follow (a schema member is `outside`, §3.1, and
+    has no contract): each argument escapes there (§3.2). *Invariant: a function that a compiled worker
+    calls writes nothing it is handed, and whatever it keeps escaped where the program handed it to the
+    worker.* This holds wherever the worker is called from: another schema's worker, a derived codec,
+    `core/Schema`'s runners through `S.schema`. A conversion that is a top-level value (`via conv`) is
+    walked as a declaration, and `Schema.conversion` loses its functions, so they went to `top` there.
+    The default costs precision: a print whose value nothing reads after is refused, and a parse worker's
+    value is new, so its conversion could write it (research report 129 §9).
+
+    **A `--library` build.** Host JavaScript calls each value that the root package exports, at any time,
+    with values that it may still hold and read after. An exported function is a **function in the default
+    location** (`walkExports`): it goes to the `top` use, so one that writes a parameter is refused. A
+    constant that holds a function put it into its value where the value was made, which sent it to `top`
+    (`mention`). A derived row reads; the declared methods it calls are `pub`, so they are exports too. A
+    member of a `pub schema` runs the `via`s, which are in the default location already.
+
+    *The argument.* A call of the program's code by code that the walk does not follow is a call like any
+    other (rule 2) when the walk knows where the caller gets the arguments (markup, the entry), and
+    otherwise the code is in the default location (rule 8): it is handed values with no claim, so it may
+    write none, and what it keeps was given up where the caller got it. Each row of the table is one of
+    the two. *Research report 128 §4.1: no walk read a schema declaration, so the function named in a
+    `via` never went to the default location; report 129 found the same of a `--library` build's
+    exports.*
+
+    **The mechanical check** (`Check.checkCovered`, safe builds). Every instruction that names or runs
+    code (`namesCode`: a reference to a value, a lambda, a call of any kind, markup), in every declaration
+    whose code the backend emits, was evaluated by a walk or accounted for by a rule (`Frame.noteWalked`):
+    otherwise the build panics, naming the instruction. The kinds of declaration are a `switch` with no
+    `else` (`value`: its body; `schema`: its `via`s; `foreign_value` and `vocab_markup`: JavaScript of a
+    sibling or a runtime, rules 10 and 12; the others: no code), and so are the kinds of instruction: a new
+    kind of either compiles only once it is classified. It is what found research report 128's fault
+    again in one run: with `walkSchema` turned off, the first program with a `via` fails the check. A
+    declaration whose walk gave up or passed its steps is not checked; it publishes nothing and its module
+    authorises no write. *What it cannot catch:* a call with no instruction behind it — a name that the
+    compiler makes up (a derived row, a dispatch edge, the entry's protocol, the workers of one schema
+    calling another's, the exports of a `--library` build, a codec found by the name `codec`); a contract
+    of `core/`, a platform or a `foreign` that is wrong; and a lowering that changes which calls run or
+    their order. Each of those is a row of the table above, and a new one must be added to it by hand.
 
 ## 7. The module
 
@@ -509,24 +597,51 @@ paths:
   `top` use and the depth started again at 0, so the bound bounded nothing, and the use's supplies never
   escaped: a list handed down 18 closures to one that kept it was written in place. A walk is bounded by
   the two rules above and the limit below, not by a depth.
-- **The walk of one declaration takes at most `Check.max_walk_steps` steps** (1 048 576, twenty times
-  the largest real walk): each call of `flow`, `resolve`, `answerOf`, `answerOfCode`, `leaves`, `leavesOwn`, `reach`, `partsOf`,
-  `ownSupply`, `answerOwn` and `expandSrcs` is a step (`Frame.tick`). Past it every walk returns at
-  once, the declaration gives up (§3.3) and publishes no contract, and the module's report has an
-  `ownership_limit` line that names the limit: a loud refusal. It bounds what no memo bounds: a judgment
-  that reads the chain of holders above it on every path, an answer, a supply. The largest walk of every
-  ownership root and corpus program took 49 383 steps (report 127 §1.4).
+- **One declaration takes at most `Check.max_walk_steps` steps** (1 048 576), **over all of its walks**:
+  one budget for each declaration (`Mod.decl_steps`), which every loop that no memo bounds counts against
+  (`Frame.tick`):
+  - each expression the walk evaluates (`eval`; past the budget the walk goes no deeper, and a write it
+    did not reach has no line, so it is not authorised);
+  - each call of `flow`, `resolve`, `answerOf`, `answerOfCode`, `leaves`, `leavesOwn`, `reach`,
+    `partsOf`, `ownSupply`, `answerOwn` and `expandSrcs`;
+  - each pair of a write and an escape (`demand`) and of a write and a later read (`finishDemands`);
+  - in the entry (`entryCall`, rule 13), each entry of the contract's answer that a model location
+    meets and each model location that a parameter entry meets (`meetsOf`), and each step of the
+    taking away;
+  - every round of the declaration's recursive group (`solveGroup`, rule 9) and of a group of its local
+    functions (`solveCodes`): the rounds walk again and keep counting, they do not start the count
+    again.
+
+  Past it every walk returns at once, the declaration gives up (§3.3), and the module's report has an
+  `ownership_limit` line that names the limit: a loud refusal. A member of a recursive group past it
+  stops the group's rounds, and no member publishes a contract. In the entry, a budget passed takes
+  every model location out of `own`, so every write the entry judges is refused. The `via`s of a schema
+  and the exports of a `--library` build (§6.14) are walked under the budget of their declaration. The
+  largest declaration of the 2 311 ownership roots (every corpus program and every real root) takes
+  49 480 steps with every loop counted (`changeRouteTo` of `examples/conduit`; report 129 §8), so the
+  budget is about 21 times it.
+
+  *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked
+  each member up to 64 times with a new count each time (6.5 s for a 400-line program, about 30 s for a
+  member near both limits), and the entry's largest solution took one round for each model location,
+  each round over every pair of locations, with no step counted (18.7 s for 800 list fields). The entry
+  now reads each fact once and takes away along a worklist (`entryCall`): about the number of pairs of
+  locations that meet, not their fourth power.*
 
 **The complexity argument.** A memo-kept judgment costs one step for each equal use, so a DAG of `n`
-closures with `e` captures costs O(e) judgments and O(n) value walks per root walk; whatever the memos do
-not bound is at most `max_walk_steps` steps per declaration, and one step costs time polynomial in the
-size of the layouts it reads (at most 4 096 entries each). So the work of a module is polynomial in its
-size, whatever its shape.
+closures with `e` captures costs O(e) judgments and O(n) value walks per root walk. Every other loop of a
+declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point — is
+counted, so a declaration takes at most `max_walk_steps` steps however many times it is walked, and one
+step costs time polynomial in the size of the layouts it reads (at most 4 096 entries each). So the work
+of a module is polynomial in its size, whatever its shape. Two costs are outside the count, each
+polynomial and each kept, so no round repeats it: building a layout and a call map (`Loc.cover`, kept for
+each pair of layouts), and the index of a pair's meets (`MeetIndex`, kept for each pair in a frame).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
-deeper than 12, an `answerOfCode` deeper than 8, or more than 24 answers in work, is a lost answer
-(`lostAnswer`: `outside` and every argument in sight); more than 32 supplies in work is a refusal; a
-`partsOf` deeper than 8 claims nothing; a frame nested past 200 or a group of local functions past 16
+deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
+argument in sight); a `partsOf` deeper than 8 claims nothing (the parts are not apart); `isView` deeper
+than 4 is no view (its answer is kept); an alias of `sender` deeper than 8 is no sender (a message
+sent through it is not a demand, and it is never `own` anyway, rule 13); a frame nested past 200 or a group of local functions past 16
 rounds gives up (§3.3); a group of declarations past 64 rounds is a `limit` line, and none of its members
 publishes a contract (a round's contract that is not the last says less than the group does, and a limit
 line of a module outside the app is no error, so an importer would read it). A type with more than 4 096
@@ -554,6 +669,8 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | `twice` never reaches a supply | `resolve` | §4.4 |
 | root 0 is made once, by `init` | `newRoot` | §3.1 |
 | every `switch` is exhaustive | the compiler, every file of `src/own3/` | §3.3 |
+| every instruction that names code, in a declaration whose code the backend emits, was walked | `Check.checkCovered` | §6.14 |
+| the index of a pair's meets says what `locsMeet` says, for layouts of at most 64 entries | `Frame.meetsOf` | §4.1, §6.13 |
 
 ## 10. What the kernel costs
 
