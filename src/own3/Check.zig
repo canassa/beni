@@ -28,6 +28,8 @@ const InternPool = @import("../InternPool.zig");
 const Loc = @import("Loc.zig");
 const Contract = @import("Contract.zig");
 const Frame = @import("Frame.zig");
+const Dispatch = @import("../check/Dispatch.zig");
+const Edges = @import("../check/Edges.zig");
 
 const PlaceId = Ids.PlaceId;
 const Step = Place.Step;
@@ -452,6 +454,82 @@ pub const Mod = struct {
             return m.contracts[t[1]];
         }
         return m.contracts[t[1]];
+    }
+
+    // ---- code that the walk does not follow --------------------------------------
+
+    /// What the code that dispatch edge `e` names can do with a value it is
+    /// handed (kernel §6.11): write it, keep it, or nothing that a contract
+    /// says (`no_contract`: unknown code, which keeps what it is handed).
+    /// The code is called by code that the walk does not follow — a
+    /// function the compiler derives, or code handed evidence — so the fact
+    /// is read off the callee's contract, never off its name, and a missing
+    /// fact is the pessimistic one: another module's derived method with no
+    /// published fact can write and keep.
+    pub fn edgeEffect(m: *Mod, e: Edges.Edge) Allocator.Error!Contract.Effect {
+        const target: [2]u32 = switch (e) {
+            .top => |d| .{ m.in.module, d },
+            .ext => |x| blk: {
+                if (x.module.int() >= m.in.provenance.len) return .{ .no_contract = true };
+                const d = m.in.provenance[x.module.int()].valueDecl(x.value) orelse return .{ .no_contract = true };
+                break :blk .{ x.module.int(), d.int() };
+            },
+            // This module's row: its body is walked with the edges (`through_rows`).
+            .derived => return .{},
+            .ext_derived => |u| {
+                const owner = m.in.types.entries[@backingInt(u.type)].module;
+                for ([_]u32{ u.module.int(), owner.int() }) |mi| {
+                    if (mi >= m.shared.published.len) continue;
+                    const p = m.shared.published[mi] orelse continue;
+                    for (p.derived) |fact| if (fact.type == @backingInt(u.type) and fact.kind == @backingInt(u.kind)) return fact.effect;
+                }
+                return .{ .writes = true, .keeps = true, .no_contract = true };
+            },
+            // The compiler's own comparisons and codecs: they read their
+            // operands; what they call is an edge of its own.
+            .primitive, .undetermined, .codec => return .{},
+        };
+        if (try m.declContract(target)) |c| return .{ .writes = c.writes(), .keeps = c.escapes() };
+        if (try m.isFunction(target)) return .{ .no_contract = true };
+        return .{};
+    }
+
+    /// The text of a refusal of evidence with effect `x` (`Frame.evidence`).
+    pub fn evidenceText(x: Contract.Effect) []const u8 {
+        if (x.writes) return "a function that writes its parameter is handed as evidence";
+        if (x.keeps) return "a function that keeps its parameter is handed as evidence";
+        return "a function with no contract is handed as evidence";
+    }
+
+    /// Every edge of the terms `roots`, through the body of each derived
+    /// row of this module that they name, each term once (`Edges.termsEdges`):
+    /// the methods a derived `eq` or `compare` calls on the parts of its
+    /// type, at any depth, and the evidence it is handed.
+    pub fn termEdges(m: *Mod, roots: []const Dispatch.TermIndex, out: *std.ArrayList(Edges.Edge)) Allocator.Error!void {
+        const dt = m.in.dispatch orelse return;
+        try Edges.termsEdges(out, m.walk_arena.allocator(), dt, roots, true);
+    }
+
+    /// For each derived method of a nominal type that this module emits:
+    /// what the methods it calls, at any depth, can do (`edgeEffect`). A
+    /// row's evidence parameters are judged where it is used.
+    fn derivedFacts(m: *Mod) Allocator.Error![]const Contract.DerivedFact {
+        const dt = m.in.dispatch orelse return &.{};
+        var out: std.ArrayList(Contract.DerivedFact) = .empty;
+        var edges: std.ArrayList(Edges.Edge) = .empty;
+        defer edges.deinit(m.walk_arena.allocator());
+        for (dt.derived) |row| {
+            const t = switch (row.shape) {
+                .nominal => |id| id,
+                .record, .tuple, .unit => continue,
+            };
+            edges.clearRetainingCapacity();
+            try m.termEdges(dt.argsAt(row.body), &edges);
+            var x: Contract.Effect = .{};
+            for (edges.items) |e| x = x.join(try m.edgeEffect(e));
+            try out.append(m.arena, .{ .type = @backingInt(t), .kind = @backingInt(row.kind), .effect = x });
+        }
+        return out.items;
     }
 
     // ---- the signature of a declaration ------------------------------------------
@@ -886,7 +964,8 @@ pub const Mod = struct {
         if (inst == none) return "call";
         switch (m.tags[inst]) {
             .top, .ext_value => if (m.calleeOf(inst)) |t| return m.refName(t),
-            .method_call => if (m.methodTarget(inst)) |t| return m.refName(t),
+            .method_call => return if (m.methodTarget(inst)) |t| m.refName(t) else "<derived method>",
+            .type_dispatch => return "<dispatched method>",
             .local => return m.localName(f.d, m.datas[inst].lhs),
             else => {},
         }
@@ -1156,6 +1235,16 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     // A walk that gave up publishes nothing (kernel §3.3).
     if (std.debug.runtime_safety) for (m.contracts, m.failed_decl) |c, failed| std.debug.assert(!(failed and c != null));
-    const published = try Contract.publish(gpa, &m.loc, m.contracts);
+    // A type past the layout limit (kernel §8, `Loc.max_layout_entries`): the
+    // walk read its places as one summary location, so the module authorises
+    // no write (`limits`) and publishes no contract. An importer reads each
+    // of its declarations as unknown code.
+    if (m.loc.over.items.len != 0) {
+        try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: a type has more than {d} locations (a location for each path of labels through it), so the checker judges no write of the module", .{ m.names.module_names[in.module], Loc.max_layout_entries }));
+        @memset(m.contracts, null);
+    }
+    // A module past a limit publishes no contract, and so no derived fact.
+    const derived = if (m.loc.over.items.len != 0) &.{} else try m.derivedFacts();
+    const published = try Contract.publish(gpa, &m.loc, m.contracts, derived);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };
 }

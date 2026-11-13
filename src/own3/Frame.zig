@@ -67,6 +67,8 @@ const Facts = @import("../own2/Facts.zig");
 const Loc = @import("Loc.zig");
 const CMod = @import("Contract.zig");
 const Check = @import("Check.zig");
+const Dispatch = @import("../check/Dispatch.zig");
+const Edges = @import("../check/Edges.zig");
 
 const Contract = CMod.Contract;
 const Mod = Check.Mod;
@@ -400,6 +402,12 @@ clock_inst: u32 = none,
 clock_entered: u32 = 0,
 /// The count of expressions that the walk entered (`eval`).
 entered: u32 = 0,
+/// While the holes of markup are walked: every value of a local that they
+/// read, which the markup holds (`evalInner .markup`).
+markup_reads: ?*std.ArrayList(Val) = null,
+/// The entries of runs that one call of `markAtom`, `groundOf` or
+/// `atomSrcs` visited: each once (`runKey`).
+run_seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -1200,7 +1208,7 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     try f.uniqueTail(&f.atoms, start);
     const n: u32 = @intCast(f.atoms.items.len - start);
     if (n == 0) return;
-    for (start..start + n) |i| f.markAtom(f.atoms.items[i], flag_e);
+    for (start..start + n) |i| try f.markAtom(f.atoms.items[i], flag_e);
     const at: u32 = @intCast(f.esc_atoms.items.len);
     try f.esc_atoms.appendSlice(f.gpa, f.atoms.items[start..]);
     // The answer of a function parameter can hold what the function was
@@ -1216,8 +1224,15 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
 
 /// Set `flag` on the parameter location that atom `a` is, or was taken
 /// from. The run of a `version` or `taken` entry holds atoms of roots made
-/// before its own, so the recursion ends.
-fn markAtom(f: *Frame, a: Atom, flag: u8) void {
+/// before its own, and their runs hold older ones again: each entry is
+/// visited once per call (`run_seen`), so a chain of `n` writes costs `n`
+/// steps and not `2ⁿ` (research report 119 §4.1).
+fn markAtom(f: *Frame, a: Atom, flag: u8) Error!void {
+    f.run_seen.clearRetainingCapacity();
+    return f.markAtomIn(a, flag);
+}
+
+fn markAtomIn(f: *Frame, a: Atom, flag: u8) Error!void {
     const r = f.roots.items[a.root];
     switch (r.kind) {
         .param, .capture => f.pflags.items[r.ent + a.e] |= flag,
@@ -1227,7 +1242,8 @@ fn markAtom(f: *Frame, a: Atom, flag: u8) void {
                 .own, .alias, .derived => return,
                 .taken, .version => {},
             }
-            for (0..ent.len) |i| f.markAtom(f.atoms.items[ent.start + i], flag);
+            if ((try f.run_seen.getOrPut(f.gpa, runKey(a))).found_existing) return;
+            for (0..ent.len) |i| try f.markAtomIn(f.atoms.items[ent.start + i], flag);
         },
         // The answer of a function parameter escapes: the contract says so,
         // and the caller that knows the function lets what it answers escape.
@@ -1236,6 +1252,11 @@ fn markAtom(f: *Frame, a: Atom, flag: u8) void {
         },
         .outside, .fresh => {},
     }
+}
+
+/// The entry of a root the frame made that atom `a` is at: what `run_seen` holds.
+fn runKey(a: Atom) u64 {
+    return (@as(u64, a.root) << 32) | a.e;
 }
 
 // ---- demands -------------------------------------------------------------------------
@@ -1431,7 +1452,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         }
     }
     // The contract asks the caller for what the body writes of a parameter.
-    if (in.op != .supply) for (0..wn) |i| f.markAtom(f.atoms.items[w + i], flag_w);
+    if (in.op != .supply) for (0..wn) |i| try f.markAtom(f.atoms.items[w + i], flag_w);
     // A write of a cell that a function parameter was handed before: a function that keeps it reads the edit.
     if (in.op != .supply and wn != 0) for (f.answers.items) |an| {
         if (f.overlapAny(an.base.items, f.atoms.items[w..][0..wn])) f.drafts.items[an.di].rewrites = true;
@@ -1441,7 +1462,13 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
 
 const Ground = enum(u8) { fresh, call, param };
 
-fn groundOf(f: *Frame, a: Atom) Ground {
+fn groundOf(f: *Frame, a: Atom) Error!Ground {
+    f.run_seen.clearRetainingCapacity();
+    return f.groundIn(a);
+}
+
+/// `groundOf`, each entry of a run once (`markAtom`).
+fn groundIn(f: *Frame, a: Atom) Error!Ground {
     const r = f.roots.items[a.root];
     // A cell read through a call's result rests on the callee's contract.
     const via: Ground = if (a.via != none and f.roots.items[a.via].call) .call else .fresh;
@@ -1453,9 +1480,12 @@ fn groundOf(f: *Frame, a: Atom) Ground {
             var g: Ground = if (r.call) .call else via;
             switch (ent.kind) {
                 .own, .alias, .derived => {},
-                .taken, .version => for (0..ent.len) |i| {
-                    const b = f.groundOf(f.atoms.items[ent.start + i]);
-                    if (@backingInt(b) > @backingInt(g)) g = b;
+                .taken, .version => {
+                    if ((try f.run_seen.getOrPut(f.gpa, runKey(a))).found_existing) return g;
+                    for (0..ent.len) |i| {
+                        const b = try f.groundIn(f.atoms.items[ent.start + i]);
+                        if (@backingInt(b) > @backingInt(g)) g = b;
+                    }
                 },
             }
             return g;
@@ -1498,7 +1528,7 @@ fn finishDemands(f: *Frame) Error!void {
         }
         var g: Ground = .fresh;
         for (ws) |a| {
-            const x = f.groundOf(a);
+            const x = try f.groundOf(a);
             if (@backingInt(x) > @backingInt(g)) g = x;
         }
         const ground: Facts.Verdict.Accepted = switch (g) {
@@ -1703,6 +1733,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             if (m.lframe[l] == none) return f.memberValue(data.lhs, inst);
             if (m.lframe[l] == f.id) {
                 if (safety) std.debug.assert(m.lv[l] != v_unbound);
+                if (f.markup_reads) |mr| try mr.append(f.gpa, m.lv[l]);
                 return m.lv[l];
             }
             if (m.lbinder[l] == f.id) {
@@ -1717,7 +1748,9 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                 // A value read before it is bound: lowering refuses that.
                 return f.giveUp(inst);
             }
-            return f.capture(data.lhs);
+            const cv = try f.capture(data.lhs);
+            if (f.markup_reads) |mr| try mr.append(f.gpa, cv);
+            return cv;
         },
         .field_access => {
             const base = try f.eval(data.lhs, .callee, false);
@@ -1738,7 +1771,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .top, .ext_value => {
             // A name that resolves to no declaration: unknown code, with nothing in sight.
             const t = m.calleeOf(inst) orelse return f.unknownResult(inst, &.{});
-            try f.evidence(inst);
+            _ = try f.evidence(inst);
             if (try m.isFunction(t)) return f.node(.{ .tag = .fnref, .a = t[0], .b = t[1] });
             // A top-level value: every reader has it, so each cell of it is
             // outside every frame (the position rule, kernel §3.1). Its
@@ -1802,9 +1835,11 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .@"try" => {
             const v = try f.ev(data.lhs);
             if (v == v_none) return v_none;
-            // The failure leaves the function with the scrutinee's other arm.
+            // The failure leaves the function with the scrutinee's other arm:
+            // an answer that is an object made before (`Contract.old_result`).
             try f.readAll(v, inst);
             try f.returns.append(f.gpa, v);
+            f.tail_old = true;
             // The success: the argument of `Ok` or `Just`, a part of the
             // scrutinee. A `smear` of it would claim its cells and lose that
             // one cell can be at two of its locations.
@@ -1819,6 +1854,9 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             var vals: std.ArrayList(Val) = .empty;
             defer vals.deinit(f.gpa);
             for (m.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index)) |a| try vals.append(f.gpa, try f.ev(a.int()));
+            // The code it runs, and what that calls, as a derived callee (kernel §6.11).
+            const x = try f.evidenceAt(inst, true);
+            try f.derivedEffect(inst, x, vals.items, &.{});
             for (vals.items) |v| try f.escape(v, inst);
             return f.unknownResult(inst, vals.items);
         },
@@ -1839,18 +1877,26 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // A hole that calls a function of the top level is a helper: the
             // platform may make the call where it renders (`language.md` §6,
             // *Evaluation order*; §11.6), so what the call was handed is held
-            // by the markup too, as the call's value is.
+            // by the markup too, as the call's value is. And a lowering may
+            // evaluate any hole where it renders, from the values the hole
+            // reads (the `dom` lowering's block of inputs, `backend.md`
+            // §15.4): so the markup holds every local that a hole reads, not
+            // only the hole's value.
             const vals = try f.gpa.alloc(Val, ops.items.len);
             var held: std.ArrayList(Val) = .empty;
             defer held.deinit(f.gpa);
             var helpers: std.ArrayList(u32) = .empty;
             defer helpers.deinit(f.gpa);
             try f.helperHoles(@fromBackingInt(data.lhs), &helpers);
+            const outer_reads = f.markup_reads;
+            f.markup_reads = &held;
+            defer f.markup_reads = outer_reads;
             for (ops.items, vals) |o, *v| {
                 v.* = try f.ev(o.int());
                 try held.append(f.gpa, v.*);
                 if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try held.appendSlice(f.gpa, f.call_vals);
             }
+            f.markup_reads = outer_reads;
             for (vals) |v| {
                 const n = f.nodes.items[v];
                 const kept = switch (n.tag) {
@@ -2585,7 +2631,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         } else for (0..u.nmask) |i| {
             _ = try f.leaves(u.val, f.lists.items[u.mask + i], &tmp);
         }
-        for (tmp.items) |a| f.markAtom(a, flag_r);
+        for (tmp.items) |a| try f.markAtom(a, flag_r);
     }
     const arity: u32 = @intCast(f.params.items.len);
     const layouts = try m.arena.alloc(u32, arity + 1);
@@ -2632,7 +2678,8 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         // Each atom is a named source (kernel §4.2): a cell the frame made
         // is `fresh(k)`, with its escape, so one cell at two entries is one
         // `k` at two entries, and an escaped cell is escaped where the caller reads it.
-        for (mine) |a| try f.atomSrcs(a, &srcs);
+        f.run_seen.clearRetainingCapacity();
+        for (mine) |a| try f.atomSrcsIn(a, &srcs);
         if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
         for (res[e]) |s| if (s.kind == .param) {
@@ -2681,8 +2728,14 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
 }
 
 /// What atom `a` is for a contract: a parameter location, a named fresh
-/// cell, an outside cell, an answer (kernel §4.2).
+/// cell, an outside cell, an answer (kernel §4.2). Each entry of a run once
+/// (`markAtom`).
 fn atomSrcs(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
+    f.run_seen.clearRetainingCapacity();
+    return f.atomSrcsIn(a, out);
+}
+
+fn atomSrcsIn(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
     const r = f.roots.items[a.root];
     switch (r.kind) {
         .outside => try out.append(f.gpa, Src.outside),
@@ -2696,7 +2749,10 @@ fn atomSrcs(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
                 // A new name of cells that exist: its sources are theirs. The
                 // run of `alias` and `derived` is in the list on its own
                 // (`rootLeaves` puts it there).
-                .taken, .version => for (0..ent.len) |i| try f.atomSrcs(f.atoms.items[ent.start + i], out),
+                .taken, .version => {
+                    if ((try f.run_seen.getOrPut(f.gpa, runKey(a))).found_existing) return;
+                    for (0..ent.len) |i| try f.atomSrcsIn(f.atoms.items[ent.start + i], out);
+                },
                 .alias => {},
                 // A cell the frame made.
                 .own, .derived => try out.append(f.gpa, try f.freshSrc(a)),
@@ -2757,8 +2813,8 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     switch (m.tags[callee]) {
         .top, .ext_value => {
             // The evidence of a call is at the call; that of a reference is at the reference.
-            try f.evidence(callee);
-            try f.evidence(inst);
+            _ = try f.evidence(callee);
+            _ = try f.evidence(inst);
             if (m.calleeOf(callee)) |t| {
                 if (try m.declContract(t)) |c| code = .{ .contract = c, .decl = t, .own_params = c.arity };
                 if (t[0] < m.in.birs.len and t[1] < m.in.birs[t[0]].decls.len) primitive = m.in.birs[t[0]].decls[t[1]].kind == .vocab_markup;
@@ -2845,9 +2901,11 @@ fn memberValue(f: *Frame, local: u32, inst: u32) Error!Val {
 /// A method call, `x.m a` or an operator (`==`, `<`, …): the dispatch table
 /// says which code runs (kernel §6.11, *no fact by a name*). A declaration
 /// of the program is a call of its contract, as any call. A function the
-/// compiler derives (`eq`, `compare` of a type that declares none) reads its
-/// operands and calls its evidence, each of which is judged (`evidence`). A
-/// receiver's field, and a target the table does not name, is unknown code.
+/// compiler derives (`eq`, `compare` of a type that declares none, a codec)
+/// reads its operands, and calls its evidence and the methods of the parts
+/// of its type: each of those is judged where the walk cannot follow it
+/// (`evidence`), so the read is all that the derived code does with them.
+/// A receiver's field, and a target the table does not name, is unknown code.
 fn methodCall(f: *Frame, inst: u32) Error!Val {
     const m = f.m;
     const data = m.datas[inst];
@@ -2864,9 +2922,11 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
             }
         },
         // Code of the compiler's own: it reads its operands (language.md
-        // §6.5), and what it calls is its evidence. An evidence parameter
-        // (`a.eq` under `where a.eq`) is a function the caller handed, and
-        // `evidence` refused one that writes or keeps at that call: it reads.
+        // §6.5). What it calls — its evidence, and the declared methods of
+        // the parts of its type at any depth — `evidence` judged: each one
+        // that writes or keeps is refused. An evidence parameter (`a.eq`
+        // under `where a.eq`) is a function the caller handed, and judged
+        // at that call. So the read is all that is left.
         .derived, .ext_derived, .codec, .primitive, .undetermined, .param => target = .reads,
         .field, .identity, .text => {},
     };
@@ -2881,10 +2941,11 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         const is_fn = if (code) |c| c.contract.fns[k] != null else false;
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
-    try f.evidence(inst);
+    const derived = try f.evidence(inst);
     switch (target) {
         .reads => {
             for (vals.items) |v| try f.readAll(v, inst);
+            try f.derivedEffect(inst, derived, vals.items, all.items);
             return f.unknownResult(inst, vals.items);
         },
         .decl, .unknown => {},
@@ -2894,36 +2955,110 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     return f.unknownResult(inst, vals.items);
 }
 
-/// A function handed as evidence (`where`) is called by code that the
-/// checker does not follow, any number of times, with values it does not
-/// own: it must write no parameter and let none escape (kernel §6.11).
-fn evidence(f: *Frame, inst: u32) Error!void {
-    const m = f.m;
-    const dt = m.in.dispatch orelse return;
-    if (dt.sites.len == 0) return;
-    const site = dt.siteOf(@fromBackingInt(inst)) orelse return;
-    for (dt.argsAt(site.evidence)) |ti| try f.evidenceTerm(inst, ti, 0);
+/// Code that the checker does not follow at the dispatch site `inst` (kernel
+/// §6.11). A function handed as evidence (`where`) is called any number of
+/// times with values that it does not own: one that writes or keeps its
+/// parameter, or has no contract, is refused. A callee that the compiler
+/// derives (`eq`, `compare` of a type that declares none, a codec) calls
+/// the methods of the parts of its type directly, at any depth
+/// (`static-dispatch-spike.md` §3.3), once for each part of its operands:
+/// what those can do is the answer, which the caller applies to the operands
+/// (`derivedEffect`). The functions are every edge of the site's terms,
+/// through the body of each derived row (`Mod.termEdges`), each term once;
+/// another module's derived row is read by the fact that module published
+/// (`Mod.edgeEffect`).
+fn evidence(f: *Frame, inst: u32) Error!CMod.Effect {
+    return f.evidenceAt(inst, false);
 }
 
-fn evidenceTerm(f: *Frame, inst: u32, ti: anytype, depth: u32) Error!void {
+/// `evidence`; with `with_decl`, a callee that is a declaration is read as
+/// a derived callee too: the site runs it where the walk does not apply its
+/// contract (`type_dispatch`).
+fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
     const m = f.m;
-    const dt = m.in.dispatch.?;
-    if (depth > 8) return m.addRefusal(f, inst, .limit, "the evidence of this call is nested too deep to judge");
-    const t: ?[2]u32 = switch (dt.term(ti)) {
-        .top => |u| .{ m.in.module, u.decl.int() },
-        .ext => |u| if (u.module.int() < m.in.provenance.len) (if (m.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| .{ u.module.int(), d.int() } else null) else null,
-        .param, .derived, .ext_derived, .codec, .primitive, .undetermined, .field, .identity, .text => null,
+    const dt = m.in.dispatch orelse return .{};
+    if (dt.sites.len == 0) return .{};
+    const site = dt.siteOf(@fromBackingInt(inst)) orelse return .{};
+    var roots: std.ArrayList(Dispatch.TermIndex) = .empty;
+    defer roots.deinit(f.gpa);
+    // A callee of a declaration is applied with its contract (`call`,
+    // `methodCall`); any other callee is code of the compiler's own.
+    if (site.callee.unwrap()) |ti| switch (dt.term(ti)) {
+        .top, .ext => if (with_decl) try roots.append(f.gpa, ti),
+        .derived, .ext_derived, .codec, .primitive, .undetermined, .param, .field, .identity, .text => try roots.append(f.gpa, ti),
     };
-    if (t) |target| {
-        if (try m.declContract(target)) |c| {
-            if (c.writes()) try m.addRefusal(f, inst, .call, "a function that writes its parameter is handed as evidence");
-            if (c.escapes()) try m.addRefusal(f, inst, .call, "a function that keeps its parameter is handed as evidence");
-        } else if (try m.isFunction(target)) {
-            // No contract: the checker cannot say that it writes nothing.
-            try m.addRefusal(f, inst, .call, "a function with no contract is handed as evidence");
-        }
+    const ncallee = roots.items.len;
+    try roots.appendSlice(f.gpa, dt.argsAt(site.evidence));
+    var edges: std.ArrayList(Edges.Edge) = .empty;
+    defer edges.deinit(f.gpa);
+    try m.termEdges(roots.items[0..ncallee], &edges);
+    var x: CMod.Effect = .{};
+    for (edges.items) |e| x = x.join(try m.edgeEffect(e));
+    edges.clearRetainingCapacity();
+    try m.termEdges(roots.items[ncallee..], &edges);
+    for (edges.items) |e| {
+        const y = try m.edgeEffect(e);
+        if (y.any()) try m.addRefusal(f, inst, .call, Mod.evidenceText(y));
     }
-    for (dt.argsOfTerm(ti)) |a| try f.evidenceTerm(inst, a, depth + 1);
+    return x;
+}
+
+/// What a derived callee with effect `x` does with its operands `vals`
+/// (kernel §6.11): each method it calls is handed a part of them, once. So
+/// where one can keep what it is handed, or is unknown code, each operand
+/// escapes; then, where one can write, every cell of each operand is a
+/// demand, with the other operands as the other operands of the call. A
+/// cell at two places of the operands is refused (`element`): the derived
+/// code reads the second place after the method wrote the first.
+fn derivedEffect(f: *Frame, inst: u32, x: CMod.Effect, vals: []const Val, arg_insts: []const Inst.Index) Error!void {
+    if (x.keeps or x.no_contract) for (vals) |v| try f.escape(v, inst);
+    if (!x.writes) return;
+    const others = try f.gpa.alloc(Other, vals.len);
+    defer f.gpa.free(others);
+    for (others, vals) |*o, v| o.* = .{ .v = v };
+    for (vals, 0..) |v, k| {
+        const w: u32 = @intCast(f.atoms.items.len);
+        const dup = try f.operandLeaves(v, &f.atoms);
+        if (f.atoms.items.len == w) continue;
+        const rest = try f.gpa.alloc(Other, vals.len - 1);
+        var ri: usize = 0;
+        for (others, 0..) |o, ok| if (ok != k) {
+            rest[ri] = o;
+            ri += 1;
+        };
+        try f.demand(w, .{ .point = inst, .kind = .callsite, .callee_inst = inst, .base_inst = if (k < arg_insts.len) arg_insts[k].int() else none, .others = rest, .dup = dup });
+    }
+}
+
+/// Every cell of `v`, appended to `out`, and whether one of them can be at
+/// two places of it: twice at one location, or at two of its locations.
+fn operandLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .none, .fnref => return false,
+        .outside, .closure, .unknown => {
+            _ = try f.allLeaves(v, out);
+            // No claim: a cell can be anywhere in it.
+            return n.tag != .outside;
+        },
+        .ref, .built, .join => {},
+        .later => unreachable, // read through `capVal` only
+    }
+    const start = out.items.len;
+    var dup = false;
+    const len = try f.layoutLen(n.place);
+    var runs: std.ArrayList([2]usize) = .empty;
+    defer runs.deinit(f.gpa);
+    for (0..len) |e| {
+        const at = out.items.len;
+        if (try f.leaves(v, @intCast(e), out)) dup = true;
+        try runs.append(f.gpa, .{ at, out.items.len });
+    }
+    for (runs.items, 0..) |r1, i| for (runs.items[i + 1 ..]) |r2| {
+        if (f.dupOverlap(out.items[r1[0]..r1[1]], out.items[r2[0]..r2[1]])) dup = true;
+    };
+    _ = start;
+    return dup;
 }
 
 /// The atoms of argument `v` at the callee's entry `se` of the signature
@@ -3974,7 +4109,12 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != want.?) continue;
         if (cv >= Loc.all and m.loc.noObject(fnc.layouts[fnc.arity], m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc)) continue;
         for (lc.res[re]) |ls| switch (ls.kind) {
-            .fresh => {},
+            // A cell the function made is its own only where the contract
+            // names no other holder of it: it did not escape, it is at no
+            // other location of the answer, and it was handed to no function.
+            .fresh => if (!freshOwn(lc, @intCast(re), ls)) {
+                try f.refuse(level, .supply, "the function answers a cell that it made and let go, and the callee hands it back");
+            },
             .outside, .twice => try f.refuse(level, .supply, not_own),
             .answer => {
                 // The answer of a function that this one captured: `own` in its turn.
@@ -4020,6 +4160,47 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
             },
         };
     }
+}
+
+/// Whether the cell `ls` that a function made, which its contract `lc`
+/// answers at result entry `re`, has no other holder that the contract
+/// names (kernel §6.8). Every negative fact here is read off positive
+/// sources: a source of that site with the escape bit, the same site at
+/// another result entry, or the same site in what the function hands a
+/// function parameter (which can keep it).
+fn freshOwn(lc: *const Contract, re: u32, ls: Src) bool {
+    if (ls.e != 0) return false;
+    for (lc.res, 0..) |srcs, k| for (srcs) |x| if (x.kind == .fresh and x.a == ls.a) {
+        if (x.e != 0 or k != re) return false;
+    };
+    for (lc.fns) |lfo| {
+        const g = lfo orelse continue;
+        for (g.supply) |srcs| for (srcs) |x| if (x.kind == .fresh and x.a == ls.a) return false;
+    }
+    return true;
+}
+
+/// Whether the parameter location `ls` that contract `lc` answers at
+/// result entry `re` has no other holder that the contract names: the body
+/// did not let it escape, answers it at no other entry, and handed it to no
+/// function (kernel §6.13).
+fn paramOwn(lc: *const Contract, re: u32, ls: Src) bool {
+    if (ls.a >= lc.arity or lc.flags[lc.off[ls.a] + ls.e] & flag_e != 0) return false;
+    for (lc.res, 0..) |srcs, k| {
+        if (k == re) continue;
+        for (srcs) |x| if (x.kind == .param and x.a == ls.a and x.e == ls.e) return false;
+    }
+    return !handsOn(lc, ls.a, ls.e);
+}
+
+/// Whether contract `lc` hands parameter location `(a, e)` to one of its
+/// function parameters or captured functions, which can keep it.
+fn handsOn(lc: *const Contract, a: u32, e: u32) bool {
+    for (lc.fns) |lfo| {
+        const g = lfo orelse continue;
+        for (g.supply) |srcs| for (srcs) |x| if (x.kind == .param and x.a == a and x.e == e) return true;
+    }
+    return false;
 }
 
 /// Whether the known function `code` answers the answer `ls` of a function
@@ -4320,7 +4501,8 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
     if (end == w) return;
     var srcs: std.ArrayList(Src) = .empty;
     defer srcs.deinit(f.gpa);
-    for (w..end) |i| try f.atomSrcs(f.atoms.items[i], &srcs);
+    f.run_seen.clearRetainingCapacity();
+    for (w..end) |i| try f.atomSrcsIn(f.atoms.items[i], &srcs);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
     const ai = try f.answerRoot(di, point);
     for (w..end) |i| try f.answers.items[ai].base.append(f.gpa, f.atoms.items[i]);
@@ -4618,6 +4800,18 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     const idx0: Loc.Label = .{ .kind = .index, .payload = 0, .cyc = false, .head = 0 };
     const p0 = try m.loc.extend(0, idx0);
     const models = [_]?Code{ init_c, update, settle };
+    // Kernel §6.13. A model location is `own` for `update` only where a
+    // positive fact names its one holder, the model, in every producer of
+    // the model (`init`, `update`, `settle`): each source of it there is a
+    // cell the producer made and let go nowhere (`freshOwn`), or a model
+    // location of the producer's own parameter that is `own` in its turn,
+    // that it let go nowhere and answers at no other place (`paramOwn`).
+    // Every other source has another holder or no fact: a top-level value
+    // (`outside`), the answer of a function, a capture (the record holds it
+    // for ever), the message (the runtime can hand one message twice: a
+    // handler keeps its message until the next render), the `Host`. A
+    // location answered through a wide location has no fact of its own.
+    // The largest solution: start from `own` everywhere and take away.
     var changed = true;
     while (changed) {
         changed = false;
@@ -4647,22 +4841,18 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
                 const want = if (direct) me.loc else try m.loc.concat(p0, me.loc);
                 var ok = true;
                 for (res_es, 0..) |re, ri| {
-                    // The location itself, or a wide location above it.
-                    if (!(re.loc == want or (re.kind.wide() and m.loc.isPrefix(re.loc, want)))) continue;
+                    if (re.loc != want) {
+                        // A wide location above it: no fact for this location alone.
+                        if (re.kind.wide() and m.loc.isPrefix(re.loc, want) and c.res[ri].len != 0) ok = false;
+                        continue;
+                    }
                     for (c.res[ri]) |s| switch (s.kind) {
-                        .fresh => {},
+                        .fresh => if (!freshOwn(c, @intCast(ri), s)) {
+                            ok = false;
+                        },
                         .param => {
-                            // One cell at two locations of the model is `own` at neither.
-                            if (re.loc == want and which != 0) for (res_es, 0..) |re2, ri2| {
-                                if (ri2 == ri) continue;
-                                for (c.res[ri2]) |s2| if (s2.kind == .param and s2.a == s.a and s2.e == s.e) {
-                                    ok = false;
-                                };
-                                _ = re2;
-                            };
-                            if (s.a != model_param) {
-                                // The message: the runtime hands it as the function's own (each send is checked).
-                                if (which == 0 or s.a >= code.own_params) ok = false;
+                            if (s.a != model_param or !paramOwn(c, @intCast(ri), s)) {
+                                ok = false;
                                 continue;
                             }
                             // From another model location: `own` only when that one is.
@@ -4674,7 +4864,7 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
                             };
                             if (!found) ok = false;
                         },
-                        else => ok = false,
+                        .outside, .answer, .twice => ok = false,
                     };
                 }
                 if (!ok) {
@@ -4690,7 +4880,8 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     // which it does before it runs `update` again, and keeps none of their
     // lists past that (`boundary.md` §9.4.8, kernel §6.12): so what a
     // `view` answers is no holder of the model here. What it lets escape
-    // (a message built in a hole, a function that answers one) still is.
+    // (a message built in a hole, a function that answers one), and what it
+    // hands a function (which can keep it), still is.
     for (others[0..nothers], views[0..nothers]) |c0, is_view| {
         const c = c0.contract;
         for (0..c0.own_params) |pj| {
@@ -4700,6 +4891,7 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
                 if (!is_view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
                     kept = true;
                 };
+                if (handsOn(c, @intCast(pj), @intCast(e))) kept = true;
                 if (!kept) continue;
                 for (mes, 0..) |me, k| if (me.loc == pe.loc or (pe.kind.wide() and m.loc.isPrefix(pe.loc, me.loc))) {
                     own[k] = false;
@@ -4708,6 +4900,11 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
         }
     }
     // The verdicts: one for each location that `update` or `settle` writes.
+    // The message is never `own`: no fact names its one holder. A handler
+    // of the rendered markup keeps its message until the next render and can
+    // send it twice, and a message can hold a top-level value or anything a
+    // platform's runtime made; a `send` is checked where it is written, but
+    // it is one source among these (kernel §6.13).
     for ([_]?Code{ update, settle }) |mc| {
         const c0 = mc orelse continue;
         const c = c0.contract;
@@ -4715,16 +4912,7 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             const pes = m.loc.layoutEntries(c.layouts[pj]);
             for (pes, 0..) |pe, e| {
                 if (c.flags[c.off[pj] + e] & flag_w == 0) continue;
-                // The model is the function's own where the rounds keep it so.
-                // The message is: a `send` is checked (`callParam`), and a
-                // message built in `view` from the model can hold a cell of
-                // the model only where `view` keeps the model, which is a
-                // location that is not own. So the message is own only when
-                // every location of the model is (kernel §6.13).
-                var ok = pj != c0.own_params - 1;
-                if (ok) for (own) |o| if (!o) {
-                    ok = false;
-                };
+                var ok = false;
                 if (pj == c0.own_params - 1) for (mes, 0..) |me, k| if (me.loc == pe.loc and own[k]) {
                     ok = true;
                 };
