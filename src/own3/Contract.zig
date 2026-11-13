@@ -240,6 +240,11 @@ pub const Published = struct {
     layouts: []?[]const ExEntry = &.{},
     /// By declaration.
     contracts: []?*const Contract = &.{},
+    /// Each derived `eq` or `compare` of a nominal type that the module emits,
+    /// and what the methods it calls, at any depth, can do (kernel §6.11). A
+    /// row that is not here has no fact: an importer reads it as code that
+    /// writes and keeps what it is handed.
+    derived: []const DerivedFact = &.{},
 
     pub fn deinit(p: *Published, gpa: Allocator) void {
         p.arena.deinit();
@@ -280,12 +285,34 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     return out;
 }
 
+/// What code that a walk does not follow can do with what it is handed: a
+/// derived method through the methods of its parts, or a function handed
+/// as evidence (kernel §6.11). `no_contract`: some of it is unknown code.
+pub const Effect = struct {
+    writes: bool = false,
+    keeps: bool = false,
+    no_contract: bool = false,
+
+    pub fn join(x: Effect, y: Effect) Effect {
+        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract };
+    }
+    pub fn any(x: Effect) bool {
+        return x.writes or x.keeps or x.no_contract;
+    }
+};
+
+/// What a module says of one derived method it emits (`Published.derived`):
+/// the type (a `TypeId`), the method (`Dispatch.Derived.Kind`), and what
+/// the methods it calls through the parts of the type can do.
+pub const DerivedFact = struct { type: u32, kind: u8, effect: Effect };
+
 /// The module's contracts, by declaration, as its importers read them.
-pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const Contract) Allocator.Error!*Published {
+pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const Contract, derived: []const DerivedFact) Allocator.Error!*Published {
     const p = try gpa.create(Published);
     p.* = .{ .arena = .init(gpa) };
     errdefer p.deinit(gpa);
     const a = p.arena.allocator();
+    p.derived = try a.dupe(DerivedFact, derived);
     p.layouts = try a.alloc(?[]const ExEntry, loc.layouts.items.len);
     @memset(p.layouts, null);
     p.contracts = try a.alloc(?*const Contract, contracts.len);

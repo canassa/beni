@@ -3117,7 +3117,11 @@ test "ownership v3: code that names a later binding holds what it reads" {
 // - `fieldBefore`, `receiverBefore`: the callee or the receiver reads `q`,
 //   and the operand writes it after. Safe, and accepted.
 // - `rows`: a `For` reads its list where the page renders, after each
-//   hole, so a hole that writes the list runs first. `rowsDead` is the twin.
+//   hole, so a hole that writes the list runs first. `rowsDead` is the twin,
+//   whose `For` reads a literal; it is refused too, since a lowering may
+//   evaluate the hole itself where it renders, from the lists the hole reads
+//   (`dom`'s inputs, #2505): the markup holds `q`, and the render reads it
+//   after the push (research report 120).
 test "ownership v3: the walk reads and writes in the order of the program" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -3265,8 +3269,8 @@ test "ownership v3: the walk reads and writes in the order of the program" {
         "  111:11 List.push q: accepted fresh\n",
         "  111:44 List.append <literal>: accepted fresh\n",
         "  117:92 List.push q: rejected later-use: it is read again at 117:17 (<expression>)\n",
-        "  123:96 List.push q: accepted fresh\n",
-        "total 17: accepted 11 (fresh 9, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6\n",
+        "  123:96 List.push q: rejected later-use: it is read again at 123:5 (<call Ssr.render>)\n",
+        "total 17: accepted 10 (fresh 8, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -3577,8 +3581,11 @@ test "ownership v3: one list at two places keeps its claim" {
 // - `helper`: a hole that calls a function of the top level is a helper:
 //   the platform calls it where it renders, after the other holes. So it
 //   reads `q` after the push of the next hole. `helperDead` and
-//   `helperAfter` are the twins; `attribute` is no helper, and stays
-//   accepted.
+//   `helperAfter` are the twins, and `attribute` is no helper; the three
+//   are refused now, since a lowering may evaluate any hole where it
+//   renders, from the lists the hole reads (`dom`'s inputs, #2505), so
+//   the markup holds `q`, which the hole that pushes reads (research
+//   report 120).
 // - `Page.view`: the browser platform keeps the values of a page's holes
 //   in the markup's value, and reads them where it renders, after the
 //   frame. So `q` is read again at the frame's end, and the push after
@@ -3678,11 +3685,11 @@ test "ownership v3: the faults of the review of report 114 are refused" {
             "  20:19 List.push a: accepted param\n",
             "  42:13 call Review.h r#Cons.0: rejected disjoint: another operand of the same operation reaches it\n",
             "  52:13 call Review.h r#Cons.0: accepted call\n",
-            "  65:37 List.push q: rejected later-use: it is read again at 65:5 (<call Ssr.render>)\n",
-            "  71:41 List.push q: accepted fresh\n",
-            "  77:29 List.push q: accepted fresh\n",
-            "  83:44 List.push q: accepted fresh\n",
-            "total 7: accepted 5 (fresh 3, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2\n",
+            "  65:37 List.push q: rejected later-use: it is read again at 65:17 (<expression>)\n",
+            "  71:41 List.push q: rejected later-use: it is read again at 71:5 (<call Ssr.render>)\n",
+            "  77:29 List.push q: rejected later-use: it is read again at 77:5 (<call Ssr.render>)\n",
+            "  83:44 List.push q: rejected later-use: it is read again at 83:5 (<call Ssr.render>)\n",
+            "total 7: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5\n",
         }) |line| {
             if (std.mem.indexOf(u8, r.stdout, line) == null) {
                 std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -4473,6 +4480,322 @@ test "ownership v3: a JavaScript comparison can keep its operands" {
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// Research report 118, the fourth blind test (reader A): six programs that v3
+// accepted and that then read a list after an in-place write, each with a
+// twin that is safe at run time. Every live program is refused. Of the twins,
+// `derived-method.dead` is accepted: the derived `eq` of a tuple calls the
+// writing `Tm.eq` on its parts, and the call is a demand on each operand
+// (kernel §6.11), which nothing reads later. The other twins are the same
+// programs with the reader removed from a place the checker does not see
+// into, and stay refused (research report 120 §3): a `Ref`'s reads (the
+// kernel judges cells at a later stage, §0), a model location that no
+// function reads (`entry-fresh-twice`), and the number of clicks
+// (`entry-message.dead` is the live program with one click fewer).
+test "ownership v3: the faults of the fourth blind test, reader A, are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const dir = "bench/ownership-sweeps/blind4a-faults/";
+    const Case = struct { name: []const u8, platform: []const u8, files: []const []const u8 = &.{"Main.beni"}, accepted: bool, why: []const u8 = "" };
+    const page = "tests/platforms/page";
+    const cases = [_]Case{
+        .{ .name = "derived-method.live", .platform = "node", .files = &.{ "Main.beni", "Tm.beni" }, .accepted = false, .why = "later-use" },
+        .{ .name = "derived-method.dead", .platform = "node", .files = &.{ "Main.beni", "Tm.beni" }, .accepted = true },
+        .{ .name = "entry-escaped-fresh.live", .platform = page, .accepted = false, .why = "entry" },
+        .{ .name = "entry-escaped-fresh.dead", .platform = page, .accepted = false, .why = "entry" },
+        .{ .name = "entry-escaped-param.live", .platform = page, .accepted = false, .why = "entry" },
+        .{ .name = "entry-escaped-param.dead", .platform = page, .accepted = false, .why = "entry" },
+        .{ .name = "entry-fresh-twice.live", .platform = page, .accepted = false, .why = "entry" },
+        .{ .name = "entry-fresh-twice.dead", .platform = page, .accepted = false, .why = "entry" },
+        .{ .name = "entry-message.live", .platform = page, .accepted = false, .why = "msg" },
+        .{ .name = "entry-message.dead", .platform = page, .accepted = false, .why = "msg" },
+        .{ .name = "fold-escaped-answer.live", .platform = "node", .accepted = false, .why = "supply" },
+        .{ .name = "fold-escaped-answer.dead", .platform = "node", .accepted = false, .why = "supply" },
+    };
+    for (cases) |c| {
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache" });
+        try argv.append(a, try std.fmt.allocPrint(a, "--platform={s}", .{c.platform}));
+        try argv.append(a, try std.fmt.allocPrint(a, "--root=" ++ dir ++ "{s}", .{c.name}));
+        for (c.files) |file| try argv.append(a, try std.fmt.allocPrint(a, dir ++ "{s}/{s}", .{ c.name, file }));
+        const r = try w.runWith(argv.items, .{ .raw_diagnostics = true, .cwd = .inherit });
+        const ok = if (c.accepted) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
+// The siblings of report 118's faults that the sibling audit of research
+// report 120 found, each a negative fact that a rule read without deriving:
+//
+// - `foldHandsOn`: a fold callback hands a cell it made to a function that
+//   keeps it, and answers it (kernel §6.8: the cell is in a supply);
+// - `nominal`: `==` on a type of the program whose part's type declares a
+//   writing `eq` (the derived row's body, through `Edges.termsEdges`);
+// - `sortNominal`: the same derived `compare` handed as evidence.
+test "ownership v3: the siblings of the fourth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Tm.beni",
+        \\import List
+        \\
+        \\
+        \\pub type T
+        \\    = T (List Int)
+        \\
+        \\
+        \\pub eq : T, T → Bool
+        \\eq x y =
+        \\    case ( x, y ) of
+        \\        ( T a, T b ) →
+        \\            List.length (List.push a 0) == List.length b
+        \\
+        \\
+        \\pub compare : T, T → Order
+        \\compare x y =
+        \\    case ( x, y ) of
+        \\        ( T a, T b ) →
+        \\            Basics.compare (List.length (List.push a 0)) (List.length b)
+        \\
+    );
+    try w.write("Sib.beni",
+        \\import List
+        \\import Tm exposing (T)
+        \\
+        \\
+        \\type W
+        \\    = W T Int
+        \\
+        \\
+        \\pub foldHandsOn : (List Int → ⊤), Int → Int
+        \\foldHandsOn g n =
+        \\    out = List.foldl [ 1, 2 ] [ n ] λx acc →
+        \\        _ = List.push acc x
+        \\        k = [ x ]
+        \\        g k
+        \\        k
+        \\    List.sum out
+        \\
+        \\
+        \\pub nominal : Int → Int
+        \\nominal n =
+        \\    xs = [ n ]
+        \\    b = W (T xs) 1 == W (T [ 5 ]) 1
+        \\    if b then List.sum xs else 0
+        \\
+        \\
+        \\pub sortNominal : Int → Int
+        \\sortNominal n =
+        \\    xs = [ n ]
+        \\    s = List.sort [ W (T xs) 1, W (T [ 5 ]) 1 ]
+        \\    List.length s + List.sum xs
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "--root=.", "." }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    for ([_][]const u8{
+        " value <call List.foldl>: rejected supply: the function answers a cell that it made and let go, and the callee hands it back\n",
+        " call <derived method> <constructor …>: rejected later-use: it is read again at ",
+        " value <call List.sort>: rejected call: a function that writes its parameter is handed as evidence\n",
+    }) |line| {
+        if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
+            return error.TestExpectedLine;
+        }
+    }
+}
+
+// Research report 119, the fourth blind test (reader B): two compiles that
+// never ended. A chain of writes, each on the version the last one answered,
+// cost time that doubled with each write; each entry of a version's run is
+// now visited once (`Frame.markAtom`, `groundOf`, `atomSrcs`). A type whose
+// halves repeat at each level has a location for each of its 2³² paths; past
+// `Loc.max_layout_entries` the module is refused with a loud limit (kernel §8).
+// `EvidenceDagBuildDepth32` is that type, with `==` on it.
+test "ownership v3: a chain of writes and a type of repeated halves finish" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const quick: i64 = 10_000;
+    const chain = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "bench/ownership-sweeps/blind4b-faults/version-chain.hang/Main.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = quick });
+    try testing.expectEqual(@as(u8, 0), chain.exit_code);
+    try testing.expect(std.mem.indexOf(u8, chain.stdout, "List.push v39: accepted call") != null);
+    const dag = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "bench/ownership-sweeps/blind4b-faults/dag-type.hang/Main.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = quick });
+    try testing.expectEqual(@as(u8, 0), dag.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dag.stdout, "a type has more than 16384 locations") != null);
+    const corpus = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "tests/corpus/run/EvidenceDagBuildDepth32.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = quick });
+    try testing.expectEqual(@as(u8, 1), corpus.exit_code);
+    try testing.expect(std.mem.indexOf(u8, corpus.stderr, "a type has more than 16384 locations") != null);
+}
+
+// The siblings of report 118's entry faults that the sibling audit of research
+// report 120 found, and two issues of the markup audit (report 117 §9.6). Each
+// is accepted by the old entry rule and traps under `--sanitize-lists`:
+//
+// - `Message`: `update` answers a list of its message into the model and
+//   later pushes onto it; the message holds a top-level list (kernel §6.13:
+//   the message is never `own`, so neither is a location answered from it);
+// - `Handed`: `view` hands a model list to a function it captured, which
+//   keeps it in a `Ref` (a hand-on is a holder, `handsOn`);
+// - `Cached`: markup stored in the model holds a model list (#2506: the
+//   location of the markup is another place of the answer that holds it);
+// - `Inputs`: markup holds the lists its holes read, not only the holes'
+//   values: the `dom` lowering evaluates the hole where it renders (#2505).
+test "ownership v3: the entry's siblings and markup's inputs are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const page = "--platform=tests/platforms/page";
+    const Case = struct { name: []const u8, platform: []const u8, text: []const u8, line: []const u8 };
+    const cases = [_]Case{
+        .{ .name = "Message", .platform = page, .line = "entry Main.update model.items: rejected", .text =
+        \\import List
+        \\import Page exposing (Node)
+        \\
+        \\
+        \\type Msg
+        \\    = Load (List Int)
+        \\    | Add Int
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\
+        \\
+        \\base : List Int
+        \\base = [ 5 ]
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Load l →
+        \\            { model | items = l }
+        \\
+        \\        Add n →
+        \\            { model | items = List.push model.items n }
+        \\
+        \\
+        \\view : Model → Node Msg
+        \\view model =
+        \\    Page.element "main" []
+        \\        [ Page.element "button" [ Page.attribute "id" "load", Page.onClick (Load base) ] [ Page.text (String.fromInt (List.length base)) ]
+        \\        , Page.element "button" [ Page.attribute "id" "add", Page.onClick (Add 7) ] [ Page.text (String.fromInt (List.length model.items)) ]
+        \\        ]
+        \\
+        \\
+        \\main : Page.Program
+        \\main = Page.sandbox { init = λ⊤ → { items = [ 1 ] }, update = update, view = view }
+        },
+        .{ .name = "Handed", .platform = page, .line = "entry Main.update model.items: rejected", .text =
+        \\import List
+        \\import Page exposing (Node)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\
+        \\
+        \\cell : Ref (List Int)
+        \\cell = Ref.make []
+        \\
+        \\
+        \\update : Int, Model → Model
+        \\update n model = { model | items = List.push model.items n }
+        \\
+        \\
+        \\mk : (List Int → ⊤) → Page.Program
+        \\mk g =
+        \\    Page.sandbox
+        \\        { init = λ⊤ → { items = [ 1 ] }
+        \\        , update = update
+        \\        , view =
+        \\            λmodel →
+        \\                t = String.fromInt (List.length (Ref.get cell))
+        \\                g model.items
+        \\                Page.element "button" [ Page.attribute "id" "add", Page.onClick 7 ] [ Page.text t ]
+        \\        }
+        \\
+        \\
+        \\main : Page.Program
+        \\main = mk λl → Ref.set cell l
+        },
+        .{ .name = "Cached", .platform = "--platform=browser", .line = "entry Main.update model.items: rejected", .text =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\
+        \\
+        \\type Msg
+        \\    = Add
+        \\    | Snap
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    cached : Html Msg
+        \\    n : Int
+        \\
+        \\
+        \\shown : List Int → Html Msg
+        \\shown xs = <p id="c">{List.sum xs}</p>
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Add →
+        \\            { model | items = List.push model.items model.n, n = model.n + 1 }
+        \\
+        \\        Snap →
+        \\            { model | cached = shown model.items }
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <button id="add" onClick={Add}>add</button>
+        \\        <button id="snap" onClick={Snap}>snap</button>
+        \\        {model.cached}
+        \\        <p id="n">{List.sum model.items}</p>
+        \\    </main>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → { items = [ 1, 2 ], cached = <p>none</p>, n = 3 }, update = update, view = view }
+        },
+        .{ .name = "Inputs", .platform = "--platform=browser", .line = "List.push xs: rejected later-use", .text =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\
+        \\
+        \\helper : Int → Html Int
+        \\helper n =
+        \\    xs = List.repeat n 1
+        \\    m = <p id="a">{List.sum xs}</p>
+        \\    ys = List.push xs 9
+        \\    <div>{m}<p id="b">{List.length ys}</p></div>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → 3, update = λ_ n → n, view = helper }
+        },
+    };
+    for (cases) |c| {
+        const file = try std.fmt.allocPrint(a, "{s}/Main.beni", .{c.name});
+        try w.write(file, c.text);
+        const main = try std.fs.path.join(a, &.{ try w.projectPath(), file });
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", c.platform, main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, c.line) == null) {
+            std.debug.print("{s}: missing line {s}; exit {d}:\n{s}{s}\n", .{ c.name, c.line, r.exit_code, r.stdout, r.stderr });
             return error.TestExpectedLine;
         }
     }

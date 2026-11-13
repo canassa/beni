@@ -41,6 +41,14 @@ pub const none: u32 = std.math.maxInt(u32);
 /// In a cover: every entry of the signature's layout covers this one.
 pub const all: u32 = std.math.maxInt(u32) - 1;
 
+/// The most locations one type's layout has (kernel §8). A location is a path
+/// of labels, so a type whose parts repeat at each level (`( x, x )` nested
+/// 32 times) has a number of paths that doubles with its depth though its
+/// place graph is small. Past the limit the layout is `Table.over_layout`, the
+/// module authorises no write and publishes no contract, and its report has an
+/// `ownership_limit` line: a loud refusal, never a silent cut.
+pub const max_layout_entries: usize = 1 << 14;
+
 /// Whether cover value `c` says that signature entry `se` covers the entry.
 pub fn hits(c: u32, se: u32) bool {
     return c == se or c == all;
@@ -144,6 +152,13 @@ pub const Table = struct {
 
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
     empty_layout: u32 = none,
+    /// The layout of a place whose type has more locations than
+    /// `max_layout_entries`: one summary location of a type variable. A walk
+    /// that meets it authorises no write (`over`, `Check.checkModule`).
+    over_layout: u32 = none,
+    /// The places whose layout was cut to `over_layout`, by place: the loud
+    /// limit of kernel §8. Never a silent cut.
+    over: std.ArrayList(PlaceId) = .empty,
 
     pub fn init(gpa: Allocator, arena: Allocator, places: *Place.Table) Allocator.Error!Table {
         var t: Table = .{ .gpa = gpa, .arena = arena, .places = places };
@@ -172,6 +187,7 @@ pub const Table = struct {
         t.path_index.deinit(gpa);
         t.path_root.deinit(gpa);
         t.covers.deinit(gpa);
+        t.over.deinit(gpa);
     }
 
     // ---- the location trie ---------------------------------------------------
@@ -275,6 +291,10 @@ pub const Table = struct {
 
     const Building = struct {
         out: std.ArrayList(Entry) = .empty,
+        /// Per location in `out`: its index there.
+        index: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+        /// The type has more than `max_layout_entries` locations: the visit stops.
+        over: bool = false,
         /// Per entry of `out`: its path, a run of `rep_steps`.
         rep_at: std.ArrayList([2]u32) = .empty,
         rep_steps: std.ArrayList(u32) = .empty,
@@ -288,6 +308,7 @@ pub const Table = struct {
 
         fn deinit(b: *Building, gpa: Allocator) void {
             b.out.deinit(gpa);
+            b.index.deinit(gpa);
             b.rep_at.deinit(gpa);
             b.rep_steps.deinit(gpa);
             b.steps.deinit(gpa);
@@ -311,7 +332,17 @@ pub const Table = struct {
         defer b.deinit(t.gpa);
         try t.visit(&b, place, 0);
         var id = t.empty_layout;
-        if (b.out.items.len != 0) {
+        if (b.over) {
+            // The loud limit (kernel §8): never a cut toward "holds nothing".
+            if (t.over_layout == none) {
+                t.over_layout = try t.addLayout(&.{.{ .loc = 0, .kind = .@"var", .single = false }});
+                const reps = try t.arena.alloc([]const u32, 1);
+                reps[0] = &.{};
+                t.reps.items[t.over_layout] = reps;
+            }
+            id = t.over_layout;
+            try t.over.append(t.gpa, place);
+        } else if (b.out.items.len != 0) {
             id = try t.addLayout(b.out.items);
             const reps = try t.arena.alloc([]const u32, b.out.items.len);
             for (reps, b.rep_at.items) |*r, at| r.* = try t.arena.dupe(u32, b.rep_steps.items[at[0]..][0..at[1]]);
@@ -322,11 +353,19 @@ pub const Table = struct {
     }
 
     fn addEntry(t: *Table, b: *Building, loc: u32, kind: Kind) Allocator.Error!void {
-        for (b.out.items) |*e| if (e.loc == loc) {
+        if (b.over) return;
+        const got = try b.index.getOrPut(t.gpa, loc);
+        if (got.found_existing) {
+            const e = &b.out.items[got.value_ptr.*];
             // Two places at one location (the deep level of a cycle): the wider kind.
             if (e.kind != kind) e.kind = .@"var";
             return;
-        };
+        }
+        if (b.out.items.len == max_layout_entries) {
+            b.over = true;
+            return;
+        }
+        got.value_ptr.* = @intCast(b.out.items.len);
         try b.out.append(t.gpa, .{ .loc = loc, .kind = kind, .single = !t.loc_summary.items[loc] });
         try b.rep_at.append(t.gpa, .{ @intCast(b.rep_steps.items.len), @intCast(b.steps.items.len) });
         try b.rep_steps.appendSlice(t.gpa, b.steps.items);
@@ -334,7 +373,7 @@ pub const Table = struct {
 
     /// A place reached by a step that does not stay in a cycle: `loc` is its own location.
     fn visit(t: *Table, b: *Building, place: PlaceId, loc: u32) Allocator.Error!void {
-        if (t.places.holds(place).isEmpty()) return;
+        if (b.over or t.places.holds(place).isEmpty()) return;
         if (t.places.cyclic(place)) {
             const base = b.on_path.items.len;
             try b.on_path.append(t.gpa, place.int());
@@ -359,6 +398,7 @@ pub const Table = struct {
 
     /// The entry level of a cycle entered at `entry`: `place` is on the path, at `loc`.
     fn visitEntry(t: *Table, b: *Building, place: PlaceId, loc: u32, entry: u32, base: usize) Allocator.Error!void {
+        if (b.over) return;
         if (objectKind(t.places.kind(place))) |k| {
             try t.addEntry(b, loc, k);
             if (k != .list) return;
@@ -392,6 +432,7 @@ pub const Table = struct {
     }
 
     fn deepMember(t: *Table, b: *Building, m: PlaceId, entry: u32, mbase: usize) Allocator.Error!void {
+        if (b.over) return;
         if (std.mem.indexOfScalar(u32, b.members.items[mbase..], m.int()) != null) return;
         try b.members.append(t.gpa, m.int());
         if (objectKind(t.places.kind(m))) |k| {
