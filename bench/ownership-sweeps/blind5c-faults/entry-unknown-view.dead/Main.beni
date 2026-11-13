@@ -1,0 +1,54 @@
+-- `view` is one of two functions. The view gives the outer element a
+-- message that holds the model's list (dead twin). A click on the inner
+-- button runs `update`, which pushes onto the list; the click then
+-- bubbles to the outer element, whose message was made before the push.
+import Browser
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+    | Report (List Int)
+
+
+type alias Model =
+    items : List Int
+    seen : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | items = List.push model.items 9 }
+
+        Report l →
+            { model | seen = List.length l }
+
+
+viewA : Model → Html Msg
+viewA model =
+    <main>
+        <div id="outer" onClick={Report [ List.length model.items ]}>
+            <button id="add" onClick={Add}>add</button>
+        </div>
+        <p id="seen">{model.seen}</p>
+    </main>
+
+
+viewB : Model → Html Msg
+viewB _ = <main />
+
+
+alt : Bool
+alt = False
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { items = [ 1, 2 ], seen = 0 }
+        , update = update
+        , view = if alt then viewB else viewA
+        }

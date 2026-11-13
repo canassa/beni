@@ -1,0 +1,31 @@
+-- The safe twin of `entry-tuple-pair.live`: `init` puts two lists in the
+-- model, so the push onto the first is safe in place.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import List
+import Sub
+import Tea
+
+
+type Msg
+    = Add
+
+
+init : ⊤ → (List Int × List Int) × Cmd Msg
+init ⊤ = ( ( [ 1, 2 ], [ 1, 2 ] ), Cmd.none )
+
+
+update : Msg, List Int × List Int → (List Int × List Int) × Cmd Msg
+update Add ( a, b ) = ( ( List.push a 7, b ), Cmd.none )
+
+
+view : List Int × List Int → Html Msg
+view ( a, b ) =
+    <div>
+        <output>{List.length a}/{List.length b}</output>
+        <button onClick={Add}>add</button>
+    </div>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }

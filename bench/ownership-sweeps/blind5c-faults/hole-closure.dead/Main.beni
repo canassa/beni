@@ -1,0 +1,26 @@
+-- A hole of markup makes a function that reads the local list `xs` and
+-- calls it. The view then pushes onto a copy of `xs` and answers the markup. The `dom`
+-- lowering evaluates the hole where it renders, after the push.
+import Browser
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+
+
+view : List Int → Html Msg
+view model =
+    xs = List.copy model
+    m = <p id="m">{(λ⊤ → List.length xs) ⊤}</p>
+    ys = List.push (List.copy xs) 5
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        {m}
+        <p id="y">{List.length ys}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → [ 1, 2 ], update = λ_ model → model, view = view }

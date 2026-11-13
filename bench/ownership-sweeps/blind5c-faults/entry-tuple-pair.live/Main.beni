@@ -1,0 +1,34 @@
+-- The model is a pair, and `update` answers `( model, Cmd msg )`. `init`
+-- puts one list at both places of the model; `update` pushes onto the
+-- first. The view shows the second.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import List
+import Sub
+import Tea
+
+
+type Msg
+    = Add
+
+
+init : ⊤ → (List Int × List Int) × Cmd Msg
+init ⊤ =
+    xs = [ 1, 2 ]
+    ( ( xs, xs ), Cmd.none )
+
+
+update : Msg, List Int × List Int → (List Int × List Int) × Cmd Msg
+update Add ( a, b ) = ( ( List.push a 7, b ), Cmd.none )
+
+
+view : List Int × List Int → Html Msg
+view ( a, b ) =
+    <div>
+        <output>{List.length a}/{List.length b}</output>
+        <button onClick={Add}>add</button>
+    </div>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -1,0 +1,53 @@
+-- `settle` is one of two functions. Before the first render it puts the
+-- model's list at a second field (dead twin); `update` pushes onto the
+-- first, and the view shows the second.
+import Browser exposing (Host)
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    items : List Int
+    other : List Int
+
+
+update : Host Msg, Msg, Model → Model
+update _ Add model = { model | items = List.push model.items 9 }
+
+
+settleA : Host Msg, Model → Model
+settleA _ model =
+    if List.isEmpty model.other then
+        { model | other = List.copy model.items }
+    else
+        model
+
+
+settleB : Host Msg, Model → Model
+settleB _ model = model
+
+
+alt : Bool
+alt = False
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p id="o">{List.length model.other}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → { items = [ 1, 2 ], other = [] }
+        , update = update
+        , settle = if alt then settleB else settleA
+        , view = view
+        }
