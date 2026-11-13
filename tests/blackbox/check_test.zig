@@ -4920,3 +4920,301 @@ test "ownership v3: the faults of the review of report 120 are refused" {
         }
     }
 }
+
+// Research reports 121 and 122, the fifth blind test (readers C and D): ten
+// programs that v3 accepted and that then read a list after an in-place
+// write, each with a safe twin. Every live program is refused, and every twin
+// is accepted:
+//
+// - `entry-unknown-view`, `entry-unknown-settle`, `view-no-code`,
+//   `settle-no-code`: a function of the entry's record is one of two
+//   functions (`if … then a else b`). Each value it can be is applied as a
+//   function of the record (kernel §6.13); one with no known code is the
+//   default, and then no model location is `own`.
+// - `entry-tuple-pair`, `pair-model`: the model is a tuple and `update`
+//   answers `model × Cmd msg`. Where an answer has the model is read off the
+//   entry's declared type (`Mod.entryShape`), not guessed from locations.
+// - `hole-closure`: a closure made in a hole holds what it captured, and the
+//   markup holds the closure (kernel §6.12).
+// - `row-parameter`, `for-row-message`, `for-row-keeps`: the runtime calls a
+//   `For` row with each item of `each`; the row is applied to them as at a
+//   call site, so what it keeps of its item escapes (kernel §6.12).
+test "ownership v3: the faults of the fifth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
+    const tea = "platforms/browser-tea";
+    const page = "platforms/browser";
+    const cases = [_]Case{
+        .{ .name = "blind5c-faults/entry-tuple-pair.live", .platform = tea, .accepted = false, .why = "entry Main.update model.0" },
+        .{ .name = "blind5c-faults/entry-tuple-pair.dead", .platform = tea, .accepted = true },
+        .{ .name = "blind5c-faults/entry-unknown-settle.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5c-faults/entry-unknown-settle.dead", .platform = page, .accepted = true },
+        .{ .name = "blind5c-faults/entry-unknown-view.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5c-faults/entry-unknown-view.dead", .platform = page, .accepted = true },
+        .{ .name = "blind5c-faults/hole-closure.live", .platform = page, .accepted = false, .why = "later-use" },
+        .{ .name = "blind5c-faults/hole-closure.dead", .platform = page, .accepted = true },
+        .{ .name = "blind5c-faults/row-parameter.live", .platform = page, .accepted = false, .why = "entry Main.update model.rows[*]" },
+        .{ .name = "blind5c-faults/row-parameter.dead", .platform = page, .accepted = true },
+        .{ .name = "blind5d-faults/for-row-keeps.live", .platform = "node", .accepted = false, .why = "escaped" },
+        .{ .name = "blind5d-faults/for-row-keeps.dead", .platform = "node", .accepted = true },
+        .{ .name = "blind5d-faults/for-row-message.live", .platform = page, .accepted = false, .why = "entry Main.update model.rows[*]" },
+        .{ .name = "blind5d-faults/for-row-message.dead", .platform = page, .accepted = true },
+        .{ .name = "blind5d-faults/pair-model.live", .platform = tea, .accepted = false, .why = "entry Main.update model.0" },
+        .{ .name = "blind5d-faults/pair-model.dead", .platform = tea, .accepted = true },
+        .{ .name = "blind5d-faults/settle-no-code.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5d-faults/settle-no-code.dead", .platform = page, .accepted = true },
+        .{ .name = "blind5d-faults/view-no-code.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5d-faults/view-no-code.dead", .platform = page, .accepted = true },
+    };
+    for (cases) |c| {
+        const r = try w.runWith(&.{
+            "check",
+            "--ownership=v3",
+            "--ownership-everywhere",
+            "--no-cache",
+            try std.fmt.allocPrint(a, "--platform={s}", .{c.platform}),
+            try std.fmt.allocPrint(a, "--root=bench/ownership-sweeps/{s}", .{c.name}),
+            try std.fmt.allocPrint(a, "bench/ownership-sweeps/{s}/Main.beni", .{c.name}),
+        }, .{ .raw_diagnostics = true, .cwd = .inherit });
+        const ok = if (c.accepted) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
+// The siblings of the fifth blind test's faults that the audit of research
+// report 123 found. Each is accepted before and is refused now:
+//
+// - `ShowBody`: a `Show`'s body keeps the value in `when` in an event's
+//   message; the runtime calls the body with it (kernel §6.12).
+// - `ForKey`: a `For`'s key function keeps its item in a `Ref`; the runtime
+//   calls the key function with each item.
+// - `TopField`: `view` is a field of a top-level record, a value with no
+//   known code: the default, so no model location is `own` (kernel §6.13).
+// - `Children`: a component's children are a value that its code is handed
+//   whole, markup that holds what its holes read: the component keeps them
+//   in a message here, and `update` keeps that in the model.
+test "ownership v3: the siblings of the fifth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, text: []const u8, line: []const u8, card: bool = false };
+    const cases = [_]Case{
+        .{ .name = "ShowBody", .line = "entry Main.update model.pick#Just.0: rejected", .text =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\
+        \\
+        \\type Msg
+        \\    = Add
+        \\    | Report (List Int)
+        \\
+        \\
+        \\type alias Model =
+        \\    pick : Maybe (List Int)
+        \\    seen : Int
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Add →
+        \\            { model | pick = Maybe.map model.pick λl → List.push l 9 }
+        \\
+        \\        Report l →
+        \\            { model | seen = List.length l }
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <Show when={model.pick} keyed={λl → List.length l}>
+        \\            {λl →
+        \\                <div class="outer" onClick={Report l}>
+        \\                    <button class="add" onClick={Add}>add</button>
+        \\                </div>
+        \\            }
+        \\        </Show>
+        \\        <p id="seen">{model.seen}</p>
+        \\    </main>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program
+        \\        { init = λ⊤ → { pick = Just (List.copy [ 1, 2 ]), seen = 0 }
+        \\        , update = update
+        \\        , view = view
+        \\        }
+        },
+        .{ .name = "ForKey", .line = "entry Main.update model.rows[*]: rejected", .text =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Msg
+        \\    = Add
+        \\
+        \\
+        \\type alias Model =
+        \\    rows : List (List Int)
+        \\    cell : Ref (List Int)
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Add →
+        \\            { model | rows = List.update model.rows 0 λr → List.push r 9 }
+        \\
+        \\
+        \\key : Ref (List Int), List Int → Int
+        \\key cell r =
+        \\    Ref.set cell r
+        \\    List.length r
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <p id="kept">{List.length (Ref.get model.cell)}</p>
+        \\        <button class="add" onClick={Add}>add</button>
+        \\        <For each={model.rows} keyed={key model.cell _}>{λr → <p>{List.length r}</p>}</For>
+        \\    </main>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program
+        \\        { init = λ⊤ → { rows = [ List.copy [ 1, 2 ] ], cell = Ref.make [] }
+        \\        , update = update
+        \\        , view = view
+        \\        }
+        },
+        .{ .name = "TopField", .line = "entry Main.update model.items: rejected", .text =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import List
+        \\
+        \\
+        \\type Msg
+        \\    = Add
+        \\    | Snap (List Int)
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    saved : List Int
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Add →
+        \\            { model | items = List.push model.items 3 }
+        \\
+        \\        Snap xs →
+        \\            { model | saved = xs }
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <button id="add" onClick={Add}>add</button>
+        \\        <p>{List.length model.saved}</p>
+        \\    </main>
+        \\
+        \\
+        \\views : { main : Model → Html Msg }
+        \\views =
+        \\    { main = view }
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program
+        \\        { init = λ⊤ → { items = List.copy [ 1, 2 ], saved = [] }
+        \\        , update = update
+        \\        , view = views.main
+        \\        }
+        },
+        .{ .name = "Children", .card = true, .line = "entry Main.update model.items: rejected", .text =
+        \\import Browser
+        \\import Card
+        \\import Html exposing (Html)
+        \\import List
+        \\
+        \\
+        \\type Msg
+        \\    = Add
+        \\    | Keep (Html Msg)
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    saved : Maybe (Html Msg)
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Add →
+        \\            { model | items = List.push model.items 3 }
+        \\
+        \\        Keep h →
+        \\            { model | saved = Just h }
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <button id="add" onClick={Add}>add</button>
+        \\        <Card.wrap keep={Keep}><p>{List.length model.items}</p></Card.wrap>
+        \\        {Maybe.withDefault model.saved (<p>none</p>)}
+        \\    </main>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program
+        \\        { init = λ⊤ → { items = List.copy [ 1, 2 ], saved = Nothing }
+        \\        , update = update
+        \\        , view = view
+        \\        }
+        },
+    };
+    for (cases) |c| {
+        const file = try std.fmt.allocPrint(a, "{s}/Main.beni", .{c.name});
+        try w.write(file, c.text);
+        const main = try std.fs.path.join(a, &.{ try w.projectPath(), file });
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(a, &.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser", main });
+        if (c.card) {
+            const card = try std.fmt.allocPrint(a, "{s}/Card.beni", .{c.name});
+            try w.write(card,
+                \\import Html exposing (Html)
+                \\
+                \\
+                \\pub wrap : { children : Html msg, keep : Html msg → msg } → Html msg
+                \\wrap { children, keep } =
+                \\    <div id="w" onClick={keep children}>{children}</div>
+                \\
+            );
+            const dir = try std.fs.path.join(a, &.{ try w.projectPath(), c.name });
+            argv.items[argv.items.len - 1] = dir;
+            try argv.append(a, try std.fmt.allocPrint(a, "--root={s}", .{dir}));
+        }
+        const r = try w.runWith(argv.items, .{ .raw_diagnostics = true, .cwd = .inherit });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, c.line) == null) {
+            std.debug.print("{s}: missing line {s}; exit {d}:\n{s}{s}\n", .{ c.name, c.line, r.exit_code, r.stdout, r.stderr });
+            return error.TestExpectedLine;
+        }
+    }
+}

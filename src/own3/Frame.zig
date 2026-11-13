@@ -69,6 +69,7 @@ const CMod = @import("Contract.zig");
 const Check = @import("Check.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Edges = @import("../check/Edges.zig");
+const InternPool = @import("../InternPool.zig");
 
 const Contract = CMod.Contract;
 const Mod = Check.Mod;
@@ -1730,7 +1731,11 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // A code binding of a group whose rounds run (the code itself, or
             // another code of its cycle): the known function, with its
             // contract so far.
-            if (m.lframe[l] == none) return f.memberValue(data.lhs, inst);
+            if (m.lframe[l] == none) {
+                const mv = try f.memberValue(data.lhs, inst);
+                if (f.markup_reads) |mr| try mr.append(f.gpa, mv);
+                return mv;
+            }
             if (m.lframe[l] == f.id) {
                 if (safety) std.debug.assert(m.lv[l] != v_unbound);
                 if (f.markup_reads) |mr| try mr.append(f.gpa, m.lv[l]);
@@ -1891,21 +1896,44 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             const outer_reads = f.markup_reads;
             f.markup_reads = &held;
             defer f.markup_reads = outer_reads;
-            for (ops.items, vals) |o, *v| {
+            // Per value: the run of `held` that its evaluation read.
+            const reads = try f.gpa.alloc([2]u32, ops.items.len);
+            defer f.gpa.free(reads);
+            for (ops.items, vals, reads) |o, *v, *rd| {
+                rd[0] = @intCast(held.items.len);
                 v.* = try f.ev(o.int());
                 try held.append(f.gpa, v.*);
                 if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try held.appendSlice(f.gpa, f.call_vals);
+                rd[1] = @intCast(held.items.len);
             }
             f.markup_reads = outer_reads;
+            // The runtime calls the functions that the markup gives it with
+            // items of the markup's own values (`boundary.md` §9.4.8): a
+            // `For`'s row and key function with each item of `each`, a
+            // `Show`'s body and key function with the value in `when`. Each
+            // is applied to them as at a call site (`runtimeCall`), so what
+            // it keeps of them escapes and what it hands a function is
+            // supplied.
+            try f.formCalls(inst, @fromBackingInt(data.lhs), ops.items, vals);
             // A value at an item that no row names as an attribute — an
             // event's handler or message, a component's prop, a spread — is
             // kept by the runtime past the render, and called or sent after
             // `update` runs (`boundary.md` §9.4.8): it escapes, whatever
             // made it. An attribute's value is read where it is rendered.
+            //
+            // A component's children are a value that its code is handed
+            // whole (`children`, `language.md` §11.8), markup that holds
+            // everything its holes read: each of those escapes.
             var unrendered: std.ArrayList(u32) = .empty;
             defer unrendered.deinit(f.gpa);
-            try f.keptItems(@fromBackingInt(data.lhs), &unrendered);
-            for (ops.items, vals) |o, v| {
+            var handed: std.ArrayList(u32) = .empty;
+            defer handed.deinit(f.gpa);
+            try f.keptItems(@fromBackingInt(data.lhs), &unrendered, &handed);
+            for (ops.items, vals, reads) |o, v, rd| {
+                if (std.mem.indexOfScalar(u32, handed.items, o.int()) != null) {
+                    for (held.items[rd[0]..rd[1]]) |x| try f.escape(x, inst);
+                    continue;
+                }
                 const n = f.nodes.items[v];
                 const kept = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null or switch (n.tag) {
                     .built => true,
@@ -1987,23 +2015,95 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
     }
 }
 
+/// The `For` and `Show` forms of the markup at `root`, each with its
+/// functions applied to what the runtime hands them (kernel §6.12). `ops`
+/// and `vals` are the markup's values (`Bir.markupValues`) and theirs.
+fn formCalls(f: *Frame, inst: u32, root: Bir.ExtraIndex, ops: []const Inst.Index, vals: []const Val) Error!void {
+    const m = f.m;
+    const bir = m.bir;
+    switch (bir.markupKind(root)) {
+        .element => {
+            const e = bir.extraData(root, Bir.MarkupElement);
+            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| try f.formCalls(inst, c, ops, vals);
+        },
+        .fragment => {
+            const fr = bir.extraData(root, Bir.MarkupFragment);
+            for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| try f.formCalls(inst, c, ops, vals);
+        },
+        .component => {
+            const c = bir.extraData(root, Bir.MarkupComponent);
+            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try f.formCalls(inst, ch, ops, vals);
+        },
+        .text, .hole => {},
+        .@"for", .show => {
+            const k = bir.markupKind(root);
+            const form = bir.extraData(root, Bir.MarkupForm);
+            const list = form.list.unwrap() orelse return;
+            const lv = valOf(ops, vals, list.int());
+            // What the runtime hands: an item of the list, or the value in `Just`.
+            const item = if (k == .@"for") try f.project(lv, Step.elem) else try f.project(lv, try m.ctorStep(0, 0));
+            if (form.mode == .key_function) if (form.keyed.unwrap()) |kf| try f.runtimeCall(inst, kf.int(), valOf(ops, vals, kf.int()), item);
+            if (form.row != Bir.none_extra) {
+                const rf = bir.extraData(@fromBackingInt(@intCast(form.row)), Bir.MarkupRow).function.int();
+                try f.runtimeCall(inst, rf, valOf(ops, vals, rf), item);
+            }
+        },
+    }
+}
+
+fn valOf(ops: []const Inst.Index, vals: []const Val, inst: u32) Val {
+    for (ops, vals) |o, v| if (o.int() == inst) return v;
+    unreachable; // every value of the markup is in `ops`
+}
+
+/// The runtime calls the function `fv` (the value of `fn_inst`) with `item`,
+/// and a row's position, where it renders the markup `inst`: applied as at a
+/// call site. A function that no rule follows is unknown code: the item and
+/// the function escape. The answer is markup the runtime renders, or a key
+/// of no list.
+fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!void {
+    const m = f.m;
+    const n = f.nodes.items[fv];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| try f.runtimeCall(inst, fn_inst, f.lists.items[n.a + 2 * ki], item);
+        return;
+    }
+    const ft = m.fnType(m.typeOfInst(fn_inst));
+    const arity: usize = if (ft) |t| m.in.store.vars(t.params).len else 0;
+    // The item, and for a row of two parameters its position, an `Int`.
+    const args = [2]Val{ item, v_none };
+    if (arity == 1 or arity == 2) {
+        if (try f.codeOf(fv)) |code| if (code.own_params == arity) {
+            _ = try f.applyAt(inst, fn_inst, code, args[0..arity], &.{}, try m.placeOfInst(inst));
+            return;
+        };
+        const root = f.ownFnRoot(fv);
+        if (f.isFnRoot(root)) {
+            _ = try f.callParam(inst, fn_inst, root, args[0..arity], &.{});
+            return;
+        }
+    }
+    try f.escape(item, inst);
+    try f.escape(fv, inst);
+}
+
 /// The values of the items of the markup at `root` that the runtime can keep
 /// past the render: every item that no row of the dispatch table names as an
 /// attribute or a quoted attribute (an event's handler or message, a
 /// component's prop, a spread of attributes). A missing row is the
 /// pessimistic fact: kept.
-fn keptItems(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
+fn keptItems(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32), handed: *std.ArrayList(u32)) Error!void {
     const m = f.m;
     const bir = m.bir;
     switch (bir.markupKind(root)) {
         .element => {
             const e = bir.extraData(root, Bir.MarkupElement);
             try f.keptOf(e.items_start, e.items_end, out);
-            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| try f.keptItems(c, out);
+            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| try f.keptItems(c, out, handed);
         },
         .fragment => {
             const fr = bir.extraData(root, Bir.MarkupFragment);
-            for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| try f.keptItems(c, out);
+            for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| try f.keptItems(c, out, handed);
         },
         .component => {
             const c = bir.extraData(root, Bir.MarkupComponent);
@@ -2012,7 +2112,12 @@ fn keptItems(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!vo
                 if (bir.extraData(at, Bir.MarkupItem).value.unwrap()) |v| try out.append(f.gpa, v.int());
             }
             if (c.spread.unwrap()) |s| try out.append(f.gpa, s.int());
-            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try f.keptItems(ch, out);
+            // Its children are a prop too (`children`, `language.md` §11.8):
+            // that code is handed every value in them, and what they read.
+            var tmp: std.ArrayList(Inst.Index) = .empty;
+            defer tmp.deinit(f.gpa);
+            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try bir.markupValues(f.gpa, ch, &tmp);
+            for (tmp.items) |v| try handed.append(f.gpa, v.int());
         },
         .text, .hole, .@"for", .show => {},
     }
@@ -2035,8 +2140,10 @@ fn keptOf(f: *Frame, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out: *std.Array
 /// The values of the holes of the markup at `root` that call a function of
 /// the top level and that a platform may call where it renders (the
 /// emitter's `helperCallee`, `language.md` §11.6). A hole whose value is
-/// text is not one. A function of another module is taken to be one: a
-/// markup primitive among them only reads later than it does.
+/// text is one too: a lowering may evaluate it where it renders (the `dom`
+/// lowering's block of inputs, `backend.md` §15.4). A function of another
+/// module is taken to be one: a markup primitive among them only reads
+/// later than it does.
 fn helperHoles(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
     const m = f.m;
     const bir = m.bir;
@@ -2057,10 +2164,6 @@ fn helperHoles(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!
         .hole => {
             const v = bir.extraData(root, Bir.MarkupHole).value.int();
             if (m.tags[v] != .call) return;
-            // A hole of text is written where it is; one with no row is markup.
-            if (m.in.dispatch) |dt| for (dt.markup) |row| if (row.kind == .hole and row.node == @backingInt(root)) {
-                if (row.detail < 4) return;
-            };
             const callee = m.datas[v].lhs;
             switch (m.tags[callee]) {
                 .top => {
@@ -2633,7 +2736,12 @@ fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
     const start: u32 = @intCast(f.lists.items.len);
     try f.lists.appendSlice(f.gpa, tmp.items);
     try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(cap_locals.len), .inst = mb.inst, .own_params = @intCast(mb.params.len) });
-    return f.node(.{ .tag = .closure, .place = try m.placeOf(mb.ty), .a = @intCast(f.codes.items.len - 1) });
+    const v = try f.node(.{ .tag = .closure, .place = try m.placeOf(mb.ty), .a = @intCast(f.codes.items.len - 1) });
+    // A closure made in a hole of markup reads what it captured where the
+    // lowering evaluates the hole, which can be where it renders (kernel
+    // §6.12): the markup holds the closure, so it holds each capture.
+    if (f.markup_reads) |mr| try mr.append(f.gpa, v);
+    return v;
 }
 
 /// What a closure that this frame makes holds of the captured local `local`:
@@ -2890,7 +2998,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
             if (code == null and fn_root == none) try f.flowTop(callee_val, inst);
         },
     }
-    if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, args[0].int());
+    if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, c.decl, args[0].int());
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
     for (args, 0..) |a, k| {
@@ -3168,6 +3276,12 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
 
 /// Apply contract `code.contract` to the arguments `vals` at the call `inst`.
 fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_insts: []const Inst.Index) Error!Val {
+    return f.applyAt(inst, callee, code, vals, arg_insts, try f.m.placeOfInst(inst));
+}
+
+/// `apply`, with the answer at `place`: a call that the runtime makes, at
+/// the markup that hands it its arguments (`runtimeCall`).
+fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_insts: []const Inst.Index, place: PlaceId) Error!Val {
     const m = f.m;
     const c = code.contract;
     // The values by the contract's parameters: the arguments, then the captures.
@@ -3239,7 +3353,6 @@ fn apply(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg_i
     // The level that the result's sources are read at: no function of it is in work.
     const base: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .args = args, .site = &site };
     // The result.
-    const place = try m.placeOfInst(inst);
     const layout = try m.loc.layoutOf(place);
     const es = m.loc.layoutEntries(layout);
     if (es.len == 0) return v_none;
@@ -4784,12 +4897,40 @@ fn appendChain(f: *Frame, inst: u32) Error!Val {
 /// `Tea.application { init, update, view, … }` (research report 110 §6.6):
 /// the runtime hands `update` a model that is `own` where `init` and `update`
 /// answer it `own` and no other function of the record keeps it.
-fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
+/// The functions that a value of a field of an entry's record can be: each
+/// value of a join, each a known function. False where one has no known
+/// code: no contract says what it does.
+fn fnMembers(f: *Frame, v: Val, out: *std.ArrayList(Code)) Error!bool {
+    if (v == v_none) return false;
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| if (!try f.fnMembers(f.lists.items[n.a + 2 * ki], out)) return false;
+        return true;
+    }
+    const code = (try f.codeOf(v)) orelse return false;
+    try out.append(f.gpa, code);
+    return true;
+}
+
+fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
     const m = f.m;
-    // `view`: the field is a function that answers markup (`Mod.isView`).
-    const Field = struct { name: []const u8, code: ?Code, view: bool };
-    var fields: [12]Field = undefined;
-    var nfields: usize = 0;
+    // Kernel §6.13. Every function of the record is accounted for by a
+    // contract: each value it can be is a known function (`fnMembers`), or
+    // the field has no fact, and no location of the model is `own`. Where
+    // each function has the model is read off the entry's declared type
+    // (`Mod.entryShape`), never guessed from locations: a field whose answer
+    // has the model is a producer of it, at the answer itself or at one item
+    // of a tuple (`model × Cmd msg`); the model is the type variable of
+    // `update`'s last parameter.
+    const Field = struct { shape: Mod.EntryField, ty: Var.Optional, from: usize, len: usize, view: bool };
+    var fields: std.ArrayList(Field) = .empty;
+    defer fields.deinit(f.gpa);
+    var codes: std.ArrayList(Code) = .empty;
+    defer codes.deinit(f.gpa);
+    // No fact for some function of the record, or for where the model is.
+    var no_fact = false;
+    const shape = try m.entryShape(entry);
+    if (shape == null) no_fact = true;
     // The program's value holds the record: what the runtime was handed.
     var held: std.ArrayList(Val) = .empty;
     defer held.deinit(f.gpa);
@@ -4799,130 +4940,153 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
             try held.append(f.gpa, v);
             // The runtime keeps the record: what a function of it captured is read at any time.
             try f.escape(v, inst);
-            const code = try f.codeOf(v);
-            if (nfields == fields.len or code == null) {
-                // No row of the entry describes this field: the default.
+            const sym = m.bir.symbol(fd.name);
+            var sf: ?Mod.EntryField = null;
+            if (shape) |sh| for (sh) |x| if (x.name == sym) {
+                sf = x;
+            };
+            const s = sf orelse {
+                // A field that the entry's type does not name: no row describes it.
+                no_fact = true;
+                try f.flowTop(v, inst);
+                continue;
+            };
+            if (s.unknown) no_fact = true;
+            if (!s.is_fn) continue;
+            const from = codes.items.len;
+            // A constructor whose answer holds no cell is the value of no
+            // object (`ctorValue`): it keeps and writes nothing. Any other
+            // function value of no object is one that no rule names (a
+            // field of a top-level record), and has no known code.
+            const ctor = m.tags[fd.value.int()] == .ctor or m.tags[fd.value.int()] == .ext_ctor;
+            var known = if (v == v_none) ctor else try f.fnMembers(v, &codes);
+            if (known) for (codes.items[from..]) |c| if (c.own_params != s.arity) {
+                known = false;
+            };
+            if (!known) {
+                // A function with no known code: the default. It can write
+                // nothing (`flowTop` refuses that), and it can keep each
+                // value that the runtime hands it, the model among them.
+                codes.shrinkRetainingCapacity(from);
+                no_fact = true;
                 try f.flowTop(v, inst);
                 continue;
             }
-            // The rows below judge what the function does with its own
+            // The rows below judge what each function does with its own
             // parameters. No row describes what the runtime hands on to a
             // function that it captured: those are in the default.
-            const site: Site = .{ .inst = inst };
-            const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = code };
-            try f.flowCaptures(code.?, &top);
-            const view = if (m.fnType(m.typeOfInst(fd.value.int()))) |ft| try m.isView(ft.result.toOptional(), 0) else false;
-            fields[nfields] = .{ .name = m.symbolText(fd.name), .code = code, .view = view };
-            nfields += 1;
+            for (codes.items[from..]) |c| {
+                const site: Site = .{ .inst = inst };
+                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c };
+                try f.flowCaptures(c, &top);
+            }
+            const ty = m.typeOfInst(fd.value.int());
+            const view = if (m.fnType(ty)) |ft| try m.isView(ft.result.toOptional(), 0) else false;
+            try fields.append(f.gpa, .{ .shape = s, .ty = ty, .from = from, .len = codes.items.len - from, .view = view });
         }
     } else {
         const v = try f.ev(arg);
         try held.append(f.gpa, v);
         try f.escape(v, inst);
+        no_fact = true;
     }
-    var update: ?Code = null;
-    var init_c: ?Code = null;
-    var settle: ?Code = null;
-    var others: [12]Code = undefined;
-    var views: [12]bool = undefined;
-    var nothers: usize = 0;
-    for (fields[0..nfields]) |fd| {
-        const c = fd.code orelse continue;
-        if (std.mem.eql(u8, fd.name, "update")) update = c else if (std.mem.eql(u8, fd.name, "init")) init_c = c else if (std.mem.eql(u8, fd.name, "settle")) settle = c else {
-            others[nothers] = c;
-            views[nothers] = fd.view;
-            nothers += 1;
-        }
+    // The model: the type of the model parameter of a field that has one
+    // (`update`). Its layout names the locations judged below.
+    var model_ty: Var.Optional = .none;
+    // A producer handed no model (`init`): the first model comes from it.
+    var has_first = false;
+    for (fields.items) |fd| {
+        if (fd.shape.model_param != none and model_ty == .none) if (m.fnType(fd.ty)) |ft| {
+            const pv = m.in.store.vars(ft.params);
+            if (fd.shape.model_param < pv.len) model_ty = pv[fd.shape.model_param].toOptional();
+        };
+        if (fd.shape.answer != .none and fd.shape.model_param == none) has_first = true;
     }
-    // Any other function of the record is called with values that it does not own.
-    for (others[0..nothers]) |c| {
-        if (writesOwn(c.contract, c.own_params)) try m.addRefusal(f, inst, .unknown, "the runtime calls this function with a value that the function does not own");
+    // A function that is not handed the model and writes a parameter: the
+    // runtime hands it a value that the function does not own.
+    const init_sym: ?InternPool.Symbol = if (m.in.interner) |i| i.find("init") else null;
+    for (fields.items) |fd| {
+        if (fd.shape.model_param != none and fd.shape.answer != .none) continue;
+        for (codes.items[fd.from..][0..fd.len]) |c| if (writesOwn(c.contract, c.own_params)) {
+            const is_init = init_sym != null and init_sym.? == fd.shape.name;
+            try m.addRefusal(f, inst, .unknown, if (is_init) "the runtime calls `init` with a value that the function does not own" else "the runtime calls this function with a value that the function does not own");
+        };
     }
-    if (init_c) |c| if (writesOwn(c.contract, c.own_params)) try m.addRefusal(f, inst, .unknown, "the runtime calls `init` with a value that the function does not own");
-    const up = update orelse {
-        if (settle) |c| if (writesOwn(c.contract, c.own_params)) try m.addRefusal(f, inst, .unknown, "the record has no `update`");
+    if (model_ty == .none) {
+        for (fields.items) |fd| if (fd.shape.model_param != none) for (codes.items[fd.from..][0..fd.len]) |c| if (writesOwn(c.contract, c.own_params)) {
+            try m.addRefusal(f, inst, .unknown, "the record has no `update`");
+        };
         return f.unknownResult(inst, held.items);
-    };
-    const uc = up.contract;
-    if (up.own_params == 0) return f.unknownResult(inst, held.items);
-    const ml = uc.layouts[up.own_params - 1];
-    const mes = m.loc.layoutEntries(ml);
+    }
+    const mes = m.loc.layoutEntries(try m.loc.layoutOf(try m.placeOf(model_ty)));
     const own = try f.gpa.alloc(bool, mes.len);
-    @memset(own, true);
-    // The model in a result: the result itself, or the first of a pair.
-    const idx0: Loc.Label = .{ .kind = .index, .payload = 0, .cyc = false, .head = 0 };
-    const p0 = try m.loc.extend(0, idx0);
-    const models = [_]?Code{ init_c, update, settle };
+    defer f.gpa.free(own);
+    // With no producer handed no model, the runtime makes the first one, and
+    // no fact names its holder.
+    @memset(own, !no_fact and has_first);
     // Kernel §6.13. A model location is `own` for `update` only where a
     // positive fact names its one holder, the model, in every producer of
-    // the model (`init`, `update`, `settle`): each source of it there is a
-    // cell the producer made and let go nowhere (`freshOwn`), or a model
-    // location of the producer's own parameter that is `own` in its turn,
-    // that it let go nowhere and answers at no other place (`paramOwn`).
-    // Every other source has another holder or no fact: a top-level value
-    // (`outside`), the answer of a function, a capture (the record holds it
-    // for ever), the message (the runtime can hand one message twice: a
-    // handler keeps its message until the next render), the `Host`. A
-    // location answered through a wide location has no fact of its own.
-    // The largest solution: start from `own` everywhere and take away.
+    // the model (each function whose answer has it: `init`, `update`,
+    // `settle`): each source of it there is a cell the producer made and let
+    // go nowhere (`freshOwn`), or a model location of the producer's own
+    // parameter that is `own` in its turn, that it let go nowhere and
+    // answers at no other place (`paramOwn`). Every other source has another
+    // holder or no fact: a top-level value (`outside`), the answer of a
+    // function, a capture (the record holds it for ever), the message (the
+    // runtime can hand one message twice: a handler keeps its message until
+    // the next render), the `Host`. A location answered through a wide
+    // location has no fact of its own. The largest solution: start from
+    // `own` everywhere and take away.
     var changed = true;
     while (changed) {
         changed = false;
-        for (models, 0..) |mc, which| {
-            const code = mc orelse {
-                if (which == 0) for (own) |*o| if (o.*) {
-                    o.* = false;
-                    changed = true;
-                };
-                continue;
+        for (fields.items) |fd| {
+            // Where the answer has the model: the answer, or one item of a tuple.
+            const at: u32 = switch (fd.shape.answer) {
+                .none => continue,
+                .whole => 0,
+                .index => try m.loc.extend(0, .{ .kind = .index, .payload = @intCast(fd.shape.index), .cyc = false, .head = 0 }),
             };
-            const c = code.contract;
-            if (which != 0 and code.own_params == 0) continue;
-            const model_param: u32 = if (which == 0) none else code.own_params - 1;
-            const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
-            const pes: []const Loc.Entry = if (which == 0) &.{} else m.loc.layoutEntries(c.layouts[model_param]);
-            // Whether the result is the model, or a pair whose first is.
-            var direct = true;
-            for (res_es) |re| if (m.loc.isPrefix(p0, re.loc)) {
-                direct = false;
-            };
-            for (mes) |me| if (m.loc.isPrefix(p0, me.loc)) {
-                direct = true;
-            };
-            for (mes, 0..) |me, k| {
-                if (!own[k]) continue;
-                const want = if (direct) me.loc else try m.loc.concat(p0, me.loc);
-                var ok = true;
-                for (res_es, 0..) |re, ri| {
-                    if (re.loc != want) {
-                        // A wide location above it: no fact for this location alone.
-                        if (re.kind.wide() and m.loc.isPrefix(re.loc, want) and c.res[ri].len != 0) ok = false;
-                        continue;
-                    }
-                    for (c.res[ri]) |s| switch (s.kind) {
-                        .fresh => if (!freshOwn(c, @intCast(ri), s)) {
-                            ok = false;
-                        },
-                        .param => {
-                            if (s.a != model_param or !paramOwn(c, @intCast(ri), s)) {
+            const model_param = fd.shape.model_param;
+            for (codes.items[fd.from..][0..fd.len]) |code| {
+                const c = code.contract;
+                const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
+                const pes: []const Loc.Entry = if (model_param == none) &.{} else m.loc.layoutEntries(c.layouts[model_param]);
+                for (mes, 0..) |me, k| {
+                    if (!own[k]) continue;
+                    const want = if (at == 0) me.loc else try m.loc.concat(at, me.loc);
+                    var ok = true;
+                    for (res_es, 0..) |re, ri| {
+                        if (re.loc != want) {
+                            // A wide location above it: no fact for this location alone.
+                            if (re.kind.wide() and m.loc.isPrefix(re.loc, want) and c.res[ri].len != 0) ok = false;
+                            continue;
+                        }
+                        for (c.res[ri]) |s| switch (s.kind) {
+                            .fresh => if (!freshOwn(c, @intCast(ri), s)) {
                                 ok = false;
-                                continue;
-                            }
-                            // From another model location: `own` only when that one is.
-                            const from = pes[s.e].loc;
-                            var found = false;
-                            for (mes, 0..) |me2, k2| if (me2.loc == from or (pes[s.e].kind.wide() and m.loc.isPrefix(from, me2.loc))) {
-                                found = true;
-                                if (!own[k2]) ok = false;
-                            };
-                            if (!found) ok = false;
-                        },
-                        .outside, .answer, .twice => ok = false,
-                    };
-                }
-                if (!ok) {
-                    own[k] = false;
-                    changed = true;
+                            },
+                            .param => {
+                                if (s.a != model_param or !paramOwn(c, @intCast(ri), s)) {
+                                    ok = false;
+                                    continue;
+                                }
+                                // From another model location: `own` only when that one is.
+                                const from = pes[s.e].loc;
+                                var found = false;
+                                for (mes, 0..) |me2, k2| if (me2.loc == from or (pes[s.e].kind.wide() and m.loc.isPrefix(from, me2.loc))) {
+                                    found = true;
+                                    if (!own[k2]) ok = false;
+                                };
+                                if (!found) ok = false;
+                            },
+                            .outside, .answer, .twice => ok = false,
+                        };
+                    }
+                    if (!ok) {
+                        own[k] = false;
+                        changed = true;
+                    }
                 }
             }
         }
@@ -4935,41 +5099,47 @@ fn entryCall(f: *Frame, inst: u32, arg: u32) Error!Val {
     // `view` answers is no holder of the model here. What it lets escape
     // (a message built in a hole, a function that answers one), and what it
     // hands a function (which can keep it), still is.
-    for (others[0..nothers], views[0..nothers]) |c0, is_view| {
-        const c = c0.contract;
-        for (0..c0.own_params) |pj| {
-            const pes = m.loc.layoutEntries(c.layouts[pj]);
-            for (pes, 0..) |pe, e| {
-                var kept = c.flags[c.off[pj] + e] & (flag_w | flag_e) != 0;
-                if (!is_view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
-                    kept = true;
-                };
-                if (handsOn(c, @intCast(pj), @intCast(e))) kept = true;
-                if (!kept) continue;
-                for (mes, 0..) |me, k| if (me.loc == pe.loc or (pe.kind.wide() and m.loc.isPrefix(pe.loc, me.loc))) {
-                    own[k] = false;
-                };
+    for (fields.items) |fd| {
+        if (fd.shape.answer != .none) continue;
+        for (codes.items[fd.from..][0..fd.len]) |c0| {
+            const c = c0.contract;
+            for (0..c0.own_params) |pj| {
+                const pes = m.loc.layoutEntries(c.layouts[pj]);
+                for (pes, 0..) |pe, e| {
+                    var kept = c.flags[c.off[pj] + e] & (flag_w | flag_e) != 0;
+                    if (!fd.view) for (c.res) |rs| for (rs) |s| if (s.kind == .param and s.a == pj and s.e == e) {
+                        kept = true;
+                    };
+                    if (handsOn(c, @intCast(pj), @intCast(e))) kept = true;
+                    if (!kept) continue;
+                    for (mes, 0..) |me, k| if (me.loc == pe.loc or (pe.kind.wide() and m.loc.isPrefix(pe.loc, me.loc))) {
+                        own[k] = false;
+                    };
+                }
             }
         }
     }
-    // The verdicts: one for each location that `update` or `settle` writes.
+    // The verdicts: one for each location that a producer handed the model
+    // (`update`, `settle`) writes.
     // The message is never `own`: no fact names its one holder. A handler
     // of the rendered markup keeps its message until the next render and can
     // send it twice, and a message can hold a top-level value or anything a
     // platform's runtime made; a `send` is checked where it is written, but
     // it is one source among these (kernel §6.13).
-    for ([_]?Code{ update, settle }) |mc| {
-        const c0 = mc orelse continue;
-        const c = c0.contract;
-        for (0..c0.own_params) |pj| {
-            const pes = m.loc.layoutEntries(c.layouts[pj]);
-            for (pes, 0..) |pe, e| {
-                if (c.flags[c.off[pj] + e] & flag_w == 0) continue;
-                var ok = false;
-                if (pj == c0.own_params - 1) for (mes, 0..) |me, k| if (me.loc == pe.loc and own[k]) {
-                    ok = true;
-                };
-                try m.addEntryLine(f, inst, c0, pj == c0.own_params - 1, pe.loc, ok);
+    for (fields.items) |fd| {
+        if (fd.shape.model_param == none or fd.shape.answer == .none) continue;
+        for (codes.items[fd.from..][0..fd.len]) |c0| {
+            const c = c0.contract;
+            for (0..c0.own_params) |pj| {
+                const pes = m.loc.layoutEntries(c.layouts[pj]);
+                for (pes, 0..) |pe, e| {
+                    if (c.flags[c.off[pj] + e] & flag_w == 0) continue;
+                    var ok = false;
+                    if (pj == fd.shape.model_param) for (mes, 0..) |me, k| if (me.loc == pe.loc and own[k]) {
+                        ok = true;
+                    };
+                    try m.addEntryLine(f, inst, c0, pj == fd.shape.model_param, pe.loc, ok);
+                }
             }
         }
     }

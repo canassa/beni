@@ -9242,3 +9242,10 @@ tests/corpus/browser/tea/HolesInPlace.beni HolesInPlace 78:8 #0 :: entry HolesIn
 tests/corpus/browser/tea/HolesInPlace.beni HolesInPlace 78:8 #0 :: entry HolesInPlace.update model.items :: accepted :: absent  v1's entry demand: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/HolesInPlace.beni HolesInPlace 50:10 #0 :: entry HolesInPlace.update model.items :: accepted :: absent  v1's entry demand: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/HolesInPlace.beni HolesInPlace 50:10 #0 :: entry HolesInPlace.update model.names :: accepted :: absent  v1's entry demand: initialization transfer is S7, v2 makes none
+tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 15:5 #0 :: Ref.set seen◆ :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 15:5 #0 :: Ref.set r :: absent :: rejected  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 22:12 #0 :: Ref.make <literal> :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 23:48 #0 :: cell seen◆ :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 23:53 #0 :: SsrRowKeeps.keep seen◆ :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 23:53 #0 :: SsrRowKeeps.keep r :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/PairModelInPlace.beni PairModelInPlace 59:5 #0 :: entry PairModelInPlace.update model.0 :: accepted :: absent  v1's entry demand: initialization transfer is S7, v2 makes none
