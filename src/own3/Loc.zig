@@ -143,8 +143,6 @@ pub const Table = struct {
     layouts: std.ArrayList([]const Entry) = .empty,
     /// Per layout of a place, per entry: the steps of one path from the place to a cell there.
     reps: std.ArrayList([]const []const u32) = .empty,
-    /// Per layout: the place it is the layout of, or null (the empty and the over layout).
-    layout_place: std.ArrayList(?PlaceId) = .empty,
     /// Per place: its layout, or `none` while not built.
     layout_of: std.ArrayList(u32) = .empty,
 
@@ -187,7 +185,6 @@ pub const Table = struct {
         t.loc_index.deinit(gpa);
         t.layouts.deinit(gpa);
         t.reps.deinit(gpa);
-        t.layout_place.deinit(gpa);
         t.layout_of.deinit(gpa);
         t.projs.deinit(gpa);
         t.proj_index.deinit(gpa);
@@ -258,7 +255,6 @@ pub const Table = struct {
         const id: u32 = @intCast(t.layouts.items.len);
         try t.layouts.append(t.gpa, try t.arena.dupe(Entry, es));
         try t.reps.append(t.gpa, &.{});
-        try t.layout_place.append(t.gpa, null);
         return id;
     }
 
@@ -354,7 +350,6 @@ pub const Table = struct {
             const reps = try t.arena.alloc([]const u32, b.out.items.len);
             for (reps, b.rep_at.items) |*r, at| r.* = try t.arena.dupe(u32, b.rep_steps.items[at[0]..][0..at[1]]);
             t.reps.items[id] = reps;
-            t.layout_place.items[id] = place;
         }
         t.layout_of.items[pi] = id;
         return id;
@@ -638,40 +633,18 @@ pub const Table = struct {
 
     // ---- the call map ----------------------------------------------------------
 
-    /// Whether the caller's location at entry `ei` of layout `of`, in the deep
-    /// level that starts at location `entry`, is in a cycle wider than the
-    /// signature's: a wide entry of `sig` at or below `entry` is, in the
-    /// caller's type, at a place of a cycle on the caller's path to the
-    /// location — the outer cycle or one nested in its deep level. Read by
-    /// places, never by label paths. With no place to read, or a step the
-    /// caller's type has no child for (a row's, which stands for fields), it
-    /// is (the pessimistic side).
-    fn cycleWider(t: *Table, sig: u32, of: u32, ei: usize, entry: u32) bool {
-        const root = t.layout_place.items[of] orelse return true;
-        const oreps = t.reps.items[of];
-        if (ei >= oreps.len) return true;
-        // The components of the cycles on the caller's path to the location.
-        var comps: [16]u32 = undefined;
-        var n: usize = 0;
-        var cur = root;
-        for (0..oreps[ei].len + 1) |k| {
-            if (k > 0) cur = t.places.child(cur, Step.fromWord(oreps[ei][k - 1])) orelse return true;
-            if (!t.places.cyclic(cur)) continue;
-            const c = t.places.sccOf(cur);
-            if (std.mem.indexOfScalar(u32, comps[0..n], c) != null) continue;
-            if (n == comps.len) return true;
-            comps[n] = c;
-            n += 1;
-        }
-        const se = t.layoutEntries(sig);
-        const reps = t.reps.items[sig];
-        for (se, 0..) |s, i| {
-            if (!s.kind.wide() or !t.isPrefix(entry, s.loc)) continue;
-            if (i >= reps.len) return true;
-            cur = root;
-            for (reps[i]) |w| cur = t.places.child(cur, Step.fromWord(w)) orelse return true;
-            if (t.places.cyclic(cur) and std.mem.indexOfScalar(u32, comps[0..n], t.places.sccOf(cur)) != null) return true;
-        }
+    /// Whether the signature's layout `sig` reads the region at or below the
+    /// location `entry`, where a deep level starts, through a type variable
+    /// or a row. If it does not, the type there is concrete: the caller's type
+    /// is the same type, with the same cycles and the same cells at each deep
+    /// location, and a label path names one set of cells in both. If it does,
+    /// a type argument can name the container again, at that variable or in a
+    /// cycle nested below it, and one deep location of the caller can hold
+    /// cells the signature names at several entries. No sample path decides
+    /// that, since a location can stand for several places: so it is the
+    /// pessimistic answer, and no match inside the deep level stands.
+    fn cycleWider(t: *const Table, sig: u32, entry: u32) bool {
+        for (t.layoutEntries(sig)) |s| if (s.kind == .@"var" and t.isPrefix(entry, s.loc)) return true;
         return false;
     }
 
@@ -692,7 +665,7 @@ pub const Table = struct {
         const oe = t.layoutEntries(of);
         const m = try t.arena.alloc(u32, oe.len);
         const row: Label = .{ .kind = .row, .payload = 0, .cyc = false, .head = 0 };
-        for (m, oe, 0..) |*x, e, ei| {
+        for (m, oe) |*x, e| {
             x.* = none;
             var a = e.loc;
             // A location of a deep level names one cell of each member of the
@@ -703,7 +676,7 @@ pub const Table = struct {
             // wide entry of the signature. Then one label path names two sets
             // of cells, and no entry covers it (research report 125 §6).
             const deep = t.deepEntry(e.loc);
-            const wider = deep != none and t.cycleWider(sig, of, ei, deep);
+            const wider = deep != none and t.cycleWider(sig, deep);
             // Every match the walk can take — the location itself, a wide
             // entry above it, a row that holds its field — is one test: when
             // the caller's cycle is wider, a signature entry inside the deep

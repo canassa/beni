@@ -5308,6 +5308,10 @@ test "ownership v3: the faults of the sixth blind test are refused" {
 //   level that the signature holds in a row inside its own deep level.
 // - `CycleNested` (the review's fourth pass): the wider cycle is nested in
 //   the deep level of another, which alone was tested.
+// - `CycleMerged` (the review's fifth pass): one deep location of the
+//   caller stands for two places, two cycles, and a sample path saw one.
+//   The map now pairs a deep location only where the signature has no type
+//   variable or row in that region (`Loc.cycleWider`).
 // - `EvidenceRewrite`: a method handed as evidence writes a list after it
 //   handed it to its function parameter; the code that runs evidence hands
 //   it the default (kernel §6.11, `Contract.Effect.rewrites`).
@@ -5739,6 +5743,75 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    t = O [ O [] (Node inner []) ] (Node (T []) [])
         \\    r = Ref.make []
         \\    keepNested r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleMerged", .why = "call Main.grow t.x⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type Outer2 a b
+        \\    = O { x : Tree2 a, kids : List (Outer2 a b) }
+        \\    | P { x : Tree2 b, more : List (Outer2 a b) }
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepB : Ref (List b), Outer2 a b → ⊤
+        \\keepB r t =
+        \\    case t of
+        \\        O o →
+        \\            case o.kids of
+        \\                [ P p ] →
+        \\                    case p.x of
+        \\                        Node b _ →
+        \\                            Ref.set r [ b ]
+        \\
+        \\                _ →
+        \\                    ⊤
+        \\
+        \\        P _ →
+        \\            ⊤
+        \\
+        \\
+        \\grow : Outer2 Int T → List (Tree2 T)
+        \\grow t =
+        \\    case t of
+        \\        O o →
+        \\            case o.kids of
+        \\                [ P p ] →
+        \\                    case p.x of
+        \\                        Node (T [ Node _ kids ]) _ →
+        \\                            List.push kids (Node (T []) [])
+        \\
+        \\                        _ →
+        \\                            []
+        \\
+        \\                _ →
+        \\                    []
+        \\
+        \\        P _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    inner = P { x = Node (T [ Node (T []) [ Node (T []) [] ] ]) [], more = [] }
+        \\    t = O { x = Node 0 [], kids = [ inner ] }
+        \\    r = Ref.make []
+        \\    keepB r t
         \\    g = grow t
         \\    Debug.log (Debug.toString (Ref.get r)) ⊤
         \\    Debug.log (String.fromInt (List.length g)) ⊤

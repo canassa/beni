@@ -115,18 +115,14 @@ positions, the answer decides whether the two meet. Where neither direction deci
 paths are compared only inside one layout, or to narrow a wide entry to a part that the type names at
 exactly that path, with all of the entry as the fallback.
 
-The map itself pairs a location of a deep level by its label path only where the caller's cycle is the
-signature's. A type argument can name the container again (`Tree2 T`, where `T` holds a
-`List (Tree2 T)`): the caller's cycle then passes through a place where the signature has a wide entry,
-and the caller's deep location holds cells that the signature names at two entries, its own deep
-location and that wide one. No entry covers it, so the map answers `Loc.all` (`Loc.cycleWider`: the
-caller's place at a wide entry's path inside the cycle is in the caller's cycle). The same holds for a
-caller location below a wide entry of the signature's deep level, and a step of that path that the
-caller's place graph cannot follow (a row's) counts as one the cycle passes. Every match the map can
-take there is one test: the location itself, a wide entry above it, or a row that holds its field. The
-test reads places, not label paths: a wide entry of the signature inside the deep level, followed in the
-caller's place graph, is at a place of a cycle on the caller's path to the location — the outer one or
-one nested in its deep level.
+The map itself pairs a location of a deep level by its label path only where the signature reads that
+cycle's region with no type variable and no row (`Loc.cycleWider`). Then the region's type is concrete,
+the caller's type there is the same type, and each deep location names the same cells in both. Where the
+signature has a variable or a row there, a type argument can name the container again (`Tree2 T`, where
+`T` holds a `List (Tree2 T)`), at that variable or in a cycle nested below it, and one deep location of the
+caller can hold cells that the signature names at several entries; a location can stand for several
+places, so no sample path decides it. Every match the map can take inside that deep level — the location
+itself, a wide entry above it, or a row that holds its field — then answers `Loc.all`.
 
 *Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held
