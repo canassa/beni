@@ -1,0 +1,145 @@
+-- A sibling of fault 1 of research report 126: a record of three functions
+-- per level, each calling the three of the level below through the record
+-- it captured. The walk of the values a closure holds (`leaves`) went down
+-- each path: three to the power of the depth. The live twin reads `xs` after
+-- the write.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    r0 = { a = λl → List.take l n, b = λl → List.reverse l, c = λl → List.drop l 1 }
+    r1 =
+        { a = λl → r0.a (r0.b (r0.c l))
+        , b = λl → r0.b (r0.c (r0.a l))
+        , c = λl → r0.c (r0.a (r0.b l))
+        }
+    r2 =
+        { a = λl → r1.a (r1.b (r1.c l))
+        , b = λl → r1.b (r1.c (r1.a l))
+        , c = λl → r1.c (r1.a (r1.b l))
+        }
+    r3 =
+        { a = λl → r2.a (r2.b (r2.c l))
+        , b = λl → r2.b (r2.c (r2.a l))
+        , c = λl → r2.c (r2.a (r2.b l))
+        }
+    r4 =
+        { a = λl → r3.a (r3.b (r3.c l))
+        , b = λl → r3.b (r3.c (r3.a l))
+        , c = λl → r3.c (r3.a (r3.b l))
+        }
+    r5 =
+        { a = λl → r4.a (r4.b (r4.c l))
+        , b = λl → r4.b (r4.c (r4.a l))
+        , c = λl → r4.c (r4.a (r4.b l))
+        }
+    r6 =
+        { a = λl → r5.a (r5.b (r5.c l))
+        , b = λl → r5.b (r5.c (r5.a l))
+        , c = λl → r5.c (r5.a (r5.b l))
+        }
+    r7 =
+        { a = λl → r6.a (r6.b (r6.c l))
+        , b = λl → r6.b (r6.c (r6.a l))
+        , c = λl → r6.c (r6.a (r6.b l))
+        }
+    r8 =
+        { a = λl → r7.a (r7.b (r7.c l))
+        , b = λl → r7.b (r7.c (r7.a l))
+        , c = λl → r7.c (r7.a (r7.b l))
+        }
+    r9 =
+        { a = λl → r8.a (r8.b (r8.c l))
+        , b = λl → r8.b (r8.c (r8.a l))
+        , c = λl → r8.c (r8.a (r8.b l))
+        }
+    r10 =
+        { a = λl → r9.a (r9.b (r9.c l))
+        , b = λl → r9.b (r9.c (r9.a l))
+        , c = λl → r9.c (r9.a (r9.b l))
+        }
+    r11 =
+        { a = λl → r10.a (r10.b (r10.c l))
+        , b = λl → r10.b (r10.c (r10.a l))
+        , c = λl → r10.c (r10.a (r10.b l))
+        }
+    r12 =
+        { a = λl → r11.a (r11.b (r11.c l))
+        , b = λl → r11.b (r11.c (r11.a l))
+        , c = λl → r11.c (r11.a (r11.b l))
+        }
+    r13 =
+        { a = λl → r12.a (r12.b (r12.c l))
+        , b = λl → r12.b (r12.c (r12.a l))
+        , c = λl → r12.c (r12.a (r12.b l))
+        }
+    r14 =
+        { a = λl → r13.a (r13.b (r13.c l))
+        , b = λl → r13.b (r13.c (r13.a l))
+        , c = λl → r13.c (r13.a (r13.b l))
+        }
+    r15 =
+        { a = λl → r14.a (r14.b (r14.c l))
+        , b = λl → r14.b (r14.c (r14.a l))
+        , c = λl → r14.c (r14.a (r14.b l))
+        }
+    r16 =
+        { a = λl → r15.a (r15.b (r15.c l))
+        , b = λl → r15.b (r15.c (r15.a l))
+        , c = λl → r15.c (r15.a (r15.b l))
+        }
+    r17 =
+        { a = λl → r16.a (r16.b (r16.c l))
+        , b = λl → r16.b (r16.c (r16.a l))
+        , c = λl → r16.c (r16.a (r16.b l))
+        }
+    r18 =
+        { a = λl → r17.a (r17.b (r17.c l))
+        , b = λl → r17.b (r17.c (r17.a l))
+        , c = λl → r17.c (r17.a (r17.b l))
+        }
+    r19 =
+        { a = λl → r18.a (r18.b (r18.c l))
+        , b = λl → r18.b (r18.c (r18.a l))
+        , c = λl → r18.c (r18.a (r18.b l))
+        }
+    r20 =
+        { a = λl → r19.a (r19.b (r19.c l))
+        , b = λl → r19.b (r19.c (r19.a l))
+        , c = λl → r19.c (r19.a (r19.b l))
+        }
+    r21 =
+        { a = λl → r20.a (r20.b (r20.c l))
+        , b = λl → r20.b (r20.c (r20.a l))
+        , c = λl → r20.c (r20.a (r20.b l))
+        }
+    r22 =
+        { a = λl → r21.a (r21.b (r21.c l))
+        , b = λl → r21.b (r21.c (r21.a l))
+        , c = λl → r21.c (r21.a (r21.b l))
+        }
+    r23 =
+        { a = λl → r22.a (r22.b (r22.c l))
+        , b = λl → r22.b (r22.c (r22.a l))
+        , c = λl → r22.c (r22.a (r22.b l))
+        }
+    r24 =
+        { a = λl → r23.a (r23.b (r23.c l))
+        , b = λl → r23.b (r23.c (r23.a l))
+        , c = λl → r23.c (r23.a (r23.b l))
+        }
+    xs = [ n, 2 ]
+    ys = List.push xs 3
+    show ys ++ show (r24.a [ 4, 5 ]) ++ show xs
+
+
+main : Program
+main = Node.print (go 1)

@@ -5929,3 +5929,74 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
     }
     if (bad) return error.TestUnexpectedVerdict;
 }
+
+// Research report 126's fault and the siblings that the audit of research
+// report 127 found: walks that reach one function or one value by many
+// paths. Each program is 24 levels deep; before the fix each check but one
+// did not end (it took 3 to the power of the depth). Each ends in well under
+// a second now (kernel §8):
+//
+// - `closure-dag`: a DAG of closures, three per level, each capturing the
+//   three of the level below (`flow` judges each function once per use);
+// - `dag-writer`: the same, and the leaf writes its parameter;
+// - `record-dag`: a record of three functions per level (`leaves` walks a
+//   value once);
+// - `join-dag`: a value chosen by `if` among three values of the level below
+//   (`leavesOwn` walks a value once for each set of entries);
+// - `answers-dag`: each closure answers the answer of one of three captured
+//   closures;
+// - `climb`: each closure hands its parameter to one of three captured
+//   closures, and the leaves write it, so each judgment reads the whole
+//   chain above it: the walk ends at its step limit, a loud refusal;
+// - `deep-keeper`: the one that ended, wrongly: a list handed down 24
+//   closures to one that keeps it in a `Ref`. Past 16 holders the walk sent
+//   the function to the default without letting what it was handed escape,
+//   so the write was accepted and the `Ref` read the new value.
+test "ownership v3: walks that reach one function or value by many paths end" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { dir: []const u8, name: []const u8, accepted: bool, why: []const u8 = "" };
+    const f6 = "blind7f-faults";
+    const f7 = "bounded-walk-faults";
+    const limit = "the walk took more than 1048576 steps";
+    const cases = [_]Case{
+        .{ .dir = f6, .name = "closure-dag.live", .accepted = false, .why = "List.push xs is refused: later-use" },
+        .{ .dir = f6, .name = "closure-dag.dead", .accepted = true },
+        .{ .dir = f7, .name = "dag-writer.live", .accepted = false, .why = "List.push xs is refused: later-use" },
+        .{ .dir = f7, .name = "dag-writer.dead", .accepted = false, .why = "is refused: supply: the callee hands the function the answer of another function" },
+        .{ .dir = f7, .name = "record-dag.live", .accepted = false, .why = "List.push xs is refused: later-use" },
+        .{ .dir = f7, .name = "record-dag.dead", .accepted = true },
+        .{ .dir = f7, .name = "join-dag.live", .accepted = false, .why = "List.push x24 is refused: later-use" },
+        .{ .dir = f7, .name = "join-dag.dead", .accepted = true },
+        .{ .dir = f7, .name = "answers-dag.live", .accepted = false, .why = "is refused: unknown" },
+        .{ .dir = f7, .name = "answers-dag.dead", .accepted = false, .why = "is refused: unknown" },
+        .{ .dir = f7, .name = "climb.live", .accepted = false, .why = limit },
+        .{ .dir = f7, .name = "climb.dead", .accepted = false, .why = limit },
+        .{ .dir = f7, .name = "deep-keeper.live", .accepted = false, .why = "List.push xs is refused: escaped" },
+        .{ .dir = f7, .name = "deep-keeper.dead", .accepted = true },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const r = w.runWith(&.{
+            "check",
+            "--ownership=v3",
+            "--ownership-everywhere",
+            "--no-cache",
+            "--platform=node",
+            try std.fmt.allocPrint(a, "--root=bench/ownership-sweeps/{s}/{s}", .{ c.dir, c.name }),
+            try std.fmt.allocPrint(a, "bench/ownership-sweeps/{s}/{s}/Main.beni", .{ c.dir, c.name }),
+        }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.accepted) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}

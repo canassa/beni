@@ -39,6 +39,9 @@ const Src = Contract.Src;
 const W = Ast.OwnWord;
 const none = Loc.none;
 
+/// The steps that the walk of one declaration may take (kernel §8).
+pub const max_walk_steps: u64 = 1 << 20;
+
 pub const Names = Message.Names;
 
 /// What the modules of one run share: each module's contracts, written once
@@ -146,6 +149,10 @@ pub const Mod = struct {
     spread_root: std.DynamicBitSetUnmanaged = .{},
     lines: std.ArrayList(Line) = .empty,
     limits: std.ArrayList([]const u8) = .empty,
+    /// The steps that the walk of the declaration in work took (`Frame.tick`),
+    /// and whether it passed `max_walk_steps` (kernel §8).
+    steps: u64 = 0,
+    steps_over: bool = false,
 
     // ---- types ------------------------------------------------------------------
 
@@ -982,8 +989,16 @@ pub const Mod = struct {
             try f.addParam(place, p.int(), ty);
         }
         const result_place = if (sig) |s| (if (params.len == s.params.len) s.result else try m.placeOfInst(body.int())) else try m.placeOfInst(body.int());
+        m.steps = 0;
+        m.steps_over = false;
         try f.walkBody(body.int());
         const c = try f.finish(result_place);
+        if (m.steps_over) {
+            // A walk past its steps (kernel §8): the declaration gives up, loudly.
+            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
+            m.failed_decl[di] = true;
+            return null;
+        }
         if (f.failed) {
             try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
             m.failed_decl[di] = true;
@@ -1027,6 +1042,14 @@ pub const Mod = struct {
             if (!recursive or !changed) break;
             if (rounds > 64) {
                 try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the group did not settle", .{m.names.declName(m.in.module, members[0])}));
+                // A contract of a round that is not the last says less than the
+                // group does: no member publishes one (kernel §8). An importer
+                // reads each as unknown code; a limit line of a module that is
+                // not the app's is no error, so the importer would read it.
+                for (members) |di| {
+                    m.contracts[di] = null;
+                    m.failed_decl[di] = true;
+                }
                 break;
             }
         }

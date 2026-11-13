@@ -2,7 +2,8 @@
 
 *Normative for `src/own3/`, 2026-11-12; §6.4, §6.8, §6.11 to §6.13 and §8 revised 2026-11-13 (research
 report 120); §6.12 and §6.13 revised again the same day (research report 123); §4.1, §6.2, §6.8 and
-§6.13 revised again the same day (research report 125). The owner ordered it after research report 116: "Write the rules
+§6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
+(research report 127). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -300,7 +301,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    written after (`defaultParams`). The other facts ask nothing: a read; an escape; an answer, which
    the default keeps; what it hands a function parameter, `free` or not, which escapes, since the default
    writes nothing; whether it calls it; a captured function, which goes to the use the two
-   contracts compose to (`flowCaptures`). `Use.rewrites` is false at `top` as a derived fact, not a
+   contracts compose to (`flowCaptures`). `rewritesOf` is false at `top` as a derived fact, not a
    default: the default hands only cells outside every frame, so it writes no cell after it handed it.
    *Invariant: a function in a default location asks nothing and keeps what it is handed (`flowUnknown`,
    `flowCode` with `top`, `defaultParams`).* *Research report 124 F2: the text said "asks nothing", the
@@ -309,7 +310,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 9. **Recursion** (`Check.solveGroup`, `solveCodes`): a group starts from the contract with no flag and no
    source and is walked until no contract changes; contracts only grow (`Contract.join`), so the last
    round's verdicts stand on the least fixed point. Fresh names of drafts are bounded (§4.2). A member
-   whose walk gave up has no contract in that round and after.
+   whose walk gave up has no contract in that round and after. A group that has not settled after 64
+   rounds publishes no contract for any member (§8): a contract of a round before the fixed point says
+   less than the group does.
 10. **`foreign` and the rows of `core/`** (`Check.wordedContract`, `Check.wordedFn`): a declaration with
     ownership words is not walked; its words are its contract, a trusted row. A result the words do not
     describe is `undescribed`: `outside` (no frame may write it) and every cell of every parameter at any
@@ -485,21 +488,58 @@ module, authorises no in-place write (`Enforce.checkModule`, `Hoists.finish`).
 
 ## 8. Resource limits
 
-Each limit falls to the pessimistic side, so it costs precision and never soundness: a `flow` deeper than
-16 is the `top` use; a `resolve` deeper than 12, an `answerOfCode` deeper than 8, or more than 24 answers in
-work, is a lost answer (`lostAnswer`: `outside` and every argument in sight); more than 32 supplies in work
-is a refusal; a `partsOf` deeper than 8 claims nothing; a frame nested
-past 200 or a group of local functions past 16 rounds gives up (§3.3); a group of declarations past 64
-rounds is a `limit` line. A type with more than 4 096 locations (`Loc.max_layout_entries`: a location
-for each path of labels, so `( x, x )` nested 32 times has 2³²) has the layout of one summary location of
-a type variable; the module then authorises no write, publishes no contract and no derived fact, and its
-report has an `ownership_limit` line naming the limit (`Loc.Table.over`, `Check.checkModule`): a loud
-refusal, never a cut toward "holds nothing". A principled layout exists — the repeated halves of a type
-past a bound given one summary location for each object place below them, as the deep level of a cycle
-has (§4.1) — and is not built (research report 120 §2). Evidence and the rows of derived methods are
-walked each term once (`Edges.termsEdges`), so a doubling evidence term costs its distinct nodes and has
-no limit. None of these is a hole; each is a prototype's constant, and R-7.4 asks that each
-become a loud `ownership_limit` before the checker leaves the prototype stage.
+**Every walk ends, and its work is bounded by design.** Research report 126 found a walk that did not: a
+function whose local closures form a DAG, each capturing the three of the level below, made `flow` follow
+each of the 3ᴺ paths through the captures. Four rules bound each walk that can reach one thing by many
+paths:
+
+- **`flow` judges each function once for each use** (`FlowKey`). A judgment reads the function, the
+  holder's contract, the capture, the captured values, and two facts of the use above, set where the use
+  is made: whether it is the default, and whether a holder above writes what it handed on
+  (`Use.up_rewrites`). A judgment that read nothing else above its own use is kept for the rest of the
+  walk, and an equal use reaches it again for free. A judgment that read more is judged again on each
+  path: one that read the use above it (`upOf`), a key (`freshAtom`: a key names the whole path of
+  holders), a draft of the frame's own function, or what an answer was handed (both grow while the walk
+  runs). A judgment that meets itself in work gives up (§3.3): its function reaches itself through what
+  it captured.
+- **A walk of values** (`leaves`, `leavesOwn`, `reach`) walks each value once for each set of entries
+  in one walk, and copies what it found, without repeats, where it reaches the value again. The atoms of
+  a value are a set and its `dup` is its own, so the copy is what a second walk would find.
+- **`flow` follows every use, at any depth.** Before report 127 a use deeper than 16 went to the
+  `top` use and the depth started again at 0, so the bound bounded nothing, and the use's supplies never
+  escaped: a list handed down 18 closures to one that kept it was written in place. A walk is bounded by
+  the two rules above and the limit below, not by a depth.
+- **The walk of one declaration takes at most `Check.max_walk_steps` steps** (1 048 576, twenty times
+  the largest real walk): each call of `flow`, `resolve`, `answerOf`, `answerOfCode`, `leaves`, `leavesOwn`, `reach`, `partsOf`,
+  `ownSupply`, `answerOwn` and `expandSrcs` is a step (`Frame.tick`). Past it every walk returns at
+  once, the declaration gives up (§3.3) and publishes no contract, and the module's report has an
+  `ownership_limit` line that names the limit: a loud refusal. It bounds what no memo bounds: a judgment
+  that reads the chain of holders above it on every path, an answer, a supply. The largest walk of every
+  ownership root and corpus program took 49 383 steps (report 127 §2).
+
+**The complexity argument.** A memo-kept judgment costs one step for each equal use, so a DAG of `n`
+closures with `e` captures costs O(e) judgments and O(n) value walks per root walk; whatever the memos do
+not bound is at most `max_walk_steps` steps per declaration, and one step costs time polynomial in the
+size of the layouts it reads (at most 4 096 entries each). So the work of a module is polynomial in its
+size, whatever its shape.
+
+The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
+deeper than 12, an `answerOfCode` deeper than 8, or more than 24 answers in work, is a lost answer
+(`lostAnswer`: `outside` and every argument in sight); more than 32 supplies in work is a refusal; a
+`partsOf` deeper than 8 claims nothing; a frame nested past 200 or a group of local functions past 16
+rounds gives up (§3.3); a group of declarations past 64 rounds is a `limit` line, and none of its members
+publishes a contract (a round's contract that is not the last says less than the group does, and a limit
+line of a module outside the app is no error, so an importer would read it). A type with more than 4 096
+locations (`Loc.max_layout_entries`: a location for each path of labels, so `( x, x )` nested 32 times
+has 2³²) has the layout of one summary location of a type variable; the module then authorises no write,
+publishes no contract and no derived fact, and its report has an `ownership_limit` line naming the limit
+(`Loc.Table.over`, `Check.checkModule`): a loud refusal, never a cut toward "holds nothing". A
+principled layout exists — the repeated halves of a type past a bound given one summary location for each
+object place below them, as the deep level of a cycle has (§4.1) — and is not built (research report 120
+§2). Evidence and the rows of derived methods are walked each term once (`Edges.termsEdges`), so a
+doubling evidence term costs its distinct nodes and has no limit. None of these is a hole; each is a
+prototype's constant, and R-7.4 asks that each become a loud `ownership_limit` before the checker leaves
+the prototype stage.
 
 ## 9. Checks that run in safe builds
 

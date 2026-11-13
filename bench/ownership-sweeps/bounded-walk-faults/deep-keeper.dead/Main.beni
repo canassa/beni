@@ -1,0 +1,48 @@
+-- The dead twin of `deep-keeper.live` (research report 127): the closure keeps a copy, so
+-- the write is accepted.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    cell = Ref.make [ 0 ]
+    k0 = λl → Ref.set cell (List.copy l)
+    k1 = λl → k0 l
+    k2 = λl → k1 l
+    k3 = λl → k2 l
+    k4 = λl → k3 l
+    k5 = λl → k4 l
+    k6 = λl → k5 l
+    k7 = λl → k6 l
+    k8 = λl → k7 l
+    k9 = λl → k8 l
+    k10 = λl → k9 l
+    k11 = λl → k10 l
+    k12 = λl → k11 l
+    k13 = λl → k12 l
+    k14 = λl → k13 l
+    k15 = λl → k14 l
+    k16 = λl → k15 l
+    k17 = λl → k16 l
+    k18 = λl → k17 l
+    k19 = λl → k18 l
+    k20 = λl → k19 l
+    k21 = λl → k20 l
+    k22 = λl → k21 l
+    k23 = λl → k22 l
+    k24 = λl → k23 l
+    xs = [ n, 2 ]
+    k24 xs
+    ys = List.push xs 3
+    show ys ++ "|" ++ show (Ref.get cell)
+
+
+main : Program
+main = Node.print (go 1)

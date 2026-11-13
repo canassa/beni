@@ -245,22 +245,16 @@ const Use = struct {
     args: []const Val = &.{},
     own: u32 = 0,
     up: ?*const Use = null,
+    /// Whether a holder above this one writes a cell after it handed that
+    /// cell on (`rewritesOf`): set where the use is made, so a judgment
+    /// reads it as a fact of its own use.
+    up_rewrites: bool = false,
     site: *const Site,
     depth: u32 = 0,
     /// The function in the location, once `flow` knows which it is: a known
     /// function, or the frame's own function parameter at `root`.
     code: ?Code = null,
     root: u32 = none,
-
-    /// Whether a holder on the way writes a cell after it handed that cell on.
-    fn rewrites(use: *const Use) bool {
-        var u: ?*const Use = use;
-        while (u) |x| : (u = x.up) {
-            if (x.kind == .top) return false;
-            if (x.fnc.rewrites) return true;
-        }
-        return false;
-    }
 };
 
 /// What a use hands one parameter location of the function. `fe` is `none`
@@ -390,6 +384,20 @@ order: std.ArrayList(u32) = .empty,
 chain_root: u32 = none,
 /// The next `Use.id`.
 next_use: u32 = 1,
+/// The judgments of `flow` that the walk in work made, by what each read
+/// (`FlowKey`), and the ones in work. Kept while one walk of `flow` runs.
+flow_memo: std.AutoHashMapUnmanaged(FlowKey, void) = .empty,
+/// The values that the walk of values in work found (`leafHit`), and the values that `reach` in work reached.
+leaf_memo: std.AutoHashMapUnmanaged(LeafKey, LeafHit) = .empty,
+leaf_buf: std.ArrayList(Atom) = .empty,
+leaf_ks: std.ArrayList(u32) = .empty,
+leaf_nest: u32 = 0,
+reach_seen: std.AutoHashMapUnmanaged(Val, void) = .empty,
+reach_nest: u32 = 0,
+flow_active: std.ArrayList(FlowKey) = .empty,
+/// The lowest depth of a use whose context the judgments in work read: the
+/// use above it, or its key (`upOf`, `freshAtom`).
+ctx_floor: u32 = std.math.maxInt(u32),
 /// The `fresh` roots of this frame, by the holder's key, the contract the
 /// source was read from and its allocation site (`freshAtom`).
 fresh_roots: std.AutoHashMapUnmanaged(FreshKey, u32) = .empty,
@@ -432,6 +440,20 @@ pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32
 /// write (`finish`, `Check.walkDecl`). The value stands for the expression
 /// at `inst` while the walk completes, so that every later line of this
 /// frame is still made and refused.
+/// One step of a walk that can come back to what it walked (kernel §8):
+/// true once the walk of the declaration passed `Check.max_walk_steps`.
+/// Past it every walk returns at once, and the declaration gives up.
+fn tick(f: *Frame) bool {
+    const m = f.m;
+    if (m.steps_over) return true;
+    m.steps += 1;
+    if (m.steps > Check.max_walk_steps) {
+        m.steps_over = true;
+        f.failed = true;
+    }
+    return m.steps_over;
+}
+
 fn giveUp(f: *Frame, inst: u32) Error!Val {
     f.failed = true;
     return f.unknownOf(try f.m.placeOfInst(inst), &.{});
@@ -526,6 +548,9 @@ fn newRoot(f: *Frame, kind: RootKind, place: PlaceId, inst: u32) Error!u32 {
 /// atom (kernel §4.2). The atom is appended to `out`; `escaped` notes its
 /// escape. `draft` says the contract is a draft of a group in its rounds.
 fn freshAtom(f: *Frame, key: u64, holder: u64, draft: bool, k: u32, escaped: bool, point: u32, out: *std.ArrayList(Atom)) Error!void {
+    // A key names the path of holders from the walk's root: a judgment of
+    // `flow` in work that reads one reads all that is above its use.
+    f.ctx_floor = 0;
     const fk: FreshKey = .{ .key = key, .holder = holder, .k = k };
     const got = try f.fresh_roots.getOrPut(f.gpa, fk);
     if (!got.found_existing) {
@@ -767,6 +792,7 @@ fn rootLeaves(f: *Frame, root: u32, path_in: u32, re: u32, out: *std.ArrayList(A
 /// The atoms of `v` at entry `e` of its own place's layout. True when one
 /// cell can be there twice (`leavesOwn`).
 fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
+    if (f.tick()) return false;
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .fnref => return false,
@@ -775,18 +801,66 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
             return false;
         },
         .ref, .built, .join => return f.leavesOwn(v, &.{e}, out),
-        .closure => {
-            const c = f.codes.items[n.a];
-            for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
-            return false;
-        },
-        .unknown => {
-            // No claim, and each cell of the values that it can be made of.
-            try out.append(f.gpa, outside_atom);
-            for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
+        .closure, .unknown => {
+            if (try f.leafHit(v, &.{}, true, out)) |dup| return dup;
+            const start = out.items.len;
+            f.leaf_nest += 1;
+            if (n.tag == .closure) {
+                const c = f.codes.items[n.a];
+                for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
+            } else {
+                // No claim, and each cell of the values that it can be made of.
+                try out.append(f.gpa, outside_atom);
+                for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
+            }
+            try f.leafKeep(v, &.{}, true, out, start, false);
             return false;
         },
         .later => unreachable, // read through `capVal` only
+    }
+}
+
+/// A walk of values reaches one value by many paths (a closure that two
+/// closures captured, a value in two arms of two `if`s): it walks each value
+/// once for each set of entries, and copies what it found, without repeats,
+/// where it reaches the value again (kernel §8). Kept while one walk of
+/// values runs (`leaf_nest`). The atoms of a value are a set and its `dup`
+/// is its own, so a copy is what a second walk finds.
+const LeafKey = struct { v: Val, ks: u64, whole: bool };
+const LeafHit = struct { start: u32, len: u32, ks_start: u32, ks_len: u32, dup: bool };
+
+fn leafKeyOf(v: Val, ks: []const u32, all: bool) LeafKey {
+    return .{ .v = v, .ks = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(ks)), .whole = all };
+}
+
+/// What the walk of values in work found for `v` at `ks`, appended to
+/// `out`, and its `dup`; null when it has not walked it.
+fn leafHit(f: *Frame, v: Val, ks: []const u32, all: bool, out: *std.ArrayList(Atom)) Error!?bool {
+    if (f.leaf_nest == 0) return null;
+    const hit = f.leaf_memo.get(leafKeyOf(v, ks, all)) orelse return null;
+    if (!std.mem.eql(u32, f.leaf_ks.items[hit.ks_start..][0..hit.ks_len], ks)) return null;
+    try out.appendSlice(f.gpa, f.leaf_buf.items[hit.start..][0..hit.len]);
+    return hit.dup;
+}
+
+/// The walk of `v` at `ks` found `out[start..]` and `dup`: keep it, without repeats.
+fn leafKeep(f: *Frame, v: Val, ks: []const u32, all: bool, out: *std.ArrayList(Atom), start: usize, dup: bool) Error!void {
+    try f.uniqueTail(out, start);
+    const hit: LeafHit = .{
+        .start = @intCast(f.leaf_buf.items.len),
+        .len = @intCast(out.items.len - start),
+        .ks_start = @intCast(f.leaf_ks.items.len),
+        .ks_len = @intCast(ks.len),
+        .dup = dup,
+    };
+    try f.leaf_buf.appendSlice(f.gpa, out.items[start..]);
+    try f.leaf_ks.appendSlice(f.gpa, ks);
+    try f.leaf_memo.put(f.gpa, leafKeyOf(v, ks, all), hit);
+    f.leaf_nest -= 1;
+    if (f.leaf_nest == 0) {
+        f.leaf_memo.clearRetainingCapacity();
+        f.leaf_buf.clearRetainingCapacity();
+        f.leaf_ks.clearRetainingCapacity();
     }
 }
 
@@ -830,6 +904,16 @@ const Entries = struct {
 /// that hold one cell of another root are two places, unless the root
 /// says that it holds each such cell once (`linear`, in `dupOverlap`).
 fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Error!bool {
+    if (f.tick()) return false;
+    if (try f.leafHit(v, ks, false, out)) |dup| return dup;
+    const start = out.items.len;
+    f.leaf_nest += 1;
+    const dup = try f.leavesOwnWalk(v, ks, out);
+    try f.leafKeep(v, ks, false, out, start, dup);
+    return dup;
+}
+
+fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Error!bool {
     const m = f.m;
     const n = f.nodes.items[v];
     switch (n.tag) {
@@ -966,6 +1050,19 @@ fn allLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
 
 /// Whether `v` can hold a cell of `w`.
 fn reach(f: *Frame, v: Val, w: []const Atom) Error!bool {
+    if (f.tick()) return true;
+    // A value that this walk reached already did not reach `w` (kernel §8).
+    if (f.reach_nest != 0 and (try f.reach_seen.getOrPut(f.gpa, v)).found_existing) return false;
+    if (f.reach_nest == 0) try f.reach_seen.put(f.gpa, v, {});
+    f.reach_nest += 1;
+    defer {
+        f.reach_nest -= 1;
+        if (f.reach_nest == 0) f.reach_seen.clearRetainingCapacity();
+    }
+    return f.reachWalk(v, w);
+}
+
+fn reachWalk(f: *Frame, v: Val, w: []const Atom) Error!bool {
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .outside, .fnref => return false,
@@ -1217,7 +1314,12 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     for (start..start + n) |i| {
         const a = f.atoms.items[i];
         const r = f.roots.items[a.root];
-        if (r.kind == .answer) try f.esc_atoms.appendSlice(f.gpa, f.answers.items[r.ent].base.items);
+        if (r.kind == .answer) {
+            try f.esc_atoms.appendSlice(f.gpa, f.answers.items[r.ent].base.items);
+            // What an answer was handed grows as the walk goes on: a judgment
+            // of `flow` that read it is not one that an equal use repeats.
+            f.ctx_floor = 0;
+        }
     }
     const len: u32 = @intCast(f.esc_atoms.items.len - at);
     try f.escapes.append(f.gpa, .{ .start = at, .len = len, .point = point, .ctx = f.cur_ctx });
@@ -3486,6 +3588,7 @@ fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
 ///   no check here;
 /// - a value that the walk cannot follow (`unknown`): one cell can be at two.
 fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2]u32), depth: u32) Error!bool {
+    if (f.tick()) return false;
     if (v == v_none or v == v_outside) return true;
     const n = f.nodes.items[v];
     switch (n.tag) {
@@ -3560,6 +3663,7 @@ fn oldNames(f: *Frame, from: usize, st: *SrcState) void {
 /// Append to `f.atoms` what the sources `srcs` of the callee's result entry
 /// `cr` are for the caller's result entry `e`.
 fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32, rlayout: u32, e: u32, st: *SrcState) Error!void {
+    if (f.tick()) return;
     const c = base.c;
     const args = base.args;
     const first = f.atoms.items.len;
@@ -3770,23 +3874,95 @@ fn refuse(f: *Frame, use: *const Use, cause: Facts.Cause, detail: []const u8) Er
 /// and none for where the location is.
 fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
     if (v == v_none) return;
-    if (use.depth > 16) {
-        // Too deep to follow: the default.
-        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site };
-        return f.flow(v, &top);
-    }
+    if (f.tick()) return;
     const n = f.nodes.items[v];
     if (n.tag == .join) {
         // One of several values: each of them is in the location.
         for (0..n.b) |ki| try f.flow(f.lists.items[n.a + 2 * ki], use);
         return;
     }
+    // Each judgment once (kernel §8): a function judged at a use equal in
+    // all that the judgment read is not judged again in this walk.
+    const key = f.flowKey(v, use);
+    if (f.flow_memo.contains(key)) return;
+    // The same judgment inside itself: a function that its own captures
+    // reach. No rule follows it, and the walk gives up (kernel §3.3).
+    for (f.flow_active.items) |x| if (std.meta.eql(x, key)) {
+        f.failed = true;
+        return;
+    };
+    try f.flow_active.append(f.gpa, key);
+    const outer = f.ctx_floor;
+    f.ctx_floor = std.math.maxInt(u32);
+    try f.judge(v, use);
+    const floor = f.ctx_floor;
+    f.ctx_floor = @min(outer, floor);
+    _ = f.flow_active.pop();
+    // It read nothing above its use: each use equal to this one gets the same judgment.
+    if (floor > use.depth) try f.flow_memo.put(f.gpa, key, {});
+    if (f.flow_active.items.len == 0) f.flow_memo.clearRetainingCapacity();
+}
+
+fn judge(f: *Frame, v: Val, use: *const Use) Error!void {
     // The holder lets the function's answer escape: each cell that the answer can hold escapes here.
     if (use.kind != .top and use.fnc.ans_escapes) try f.escapeAnswer(v, use);
     if (try f.codeOf(v)) |code| return f.flowCode(v, code, use);
     const root = f.ownFnRoot(v);
     if (f.isFnRoot(root)) return f.flowOwn(root, use);
     return f.flowUnknown(v, use);
+}
+
+/// Whether a callee loses the function at `use`: no contract describes what
+/// it does with it after (`Fn.lost`).
+fn lostAt(use: *const Use) bool {
+    return use.kind != .top and use.fnc.lost;
+}
+
+/// What one judgment of `flow` reads of its use, besides what is above it
+/// (`ctx_floor`): the function, the holder's contract and capture, the
+/// values, and whether the use above is the default or rewrites.
+const FlowKey = struct {
+    v: Val,
+    kind: u8,
+    j: u32,
+    own: u32,
+    up_top: bool,
+    up_rewrites: bool,
+    c: usize,
+    fnc: usize,
+    holder: u64,
+    args: u64,
+};
+
+fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
+    _ = f;
+    const known = use.kind != .top;
+    return .{
+        .v = v,
+        .kind = @backingInt(use.kind),
+        .j = use.j,
+        .own = use.own,
+        .up_top = if (use.up) |u| u.kind == .top else false,
+        .up_rewrites = use.up_rewrites,
+        .c = if (known) @intFromPtr(use.c) else 0,
+        .fnc = if (known) @intFromPtr(use.fnc) else 0,
+        .holder = use.holder,
+        .args = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(use.args)),
+    };
+}
+
+/// The use above `u`. A judgment that reads it, when it is not the default,
+/// reads what is above its own use (`ctx_floor`).
+fn upOf(f: *Frame, u: *const Use) ?*const Use {
+    const up = u.up orelse return null;
+    if (up.kind != .top) f.ctx_floor = @min(f.ctx_floor, u.depth);
+    return up;
+}
+
+/// Whether a holder on the way writes a cell after it handed that cell on.
+fn rewritesOf(f: *const Frame, use: *const Use) bool {
+    _ = f;
+    return use.kind != .top and (use.fnc.rewrites or use.up_rewrites);
 }
 
 /// A known function meets a use: what it does with each parameter is judged
@@ -3800,7 +3976,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     var use = use_in.*;
     use.code = code;
     const inst = use.site.inst;
-    if (use.kind == .top or use.fnc.lost or code.own_params != use.fnc.arity) {
+    if (use.kind == .top or lostAt(&use) or code.own_params != use.fnc.arity) {
         // No contract describes the holder: the function must ask nothing
         // (kernel §6.8). It writes no parameter, and the holder hands each of
         // its function parameters a function in the default state, which
@@ -3817,7 +3993,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         try f.defaultParams(code, &top);
         return f.flowCaptures(code, &top);
     }
-    if (use.rewrites() and keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
+    if (f.rewritesOf(&use) and keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
     if (use.fnc.called) {
         try f.captureEscapes(code, inst);
         // A holder that runs the function hands its function parameters
@@ -3863,7 +4039,7 @@ fn defaultParams(f: *Frame, code: Code, use: *const Use) Error!void {
         var inner = try f.innerUse(code, @intCast(k), lf, use);
         inner.key = use.key;
         try f.escapeSupplies(&inner);
-        if (inner.rewrites()) try f.refuse(&inner, .supply, "the function changes a value after it handed it to a function parameter, and the code that runs it hands a function that can keep it");
+        if (f.rewritesOf(&inner)) try f.refuse(&inner, .supply, "the function changes a value after it handed it to a function parameter, and the code that runs it hands a function that can keep it");
     }
 }
 
@@ -3906,7 +4082,7 @@ fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) E
     for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
         args[code.own_params + k] = try f.capVal(code, k);
     };
-    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .site = up.site, .depth = up.depth + 1 };
+    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .site = up.site, .depth = up.depth + 1 };
 }
 
 /// The frame's own function parameter meets a use: what the use hands it,
@@ -3916,16 +4092,20 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     const m = f.m;
     var use = use_in.*;
     use.root = root;
+    // The draft of the frame's own function changes as the walk goes on
+    // (`lost`, `called`, what it is handed): a judgment that read it is not
+    // one that an equal use repeats (`flow`).
+    f.ctx_floor = 0;
     const di = try f.draftOf(root, null);
     const inst = use.site.inst;
     f.drafts.items[di].used = true;
-    if (use.kind == .top or use.fnc.lost or f.drafts.items[di].lost or f.drafts.items[di].arity != use.fnc.arity) {
+    if (use.kind == .top or lostAt(&use) or f.drafts.items[di].lost or f.drafts.items[di].arity != use.fnc.arity) {
         f.drafts.items[di].lost = true;
         if (use.kind != .top) try f.escapeSupplies(&use);
         return;
     }
     if (use.fnc.called) f.drafts.items[di].called = true;
-    if (use.rewrites()) f.drafts.items[di].rewrites = true;
+    if (f.rewritesOf(&use)) f.drafts.items[di].rewrites = true;
     var labels: std.ArrayList(u64) = .empty;
     defer labels.deinit(f.gpa);
     for (0..use.fnc.arity) |k| {
@@ -3951,8 +4131,8 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
 fn flowUnknown(f: *Frame, v: Val, use: *const Use) Error!void {
     if (use.kind == .top) return;
     try f.escapeSupplies(use);
-    if (use.fnc.lost) try f.escape(v, use.site.inst);
-    if (use.rewrites()) try f.refuse(use, .supply, "the callee changes a value after it handed it to a function that the checker does not know");
+    if (lostAt(use)) try f.escape(v, use.site.inst);
+    if (f.rewritesOf(use)) try f.refuse(use, .supply, "the callee changes a value after it handed it to a function that the checker does not know");
 }
 
 /// What `use` hands the function at its parameter `k`, at entry `le` of
@@ -4051,6 +4231,7 @@ fn answersAt(f: *Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) Error!bool
 /// location). A parameter of a known function that has the location is what
 /// that function's own use hands it: this is the composition.
 fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool, sink: anytype, depth: u32) Error!void {
+    if (f.tick()) return;
     switch (src.kind) {
         // A cell the holder made: its one root at this call, an atom like any other (kernel §4.2).
         .fresh => {
@@ -4069,7 +4250,7 @@ fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool
         .param => {
             if (src.a >= use.args.len) return sink.lost(f, use);
             if (use.kind == .inner and src.a < use.own) {
-                const up = use.up.?;
+                const up = f.upOf(use).?;
                 // The default hands a value outside the frame.
                 if (up.kind == .top) return sink.outside(f);
                 if (depth > 12) return sink.lost(f, use);
@@ -4140,7 +4321,7 @@ const EscSink = struct {
     fn held(_: *EscSink, _: *Frame) Error!void {}
     fn lost(s: *EscSink, f: *Frame, use: *const Use) Error!void {
         var u: ?*const Use = use;
-        while (u) |x| : (u = x.up) for (x.args) |v| try f.escape(v, s.inst);
+        while (u) |x| : (u = f.upOf(x)) for (x.args) |v| try f.escape(v, s.inst);
     }
     fn atoms(s: *EscSink, f: *Frame, h: Handed) Error!void {
         try f.noteEscape(h.start, s.inst);
@@ -4271,6 +4452,7 @@ const DraftSink = struct {
 /// parameter `k` at its entry `le`: each source of what `level` hands there
 /// must be `own`, and the holder must not read it again.
 fn ownSupply(f: *Frame, level: *const Use, code: Code, k: u32, le: u32, seen: *Seen) Error!void {
+    if (f.tick()) return;
     const lc = code.contract;
     const not_own = "the function writes a parameter that the callee reads again or does not hand as its own";
     var slots: std.ArrayList(Slot) = .empty;
@@ -4316,6 +4498,7 @@ fn partBelow(f: *Frame, fl: u32, le: u32, ul: u32, fe: u32, suffix: []const u64,
 /// made by the function, or a parameter that it was handed as its own and
 /// did not let go.
 fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bool, seen: *Seen) Error!void {
+    if (f.tick()) return;
     const m = f.m;
     const not_own = "the function answers a value that it does not own, and the callee hands it back";
     const code = level.code orelse return f.refuse(level, .supply, not_own);
@@ -4513,7 +4696,7 @@ fn lostAnswer(f: *Frame, use: *const Use, st: *SrcState) Error!void {
     _ = st;
     try f.atoms.append(f.gpa, outside_atom);
     var u: ?*const Use = use;
-    while (u) |x| : (u = x.up) for (x.args) |a| {
+    while (u) |x| : (u = f.upOf(x)) for (x.args) |a| {
         _ = try f.allLeaves(a, &f.atoms);
     };
 }
@@ -4546,6 +4729,7 @@ fn answerOfParam(f: *Frame, level: *const Use, src: Src, suffix: []const u64, st
 /// Append to `f.atoms` what the answer of the function value `v`, in the
 /// location of `use`, can hold at the answer entry `ae`.
 fn answerOf(f: *Frame, v: Val, use: *const Use, ae: u32, st: *SrcState, depth: u32) Error!void {
+    if (f.tick()) return;
     if (v == v_none) return;
     const n = f.nodes.items[v];
     if (n.tag == .join) {
@@ -4565,6 +4749,7 @@ fn answerOf(f: *Frame, v: Val, use: *const Use, ae: u32, st: *SrcState, depth: u
 
 /// What the known function `code`, in the location of `use`, answers at the entry `ae`.
 fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, depth: u32) Error!void {
+    if (f.tick()) return;
     const m = f.m;
     if (use.kind == .top or depth > 8 or code.own_params != use.fnc.arity) return f.lostAnswer(use, st);
     const fnc = use.fnc;
@@ -4757,7 +4942,7 @@ fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, use: *const Use) Error!
     f.drafts.items[di].free[slot] = false;
     const w = f.atoms.items.len;
     var u: ?*const Use = use;
-    while (u) |x| : (u = x.up) for (x.args) |v| {
+    while (u) |x| : (u = f.upOf(x)) for (x.args) |v| {
         _ = try f.allLeaves(v, &f.atoms);
     };
     try f.uniqueTail(&f.atoms, w);
