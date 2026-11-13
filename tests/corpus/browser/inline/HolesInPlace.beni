@@ -1,0 +1,56 @@
+-- `browser-inline` compiles a view into bindings that read the model's
+-- paths, and its holes are text, so no list of the model reaches its
+-- runtime; a binding reads a list only while it runs (boundary.md
+-- §9.4.8). The model's lists are read by text holes and by a helper's
+-- argument; `update` pushes onto both lists in place (`--ownership=v3`),
+-- and each pass shows the lists as they are then.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    items : List Int
+    names : List String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | items = List.push model.items model.n
+                , names = List.push model.names "n${String.fromInt model.n}"
+                , n = model.n + 1
+            }
+
+
+total : List Int → Html Msg
+total xs = <output>{List.sum xs}</output>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p id="count">{List.length model.items}</p>
+        <p id="names">{String.join model.names ","}</p>
+        {total model.items}
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { items = [ 1, 2 ], names = [ "a" ], n = 3 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

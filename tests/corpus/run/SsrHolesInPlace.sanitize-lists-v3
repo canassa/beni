@@ -1,0 +1,1 @@
+The ssr runtime keeps no list of a hole past the render (boundary.md §9.4.8): a list rendered, pushed in place under --ownership=v3, and rendered again.

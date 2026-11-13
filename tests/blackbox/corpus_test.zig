@@ -1155,7 +1155,7 @@ const Config = struct {
     /// `lists-v2` (`zig build test-lists-in-place-v2`) its v2 twin.
     in_place: InPlace = .none,
 
-    const InPlace = enum { none, records, lists, lists_v2 };
+    const InPlace = enum { none, records, lists, lists_v2, lists_v3 };
 
     const Mode = enum {
         /// Unset: every fixture must pass (today's behaviour).
@@ -2358,6 +2358,7 @@ const Case = struct {
     const lists_passes = [_]ListsPass{
         .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .refuses = "sanitize-lists-refuses", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 7, .checker = "v1" },
         .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .refuses = "sanitize-lists-v2-refuses", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 8, .checker = "v2" },
+        .{ .golden = "sanitize-lists-v3", .crash = "sanitize-lists-v3-crash", .refuses = "sanitize-lists-v3-refuses", .out = "out-lists-v3", .flags = &.{ "--ownership=v3", "--ownership-everywhere" }, .mode = .lists_v3, .slot = 9, .checker = "v3" },
     };
 
     fn ownershipRefuses(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8) !bool {
@@ -3320,6 +3321,10 @@ const Case = struct {
         // `BENI_IN_PLACE`'s pages, for a page of `browser-inline`.
         const in_browser_inline = !platform and c.fixture.platform != null and std.mem.eql(u8, c.fixture.platform.?, "browser-inline");
         const differential: [4]?PagePlan = if (pages[0] != null and in_browser_inline) try c.differentialPages(platform_arg, sources) else @splat(null);
+        // A page with a `.sanitize-lists-v3` file (its reason), on any
+        // platform: built under the ownership prototype and the list
+        // sanitiser (`v3Page`), against the same golden.
+        const v3_pages = [1]?PagePlan{if (pages[0] != null and c.goldenExists("sanitize-lists-v3")) try c.v3Page(platform_arg, sources) else null};
         if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
@@ -3328,6 +3333,7 @@ const Case = struct {
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
         for (differential) |plan| if (plan) |p| try entries.append(c.arena, .{ .path = p.entry });
+        for (v3_pages) |plan| if (plan) |p| try entries.append(c.arena, .{ .path = p.entry });
         if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
         var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
         if (entries.items.len != 0) {
@@ -3353,6 +3359,12 @@ const Case = struct {
             if (p.digest != null) try run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, p.out, @tagName(p.pass), p.golden, (page orelse shown.run).stdout, try browser.page(c.arena, h, script.bytes)));
         }
         for (differential) |plan| {
+            const p = plan orelse continue;
+            const page = shown.pages[next];
+            next += 1;
+            try c.pageVerdict(p, shown.run, page);
+        }
+        for (v3_pages) |plan| {
             const p = plan orelse continue;
             const page = shown.pages[next];
             next += 1;
@@ -3447,6 +3459,29 @@ const Case = struct {
         };
     }
 
+    /// The page of a fixture with a `.sanitize-lists-v3` file (its reason):
+    /// the program built under the ownership prototype with its check
+    /// enforced (`--ownership=v3 --ownership-everywhere`) and under the list
+    /// stale-read sanitiser, against `.expected`. Every list write the
+    /// prototype accepts runs on a copy and poisons the list it wrote, so a
+    /// runtime that kept a list from a hole and reads it after `update`
+    /// wrote it traps (`boundary.md` §9.4.8). The build must wrap a list
+    /// write, or the page tests nothing. Never blessed, never cached.
+    fn v3Page(c: Case, platform_arg: []const u8, sources: []const []const u8) !?PagePlan {
+        const out = "out-lists-v3";
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership=v3", "--ownership-everywhere", "--sanitize-lists", "--out=" ++ out });
+        try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
+        var plan = try c.builtPage(.dev, out, args.items);
+        plan.bless = false;
+        if (!c.w.exists(out ++ "/_core/_sanitize.mjs")) {
+            detail("{s}: its .sanitize-lists-v3 build writes no list in place, so its page tests nothing\n", .{c.fixture.name});
+            because("[" ++ out ++ "] no list written in place", .{});
+            return error.SanitisedNothing;
+        }
+        return plan;
+    }
+
     /// The differential pages of `BENI_IN_PLACE` (`Config.in_place`) for a
     /// page built for `browser-inline`, the one browser platform whose
     /// records and lists are judged in place (`ownership-v2.md` §8, S0):
@@ -3472,6 +3507,8 @@ const Case = struct {
             // makes it.
             .lists => &.{.{ .pass = .dev, .out = "out-lists", .flags = &.{"--sanitize-lists"} }},
             .lists_v2 => &.{.{ .pass = .dev, .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--sanitize-lists" } }},
+            // No sweep: a page asks for its v3 page with a file (`v3Page`).
+            .lists_v3 => return plans,
         };
         for (passes, 0..) |d, i| {
             var args: std.ArrayList([]const u8) = .empty;

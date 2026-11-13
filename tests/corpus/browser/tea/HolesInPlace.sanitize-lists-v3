@@ -1,0 +1,1 @@
+browser-tea renders through the dom runtime, which keeps no list of a hole past the render (boundary.md §9.4.8): the model's lists in For, class, text, Html.map and the subscriptions, pushed in place under --ownership=v3.

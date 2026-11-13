@@ -1,0 +1,34 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <button id="add">"add"</button>
+      <p id="count">"2"</p>
+      <p id="names">"a"</p>
+      <output>"3"</output>
+    </main>
+  </div>
+</body>
+-- click #add
+<body>
+  <div id="root">
+    <main>
+      <button id="add">"add"</button>
+      <p id="count">"3"</p>
+      <p id="names">"a,n3"</p>
+      <output>"6"</output>
+    </main>
+  </div>
+</body>
+-- click #add
+<body>
+  <div id="root">
+    <main>
+      <button id="add">"add"</button>
+      <p id="count">"4"</p>
+      <p id="names">"a,n3,n4"</p>
+      <output>"10"</output>
+    </main>
+  </div>
+</body>
