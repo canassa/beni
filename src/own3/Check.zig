@@ -264,6 +264,14 @@ pub const Mod = struct {
 
     /// Whether the declaration in work passed its own budget, or the module
     /// passed its own (kernel §8).
+    /// Whether no other declaration of the module is walked: one passed
+    /// the budget, or a type passed the layout limit (kernel §8). Either way
+    /// the module authorises no write and publishes no contract, so a walk
+    /// would find nothing that is used (research report 131).
+    fn stopped(m: *const Mod) bool {
+        return m.module_over or m.loc.over.items.len != 0;
+    }
+
     pub fn overBudget(m: *const Mod) bool {
         return m.steps > max_walk_steps or m.module_units +| m.loc.units > m.module_budget;
     }
@@ -1232,10 +1240,11 @@ pub const Mod = struct {
     fn walkDecl(m: *Mod, di: u32) Allocator.Error!?*const Contract.Contract {
         const d = m.bir.decls[di];
         const body = d.body.unwrap() orelse return null;
-        // A declaration of the module passed its budget: the module
-        // authorises no write, so no other is walked (kernel §8). Each
-        // publishes nothing, and an importer reads it as unknown code.
-        if (m.module_over) {
+        // A declaration of the module passed its budget, or a type the
+        // layout limit: the module authorises no write, so no other is
+        // walked (kernel §8). Each publishes nothing, and an importer reads
+        // it as unknown code.
+        if (m.stopped()) {
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
             return null;
@@ -1299,7 +1308,7 @@ pub const Mod = struct {
             any = true;
         };
         if (!any) return;
-        if (m.module_over) {
+        if (m.stopped()) {
             m.incomplete[di] = true;
             return;
         }
@@ -1340,7 +1349,7 @@ pub const Mod = struct {
             if (d.kind != .value) continue;
             const body = d.body.unwrap() orelse continue;
             if (!try m.isFunction(.{ m.in.module, di })) continue;
-            if (m.module_over) return;
+            if (m.stopped()) return;
             var f = try Frame.init(m, null, di, false, none);
             m.steps = m.decl_steps[di];
             m.steps_over = m.overBudget();
@@ -1759,7 +1768,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     defer m.places.deinit(gpa);
     defer m.account.deinit(gpa);
     m.account.walk = .growth;
-    m.adapter = .{ .in = in, .gpa = gpa, .places = &m.places, .account = &m.account };
+    m.adapter = .{ .in = in, .gpa = gpa, .places = &m.places, .account = &m.account, .repeat_reservations = false };
     defer m.adapter.deinit();
     m.loc = try Loc.Table.init(gpa, arena, &m.places);
     defer m.loc.deinit();

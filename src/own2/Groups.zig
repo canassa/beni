@@ -166,8 +166,37 @@ pub const Adapter = struct {
     families: Family.Table = .{},
     /// While a payload's steps are read: where a family head's arguments go.
     contexts: ?*std.ArrayList(u32) = null,
+    /// An alias expanded under an argument list → its id and what the
+    /// expansion did that a memo does not repeat (`applied`; research
+    /// report 131: a diamond of aliases 64 deep expanded 4⁶⁴ bodies).
+    alias_memo: std.AutoHashMapUnmanaged([2]u32, AliasMemo) = .empty,
+    /// The arguments of every family head met (`nominal`), which go to
+    /// `contexts` while a payload is read; a kept expansion's, each at its
+    /// last place, in `kept_logs` (`applied`), and the stamps that find
+    /// the last places.
+    family_log: std.ArrayList(u32) = .empty,
+    kept_logs: std.ArrayList(u32) = .empty,
+    log_seen: stamped.Column(u32, void) = .{},
+    /// How many expansions are open: outside every one, nothing is logged.
+    alias_depth: u32 = 0,
+    /// Counts of what an expansion does that a kept id does not repeat for
+    /// free: a reservation made, and a test of the account (a limit, which
+    /// passes again unless the account failed since).
+    term_reserves: u32 = 0,
+    term_tests: u32 = 0,
+    /// Whether an expansion that reserved is expanded again, so that each
+    /// reservation is made again in the same order: v2's accounts are part
+    /// of its verdict (§4.4). v3's account has no allowance to pass and
+    /// v3 counts its own work (its kernel §8), so it keeps them.
+    repeat_reservations: bool = true,
+
+    const AliasMemo = struct { id: u32, tested: bool, reserved: bool, log: [2]u32 };
 
     pub fn deinit(a: *Adapter) void {
+        a.alias_memo.deinit(a.gpa);
+        a.family_log.deinit(a.gpa);
+        a.kept_logs.deinit(a.gpa);
+        a.log_seen.deinit(a.gpa);
         a.families.deinit(a.gpa);
         a.nodes.deinit(a.gpa);
         a.kids.deinit(a.gpa);
@@ -241,6 +270,7 @@ pub const Adapter = struct {
     fn nominal(a: *Adapter, t: Types.TypeId, args: []const u32) Ids.IndexError!u32 {
         if (args.len == 0 or t.int() >= a.in.types.entries.len) return a.instance(t, args);
         const family = try a.families.of(a.gpa, a.in, t.int()) orelse return a.instance(t, args);
+        if (a.alias_depth != 0) try a.family_log.appendSlice(a.gpa, args);
         if (a.contexts) |c| try c.appendSlice(a.gpa, args);
         const got = try a.keys.getOrPut(a.gpa, .{ 0x200, if (@import("Mutate.zig").on(.family_split_heads)) t.int() else family, 0 });
         if (!got.found_existing) got.value_ptr.* = try a.add(.{ .kind = .payload, .place_kind = .@"var", .head = 0, .a = family, .b = 0 });
@@ -391,13 +421,17 @@ pub const Adapter = struct {
     // ---- templates -------------------------------------------------------------
 
     /// The id of BIR type instruction `inst` of module `m` under `env` (an
-    /// argument list): a tree, post-order on an explicit stack.
+    /// argument list): a tree, post-order on an explicit stack. The table of
+    /// closed instructions is a sparse map: it was a dense column as long as
+    /// the instruction index, made for each constructor argument described,
+    /// so a module's describing cost its arguments times its size (research
+    /// report 130 §10, report 131).
     fn ofTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32) Error!u32 {
         const bir = a.in.birs[m];
         const Frame = struct { inst: Bir.Inst.Index, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(a.gpa);
-        var done: stamped.Column(u32, u32) = .{};
+        var done: std.AutoHashMapUnmanaged(u32, u32) = .empty;
         defer done.deinit(a.gpa);
         var ops: std.ArrayList(Bir.Inst.Index) = .empty;
         defer ops.deinit(a.gpa);
@@ -416,7 +450,7 @@ pub const Adapter = struct {
         return done.get(inst.int()).?;
     }
 
-    fn closeTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32, done: *stamped.Column(u32, u32)) Error!u32 {
+    fn closeTerm(a: *Adapter, m: u32, inst: Bir.Inst.Index, env: u32, done: *const std.AutoHashMapUnmanaged(u32, u32)) Error!u32 {
         const bir = a.in.birs[m];
         const d = bir.instData(inst);
         const tag = bir.instTag(inst);
@@ -433,18 +467,27 @@ pub const Adapter = struct {
                 var kids: std.ArrayList(Kid) = .empty;
                 defer kids.deinit(a.gpa);
                 const elems = bir.extraSlice(Bir.inlineRange(d), Bir.Inst.Index);
-                for (elems, 0..) |e, k| try kids.append(a.gpa, .{ .step = try Step.index(a.account, @intCast(k)), .id = done.get(e.int()).? });
+                for (elems, 0..) |e, k| {
+                    a.term_tests += 1;
+                    try kids.append(a.gpa, .{ .step = try Step.index(a.account, @intCast(k)), .id = done.get(e.int()).? });
+                }
                 return a.structural(.tuple, @intCast(elems.len), kids.items);
             },
             .type_record, .type_record_ext => {
                 var kids: std.ArrayList(Kid) = .empty;
                 defer kids.deinit(a.gpa);
                 const r = if (tag == .type_record) Bir.inlineRange(d) else bir.subRange(@fromBackingInt(d.rhs));
-                for (bir.extraSlice(r, Bir.Field)) |fld| try kids.append(a.gpa, .{ .step = try Step.field(a.account, a.rank(bir.symbol(fld.name))), .id = done.get(fld.value.int()).? });
+                for (bir.extraSlice(r, Bir.Field)) |fld| {
+                    a.term_tests += 1;
+                    try kids.append(a.gpa, .{ .step = try Step.field(a.account, a.rank(bir.symbol(fld.name))), .id = done.get(fld.value.int()).? });
+                }
                 const ext = if (tag == .type_record_ext) a.recordKids(done.get(d.lhs)) else @as(?[]const Kid, &.{});
                 for (ext orelse &.{}) |ek| if (ek.step.kind == .field) try kids.append(a.gpa, ek);
                 sortKids(kids.items);
-                if (ext == null or (ext.?.len != 0 and ext.?[ext.?.len - 1].step.isRow())) try kids.append(a.gpa, .{ .step = try a.places.rowOf(a.gpa, a.account, kids.items), .id = try a.leaf(&a.var_id, .@"var") });
+                if (ext == null or (ext.?.len != 0 and ext.?[ext.?.len - 1].step.isRow())) {
+                    a.term_reserves += 1;
+                    try kids.append(a.gpa, .{ .step = try a.places.rowOf(a.gpa, a.account, kids.items), .id = try a.leaf(&a.var_id, .@"var") });
+                }
                 return a.structural(.record, 0, kids.items);
             },
             .type_app => {
@@ -463,13 +506,67 @@ pub const Adapter = struct {
     }
 
     /// A nominal type applied in a template: an alias expanded under its arguments.
+    ///
+    /// Each expansion of an alias under an argument list is kept
+    /// (`alias_memo`), and a second expansion answers the kept id where it
+    /// would do nothing the first did not. Every node an expansion names is
+    /// interned, so a second finds each again; a test of the account passes
+    /// again unless the account failed since, and then the kept one fails
+    /// as the first test would. An expansion that met a family head hands
+    /// the head's arguments to `contexts` while a payload is read: a kept
+    /// id hands them again, each at its last place. `payloadSteps` reads
+    /// `contexts` as a stack and skips what it has seen, so an earlier
+    /// copy of an id that comes again later is never read, and dropping it
+    /// changes nothing. An expansion that reserved a record's row counts
+    /// against the account, so it is expanded again unless the adapter
+    /// keeps reservations (`repeat_reservations`). A kept id adds what it
+    /// did to the counts of the expansion around it, so that one is judged
+    /// the same. So a diamond `A{i} a = A{i-1} (A{i-1} a)` costs its depth, not
+    /// 4 to its depth (#2121), and nothing the adapter answers changes.
     fn applied(a: *Adapter, t: Types.TypeId, args: []const u32) Error!u32 {
         if (t == .none or t.int() >= a.in.types.entries.len) return a.leaf(&a.var_id, .@"var");
         const e = a.in.types.entries[t.int()];
         if (e.kind == .alias and !e.schema_endpoint) {
             const bir = a.in.birs[e.module.int()];
             const body = bir.decl(e.decl).annotation.unwrap() orelse return a.leaf(&a.var_id, .@"var");
-            return a.ofTerm(e.module.int(), body, try a.listOf(args));
+            const env = try a.listOf(args);
+            const key: [2]u32 = .{ t.int(), env };
+            if (a.alias_memo.get(key)) |kept| {
+                if (!kept.reserved or !a.repeat_reservations) {
+                    if (kept.tested or kept.reserved) if (a.account.failed) |f| return f.err();
+                    const log = a.kept_logs.items[kept.log[0]..kept.log[1]];
+                    if (a.alias_depth != 0) try a.family_log.appendSlice(a.gpa, log);
+                    if (a.contexts) |c| try c.appendSlice(a.gpa, log);
+                    a.term_reserves += @intFromBool(kept.reserved);
+                    a.term_tests += @intFromBool(kept.tested);
+                    return kept.id;
+                }
+            }
+            const from = a.family_log.items.len;
+            const reserves = a.term_reserves;
+            const tests = a.term_tests;
+            a.alias_depth += 1;
+            const id = a.ofTerm(e.module.int(), body, env) catch |err| {
+                a.alias_depth -= 1;
+                a.family_log.shrinkRetainingCapacity(from);
+                return err;
+            };
+            a.alias_depth -= 1;
+            // The arguments it handed on, each at its last place, in order.
+            a.log_seen.clear();
+            const start: u32 = @intCast(a.kept_logs.items.len);
+            var k = a.family_log.items.len;
+            while (k > from) {
+                k -= 1;
+                const x = a.family_log.items[k];
+                if ((try a.log_seen.getOrPut(a.gpa, x)).found_existing) continue;
+                try a.kept_logs.append(a.gpa, x);
+            }
+            std.mem.reverse(u32, a.kept_logs.items[start..]);
+            a.family_log.shrinkRetainingCapacity(from);
+            if (a.alias_depth != 0) try a.family_log.appendSlice(a.gpa, a.kept_logs.items[start..]);
+            try a.alias_memo.put(a.gpa, key, .{ .id = id, .tested = a.term_tests != tests, .reserved = a.term_reserves != reserves, .log = .{ start, @intCast(a.kept_logs.items.len) } });
+            return id;
         }
         return a.nominal(t, args);
     }

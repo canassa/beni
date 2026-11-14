@@ -6268,6 +6268,144 @@ test "ownership v3: a tagged schema's constructor is a constructor" {
     }
 }
 
+// Research report 130 §10 and report 131: `own2`'s adapter made, for each
+// constructor argument it described, a table as long as the module's
+// instructions, so 2 000 nominal types that each hold 32 of the types
+// before them, and one function over the last, took 9 s of v3 on an LLVM
+// compiler against 0.2 s of type check. The table is a sparse map now.
+test "ownership v3: a long chain of nominal types is described in linear time" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport Node exposing (Program)\n\n\ntype T0\n    = T0 Int\n");
+    for (1..2001) |i| {
+        try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype T{d}\n    = T{d}", .{ i, i }));
+        for (1..33) |j| try main.appendSlice(a, try std.fmt.allocPrint(a, " T{d}", .{if (i > j) i - j else 0}));
+        try main.appendSlice(a, "\n");
+    }
+    try main.appendSlice(a, "\n\nf : T2000 → T2000\nf t =\n    t\n\n\nmain : Program\nmain =\n    Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Issue #2121 and report 131: `own2`'s adapter and its family table read an
+// alias again at each place it was named, so a diamond of aliases 64 deep
+// (`A{i} a = A{i-1} (A{i-1} a)`) cost 4⁶⁴ readings and v3 never ended on
+// `check/good/AliasDiamondChain`. Each reading of an alias under one list of
+// arguments is kept now, where a second one would do nothing more.
+test "ownership v3: a diamond of aliases is read in time linear in its depth" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const dir = "tests/corpus/check/good/AliasDiamondChain";
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--root=" ++ dir, dir ++ "/Main.beni", dir ++ "/Chain.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 130 §9 and report 131: `own2`'s pre-pass collected each
+// declaration's dispatch edges by walking every derived row below its
+// sites again, so 1 500 functions that compare two values of the last of
+// 300 types, each holding 32 of the types before it, cost v3 about 3 s
+// on an LLVM compiler against 0.05 s of type check (a module with no
+// constant: the type check's cycle pass, which walks the same rows, does
+// not run). Each term's edges are found once now (`own2/TopEdges.zig`).
+test "ownership v3: many `==` sites read each derived row once" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "type T0\n    = T0 Int\n");
+    for (1..301) |i| {
+        try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype T{d}\n    = T{d}", .{ i, i }));
+        for (1..33) |j| try main.appendSlice(a, try std.fmt.allocPrint(a, " T{d}", .{if (i > j) i - j else 0}));
+        try main.appendSlice(a, "\n");
+    }
+    for (0..1500) |k| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ng{d} : T300, T300 → Bool\ng{d} x y =\n    x == y\n", .{ k, k }));
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 131's review: a diamond of aliases whose bottom is a
+// family head, inside the family's own constructor. Reading a family's
+// payload hands each head's arguments on (`contexts`), so a kept reading
+// of such an alias was not used there, and each level cost four times the
+// one below: 16 levels did not end in 60 s. A kept reading now hands the
+// same arguments on again, each at its last place.
+test "ownership v3: a diamond of aliases under a family head is read in linear time" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "type Nest a\n    = NNil\n    | NCons (K16 a) (Nest (List a)) (List a)\n\n\ntype alias K0 a =\n    Nest Int\n");
+    for (1..17) |i| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype alias K{d} a =\n    K{d} (K{d} a)\n", .{ i, i - 1, i - 1 }));
+    try main.appendSlice(a,
+        \\
+        \\
+        \\pub f : Nest Int, List Int → List Int × Nest Int
+        \\f n xs =
+        \\    case n of
+        \\        NNil →
+        \\            ( List.push xs 1, n )
+        \\
+        \\        NCons k _ ys →
+        \\            ( List.push ys 1, k )
+        \\
+    );
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 131's review: 5 000 mutually recursive types, each
+// holding a list, and 5 000 `==` sites. A type past the layout limit makes
+// the module judge no write, but the walk went on to the module's budget:
+// 6.5 s of v3 against 0.08 s of type check on an LLVM compiler, and 11.6 s
+// before this work. No declaration is walked after a type passes the limit.
+test "ownership v3: a module past the layout limit walks no other declaration" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    const n = 5000;
+    for (0..n) |i| try main.appendSlice(a, try std.fmt.allocPrint(a, "{s}type M{d}\n    = A{d} (List Int) M{d}\n    | B{d} (List M{d})\n", .{ if (i == 0) "" else "\n\n", i, i, (i + 1) % n, i, (i * 13 + 5) % n }));
+    for (0..n) |k| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ng{d} : M{d}, M{d} → Bool\ng{d} x y =\n    x == y\n", .{ k, k % n, k % n, k }));
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "a type has more than 4096 locations") != null)) {
+        std.debug.print("wanted the layout limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // Research report 129: a `--library` build exports its `pub` functions, and
 // host JavaScript calls them with arrays that it still holds and reads
 // after. An export is a function in the default location (kernel §6.14), so

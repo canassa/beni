@@ -4,7 +4,7 @@
 report 120); §6.12 and §6.13 revised again the same day (research report 123); §4.1, §6.2, §6.8 and
 §6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
-129); §8 revised 2026-11-14 (research report 130); §6.14 revised again the same day (research
+129); §8 revised 2026-11-14 (research report 130); §6.14 and §8 revised again the same day (research
 report 131). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -715,11 +715,32 @@ way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds
 in a table (`Loc.proj`, kept for each place and step), and the module's published contracts
 (`Contract.publish`: the labels of each entry of each layout they name, once for each module, about
 four times the counted copy of those labels where the layout was built or read, and a copy of each
-contract that `finish` built). One piece is not linear and is not v3's own: `own2`'s prepass collects
-the dispatch edges of each declaration (`Edges.declEdges`) as the type check does, and costs what the
-type check costs there (report 130 §9). And `own2`'s adapter makes, for each constructor argument of a
-type it describes, a table as long as the instruction index of the term (`Groups.Adapter.ofTerm`): a
-chain of 3 000 nominal types each holding 32 others takes 23 s and is not counted (report 130 §10).
+contract that `finish` built).
+
+**The code of `own2` that v3 calls** is linear too (research report 131), and its answers are the ones
+it gave before, so v2's verdicts do not move:
+
+- **The pre-pass** (`Prepass.run`) orders the declarations by their edges, and the third leg of
+  `check/Edges.zig` is every derived row below a declaration's sites. `own2/TopEdges.zig` finds the
+  same `top` edges in the same order, each target at its first place (a repeated edge does nothing in
+  Tarjan), from the sequence of each term, made once: a term on no cycle merges its arguments' and its
+  row's, and a term on a cycle of rows walks its group, splicing in what lies outside. The cost is
+  the table and the edges it yields, except a group of rows on a cycle that reaches two or more of the
+  module's declarations, which is walked once for each of its members that a sequence asks for. Safe
+  builds compare each declaration's edges with `Edges.declEdges`' for a table of at most 4 096 terms.
+- **The adapter** (`Groups.Adapter.ofTerm`) keeps the instructions of a term it reads in a sparse map,
+  not a column as long as the module's instructions, and keeps each reading of an alias under one list
+  of arguments (`applied`). A kept reading answers again where a second would do nothing more; one that
+  met a family head hands the head's arguments to `contexts` again, each at its last place (an earlier
+  copy is never read off that stack). For v2, a reading that reserved a record's row is read again,
+  since v2's account counts it; v3's account has no allowance, so v3 keeps those too.
+- **The family table** (`Family.Table.scan`) keeps the same sparse map and each reading of an alias
+  under one list of arguments, with the edges it added, each once.
+
+So a diamond of aliases 64 deep is read in its depth, not in 4⁶⁴ (#2121), and a chain of 3 000
+nominal types that each hold 32 others in 0.05 s, not 20 s. The type check's own cycle pass
+(`check/Cycles.zig`) still walks the rows below each declaration's sites when the module has a
+constant: it is the type check's cost, not v3's, and research report 131 measures it.
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
@@ -732,7 +753,9 @@ line of a module outside the app is no error, so an importer would read it). A t
 locations (`Loc.max_layout_entries`: a location for each path of labels, so `( x, x )` nested 32 times
 has 2³²) has the layout of one summary location of a type variable; the module then authorises no write,
 publishes no contract and no derived fact, and its report has an `ownership_limit` line naming the limit
-(`Loc.Table.over`, `Check.checkModule`): a loud refusal, never a cut toward "holds nothing". A
+(`Loc.Table.over`, `Check.checkModule`): a loud refusal, never a cut toward "holds nothing". No
+other declaration of the module is walked after a type passes the limit (`Mod.stopped`, research
+report 131: 5 000 `==` sites over 5 000 recursive types walked on to the module budget, 6.5 s). A
 principled layout exists — the repeated halves of a type past a bound given one summary location for each
 object place below them, as the deep level of a cycle has (§4.1) — and is not built (research report 120
 §2). Evidence and the rows of derived methods are walked each term once (`Edges.termsEdges`), so a
@@ -759,6 +782,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | every instruction that names code, in a declaration whose code the backend emits, was walked | `Check.checkCovered` | §6.14 |
 | the index of a pair's meets says what `locsMeet` says, for layouts of at most 64 entries | `Frame.meetsOf` | §4.1, §6.13 |
 | the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
+| the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 
 ## 10. What the kernel costs
 

@@ -42,8 +42,21 @@ pub const Table = struct {
     /// Per family, its heads in id order.
     heads: std.ArrayList([]u32) = .empty,
     comps: u32 = 0,
+    /// An alias read under an argument list, in a head's module: what it
+    /// stands for, and the edges its reading added, without repeats
+    /// (`applied`; research report 131). Keyed by the alias, the module and
+    /// a hash of the arguments; the arguments are kept, so a key whose
+    /// arguments differ is read again and not kept.
+    memo: std.AutoHashMapUnmanaged([3]u64, Kept) = .empty,
+    memo_args: std.ArrayList(u32) = .empty,
+    memo_edges: std.ArrayList(Edge) = .empty,
+
+    const Kept = struct { result: u32, args: [2]u32, edges: [2]u32 };
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.memo.deinit(gpa);
+        t.memo_args.deinit(gpa);
+        t.memo_edges.deinit(gpa);
         t.marks.deinit(gpa);
         t.edges.deinit(gpa);
         t.runs.deinit(gpa);
@@ -119,13 +132,16 @@ pub const Table = struct {
 
     /// The parameter term `inst` of module `m` is exactly, under `env` (per
     /// parameter of the term's declaration, the walked head's parameter it
-    /// stands for), or `none`. Every application in it is an edge.
+    /// stands for), or `none`. Every application in it is an edge. The
+    /// table of read instructions is a sparse map: a dense column as long as
+    /// the instruction index, made for each term, cost a chain of types the
+    /// product of its arguments and its module's size (research report 131).
     fn scan(t: *Table, gpa: Allocator, in: anytype, m: u32, inst: Bir.Inst.Index, env: []const u32, home: u32) Allocator.Error!u32 {
         const bir = in.birs[m];
         const Item = struct { inst: Bir.Inst.Index, expanded: bool };
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(gpa);
-        var done: stamped.Column(u32, u32) = .{};
+        var done: std.AutoHashMapUnmanaged(u32, u32) = .empty;
         defer done.deinit(gpa);
         var ops: std.ArrayList(Bir.Inst.Index) = .empty;
         defer ops.deinit(gpa);
@@ -170,13 +186,41 @@ pub const Table = struct {
         return done.get(inst.int()).?;
     }
 
+    /// An application: an alias read through under `args`, or an edge.
+    ///
+    /// An alias read under one argument list in one module stands for the
+    /// same parameter and adds the same edges each time, so the first
+    /// reading is kept (`memo`) and a later one adds its edges again, each
+    /// once, in the order of their first places. A repeated edge does
+    /// nothing in Tarjan or in `close`, so the families are the ones the
+    /// reading of every application gives, and a diamond of aliases
+    /// `A{i} a = A{i-1} (A{i-1} a)` costs its depth, not 2 to its depth.
     fn applied(t: *Table, gpa: Allocator, in: anytype, g: anytype, args: []const u32, home: u32) Allocator.Error!u32 {
         if (g == .none or g.int() >= in.types.entries.len) return none;
         const e = in.types.entries[g.int()];
         if (e.kind == .alias and !e.schema_endpoint) {
             const bir = in.birs[e.module.int()];
             const body = bir.decl(e.decl).annotation.unwrap() orelse return none;
-            return t.scan(gpa, in, e.module.int(), body, args, home);
+            const key: [3]u64 = .{ g.int(), home, std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(args)) };
+            if (t.memo.get(key)) |kept| {
+                if (std.mem.eql(u32, t.memo_args.items[kept.args[0]..kept.args[1]], args)) {
+                    try t.edges.appendSlice(gpa, t.memo_edges.items[kept.edges[0]..kept.edges[1]]);
+                    return kept.result;
+                }
+                // Another argument list with the same hash: read again, not kept.
+                return t.scan(gpa, in, e.module.int(), body, args, home);
+            }
+            const from = t.edges.items.len;
+            const result = try t.scan(gpa, in, e.module.int(), body, args, home);
+            // The edges the reading added, each once, in order.
+            const edges_at: u32 = @intCast(t.memo_edges.items.len);
+            var seen: std.AutoHashMapUnmanaged(Edge, void) = .empty;
+            defer seen.deinit(gpa);
+            for (t.edges.items[from..]) |x| if (!(try seen.getOrPut(gpa, x)).found_existing) try t.memo_edges.append(gpa, x);
+            const args_at: u32 = @intCast(t.memo_args.items.len);
+            try t.memo_args.appendSlice(gpa, args);
+            try t.memo.put(gpa, key, .{ .result = result, .args = .{ args_at, @intCast(t.memo_args.items.len) }, .edges = .{ edges_at, @intCast(t.memo_edges.items.len) } });
+            return result;
         }
         if (e.module.int() != home or !walked(in, g.int())) return none;
         var own = args.len == e.arity;
