@@ -217,3 +217,22 @@ zig build test-blackbox-check "-Dtest-filter=ownership v3: a literal earns"
 
 The units of a module need a measuring line that is not in the commits: print `m.module_units +
 m.loc.units` and `m.module_budget` at the end of `Check.checkModule`.
+
+## 11. What became of §9 (research report 138)
+
+Research report 138 took the way out that §9 recommended, after it made the walks that grew with the
+square of a type about linear:
+
+- **The duplicate test is about linear in the cells** (`Frame.runsShare`). `f p = p` over nested pairs of
+  4 096 lists costs 0.43 million units, not 8.8 million, with the same answer.
+- **A declaration spends only what its own instructions earn** (kernel §8, `Mod.declBudget`): 2²⁰, what
+  §3's table gives its instructions, and 128 units for each entry of the layout of each instruction that a
+  walk evaluates, at most 2²⁵. The module's budget is the sum of its declarations' and of its types', with
+  §2's floor and the cap of 2²⁷. Nothing is pooled, so cheap lines pay for nothing beside them.
+- **The two red tests pass for their reasons.** `group-rounds-control.dead` is accepted (`rot` costs 21
+  million units and earns the most for a declaration), and `locals-after-limit.dead` stops at its
+  declaration's limit of 33 554 432 units. `group-rounds-slow.dead` now stops there too, not at the
+  module's.
+- **The shapes of §4 are accepted**, at 0.06 to 0.13 s of v3 for a thousand lines (ReleaseFast, LLVM).
+- **The literal nested 400 deep** made a projection for each level after the budget was passed; it stops
+  at its own budget in 0.33 s on the gates' compiler, not 4.1 s.

@@ -148,7 +148,10 @@ The site `k` is canonical, so the rounds of a recursive group settle (`freshId`,
 frame made is named by the instruction that made it and the entry; a cell a callee made is named by the
 call and the callee's site; a cell of a callee whose contract is a **draft** (a member of the group in its
 rounds, a local function in `solveCodes`' rounds: `Mod.drafts`) is named by the call alone, which bounds
-the names of a recursion by its call sites. Collapsing two cells into one name is on the pessimistic side.
+the names of a recursion by its call sites. A local function's contract from an earlier walk of its
+declaration (a round of the declaration's group) starts the next walk's rounds, and is a draft while they
+run too: read as a finished contract, the cells of its own recursive call had new names in each walk, and
+the group never settled (`TailModConsBranches.chunks`, 66 walks; research report 138). Collapsing two cells into one name is on the pessimistic side.
 
 A worded row's new cells are one site, `0` (`Check.wordedContract`).
 
@@ -166,7 +169,10 @@ in the run). In the contract, an own atom of `own` or `derived` is `fresh(k)`; a
 A **summary** location names the cells of many positions (list elements, a deep level). One cell at two of
 its places cannot be seen by atoms alone, so it is a fact of the entry: `REntry.twice`, and `Src.twice` in a
 contract. It is derived in **one test**, `partDup`, where a run is built from parts: a part that holds a
-cell an earlier part holds (`dupOverlap`). Two overlapping atoms are two cells only when they were read
+cell an earlier part holds (`dupOverlap`). Every test of a set of runs for one cell in two of them
+(`partDup`, `deriveLinear`, `finish`, `operandLeaves`, `runsApart`, `expandSrcs`) is `runsShare` when
+the set holds more than 64 atoms: the same answer as the test of every pair, in time about linear in the
+atoms (§8). Two overlapping atoms are two cells only when they were read
 through two **apart parts** of one root the frame made that holds each cell once (`viaApart`: the same
 `via`, `linear`, and two parts with different entries or incomparable paths). An atom records the part it
 was read through (`Atom.via`, `via_path`, `via_e`, set in `copyAtoms`), so two reads of one part of a list
@@ -664,9 +670,26 @@ paths:
   `top` use and the depth started again at 0, so the bound bounded nothing, and the use's supplies never
   escaped: a list handed down 18 closures to one that kept it was written in place. A walk is bounded by
   the two rules above and the limit below, not by a depth.
-- **One declaration does at most `Check.max_walk_steps` units of work** (33 554 432), **over all of its
-  walks**: one budget for each declaration (`Mod.decl_steps`), which every loop that no memo bounds
-  counts against. Two kinds of thing count:
+- **One declaration does at most what its own instructions earn, and never more than
+  `Check.max_walk_steps` units of work** (33 554 432), **over all of its walks**: one budget for each
+  declaration (`Mod.declBudget`, `Mod.decl_steps`), which every loop that no memo bounds counts
+  against, with the location table's work in its walks (`Mod.declSpent`). It earns (research report
+  138):
+  - **1 048 576 units** (`decl_floor`), whatever its size;
+  - **what its instructions earn** (`Mod.earnedUnits`, below): 32 768 for each that a walk evaluates,
+    128 for each of a literal or a type, and the pairs of the lists of its literals;
+  - **128 units for each entry of the layout of each instruction that a walk evaluates**
+    (`layout_units`): a walk of a value visits each entry of its layout a few times, a call each, and
+    the duplicate test groups each of its cells (`runsShare`). `f p = p` over nested pairs of 4 096
+    lists took 52 units for each entry of its two instructions; a list of 45 references to nested pairs
+    of 2 048 lists, 41; a list of 45 calls of a function over them, 270.
+
+  It depends on the declaration's own instructions alone, so it is the same at any `--jobs` and in any
+  order. *Before research report 138 the budget was pooled over the module, so what one declaration
+  earned another spent: dense lines of cheap references paid for a function whose walk cost the square
+  of its layout.* Past it, the limit line names the declaration's own budget ("the walk took more than
+  `N` units of work (what the declaration earns)"), or `max_walk_steps` when that is its budget. Two
+  kinds of thing count:
   - **a call, 32 units** (`Check.call_units`: about what a call costs beside the loops inside it, so the
     budget is about a million calls; `Frame.tick`): each expression the walk evaluates (`eval`; past
     the budget the walk goes no deeper, and a write it did not reach has no line, so it is not
@@ -702,13 +725,15 @@ paths:
   functions (`solveCodes`) counts too: the rounds walk again and keep counting; they do not start the
   count again.
 
-- **One module does at most `Check.moduleBudget` units of work: 65 536 (`module_floor`), and what its
-  instructions earn** (`Mod.earnedUnits`), **and never more than 134 217 728 (2²⁷, `Check.module_cap`)**.
-  A module earns for what its walks can cost, not for its tokens (research report 136):
+- **One module does at most `Check.moduleBudget` units of work: 65 536 (`module_floor`), what its
+  instructions earn** (`Mod.earnedUnits`), **`decl_floor` for each value declaration and what the layouts of
+  each walked declaration earn** (`Mod.declBudget`), **and never more than 134 217 728 (2²⁷,
+  `Check.module_cap`)**: the sum of its declarations' budgets and the work of its types, with the cap as
+  a backstop. An instruction earns for what its walks can cost, not for its tokens (research report 136):
   - **each instruction that a walk evaluates, 32 768 units** (`inst_units`, a thousand calls): a
     reference, a call, a binding, a pattern, a `case` and its arms, a function, a record update, a
-    markup site, a list built of anything but literals. The most that the module of an ownership root
-    needs is 18 900 units for each of its instructions (`TailModConsBranches`, 0.85 of its budget);
+    markup site, a list built of anything but literals. `DeepWrittenPath.deep256` needs it: at 16 384
+    it would pass its budget (research report 138 §4);
   - **each instruction of a literal, 128 units** (`literal_units`, four calls), and **2 units for each
     pair of two lists of literals that a construction brings together** (`pair_units`), whether or not
     the construction is a literal itself (`[ first, [ 0, 1 ], [ 1, 2 ], … ]`). A literal is a number, a character, a string, `⊤`, a
@@ -727,15 +752,17 @@ paths:
   took 5.7 s of v3 at `--jobs=1` (research report 135 §8); each module now reaches its own budget at
   its first such function.*
 
-  **The bound in time.** At the slowest unit of v3's own walks measured, 12 ns (research report 135),
-  an instruction that a walk evaluates earns at most about 0.4 ms of work, and an instruction of a
-  literal or a type about 1.5 µs. A line that `beni fmt` writes holds at most about 45 instructions
-  that a walk evaluates (a call with 20 arguments, twice, in 93 columns), so it earns at most about
-  18 ms; a line of three to five, the common case, 1 to 2 ms. A literal's line earns about 1.5 µs for
-  each element. The budget is pooled over the module, so what one declaration earns another can spend,
-  and a declaration whose walk costs far more than it earns (a function `f p = p` over nested pairs of
-  4 096 lists, 8.8 million units for 4 instructions) spends it: dense lines of cheap references beside
-  such functions are the slowest shape that the rule allows (research report 136 §4, §9).
+  **The bound in time** (research report 138 §5). A declaration spends only what it earns, so a line
+  pays for itself: its instructions, and the layouts they walk. An instruction that a walk evaluates
+  earns at most 32 768 + 128 · 4 096 units (a layout has at most 4 096 entries, `Loc.max_layout_entries`),
+  about 1.6 ms at 3 ns a unit (ReleaseFast); one of three to five over small types, the common case,
+  earns 0.1 to 0.2 ms with the floor shared over its declaration. A declaration never does more than
+  2²⁵ units and a module never more than 2²⁷ (0.3 s at the 2.2 ns a unit measured there, ReleaseFast).
+  The walks that the budget pays for are about linear in what they earn for (*The duplicate test*,
+  below), so the shapes of research reports 135 and 136 are accepted, at 0.06 to 0.13 s of v3 for a
+  thousand lines at `--jobs=1` (ReleaseFast, LLVM). The slowest found, functions that each build a list of
+  45 calls of a function over nested pairs of 2 048 lists, reach the module's cap: 1.4 s for a thousand
+  lines as generated, each list on one line.
 
   Every unit that a
   declaration counts counts against its module too
@@ -762,6 +789,31 @@ paths:
   `operandLeaves`, `runsApart`): a pair with an empty location compared nothing and cost nothing,
   and 4 096 empty locations were 8 million such pairs in each walk. Each gives the same answer as
   before.
+
+  **The duplicate test is about linear in the cells** (`Frame.runsShare`, research report 138). The
+  tests of a set of runs for one cell in two of them (§4.4) compared each pair of runs atom by atom: `f
+  p = p` over nested pairs of 4 096 lists did 8.4 million pairs for 4 instructions, and a part of a
+  construction was compared with every part before it. A set of more than 64 atoms is now tested in one
+  pass, run by run, each atom against the runs before it, ending at the first pair that is one cell:
+  two atoms can overlap only at one root and entry, so each atom is grouped by them (a lookup); a group
+  of at most 32 atoms compares each pair; a larger one keeps, for each path, two atoms at it and two at
+  or below it, of two different `via` keys (an atom with no `via`, or one through a root that is not
+  linear, has the key 0), and an atom looks up its own path and each path above it to the group's
+  shallowest. Two atoms at comparable paths are one cell unless both were read through two apart parts
+  of one root (`viaApart`), so one of the two kept is one cell with the atom whenever any atom there is.
+  Atoms read through one part (`via`, `via_e`) have their own tables, and a pair found there is tested
+  for its `via_path`; when that fails, the atom is compared with each atom of its part. The largest run
+  is taken last, and is only looked up. Each atom grouped, each path looked up or added to, is a lookup;
+  each pair compared is a unit. A set of at most 64 atoms is tested in pairs as before, and a safe build
+  checks there that `runsShare` answers the same, with its groups compared in pairs and with every group
+  tested by tables (`checkShare`). A test whose answer is already yes (a `twice` part, a duplicate found
+  before) is not run. The walk of a few entries of a construction of many parts reads only the parts
+  that hold a location at one of them (`builtIndex`, made once in a frame), so the walk of each entry of
+  a record of `n` fields in `finish` costs `n` and not its square. A list literal past the budget makes
+  no projection (`listOf`): a list nested 400 deep made one for each level on the way back up, each the
+  size of its layout times its depth, long after the budget was passed (4.1 s on the gates' compiler).
+  The answers are the ones the tests in pairs gave: every dump of the 2 314 ownership roots is the same,
+  but where a group now settles and where a budget moved (research report 138 §3).
 
   **The runs of new names are walked once** (research report 134). The run of a `version` or `taken`
   entry holds older atoms, and their runs older ones again, so a chain of `n` writes reaches `n`
@@ -819,15 +871,12 @@ paths:
   that writes and keeps. The reads of those rows count against the module's budget too, and a module
   that passes it only there has its limit line as well. The
   `via`s of a schema and the exports of a `--library` build (§6.14) are walked under the budget of their
-  declaration. The largest declaration of the 2 734 ownership roots (every corpus program and every real
-  root) does 8.9 million units (in `tests/corpus/run/TailModConsBranches`), and the largest of a real
-  root 5.0 million (in `bench/corpus`'s `NotesApp`; research report 135 §5): the budget is about 3.8 and
-  6.7 times them. The module of an ownership root closest to its module budget is
-  `tests/corpus/run/TailModConsBranches` (8.9 million units, 0.85 of its budget), and of a real
-  root `bench/corpus`'s `NotesApp` (8.3 million, 0.29; research report 136 §5). One corpus program
-  of paths more than a hundred levels deep passes its module budget, `DeepPathThroughList` (report
-  130 §8); `DeepWrittenPath` passed it before research report 136 and does 0.95 of it now. A declaration that
-  reaches the budget took at most 0.45 s on the shapes research report 135 measured (LLVM ReleaseSafe).
+  declaration. Over the 2 314 ownership roots (research report 138 §4), the declarations closest to their
+  own budgets are corpus programs of paths more than a hundred levels deep: `DeepPathThroughList.below`
+  passes its budget (it passed its module's before, report 130 §8), `DeepPathThroughList.through` does
+  0.93 of its budget and `DeepWrittenPath.deep256` 0.91. Of a real root, `Ui.Html.map` (core's platform)
+  does 0.59 of its budget, `NotesApp.viewSidebar` 0.56 and `Dict.descend` 0.52. The largest declaration
+  of a real root does 2.1 million units (`Main.changeRouteTo` of the Conduit example, 0.35).
 
 
   *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked
@@ -847,11 +896,12 @@ closures with `e` captures costs O(e) judgments and O(n) value walks per root wa
 declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point, the
 tests of runs of atoms and the walks of the parts of a value — is counted by the elements it visits, so
 a declaration does at most `max_walk_steps` units however many times it is walked. The location
-table's work is counted with it. So **a module of `n` instructions does at most min(65 536 + 32 768·n +
-2·p, 2²⁷) units**, where `p` is the pairs of lists in its literals, **and a build at most the sum over its
-modules**: linear in the size of the program, at most 32 768 units for each instruction and 65 536 for each
-module, and at most 2²⁷ for any one module, whatever the shape of its types or the number of its
-declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
+table's work is counted with it. So **a declaration of `n` instructions that walks layouts of `L`
+entries in all does at most min(2²⁰ + 32 768·n + 128·L + 2·p, 2²⁵) units**, where `p` is the pairs of
+lists in its literals, **a module at most the sum over its declarations and its types, and never more
+than 2²⁷, and a build at most the sum over its modules**: linear in the size of the program and of the
+layouts its instructions walk, and at most 2²⁷ for any one module, whatever the shape of its types or the
+number of its declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
 and the contracts of its imports only). **A unit tracks time** (research report 135): over the 101
 programs of 307 measured (the shapes of research reports 130, 131, 134 and 135, the corpus programs
 nearest their budgets, and every fault folder of the sweeps) that do more than 5 million units, a unit
