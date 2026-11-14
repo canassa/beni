@@ -704,7 +704,8 @@ paths:
 
 - **One module does at most `Check.moduleBudget` units of work: 65 536 (`module_floor`), and 16 384
   (`token_units`) for each token of its source** — or for each instruction of its BIR, where it has more
-  (`Mod.module_size`). Every unit that a declaration counts counts against its module too
+  (`Mod.module_size`), **and never more than 134 217 728 (2²⁷, `Check.module_cap`)**. Every unit that a
+  declaration counts counts against its module too
   (`Mod.module_units`), and so does the work of the module's location table (`Loc.Table.units`): each
   step that the visit of a layout takes and each step of the path that a projection follows for each
   entry (`abstractPath`), each a lookup; each label of a layout of an imported contract that the
@@ -808,9 +809,9 @@ closures with `e` captures costs O(e) judgments and O(n) value walks per root wa
 declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point, the
 tests of runs of atoms and the walks of the parts of a value — is counted by the elements it visits, so
 a declaration does at most `max_walk_steps` units however many times it is walked. The location
-table's work is counted with it. So **a module of `n` tokens does at most 65 536 + 16 384·n units, and
-a build at most the sum over its modules**: linear in the size of the program, at most 16 384 units for
-each token and 65 536 for each module, whatever the shape of its types or the number of its
+table's work is counted with it. So **a module of `n` tokens does at most min(65 536 + 16 384·n, 2²⁷)
+units, and a build at most the sum over its modules**: linear in the size of the program, at most 16 384
+units for each token and 65 536 for each module, and at most 2²⁷ for any one module, whatever the shape of its types or the number of its
 declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
 and the contracts of its imports only). **A unit tracks time** (research report 135): over the 101
 programs of 307 measured (the shapes of research reports 130, 131, 134 and 135, the corpus programs
@@ -819,12 +820,12 @@ took 4.9 ns at the median and 8.3 ns at the 90th percentile (ReleaseSafe, LLVM),
 v3's own walks take the time (a chain of 5 000 writes, whose runs of atoms are made unique in a hash
 set). Two shapes take longer for each unit, and in both the time is `own2`'s, which v3 calls and does
 not count (below), and the type check of the same module takes 15 to 30 times as long as v3: a
-function of 8 000 calls over a record of 2 040 lists (18 ns a unit, the adapter's reading of each
-call's type), and 6 000 `==` sites over records in a module with a `pub eq` (62 ns, the pre-pass). So
-a declaration reaches its budget in about 0.4 s, and a module's walks take at most about 0.2 ms for
-each token (16 384 units at 12 ns): 1 000 functions over nested pairs of 4 096 lists (10 000 tokens)
-reach the module's budget in 0.94 s, and a module of more than about 10 000 such tokens can take more
-than 2 s to reach it. The slowest program that report 130 found takes 5.2 s for 7 767 lines (40 modules
+function of 8 000 calls over a record of 2 040 lists (18 ns a unit, the adapter), and 6 000 `==` sites over records in a module with a `pub eq` (62 ns, the pre-pass). So
+a declaration reaches its budget in about 0.4 s, and a module in at most about 1.6 s (2²⁷ units at
+12 ns); the slowest measured, 1 000 functions over nested pairs of 4 096 lists, takes 0.8 s. **The
+module's cap** (research report 135 §8): without it a module of 360 lines that held a literal list of
+15 000 numbers earned 500 million units from its tokens, and 60 functions `f p = p` over those pairs
+spent them in 3.2 s. The cap is about 15 times the most that a module of an ownership root does. The slowest program that report 130 found takes 5.2 s for 7 767 lines (40 modules
 over one record of 2 040 lists), and the largest ratio of v3's time to the type check's there was 131 (nested pairs of
 2 048 lists, which the type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each
 piece of it is linear in counted work: a lookup
