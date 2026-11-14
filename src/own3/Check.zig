@@ -812,8 +812,11 @@ pub const Mod = struct {
         m.row_slot_gen[j] = m.gen;
         var next: usize = 0;
         while (next < rows.items.len) : (next += 1) {
-            // Past the budget the rows are not read on (kernel §8).
+            // Past the budget the rows are not read on (kernel §8). The
+            // slots of this call's rows are let go, so no later call reads
+            // a slot of a list it did not build.
             if (m.overBudget()) {
+                for (rows.items) |k| m.row_slot_gen[k] = m.gen - 1;
                 var x: RowInfo = .{};
                 x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true });
                 return x;
