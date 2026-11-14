@@ -421,6 +421,8 @@ run_seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
 /// Per pair of layouts: which entries of the second meet each entry of the
 /// first (`meetsOf`), built once from the two call maps.
 meet_index: std.AutoHashMapUnmanaged([2]u32, *const MeetIndex) = .empty,
+/// Per pair of layouts: the call map read the other way (`coverHits`).
+cover_index: std.AutoHashMapUnmanaged([2]u32, *const CoverIndex) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -450,11 +452,23 @@ pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32
 fn tick(f: *Frame) bool {
     const m = f.m;
     if (m.steps_over) return true;
-    m.steps += 1;
+    m.steps += Check.call_units;
     if (m.steps > Check.max_walk_steps) {
         m.steps_over = true;
         f.failed = true;
     }
+    return m.steps_over;
+}
+
+/// `n` units of work of a loop over atoms, counted against the
+/// declaration's budget (kernel §8): a step's own cost grows with the atoms
+/// it compares, so the budget counts them. True once the declaration is past
+/// it; the caller then answers on the pessimistic side.
+fn charge(f: *const Frame, n: usize) bool {
+    const m = f.m;
+    if (m.steps_over) return true;
+    m.steps +|= n;
+    if (m.steps > Check.max_walk_steps) m.steps_over = true;
     return m.steps_over;
 }
 
@@ -644,7 +658,12 @@ fn overlap(f: *const Frame, a: Atom, b: Atom) bool {
 }
 
 fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
-    for (xs) |x| for (ys) |y| if (f.overlap(x, y)) return true;
+    for (xs) |x| {
+        // Each comparison made is work (kernel §8); past the budget the two
+        // can share a cell.
+        if (f.charge(ys.len)) return true;
+        for (ys) |y| if (f.overlap(x, y)) return true;
+    }
     return false;
 }
 
@@ -666,6 +685,9 @@ fn isLinear(f: *const Frame, root: u32) bool {
 /// one cell only when that root's own atoms say so: its parts are apart.
 fn dupOverlap(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
     for (xs) |x| {
+        // Each comparison made is work (kernel §8); past the budget one
+        // cell is at two places.
+        if (f.charge(ys.len)) return true;
         for (ys) |y| {
             if (!f.overlap(x, y)) continue;
             if (f.viaApart(x, y)) continue;
@@ -700,20 +722,36 @@ fn partDup(f: *const Frame, out: []const Atom, at: usize, before: usize) bool {
 /// itself and its own atoms decide. The claim covers the sources the callee
 /// saw as atoms, never an answer of a function parameter: `answers` says
 /// which entries hold one, and a pair of entries with one is tested here.
-fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) void {
+fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error!void {
     const r = f.roots.items[root];
     var linear = claim orelse true;
     const n = f.m.loc.layouts.items[r.layout].len;
     for (0..n) |e| if (f.rents.items[r.ent + e].twice) {
         linear = false;
     };
-    if (linear) outer: for (0..n) |e1| {
+    // The entries that hold an atom: only they can share a cell.
+    var held: std.ArrayList(u32) = .empty;
+    defer held.deinit(f.gpa);
+    if (linear) for (0..n) |e| if (f.rents.items[r.ent + e].len != 0) try held.append(f.gpa, @intCast(e));
+    // With the callee's claim, only a pair with an answer of a function
+    // parameter is tested: the first of each pair is such an entry.
+    var firsts: std.ArrayList(u32) = .empty;
+    defer firsts.deinit(f.gpa);
+    if (linear) for (held.items) |e| if (claim == null or answers[e]) try firsts.append(f.gpa, e);
+    if (linear) outer: for (firsts.items, 0..) |e1, i| {
         const a1 = f.rents.items[r.ent + e1];
-        if (a1.len == 0) continue;
-        for (e1 + 1..n) |e2| {
+        // Without a claim the pairs are each two entries once; with one, an
+        // answer's entry and every other entry.
+        const seconds = if (claim == null) held.items[i + 1 ..] else held.items;
+        // Each pair of entries is work of its own (kernel §8); past the
+        // budget the root is not linear.
+        if (f.charge(seconds.len)) {
+            linear = false;
+            break :outer;
+        }
+        for (seconds) |e2| {
+            if (e2 == e1) continue;
             const a2 = f.rents.items[r.ent + e2];
-            if (a2.len == 0) continue;
-            if (claim != null and !answers[e1] and !answers[e2]) continue;
             if (f.dupOverlap(f.atoms.items[a1.start..][0..a1.len], f.atoms.items[a2.start..][0..a2.len])) {
                 linear = false;
                 break :outer;
@@ -772,6 +810,8 @@ fn atomLess(run: []const Atom, x: u32, y: u32) bool {
 fn uniqueTail(f: *Frame, list: *std.ArrayList(Atom), from: usize) Error!void {
     const run = list.items[from..];
     if (run.len < 2) return;
+    // Sorting a run is work of its own (kernel §8).
+    _ = f.charge(run.len);
     var n: usize = 1;
     if (run.len <= 16) {
         for (run[1..]) |a| {
@@ -882,6 +922,8 @@ fn leafHit(f: *Frame, v: Val, ks: []const u32, all: bool, out: *std.ArrayList(At
     if (f.leaf_nest == 0) return null;
     const hit = f.leaf_memo.get(leafKeyOf(v, ks, all)) orelse return null;
     if (!std.mem.eql(u32, f.leaf_ks.items[hit.ks_start..][0..hit.ks_len], ks)) return null;
+    // The copy is work of its own (kernel §8).
+    _ = f.charge(hit.len);
     try out.appendSlice(f.gpa, f.leaf_buf.items[hit.start..][0..hit.len]);
     return hit.dup;
 }
@@ -991,6 +1033,12 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             return dup;
         },
         .built => {
+            // A walk of every part is work of its own (kernel §8); past the
+            // budget it holds a cell of no frame, and no write of it stands.
+            if (f.charge(n.b)) {
+                try out.append(f.gpa, outside_atom);
+                return true;
+            }
             var dup = false;
             const at = out.items.len;
             const single = ks.len == 1 and m.loc.layoutEntries(try m.loc.layoutOf(n.place))[ks[0]].single;
@@ -1183,6 +1231,8 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
 /// of a function parameter that was handed one.
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
     for (xs) |x| {
+        // Each comparison made is work (kernel §8); past the budget it reaches.
+        if (f.charge(w.len + 1)) return true;
         if (f.isOld(x)) continue;
         for (w) |y| if (f.overlap(x, y)) return true;
         const r = f.roots.items[x.root];
@@ -1251,6 +1301,8 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             return f.refVal(n.a, np);
         },
         .built => {
+            // A scan of the parts is work of its own (kernel §8).
+            _ = f.charge(n.b);
             for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
             // A construction names every part that holds a cell (`built`,
             // `recordUpdate`): another constructor's argument, and a field
@@ -1981,7 +2033,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             const start: u32 = @intCast(f.atoms.items.len);
             try f.atoms.append(f.gpa, outside_atom);
             for (cov, 0..) |cr, e| f.rents.items[ent0 + e] = if (cr >= Loc.all or c.res[cr].len != 0) .{ .kind = .alias, .start = start, .len = 1 } else .{ .kind = .alias };
-            f.deriveLinear(root, null, &.{});
+            try f.deriveLinear(root, null, &.{});
             return f.rootVal(root);
         },
         .tuple => {
@@ -2493,7 +2545,7 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
         // and its parts are not apart (kernel §4.4).
         f.rents.items[r.ent + e] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
     }
-    f.deriveLinear(root, null, &.{});
+    try f.deriveLinear(root, null, &.{});
     return f.rootVal(root);
 }
 
@@ -2514,6 +2566,22 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     const bplace = f.placeOfVal(base) orelse place;
     const st = m.places.steps(bplace);
     const updated = tmp.items.len;
+    // Each part copied is a step of the budget (kernel §8).
+    _ = f.charge(st.steps.len);
+    const bn = f.nodes.items[base];
+    if (bn.tag == .built) {
+        // A construction's parts are its kids: each that is not updated is
+        // the part `project` would find, read once, not searched for.
+        for (f.kids.items[bn.a..][0..bn.b]) |k| {
+            if (k.val == v_none) continue;
+            var is_updated = false;
+            for (tmp.items[0..updated]) |u| if (u.step == k.step) {
+                is_updated = true;
+            };
+            if (!is_updated) try tmp.append(f.gpa, k);
+        }
+        return f.built(place, tmp.items);
+    }
     for (st.steps) |s| {
         if (s.kind == .level) continue;
         var is_updated = false;
@@ -2841,6 +2909,12 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
     const vals = try f.gpa.alloc(Val, ms.len);
     // Read only where the walk gives up on the whole declaration (below).
     @memset(vals, v_outside);
+    // Past the budget (kernel §8) no code is walked or joined any more: the
+    // declaration gave up.
+    if (m.steps_over) {
+        f.failed = true;
+        return vals;
+    }
     for (ms) |mb| {
         const fnt = m.fnType(mb.ty);
         const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
@@ -2868,6 +2942,10 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
         for (ms, 0..) |mb, i| {
             const fnt = m.fnType(mb.ty);
             const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
+            if (m.steps_over) {
+                f.failed = true;
+                return vals;
+            }
             var child = try Frame.init(m, f, f.decl, true, mb.inst);
             child.own_params = @intCast(mb.params.len);
             if (child.depth > 200) {
@@ -3433,6 +3511,13 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
     }
     const own = try m.loc.layoutOf(n.place);
     const cov = try m.loc.cover(sig, own);
+    // The entries of `own` that the map sends to `se` or to every entry,
+    // ascending: read off the map's index, not by a scan of the map.
+    var hit: std.ArrayList(u32) = .empty;
+    defer hit.deinit(f.gpa);
+    try f.coverHits(sig, own, cov, se, &hit);
+    // Each entry found is work of its own (kernel §8).
+    _ = f.charge(hit.items.len);
     if (suffix.len != 0) {
         var want: ?u32 = m.loc.layoutEntries(sig)[se].loc;
         for (suffix) |l| {
@@ -3443,9 +3528,10 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
             var found: Entries = .{};
             // The cell at that part. `deep`: each cell below it too (the
             // part is a wide location of another reading of the type).
-            for (m.loc.layoutEntries(own), 0..) |oe, k| if (Loc.hits(cov[k], se) and (oe.loc == wl or (deep and m.loc.isPrefix(wl, oe.loc)))) {
+            const oes = m.loc.layoutEntries(own);
+            for (hit.items) |k| if (oes[k].loc == wl or (deep and m.loc.isPrefix(wl, oes[k].loc))) {
                 if (cov[k] != se and !deep) continue;
-                try found.add(f.gpa, @intCast(k));
+                try found.add(f.gpa, k);
             };
             if (found.slice().len != 0) {
                 for (found.slice()) |k| try ks.add(f.gpa, k);
@@ -3453,12 +3539,63 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
             }
         }
     }
-    for (cov, 0..) |c, k| {
-        if (!Loc.hits(c, se)) continue;
-        if (c == Loc.all) f.hit_all = true;
-        try ks.add(f.gpa, @intCast(k));
+    for (hit.items) |k| {
+        if (cov[k] == Loc.all) f.hit_all = true;
+        try ks.add(f.gpa, k);
     }
     return true;
+}
+
+/// Per pair of layouts `sig`, `own`: the entries of `own` that the call map
+/// `cov` sends to each entry of `sig`, and those it sends to every entry
+/// (`Loc.all`), each ascending (`coverHits`).
+const CoverIndex = struct { start: []u32, items: []u32, alls: []u32 };
+
+/// The entries `k` of `own` with `Loc.hits(cov[k], se)`, ascending, in `out`.
+fn coverHits(f: *Frame, sig: u32, own: u32, cov: []const u32, se: u32, out: *std.ArrayList(u32)) Error!void {
+    const ci = blk: {
+        if (f.cover_index.get(.{ sig, own })) |x| break :blk x;
+        const ns = f.m.loc.layoutEntries(sig).len;
+        const x = try f.gpa.create(CoverIndex);
+        x.start = try f.gpa.alloc(u32, ns + 1);
+        @memset(x.start, 0);
+        var alls: std.ArrayList(u32) = .empty;
+        for (cov, 0..) |c, k| {
+            if (c == Loc.all) try alls.append(f.gpa, @intCast(k)) else if (c < ns) x.start[c + 1] += 1;
+        }
+        for (1..ns + 1) |i| x.start[i] += x.start[i - 1];
+        x.items = try f.gpa.alloc(u32, x.start[ns]);
+        const fill = try f.gpa.dupe(u32, x.start[0..ns]);
+        defer f.gpa.free(fill);
+        for (cov, 0..) |c, k| if (c != Loc.all and c < ns) {
+            x.items[fill[c]] = @intCast(k);
+            fill[c] += 1;
+        };
+        x.alls = alls.items;
+        try f.cover_index.put(f.gpa, .{ sig, own }, x);
+        break :blk x;
+    };
+    const mine = ci.items[ci.start[se]..ci.start[se + 1]];
+    // Merge the two ascending runs.
+    var i: usize = 0;
+    var j: usize = 0;
+    while (i < mine.len or j < ci.alls.len) {
+        if (j == ci.alls.len or (i < mine.len and mine[i] < ci.alls[j])) {
+            try out.append(f.gpa, mine[i]);
+            i += 1;
+        } else {
+            try out.append(f.gpa, ci.alls[j]);
+            j += 1;
+        }
+    }
+    if (safety and cov.len <= 64) {
+        // The index says what a scan of the map says.
+        var n: usize = 0;
+        for (cov) |c| if (Loc.hits(c, se)) {
+            n += 1;
+        };
+        std.debug.assert(n == out.items.len);
+    }
 }
 
 /// Apply contract `code.contract` to the arguments `vals` at the call `inst`.
@@ -3613,7 +3750,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
         has_answer[e] = answers;
     }
-    f.deriveLinear(root, !c.nonlinear and args_apart, has_answer);
+    try f.deriveLinear(root, !c.nonlinear and args_apart, has_answer);
     return f.rootVal(root);
 }
 

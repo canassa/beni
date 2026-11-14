@@ -39,8 +39,14 @@ const Src = Contract.Src;
 const W = Ast.OwnWord;
 const none = Loc.none;
 
-/// The steps that the walk of one declaration may take (kernel §8).
-pub const max_walk_steps: u64 = 1 << 20;
+/// The units of work that one declaration may do over all of its walks
+/// (kernel §8): about 6 times the largest declaration of every ownership root.
+pub const max_walk_steps: u64 = 1 << 25;
+
+/// The units of one call of a walk (`Frame.tick`): about what a call costs
+/// beside the loops inside it, which count their own elements
+/// (`Frame.charge`). So the budget is about a million calls (kernel §8).
+pub const call_units: u64 = 32;
 
 pub const Names = Message.Names;
 
@@ -164,6 +170,8 @@ pub const Mod = struct {
     /// against it (`decl_steps`).
     steps: u64 = 0,
     steps_over: bool = false,
+    /// A declaration of the module passed its budget: no other is walked.
+    module_over: bool = false,
     /// Per declaration: the steps that its walks took so far, in every round.
     decl_steps: []u64 = &.{},
     /// Per declaration: a walk of it gave up or passed its steps, so some
@@ -1012,6 +1020,18 @@ pub const Mod = struct {
     fn walkDecl(m: *Mod, di: u32) Allocator.Error!?*const Contract.Contract {
         const d = m.bir.decls[di];
         const body = d.body.unwrap() orelse return null;
+        // A declaration of the module passed its budget: the module
+        // authorises no write, so no other is walked (kernel §8). Each
+        // publishes nothing, and an importer reads it as unknown code.
+        if (m.module_over) {
+            m.failed_decl[di] = true;
+            m.incomplete[di] = true;
+            return null;
+        }
+        // One budget for the declaration, whatever the number of its walks
+        // (kernel §8): the rounds of its group count against it together.
+        m.steps = m.decl_steps[di];
+        m.steps_over = m.steps > max_walk_steps;
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
@@ -1025,15 +1045,12 @@ pub const Mod = struct {
             try f.addParam(place, p.int(), ty);
         }
         const result_place = if (sig) |s| (if (params.len == s.params.len) s.result else try m.placeOfInst(body.int())) else try m.placeOfInst(body.int());
-        // One budget for the declaration, whatever the number of its walks
-        // (kernel §8): the rounds of its group count against it together.
-        m.steps = m.decl_steps[di];
-        m.steps_over = m.steps > max_walk_steps;
         try f.walkBody(body.int());
         const c = try f.finish(result_place);
         m.decl_steps[di] = m.steps;
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
+            m.module_over = true;
             try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
@@ -1070,6 +1087,10 @@ pub const Mod = struct {
             any = true;
         };
         if (!any) return;
+        if (m.module_over) {
+            m.incomplete[di] = true;
+            return;
+        }
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
@@ -1080,6 +1101,7 @@ pub const Mod = struct {
         _ = try f.finish(m.var_place);
         m.decl_steps[di] = m.steps;
         if (m.steps_over or f.failed) m.incomplete[di] = true;
+        if (m.steps_over) m.module_over = true;
         if (m.steps_over) {
             try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
         } else if (f.failed) {
@@ -1106,6 +1128,7 @@ pub const Mod = struct {
             if (d.kind != .value) continue;
             const body = d.body.unwrap() orelse continue;
             if (!try m.isFunction(.{ m.in.module, di })) continue;
+            if (m.module_over) return;
             var f = try Frame.init(m, null, di, false, none);
             m.steps = m.decl_steps[di];
             m.steps_over = m.steps > max_walk_steps;

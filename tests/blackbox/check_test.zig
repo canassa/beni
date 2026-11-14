@@ -5959,7 +5959,7 @@ test "ownership v3: walks that reach one function or value by many paths end" {
     const Case = struct { dir: []const u8, name: []const u8, accepted: bool, why: []const u8 = "" };
     const f6 = "blind7f-faults";
     const f7 = "bounded-walk-faults";
-    const limit = "the walk took more than 1048576 steps";
+    const limit = "the walk took more than 33554432 steps";
     const cases = [_]Case{
         .{ .dir = f6, .name = "closure-dag.live", .accepted = false, .why = "List.push xs is refused: later-use" },
         .{ .dir = f6, .name = "closure-dag.dead", .accepted = true },
@@ -6028,6 +6028,9 @@ test "ownership v3: walks that reach one function or value by many paths end" {
 //   constant's contract says what its value holds, and the derived code read
 //   it as code that only reads, so `keeper` kept a list that was then written
 //   in place. A constant method has no fact now (kernel §6.11).
+// - `locals-after-limit` (the review): 200 local functions over a record of
+//   2 040 lists. Past the budget, each round still built and compared
+//   contracts of the record's size; it stops at the budget now.
 test "ownership v3: runtime calls into the program, and one step budget per declaration" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6037,7 +6040,7 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
     const r = "runtime-calls-faults";
     const tea = "platforms/browser-tea";
     const via = "value <call Schema.conversion> is refused: call: a function that writes its";
-    const limit = "the walk took more than 1048576 steps";
+    const limit = "the walk took more than 33554432 steps";
     const cases = [_]Case{
         .{ .dir = g, .name = "schema-via.live", .accepted = false, .why = via },
         .{ .dir = g, .name = "schema-via.dead", .accepted = false, .why = via },
@@ -6054,6 +6057,7 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
         .{ .dir = r, .name = "via-copy.dead", .accepted = true },
         .{ .dir = r, .name = "constant-method.live", .accepted = false, .why = "List.push xs is refused: escaped" },
         .{ .dir = r, .name = "constant-method.dead", .accepted = true },
+        .{ .dir = r, .name = "locals-after-limit.dead", .accepted = false, .why = limit },
     };
     // Every case is run, so a run before the fix names each one it gets wrong.
     var bad = false;
