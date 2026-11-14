@@ -57,8 +57,8 @@ pub const token_units: u64 = 1 << 14;
 pub const module_floor: u64 = 1 << 16;
 
 /// The most units of work that any module may do (kernel §8): about 15 times
-/// the most that a module of an ownership root does, and about a second of
-/// work at the slowest unit measured (research report 135). Without it a
+/// the most that a module of an ownership root does, and about 1.6 s of work
+/// at the slowest unit of v3's own walks measured, 12 ns (research report 135). Without it a
 /// module of a few hundred lines that holds a large literal earns a budget
 /// of seconds that a few declarations can spend.
 pub const module_cap: u64 = 1 << 27;
@@ -1958,6 +1958,11 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         derived = &.{};
         try m.limits.append(m.arena, try moduleLimitText(m.arena, m.names.module_names[in.module], m.module_budget, m.module_size));
     }
+    // A module past its budget publishes no contract, not even of the
+    // declarations walked before the one that passed it (kernel §8): what
+    // an importer reads of it must not depend on the order of its
+    // declarations (research report 135's review).
+    if (m.module_over) @memset(m.contracts, null);
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };
 }

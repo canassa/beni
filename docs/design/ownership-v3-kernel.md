@@ -776,8 +776,11 @@ paths:
   the module's report has an `ownership_limit` line that names the budget it passed: a loud refusal. A member of a
   recursive group past it stops the group's rounds, and no member publishes a contract. In the entry, a
   budget passed takes every model location out of `own`, so every write the entry judges is refused. No
-  other declaration of the module is walked after one passes its budget (`Mod.module_over`): each
-  publishes nothing, an importer reads it as unknown code, and the module authorises no write. Nor are
+  other declaration of the module is walked after one passes its budget (`Mod.module_over`), the
+  module publishes no contract, not even of the declarations walked before that one (so what an
+  importer reads of it does not depend on the order of its declarations; the review of research
+  report 135), an importer reads each of its declarations as unknown code, and the module authorises
+  no write. Nor are
   the module's derived rows read for its published facts; an importer reads a row with no fact as code
   that writes and keeps. The reads of those rows count against the module's budget too, and a module
   that passes it only there has its limit line as well. The
@@ -821,8 +824,9 @@ v3's own walks take the time (a chain of 5 000 writes, whose runs of atoms are m
 set). Two shapes take longer for each unit, and in both the time is `own2`'s, which v3 calls and does
 not count (below), and the type check of the same module takes 15 to 30 times as long as v3: a
 function of 8 000 calls over a record of 2 040 lists (18 ns a unit, the adapter), and 6 000 `==` sites over records in a module with a `pub eq` (62 ns, the pre-pass). So
-a declaration reaches its budget in about 0.4 s, and a module in at most about 1.6 s (2²⁷ units at
-12 ns); the slowest measured, 1 000 functions over nested pairs of 4 096 lists, takes 0.8 s. **The
+a declaration reaches its budget in about 0.4 s, and a module in at most about 1.6 s of v3's own
+walks (2²⁷ units at 12 ns; the time of `own2`'s code in the two shapes above is not in units, and no
+budget bounds it); the slowest measured, 1 000 functions over nested pairs of 4 096 lists, takes 0.8 s. **The
 module's cap** (research report 135 §8): without it a module of 360 lines that held a literal list of
 15 000 numbers earned 500 million units from its tokens, and 60 functions `f p = p` over those pairs
 spent them in 3.2 s. The cap is about 15 times the most that a module of an ownership root does. The slowest program that report 130 found takes 5.2 s for 7 767 lines (40 modules

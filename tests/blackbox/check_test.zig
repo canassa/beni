@@ -6659,3 +6659,36 @@ test "ownership v3: no module does more than the most for any module" {
         return error.TestUnexpectedVerdict;
     }
 }
+
+// The review of research report 135: a module past its budget published
+// the contracts of the declarations walked before the one that passed it,
+// so whether an importer's write was accepted depended on the order of the
+// module's declarations. The module publishes no contract now (kernel §8).
+test "ownership v3: a module past its budget publishes no contract, in any order" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var types: std.ArrayList(u8) = .empty;
+    try types.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+    for (1..13) |k| try types.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ k, k - 1, k - 1 });
+    const len = "\n\npub len : List Int → Int\nlen l =\n    List.length l\n";
+    var heavy: std.ArrayList(u8) = .empty;
+    for (0..3) |k| try heavy.print(a, "\n\nheavy{d} : P12 → P12\nheavy{d} p =\n    p\n", .{ k, k });
+    try w.write("Main.beni", "import A\nimport List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    l = [ n ]\n    k = A.len l\n    List.length (List.push l k)\n\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n");
+    var bad = false;
+    for ([_]bool{ true, false }) |len_first| {
+        const src = if (len_first) try std.mem.concat(a, u8, &.{ types.items, len, heavy.items }) else try std.mem.concat(a, u8, &.{ types.items, heavy.items, len });
+        try w.write("A.beni", src);
+        const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+            return err;
+        };
+        const limit = std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null;
+        const refused = std.mem.indexOf(u8, r.stderr, "List.push l is refused") != null;
+        if (!(r.exit_code == 1 and limit and refused)) {
+            std.debug.print("len {s}: wanted A's limit and the push refused; exit {d}:\n{s}\n", .{ if (len_first) "first" else "last", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
