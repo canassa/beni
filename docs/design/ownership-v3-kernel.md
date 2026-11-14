@@ -676,14 +676,27 @@ paths:
     each entry of the contract's answer that a model location meets and each model location that a
     parameter entry meets (`meetsOf`), and each step of the taking away;
   - **an element visited, 1 unit** (`Frame.charge`): each atom compared in a test of two runs of atoms
-    (`overlapAny`, `dupOverlap`, `atomsReach`), each pair of entries that `deriveLinear` tests, each
-    part of a construction that a walk of values or a projection visits, each part a record update
-    copies, each atom of a run that `uniqueTail` sorts, each atom copied out of the memo of the walks
-    of values, and each entry of a call map read (`argEntries`); each part of a construction that a
+    (`overlapAny`, `dupOverlap`, `atomsReach`; an old name, which is compared with nothing, is 1), each
+    pair of entries that `deriveLinear` tests, each part of a construction that a walk of values or a
+    projection visits, each part a record update copies, each atom of a run that `uniqueTail` makes
+    unique (and a lookup, 4 units, for each atom of a run of more than 16, which it keeps in a hash
+    set), each atom copied out of a run (`copyAtoms`), out of the memo of the walks of values or into
+    it (`leafKeep`), each entry of a call map read (`argEntries`), and each atom of a target that
+    `rootReach` compares a part of a root with and each entry of the part and of the root it scans; each part of a construction that a
     walk of values goes into is 4 units (`Loc.lookup_units`, the units of a lookup in a hash table: it
     looks up its projection); each location of
     a frame's result, each pair of locations of a written operand and another that are compared
-    (`otherReaches`), and each pair of two parts of one location (`expandSrcs`).
+    (`otherReaches`), and each pair of two parts of one location (`expandSrcs`);
+  - **a scan, 1 unit and one for each four words** (`Loc.scanUnits`): the scans
+    of a contract's flags (`applyAt`, `readBy`, `otherReaches`, `keepsOwn`, `writesOwn`) and of a
+    layout or an answer's layout for one location (`selfAtoms`, `readSelf`, `newItem`, `answerOwn`,
+    `answerOfCode`, `ownAnswer`, `DraftSink.answer`), each entry of a call map that `readBy` or
+    `otherReaches` walks, 1 unit, and an index of two layouts (`meetIndex`, `coverHits`), twice its two
+    layouts, once for each frame; the climb of a path to the depth of another, 1 unit for each four
+    steps beyond the test it is part of (`Frame.comparable`, `Frame.pathPrefix`: a path into a
+    recursive type is as deep as the chain of projections that made it, so one test of two atoms can
+    climb hundreds of steps). A projection of a part of a root is a lookup (`project`), and a
+    projection of a join is a lookup, and a call where the join's part is made (below).
 
   Every round of the declaration's recursive group (`solveGroup`, rule 9) and of a group of its local
   functions (`solveCodes`) counts too: the rounds walk again and keep counting; they do not start the
@@ -728,9 +741,31 @@ paths:
   The tests of pairs count the elements they pass over too: each escape and each read that a demand
   skips (another context, an earlier time), each answer it compares, and each context that the test of
   two contexts climbs to their common case (`compatible`): a write and a read in two arms of cases 2 000
-  deep cost 2 000 steps for each pair and counted 1 (the review of report 134). A chain of 5 000 writes
-  in one function now reaches the declaration's budget in 1.4 s (LLVM ReleaseSafe): its counted work is
-  still quadratic in its length, since each write's operand holds every older name (report 134 §5).
+  deep cost 2 000 steps for each pair and counted 1 (the review of report 134).
+
+  **A read of a name of a chain reads its run in one step when the run is old** (research report 135).
+  A read of the `n`-th name of a chain holds the `n` older names in its run, and each demand of a write
+  before it tests that read: a write `k`, then every later read, each of `n` atoms. Every atom of such a
+  run is an old name for the write (its `dead` is at or after the write's time), and an old name is no
+  holder (`isOld`, §5.1). A run never changes once its entry is made, so its lowest `dead` is found once
+  (`RunFact.old`, one scan) and a run whose every atom is old for the write in judgement reaches nothing,
+  in one step (`runReaches`); a read of part of a root tests its atoms where they are, with no copy
+  (`refReaches`, the atoms that `leavesOwnWalk` and `rootLeaves` make). Safe builds check, for runs of
+  at most 64 atoms, that every atom of such a run is old. The answer is the one the scan gives, so no
+  verdict moves but through the budget. The counted work of a chain is still quadratic in its length
+  (each pair of a write and a later read is a step), and a chain of more than about 550 writes in one
+  function reaches the declaration's budget, in about 0.4 s for 5 000 (LLVM ReleaseSafe). *Before, the
+  pairs were counted by the old names they passed over, so about 85 writes reached the module's budget.*
+
+  **A part of a join is projected once in a frame** (`proj_memo`, research report 135). The arms of a
+  join can be values of earlier `case`s, so the values of a walk are a DAG, and `project` made the part
+  of each arm again for each path that reached it: a chain of `n` `case`s each of which can answer the
+  value of the one before (`t1 = case t0 of Node _ (Just t) → t; _ → t0`) made 2ⁿ joins, each counted
+  as its arms while its allocations went uncounted (about 0.1 µs a unit; 20 levels to a limit in 0.7
+  s, 400 levels in 3.6 s). A value never changes once it is made, so its part at one step is the part a
+  second projection makes: it is kept, by the value and the step, for the rest of the frame. A chain of
+  `n` `case`s now makes at most a part for each of its values and each step, O(n²) for `n` levels.
+
 
   Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
   atoms answers on the pessimistic side (the two can
@@ -746,14 +781,15 @@ paths:
   that writes and keeps. The reads of those rows count against the module's budget too, and a module
   that passes it only there has its limit line as well. The
   `via`s of a schema and the exports of a `--library` build (§6.14) are walked under the budget of their
-  declaration. The largest declaration of the 2 311 ownership roots (every corpus program and every real
-  root) does 5.2 million units (`chunks` of `tests/corpus/run/TailModConsBranches`), and the largest of
-  a real root 3.6 million (`viewSidebar` of `bench/corpus`'s `NotesApp`; report 129 §8): the budget is
-  about 6 and 9 times them. The module of an ownership root closest to its module budget is
-  `tests/corpus/run/TailModConsBranches` (8.3 million units, 0.86 of its budget), and of a real
-  root `examples/conduit`'s `Main` (3.7 million, 0.24; report 130 §4). Three corpus programs of
-  paths more than a hundred levels deep pass their module budget (report 130 §8). A declaration that reaches the budget took at most about a second on the
-  shapes research report 129 measured.
+  declaration. The largest declaration of the 2 734 ownership roots (every corpus program and every real
+  root) does 8.9 million units (in `tests/corpus/run/TailModConsBranches`), and the largest of a real
+  root 5.0 million (in `bench/corpus`'s `NotesApp`; research report 135 §5): the budget is about 3.8 and
+  6.7 times them. The module of an ownership root closest to its module budget is
+  `tests/corpus/run/TailModConsBranches` (8.9 million units, 0.92 of its budget), and of a real
+  root `bench/corpus`'s `NotesApp` (8.3 million, 0.33). Three corpus programs of
+  paths more than a hundred levels deep pass their module budget (report 130 §8). A declaration that
+  reaches the budget took at most 0.45 s on the shapes research report 135 measured (LLVM ReleaseSafe).
+
 
   *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked
   each member up to 64 times with a new count each time (6.5 s for a 400-line program, about 30 s for a
@@ -776,14 +812,22 @@ table's work is counted with it. So **a module of `n` tokens does at most 65 536
 a build at most the sum over its modules**: linear in the size of the program, at most 16 384 units for
 each token and 65 536 for each module, whatever the shape of its types or the number of its
 declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
-and the contracts of its imports only). A unit took 1.4 to 6.3 ns on every shape that research report
-130 measured but one (ReleaseSafe, LLVM), so a module's walks take at most about 0.1 ms for each token;
-the one is a module of a few lines that names large types, about 25 ns, where the type check of the
-module takes longer than v3. The slowest program found takes 5.2 s for 7 767 lines (40 modules over one
-record of 2 040 lists), and the largest ratio of v3's time to the type check's is 131 (nested pairs of
+and the contracts of its imports only). **A unit tracks time** (research report 135): over the 101
+programs of 307 measured (the shapes of research reports 130, 131, 134 and 135, the corpus programs
+nearest their budgets, and every fault folder of the sweeps) that do more than 5 million units, a unit
+took 4.9 ns at the median and 8.3 ns at the 90th percentile (ReleaseSafe, LLVM), and at most 12 ns where
+v3's own walks take the time (a chain of 5 000 writes, whose runs of atoms are made unique in a hash
+set). Two shapes take longer for each unit, and in both the time is `own2`'s, which v3 calls and does
+not count (below), and the type check of the same module takes 15 to 30 times as long as v3: a
+function of 8 000 calls over a record of 2 040 lists (18 ns a unit, the adapter's reading of each
+call's type), and 6 000 `==` sites over records in a module with a `pub eq` (62 ns, the pre-pass). So
+a declaration reaches its budget in about 0.4 s, and a module's walks take at most about 0.2 ms for
+each token (16 384 units at 12 ns): 1 000 functions over nested pairs of 4 096 lists (10 000 tokens)
+reach the module's budget in 0.94 s, and a module of more than about 10 000 such tokens can take more
+than 2 s to reach it. The slowest program that report 130 found takes 5.2 s for 7 767 lines (40 modules
+over one record of 2 040 lists), and the largest ratio of v3's time to the type check's there was 131 (nested pairs of
 2 048 lists, which the type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each
-piece of it is linear in counted work: the indexes of a pair's meets and of a call map read the other
-way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), a lookup
+piece of it is linear in counted work: a lookup
 in a table (`Loc.proj`, kept for each place and step), and the module's published contracts
 (`Contract.publish`: the labels of each entry of each layout they name, once for each module, about
 four times the counted copy of those labels where the layout was built or read, and a copy of each
@@ -813,6 +857,10 @@ So a diamond of aliases 64 deep is read in its depth, not in 4⁶⁴ (#2121), an
 nominal types that each hold 32 others in 0.05 s, not 20 s. The type check's own cycle pass
 (`check/Cycles.zig`) still walks the rows below each declaration's sites when the module has a
 constant: it is the type check's cost, not v3's, and research report 131 measures it.
+The adapter's reading of a type that adds no place is not counted (`Mod.chargePlaces` counts what it
+adds). In a function of 8 000 calls over a record of 2 040 lists, most of v3's 0.43 s is the adapter
+(`ofVar`, and the freeing of its tables), and the type check of the module takes 11.5 s: the adapter
+reads the types that the type check made (research report 135 §3).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
@@ -855,6 +903,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | the `dom` root keeps a `let` from one render to the next exactly when its `keeps_let` says so | `platforms/browser/zig/dom.zig`, `hoistGroupedKind` | §6.14 |
 | the index of a pair's meets says what `locsMeet` says, for layouts of at most 64 entries | `Frame.meetsOf` | §4.1, §6.13 |
 | the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
+| a run that a read skips as old holds only old names, for runs of at most 64 atoms | `Frame.runReaches` | §5.1, §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 
 ## 10. What the kernel costs
