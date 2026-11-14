@@ -4,7 +4,7 @@
 report 120); §6.12 and §6.13 revised again the same day (research report 123); §4.1, §6.2, §6.8 and
 §6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
-129). The owner ordered it after research report 116: "Write the rules
+129); §8 revised 2026-11-14 (research report 130). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -612,16 +612,34 @@ paths:
     (`overlapAny`, `dupOverlap`, `atomsReach`), each pair of entries that `deriveLinear` tests, each
     part of a construction that a walk of values or a projection visits, each part a record update
     copies, each atom of a run that `uniqueTail` sorts, each atom copied out of the memo of the walks
-    of values, and each entry of a call map read (`argEntries`).
+    of values, and each entry of a call map read (`argEntries`); each part of a construction that a
+    walk of values goes into is 4 units (`lookup_units`: it looks up its projection).
 
   Every round of the declaration's recursive group (`solveGroup`, rule 9) and of a group of its local
   functions (`solveCodes`) counts too: the rounds walk again and keep counting; they do not start the
   count again.
 
-  Past it every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
+- **One module does at most `Check.moduleBudget` units of work: 65 536 (`module_floor`), and 16 384
+  (`token_units`) for each token of its source** — or for each instruction of its BIR, where it has more
+  (`Mod.module_size`). Every unit that a declaration counts counts against its module too
+  (`Mod.module_units`), and so does the work of the module's location table (`Loc.Table.units`): each
+  step that the visit of a layout takes, each entry that it adds, each entry of a projection, a path
+  and a call map that it builds, and each location that the search of a call map climbs; a scan or a
+  copy of a run of words (the path of an entry, the places on a path through a cycle) is one unit and
+  one for each four words (`scanUnits`). `Mod.overBudget` tests the two budgets together at each
+  count. A memo entry of the table is built whole, so the module passes its budget by at most one
+  entry: a call map of two layouts of 4 096 entries, about 2²⁴ units.
+
+  Three loops cost their answer and not the product of two layouts (research report 130): the walk of
+  a construction reads the rank of each entry asked once, and each part reads its own entries
+  (`leavesOwnWalk`); a value read through another layout marks the entries asked (`leavesSet`); and a
+  set of more than 32 entries tests its members in one step (`Entries`). Each gives the same entries
+  in the same order as before.
+
+  Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
   atoms answers on the pessimistic side (the two can
   share a cell, one cell is at two places, a root is not linear), the declaration gives up (§3.3), and
-  the module's report has an `ownership_limit` line that names the limit: a loud refusal. A member of a
+  the module's report has an `ownership_limit` line that names the budget it passed: a loud refusal. A member of a
   recursive group past it stops the group's rounds, and no member publishes a contract. In the entry, a
   budget passed takes every model location out of `own`, so every write the entry judges is refused. No
   other declaration of the module is walked after one passes its budget (`Mod.module_over`): each
@@ -630,7 +648,9 @@ paths:
   declaration. The largest declaration of the 2 311 ownership roots (every corpus program and every real
   root) does 5.2 million units (`chunks` of `tests/corpus/run/TailModConsBranches`), and the largest of
   a real root 3.6 million (`viewSidebar` of `bench/corpus`'s `NotesApp`; report 129 §8): the budget is
-  about 6 and 9 times them. A declaration that reaches the budget took at most about a second on the
+  about 6 and 9 times them. The module of an ownership root closest to its module budget is
+  `tests/corpus/ownership/DeepPathThroughList` (7.5 million units, 0.82 of its budget), and of a real
+  root `examples/conduit`'s `Main` (3.8 million, 0.24; report 130 §4). A declaration that reaches the budget took at most about a second on the
   shapes research report 129 measured.
 
   *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked
@@ -649,15 +669,19 @@ paths:
 closures with `e` captures costs O(e) judgments and O(n) value walks per root walk. Every other loop of a
 declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point, the
 tests of runs of atoms and the walks of the parts of a value — is counted by the elements it visits, so
-a declaration does at most `max_walk_steps` units however many times it is walked. So the work of a
-module is at most its number of declarations times the budget, whatever its shape, and it stops at the
-first declaration that passes the budget. Declarations that each stay under the budget add up: ten that
-each take about a second (a record of 2 040 lists written 300 times) take ten seconds (report 129 §10).
-The costs outside
-the count are each kept, so no round repeats them: building a layout and a call map (`Loc.cover`, kept
-for each pair of layouts), the indexes of a pair's meets and of a call map read the other way
-(`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), and a lookup in
-the place graph (`Loc.proj`, kept for each place and step).
+a declaration does at most `max_walk_steps` units however many times it is walked. The location
+table's work is counted with it. So **a module of `n` tokens does at most 65 536 + 16 384·n units, and
+a build at most the sum over its modules**: linear in the size of the program, at most 16 384 units for
+each token and 65 536 for each module, whatever the shape of its types or the number of its
+declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
+and the contracts of its imports only). A unit took 1.7 to 7 ns on every shape that research report
+130 measured (ReleaseSafe, LLVM), so a module's walks take at most about 0.1 ms for each token; the
+slowest program it found takes 5.2 s for 7 767 lines (40 modules over one record of 2 040 lists), and
+the largest ratio of the walks' time to the type check's is 130 (nested pairs of 2 048 lists, which the
+type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each
+piece of it is linear in what it builds: the indexes of a pair's meets and of a call map read the other
+way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), and a lookup
+in a table (`Loc.proj`, kept for each place and step).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every

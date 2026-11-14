@@ -447,28 +447,35 @@ pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32
 /// at `inst` while the walk completes, so that every later line of this
 /// frame is still made and refused.
 /// One step of a walk that can come back to what it walked (kernel §8):
-/// true once the walk of the declaration passed `Check.max_walk_steps`.
-/// Past it every walk returns at once, and the declaration gives up.
+/// true once the declaration passed `Check.max_walk_steps`, or the module
+/// its budget (`Check.Mod.overBudget`). Past it every walk returns at once,
+/// and the declaration gives up.
 fn tick(f: *Frame) bool {
     const m = f.m;
     if (m.steps_over) return true;
     m.steps += Check.call_units;
-    if (m.steps > Check.max_walk_steps) {
+    m.module_units +|= Check.call_units;
+    if (m.overBudget()) {
         m.steps_over = true;
         f.failed = true;
     }
     return m.steps_over;
 }
 
+/// The units of one lookup in a table of the walk or of the location table
+/// (kernel §8): a lookup costs about four elements compared.
+const lookup_units = 4;
+
 /// `n` units of work of a loop over atoms, counted against the
-/// declaration's budget (kernel §8): a step's own cost grows with the atoms
+/// declaration's budget and the module's (kernel §8): a step's own cost grows with the atoms
 /// it compares, so the budget counts them. True once the declaration is past
 /// it; the caller then answers on the pessimistic side.
 fn charge(f: *const Frame, n: usize) bool {
     const m = f.m;
     if (m.steps_over) return true;
     m.steps +|= n;
-    if (m.steps > Check.max_walk_steps) m.steps_over = true;
+    m.module_units +|= n;
+    if (m.overBudget()) m.steps_over = true;
     return m.steps_over;
 }
 
@@ -963,8 +970,18 @@ const Entries = struct {
     small: [8]u32 = undefined,
     n: usize = 0,
     more: std.ArrayList(u32) = .empty,
+    /// The members of a large set, by entry, so that an add costs one step
+    /// and not a scan of the set (kernel §8). Empty while the set is small.
+    seen: std.DynamicBitSetUnmanaged = .{},
 
     fn add(s: *Entries, gpa: Allocator, x: u32) Error!void {
+        if (s.seen.bit_length != 0) {
+            if (x >= s.seen.bit_length) try s.seen.resize(gpa, @max(x + 1, 2 * s.seen.bit_length), false);
+            if (s.seen.isSet(x)) return;
+            s.seen.set(x);
+            try s.more.append(gpa, x);
+            return;
+        }
         for (s.slice()) |y| if (y == x) return;
         if (s.more.items.len == 0 and s.n < s.small.len) {
             s.small[s.n] = x;
@@ -973,6 +990,12 @@ const Entries = struct {
         }
         if (s.more.items.len == 0) try s.more.appendSlice(gpa, s.small[0..s.n]);
         try s.more.append(gpa, x);
+        if (s.more.items.len > 32) {
+            var top: u32 = 0;
+            for (s.more.items) |y| top = @max(top, y);
+            s.seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, top + 1);
+            for (s.more.items) |y| s.seen.set(y);
+        }
     }
 
     fn slice(s: *const Entries) []const u32 {
@@ -1016,6 +1039,7 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             const p = m.loc.paths.items[n.b];
             var res: Entries = .{};
             var lost = false;
+            _ = f.charge(ks.len);
             for (ks) |k| {
                 const re = p.to_root[k];
                 if (re == none) lost = true else try res.add(f.gpa, re);
@@ -1033,23 +1057,59 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             return dup;
         },
         .built => {
-            // A walk of every part is work of its own (kernel §8); past the
-            // budget it holds a cell of no frame, and no write of it stands.
-            if (f.charge(n.b)) {
+            // A walk of every part is work of its own (kernel §8): each part
+            // looks up its projection, `lookup_units`. Past the budget it
+            // holds a cell of no frame, and no write of it stands.
+            if (f.charge(n.b * lookup_units)) {
                 try out.append(f.gpa, outside_atom);
                 return true;
             }
             var dup = false;
             const at = out.items.len;
-            const single = ks.len == 1 and m.loc.layoutEntries(try m.loc.layoutOf(n.place))[ks[0]].single;
+            const pes = m.loc.layoutEntries(try m.loc.layoutOf(n.place));
+            const single = ks.len == 1 and pes[ks[0]].single;
+            // A large set of entries reads the rank of each entry once, so
+            // that a kid costs its own entries and not the whole set (kernel
+            // §8): a walk of a construction costs its layout, not the layout
+            // times its parts.
+            var rank: []u32 = &.{};
+            defer m.gpa.free(rank);
+            var pairs: std.ArrayList([2]u32) = .empty;
+            defer pairs.deinit(m.gpa);
+            if (ks.len > 8) {
+                if (f.charge(pes.len + ks.len)) {
+                    try out.append(f.gpa, outside_atom);
+                    return true;
+                }
+                rank = try m.gpa.alloc(u32, pes.len);
+                @memset(rank, none);
+                for (ks, 0..) |e, i| if (rank[e] == none) {
+                    rank[e] = @intCast(i);
+                };
+            }
             for (0..n.b) |ki| {
                 const k = f.kids.items[n.a + ki];
                 if (k.val == v_none) continue;
                 const before = out.items.len;
                 if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
-                    // The kid's entries that these entries are made of.
+                    // The kid's entries that these entries are made of: for
+                    // each entry of `ks`, in its order, the kid's entries
+                    // below it, ascending.
                     var js: Entries = .{};
-                    for (ks) |e| for (pr.downOf(e)) |j| try js.add(f.gpa, j);
+                    if (rank.len == 0) {
+                        _ = f.charge(ks.len);
+                        for (ks) |e| for (pr.downOf(e)) |j| try js.add(f.gpa, j);
+                    } else {
+                        _ = f.charge(pr.up.len);
+                        pairs.clearRetainingCapacity();
+                        for (pr.up, 0..) |u, j| if (u != none and rank[u] != none) try pairs.append(m.gpa, .{ rank[u], @intCast(j) });
+                        std.mem.sort([2]u32, pairs.items, {}, struct {
+                            fn lt(_: void, x: [2]u32, y: [2]u32) bool {
+                                return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+                            }
+                        }.lt);
+                        for (pairs.items) |pj| try js.add(f.gpa, pj[1]);
+                    }
                     if (js.slice().len != 0 and try f.leavesSet(k.val, pr.child, js.slice(), out)) dup = true;
                 } else if (try f.allLeaves(k.val, out)) {
                     dup = true;
@@ -1093,10 +1153,23 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
     if (view == own) return f.leavesOwn(v, js, out);
     const cov = try f.m.loc.cover(view, own);
     var ks: Entries = .{};
-    for (cov, 0..) |c, k| for (js) |j| if (Loc.hits(c, j)) {
-        try ks.add(f.gpa, @intCast(k));
-        break;
-    };
+    // Each entry of the map is a step (kernel §8). A large set of entries is
+    // a mark for each entry of the view, so that the map is read once.
+    _ = f.charge(cov.len);
+    if (js.len <= 8) {
+        for (cov, 0..) |c, k| for (js) |j| if (Loc.hits(c, j)) {
+            try ks.add(f.gpa, @intCast(k));
+            break;
+        };
+    } else {
+        const vn = f.m.loc.layoutEntries(view).len;
+        _ = f.charge(vn + js.len);
+        const in_js = try f.m.gpa.alloc(bool, vn);
+        defer f.m.gpa.free(in_js);
+        @memset(in_js, false);
+        for (js) |j| in_js[j] = true;
+        for (cov, 0..) |c, k| if (c == Loc.all or (c < vn and in_js[c])) try ks.add(f.gpa, @intCast(k));
+    }
     return f.leavesOwn(v, ks.slice(), out);
 }
 

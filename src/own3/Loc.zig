@@ -114,6 +114,17 @@ const LocKey = struct { parent: u32, label: u64 };
 const ProjKey = struct { place: u32, step: u32 };
 const PathKey = struct { parent: u32, step: u32 };
 const CoverKey = struct { sig: u32, of: u32 };
+const EntryKey = struct { layout: u32, loc: u32 };
+
+/// The units of a scan or a copy of `n` words in a row (kernel §8): one, and
+/// one for each four words. A word of a run costs about a quarter of an
+/// element that a walk visits, measured on the corpus (research report 130).
+fn scanUnits(n: usize) u64 {
+    return 1 + n / 4;
+}
+
+/// A layout of at most this many entries is searched by a scan (`indexOf`).
+const small_layout = 16;
 
 pub const Path = struct {
     parent: u32,
@@ -155,6 +166,15 @@ pub const Table = struct {
     path_root: std.ArrayList(u32) = .empty,
 
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
+    /// The entry of a location in a layout of more than `small_layout`
+    /// entries, by layout and location (`indexOf`): a lookup is one step,
+    /// not a scan of the layout.
+    entry_index: std.AutoHashMapUnmanaged(EntryKey, u32) = .empty,
+    /// The units of work that the table did so far (kernel §8): each step a
+    /// layout's visit takes, each entry of a projection, a path and a call
+    /// map it builds, and each location a call map's search climbs. The
+    /// module's budget counts them with the walks' (`Check.Mod.overBudget`).
+    units: u64 = 0,
     empty_layout: u32 = none,
     /// The layout of a place whose type has more locations than
     /// `max_layout_entries`: one summary location of a type variable. A walk
@@ -192,6 +212,7 @@ pub const Table = struct {
         t.path_index.deinit(gpa);
         t.path_root.deinit(gpa);
         t.covers.deinit(gpa);
+        t.entry_index.deinit(gpa);
         t.over.deinit(gpa);
     }
 
@@ -255,7 +276,16 @@ pub const Table = struct {
         const id: u32 = @intCast(t.layouts.items.len);
         try t.layouts.append(t.gpa, try t.arena.dupe(Entry, es));
         try t.reps.append(t.gpa, &.{});
+        t.units +|= es.len;
+        if (es.len > small_layout) for (es, 0..) |e, i| try t.entry_index.put(t.gpa, .{ .layout = id, .loc = e.loc }, @intCast(i));
         return id;
+    }
+
+    /// The index of location `loc` in layout `id`, or `none`.
+    pub fn indexOf(t: *const Table, id: u32, loc: u32) u32 {
+        const es = t.layouts.items[id];
+        if (es.len <= small_layout) return indexOfLoc(es, loc);
+        return t.entry_index.get(.{ .layout = id, .loc = loc }) orelse none;
     }
 
     pub fn layoutEntries(t: *const Table, id: u32) []const Entry {
@@ -370,6 +400,7 @@ pub const Table = struct {
             return;
         }
         slot.* = .{ t.build_gen, @intCast(b.out.items.len) };
+        t.units +|= scanUnits(b.steps.items.len);
         try b.out.append(t.gpa, .{ .loc = loc, .kind = kind, .single = !t.loc_summary.items[loc] });
         try b.rep_at.append(t.gpa, .{ @intCast(b.rep_steps.items.len), @intCast(b.steps.items.len) });
         try b.rep_steps.appendSlice(t.gpa, b.steps.items);
@@ -392,6 +423,7 @@ pub const Table = struct {
             if (k != .list) return;
         }
         const st = t.places.steps(place);
+        t.units +|= st.steps.len;
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -408,6 +440,7 @@ pub const Table = struct {
             if (k != .list) return;
         }
         const st = t.places.steps(place);
+        t.units +|= st.steps.len * scanUnits(b.on_path.items.len - base);
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -428,6 +461,7 @@ pub const Table = struct {
     /// The deep level of the cycle of `place`, entered at the location `entry`: each member once.
     fn visitDeep(t: *Table, b: *Building, place: PlaceId, entry: u32) Allocator.Error!void {
         const scc = t.places.sccOf(place);
+        t.units +|= scanUnits(b.seen_scc.items.len);
         for (b.seen_scc.items) |x| if (x[0] == scc and x[1] == entry) return;
         try b.seen_scc.append(t.gpa, .{ scc, entry });
         const mbase = b.members.items.len;
@@ -437,6 +471,7 @@ pub const Table = struct {
 
     fn deepMember(t: *Table, b: *Building, m: PlaceId, entry: u32, mbase: usize) Allocator.Error!void {
         if (b.over) return;
+        t.units +|= scanUnits(b.members.items.len - mbase);
         if (std.mem.indexOfScalar(u32, b.members.items[mbase..], m.int()) != null) return;
         try b.members.append(t.gpa, m.int());
         if (objectKind(t.places.kind(m))) |k| {
@@ -444,6 +479,7 @@ pub const Table = struct {
             if (k != .list) return;
         }
         const st = t.places.steps(m);
+        t.units +|= st.steps.len;
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -465,6 +501,7 @@ pub const Table = struct {
         var deep = false;
         if (in_cycle) try on_path.append(t.gpa, root.int());
         for (steps) |w| {
+            t.units +|= scanUnits(on_path.items.len);
             const s = Step.fromWord(w);
             const next = t.places.child(cur, s) orelse return null;
             if (in_cycle and t.places.sameComponent(cur, next)) {
@@ -531,23 +568,29 @@ pub const Table = struct {
                 up[j] = none;
                 continue;
             };
-            up[j] = indexOfLoc(t.layoutEntries(pl), ploc);
+            up[j] = t.indexOf(pl, ploc);
         }
-        // The inverse: per entry of the parent, the child's entries there.
+        // The inverse: per entry of the parent, the child's entries there,
+        // in the order of the child's entries (a counting sort).
+        t.units +|= pn + cn;
         const down_off = try t.arena.alloc(u32, pn + 1);
-        const down = try t.arena.alloc(u32, cn);
-        var n: u32 = 0;
-        for (0..pn) |i| {
-            down_off[i] = n;
-            for (up, 0..) |u, j| if (u == i) {
-                down[n] = @intCast(j);
-                n += 1;
-            };
-        }
-        down_off[pn] = n;
+        @memset(down_off, 0);
+        for (up) |u| if (u != none) {
+            down_off[u + 1] += 1;
+        };
+        for (1..pn + 1) |i| down_off[i] += down_off[i - 1];
+        const n = down_off[pn];
+        const down = try t.arena.alloc(u32, n);
+        const fill = try t.gpa.alloc(u32, pn);
+        defer t.gpa.free(fill);
+        @memcpy(fill, down_off[0..pn]);
+        for (up, 0..) |u, j| if (u != none) {
+            down[fill[u]] = @intCast(j);
+            fill[u] += 1;
+        };
         const id: u32 = @intCast(t.projs.items.len);
         const pr = try t.arena.create(Proj);
-        pr.* = .{ .child = child, .up = up, .down_off = down_off, .down = down[0..n] };
+        pr.* = .{ .child = child, .up = up, .down_off = down_off, .down = down };
         try t.projs.append(t.gpa, pr);
         try t.proj_index.put(t.gpa, key, id);
         return pr;
@@ -560,6 +603,7 @@ pub const Table = struct {
         if (pi >= t.path_root.items.len) try t.path_root.appendNTimes(t.gpa, none, @as(usize, t.places.count()) + 1 - t.path_root.items.len);
         if (t.path_root.items[pi] != none) return t.path_root.items[pi];
         const n = t.layouts.items[try t.layoutOf(place)].len;
+        t.units +|= n;
         const ident = try t.arena.alloc(u32, n);
         for (ident, 0..) |*x, i| x.* = @intCast(i);
         const id: u32 = @intCast(t.paths.items.len);
@@ -577,6 +621,7 @@ pub const Table = struct {
             try t.path_index.put(t.gpa, key, none);
             return null;
         };
+        t.units +|= pr.up.len;
         const to_root = try t.arena.alloc(u32, pr.up.len);
         for (to_root, pr.up) |*x, u| x.* = if (u == none) none else p.to_root[u];
         const id: u32 = @intCast(t.paths.items.len);
@@ -643,7 +688,8 @@ pub const Table = struct {
     /// cells the signature names at several entries. No sample path decides
     /// that, since a location can stand for several places: so it is the
     /// pessimistic answer, and no match inside the deep level stands.
-    fn cycleWider(t: *const Table, sig: u32, entry: u32) bool {
+    fn cycleWider(t: *Table, sig: u32, entry: u32) bool {
+        t.units +|= t.layoutEntries(sig).len;
         for (t.layoutEntries(sig)) |s| if (s.kind == .@"var" and t.isPrefix(entry, s.loc)) return true;
         return false;
     }
@@ -683,7 +729,8 @@ pub const Table = struct {
             // level names fewer cells than the caller's location holds.
             var two_sets = false;
             while (true) {
-                const i = indexOfLoc(se, a);
+                t.units +|= 1;
+                const i = t.indexOf(sig, a);
                 if (i != none and (a == e.loc or se[i].kind.wide())) {
                     if (wider and a != deep and t.isPrefix(deep, a)) {
                         two_sets = true;
@@ -696,7 +743,7 @@ pub const Table = struct {
                 a = t.loc_parent.items[a];
                 // A field that the signature's record does not name is in its row.
                 if (t.find(a, row.word())) |r| {
-                    const ri = indexOfLoc(se, r);
+                    const ri = t.indexOf(sig, r);
                     if (ri != none) {
                         if (wider and r != deep and t.isPrefix(deep, r)) {
                             two_sets = true;
@@ -713,6 +760,7 @@ pub const Table = struct {
             if (entry == none or two_sets) continue;
             var one: u32 = none;
             var count: u32 = 0;
+            t.units +|= se.len;
             for (se, 0..) |s, i| if (s.kind.wide() and t.isPrefix(entry, s.loc)) {
                 one = @intCast(i);
                 count += 1;

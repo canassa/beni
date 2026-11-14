@@ -6022,7 +6022,9 @@ test "ownership v3: walks that reach one function or value by many paths end" {
 //   worklist, and every step counts against the declaration's budget.
 // - `group-rounds-slow`: a recursive group re-walked its member 60 times,
 //   each walk with a fresh step budget (6.5 s). The rounds share one budget
-//   now: past it the check stops with the loud limit.
+//   now: past it the check stops with the loud limit. Since research report
+//   130 the module's budget, in proportion to its size, is the one it
+//   passes first.
 // - `constant-method.*` (the give-up audit): a method written as a constant,
 //   `pub eq = keeper`, called by a derived `eq` with its operands. The
 //   constant's contract says what its value holds, and the derived code read
@@ -6041,6 +6043,7 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
     const tea = "platforms/browser-tea";
     const via = "value <call Schema.conversion> is refused: call: a function that writes its";
     const limit = "the walk took more than 33554432 steps";
+    const module_limit = "the walks of the module took more than";
     const cases = [_]Case{
         .{ .dir = g, .name = "schema-via.live", .accepted = false, .why = via },
         .{ .dir = g, .name = "schema-via.dead", .accepted = false, .why = via },
@@ -6048,7 +6051,7 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
         .{ .dir = g, .name = "schema-via-tea.dead", .platform = tea, .accepted = true },
         .{ .dir = g, .name = "entry-shift-slow.dead", .platform = tea, .accepted = true },
         .{ .dir = g, .name = "entry-shift-control.dead", .platform = tea, .accepted = true },
-        .{ .dir = g, .name = "group-rounds-slow.dead", .accepted = false, .why = limit },
+        .{ .dir = g, .name = "group-rounds-slow.dead", .accepted = false, .why = module_limit },
         .{ .dir = g, .name = "group-rounds-control.dead", .accepted = true },
         .{ .dir = r, .name = "via-module.live", .accepted = false, .why = via },
         .{ .dir = r, .name = "via-partial.live", .accepted = false, .why = via },
@@ -6081,6 +6084,52 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
     if (bad) return error.TestUnexpectedVerdict;
 }
 
+// Research report 130: the budget was per declaration, so declarations
+// that each stayed under it added up without a bound. One module that
+// instantiates a record of 2 040 lists, declared in another module, at 30
+// record types, with a small function and its caller for each: each
+// declaration built and walked layouts of 2 040 locations (about 10 s on an
+// LLVM ReleaseSafe compiler, and over a minute on the gates' one, for 240
+// lines of its own). A module now does at most `Check.moduleBudget` units
+// of work: a small floor, and a fixed number for each token of its source
+// (kernel §8). Past it the check stops with the loud limit, and judges no
+// write of the module.
+test "ownership v3: one budget for each module, in proportion to its size" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var shared: std.ArrayList(u8) = .empty;
+    try shared.appendSlice(a, "pub type alias B a =\n");
+    for (0..2040) |i| try shared.appendSlice(a, try std.fmt.allocPrint(a, "    a{d} : List a\n", .{i}));
+    try w.write("Shared.beni", shared.items);
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport List\nimport Node exposing (Program)\nimport Shared exposing (B)\n");
+    for (0..30) |n| try main.appendSlice(a, try std.fmt.allocPrint(a,
+        \\
+        \\
+        \\type alias K{d} =
+        \\    {{ k{d} : Int }}
+        \\
+        \\
+        \\g{d} : B K{d} → B K{d}
+        \\g{d} b = {{ b | a{d} = List.push b.a{d} {{ k{d} = {d} }} }}
+        \\
+        \\
+        \\h{d} : B K{d} → B K{d}
+        \\h{d} b = g{d} (g{d} b)
+        \\
+    , .{ n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n }));
+    try main.appendSlice(a, "\n\nmain : Program\nmain = Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "Shared.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null)) {
+        std.debug.print("wanted the module's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
 // Research report 129: a `--library` build exports its `pub` functions, and
 // host JavaScript calls them with arrays that it still holds and reads
 // after. An export is a function in the default location (kernel §6.14), so

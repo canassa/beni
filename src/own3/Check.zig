@@ -48,6 +48,21 @@ pub const max_walk_steps: u64 = 1 << 25;
 /// (`Frame.charge`). So the budget is about a million calls (kernel §8).
 pub const call_units: u64 = 32;
 
+/// The units of work that a module may do for each token of its source
+/// (kernel §8): its walks and its location table together
+/// (`Mod.overBudget`), over and above `module_floor`.
+pub const token_units: u64 = 1 << 14;
+
+/// The units of work that every module may do, whatever its size (kernel §8).
+pub const module_floor: u64 = 1 << 16;
+
+/// The budget of a module of `size` tokens (kernel §8). So the work of a
+/// module is linear in its size, and the work of a build in the sum of the
+/// sizes of its modules.
+pub fn moduleBudget(size: usize) u64 {
+    return module_floor +| token_units *| @as(u64, size);
+}
+
 pub const Names = Message.Names;
 
 /// What the modules of one run share: each module's contracts, written once
@@ -90,6 +105,9 @@ pub const Options = struct {
     /// A `--library` build of a module of the root package: host
     /// JavaScript calls each value it exports (kernel §6.14).
     library: bool = false,
+    /// The tokens of the module's source: with its instructions, the size
+    /// that its budget is proportional to (`moduleBudget`, kernel §8).
+    tokens: usize = 0,
 };
 
 const State = enum(u8) { todo, working, done };
@@ -172,6 +190,15 @@ pub const Mod = struct {
     steps_over: bool = false,
     /// A declaration of the module passed its budget: no other is walked.
     module_over: bool = false,
+    /// The units that every walk of the module did so far, of every
+    /// declaration and round (`Frame.tick`, `Frame.charge`). With the
+    /// location table's (`Loc.Table.units`) they count against
+    /// `module_budget` (kernel §8).
+    module_units: u64 = 0,
+    /// The module's size (`Options.tokens`, or its instructions where it
+    /// has more) and its budget (`moduleBudget`).
+    module_size: usize = 0,
+    module_budget: u64 = std.math.maxInt(u64),
     /// Per declaration: the steps that its walks took so far, in every round.
     decl_steps: []u64 = &.{},
     /// Per declaration: a walk of it gave up or passed its steps, so some
@@ -182,6 +209,19 @@ pub const Mod = struct {
     walked: std.DynamicBitSetUnmanaged = .{},
     /// Each refusal line by its instruction, cause and detail: its index in `lines` (`addRefusal`).
     refusals: std.AutoHashMapUnmanaged(RefusalKey, u32) = .empty,
+
+    /// Whether the declaration in work passed its own budget, or the module
+    /// passed its own (kernel §8).
+    pub fn overBudget(m: *const Mod) bool {
+        return m.steps > max_walk_steps or m.module_units +| m.loc.units > m.module_budget;
+    }
+
+    /// The limit line of declaration `di` past a budget: the declaration's
+    /// or the module's, whichever it passed.
+    fn budgetLine(m: *Mod, di: u32, what: []const u8) Allocator.Error![]const u8 {
+        if (m.steps > max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), what, max_walk_steps });
+        return std.fmt.allocPrint(m.arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and {d} for each of its {d} tokens), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), m.module_budget, module_floor, token_units, m.module_size });
+    }
 
     // ---- types ------------------------------------------------------------------
 
@@ -1031,7 +1071,7 @@ pub const Mod = struct {
         // One budget for the declaration, whatever the number of its walks
         // (kernel §8): the rounds of its group count against it together.
         m.steps = m.decl_steps[di];
-        m.steps_over = m.steps > max_walk_steps;
+        m.steps_over = m.overBudget();
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
@@ -1051,7 +1091,7 @@ pub const Mod = struct {
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
             m.module_over = true;
-            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
+            try m.limits.append(m.arena, try m.budgetLine(di, ""));
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
             return null;
@@ -1096,14 +1136,14 @@ pub const Mod = struct {
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
         var f = try Frame.init(m, null, di, false, none);
         m.steps = m.decl_steps[di];
-        m.steps_over = m.steps > max_walk_steps;
+        m.steps_over = m.overBudget();
         for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) try f.walkHeld(m.datas[i].lhs);
         _ = try f.finish(m.var_place);
         m.decl_steps[di] = m.steps;
         if (m.steps_over or f.failed) m.incomplete[di] = true;
         if (m.steps_over) m.module_over = true;
         if (m.steps_over) {
-            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), max_walk_steps }));
+            try m.limits.append(m.arena, try m.budgetLine(di, ""));
         } else if (f.failed) {
             try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
         }
@@ -1131,11 +1171,14 @@ pub const Mod = struct {
             if (m.module_over) return;
             var f = try Frame.init(m, null, di, false, none);
             m.steps = m.decl_steps[di];
-            m.steps_over = m.steps > max_walk_steps;
+            m.steps_over = m.overBudget();
             try f.walkExported(.{ m.in.module, di }, body.int());
             _ = try f.finish(m.var_place);
             m.decl_steps[di] = m.steps;
-            if (m.steps_over or f.failed) try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk of the export gave up", .{m.names.declName(m.in.module, di)}));
+            if (m.steps_over) {
+                m.module_over = true;
+                try m.limits.append(m.arena, try m.budgetLine(di, " of the export"));
+            } else if (f.failed) try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk of the export gave up", .{m.names.declName(m.in.module, di)}));
             _ = m.walk_arena.reset(.retain_capacity);
         }
     }
@@ -1553,6 +1596,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.prepass = try Prepass.run(gpa, prepass_arena.allocator(), .{ .bir = bir, .dispatch = in.dispatch });
 
     const nd = bir.decls.len;
+    // The module's size: its tokens, or its instructions where it has more.
+    m.module_size = @max(options.tokens, bir.insts.len);
+    m.module_budget = moduleBudget(m.module_size);
     m.lv = try gpa.alloc(Frame.Val, bir.locals.len);
     defer gpa.free(m.lv);
     m.lframe = try gpa.alloc(u32, bir.locals.len);
