@@ -21,7 +21,8 @@ earn. The kernel is `ownership-v3-kernel.md`; this report changes its §4.2, §4
   budget in its limit line is larger).
 - **Every shape of reports 135 and 136 is accepted**, at 0.06 to 0.13 s of v3 for a thousand lines
   (ReleaseFast, LLVM, `--jobs=1`). Before, they stopped at a budget after 1.2 to 3.4 s a thousand lines.
-- **The literal nested 400 deep** takes 0.33 s on the gates' compiler, not 4.2 s.
+- **The literal nested 400 deep** stops at its module's budget in 0.3 to 0.5 s on the gates' compiler,
+  not 4.2 s.
 - **The two red tests of report 136 pass** for their reasons (§6).
 
 ## 2. The duplicate test
@@ -157,7 +158,7 @@ that led here.
 | 30 functions with a list of 45 references, answering nested pairs of 4 096 lists | 1 410 | 1.71 s, module budget | 0.15 s, accepted | 0.11 s |
 | the same, 130 references | 1 410 | 4.34 s, the cap | 0.14 s, accepted | 0.10 s |
 | 30 `f p = p` alone | 210 | 0.04 s, module budget | 0.03 s, accepted | 0.16 s |
-| a literal list nested 400 deep | 65 | 0.23 s, module budget | 0.06 s, its declaration's budget | — |
+| a literal list nested 400 deep | 65 | 0.23 s, module budget | 0.06 s, module budget | — |
 | 30 functions each a list of 45 references to nested pairs of 2 048 lists | 1 230 | 0.85 s, module budget | 0.93 s, accepted | 0.75 s |
 | 30 functions each a list of 45 calls of a function over them | 1 260 | 0.42 s, a declaration's steps | 1.76 s, the cap | 1.40 s |
 
@@ -187,13 +188,13 @@ than 33554432 steps" (200 local functions over a record of 2 040 lists cost 42 m
 wanted `group-rounds-slow.dead` at the module's limit; it stops at its declaration's now, and the test
 says so.
 
-Four tests pinned the pooled budget, and say what the new rule does with the same programs:
-- *One budget for each module, in proportion to its size*: `g0`, a record update over 2 040 fields, passes
-  its own budget (0.7 s).
+Three tests pinned the pooled budget, and say what the new rule does with the same programs (a fourth,
+*one budget for each module, in proportion to its size*, still wants the module's limit: its record
+updates over 2 040 fields spend it in the location table):
 - *A literal earns what its walk costs, not what its tokens would*: six modules of a literal and 30
   `f p = p` are accepted.
 - *A module past its budget publishes no contract, in any order*: the heavy declaration is now a literal
-  list nested 200 deep, which passes its own budget; the module still publishes nothing, in either order.
+  list nested 200 deep, whose location table passes the module's budget; the module still publishes nothing, in either order.
 
 ## 7. Gates
 
@@ -201,7 +202,26 @@ Four tests pinned the pooled budget, and say what the new rule does with the sam
 
 ## 8. The review
 
-(below)
+One fresh reader had the code and the kernel, not this report.
+
+- **Found, fixed: the order of the declarations decided whether a program checked.** The first version
+  charged the location table's work to the declaration in whose walk it happened. The table keeps what it
+  builds for the whole module, so the first declaration to need a projection paid for it: a record of
+  1 250 lists with two functions that update it was accepted in one order and refused in the other. The
+  table's work now counts against the module alone, and each declaration's budget is made before any
+  walk (`75027a9c7f`).
+- **Found, fixed: a flat record of 1 300 lists was refused.** One update of it costs about n² units of
+  projections in the location table, which the declaration did not earn. The same fix: it is accepted.
+- **Found, not changed: many small functions over the largest types.** 20 modules of 100 functions
+  `g p = f p` over nested pairs of 4 096 lists, about 10 000 lines, take 4.7 s of v3 (ReleaseFast) and are
+  accepted; the base refused them at its budgets in 1.1 s. Each call reads a contract of 4 096 entries:
+  linear work, which the layout term pays for, not the floor. 0.47 s for a thousand lines.
+- **Held:** the pair test and its helpers against the test in pairs (code reading, and 184 generated
+  probes of more than 64 atoms with groups of more than 32: the dumps are the same); `builtKids` is exactly
+  the parts that hold an asked entry and the parts with no projection, in the old order; a draft only names
+  cells more coarsely, which is sound; 413 ownership fixtures and 152 sweep programs had the same verdicts.
+  The reader could not build a real program whose atoms are told apart only by the part they were read
+  through, in a group of more than 32.
 
 ## 9. What is open
 
@@ -209,10 +229,10 @@ Four tests pinned the pooled budget, and say what the new rule does with the sam
   each layout entry, quadratic in the depth of their paths. `DeepPathThroughList` was refused for it
   before and is now.
 - **A record update over many fields** walks each field for each entry it projects (`project` of a
-  `built` value scans its parts): the record of 2 040 fields in *one budget for each module* passes its
-  declaration's budget. It is counted.
+  `built` value scans its parts): the record of 2 040 fields in *one budget for each module* passes the
+  module's budget. It is counted.
 - **A literal list nested deep** builds layouts whose cost grows with the cube of the depth: 100 levels
-  pass the declaration's budget. It is counted, and stops in 0.33 s at 400 levels on the gates' compiler.
+  pass the module's budget. It is counted, and stops in 0.33 s at 400 levels on the gates' compiler.
 - **Reading a large contract** costs about 270 units for each of its entries at each call. A program of
   many calls of a function over the largest layouts reaches the module's cap (§5).
 
