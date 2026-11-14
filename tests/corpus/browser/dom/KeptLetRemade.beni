@@ -1,0 +1,46 @@
+-- The safe twins of `KeptLetInPlace`: each `let` the root keeps reads a
+-- list of the model, which the root treats as changed on every render
+-- (language.md §11.11), so the root makes it again before any read, and
+-- the push onto it runs in place under `--ownership=v3`. A `let` the root
+-- keeps that nothing writes is shown as it is.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    k : Int
+    items : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+view : Model → Html Msg
+view model =
+    kept = [ 1, 2 ]
+    xs = List.copy model.items
+    ys = List.push xs model.k
+    r = { l = List.copy model.items, n = 1 }
+    zs = List.push r.l model.k
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p>{show kept}</p>
+        <p>{show ys}</p>
+        <p>{show zs}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0, items = [ 5 ] }, update = update, view = view }

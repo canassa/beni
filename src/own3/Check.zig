@@ -108,6 +108,10 @@ pub const Options = struct {
     /// The tokens of the module's source: with its instructions, the size
     /// that its budget is proportional to (`moduleBudget`, kernel §8).
     tokens: usize = 0,
+    /// The `let_def` instructions whose values the build's markup lowering
+    /// keeps beyond the call that made them, ascending (kernel §6.14,
+    /// `Enforce.keptLets`): each is held by the root that keeps it.
+    kept_lets: []const u32 = &.{},
 };
 
 const State = enum(u8) { todo, working, done };
@@ -169,6 +173,8 @@ pub const Mod = struct {
     shared: *const Shared,
     /// The build's markup type, when it has one (`Options.markup_type`).
     markup_type: ?MarkupType = null,
+    /// `Options.kept_lets`.
+    kept_lets: []const u32 = &.{},
 
     places: Place.Table = .{},
     account: Ids.Account = .{ .allowance = std.math.maxInt(u32) },
@@ -781,6 +787,13 @@ pub const Mod = struct {
     /// eight times for each row that names it.
     fn rowInfo(m: *Mod, j: u32) Allocator.Error!RowInfo {
         if (m.row_gen[j] == m.gen) return m.row_info[j];
+        // Past the budget no walk goes on (kernel §8): the row is code
+        // that writes and keeps, and the declaration gives up.
+        if (m.overBudget()) {
+            var x: RowInfo = .{};
+            x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true });
+            return x;
+        }
         const dt = m.in.dispatch.?;
         const arena = m.walk_arena.allocator();
         var rows: std.ArrayList(u32) = .empty;
@@ -1267,7 +1280,9 @@ pub const Mod = struct {
         }
         const result_place = if (sig) |s| (if (params.len == s.params.len) s.result else try m.placeOfInst(body.int())) else try m.placeOfInst(body.int());
         try f.walkBody(body.int());
-        const c = try f.finish(result_place);
+        // Past the budget no walk goes on (kernel §8): `finish` is not run,
+        // and the declaration gives up below.
+        const c = if (m.steps_over) undefined else try f.finish(result_place);
         m.decl_steps[di] = m.steps;
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
@@ -1318,8 +1333,11 @@ pub const Mod = struct {
         var f = try Frame.init(m, null, di, false, none);
         m.steps = m.decl_steps[di];
         m.steps_over = m.overBudget();
-        for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) try f.walkHeld(m.datas[i].lhs);
-        _ = try f.finish(m.var_place);
+        for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) {
+            if (m.steps_over) break;
+            try f.walkHeld(m.datas[i].lhs);
+        };
+        if (!m.steps_over) _ = try f.finish(m.var_place);
         m.decl_steps[di] = m.steps;
         if (m.steps_over or f.failed) m.incomplete[di] = true;
         if (m.steps_over) m.module_over = true;
@@ -1354,7 +1372,7 @@ pub const Mod = struct {
             m.steps = m.decl_steps[di];
             m.steps_over = m.overBudget();
             try f.walkExported(.{ m.in.module, di }, body.int());
-            _ = try f.finish(m.var_place);
+            if (!m.steps_over) _ = try f.finish(m.var_place);
             m.decl_steps[di] = m.steps;
             if (m.steps_over) {
                 m.module_over = true;
@@ -1763,6 +1781,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .names = names,
         .shared = shared,
         .markup_type = options.markup_type,
+        .kept_lets = options.kept_lets,
     };
     defer m.walk_arena.deinit();
     defer m.places.deinit(gpa);
@@ -1903,7 +1922,16 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         @memset(m.contracts, null);
     }
     // A module past a limit publishes no contract, and so no derived fact.
-    const derived = if (m.loc.over.items.len != 0) &.{} else try m.derivedFacts();
+    // Past its budget the rows are not read either (kernel §8): an importer
+    // reads a row with no fact as code that writes and keeps.
+    var derived: []const Contract.DerivedFact = if (m.stopped()) &.{} else try m.derivedFacts();
+    // The rows' reads count too: a module past its budget only here
+    // authorises no write either, loudly, and publishes no row's fact.
+    if (!m.stopped() and m.overBudget()) {
+        m.module_over = true;
+        derived = &.{};
+        try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and {d} for each of its {d} tokens), so the checker judges no write of the module", .{ m.names.module_names[in.module], m.module_budget, module_floor, token_units, m.module_size }));
+    }
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };
 }

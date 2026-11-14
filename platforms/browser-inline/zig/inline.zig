@@ -138,6 +138,11 @@ pub const lowering: m.Lowering = .{
     .module = module,
     .root = root,
     .groups = true,
+    // A `let` of a root is a `const` of each binding function that reads it,
+    // made again whenever that function runs (`bindLets`, D-d); one that two
+    // functions would read is refused (`letsOnce`). No `let` is kept from one
+    // pass to the next (`boundary.md` §9.4.8, *What a lowering keeps*).
+    .keeps_let = m.keepsNoLet,
     .programs = &.{
         .{ .module = "Tea", .name = "sandbox" },
         .{ .module = "Tea", .name = "element" },

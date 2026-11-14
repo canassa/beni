@@ -1,0 +1,2 @@
+# The dom root keeps `xs` across renders, so the push of it in place is refused (ownership-v3-kernel.md §6.14).
+34:10 list_still_used List.push

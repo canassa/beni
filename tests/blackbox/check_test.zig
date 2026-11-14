@@ -3710,6 +3710,7 @@ test "ownership v3: the faults of the review of report 114 are refused" {
         \\
         \\type alias Model =
         \\    step : Int
+        \\    items : List Int
         \\
         \\
         \\update : Msg, Model → Model
@@ -3722,20 +3723,22 @@ test "ownership v3: the faults of the review of report 114 are refused" {
         \\
         \\pub view : Model → Html Msg
         \\view model =
-        \\    q = [ model.step, 2 ]
+        \\    q = [ model.step, List.length model.items ]
         \\    v = <ul><For each={q}>{λi → <li>{String.fromInt i}</li>}</For></ul>
         \\    w = List.push q 9
         \\    <div>{v}<p>{show w}</p></div>
         \\
         \\
         \\main : Browser.Program
-        \\main = Browser.program { init = λ⊤ → { step = 0 }, update = update, view = view }
+        \\main = Browser.program { init = λ⊤ → { step = 0, items = [] }, update = update, view = view }
     );
     {
         const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser", "Page.beni" }, .{ .raw_diagnostics = true });
         try testing.expectEqual(@as(u8, 0), r.exit_code);
         for ([_][]const u8{
-            "  27:9 List.push q: rejected later-use: it is read again at 28:5 (<expression>)\n",
+            // `q` reads a list of the model, so the root makes it again on each
+            // render and keeps none (kernel §6.14): the refusal is the markup's.
+            "  28:9 List.push q: rejected later-use: it is read again at 29:5 (<expression>)\n",
             "total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1\n",
         }) |line| {
             if (std.mem.indexOf(u8, r.stdout, line) == null) {
@@ -4771,22 +4774,24 @@ test "ownership v3: the entry's siblings and markup's inputs are refused" {
         \\main : Browser.Program
         \\main = Browser.program { init = λ⊤ → { items = [ 1, 2 ], cached = <p>none</p>, n = 3 }, update = update, view = view }
         },
+        // `xs` reads a list of the model, so the root makes it again on each
+        // render and keeps none (kernel §6.14): the refusal is the hole's.
         .{ .name = "Inputs", .platform = "--platform=browser", .line = "List.push xs: rejected later-use", .text =
         \\import Browser
         \\import Html exposing (Html)
         \\import List
         \\
         \\
-        \\helper : Int → Html Int
-        \\helper n =
-        \\    xs = List.repeat n 1
+        \\helper : { n : Int, items : List Int } → Html Int
+        \\helper model =
+        \\    xs = List.repeat (model.n + List.length model.items) 1
         \\    m = <p id="a">{List.sum xs}</p>
         \\    ys = List.push xs 9
         \\    <div><button id="add" onClick={1}>add</button>{m}<p id="b">{List.length ys}</p></div>
         \\
         \\
         \\main : Browser.Program
-        \\main = Browser.program { init = λ⊤ → 3, update = λd n → n + d, view = helper }
+        \\main = Browser.program { init = λ⊤ → { n = 3, items = [] }, update = λd model → { model | n = model.n + d }, view = helper }
         },
     };
     for (cases) |c| {
@@ -6428,4 +6433,66 @@ test "ownership v3: a library's exported function is called by the host" {
     );
     const dead = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--ownership=v3", "--ownership-everywhere", "--out=out", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dead.exit_code);
+}
+
+// Research report 133, and its fix in report 134: the `dom` lowering keeps
+// a `let` that only its root reads in the root's instance, and evaluates it
+// again only when a path it reads changed (`backend.md` §15.4, *The `let`
+// rule*). A later render reads the value an earlier one made, so a write of
+// it in place is seen by the next render. The lowering says which `let`s it
+// keeps (`Lowering.keeps_let`), and the checker reads each as held by the
+// root (kernel §6.14). A `let` that reads a list of the model is made again
+// on every render, so its twin is accepted.
+//
+// A chain of 400 writes passed its budget and then took 17.8 s (LLVM),
+// more than 120 s self-hosted: `markAtomIn` walked the runs of every
+// version again for each write, with no unit counted, and the walk went on
+// after the budget. Each entry's run is marked once for each flag now, every
+// run walked is counted, and the walk stops at the budget (kernel §8).
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, accepted: bool, why: []const u8 = "" };
+    const escaped = "List.push xs is refused: escaped";
+    const module_limit = "the walks of the module took more than";
+    const cases = [_]Case{
+        .{ .name = "view-let-kept.live", .accepted = false, .why = escaped },
+        .{ .name = "view-let-kept.kept", .accepted = false, .why = "List.push xs is refused" },
+        .{ .name = "view-let-kept.dead", .accepted = true },
+        .{ .name = "view-let-scalar.live", .accepted = false, .why = escaped },
+        .{ .name = "view-let-record.live", .accepted = false, .why = "List.push r.l is refused: escaped" },
+        .{ .name = "view-let-record.dead", .accepted = true },
+        .{ .name = "view-let-nested.live", .accepted = false, .why = "is refused: escaped" },
+        .{ .name = "view-let-chain.live", .accepted = false, .why = escaped },
+        .{ .name = "view-let-helper.live", .accepted = false, .why = escaped },
+        .{ .name = "view-let-helper.dead", .accepted = true },
+        .{ .name = "view-let-comp.live", .accepted = false, .why = escaped },
+        .{ .name = "view-let-comp.dead", .accepted = true },
+        .{ .name = "chain-of-writes.slow", .accepted = false, .why = module_limit },
+        .{ .name = "chain-of-writes.control", .accepted = true },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const dir = try std.fmt.allocPrint(a, "bench/ownership-sweeps/blind10i-faults/{s}", .{c.name});
+        const platform = std.mem.trim(u8, std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(a, "{s}/PLATFORM", .{dir}), a, .limited(256)) catch "node", " \r\n");
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", try std.fmt.allocPrint(a, "--platform={s}", .{platform}), try std.fmt.allocPrint(a, "--root={s}", .{dir}) });
+        try args.append(a, try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir}));
+        if (std.Io.Dir.cwd().access(testing.io, try std.fmt.allocPrint(a, "{s}/Comp.beni", .{dir}), .{})) |_| {
+            try args.append(a, try std.fmt.allocPrint(a, "{s}/Comp.beni", .{dir}));
+        } else |_| {}
+        const res = w.runWith(args.items, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.accepted) res.exit_code == 0 else res.exit_code == 1 and std.mem.indexOf(u8, res.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, res.exit_code, res.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
 }

@@ -415,9 +415,15 @@ entered: u32 = 0,
 /// While the holes of markup are walked: every value of a local that they
 /// read, which the markup holds (`evalInner .markup`).
 markup_reads: ?*std.ArrayList(Val) = null,
-/// The entries of runs that one call of `markAtom`, `groundOf` or
-/// `atomSrcs` visited: each once (`runKey`).
-run_seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
+/// Per entry of `rents`, what the walks of its run know of it (`RunFact`),
+/// grown to `rents` where it is read (`runFact`).
+run_facts: std.ArrayList(RunFact) = .empty,
+/// The visit of runs in progress (`newVisit`): an entry whose `RunFact.seen`
+/// is this one was visited by it.
+visit: u32 = 0,
+/// The work list of `markAtom`, `groundOf` and `atomSrcs`: a run is walked
+/// with no recursion, so a chain as long as the budget allows needs no stack.
+mark_stack: std.ArrayList(Atom) = .empty,
 /// Per pair of layouts: which entries of the second meet each entry of the
 /// first (`meetsOf`), built once from the two call maps.
 meet_index: std.AutoHashMapUnmanaged([2]u32, *const MeetIndex) = .empty,
@@ -1386,6 +1392,9 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
         },
         .join => {
             const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
+            // Each arm projected is work (kernel §8); past the budget the
+            // part is unknown over the value.
+            if (f.charge(n.b)) return f.unknownOf(n.place, &.{v});
             var tmp: std.ArrayList(Val) = .empty;
             defer tmp.deinit(f.gpa);
             var ctxs: std.ArrayList(u32) = .empty;
@@ -1492,7 +1501,7 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     try f.uniqueTail(&f.atoms, start);
     const n: u32 = @intCast(f.atoms.items.len - start);
     if (n == 0) return;
-    for (start..start + n) |i| try f.markAtom(f.atoms.items[i], flag_e);
+    try f.markAtoms(f.atoms.items[start..][0..n], flag_e);
     const at: u32 = @intCast(f.esc_atoms.items.len);
     try f.esc_atoms.appendSlice(f.gpa, f.atoms.items[start..]);
     // The answer of a function parameter can hold what the function was
@@ -1513,39 +1522,76 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
 
 /// Set `flag` on the parameter location that atom `a` is, or was taken
 /// from. The run of a `version` or `taken` entry holds atoms of roots made
-/// before its own, and their runs hold older ones again: each entry is
-/// visited once per call (`run_seen`), so a chain of `n` writes costs `n`
-/// steps and not `2ⁿ` (research report 119 §4.1).
+/// before its own, and their runs hold older ones again. Marking is
+/// idempotent and a run never changes once its entry is made, so each entry
+/// is marked once for each flag in the frame's walk (`RunFact.marked`), and a
+/// chain of `n` writes costs `n` entries over all of its writes, not `n` for
+/// each (research report 119 §4.1, report 134). Each entry and each atom of
+/// its run is counted where it is put on the work list (kernel §8); past the
+/// budget the marking stops, and the declaration gives up.
 fn markAtom(f: *Frame, a: Atom, flag: u8) Error!void {
-    f.run_seen.clearRetainingCapacity();
-    return f.markAtomIn(a, flag);
+    return f.markAtoms(&.{a}, flag);
 }
 
-fn markAtomIn(f: *Frame, a: Atom, flag: u8) Error!void {
-    const r = f.roots.items[a.root];
-    switch (r.kind) {
-        .param, .capture => f.pflags.items[r.ent + a.e] |= flag,
-        .local => {
-            const ent = f.rents.items[r.ent + a.e];
-            switch (ent.kind) {
-                .own, .alias, .derived => return,
-                .taken, .version => {},
-            }
-            if ((try f.run_seen.getOrPut(f.gpa, runKey(a))).found_existing) return;
-            for (0..ent.len) |i| try f.markAtomIn(f.atoms.items[ent.start + i], flag);
-        },
-        // The answer of a function parameter escapes: the contract says so,
-        // and the caller that knows the function lets what it answers escape.
-        .answer => if (flag & flag_e != 0) {
-            f.drafts.items[r.index].ans_escapes = true;
-        },
-        .outside, .fresh => {},
+/// `markAtom` of each of `atoms`, which the caller counted.
+fn markAtoms(f: *Frame, atoms: []const Atom, flag: u8) Error!void {
+    f.mark_stack.clearRetainingCapacity();
+    try f.mark_stack.appendSlice(f.gpa, atoms);
+    while (f.mark_stack.pop()) |x| {
+        const r = f.roots.items[x.root];
+        switch (r.kind) {
+            .param, .capture => f.pflags.items[r.ent + x.e] |= flag,
+            .local => {
+                const ent = f.rents.items[r.ent + x.e];
+                switch (ent.kind) {
+                    .own, .alias, .derived => continue,
+                    .taken, .version => {},
+                }
+                const rf = try f.runFact(x);
+                if (rf.marked & flag == flag) continue;
+                rf.marked |= flag;
+                if (f.charge(1 + ent.len)) return;
+                try f.mark_stack.appendSlice(f.gpa, f.atoms.items[ent.start..][0..ent.len]);
+            },
+            // The answer of a function parameter escapes: the contract says so,
+            // and the caller that knows the function lets what it answers escape.
+            .answer => if (flag & flag_e != 0) {
+                f.drafts.items[r.index].ans_escapes = true;
+            },
+            .outside, .fresh => {},
+        }
     }
 }
 
-/// The entry of a root the frame made that atom `a` is at: what `run_seen` holds.
-fn runKey(a: Atom) u64 {
-    return (@as(u64, a.root) << 32) | a.e;
+/// What the walks of runs know of one entry of `rents`: the flags that
+/// `markAtom` set on all of its run, the highest ground of its run plus one
+/// (`runGround`; 0 is not known yet), and the last visit that reached it.
+const RunFact = struct { marked: u8 = 0, ground: u8 = 0, seen: u32 = 0 };
+
+/// The facts of the entry of a root the frame made that atom `a` is at. A
+/// run never changes once its entry is made, so each fact holds for the rest
+/// of the walk. The pointer holds until the next call.
+fn runFact(f: *Frame, a: Atom) Error!*RunFact {
+    const i = f.roots.items[a.root].ent + a.e;
+    if (i >= f.run_facts.items.len) try f.run_facts.appendNTimes(f.gpa, .{}, f.rents.items.len - f.run_facts.items.len);
+    return &f.run_facts.items[i];
+}
+
+/// A new visit of runs: no entry is visited by it yet.
+fn newVisit(f: *Frame) void {
+    f.visit +%= 1;
+    if (f.visit == 0) {
+        for (f.run_facts.items) |*x| x.seen = 0;
+        f.visit = 1;
+    }
+}
+
+/// Whether the visit in progress reached atom `a`'s entry before; it has now.
+fn visited(f: *Frame, a: Atom) Error!bool {
+    const rf = try f.runFact(a);
+    if (rf.seen == f.visit) return true;
+    rf.seen = f.visit;
+    return false;
 }
 
 // ---- demands -------------------------------------------------------------------------
@@ -1734,6 +1780,11 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         f.judge_ctx = none;
         f.judge_at = none;
     }
+    // Each escape the test passes over is work too (kernel §8).
+    if (d.refused == null and f.charge(f.escapes.items.len)) {
+        d.refused = .limit;
+        d.detail = "the walk of this declaration gave up";
+    }
     if (d.refused == null) {
         for (f.escapes.items) |e| {
             if (!f.compatible(e.ctx, f.cur_ctx)) continue;
@@ -1750,9 +1801,10 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         }
     }
     // The contract asks the caller for what the body writes of a parameter.
-    if (in.op != .supply) for (0..wn) |i| try f.markAtom(f.atoms.items[w + i], flag_w);
+    if (in.op != .supply) try f.markAtoms(f.atoms.items[w..][0..wn], flag_w);
     // A write of a cell that a function parameter was handed before: a function that keeps it reads the edit.
-    if (in.op != .supply and wn != 0) for (f.answers.items) |an| {
+    // Each answer compared is work (kernel §8).
+    if (in.op != .supply and wn != 0 and !f.charge(f.answers.items.len)) for (f.answers.items) |an| {
         if (f.overlapAny(an.base.items, f.atoms.items[w..][0..wn])) f.drafts.items[an.di].rewrites = true;
     };
     try f.demands.append(f.gpa, d);
@@ -1760,37 +1812,73 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
 
 const Ground = enum(u8) { fresh, call, param };
 
+/// What a line's acceptance rests on (kernel §5.2): the highest ground of
+/// atom `a` and of every atom of the runs below it.
 fn groundOf(f: *Frame, a: Atom) Error!Ground {
-    f.run_seen.clearRetainingCapacity();
-    return f.groundIn(a);
+    const g = ownGround(f, a);
+    const ent = f.runOf(a) orelse return g;
+    return maxGround(g, try f.runGround(a, ent));
 }
 
-/// `groundOf`, each entry of a run once (`markAtom`).
-fn groundIn(f: *Frame, a: Atom) Error!Ground {
+/// The ground of atom `a` itself, without the run below it.
+fn ownGround(f: *const Frame, a: Atom) Ground {
     const r = f.roots.items[a.root];
     // A cell read through a call's result rests on the callee's contract.
     const via: Ground = if (a.via != none and f.roots.items[a.via].call) .call else .fresh;
-    switch (r.kind) {
-        .param, .capture => return .param,
-        .fresh => return .call,
-        .local => {
-            const ent = f.rents.items[r.ent + a.e];
-            var g: Ground = if (r.call) .call else via;
-            switch (ent.kind) {
-                .own, .alias, .derived => {},
-                .taken, .version => {
-                    if ((try f.run_seen.getOrPut(f.gpa, runKey(a))).found_existing) return g;
-                    for (0..ent.len) |i| {
-                        const b = try f.groundIn(f.atoms.items[ent.start + i]);
-                        if (@backingInt(b) > @backingInt(g)) g = b;
-                    }
-                },
-            }
-            return g;
-        },
+    return switch (r.kind) {
+        .param, .capture => .param,
+        .fresh => .call,
+        .local => if (r.call) .call else via,
         // Refused before a ground is asked for.
-        .outside, .answer => return via,
+        .outside, .answer => via,
+    };
+}
+
+fn maxGround(x: Ground, y: Ground) Ground {
+    return if (@backingInt(y) > @backingInt(x)) y else x;
+}
+
+/// The entry of a `version` or `taken` location that atom `a` names: one whose
+/// run holds older atoms. Null for every other atom.
+fn runOf(f: *const Frame, a: Atom) ?REntry {
+    const r = f.roots.items[a.root];
+    if (r.kind != .local) return null;
+    const ent = f.rents.items[r.ent + a.e];
+    return switch (ent.kind) {
+        .own, .alias, .derived => null,
+        .taken, .version => ent,
+    };
+}
+
+/// The highest ground of the run of entry `ent` (atom `a`'s) and of the runs
+/// below it, kept for the entry (`RunFact.ground`): a run never changes once its
+/// entry is made, so each entry's run is walked once in the frame, and a
+/// chain of `n` writes costs `n` entries over all of its lines (report 134).
+/// Each entry and atom is counted (kernel §8); past the budget the walk stops
+/// and every line is refused anyway (`finishDemands`).
+fn runGround(f: *Frame, a: Atom, ent: REntry) Error!Ground {
+    const known = (try f.runFact(a)).ground;
+    if (known != 0) return @fromBackingInt(@intCast(known - 1));
+    f.newVisit();
+    _ = try f.visited(a);
+    var g: Ground = .fresh;
+    f.mark_stack.clearRetainingCapacity();
+    if (f.charge(1 + ent.len)) return .param;
+    try f.mark_stack.appendSlice(f.gpa, f.atoms.items[ent.start..][0..ent.len]);
+    while (f.mark_stack.pop()) |x| {
+        g = maxGround(g, ownGround(f, x));
+        const below = f.runOf(x) orelse continue;
+        const kx = (try f.runFact(x)).ground;
+        if (kx != 0) {
+            g = maxGround(g, @fromBackingInt(@intCast(kx - 1)));
+            continue;
+        }
+        if (try f.visited(x)) continue;
+        if (f.charge(1 + below.len)) return .param;
+        try f.mark_stack.appendSlice(f.gpa, f.atoms.items[below.start..][0..below.len]);
     }
+    (try f.runFact(a)).ground = @backingInt(g) + 1;
+    return g;
 }
 
 /// The reads after each write, and the report lines.
@@ -1807,7 +1895,12 @@ fn finishDemands(f: *Frame) Error!void {
             f.skip_answer = d.skip;
             f.judge_ctx = d.ctx;
             f.judge_at = d.at;
-            for (f.uses.items) |u| {
+            // Each read the test passes over is work too (kernel §8).
+            if (f.charge(f.uses.items.len)) {
+                d.refused = .limit;
+                d.detail = "the walk of this declaration gave up";
+            }
+            if (d.refused == null) for (f.uses.items) |u| {
                 // A read at a later time: the walk goes in the program's order (`timeOf`).
                 if (u.at <= d.at) continue;
                 if (!f.compatible(u.ctx, d.ctx)) continue;
@@ -1822,7 +1915,7 @@ fn finishDemands(f: *Frame) Error!void {
                     d.detail = try f.m.useText(f, u.point);
                     break;
                 }
-            }
+            };
             f.skip_answer = none;
             f.judge_ctx = none;
             f.judge_at = none;
@@ -1854,6 +1947,9 @@ fn bindLocal(f: *Frame, local: u32, v: Val) void {
 }
 
 fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
+    // Each node of a pattern is work (kernel §8). Past the budget the
+    // pattern is still bound, each node once: no local is read unbound.
+    _ = f.charge(1);
     const m = f.m;
     const data = m.datas[pat];
     switch (m.tags[pat]) {
@@ -1890,6 +1986,8 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
 
 /// Whether matching pattern `pat` reads a list's storage.
 fn readsList(f: *Frame, pat: u32) bool {
+    // Each node of a pattern is work (kernel §8).
+    _ = f.charge(1);
     const m = f.m;
     const data = m.datas[pat];
     switch (m.tags[pat]) {
@@ -2335,6 +2433,8 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
 /// functions applied to what the runtime hands them (kernel §6.12). `ops`
 /// and `vals` are the markup's values (`Bir.markupValues`) and theirs.
 fn formCalls(f: *Frame, inst: u32, root: Bir.ExtraIndex, ops: []const Inst.Index, vals: []const Val) Error!void {
+    // Each node of the markup is work (kernel §8).
+    _ = f.charge(1);
     const m = f.m;
     const bir = m.bir;
     switch (bir.markupKind(root)) {
@@ -2409,6 +2509,8 @@ fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!voi
 /// component's prop, a spread of attributes). A missing row is the
 /// pessimistic fact: kept.
 fn keptItems(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32), handed: *std.ArrayList(u32)) Error!void {
+    // Each node of the markup is work (kernel §8).
+    _ = f.charge(1);
     const m = f.m;
     const bir = m.bir;
     switch (bir.markupKind(root)) {
@@ -2461,6 +2563,8 @@ fn keptOf(f: *Frame, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out: *std.Array
 /// module is taken to be one: a markup primitive among them only reads
 /// later than it does.
 fn helperHoles(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
+    // Each node of the markup is work (kernel §8).
+    _ = f.charge(1);
     const m = f.m;
     const bir = m.bir;
     switch (bir.markupKind(root)) {
@@ -2690,6 +2794,14 @@ fn binding(f: *Frame, b: u32) Error!void {
             if (m.lframe[l] == f.id) return;
             if (m.lcode[l] != none) return f.makeCode(def.local);
             const v = try f.eval(data.rhs, .bind, false);
+            // A `let` that the markup lowering keeps beyond this call
+            // (kernel §6.14): the root holds the value and a later call
+            // reads it, so it escapes where it is made.
+            if (std.sort.binarySearch(u32, m.kept_lets, b, struct {
+                fn order(x: u32, y: u32) std.math.Order {
+                    return std.math.order(x, y);
+                }
+            }.order) != null) try f.escape(v, b);
             f.bindLocal(def.local, v);
         },
         .let_pattern => {
@@ -2763,6 +2875,8 @@ fn unbind(f: *Frame, local: u32) void {
 }
 
 fn unbindPattern(f: *Frame, pat: u32) void {
+    // Each node of a pattern is work (kernel §8).
+    _ = f.charge(1);
     const m = f.m;
     const data = m.datas[pat];
     switch (m.tags[pat]) {
@@ -3040,6 +3154,11 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
                 try child.addParam(place, p.int(), if (k < pvars.len) pvars[k].toOptional() else .none);
             }
             try child.walkBody(mb.body);
+            // Past the budget no walk goes on (kernel §8).
+            if (m.steps_over) {
+                f.failed = true;
+                return vals;
+            }
             const rplace = if (fnt) |ft| try m.placeOf(ft.result.toOptional()) else m.var_place;
             const c = try child.finish(rplace);
             if (child.failed) f.failed = true;
@@ -3188,7 +3307,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         // Each atom is a named source (kernel §4.2): a cell the frame made
         // is `fresh(k)`, with its escape, so one cell at two entries is one
         // `k` at two entries, and an escaped cell is escaped where the caller reads it.
-        f.run_seen.clearRetainingCapacity();
+        f.newVisit();
         for (mine) |a| try f.atomSrcsIn(a, &srcs);
         if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
@@ -3253,33 +3372,41 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
 /// cell, an outside cell, an answer (kernel §4.2). Each entry of a run once
 /// (`markAtom`).
 fn atomSrcs(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
-    f.run_seen.clearRetainingCapacity();
+    f.newVisit();
     return f.atomSrcsIn(a, out);
 }
 
+/// `atomSrcs` with the entries that the visit in progress reached skipped. The
+/// runs are walked with no recursion, each entry and atom counted (kernel
+/// §8); past the budget the walk stops, and the declaration gives up.
 fn atomSrcsIn(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
-    const r = f.roots.items[a.root];
-    switch (r.kind) {
-        .outside => try out.append(f.gpa, Src.outside),
-        .param, .capture => try out.append(f.gpa, .{ .kind = .param, .a = @intCast(r.index), .e = @intCast(a.e) }),
-        .answer => try out.append(f.gpa, .{ .kind = .answer, .a = @intCast(f.roots.items[f.drafts.items[r.index].root].index), .e = @intCast(a.e) }),
-        // A cell a callee made is a cell this frame made, for its caller.
-        .fresh => try out.append(f.gpa, try f.freshSrc(a)),
-        .local => {
-            const ent = f.rents.items[r.ent + a.e];
-            switch (ent.kind) {
-                // A new name of cells that exist: its sources are theirs. The
-                // run of `alias` and `derived` is in the list on its own
-                // (`rootLeaves` puts it there).
-                .taken, .version => {
-                    if ((try f.run_seen.getOrPut(f.gpa, runKey(a))).found_existing) return;
-                    for (0..ent.len) |i| try f.atomSrcsIn(f.atoms.items[ent.start + i], out);
-                },
-                .alias => {},
-                // A cell the frame made.
-                .own, .derived => try out.append(f.gpa, try f.freshSrc(a)),
-            }
-        },
+    f.mark_stack.clearRetainingCapacity();
+    try f.mark_stack.append(f.gpa, a);
+    while (f.mark_stack.pop()) |x| {
+        const r = f.roots.items[x.root];
+        switch (r.kind) {
+            .outside => try out.append(f.gpa, Src.outside),
+            .param, .capture => try out.append(f.gpa, .{ .kind = .param, .a = @intCast(r.index), .e = @intCast(x.e) }),
+            .answer => try out.append(f.gpa, .{ .kind = .answer, .a = @intCast(f.roots.items[f.drafts.items[r.index].root].index), .e = @intCast(x.e) }),
+            // A cell a callee made is a cell this frame made, for its caller.
+            .fresh => try out.append(f.gpa, try f.freshSrc(x)),
+            .local => {
+                const ent = f.rents.items[r.ent + x.e];
+                switch (ent.kind) {
+                    // A new name of cells that exist: its sources are theirs. The
+                    // run of `alias` and `derived` is in the list on its own
+                    // (`rootLeaves` puts it there).
+                    .taken, .version => {
+                        if (try f.visited(x)) continue;
+                        if (f.charge(1 + ent.len)) return;
+                        try f.mark_stack.appendSlice(f.gpa, f.atoms.items[ent.start..][0..ent.len]);
+                    },
+                    .alias => {},
+                    // A cell the frame made.
+                    .own, .derived => try out.append(f.gpa, try f.freshSrc(x)),
+                }
+            },
+        }
     }
 }
 
@@ -5350,7 +5477,7 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
     if (end == w) return;
     var srcs: std.ArrayList(Src) = .empty;
     defer srcs.deinit(f.gpa);
-    f.run_seen.clearRetainingCapacity();
+    f.newVisit();
     for (w..end) |i| try f.atomSrcsIn(f.atoms.items[i], &srcs);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
     const ai = try f.answerRoot(di, point);
@@ -5590,6 +5717,8 @@ fn fnMembers(f: *Frame, v: Val, out: *std.ArrayList(Code)) Error!bool {
     if (v == v_none) return false;
     const n = f.nodes.items[v];
     if (n.tag == .join) {
+        // Each arm is work (kernel §8); past the budget the members are not known.
+        if (f.charge(n.b)) return false;
         for (0..n.b) |ki| if (!try f.fnMembers(f.lists.items[n.a + 2 * ki], out)) return false;
         return true;
     }

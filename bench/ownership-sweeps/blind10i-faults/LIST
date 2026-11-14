@@ -1,6 +1,14 @@
 bench/ownership-sweeps/blind10i-faults/chain-of-writes.control
 bench/ownership-sweeps/blind10i-faults/chain-of-writes.slow
+bench/ownership-sweeps/blind10i-faults/view-let-chain.live
+bench/ownership-sweeps/blind10i-faults/view-let-comp.dead
+bench/ownership-sweeps/blind10i-faults/view-let-comp.live
+bench/ownership-sweeps/blind10i-faults/view-let-helper.dead
+bench/ownership-sweeps/blind10i-faults/view-let-helper.live
 bench/ownership-sweeps/blind10i-faults/view-let-kept.dead
 bench/ownership-sweeps/blind10i-faults/view-let-kept.kept
 bench/ownership-sweeps/blind10i-faults/view-let-kept.live
+bench/ownership-sweeps/blind10i-faults/view-let-nested.live
+bench/ownership-sweeps/blind10i-faults/view-let-record.dead
+bench/ownership-sweeps/blind10i-faults/view-let-record.live
 bench/ownership-sweeps/blind10i-faults/view-let-scalar.live

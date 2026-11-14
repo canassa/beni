@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p>"1,2,0"</p>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p>"1,2,1"</p>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p>"1,2,2"</p>
+  </main>
+</body>

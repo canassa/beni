@@ -2686,6 +2686,13 @@ itself (`Program.Key.fields`). The lowering sends each value to that handler as
 answers for such a declaration. A lowering that targets 1.24 sees what it saw, and hands such a
 handler the bare value, which is the defect 1.25 corrects; `inline` targets 1.25.
 
+**Version 1.26** (*added 2026-11-14*, additive, gated on nothing; research report 134):
+`Lowering.keeps_let`, which `let`s of a grouped root (`Root.lets`) the lowering keeps beyond the call of
+the function that made them, and reads at a later call (§9.4.8, *What a lowering keeps*). Its default
+keeps every one, and the ownership checker refuses every write of a kept `let`. `dom` says which it
+keeps (`keepsLet`), `inline` that it keeps none (`keepsNoLet`). A lowering that targets 1.25 is read as
+keeping every `let` its root evaluates.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2821,6 +2828,21 @@ A runtime that needs a value from one render in the next keeps a value that hold
 cannot, the compiler must not treat the program's lists as unshared; the rule is changed in this
 section first.
 
+**What a lowering keeps** (*added 2026-11-14*, research report 134). The rule above is the runtime's.
+A lowering that evaluates a root's values itself (`groups`, §9.4.6 version 1.5) can keep more: the
+`dom` root keeps a `let` that only the root reads, and evaluates it again only when a path it reads
+changed (`backend.md` §15.4, *The `let` rule*). A later render reads the value an earlier render made.
+**A lowering may keep a value of the program beyond the call that made it only when it says so**, or
+when the value's type is identity-safe (`Tree.identitySafe`: it holds no list and no record, so no cell
+of it is written in place). It says so through the interface: `Lowering.keeps_let` names each `let`
+of a root that it keeps, and its default is that it keeps every one. The ownership checker reads each
+kept `let` as held by the root: it escapes where it is bound, so no write of it, or of a cell it
+shares, runs in place (`ownership-v3-kernel.md` §5.3, §6.14). A `let` that the lowering makes again
+on every call, before anything reads it, is not kept: the `dom` root makes a `let` again on every render
+when it reads a path whose value is not identity-safe. The test is `browser/dom/KeptLetInPlace` and
+`browser/tea/KeptLetInPlace` (a `.sanitize-lists-v3-refuses` page: the push of a kept `let` is refused),
+and `browser/dom/KeptLetRemade` (its safe twin, written in place under the sanitiser).
+
 **What the checker concludes from the rule** (`ownership-v3-kernel.md` §6.12, §6.13). The rule is
 about the runtime, so the checker uses it only where the program gives markup to the runtime:
 
@@ -2852,7 +2874,8 @@ weaken the rule:
 - the `dom` runtime runs `update` inside a render when removing a focused node fires `blur` there
   (Chrome), and then renders the old view's answer (#2502);
 - the `dom` lowering keeps a helper's `let` value, which can be a list, from one render to the next
-  (#2503);
+  (#2503); *since 2026-11-14 the lowering says so and the checker refuses every write of a kept
+  `let` (above, *What a lowering keeps*), so this is no longer a hole of the checker*;
 - a `For` keyed by reference over list or record items compares the kept old item by identity
   (#2504);
 - on the checker side, a markup value holds a hole's result where the `dom` lowering reads the

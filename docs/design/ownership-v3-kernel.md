@@ -5,7 +5,8 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 §6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
 129); §8 revised 2026-11-14 (research report 130); §6.14 and §8 revised again the same day (research
-report 131). The owner ordered it after research report 116: "Write the rules
+report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134). The owner
+ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -208,7 +209,8 @@ A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
 what the copying program prints. Argument: every cell the frame can observe is an atom of some root (§2);
 every consumer records a read of every atom it can observe (`readAll`, `readBy`, a list pattern, the
 frame's result); every holder the walk does not follow records an escape of every atom it can hold (§3.2,
-§6.10), and so does the default that a holder hands a function's function parameters (§6.2); a
+§6.10), and so does the default that a holder hands a function's function parameters (§6.2) and a value
+that a lowering keeps beyond the call that made it, which the lowering names (§5.3, §6.14); a
 write by a callee is a demand at the call (§6.2); and every call into the program's code that no walked
 body makes — by the markup runtime, the entry's runtime, derived code, a schema's compiled workers, host
 JavaScript, or a callee of `core/` or a platform — is in the list of §6.14, each with the rule that
@@ -241,6 +243,18 @@ contract; `param`, the caller's hand. A `fresh` root's ground is `call`.
 Every read, write, escape and new name has a time from the walk's clock (`timeOf`), which advances with
 the walk in the order the emitted JavaScript evaluates (`language.md` §6). An instruction number is never
 compared for order.
+
+The clock orders one call of the code. It says nothing of a value that one call makes and a later call
+reads: a value that a lowering or a runtime keeps beyond the call that made it. The walk sees a value
+made on each call; the program reads, at a later call, a value an earlier call made, and possibly wrote.
+So such a value is a holder the walk does not follow, and **it escapes where it is made** (§6.14, *What
+a lowering keeps*): every write of it, or of a cell it shares, is refused by test 3, at any time of the
+walk. The clock is never asked to order two calls.
+
+*Research report 133 §4, report 134: the `dom` lowering keeps a `let` that only its root reads from one
+render to the next (`backend.md` §15.4, *The `let` rule*); the walk saw it made on each call of `view`,
+and a push of it in place, which nothing read after in that call, passed the four tests. The next render
+pushed onto the same array.*
 
 ## 6. The rules, one for each construct
 
@@ -409,7 +423,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `boundary.md` §9.4.8 (the owner's decision, 2026-11-13): a runtime reads a hole's value only
     while it renders the markup, and keeps no list from a hole to read after that. The checker cannot
     see a runtime, so it trusts that rule, and each platform's fixture tests it. The rule is used at
-    one place: the entry (rule 13).
+    one place: the entry (rule 13). **A value that the lowering keeps beyond the call is held by the
+    root** (`binding`, `Check.Options.kept_lets`): a lowering that evaluates a root's values itself
+    (`groups`) can keep a `let` of the enclosing function that only the root reads, and read it at a
+    later render (§6.14, *What a lowering keeps*). Each such `let` escapes where it is bound, so no
+    write of it, or of a cell it shares, runs in place, in that call or a later one. The lowering
+    says which `let`s it keeps; the checker does not guess.
 
     *The argument.* The runtime is a holder that the walk does not follow, and it does two things
     with markup: it reads the values the markup holds while it renders, and it calls code the markup
@@ -519,6 +538,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     | the module loader | each top-level constant, with nothing | §7: its body is walked; its value is `outside` (§3.1) |
     | the entry file | `main`'s value, handed to the platform's `run` (and its `exports`, `"exports": "program"`) | rule 2 or 10: `main`'s value went to the platform function it was handed to |
     | a lowering that rewrites the program: the `browser-inline` program hook (the record is never built; its parts are inlined into the mount), a function's suspendable twin (its rest is a continuation), a helper re-made at render | the same functions, with the same values, in the order `language.md` §6 gives | the rule of the call it rewrites. The checker trusts each lowering to keep the program's calls and their order, as it trusts the platform rule of §6.12 |
+    | a lowering that keeps a value of the program beyond the call that made it, and reads it at a later call: the `dom` root's `let`s (`backend.md` §15.4, *The `let` rule*), in a `view`, a helper's root or a component's | the code that reads the kept value, at a later call, with the value an earlier call made | **the value escapes where it is made** (§5.3, rule 12): the lowering says what it keeps (`Lowering.keeps_let`), below |
 
     **A schema's `via`.** A `via` conversion is evaluated once, where the module loads, and the schema's
     compiled workers and its `S.schema` value hold it for as long as the program runs. They call its
@@ -543,6 +563,36 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     constant that holds a function put it into its value where the value was made, which sent it to `top`
     (`mention`). A derived row reads; the declared methods it calls are `pub`, so they are exports too. A
     member of a `pub schema` runs the `via`s, which are in the default location already.
+
+    **What a lowering keeps.** A lowering that evaluates a root's values itself can skip an evaluation:
+    it keeps a value from one call of the enclosing function and reads it at a later one. The walk of the
+    function sees the value made on each call, so such a value is a holder that the walk does not follow,
+    and it is the lowering's to name. **The lowering tells the checker what it keeps**, through the
+    markup interface it implements (`Lowering.keeps_let`, `boundary.md` §9.4.8, *What a lowering
+    keeps*), and the checker reads each kept value as held by the root: it escapes where it is bound
+    (`binding`). The facts come from the code that decides them, not from a list here:
+
+    - the compiler finds the `let`s that a root may evaluate itself (`Root.lets`) with the analysis the
+      emitter uses (`MarkupTree.build`, built again in the check, `Enforce.keptLets`, with every
+      declaration of the module live: a superset of what the emitter builds, and a root that the emitter
+      does not group evaluates its `let`s in place, so the set is never smaller than what is kept);
+    - the lowering says, of each, whether it keeps it (`keeps_let`). **The default is that it keeps every
+      one**: a lowering that says nothing is read on the side that refuses. A lowering that does not
+      `groups` evaluates no `let` of its own, and is not asked.
+
+    The audit of every lowering of the tree, 2026-11-14 (research report 134 §3):
+
+    | Lowering | What it keeps beyond the call that made it | What the checker knows |
+    |---|---|---|
+    | `dom` (`browser`, `browser-tea`) | a root's `let` in `d<k>`, made again only when a path it reads is not `===` the one it was made from; a `let` that reads a path whose value is not identity-safe (a list, or anything that holds one) is made again on every render, before it is read (`keepsLet`, checked against the emitted test in safe builds) | each kept `let` escapes where it is bound |
+    | `dom` | the last value of an operand, for a test by `===`: only an identity-safe one (`identityOperand`, `Tree.identitySafe`), a text, a number, a boolean; a class or style list's written `Set`, which the runtime makes | nothing: an identity-safe value holds no cell that can be written in place |
+    | `dom` | a skipped helper's or component's block, restated: the values a call made, of arguments that are all identity-safe, so the call is the same and its block holds what it held | rule 12: the markup held them while it was made |
+    | `dom` | a `Show`'s key, or a `For`'s items and keys, kept by the runtime to match rows | not known: a breach of `boundary.md` §9.4.8 (#2504), out of this rule |
+    | `inline` (`browser-inline`) | nothing of a root: a `let` is a `const` of each binding function that reads it, made each time it runs, and one that two functions read is refused (`keepsNoLet`); the model, which the entry holds (rule 13) | nothing to know |
+    | `ssr` (`node`), `toy`, `shared-toy` | nothing: they do not `groups`, and render as the markup is made | nothing to know |
+
+    A `let` the lowering keeps that the program then writes is a refusal, not a copy the compiler adds:
+    the program writes a copy (`List.copy`), or makes the `let` from a list of the model.
 
     *The argument.* A call of the program's code by code that the walk does not follow is a call like any
     other (rule 2) when the walk knows where the caller gets the arguments (markup, the entry), and
@@ -665,14 +715,31 @@ paths:
   and 4 096 empty locations were 8 million such pairs in each walk. Each gives the same answer as
   before.
 
+  **The runs of new names are walked once** (research report 134). The run of a `version` or `taken`
+  entry holds older atoms, and their runs older ones again, so a chain of `n` writes reaches `n`
+  entries from its last name. Three walks follow those runs: `markAtom` (the flags of the contract),
+  `groundOf` (what a line rests on) and `atomSrcs` (the sources of a contract). Each goes with a work
+  list, not by recursion, and counts each entry it opens and each atom of that entry's run. A run
+  never changes once its entry is made, and marking is idempotent, so each entry's run is marked once
+  for each flag in a walk, and its highest ground is kept (`RunFact`): the `n` writes of a chain cost
+  `n` entries over all of their demands, not `n` each. *Before, each of these walks visited every
+  entry again for each write, and counted nothing: 400 writes took 17.8 s after the budget was passed.*
+  The tests of pairs count the elements they pass over too: each escape and each read that a demand
+  skips (another context, an earlier time), and each answer it compares.
+
   Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
   atoms answers on the pessimistic side (the two can
-  share a cell, one cell is at two places, a root is not linear), the declaration gives up (§3.3), and
+  share a cell, one cell is at two places, a root is not linear), a walk of runs stops where it is,
+  `finish` is not run (no line, no contract: `walkDecl`, `walkSchema`, `walkExports`, `solveCodes`), a
+  derived row is read as code that writes and keeps (`rowInfo`), the declaration gives up (§3.3), and
   the module's report has an `ownership_limit` line that names the budget it passed: a loud refusal. A member of a
   recursive group past it stops the group's rounds, and no member publishes a contract. In the entry, a
   budget passed takes every model location out of `own`, so every write the entry judges is refused. No
   other declaration of the module is walked after one passes its budget (`Mod.module_over`): each
-  publishes nothing, an importer reads it as unknown code, and the module authorises no write. The
+  publishes nothing, an importer reads it as unknown code, and the module authorises no write. Nor are
+  the module's derived rows read for its published facts; an importer reads a row with no fact as code
+  that writes and keeps. The reads of those rows count against the module's budget too, and a module
+  that passes it only there has its limit line as well. The
   `via`s of a schema and the exports of a `--library` build (§6.14) are walked under the budget of their
   declaration. The largest declaration of the 2 311 ownership roots (every corpus program and every real
   root) does 5.2 million units (`chunks` of `tests/corpus/run/TailModConsBranches`), and the largest of
@@ -780,6 +847,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | root 0 is made once, by `init` | `newRoot` | §3.1 |
 | every `switch` is exhaustive | the compiler, every file of `src/own3/` | §3.3 |
 | every instruction that names code, in a declaration whose code the backend emits, was walked | `Check.checkCovered` | §6.14 |
+| the `dom` root keeps a `let` from one render to the next exactly when its `keeps_let` says so | `platforms/browser/zig/dom.zig`, `hoistGroupedKind` | §6.14 |
 | the index of a pair's meets says what `locsMeet` says, for layouts of at most 64 entries | `Frame.meetsOf` | §4.1, §6.13 |
 | the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |

@@ -12622,6 +12622,12 @@ group whose ops read `shown` reads `model.items`, so it runs exactly when `shown
 list, and reads the one kept. A `let` used anywhere else â in a condition that chooses between two
 roots, in two roots â stays where it is, an input like any other local.
 
+*Amended 2026-11-14* (research report 134): a kept `let` is a value one render makes and a later
+render reads, so the lowering says which `let`s it keeps (`Lowering.keeps_let`, `boundary.md` §9.4.8,
+*What a lowering keeps*): each whose test can be false, that is each that reads no path whose value is
+not identity-safe. The ownership checker refuses every write of a kept `let` in place
+(`ownership-v3-kernel.md` §6.14); what the root emits does not change.
+
 A row's root is not a grouped root: Â§15.5's rows keep their inputs and item tests. A root inside a
 `For` row, a `Show` body or another root's value is grouped as any root: its block is made where it
 is evaluated, inside the enclosing `p` or row, from the inputs bound there.

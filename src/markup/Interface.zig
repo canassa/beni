@@ -75,7 +75,10 @@ const std = @import("std");
 /// Version 1.25 adds `Program.Subscription.whole`, a declaration whose key's
 /// handler takes the message itself (`browser-inline.md` §3, amended
 /// 2026-11-09, #2258).
-pub const version: Version = .{ .major = 1, .minor = 25 };
+/// Version 1.26 adds `Lowering.keeps_let`: which `let`s of a grouped root
+/// the lowering keeps beyond the call of the function that made them
+/// (`boundary.md` §9.4.8, *What a lowering keeps*).
+pub const version: Version = .{ .major = 1, .minor = 26 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -182,9 +185,43 @@ pub const Lowering = struct {
     /// chain that names it may prerender. False: a prerendering build is
     /// refused.
     prerenders: bool = false,
+    /// 1.26 (`boundary.md` §9.4.8, *What a lowering keeps*): whether the
+    /// lowering keeps the value of root `root`'s `k`-th `let` (`Root.lets`,
+    /// which it evaluates itself because it `groups`) beyond the call of
+    /// the function that made it, and reads it at a later call: a `let`
+    /// evaluated once and read on each render after. The ownership checker
+    /// reads each such value as held by a holder that it does not follow,
+    /// so no write of it, or of a cell it shares, runs in place. A `let`
+    /// evaluated again on every call, before anything reads it, is not
+    /// kept. **The default keeps every one**: a lowering that says nothing
+    /// is read on the side that refuses. A lowering that does not `groups`
+    /// evaluates no `let` of its own, and is not asked.
+    ///
+    /// Nothing else of the program may be kept beyond the call that made
+    /// it, except a value whose type is identity-safe (`Tree.identitySafe`:
+    /// immutable, so it holds no cell that can be written in place), and
+    /// what the platform rule of §9.4.8 lets a runtime keep.
+    keeps_let: *const fn (tree: *const Tree, root: Root.Index, k: u32) bool = keepsEveryLet,
 
     pub const Effects = struct { sub: []const u8, cmd: []const u8 };
 };
+
+/// 1.26: `Lowering.keeps_let`'s default: every `let` is kept.
+pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = k;
+    return true;
+}
+
+/// 1.26: `Lowering.keeps_let` of a lowering that evaluates a `let` again in
+/// each piece of code that reads it, as a local of that code, and keeps none.
+pub fn keepsNoLet(tree: *const Tree, root: Root.Index, k: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = k;
+    return false;
+}
 
 /// 1.6: a value of a module of the platform chain, by the module's name and
 /// its own.

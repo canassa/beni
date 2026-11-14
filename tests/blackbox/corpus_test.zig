@@ -3324,7 +3324,7 @@ const Case = struct {
         // A page with a `.sanitize-lists-v3` file (its reason), on any
         // platform: built under the ownership prototype and the list
         // sanitiser (`v3Page`), against the same golden.
-        const v3_pages = [1]?PagePlan{if (pages[0] != null and c.goldenExists("sanitize-lists-v3")) try c.v3Page(platform_arg, sources) else null};
+        const v3_pages = [1]?PagePlan{if (pages[0] != null and (c.goldenExists("sanitize-lists-v3") or c.goldenExists("sanitize-lists-v3-refuses"))) try c.v3Page(platform_arg, sources) else null};
         if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
@@ -3467,8 +3467,26 @@ const Case = struct {
     /// runtime that kept a list from a hole and reads it after `update`
     /// wrote it traps (`boundary.md` §9.4.8). The build must wrap a list
     /// write, or the page tests nothing. Never blessed, never cached.
+    ///
+    /// A page with a `.sanitize-lists-v3-refuses` file instead is a fixed
+    /// soundness defect: the prototype must refuse exactly the writes it
+    /// names, and there is no page to run. When the prototype accepts the
+    /// program, the case fails.
     fn v3Page(c: Case, platform_arg: []const u8, sources: []const []const u8) !?PagePlan {
         const out = "out-lists-v3";
+        const flags: []const []const u8 = &.{ "--ownership=v3", "--ownership-everywhere" };
+        if (c.goldenExists("sanitize-lists-v3-refuses")) {
+            if (try c.ownershipRefusals(platform_arg, flags, sources)) |got| {
+                const want = try c.expectedRefusals("sanitize-lists-v3-refuses");
+                if (std.mem.eql(u8, got, want)) return null;
+                detail("{s}: v3 refuses, but not what sanitize-lists-v3-refuses names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, want, got });
+                because("[" ++ out ++ "] v3 refuses other writes than sanitize-lists-v3-refuses names", .{});
+                return error.SanitisedRefusalDiffers;
+            }
+            detail("{s}: v3 accepts a page it must refuse (sanitize-lists-v3-refuses)\n", .{c.fixture.name});
+            because("[" ++ out ++ "] v3 accepts a page it must refuse", .{});
+            return error.SanitisedRefusalAccepted;
+        }
         var args: std.ArrayList([]const u8) = .empty;
         try args.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership=v3", "--ownership-everywhere", "--sanitize-lists", "--out=" ++ out });
         try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
