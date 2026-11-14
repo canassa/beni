@@ -361,9 +361,24 @@ pub const Reader = struct {
         const es = r.from.layouts[id] orelse &.{};
         var out: std.ArrayList(Loc.Entry) = .empty;
         defer out.deinit(gpa);
+        // The locations of the labels of the entry before: an entry shares
+        // a prefix of its labels with the one before it, and only the labels
+        // after that prefix are looked up. Each comparison and each lookup is
+        // work of the module that reads the contract (kernel §8).
+        var prev: []const u64 = &.{};
+        var path: std.ArrayList(u32) = .empty;
+        defer path.deinit(gpa);
         for (es) |e| {
-            var at: u32 = 0;
-            for (e.labels) |l| at = try loc.extend(at, @bitCast(l));
+            var same: usize = 0;
+            while (same < prev.len and same < e.labels.len and prev[same] == e.labels[same]) same += 1;
+            path.shrinkRetainingCapacity(same);
+            loc.units +|= Loc.scanUnits(same) + (e.labels.len - same) * Loc.lookup_units;
+            var at: u32 = if (same == 0) 0 else path.items[same - 1];
+            for (e.labels[same..]) |l| {
+                at = try loc.extend(at, @bitCast(l));
+                try path.append(gpa, at);
+            }
+            prev = e.labels;
             try out.append(gpa, .{ .loc = at, .kind = e.kind, .single = !loc.loc_summary.items[at] });
         }
         const got = if (out.items.len == 0) loc.empty_layout else try loc.addLayout(out.items);

@@ -613,7 +613,8 @@ paths:
     part of a construction that a walk of values or a projection visits, each part a record update
     copies, each atom of a run that `uniqueTail` sorts, each atom copied out of the memo of the walks
     of values, and each entry of a call map read (`argEntries`); each part of a construction that a
-    walk of values goes into is 4 units (`lookup_units`: it looks up its projection); each location of
+    walk of values goes into is 4 units (`Loc.lookup_units`, the units of a lookup in a hash table: it
+    looks up its projection); each location of
     a frame's result, each pair of locations of a written operand and another that are compared
     (`otherReaches`), and each pair of two parts of one location (`expandSrcs`).
 
@@ -625,10 +626,16 @@ paths:
   (`token_units`) for each token of its source** — or for each instruction of its BIR, where it has more
   (`Mod.module_size`). Every unit that a declaration counts counts against its module too
   (`Mod.module_units`), and so does the work of the module's location table (`Loc.Table.units`): each
-  step that the visit of a layout takes, each entry that it adds, each entry of a projection, a path
-  and a call map that it builds, and each location that the search of a call map climbs; a scan or a
-  copy of a run of words (the path of an entry, the places on a path through a cycle) is one unit and
-  one for each four words (`scanUnits`). `Mod.overBudget` tests the two budgets together at each
+  step that the visit of a layout takes and each step of the path that a projection follows for each
+  entry (`abstractPath`), each a lookup; each label of a layout of an imported contract that the
+  module reads, a lookup (`Contract.Reader`: an entry shares the prefix of its labels with the entry
+  before it, and only the rest is looked up); each entry that a layout adds, each entry of a
+  projection, a path and a call map that the table builds, and each location that the search of a
+  call map climbs; and each place and step that the place graph adds for a type the module names,
+  32 units (`Mod.chargePlaces`: `own2`'s adapter takes about as long for one as a call of a walk).
+  A scan or a copy of a run of words (the path of an entry, the places on a path
+  through a cycle, the climb of a location to its root) is one unit and one for each four words
+  (`scanUnits`). `Mod.overBudget` tests the two budgets together at each
   count. A memo entry of the table is built whole, and a loop that has begun ends its pass, so a
   module passes its budget by at most one such piece of work: a call map of two layouts of 4 096
   entries, or one pass over the entries of one layout, about 2²⁴ units.
@@ -655,8 +662,9 @@ paths:
   root) does 5.2 million units (`chunks` of `tests/corpus/run/TailModConsBranches`), and the largest of
   a real root 3.6 million (`viewSidebar` of `bench/corpus`'s `NotesApp`; report 129 §8): the budget is
   about 6 and 9 times them. The module of an ownership root closest to its module budget is
-  `tests/corpus/ownership/DeepPathThroughList` (7.5 million units, 0.82 of its budget), and of a real
-  root `examples/conduit`'s `Main` (3.8 million, 0.24; report 130 §4). A declaration that reaches the budget took at most about a second on the
+  `tests/corpus/run/TailModConsBranches` (8.3 million units, 0.86 of its budget), and of a real
+  root `examples/conduit`'s `Main` (3.7 million, 0.24; report 130 §4). Three corpus programs of
+  paths more than a hundred levels deep pass their module budget (report 130 §8). A declaration that reaches the budget took at most about a second on the
   shapes research report 129 measured.
 
   *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked
@@ -685,9 +693,12 @@ and the contracts of its imports only). A unit took 1.7 to 7 ns on every shape t
 slowest program it found takes 5.2 s for 7 767 lines (40 modules over one record of 2 040 lists), and
 the largest ratio of the walks' time to the type check's is 130 (nested pairs of 2 048 lists, which the
 type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each
-piece of it is linear in what it builds: the indexes of a pair's meets and of a call map read the other
-way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), and a lookup
-in a table (`Loc.proj`, kept for each place and step).
+piece of it is linear in counted work: the indexes of a pair's meets and of a call map read the other
+way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), a lookup
+in a table (`Loc.proj`, kept for each place and step), and the module's published contracts
+(`Contract.publish`: the labels of each entry of each layout they name, once for each module, about
+four times the counted copy of those labels where the layout was built or read, and a copy of each
+contract that `finish` built).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every

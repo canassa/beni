@@ -462,10 +462,6 @@ fn tick(f: *Frame) bool {
     return m.steps_over;
 }
 
-/// The units of one lookup in a table of the walk or of the location table
-/// (kernel §8): a lookup costs about four elements compared.
-const lookup_units = 4;
-
 /// `n` units of work of a loop over atoms, counted against the
 /// declaration's budget and the module's (kernel §8): a step's own cost grows with the atoms
 /// it compares, so the budget counts them. True once the declaration is past
@@ -1060,7 +1056,7 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             // A walk of every part is work of its own (kernel §8): each part
             // looks up its projection, `lookup_units`. Past the budget it
             // holds a cell of no frame, and no write of it stands.
-            if (f.charge(n.b * lookup_units)) {
+            if (f.charge(n.b * Loc.lookup_units)) {
                 try out.append(f.gpa, outside_atom);
                 return true;
             }

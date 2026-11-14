@@ -199,6 +199,8 @@ pub const Mod = struct {
     /// has more) and its budget (`moduleBudget`).
     module_size: usize = 0,
     module_budget: u64 = std.math.maxInt(u64),
+    /// The places and steps of the place graph counted so far (`chargePlaces`).
+    place_records: u64 = 0,
     /// Per declaration: the steps that its walks took so far, in every round.
     decl_steps: []u64 = &.{},
     /// Per declaration: a walk of it gave up or passed its steps, so some
@@ -226,6 +228,9 @@ pub const Mod = struct {
     // ---- types ------------------------------------------------------------------
 
     pub fn placeOf(m: *Mod, v: Var.Optional) Allocator.Error!PlaceId {
+        // Each place and step that the place graph adds is work of the
+        // module (kernel §8).
+        defer m.chargePlaces();
         return m.adapter.placeOfVar(v) catch |err| switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             // A type past a limit of the place graph: it holds anything.
@@ -234,6 +239,16 @@ pub const Mod = struct {
                 break :blk m.var_place;
             },
         };
+    }
+
+    /// Count the places and steps that the place graph added since the last
+    /// count against the module's budget (kernel §8): each costs about
+    /// what a call of a walk costs (`call_units`), measured on the shapes
+    /// of research report 130.
+    fn chargePlaces(m: *Mod) void {
+        const now = @as(u64, m.places.count()) + m.places.step_tab.list.len;
+        m.loc.units +|= (now -| m.place_records) *| call_units;
+        m.place_records = now;
     }
 
     pub fn typeOfInst(m: *const Mod, inst: u32) Var.Optional {

@@ -116,10 +116,14 @@ const PathKey = struct { parent: u32, step: u32 };
 const CoverKey = struct { sig: u32, of: u32 };
 const EntryKey = struct { layout: u32, loc: u32 };
 
+/// The units of one lookup in a hash table of the walk or of the location
+/// table (kernel §8): a lookup costs about four elements compared.
+pub const lookup_units = 4;
+
 /// The units of a scan or a copy of `n` words in a row (kernel §8): one, and
 /// one for each four words. A word of a run costs about a quarter of an
 /// element that a walk visits, measured on the corpus (research report 130).
-fn scanUnits(n: usize) u64 {
+pub fn scanUnits(n: usize) u64 {
     return 1 + n / 4;
 }
 
@@ -423,7 +427,8 @@ pub const Table = struct {
             if (k != .list) return;
         }
         const st = t.places.steps(place);
-        t.units +|= st.steps.len;
+        // Each step extends a location: a lookup.
+        t.units +|= st.steps.len * lookup_units;
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -440,7 +445,7 @@ pub const Table = struct {
             if (k != .list) return;
         }
         const st = t.places.steps(place);
-        t.units +|= st.steps.len * scanUnits(b.on_path.items.len - base);
+        t.units +|= st.steps.len * (lookup_units + scanUnits(b.on_path.items.len - base));
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -479,7 +484,7 @@ pub const Table = struct {
             if (k != .list) return;
         }
         const st = t.places.steps(m);
-        t.units +|= st.steps.len;
+        t.units +|= st.steps.len * lookup_units;
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -501,7 +506,8 @@ pub const Table = struct {
         var deep = false;
         if (in_cycle) try on_path.append(t.gpa, root.int());
         for (steps) |w| {
-            t.units +|= scanUnits(on_path.items.len);
+            // A step: a child in the place graph, a location extended, a scan of the path.
+            t.units +|= lookup_units + scanUnits(on_path.items.len);
             const s = Step.fromWord(w);
             const next = t.places.child(cur, s) orelse return null;
             if (in_cycle and t.places.sameComponent(cur, next)) {
@@ -721,6 +727,8 @@ pub const Table = struct {
             // `List (Tree2 T)`) puts places of the caller's cycle under a
             // wide entry of the signature. Then one label path names two sets
             // of cells, and no entry covers it (research report 125 §6).
+            // The climb to the root that `deepEntry` takes.
+            t.units +|= scanUnits(t.loc_depth.items[e.loc]);
             const deep = t.deepEntry(e.loc);
             const wider = deep != none and t.cycleWider(sig, deep);
             // Every match the walk can take — the location itself, a wide
