@@ -597,45 +597,67 @@ paths:
   `top` use and the depth started again at 0, so the bound bounded nothing, and the use's supplies never
   escaped: a list handed down 18 closures to one that kept it was written in place. A walk is bounded by
   the two rules above and the limit below, not by a depth.
-- **One declaration takes at most `Check.max_walk_steps` steps** (1 048 576), **over all of its walks**:
-  one budget for each declaration (`Mod.decl_steps`), which every loop that no memo bounds counts against
-  (`Frame.tick`):
-  - each expression the walk evaluates (`eval`; past the budget the walk goes no deeper, and a write it
-    did not reach has no line, so it is not authorised);
-  - each call of `flow`, `resolve`, `answerOf`, `answerOfCode`, `leaves`, `leavesOwn`, `reach`,
-    `partsOf`, `ownSupply`, `answerOwn` and `expandSrcs`;
-  - each pair of a write and an escape (`demand`) and of a write and a later read (`finishDemands`);
-  - in the entry (`entryCall`, rule 13), each entry of the contract's answer that a model location
-    meets and each model location that a parameter entry meets (`meetsOf`), and each step of the
-    taking away;
-  - every round of the declaration's recursive group (`solveGroup`, rule 9) and of a group of its local
-    functions (`solveCodes`): the rounds walk again and keep counting, they do not start the count
-    again.
+- **One declaration does at most `Check.max_walk_steps` units of work** (33 554 432), **over all of its
+  walks**: one budget for each declaration (`Mod.decl_steps`), which every loop that no memo bounds
+  counts against. Two kinds of thing count:
+  - **a call, 32 units** (`Check.call_units`: about what a call costs beside the loops inside it, so the
+    budget is about a million calls; `Frame.tick`): each expression the walk evaluates (`eval`; past
+    the budget the walk goes no deeper, and a write it did not reach has no line, so it is not
+    authorised); each call of `flow`, `resolve`, `answerOf`, `answerOfCode`, `leaves`, `leavesOwn`,
+    `reach`, `partsOf`, `ownSupply`, `answerOwn` and `expandSrcs`; each pair of a write and an escape
+    (`demand`) and of a write and a later read (`finishDemands`); in the entry (`entryCall`, rule 13),
+    each entry of the contract's answer that a model location meets and each model location that a
+    parameter entry meets (`meetsOf`), and each step of the taking away;
+  - **an element visited, 1 unit** (`Frame.charge`): each atom compared in a test of two runs of atoms
+    (`overlapAny`, `dupOverlap`, `atomsReach`), each pair of entries that `deriveLinear` tests, each
+    part of a construction that a walk of values or a projection visits, each part a record update
+    copies, each atom of a run that `uniqueTail` sorts, each atom copied out of the memo of the walks
+    of values, and each entry of a call map read (`argEntries`).
 
-  Past it every walk returns at once, the declaration gives up (§3.3), and the module's report has an
-  `ownership_limit` line that names the limit: a loud refusal. A member of a recursive group past it
-  stops the group's rounds, and no member publishes a contract. In the entry, a budget passed takes
-  every model location out of `own`, so every write the entry judges is refused. The `via`s of a schema
-  and the exports of a `--library` build (§6.14) are walked under the budget of their declaration. The
-  largest declaration of the 2 311 ownership roots (every corpus program and every real root) takes
-  49 480 steps with every loop counted (`changeRouteTo` of `examples/conduit`; report 129 §8), so the
-  budget is about 21 times it.
+  Every round of the declaration's recursive group (`solveGroup`, rule 9) and of a group of its local
+  functions (`solveCodes`) counts too: the rounds walk again and keep counting; they do not start the
+  count again.
+
+  Past it every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
+  atoms answers on the pessimistic side (the two can
+  share a cell, one cell is at two places, a root is not linear), the declaration gives up (§3.3), and
+  the module's report has an `ownership_limit` line that names the limit: a loud refusal. A member of a
+  recursive group past it stops the group's rounds, and no member publishes a contract. In the entry, a
+  budget passed takes every model location out of `own`, so every write the entry judges is refused. No
+  other declaration of the module is walked after one passes its budget (`Mod.module_over`): each
+  publishes nothing, an importer reads it as unknown code, and the module authorises no write. The
+  `via`s of a schema and the exports of a `--library` build (§6.14) are walked under the budget of their
+  declaration. The largest declaration of the 2 311 ownership roots (every corpus program and every real
+  root) does 5.2 million units (`chunks` of `tests/corpus/run/TailModConsBranches`), and the largest of
+  a real root 3.6 million (`viewSidebar` of `bench/corpus`'s `NotesApp`; report 129 §8): the budget is
+  about 6 and 9 times them. A declaration that reaches the budget took at most about a second on the
+  shapes research report 129 measured.
 
   *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked
   each member up to 64 times with a new count each time (6.5 s for a 400-line program, about 30 s for a
   member near both limits), and the entry's largest solution took one round for each model location,
   each round over every pair of locations, with no step counted (18.7 s for 800 list fields). The entry
   now reads each fact once and takes away along a worklist (`entryCall`): about the number of pairs of
-  locations that meet, not their fourth power.*
+  locations that meet, not their fourth power. Report 129's review found that a step's own cost grew
+  with the layout: one declaration of a record of 2 040 lists took 6 s under the step limit, and
+  declarations added up. The loops inside a step are counted now, and three were made to cost their
+  answer and not their layout (a record update reads its base's parts, `argEntries` reads an index of
+  the call map, `deriveLinear` pairs only entries that hold an atom, and with the callee's claim only
+  pairs with an answer of a function parameter).*
 
-**The complexity argument.** A memo-kept judgment costs one step for each equal use, so a DAG of `n`
+**The complexity argument.** A memo-kept judgment costs one unit for each equal use, so a DAG of `n`
 closures with `e` captures costs O(e) judgments and O(n) value walks per root walk. Every other loop of a
-declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point — is
-counted, so a declaration takes at most `max_walk_steps` steps however many times it is walked, and one
-step costs time polynomial in the size of the layouts it reads (at most 4 096 entries each). So the work
-of a module is polynomial in its size, whatever its shape. Two costs are outside the count, each
-polynomial and each kept, so no round repeats it: building a layout and a call map (`Loc.cover`, kept for
-each pair of layouts), and the index of a pair's meets (`MeetIndex`, kept for each pair in a frame).
+declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point, the
+tests of runs of atoms and the walks of the parts of a value — is counted by the elements it visits, so
+a declaration does at most `max_walk_steps` units however many times it is walked. So the work of a
+module is at most its number of declarations times the budget, whatever its shape, and it stops at the
+first declaration that passes the budget. Declarations that each stay under the budget add up: ten that
+each take about a second (a record of 2 040 lists written 300 times) take ten seconds (report 129 §10).
+The costs outside
+the count are each kept, so no round repeats them: building a layout and a call map (`Loc.cover`, kept
+for each pair of layouts), the indexes of a pair's meets and of a call map read the other way
+(`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), and a lookup in
+the place graph (`Loc.proj`, kept for each place and step).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
@@ -671,6 +693,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | every `switch` is exhaustive | the compiler, every file of `src/own3/` | §3.3 |
 | every instruction that names code, in a declaration whose code the backend emits, was walked | `Check.checkCovered` | §6.14 |
 | the index of a pair's meets says what `locsMeet` says, for layouts of at most 64 entries | `Frame.meetsOf` | §4.1, §6.13 |
+| the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
 
 ## 10. What the kernel costs
 

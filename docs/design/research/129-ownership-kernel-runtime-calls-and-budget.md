@@ -140,14 +140,19 @@ Report 128 §5 found two loops outside the step limit: the rounds of a recursive
 new count) and the entry's fixed point (no step counted). Kernel §8 said "per declaration"; the code
 bounded each walk.
 
-- **One budget for each declaration** (`Mod.decl_steps`): a walk starts its count where the
-  declaration's last walk stopped. The rounds of a recursive group count together; a member past the
-  budget stops the rounds, and no member publishes a contract.
-- **Every loop that no memo bounds is counted**: each expression the walk evaluates; the calls of the
-  walks of values and functions (as before); each pair of a write and an escape, and of a write and a
-  later read; in the entry, each pair of locations that meet and each step of the taking away. Past the
-  budget the walk goes no deeper, every line it made is refused, and the entry takes every model location
-  out of `own`.
+- **One budget for each declaration** (`Mod.decl_steps`, 2²⁵ = 33 554 432 units): a walk starts its
+  count where the declaration's last walk stopped. The rounds of a recursive group count together; a
+  member past the budget stops the rounds, and no member publishes a contract. After one declaration
+  passes it, no other declaration of the module is walked (the module authorises no write anyway).
+- **Every loop that no memo bounds is counted.** A call is 32 units: each expression the walk evaluates,
+  the calls of the walks of values and functions (as before), each pair of a write and an escape and of
+  a write and a later read, and in the entry each pair of locations that meet and each step of the
+  taking away. An element visited inside a call is 1 unit: each atom compared in a test of two runs of
+  atoms, each pair of entries `deriveLinear` tests, each part a walk of values, a projection or a record
+  update visits, each atom sorted or copied, each entry of a call map read (`Frame.charge`; added after
+  the review, §10). Past the budget the walk goes no deeper, the rounds of local functions stop, every
+  test of atoms answers on the pessimistic side, every line is refused, and the entry takes every model
+  location out of `own`.
 - **The entry's fixed point is linear in what it reads.** It started from `own` everywhere and took one
   location away per round, and each round compared every model location with every entry of the answer
   and every parameter location (`locsMeet`): n⁴ for n list fields. It now reads each producer's facts
@@ -161,8 +166,8 @@ bounded each walk.
 |---|---|---|
 | `entry-shift-slow.dead` (800 fields) | SAME, 19.2 s | SAME, 0.16 s |
 | `entry-shift-control.dead` | SAME, 0.21 s | SAME, 0.15 s |
-| `group-rounds-slow.dead` | SAME, 6.7 s | **LIMIT**, 0.28 s |
-| `group-rounds-control.dead` | SAME, 0.16 s | SAME, 0.17 s |
+| `group-rounds-slow.dead` | SAME, 6.7 s | **LIMIT**, 0.11 s |
+| `group-rounds-control.dead` | SAME, 0.16 s | SAME, 0.08 s |
 
 *ReleaseSafe LLVM compilers, `beni check`, one run each.* `group-rounds-slow.dead` is safe, and is now
 refused with the loud limit: its group needs about 60 rounds (report 128 §5.2), and together they pass
@@ -255,6 +260,7 @@ run there with the test file copied in:
 | `runtime-calls-faults/via-copy.dead` | accepted | accepted |
 | `runtime-calls-faults/constant-method.live` | accepted | refused |
 | `runtime-calls-faults/constant-method.dead` | accepted | accepted |
+| `runtime-calls-faults/locals-after-limit.dead` (the review, 200 local functions) | the limit, 1.4 s | the limit, 0.46 s |
 | a `--library` export that writes its parameter (inline) | accepted | refused |
 | the same export writing a copy | accepted | accepted |
 
@@ -314,8 +320,9 @@ of 960 programs). **0 TRAP, DIFF or CRASH after, and no timeout.** SAME before �
 | wider-functions | 354 | 144 → 144 | 210 → 210 | 0 → 0 | |
 
 SAME is the same in every folder but three. Every program that moved is in `blind8g`'s `schema` family
-(55), the two fault folders of the schema fault (the via programs, `constant-method.live`), and
-`group-rounds-slow.dead` (SAME → the loud limit). No program moved from REFUSED to SAME. The BOTHFAIL and
+(55, and one of its `slow` family), the two fault folders of the schema fault (the via programs, `constant-method.live`), and
+`group-rounds-slow.dead` and `blind8g`'s `slow.group-rounds.r30.dead` (SAME → the loud limit). No program
+moved from REFUSED to SAME. The BOTHFAIL and
 PLAINFAIL rows are the same before and after.
 
 - **The sanitiser corpus** (`bench/ownership-step0-sanitiser.mjs`, 347 fixtures): 93 same, 254 refused,
@@ -323,12 +330,14 @@ PLAINFAIL rows are the same before and after.
 - **Real writes** (`bench/ownership-v2-review.mjs --checkers=v1,v3 --roots=real`): of the 308 writes v1
   judges, v3 accepts 287, refuses 20 and has no line for 1, before and after; the lists are equal line
   for line. **No write is lost or won.**
-- **Steps.** The largest declaration of all 2 311 ownership roots takes 49 480 steps with every loop
-  counted (`changeRouteTo` of `examples/conduit`; 49 383 before the new loops were counted). No root
-  reaches the budget, which is about 21 times that.
+- **Units.** The largest declaration of all 2 311 ownership roots does 5.2 million units (`chunks` of
+  `tests/corpus/run/TailModConsBranches`), and the largest of a real root 3.6 million (`viewSidebar` of
+  `bench/corpus`'s `NotesApp`). No root reaches the budget of 33.5 million, about 6 and 9 times them.
+  Counted as before this work (calls only), the largest was 49 480 (`changeRouteTo` of
+  `examples/conduit`).
 - **Speed** (ReleaseFast LLVM compilers of each tree, `ownership-v2-review.mjs --checkers=v1,v2,v3
   --runs=3 --jobs=1`, one after the other): v3 on v2's modules (169 846 lines) **565k lines/s before,
-  571k after** (300.5 → 297.7 ms): no cost.
+  553k after** (300.5 → 306.9 ms), 2 %.
 - **`zig build gates`:** green on the final commit.
 
 ## 9. Precision
@@ -338,14 +347,63 @@ PLAINFAIL rows are the same before and after.
   all before, so it was never in place). In `blind8g`'s `schema` family that is 37 programs that printed
   the same and are refused now. Winning them back needs the workers applied as calls, with the path from
   the worker's argument to what each `via` function is handed; the kernel does not have that fact.
-- **Lost, loudly:** a recursive group whose rounds together pass the budget (`group-rounds-slow.dead`).
+- **Lost, loudly:** a recursive group whose rounds together pass the budget (`group-rounds-slow.dead`,
+  `blind8g`'s `slow.group-rounds.r30.dead`), and the declarations of a module after one that passed it.
 - **Lost, by the constant-method rule:** a method written as a constant (`pub eq = keeper`) is code with
   no contract to derived code and to evidence. Written as a function, it is judged by its contract.
 - **Won:** none. `entry-shift-slow.dead` is accepted as before, in 0.16 s and not 19 s.
 
 ## 10. The review
 
-The review follows the final code commit; its findings are below once it has run.
+One fresh reader had the code and the kernel, and was asked for a call into the program with no rule, a
+give-up that accepts, or a check that does not end fast.
+
+- **Not found: a call with no rule.** Fifteen probes: `--library` exports in seven shapes (a constant
+  that names a writer, a record of one, a lambda, an export that answers one, an opaque type that holds
+  one, a constant made by a call, a partial application); a `via conv` and a schema built in a body and
+  run with `Schema.encode`; constant methods called directly and by a dot-call; a write in one hole of
+  markup that an earlier hole reads, on `browser-tea` and `browser-inline`. Each was refused where it
+  should be. The reader also read `Reach.zig`'s edges against §6.14's table.
+- **Not found: a give-up that accepts.** Every limit and give-up in an application module fails the
+  build, and the other modules authorise no write.
+- **Found: checks that do not end fast.** The step limit counted steps, and a step's own cost grew with
+  the layout: a declaration over a record of 2 040 lists took 6.3 s under the limit and was accepted;
+  three of them took 17.9 s; 30 declarations over nested pairs of 2 048 lists took 9.6 s. The commit
+  before this work took the same time, so it is not new, but it is what §8 claimed not to be. **Fixed:**
+  the budget counts units of work: a call is 32, and every loop inside a call counts the elements it
+  visits (§8). Four loops now cost their answer and not their layout: a record update reads its base's
+  parts, `argEntries` reads an index of the call map (`CoverIndex`), `deriveLinear` pairs only entries
+  that hold an atom, and with the callee's claim only pairs with an answer of a function parameter.
+- **Found: a wrong claim.** §8 said the index of meets was kept "so no round repeats it"; it is kept for
+  a frame, and each round makes a frame. The text says so now.
+- **The mechanical check:** "sound as described"; its blind spot is the one it names.
+
+**The second pass**, on the diff of those fixes:
+
+- **Not found:** an early answer past the budget that is optimistic. Every caller of a test that charges
+  reads `true` on the pessimistic side, and every such answer has set the declaration past its budget,
+  which ends in a limit line. The rewritten loops give the results they gave before (a record update's
+  fast path copies at most more parts, the conservative side).
+- **Found: work after the budget.** The rounds of local functions still built, joined and compared
+  contracts of the layout's size for each local function after the budget was spent: 800 local
+  functions over a record of 2 040 lists took 6 s past the limit. **Fixed:** `solveCodes` stops at the
+  budget, and a module walks no other declaration after one passes it (`locals-after-limit.dead`, a
+  test). The budget's reset now comes before a declaration's frame is made.
+- **Open, by design:** the budget is per declaration, so declarations that each stay under it add up.
+  Ten declarations of 300 lines over a record of 2 040 lists are accepted in 7.8 s, against 1.2 s for the
+  plain check. A budget per module would bound it; this work did not add one (§12).
+
+The final figures, ReleaseSafe LLVM compiler, on a quiet machine:
+
+| Program | Check | Plain check | Verdict |
+|---|---:|---:|---|
+| 2 040-field record, one declaration (review) | 1.39 s | 0.35 s | limit |
+| the same, three declarations | 2.07 s | 1.01 s | limit (the first; the rest not walked) |
+| nested pairs of 2 048 lists, 30 declarations | 1.21 s | 0.03 s | accepted |
+| 800 local functions (review) | 1.87 s | 1.68 s | limit |
+| 10 declarations each under the budget (review) | 7.81 s | 1.23 s | accepted |
+| `climb.live` | 0.10 s | 0.01 s | limit |
+| `locals-after-limit.dead` | 0.46 s | 0.26 s | limit |
 
 ## 11. How to reproduce
 
@@ -369,3 +427,11 @@ node bench/ownership-v2-review.mjs --beni=zig-out/perf/bin/beni --checkers=v1,v2
 
 The steps of §8 were counted by a compiler with a print of each declaration's steps after each walk,
 built for the measurement and not kept, over every root of `bench/ownership-roots.mjs`.
+
+## 12. Open
+
+- **A budget per module.** The per-declaration budget bounds one declaration to about a second at worst
+  on the shapes measured, and a module to its number of declarations times that.
+- **Precision of the `via` rule** (§9): the workers applied as calls would win back the prints whose
+  value nothing reads after.
+
