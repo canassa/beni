@@ -6702,27 +6702,39 @@ test "ownership v3: a literal earns what its walk costs, not what its tokens wou
     }
 }
 
-// The review of research report 136: a list whose rows are literal lists
+// The reviews of research report 136: a list whose rows are literal lists
 // but one, a name, was no literal, so it earned nothing for the pairs of
 // its rows' cells that the walk tests, and 1 400 rows passed the module's
-// budget. A construction earns the pairs of the literal cells in it now,
-// whether or not it is a literal itself (kernel §8).
+// budget; and so did 8 groups of 250 rows, each headed by the name. A
+// construction earns the pairs of the literal cells in it now, at any
+// depth, whether or not it is a literal itself (kernel §8).
 test "ownership v3: a table of literal rows beside a name is accepted" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
-    var src: std.ArrayList(u8) = .empty;
-    try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\nfirst : List Int\nfirst =\n    [ 0, 0 ]\n\n\ntable : List (List Int)\ntable =\n    [ first\n");
-    for (0..1400) |i| try src.print(a, "    , [ {d}, {d} ]\n", .{ i, i + 1 });
-    try src.appendSlice(a, "    ]\n\n\nmain : Program\nmain =\n    Node.print (String.fromInt (List.length table))\n");
-    try w.write("Main.beni", src.items);
-    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
-        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
-        return err;
-    };
-    if (r.exit_code != 0) {
-        std.debug.print("wanted the table accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
-        return error.TestUnexpectedVerdict;
+    for ([_][2]usize{ .{ 1, 1400 }, .{ 8, 250 } }) |shape| {
+        const groups = shape[0];
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\nfirst : List Int\nfirst =\n    [ 0, 0 ]\n\n\n");
+        try src.appendSlice(a, if (groups == 1) "table : List (List Int)\ntable =\n" else "table : List (List (List Int))\ntable =\n");
+        // One group: `[ first, … ]`; more: `[ [ first, … ], [ first, … ] ]`.
+        const pad = if (groups == 1) "    " else "      ";
+        for (0..groups) |g| {
+            try src.appendSlice(a, if (groups == 1) "    [ first\n" else if (g == 0) "    [ [ first\n" else "    , [ first\n");
+            for (0..shape[1]) |i| try src.print(a, "{s}, [ {d}, {d} ]\n", .{ pad, i, i + 1 });
+            try src.print(a, "{s}]\n", .{pad});
+        }
+        if (groups != 1) try src.appendSlice(a, "    ]\n");
+        try src.appendSlice(a, "\n\nmain : Program\nmain =\n    Node.print (String.fromInt (List.length table))\n");
+        try w.write("Main.beni", src.items);
+        const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{d} groups: the check did not end in 10 s ({s})\n", .{ groups, @errorName(err) });
+            return err;
+        };
+        if (r.exit_code != 0) {
+            std.debug.print("{d} groups: wanted the table accepted; exit {d}:\n{s}\n", .{ groups, r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+            return error.TestUnexpectedVerdict;
+        }
     }
 }
 

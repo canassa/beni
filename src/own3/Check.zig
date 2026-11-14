@@ -340,9 +340,11 @@ pub const Mod = struct {
     /// construction no literal, which only earns more.
     fn earnedUnits(m: *Mod) Allocator.Error!u64 {
         const n = m.tags.len;
-        // Per instruction of a literal: the lists in it, its cells.
+        // Per instruction: the lists of literals in it, its cells; 0 for
+        // one that is no construction.
         const cells = try m.gpa.alloc(u32, n);
         defer m.gpa.free(cells);
+        @memset(cells, 0);
         var lit = try std.DynamicBitSetUnmanaged.initEmpty(m.gpa, n);
         defer lit.deinit(m.gpa);
         var earned: u64 = 0;
@@ -381,7 +383,12 @@ pub const Mod = struct {
             }
             // A construction that is no literal still brings the cells of
             // the literals in it together, and the walk tests their pairs.
-            earned +|= pair_units *| (pairs(kids.cells +| @intFromBool(m.tags[i] == .list)) -| kids.pairs);
+            // It hands its cells on: a list of such constructions brings
+            // theirs together again.
+            if (kids.cells != 0) {
+                cells[i] = kids.cells +| @intFromBool(m.tags[i] == .list);
+                earned +|= pair_units *| (pairs(cells[i]) -| kids.pairs);
+            }
             earned +|= switch (m.tags[i]) {
                 .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target => type_units,
                 // A `via` is a function that a walk evaluates (kernel §6.14).
@@ -399,14 +406,14 @@ pub const Mod = struct {
         pairs: u64 = 0,
 
         /// Whether element `e` of instruction `i` is a literal lowered
-        /// before it; if so, its cells are the construction's too. Every
-        /// element is read, so a construction that is no literal still knows
-        /// the cells of the literals in it.
+        /// before it. The cells of the literals in it, at any depth, are the
+        /// construction's too, whether or not it is a literal: every element
+        /// is read.
         fn add(k: *Kids, lit: *const std.DynamicBitSetUnmanaged, cells: []const u32, i: usize, e: u32) bool {
-            if (!(e < i and lit.isSet(e))) return false;
+            if (!(e < i)) return false;
             k.cells +|= cells[e];
             k.pairs +|= pairs(cells[e]);
-            return true;
+            return lit.isSet(e);
         }
 
         fn all(k: *Kids, lit: *const std.DynamicBitSetUnmanaged, cells: []const u32, i: usize, items: []const Inst.Index) bool {
