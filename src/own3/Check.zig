@@ -850,12 +850,16 @@ pub const Mod = struct {
 
     /// `edgeEffect` for `rowInfo` and `termsInfo`: a declaration of this
     /// module that it reads is noted (`contractChanged`).
+    /// The bit is set after the read: a first read of a worded contract
+    /// changes it (`declContract`), and that change must not clear the bits
+    /// of the reads before it.
     fn rowEdgeEffect(m: *Mod, e: Edges.Edge) Allocator.Error!Contract.Effect {
+        const x = try m.edgeEffect(e);
         switch (e) {
             .top => |d| if (d < m.row_read.bit_length) m.row_read.set(d),
             else => {},
         }
-        return m.edgeEffect(e);
+        return x;
     }
 
     /// For each derived method of a nominal type that this module emits:
