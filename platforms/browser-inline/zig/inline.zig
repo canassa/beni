@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 28 },
+    .targets = .{ .major = 1, .minor = 29 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -167,6 +167,7 @@ pub const lowering: m.Lowering = .{
         .cmd = "Cmd",
         .entry_capture = .{ .module = "Listen", .name = "callback" },
         .command_context = true,
+        .after_render = true,
         .update_writers = &.{
             .{ .package = .core, .module = "Task", .name = "withClock" },
             .{ .package = .core, .module = "Task", .name = "withLogContext" },

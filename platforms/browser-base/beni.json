@@ -2,5 +2,5 @@
   "platform": true,
   "name": "browser-base",
   "platforms": ["html"],
-  "reexports": ["Html", "Html.Markdown", "Cmd", "Sub", "Time", "Browser.Events"]
+  "reexports": ["Html", "Html.Markdown", "Cmd", "Sub", "Time", "Browser.Events", "Dom"]
 }
