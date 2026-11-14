@@ -1,0 +1,8 @@
+bench/ownership-sweeps/words-faults/sort-alias.live REFUSED later-use Main.beni:28:10
+bench/ownership-sweeps/words-faults/swap-dup.live REFUSED element Main.beni:28:10
+bench/ownership-sweeps/words-faults/sort-dup.live REFUSED element Main.beni:28:10
+bench/ownership-sweeps/words-faults/swap-fresh.live SAME
+bench/ownership-sweeps/words-faults/swap-same.live REFUSED later-use Main.beni:29:10
+bench/ownership-sweeps/words-faults/update-alias.live REFUSED later-use Main.beni:28:10
+bench/ownership-sweeps/words-faults/update-dup.live REFUSED element Main.beni:27:10
+bench/ownership-sweeps/words-faults/update-self.live REFUSED disjoint Main.beni:27:10

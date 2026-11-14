@@ -1,0 +1,29 @@
+-- List.sortWith of a list whose two elements are one list: write one of the answer's.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+all : List (List Int) → String
+all xss = String.join (List.map xss ints) ";"
+
+
+bump : List Int → List Int
+bump ys = List.push ys 9
+
+
+later : List Int, List Int → Order
+later a b = compare (List.length b) (List.length a)
+
+
+main : Program
+main =
+    xs = List.repeat [ 1 ] 2
+    ys = List.sortWith xs later
+    zs = List.update ys 0 bump
+    Node.print (all zs)

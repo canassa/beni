@@ -1,0 +1,8 @@
+bench/ownership-sweeps/words-faults/sort-alias.live
+bench/ownership-sweeps/words-faults/sort-dup.live
+bench/ownership-sweeps/words-faults/swap-dup.live
+bench/ownership-sweeps/words-faults/swap-fresh.live
+bench/ownership-sweeps/words-faults/swap-same.live
+bench/ownership-sweeps/words-faults/update-alias.live
+bench/ownership-sweeps/words-faults/update-dup.live
+bench/ownership-sweeps/words-faults/update-self.live
