@@ -2117,10 +2117,11 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
 
     // Each declaration that a walk can read, its budget, before any walk
     // (kernel §8): the module's budget is the sum, whatever the order.
-    // Past the layout limit or the module's budget no declaration is walked,
-    // and none needs one.
+    // Past the layout limit no declaration is walked, and none needs one.
+    // The module's budget is not tested here: whether it stopped the loop
+    // would depend on the order of the declarations.
     for (bir.decls, 0..) |d, di| {
-        if (m.loc.over.items.len != 0 or m.loc.units > m.module_budget) break;
+        if (m.loc.over.items.len != 0) break;
         if (!((d.kind == .value and d.body != .none) or d.kind == .schema)) continue;
         m.decl_budget[di] = try m.declBudget(@intCast(di));
     }
