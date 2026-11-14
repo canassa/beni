@@ -395,6 +395,9 @@ reach_seen: std.AutoHashMapUnmanaged(Val, void) = .empty,
 /// The part of each join that `project` made, by the join and the step:
 /// kept for the frame, since a value never changes once it is made.
 proj_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
+/// Per construction (a `built` value): for each entry of its place's
+/// layout, the parts that hold a location there (`builtIndex`).
+built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
 reach_nest: u32 = 0,
 flow_active: std.ArrayList(struct { key: FlowKey, args: []const Val }) = .empty,
 /// The lowest depth of a use whose context the judgments in work read: the
@@ -743,11 +746,348 @@ fn viaApart(f: *const Frame, x: Atom, y: Atom) bool {
     return x.via_e != y.via_e or !f.comparable(x.via_path, y.via_path);
 }
 
-/// The one duplicate test of a run that parts build (kernel §4.4): whether
-/// the part `out[before..]` holds a cell that the earlier parts `out[at..before]`
-/// hold too.
-fn partDup(f: *const Frame, out: []const Atom, at: usize, before: usize) bool {
-    return before > at and f.dupOverlap(out[at..before], out[before..]);
+/// The parts of one run that `partDup` tests, each against the parts before
+/// it: `out[at..]` is the run, and `parts` its parts, in order, each where
+/// the one before it ends. Whether one of them holds a cell an earlier one
+/// holds: a large run is tested by `runsShare`, linear in its atoms.
+fn partDup(f: *const Frame, out: []const Atom, at: usize, parts: []const [2]u32) Error!bool {
+    if (out.len - at > share_small) return f.runsShare(out, parts, null);
+    if (parts.len > 1) try f.checkShare(out, parts, null);
+    var dup = false;
+    for (parts) |p| if (p[0] > at and f.dupOverlap(out[at..p[0]], out[p[0]..p[1]])) {
+        dup = true;
+    };
+    return dup;
+}
+
+// ---- the one duplicate test of a set of runs ------------------------------------
+
+/// The scratch of `runsShare`, one for the module (`Mod.share`), cleared for each test.
+pub const ShareScratch = struct {
+    /// Per cell `(root, entry)`: its group.
+    groups: std.AutoHashMapUnmanaged(u64, u32) = .empty,
+    /// Per group: its last atom (its atoms are a list through `prev`), its
+    /// size, its shallowest path's depth, and its tables (`Table`), or
+    /// `none` while it is small.
+    last: std.ArrayList(u32) = .empty,
+    size: std.ArrayList(u32) = .empty,
+    mind: std.ArrayList(u32) = .empty,
+    table: std.ArrayList(u32) = .empty,
+    /// Per atom of the test (its root is not `outside`): the atom, its run,
+    /// its group, and the atom before it in its group.
+    atoms: std.ArrayList(Atom) = .empty,
+    run_of: std.ArrayList(u32) = .empty,
+    group_of: std.ArrayList(u32) = .empty,
+    prev: std.ArrayList(u32) = .empty,
+    /// The tables of the large groups: per table and path, a few atoms there
+    /// (`PathSums`). A group has two tables, of all its atoms and of those of
+    /// a selected run, and two for each `(via, via_e)` of its atoms read
+    /// through a part of a root that holds each cell once (`parts`).
+    paths: std.AutoHashMapUnmanaged([2]u32, PathSums) = .empty,
+    parts: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
+    tables: u32 = 0,
+
+    pub fn deinit(s: *ShareScratch, gpa: Allocator) void {
+        s.groups.deinit(gpa);
+        s.last.deinit(gpa);
+        s.size.deinit(gpa);
+        s.mind.deinit(gpa);
+        s.table.deinit(gpa);
+        s.atoms.deinit(gpa);
+        s.run_of.deinit(gpa);
+        s.group_of.deinit(gpa);
+        s.prev.deinit(gpa);
+        s.paths.deinit(gpa);
+        s.parts.deinit(gpa);
+    }
+
+    fn clear(s: *ShareScratch) void {
+        s.groups.clearRetainingCapacity();
+        s.last.clearRetainingCapacity();
+        s.size.clearRetainingCapacity();
+        s.mind.clearRetainingCapacity();
+        s.table.clearRetainingCapacity();
+        s.atoms.clearRetainingCapacity();
+        s.run_of.clearRetainingCapacity();
+        s.group_of.clearRetainingCapacity();
+        s.prev.clearRetainingCapacity();
+        s.paths.clearRetainingCapacity();
+        s.parts.clearRetainingCapacity();
+        s.tables = 0;
+    }
+};
+
+/// What a table keeps of one path: up to two atoms at the path (`at`) and at
+/// or below it (`below`), of two different `via` keys (`viaKey`).
+const PathSums = struct { at: [2]u32 = .{ none, none }, below: [2]u32 = .{ none, none } };
+
+/// A group of at most this many atoms is tested in pairs: each atom costs at
+/// most this many comparisons, so the test stays linear in the atoms.
+const share_pairs_max = 32;
+
+/// A set of runs with at most this many atoms in all is tested in pairs, as
+/// before `runsShare` (kernel §8): the test costs what it did, and a safe
+/// build checks that `runsShare` answers the same (`checkShare`).
+const share_small = 64;
+
+/// Whether two different runs of `runs` (ranges of `atoms`) hold one cell: two
+/// atoms, one in each, that overlap and were not read through two apart parts
+/// of one root (`dupOverlap`). With `sel`, only a pair with at least one
+/// selected run counts. It answers what the test in pairs of every two runs
+/// answers, the one duplicate test of kernel §4.4, in time about linear in
+/// the atoms (kernel §8). The runs are taken one at a time: each atom of a
+/// run is tested against the atoms of the runs before it, and then they are
+/// added. The test ends at the first pair that is one cell.
+///
+/// - Two atoms can overlap only when they have one root and one entry, so each
+///   atom is in the group of its `(root, entry)`, one lookup, and is tested
+///   only against its group. `outside` overlaps nothing.
+/// - While a group holds at most `share_pairs_max` atoms, an atom is compared
+///   with each.
+/// - A larger group keeps tables of its atoms by path (`PathSums`): an atom
+///   looks up its own path for an atom at it or below it, and each path above
+///   its own to the group's shallowest for one at it. Two atoms at comparable
+///   paths are one cell unless both were read through two apart parts of one
+///   root that holds each cell once (`viaApart`): the same `via`, and another
+///   `via_e` or a `via_path` that is not comparable. So each path keeps two
+///   atoms of two different `via` keys, and one of them is one cell with the
+///   atom, if any atom there is whose `via` is not the atom's. Atoms of the
+///   same `via` and `via_e` have their own table, and a pair found there is
+///   tested for its `via_path`; when it fails, the atom is compared with each
+///   atom of its group of the same `via` and `via_e`.
+///
+/// Each atom grouped is a lookup, each path looked up or added to is one, and
+/// each pair compared is a unit; past the budget the runs share a cell.
+fn runsShare(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[]const bool) Error!bool {
+    return f.shareWith(atoms, runs, sel, true, share_pairs_max);
+}
+
+/// `runsShare`, counted when `charged` (a safe build's check counts
+/// nothing), with groups of more than `pairs_max` atoms tested by tables.
+fn shareWith(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[]const bool, comptime charged: bool, pairs_max: u32) Error!bool {
+    const m = f.m;
+    const gpa = m.gpa;
+    const s = &m.share;
+    s.clear();
+    if (runs.len < 2) return false;
+    // The largest run is taken last: its atoms are only tested, never added.
+    var last: usize = 0;
+    for (runs, 0..) |r, ri| if (r[1] - r[0] > runs[last][1] - runs[last][0]) {
+        last = ri;
+    };
+    for (0..runs.len) |k| {
+        const ri = if (k == runs.len - 1) last else if (k >= last) k + 1 else k;
+        const r = runs[ri];
+        const first: u32 = @intCast(s.atoms.items.len);
+        // Each atom of the run against the runs before it.
+        for (atoms[r[0]..r[1]]) |a| {
+            if (a.root == 0) continue;
+            if (charged and f.charge(Loc.lookup_units)) return true;
+            const i: u32 = @intCast(s.atoms.items.len);
+            try s.atoms.append(gpa, a);
+            try s.run_of.append(gpa, @intCast(ri));
+            try s.prev.append(gpa, none);
+            const got = try s.groups.getOrPut(gpa, @as(u64, a.root) << 32 | a.e);
+            if (!got.found_existing) {
+                got.value_ptr.* = @intCast(s.last.items.len);
+                try s.last.append(gpa, none);
+                try s.size.append(gpa, 0);
+                try s.mind.append(gpa, m.loc.paths.items[a.path].depth);
+                try s.table.append(gpa, none);
+            }
+            const g = got.value_ptr.*;
+            try s.group_of.append(gpa, g);
+            if (s.size.items[g] == 0) continue;
+            const mine_sel = if (sel) |sl| sl[ri] else true;
+            if (s.table.items[g] == none) {
+                if (try f.shareEach(g, i, sel, false, charged)) return true;
+                continue;
+            }
+            switch (try f.shareTables(g, i, mine_sel, charged)) {
+                .no => {},
+                .yes => return true,
+                .each => if (try f.shareEach(g, i, sel, true, charged)) return true,
+            }
+        }
+        // Then the run's atoms join their groups.
+        for (first..s.atoms.items.len) |ii| {
+            const i: u32 = @intCast(ii);
+            const g = s.group_of.items[i];
+            s.prev.items[i] = s.last.items[g];
+            s.last.items[g] = i;
+            s.size.items[g] += 1;
+            s.mind.items[g] = @min(s.mind.items[g], m.loc.paths.items[s.atoms.items[i].path].depth);
+            if (s.table.items[g] != none) {
+                if (try f.shareAdd(g, i, sel, charged)) return true;
+            } else if (s.size.items[g] > pairs_max) {
+                // A large group: its tables, from now on.
+                s.table.items[g] = s.tables;
+                s.tables += 2;
+                var j = s.last.items[g];
+                while (j != none) : (j = s.prev.items[j]) if (try f.shareAdd(g, j, sel, charged)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// Compare atom `i` with each atom of its group `g` (of runs before its own),
+/// or, with `same_part`, each of them of its `via` and `via_e`.
+fn shareEach(f: *const Frame, g: u32, i: u32, sel: ?[]const bool, same_part: bool, comptime charged: bool) Error!bool {
+    const s = &f.m.share;
+    if (charged and f.charge(s.size.items[g])) return true;
+    const x = s.atoms.items[i];
+    const mine_sel = if (sel) |sl| sl[s.run_of.items[i]] else true;
+    var j = s.last.items[g];
+    while (j != none) : (j = s.prev.items[j]) {
+        const y = s.atoms.items[j];
+        if (!mine_sel) if (sel) |sl| if (!sl[s.run_of.items[j]]) continue;
+        if (same_part and !(y.via == x.via and y.via_e == x.via_e)) continue;
+        if (f.atomsShare(x, y, charged)) return true;
+    }
+    return false;
+}
+
+/// The `via` key of atom `a` (kernel §4.4): 0 when no other atom can be apart
+/// from it (`viaApart`), else its `via` and one.
+fn viaKey(f: *const Frame, a: Atom) u32 {
+    if (a.via == none or f.roots.items[a.via].linear != .yes) return 0;
+    return a.via + 1;
+}
+
+/// The table of group `g`'s atoms read through `a`'s part, as `parts` has it
+/// (two ids: of all, and of a selected run); `none` when there is none.
+fn partTable(f: *const Frame, g: u32, a: Atom, make: bool) Error!u32 {
+    const s = &f.m.share;
+    if (!make) return s.parts.get(.{ g, a.via, a.via_e }) orelse none;
+    const got = try s.parts.getOrPut(f.m.gpa, .{ g, a.via, a.via_e });
+    if (!got.found_existing) {
+        got.value_ptr.* = s.tables;
+        s.tables += 2;
+    }
+    return got.value_ptr.*;
+}
+
+const TablesShare = enum { no, yes, each };
+
+/// The test of atom `i` against the tables of its group `g`.
+fn shareTables(f: *const Frame, g: u32, i: u32, mine_sel: bool, comptime charged: bool) Error!TablesShare {
+    const s = &f.m.share;
+    const x = s.atoms.items[i];
+    const k = f.viaKey(x);
+    // A selected atom pairs with any; another only with a selected one.
+    const side: u32 = if (mine_sel) 1 else 0;
+    if (try f.shareLook(s.table.items[g] + side, g, i, k, charged)) |y| return if (f.atomsShare(x, s.atoms.items[y], charged)) .yes else .each;
+    if (k == 0) return .no;
+    const pt = try f.partTable(g, x, false);
+    if (pt == none) return .no;
+    if (try f.shareLook(pt + side, g, i, 0, charged)) |y| return if (f.atomsShare(x, s.atoms.items[y], charged)) .yes else .each;
+    return .no;
+}
+
+/// An atom of table `t` at a path comparable with atom `i`'s whose `via` key
+/// is not `k` (any, when `k` is 0): at or below `i`'s path, or at a path
+/// above it to group `g`'s shallowest.
+fn shareLook(f: *const Frame, t: u32, g: u32, i: u32, k: u32, comptime charged: bool) Error!?u32 {
+    const s = &f.m.share;
+    const ps = f.m.loc.paths.items;
+    const x = s.atoms.items[i];
+    const mind = s.mind.items[g];
+    const depth = ps[x.path].depth;
+    if (charged and f.charge((1 + depth -| mind) * Loc.lookup_units)) return i;
+    if (s.paths.get(.{ t, x.path })) |sum| if (f.shareFit(sum.below, k)) |y| return y;
+    if (depth <= mind) return null;
+    var q = ps[x.path].parent;
+    while (true) {
+        if (s.paths.get(.{ t, q })) |sum| if (f.shareFit(sum.at, k)) |y| return y;
+        if (ps[q].depth <= mind) return null;
+        q = ps[q].parent;
+    }
+}
+
+/// Of two atoms of two different `via` keys, one whose key is not `k` (any, when `k` is 0).
+fn shareFit(f: *const Frame, two: [2]u32, k: u32) ?u32 {
+    const s = &f.m.share;
+    if (two[0] == none) return null;
+    if (k == 0 or f.viaKey(s.atoms.items[two[0]]) != k) return two[0];
+    return if (two[1] == none) null else two[1];
+}
+
+/// Atom `i` joins the tables of its group `g`: at its own path, and below
+/// each path from its own up to the root's. True past the budget.
+fn shareAdd(f: *const Frame, g: u32, i: u32, sel: ?[]const bool, comptime charged: bool) Error!bool {
+    const s = &f.m.share;
+    const x = s.atoms.items[i];
+    const selected = if (sel) |sl| sl[s.run_of.items[i]] else true;
+    const k = f.viaKey(x);
+    const pt = if (k == 0) none else try f.partTable(g, x, true);
+    const depth = f.m.loc.paths.items[x.path].depth;
+    const ts: u64 = (@as(u64, 1) + @intFromBool(selected)) * (@as(u64, 1) + @intFromBool(pt != none));
+    if (charged and f.charge(ts * (1 + depth) * Loc.lookup_units)) return true;
+    const base = s.table.items[g];
+    // The table of all atoms, and of those of a selected run.
+    try f.shareNote(base + 1, i, k);
+    if (selected) try f.shareNote(base, i, k);
+    if (pt != none) {
+        try f.shareNote(pt + 1, i, 0);
+        if (selected) try f.shareNote(pt, i, 0);
+    }
+    return false;
+}
+
+/// Atom `i`, of `via` key `k`, at its path in table `t` and below each path above it.
+fn shareNote(f: *const Frame, t: u32, i: u32, k: u32) Error!void {
+    const s = &f.m.share;
+    const ps = f.m.loc.paths.items;
+    var q = s.atoms.items[i].path;
+    var own = true;
+    while (true) {
+        const got = try s.paths.getOrPut(f.m.gpa, .{ t, q });
+        if (!got.found_existing) got.value_ptr.* = .{};
+        if (own) f.shareKeep(&got.value_ptr.at, i, k);
+        f.shareKeep(&got.value_ptr.below, i, k);
+        own = false;
+        if (ps[q].depth == 0) return;
+        q = ps[q].parent;
+    }
+}
+
+/// Keep atom `i`, of `via` key `k`, among two atoms of two different keys.
+fn shareKeep(f: *const Frame, two: *[2]u32, i: u32, k: u32) void {
+    if (two[0] == none) {
+        two[0] = i;
+    } else if (two[1] == none and f.viaKey(f.m.share.atoms.items[two[0]]) != k) {
+        two[1] = i;
+    }
+}
+
+/// Whether two atoms of one `(root, entry)` are one cell: they overlap, and
+/// were not read through two apart parts of one root (`dupOverlap`).
+fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
+    if (charged) return f.overlap(x, y) and !f.viaApart(x, y);
+    const loc = &f.m.loc;
+    if (!(x.root == y.root and x.root != 0 and x.e == y.e and loc.comparable(x.path, y.path))) return false;
+    // `viaApart`, with no count and no assertion: the check reads what the test reads.
+    if (x.via == none or x.via != y.via or f.roots.items[x.via].linear != .yes) return true;
+    return !(x.via_e != y.via_e or !loc.comparable(x.via_path, y.via_path));
+}
+
+/// In safe builds: `runsShare` answers what the test in pairs of every two
+/// runs answers, on a set small enough to test both ways (kernel §9), with
+/// its groups compared in pairs and with each tested by tables. No way counts
+/// here; past the budget the counted test said yes, and no answer is checked.
+fn checkShare(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[]const bool) Error!void {
+    if (!safety or f.m.steps_over) return;
+    var old = false;
+    pairs: for (runs, 0..) |r1, i| for (runs[i + 1 ..], i + 1..) |r2, j| {
+        if (sel) |sl| if (!sl[i] and !sl[j]) continue;
+        for (atoms[r1[0]..r1[1]]) |x| for (atoms[r2[0]..r2[1]]) |y| if (f.atomsShare(x, y, false)) {
+            old = true;
+            break :pairs;
+        };
+    };
+    std.debug.assert(old == try f.shareWith(atoms, runs, sel, false, share_pairs_max));
+    std.debug.assert(old == try f.shareWith(atoms, runs, sel, false, 0));
 }
 
 /// Decide `linear` for root `root`, the one writer of it (kernel §4.4): no
@@ -774,6 +1114,25 @@ fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error
     var firsts: std.ArrayList(u32) = .empty;
     defer firsts.deinit(f.gpa);
     if (linear) for (held.items) |e| if (claim == null or answers[e]) try firsts.append(f.gpa, e);
+    // A large set of entries is tested by `runsShare`, linear in its atoms.
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    var sel: std.ArrayList(bool) = .empty;
+    defer sel.deinit(f.gpa);
+    var total: usize = 0;
+    if (linear) for (held.items) |e| {
+        const a = f.rents.items[r.ent + e];
+        try runs.append(f.gpa, .{ a.start, a.start + a.len });
+        if (claim != null) try sel.append(f.gpa, answers[e]);
+        total += a.len;
+    };
+    const sl: ?[]const bool = if (claim != null) sel.items else null;
+    if (linear and total > share_small) {
+        linear = !try f.runsShare(f.atoms.items, runs.items, sl);
+        f.roots.items[root].linear = if (linear) .yes else .no;
+        return;
+    }
+    if (linear) try f.checkShare(f.atoms.items, runs.items, sl);
     if (linear) outer: for (firsts.items, 0..) |e1, i| {
         const a1 = f.rents.items[r.ent + e1];
         // Without a claim the pairs are each two entries once; with one, an
@@ -1044,6 +1403,71 @@ fn leavesOwn(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Erro
     return dup;
 }
 
+/// For each entry of the layout of a construction's place, the parts of it
+/// that hold a location there: `kids[off[e]..off[e + 1]]`, ascending; and the
+/// parts with no projection (`whole`), which a walk reads whole.
+const BuiltIndex = struct { off: []const u32, kids: []const u32, whole: []const u32 };
+
+/// The index of the construction `v` (`BuiltIndex`), made once in the frame:
+/// each part's projection is a lookup, and each entry of the part's layout a unit (kernel §8).
+fn builtIndex(f: *Frame, v: Val, n: Node) Error!*const BuiltIndex {
+    if (f.built_index.getPtr(v)) |hit| return hit;
+    const m = f.m;
+    const len = m.loc.layoutEntries(try m.loc.layoutOf(n.place)).len;
+    var pairs: std.ArrayList([2]u32) = .empty;
+    defer pairs.deinit(m.gpa);
+    var reads_all: std.ArrayList(u32) = .empty;
+    const last = try m.gpa.alloc(u32, len);
+    defer m.gpa.free(last);
+    @memset(last, none);
+    _ = f.charge(n.b * Loc.lookup_units);
+    for (0..n.b) |ki| {
+        const k = f.kids.items[n.a + ki];
+        if (k.val == v_none) continue;
+        if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
+            _ = f.charge(pr.up.len);
+            for (pr.up) |u| if (u != none and last[u] != ki) {
+                last[u] = @intCast(ki);
+                try pairs.append(m.gpa, .{ u, @intCast(ki) });
+            };
+        } else try reads_all.append(f.gpa, @intCast(ki));
+    }
+    const off = try f.gpa.alloc(u32, len + 1);
+    @memset(off, 0);
+    for (pairs.items) |pk| off[pk[0] + 1] += 1;
+    for (1..len + 1) |e| off[e] += off[e - 1];
+    const kids = try f.gpa.alloc(u32, pairs.items.len);
+    const fill = try m.gpa.dupe(u32, off[0..len]);
+    defer m.gpa.free(fill);
+    // The parts in ascending order within each entry: `pairs` is in the order of the parts.
+    for (pairs.items) |pk| {
+        kids[fill[pk[0]]] = pk[1];
+        fill[pk[0]] += 1;
+    }
+    try f.built_index.put(f.gpa, v, .{ .off = off, .kids = kids, .whole = reads_all.items });
+    return f.built_index.getPtr(v).?;
+}
+
+/// The parts of construction `v` that a walk of its entries `ks` reads, in
+/// ascending order: those that hold a location at one of them, and those
+/// with no projection.
+fn builtKids(f: *Frame, v: Val, n: Node, ks: []const u32) Error![]const u32 {
+    const ix = try f.builtIndex(v, n);
+    var sel: std.ArrayList(u32) = .empty;
+    try sel.appendSlice(f.gpa, ix.whole);
+    for (ks) |e| try sel.appendSlice(f.gpa, ix.kids[ix.off[e]..ix.off[e + 1]]);
+    // Each part found is a unit (kernel §8).
+    _ = f.charge(sel.items.len + ks.len);
+    std.mem.sort(u32, sel.items, {}, std.sort.asc(u32));
+    var w: usize = 0;
+    for (sel.items) |x| {
+        if (w != 0 and sel.items[w - 1] == x) continue;
+        sel.items[w] = x;
+        w += 1;
+    }
+    return sel.items[0..w];
+}
+
 fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) Error!bool {
     const m = f.m;
     const n = f.nodes.items[v];
@@ -1061,24 +1485,37 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             var dup = false;
             const at = out.items.len;
             const r = f.roots.items[n.a];
+            var parts: std.ArrayList([2]u32) = .empty;
+            defer parts.deinit(f.gpa);
             for (res.slice()) |re| {
-                const before = out.items.len;
+                const before: u32 = @intCast(out.items.len);
                 try f.rootLeaves(n.a, n.b, re, out);
                 if (r.kind == .local and f.rents.items[r.ent + re].twice) dup = true;
-                if (f.partDup(out.items, at, before)) dup = true;
+                try parts.append(f.gpa, .{ before, @intCast(out.items.len) });
             }
+            if (!dup and try f.partDup(out.items, at, parts.items)) dup = true;
             return dup;
         },
         .built => {
-            // A walk of every part is work of its own (kernel §8): each part
+            // The parts to walk: for a few entries of a construction of many
+            // parts, only the parts that hold a location at one of them
+            // (`builtIndex`); else every part. A part that holds none adds
+            // nothing, so the walk finds what a walk of every part finds, and
+            // a walk of each entry of a record of `n` fields (`finish`)
+            // costs `n` and not its square (research report 138).
+            const some: ?[]const u32 = if (ks.len <= 8 and n.b > 8) try f.builtKids(v, n, ks) else null;
+            const nwalk = if (some) |sk| sk.len else n.b;
+            // A walk of each part is work of its own (kernel §8): each part
             // looks up its projection, `lookup_units`. Past the budget it
             // holds a cell of no frame, and no write of it stands.
-            if (f.charge(n.b * Loc.lookup_units)) {
+            if (f.charge(nwalk * Loc.lookup_units)) {
                 try out.append(f.gpa, outside_atom);
                 return true;
             }
             var dup = false;
             const at = out.items.len;
+            var parts: std.ArrayList([2]u32) = .empty;
+            defer parts.deinit(f.gpa);
             const pes = m.loc.layoutEntries(try m.loc.layoutOf(n.place));
             const single = ks.len == 1 and pes[ks[0]].single;
             // A large set of entries reads the rank of each entry once, so
@@ -1100,7 +1537,8 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                     rank[e] = @intCast(i);
                 };
             }
-            for (0..n.b) |ki| {
+            for (0..nwalk) |wi| {
+                const ki = if (some) |sk| sk[wi] else wi;
                 const k = f.kids.items[n.a + ki];
                 if (k.val == v_none) continue;
                 // Past the budget the walk stops: a cell of no frame, and
@@ -1109,7 +1547,7 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                     try out.append(f.gpa, outside_atom);
                     return true;
                 }
-                const before = out.items.len;
+                const before: u32 = @intCast(out.items.len);
                 if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
                     // The kid's entries that these entries are made of: for
                     // each entry of `ks`, in its order, the kid's entries
@@ -1133,8 +1571,9 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                 } else if (try f.allLeaves(k.val, out)) {
                     dup = true;
                 }
-                if (!single and f.partDup(out.items, at, before)) dup = true;
+                if (!single) try parts.append(f.gpa, .{ before, @intCast(out.items.len) });
             }
+            if (!dup and try f.partDup(out.items, at, parts.items)) dup = true;
             return dup;
         },
         .join => {
@@ -2797,6 +3236,15 @@ fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
 /// pattern took off), so its storage is the spread's too.
 fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []const Val, base: Val, front: Val) Error!Val {
     const m = f.m;
+    // Past the budget (kernel §8) the walk builds nothing more: the
+    // declaration gave up. The projection below is work of the location
+    // table, and a list nested 400 deep made one for each level on the way
+    // back up, each the size of its layout times its depth, long after the
+    // budget was passed (research report 138).
+    if (m.steps_over) {
+        f.failed = true;
+        return f.unknownOf(place, &.{});
+    }
     const pr = try m.loc.proj(place, Step.elem);
     if (pr == null) {
         // A list whose place has no element step (a literal typed by a
@@ -2841,20 +3289,23 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
         // The elements: the cells of other roots, each element one part.
         const start: u32 = @intCast(f.atoms.items.len);
         var dup = false;
+        var parts: std.ArrayList([2]u32) = .empty;
+        defer parts.deinit(f.gpa);
         for (elems) |v| {
             if (v == v_none) continue;
-            const before = f.atoms.items.len;
+            const before: u32 = @intCast(f.atoms.items.len);
             // The element's entries that fold into this one are one set (`leavesOwn`).
             const js = pr.?.downOf(@intCast(e));
             if (js.len != 0 and try f.leavesSet(v, pr.?.child, js, &f.atoms)) dup = true;
-            if (f.partDup(f.atoms.items, start, before)) dup = true;
+            try parts.append(f.gpa, .{ before, @intCast(f.atoms.items.len) });
         }
         for (spreads) |v| {
             if (v == v_none) continue;
-            const before = f.atoms.items.len;
+            const before: u32 = @intCast(f.atoms.items.len);
             if (try f.leavesAs(v, place, @intCast(e), &f.atoms)) dup = true;
-            if (f.partDup(f.atoms.items, start, before)) dup = true;
+            try parts.append(f.gpa, .{ before, @intCast(f.atoms.items.len) });
         }
+        if (!dup and try f.partDup(f.atoms.items, start, parts.items)) dup = true;
         try f.uniqueTail(&f.atoms, start);
         // One cell at two places of the location: it keeps what it holds,
         // and its parts are not apart (kernel §4.4).
@@ -3243,6 +3694,13 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
     for (ms) |mb| {
         const fnt = m.fnType(mb.ty);
         const pvars: []const Var = if (fnt) |ft| m.in.store.vars(ft.params) else &.{};
+        // A contract of an earlier walk of the declaration (a round of its
+        // group) is where the rounds start, and a draft while they run, as a
+        // bottom one is: a fresh cell of it is named by its call alone
+        // (`freshAtom`). Read as a finished contract, the cells of its own
+        // calls would have new names in each walk, and the group would never
+        // settle (research report 138).
+        if (m.code_contract[mb.inst]) |c| try m.drafts.put(m.gpa, @intFromPtr(c), {});
         if (mb.local == none or m.code_contract[mb.inst] != null or pvars.len != mb.params.len) continue;
         const places = try f.gpa.alloc(PlaceId, mb.params.len);
         const tys = try f.gpa.alloc(Var.Optional, mb.params.len);
@@ -3480,11 +3938,17 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     var held: std.ArrayList(u32) = .empty;
     defer held.deinit(f.gpa);
     for (runs.items, 0..) |r, e| if (r[1] > r[0]) try held.append(f.gpa, @intCast(e));
-    pairs: for (held.items, 0..) |e1, i| {
-        for (held.items[i + 1 ..]) |e2| {
-            if (f.dupOverlap(all.items[runs.items[e1][0]..runs.items[e1][1]], all.items[runs.items[e2][0]..runs.items[e2][1]])) {
-                nonlinear = true;
-                break :pairs;
+    // A large set is tested by `runsShare`, linear in its atoms.
+    if (all.items.len > share_small) {
+        if (try f.runsShare(all.items, runs.items, null)) nonlinear = true;
+    } else if (held.items.len > 1) try f.checkShare(all.items, runs.items, null);
+    if (all.items.len <= share_small) {
+        pairs: for (held.items, 0..) |e1, i| {
+            for (held.items[i + 1 ..]) |e2| {
+                if (f.dupOverlap(all.items[runs.items[e1][0]..runs.items[e1][1]], all.items[runs.items[e2][0]..runs.items[e2][1]])) {
+                    nonlinear = true;
+                    break :pairs;
+                }
             }
         }
     }
@@ -3833,13 +4297,23 @@ fn operandLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
     var held: std.ArrayList([2]usize) = .empty;
     defer held.deinit(f.gpa);
     for (runs.items) |r| if (r[1] > r[0]) try held.append(f.gpa, r);
+    // A large set is tested by `runsShare`, linear in its atoms.
+    const total = out.items.len - start;
+    if (total > share_small or safety) {
+        var rs: std.ArrayList([2]u32) = .empty;
+        defer rs.deinit(f.gpa);
+        for (held.items) |r| try rs.append(f.gpa, .{ @intCast(r[0]), @intCast(r[1]) });
+        if (total > share_small) {
+            if (try f.runsShare(out.items, rs.items, null)) dup = true;
+            held.clearRetainingCapacity();
+        } else if (held.items.len > 1) try f.checkShare(out.items, rs.items, null);
+    }
     pairs: for (held.items, 0..) |r1, i| {
         for (held.items[i + 1 ..]) |r2| if (f.dupOverlap(out.items[r1[0]..r1[1]], out.items[r2[0]..r2[1]])) {
             dup = true;
             break :pairs;
         };
     }
-    _ = start;
     return dup;
 }
 
@@ -4126,7 +4600,7 @@ fn argsApart(f: *Frame, args: []const Val) Error!bool {
     var runs: std.ArrayList([2]u32) = .empty;
     defer runs.deinit(f.gpa);
     for (args) |v| if (!try f.partsOf(v, &buf, &runs, 0)) return false;
-    return f.runsApart(buf.items, runs.items);
+    return try f.runsApart(buf.items, runs.items);
 }
 
 /// Whether no cell is at two places of the one value `v`.
@@ -4136,10 +4610,15 @@ fn valueApart(f: *Frame, v: Val, depth: u32) Error!bool {
     var runs: std.ArrayList([2]u32) = .empty;
     defer runs.deinit(f.gpa);
     if (!try f.partsOf(v, &buf, &runs, depth)) return false;
-    return f.runsApart(buf.items, runs.items);
+    return try f.runsApart(buf.items, runs.items);
 }
 
-fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
+fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) Error!bool {
+    // A large set is tested by `runsShare`, linear in its atoms.
+    var total: usize = 0;
+    for (runs) |r| total += r[1] - r[0];
+    if (total > share_small) return !try f.runsShare(buf, runs, null);
+    try f.checkShare(buf, runs, null);
     // A run with no atom is apart from every run. The scan for each other
     // run is work of its own (kernel §8); past the budget the runs are not
     // apart.
@@ -4302,7 +4781,30 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
     }
     _ = first;
     // One cell in two parts of one location is one cell at two places,
-    // unless the two parts are alternatives (`alternatives`).
+    // unless the two parts are alternatives (`alternatives`). Only a part
+    // that is an answer has an alternative: the other parts of a large run
+    // are tested together by `runsShare`, linear in their atoms, and each
+    // pair with an answer as before. A location that holds one cell twice
+    // already needs no test.
+    if (st.twice) return;
+    var total: usize = 0;
+    for (parts.items) |x| total += x.end - x.start;
+    if (total > share_small) {
+        var runs: std.ArrayList([2]u32) = .empty;
+        defer runs.deinit(f.gpa);
+        for (parts.items) |x| if (x.src.kind != .answer) try runs.append(f.gpa, .{ x.start, x.end });
+        if (try f.runsShare(f.atoms.items, runs.items, null)) st.twice = true;
+        for (parts.items, 0..) |x, i| for (parts.items[0..i]) |y| {
+            if (x.src.kind != .answer and y.src.kind != .answer) continue;
+            if (f.charge(1)) {
+                st.twice = true;
+                break;
+            }
+            if (alternatives(c, x.src, y.src)) continue;
+            if (f.dupOverlap(f.atoms.items[x.start..x.end], f.atoms.items[y.start..y.end])) st.twice = true;
+        };
+        return;
+    }
     for (parts.items, 0..) |x, i| for (parts.items[0..i]) |y| {
         // Each pair is work of its own (kernel §8); past the budget the two
         // parts share a cell.

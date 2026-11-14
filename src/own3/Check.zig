@@ -202,6 +202,9 @@ pub const Mod = struct {
     /// The set of atoms that `Frame.uniqueTail` keeps while it removes the
     /// repeats of a run: one table for the module, cleared for each run.
     uniq_seen: std.AutoHashMapUnmanaged(Frame.Atom, void) = .empty,
+    /// The scratch of `Frame.runsShare`, the one duplicate test of a set of
+    /// runs: one table for the module, cleared for each test.
+    share: Frame.ShareScratch = .{},
     in: *const Groups.Input,
     bir: *const Bir,
     tags: []const Inst.Tag,
@@ -1941,6 +1944,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     };
     defer m.walk_arena.deinit();
     defer m.uniq_seen.deinit(gpa);
+    defer m.share.deinit(gpa);
     defer m.places.deinit(gpa);
     defer m.account.deinit(gpa);
     m.account.walk = .growth;
