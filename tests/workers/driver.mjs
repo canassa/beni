@@ -192,10 +192,18 @@ const awaitConsole = async () => {
   markWaiters.err = null;
 };
 
+// A fixture's host faults (tests/corpus/README.md, *A host fault*): the
+// harness copies the fixture's `host-faults.mjs` into the output directory
+// under this name, and the Worker then starts from it. It is a wrapper
+// entry: it imports `./_worker.mjs`, replaces a host call, and exports the
+// build's default and its object classes again.
+const hostFaults = "_host-faults.mjs";
+const entry = fs.existsSync(path.join(out, hostFaults)) ? hostFaults : "_worker.mjs";
+
 const mf = new Miniflare({
   modules: true,
   modulesRoot: out,
-  scriptPath: path.join(out, "_worker.mjs"),
+  scriptPath: path.join(out, entry),
   compatibilityDate: config.compatibility_date ?? "2026-05-18",
   compatibilityFlags: config.compatibility_flags ?? [],
   bindings: config.vars ?? {},

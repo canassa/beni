@@ -1,0 +1,70 @@
+-- workers: `kv.put` that throws an `Error` the platform does not name
+-- stops the object (boundary.md §9.12 (h), (k); CLAUDE.md rule 9; #1263).
+-- `host-faults.mjs` makes the host's `kv.put` throw a plain `Error` for
+-- the key `fault`. `Storage.put` names only the host's `SQLITE_FULL`
+-- `Error`, so this one is a defect: a 500 and a new instance, never
+-- `Err Full`. A put of another key reaches the host as before.
+import Schema
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+import Worker.Storage as Storage
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ store ] }
+
+
+store : Worker.Definition
+store = Object.define "Store" Schema.string (λ_ → ⊤) { Object.none | request = serve }
+
+
+showPut : Result Storage.PutError ⊤ → String
+showPut result =
+    case result of
+        Ok ⊤ →
+            "Ok"
+
+        Err Storage.TooLarge →
+            "Err TooLarge"
+
+        Err Storage.Full →
+            "Err Full"
+
+        Err (Storage.Unprintable _) →
+            "Err Unprintable"
+
+
+serve : Object.Context String, ⊤, Request → ⊤ × Response
+serve ctx _ request =
+    ( ⊤
+    , Worker.text 200
+        (case List.reverse (String.split (Worker.path request) "/") of
+            [ "put", …rest ] →
+                showPut (Storage.put ctx Schema.string "kept" "one")
+
+            [ "put-fault", …rest ] →
+                showPut (Storage.put ctx Schema.string "fault" "two")
+
+            [ "keys", …rest ] →
+                String.join (Storage.keys ctx "") ","
+
+            _ →
+                "no such op"
+        )
+    )
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.objects (Worker.env ctx) "STORES" Schema.string of
+        Just stores →
+            case Worker.forward (Worker.byName stores "s") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the store is not available"
+
+        Nothing →
+            Worker.text 500 "no STORES binding"

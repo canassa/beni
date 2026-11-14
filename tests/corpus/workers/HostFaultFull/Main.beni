@@ -1,0 +1,74 @@
+-- workers: `kv.put` is `Err Full` for the host's `Error` that says
+-- `SQLITE_FULL`, and for nothing else (boundary.md §9.12 (h), (k);
+-- CLAUDE.md rule 9; #1263). `host-faults.mjs` makes the host's `kv.put`
+-- throw that `Error` for the key `full`, and a value that is no `Error`
+-- with the same message for the key `not-an-error`. The first is the
+-- failure `Storage.put` names, and nothing is written. The second is a
+-- defect: a 500 and a new instance.
+import Schema
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+import Worker.Storage as Storage
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ store ] }
+
+
+store : Worker.Definition
+store = Object.define "Store" Schema.string (λ_ → ⊤) { Object.none | request = serve }
+
+
+showPut : Result Storage.PutError ⊤ → String
+showPut result =
+    case result of
+        Ok ⊤ →
+            "Ok"
+
+        Err Storage.TooLarge →
+            "Err TooLarge"
+
+        Err Storage.Full →
+            "Err Full"
+
+        Err (Storage.Unprintable _) →
+            "Err Unprintable"
+
+
+serve : Object.Context String, ⊤, Request → ⊤ × Response
+serve ctx _ request =
+    ( ⊤
+    , Worker.text 200
+        (case List.reverse (String.split (Worker.path request) "/") of
+            [ "put", …rest ] →
+                showPut (Storage.put ctx Schema.string "kept" "one")
+
+            [ "put-full", …rest ] →
+                showPut (Storage.put ctx Schema.string "full" "two")
+
+            [ "put-not-an-error", …rest ] →
+                showPut (Storage.put ctx Schema.string "not-an-error" "three")
+
+            [ "keys", …rest ] →
+                String.join (Storage.keys ctx "") ","
+
+            _ →
+                "no such op"
+        )
+    )
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.objects (Worker.env ctx) "STORES" Schema.string of
+        Just stores →
+            case Worker.forward (Worker.byName stores "s") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the store is not available"
+
+        Nothing →
+            Worker.text 500 "no STORES binding"

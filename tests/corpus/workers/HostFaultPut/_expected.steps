@@ -1,0 +1,6 @@
+# A put the host takes.
+{"path": "/put"}
+# The host throws an Error that is not SQLITE_FULL: a defect, not Err Full.
+{"path": "/put-fault"}
+# The next event starts a new instance, which reads what the first wrote.
+{"path": "/keys"}

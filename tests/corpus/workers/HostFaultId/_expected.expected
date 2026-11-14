@@ -1,0 +1,21 @@
+> GET /good-id
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< a ref
+> GET /bad-id
+< 400
+< content-type: text/plain; charset=utf-8
+<
+< invalid id
+> GET /fault-id
+< 500
+< content-length: 200
+< content-type: text/plain;charset=UTF-8
+<
+< RangeError: the fixture's host fault
+> GET /good-id
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< a ref

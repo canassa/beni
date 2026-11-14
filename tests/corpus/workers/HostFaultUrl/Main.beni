@@ -1,0 +1,27 @@
+-- workers: `new URL` that throws another class than `TypeError` stops the
+-- request (boundary.md §9.12 (d), (k); CLAUDE.md rule 9; #1263).
+-- `host-faults.mjs` makes `new URL` throw a `RangeError` for the target
+-- `/fault`. `Worker.redirect` names only the host's `TypeError`, so the
+-- `RangeError` is a defect and not "does not resolve". A target the host
+-- refuses is still the invalid response that says so.
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+route : Context, Request → Response
+route _ request =
+    case Worker.path request of
+        "/redirect" →
+            Worker.redirect request "/there" 302
+
+        "/redirect-bad-target" →
+            Worker.redirect request "http://[" 302
+
+        "/redirect-fault" →
+            Worker.redirect request "/fault" 302
+
+        _ →
+            Worker.text 404 "no such path"
