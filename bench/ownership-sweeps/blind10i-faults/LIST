@@ -1,0 +1,6 @@
+bench/ownership-sweeps/blind10i-faults/chain-of-writes.control
+bench/ownership-sweeps/blind10i-faults/chain-of-writes.slow
+bench/ownership-sweeps/blind10i-faults/view-let-kept.dead
+bench/ownership-sweeps/blind10i-faults/view-let-kept.kept
+bench/ownership-sweeps/blind10i-faults/view-let-kept.live
+bench/ownership-sweeps/blind10i-faults/view-let-scalar.live

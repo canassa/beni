@@ -1,0 +1,39 @@
+-- Research report 133, fault 1: v3 accepts the push, and the next render reads the list it wrote.
+-- The `dom` lowering keeps `xs`, a `let` read only by the root that reads no path, from the first
+-- render (backend.md §15.4, *The `let` rule*). Each render pushes onto that one array in place.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    k : Int
+    items : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+view : Model → Html Msg
+view model =
+    xs = [ 1, 2 ]
+    ys = List.push xs model.k
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p>{show ys}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0, items = [ 5 ] }, update = update, view = view }

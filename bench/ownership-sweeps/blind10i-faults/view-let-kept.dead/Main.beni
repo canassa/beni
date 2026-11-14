@@ -1,0 +1,38 @@
+-- Safe twin of view-let-kept.live: `xs` reads a list of the model, so the root makes it again on every
+-- render (language.md §11.11, amended 2026-10-15: a list path is always changed). v3 accepts it.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    k : Int
+    items : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+view : Model → Html Msg
+view model =
+    xs = List.copy model.items
+    ys = List.push xs model.k
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p>{show ys}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0, items = [ 5 ] }, update = update, view = view }
