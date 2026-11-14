@@ -6448,14 +6448,15 @@ test "ownership v3: a library's exported function is called by the host" {
 // more than 120 s self-hosted: `markAtomIn` walked the runs of every
 // version again for each write, with no unit counted, and the walk went on
 // after the budget. Each entry's run is marked once for each flag now, every
-// run walked is counted, and the walk stops at the budget (kernel §8).
+// run walked is counted, and the walk stops at the budget (kernel §8). Since
+// research report 135 an old run of the chain is read in one step, and the
+// chain is accepted.
 test "ownership v3: a let that a markup lowering keeps, and a long chain of writes" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
     const Case = struct { name: []const u8, accepted: bool, why: []const u8 = "" };
     const escaped = "List.push xs is refused: escaped";
-    const module_limit = "the walks of the module took more than";
     const cases = [_]Case{
         .{ .name = "view-let-kept.live", .accepted = false, .why = escaped },
         .{ .name = "view-let-kept.kept", .accepted = false, .why = "List.push xs is refused" },
@@ -6473,7 +6474,9 @@ test "ownership v3: a let that a markup lowering keeps, and a long chain of writ
         // alone has no row in the markup section of the dispatch table.
         .{ .name = "view-let-wrap.live", .accepted = false, .why = escaped },
         .{ .name = "view-let-wrap.dead", .accepted = true },
-        .{ .name = "chain-of-writes.slow", .accepted = false, .why = module_limit },
+        // 400 writes of one list: refused by the module's budget until research
+        // report 135, which reads an old run of a chain in one step.
+        .{ .name = "chain-of-writes.slow", .accepted = true },
         .{ .name = "chain-of-writes.control", .accepted = true },
     };
     // Every case is run, so a run before the fix names each one it gets wrong.
