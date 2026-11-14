@@ -6187,6 +6187,87 @@ test "ownership v3: each derived row is read once" {
     }
 }
 
+// Research report 131: 54 of the ownership roots, every one a program that
+// names a tagged schema, stopped the safe compiler in `checkCovered`: a
+// pattern `Event.Set ev` names the schema's constructor, which the check
+// took for code, and no walk evaluates a pattern's constructor. A schema's
+// constructor is a constructor (the backend emits `{$: tag, a: payload}`,
+// as for a type's): in a pattern a tag test, in a call a value made with
+// no code run (kernel §6.14). This module's schema and another module's,
+// each matched and built.
+test "ownership v3: a tagged schema's constructor is a constructor" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Shapes.beni",
+        \\pub schema Tree tagged "kind" of
+        \\    Leaf as "leaf"
+        \\        value : Int
+        \\    Branch as "branch"
+        \\        children : List Tree
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Io
+        \\import Node exposing (Program)
+        \\import Schema exposing (Value)
+        \\import Shapes exposing (Tree)
+        \\
+        \\
+        \\schema Event tagged "type" of
+        \\    Set as "set"
+        \\        value : Int
+        \\    Scale as "scale"
+        \\        times : Int
+        \\
+        \\
+        \\apply : Value, List Int → List Int
+        \\apply value xs =
+        \\    case Schema.read (Event.schema ⊤) value of
+        \\        Ok (Event.Set ev) →
+        \\            List.push (List.copy xs) ev.value
+        \\
+        \\        Ok (Event.Scale ev) →
+        \\            List.map xs λx → x * ev.times
+        \\
+        \\        Err _ →
+        \\            xs
+        \\
+        \\
+        \\made : Int → Event.Type
+        \\made n =
+        \\    Event.Set { value = n }
+        \\
+        \\
+        \\depth : Tree.Type → Int
+        \\depth t =
+        \\    case t of
+        \\        Tree.Leaf r →
+        \\            r.value
+        \\
+        \\        Tree.Branch r →
+        \\            List.length r.children
+        \\
+        \\
+        \\leaf : Tree.Type
+        \\leaf =
+        \\    Tree.Leaf { value = 1 }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Io.run λ⊤ → Node.done
+        \\
+    );
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "Shapes.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // Research report 129: a `--library` build exports its `pub` functions, and
 // host JavaScript calls them with arrays that it still holds and reads
 // after. An export is a function in the default location (kernel §6.14), so

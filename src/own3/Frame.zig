@@ -2320,8 +2320,13 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .pat_record,
         .pat_as,
         => return f.giveUp(inst),
-        // A schema's member or constructor is a function of the compiler's
-        // own: it captures nothing of the frame, and it is in the default state.
+        // A schema's member is a function of the compiler's own: it
+        // captures nothing of the frame, and it is in the default state. A
+        // schema's constructor makes a value and runs no code; no row
+        // describes it, so its value holds nothing of the frame and a call
+        // of it is code with no contract: each argument escapes (§3.2,
+        // kernel §6.14). In a pattern it is a tag test, and the pattern
+        // binds `unknown` over the scrutinee (`bindPattern`, rule 6).
         .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => return v_outside,
     }
 }

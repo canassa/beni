@@ -4,7 +4,8 @@
 report 120); §6.12 and §6.13 revised again the same day (research report 123); §4.1, §6.2, §6.8 and
 §6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
-129); §8 revised 2026-11-14 (research report 130). The owner ordered it after research report 116: "Write the rules
+129); §8 revised 2026-11-14 (research report 130); §6.14 revised again the same day (research
+report 131). The owner ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
 section numbers here are referenced from the code (`kernel §N`): never renumber them (`CLAUDE.md` rule 2).*
@@ -551,8 +552,23 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `via` never went to the default location; report 129 found the same of a `--library` build's
     exports.*
 
+    **What a schema puts in a program, instruction by instruction.** Each instruction that a schema
+    declaration or a use of one lowers to has one rule. *Research report 131: the check of the next
+    paragraph took a tagged schema's constructor for code, and no walk evaluates the constructor of a
+    pattern, so 54 of the 2 731 ownership roots, each a program that names a schema, stopped the safe
+    compiler.*
+
+    | Instruction | What the backend emits | Rule |
+    |---|---|---|
+    | `schema_member_top`, `ext_schema_member` (`Box.print`, `Box.schema`) | a compiled worker, or `S.schema` | code with no contract (§3.1, §3.2): its value is `outside`, and a call of it lets each argument escape; the workers call the `via`s, the row above |
+    | `schema_ctor_top`, `ext_schema_ctor` (`Event.Set`) | `{$: "Set", a: payload}`, or the bare tag (`js/SchemaCtor.zig`, `Lower.ctorValue`), as for a type's constructor | **no code**: no function of the program runs. In a pattern it is a tag test (rule 6): no row describes its parts, so the pattern binds `unknown` over the scrutinee. Called, no row describes its parts either, so it is read as code with no contract (§3.2): each argument escapes and its answer is `unknown` over them. As a value it is `outside` |
+    | `schema_via` | the conversion, made once where the module loads | the default location, above (`walkSchema`) |
+    | `schema_value_ref`, `schema_expr_ref` | a reference in a `via` or a body | names code; walked where it is evaluated |
+    | the plan: `schema_ref`, `schema_app`, `schema_paren`, `schema_record`, `schema_field`, `schema_value`, `schema_tagged`, `schema_variant`, `schema_as`, `schema_optional`, `schema_nullable`, `schema_parameter`, `schema_primitive`, `schema_target_top`, `ext_schema_target`, `schema_type_top`, `ext_schema_type`, `schema_type_ref`, `schema_ctor_ref` | the workers, and types | no code of its own: the workers call only the `via`s and the workers of other schemas (the rows above) |
+
     **The mechanical check** (`Check.checkCovered`, safe builds). Every instruction that names or runs
-    code (`namesCode`: a reference to a value, a lambda, a call of any kind, markup), in every declaration
+    code (`namesCode`: a reference to a value, a lambda, a call of any kind, markup; a constructor of a
+    type or of a tagged schema is not one), in every declaration
     whose code the backend emits, was evaluated by a walk or accounted for by a rule (`Frame.noteWalked`):
     otherwise the build panics, naming the instruction. The kinds of declaration are a `switch` with no
     `else` (`value`: its body; `schema`: its `via`s; `foreign_value` and `vocab_markup`: JavaScript of a

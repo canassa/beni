@@ -1618,8 +1618,6 @@ fn namesCode(t: Inst.Tag) bool {
         .schema_expr_ref,
         .schema_member_top,
         .ext_schema_member,
-        .schema_ctor_top,
-        .ext_schema_ctor,
         .call,
         .method_call,
         .type_dispatch,
@@ -1629,9 +1627,14 @@ fn namesCode(t: Inst.Tag) bool {
         // A constructor runs no code of the program; a literal, a
         // construction, a projection, a binding, a type, a pattern or a
         // schema plan names none of its own (its operands are instructions
-        // of their own).
+        // of their own). A tagged schema's constructor is a constructor:
+        // the backend emits `{$: tag, a: payload}` or the bare tag, as for
+        // a type's (`js/SchemaCtor.zig`, `Lower.ctorValue`); in a pattern
+        // it is a tag test. No worker runs (kernel §6.14).
         .ctor,
         .ext_ctor,
+        .schema_ctor_top,
+        .ext_schema_ctor,
         .import_ctor,
         .qualified_ctor,
         .schema_ctor_ref,
