@@ -702,9 +702,29 @@ paths:
   functions (`solveCodes`) counts too: the rounds walk again and keep counting; they do not start the
   count again.
 
-- **One module does at most `Check.moduleBudget` units of work: 65 536 (`module_floor`), and 16 384
-  (`token_units`) for each token of its source** — or for each instruction of its BIR, where it has more
-  (`Mod.module_size`), **and never more than 134 217 728 (2²⁷, `Check.module_cap`)**. Every unit that a
+- **One module does at most `Check.moduleBudget` units of work: 65 536 (`module_floor`), and what its
+  instructions earn** (`Mod.earnedUnits`), **and never more than 134 217 728 (2²⁷, `Check.module_cap`)**.
+  A module earns for what its walks can cost, not for its tokens (research report 136):
+  - **each instruction that a walk evaluates, 32 768 units** (`inst_units`, a thousand calls): a
+    reference, a call, a binding, a pattern, a `case` and its arms, a function, a record update, a
+    markup site, a list built of anything but literals. The most that the module of an ownership root
+    needs is 18 900 units for each of its instructions (`TailModConsBranches`, 0.85 of its budget);
+  - **each instruction of a literal, 128 units** (`literal_units`, four calls), and **2 units for each
+    pair of two lists in it** (`pair_units`). A literal is a number, a character, a string, `⊤`, a
+    constructor, a negated number (`-1`, a call of `Basics.negate`, and the reference to it), and a
+    tuple, a list, a record or a constructor applied whose elements are all literals. Its walk
+    evaluates each of its instructions once: a list of numbers took 32 units for each and a tuple
+    nested 511 deep 80. A list in a literal is a cell, and the walk tests each pair of the cells of a
+    value (`deriveLinear`): a literal of `n` fresh lists took about n²/2 + 142·n units;
+  - **each instruction of a type or of a schema's plan, 128 units** (`type_units`): no walk evaluates
+    one, and the location table counts the places and layouts built for it (an annotation nested 511
+    deep took 48 units for each).
+
+  *Before, a module earned 16 384 units for each token of its source, so a literal earned far more than
+  its walk could cost and the functions beside it spent the rest: six modules of 200 lines, each with a
+  literal of 9 000 numbers on one line and 30 functions `f p = p` over nested pairs of 4 096 lists,
+  took 5.7 s of v3 at `--jobs=1` (research report 135 §8); each module now reaches its own budget at
+  its first such function.* Every unit that a
   declaration counts counts against its module too
   (`Mod.module_units`), and so does the work of the module's location table (`Loc.Table.units`): each
   step that the visit of a layout takes and each step of the path that a projection follows for each
@@ -813,9 +833,10 @@ closures with `e` captures costs O(e) judgments and O(n) value walks per root wa
 declaration's walks — the rounds of its groups, the pairs of the demands, the entry's fixed point, the
 tests of runs of atoms and the walks of the parts of a value — is counted by the elements it visits, so
 a declaration does at most `max_walk_steps` units however many times it is walked. The location
-table's work is counted with it. So **a module of `n` tokens does at most min(65 536 + 16 384·n, 2²⁷)
-units, and a build at most the sum over its modules**: linear in the size of the program, at most 16 384
-units for each token and 65 536 for each module, and at most 2²⁷ for any one module, whatever the shape of its types or the number of its
+table's work is counted with it. So **a module of `n` instructions does at most min(65 536 + 32 768·n +
+2·p, 2²⁷) units**, where `p` is the pairs of lists in its literals, **and a build at most the sum over its
+modules**: linear in the size of the program, at most 32 768 units for each instruction and 65 536 for each
+module, and at most 2²⁷ for any one module, whatever the shape of its types or the number of its
 declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
 and the contracts of its imports only). **A unit tracks time** (research report 135): over the 101
 programs of 307 measured (the shapes of research reports 130, 131, 134 and 135, the corpus programs

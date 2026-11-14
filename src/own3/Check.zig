@@ -48,32 +48,57 @@ pub const max_walk_steps: u64 = 1 << 25;
 /// (`Frame.charge`). So the budget is about a million calls (kernel §8).
 pub const call_units: u64 = 32;
 
-/// The units of work that a module may do for each token of its source
-/// (kernel §8): its walks and its location table together
-/// (`Mod.overBudget`), over and above `module_floor`.
-pub const token_units: u64 = 1 << 14;
+/// The units of work that a module earns for each instruction that a walk
+/// evaluates and that is not part of a literal (kernel §8): a reference, a
+/// call, a binding, a pattern, a `case`, a function. Its walks and its
+/// location table together spend them (`Mod.overBudget`), over and above
+/// `module_floor`. A thousand calls of a walk: about 1.4 times the most that
+/// an instruction of an ownership root needs on average over its module
+/// (`tests/corpus/run/TailModConsBranches`, research report 136).
+pub const inst_units: u64 = 1 << 15;
+
+/// The units of work that a module earns for each instruction of a literal
+/// (kernel §8): a number, a character, a string, `⊤`, a constructor named, a
+/// negated number, and a tuple, a list, a record or a constructor applied
+/// whose elements are all literals. The walk of a literal evaluates each of
+/// its instructions once, a call each (`call_units`), and the place graph
+/// adds the places of its type: a literal of numbers took 32 units for each,
+/// and a tuple nested 511 deep 80 for each of its instructions (research
+/// report 136). Four calls.
+pub const literal_units: u64 = 4 * call_units;
+
+/// The units of work that a literal earns for each pair of two lists in it
+/// (kernel §8): its walk tests each pair of its cells (`deriveLinear`), and
+/// a literal of `n` fresh lists took about n²/2 units and 142 for each
+/// (research report 136). Twice that.
+pub const pair_units: u64 = 2;
+
+/// The units of work that a module earns for each instruction of a type or
+/// of a schema's plan (kernel §8): no walk evaluates one, and the location
+/// table counts the places and layouts that it builds for them: an
+/// annotation nested 511 deep took 48 units for each of its instructions
+/// (research report 136). Four calls.
+pub const type_units: u64 = 4 * call_units;
 
 /// The units of work that every module may do, whatever its size (kernel §8).
 pub const module_floor: u64 = 1 << 16;
 
 /// The most units of work that any module may do (kernel §8): about 15 times
 /// the most that a module of an ownership root does, and about 1.6 s of work
-/// at the slowest unit of v3's own walks measured, 12 ns (research report 135). Without it a
-/// module of a few hundred lines that holds a large literal earns a budget
-/// of seconds that a few declarations can spend.
+/// at the slowest unit of v3's own walks measured, 12 ns (research report 135).
 pub const module_cap: u64 = 1 << 27;
 
-/// The budget of a module of `size` tokens (kernel §8). So the work of a
-/// module is linear in its size, at most `module_cap`, and the work of a
-/// build in the sum of the sizes of its modules.
-pub fn moduleBudget(size: usize) u64 {
-    return @min(module_floor +| token_units *| @as(u64, size), module_cap);
+/// The budget of a module that earned `earned` units (`Mod.earnedUnits`,
+/// kernel §8). So the work of a module is linear in its instructions, at
+/// most `module_cap`, and the work of a build in the sum over its modules.
+pub fn moduleBudget(earned: u64) u64 {
+    return @min(module_floor +| earned, module_cap);
 }
 
 /// The text of a module's limit line: the budget, and where it comes from.
-pub fn moduleLimitText(arena: Allocator, name: []const u8, budget: u64, size: usize) Allocator.Error![]const u8 {
+pub fn moduleLimitText(arena: Allocator, name: []const u8, budget: u64, insts: usize) Allocator.Error![]const u8 {
     if (budget == module_cap) return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work (the most for any module), so the checker judges no write of the module", .{ name, budget });
-    return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and {d} for each of its {d} tokens), so the checker judges no write of the module", .{ name, budget, module_floor, token_units, size });
+    return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and what its {d} instructions earn), so the checker judges no write of the module", .{ name, budget, module_floor, insts });
 }
 
 pub const Names = Message.Names;
@@ -118,9 +143,6 @@ pub const Options = struct {
     /// A `--library` build of a module of the root package: host
     /// JavaScript calls each value it exports (kernel §6.14).
     library: bool = false,
-    /// The tokens of the module's source: with its instructions, the size
-    /// that its budget is proportional to (`moduleBudget`, kernel §8).
-    tokens: usize = 0,
     /// The `let_def` instructions whose values the build's markup lowering
     /// keeps beyond the call that made them, ascending (kernel §6.14,
     /// `Enforce.keptLets`): each is held by the root that keeps it.
@@ -258,8 +280,8 @@ pub const Mod = struct {
     /// location table's (`Loc.Table.units`) they count against
     /// `module_budget` (kernel §8).
     module_units: u64 = 0,
-    /// The module's size (`Options.tokens`, or its instructions where it
-    /// has more) and its budget (`moduleBudget`).
+    /// The module's instructions and its budget (`earnedUnits`,
+    /// `moduleBudget`).
     module_size: usize = 0,
     module_budget: u64 = std.math.maxInt(u64),
     /// Per derived row of this module: its answer (`rowInfo`), and the walk
@@ -303,6 +325,101 @@ pub const Mod = struct {
     fn budgetLine(m: *Mod, di: u32, what: []const u8) Allocator.Error![]const u8 {
         if (m.steps > max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), what, max_walk_steps });
         return moduleLimitText(m.arena, m.names.declName(m.in.module, di), m.module_budget, m.module_size);
+    }
+
+    /// What the module's instructions earn of its budget (kernel §8): each
+    /// instruction that a walk evaluates earns `inst_units`, each of a type
+    /// or a schema's plan `type_units`, and each of a literal what the walk
+    /// of the literal can cost: `literal_units`, and `pair_units` for each
+    /// pair of two lists of the literal (`deriveLinear` tests each pair of the
+    /// cells of a value). So a literal does not earn what the walk of a
+    /// function over a large type costs, and its elements cannot pay for the
+    /// walks of other declarations (research report 136). One pass in the
+    /// order of the instructions: the elements of a construction are lowered
+    /// before it, and one that is not (none is, today) makes the
+    /// construction no literal, which only earns more.
+    fn earnedUnits(m: *Mod) Allocator.Error!u64 {
+        const n = m.tags.len;
+        // Per instruction of a literal: the lists in it, its cells.
+        const cells = try m.gpa.alloc(u32, n);
+        defer m.gpa.free(cells);
+        var lit = try std.DynamicBitSetUnmanaged.initEmpty(m.gpa, n);
+        defer lit.deinit(m.gpa);
+        var earned: u64 = 0;
+        for (0..n) |i| {
+            const d = m.datas[i];
+            var kids: Kids = .{};
+            const literal = switch (m.tags[i]) {
+                .int, .float, .char, .string, .chunk, .unit, .ctor, .ext_ctor => true,
+                .tuple, .list, .interp => kids.all(&lit, cells, i, m.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
+                .record => blk: {
+                    for (m.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |fd| if (!kids.add(&lit, cells, i, fd.value.int())) break :blk false;
+                    break :blk true;
+                },
+                .call => blk: {
+                    const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index);
+                    if (d.lhs < i and (m.tags[d.lhs] == .ctor or m.tags[d.lhs] == .ext_ctor)) break :blk kids.all(&lit, cells, i, args);
+                    // `-1` is a call of `Basics.negate` (`Lower`).
+                    // Its callee, a reference, earned `inst_units`: it is
+                    // part of the literal, and earns `literal_units`.
+                    if (!(d.lhs < i and args.len == 1 and args[0].int() < i)) break :blk false;
+                    if (!(m.tags[args[0].int()] == .int or m.tags[args[0].int()] == .float) or !m.isNegate(d.lhs)) break :blk false;
+                    if (!lit.isSet(d.lhs)) {
+                        lit.set(d.lhs);
+                        earned -|= inst_units - literal_units;
+                    }
+                    break :blk true;
+                },
+                else => false,
+            };
+            if (literal) {
+                lit.set(i);
+                cells[i] = kids.cells +| @intFromBool(m.tags[i] == .list);
+                earned +|= literal_units +| pair_units *| (pairs(cells[i]) -| kids.pairs);
+                continue;
+            }
+            earned +|= switch (m.tags[i]) {
+                .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target => type_units,
+                // A `via` is a function that a walk evaluates (kernel §6.14).
+                .schema_via => inst_units,
+                .local, .top, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => inst_units,
+            };
+        }
+        return earned;
+    }
+
+    /// The elements of a construction that `earnedUnits` reads: their cells,
+    /// and the pairs of them that each element earned already.
+    const Kids = struct {
+        cells: u32 = 0,
+        pairs: u64 = 0,
+
+        /// Whether element `e` of instruction `i` is a literal lowered
+        /// before it; if so, its cells are the construction's too.
+        fn add(k: *Kids, lit: *const std.DynamicBitSetUnmanaged, cells: []const u32, i: usize, e: u32) bool {
+            if (!(e < i and lit.isSet(e))) return false;
+            k.cells +|= cells[e];
+            k.pairs +|= pairs(cells[e]);
+            return true;
+        }
+
+        fn all(k: *Kids, lit: *const std.DynamicBitSetUnmanaged, cells: []const u32, i: usize, items: []const Inst.Index) bool {
+            for (items) |it| if (!k.add(lit, cells, i, it.int())) return false;
+            return true;
+        }
+    };
+
+    /// The pairs of `n` cells.
+    fn pairs(n: u32) u64 {
+        const x: u64 = n;
+        return x * (x -| 1) / 2;
+    }
+
+    /// Whether instruction `callee` names `Basics.negate`.
+    fn isNegate(m: *const Mod, callee: u32) bool {
+        const t = m.calleeOf(callee) orelse return false;
+        if (t[0] >= m.names.module_names.len) return false;
+        return std.mem.eql(u8, m.names.module_names[t[0]], "Basics") and std.mem.eql(u8, m.names.declName(t[0], t[1]), "negate");
     }
 
     // ---- types ------------------------------------------------------------------
@@ -1829,9 +1946,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.prepass = try Prepass.run(gpa, prepass_arena.allocator(), .{ .bir = bir, .dispatch = in.dispatch });
 
     const nd = bir.decls.len;
-    // The module's size: its tokens, or its instructions where it has more.
-    m.module_size = @max(options.tokens, bir.insts.len);
-    m.module_budget = moduleBudget(m.module_size);
+    // The module's budget: what its instructions earn (kernel §8).
+    m.module_size = bir.insts.len;
+    m.module_budget = moduleBudget(try m.earnedUnits());
     m.lv = try gpa.alloc(Frame.Val, bir.locals.len);
     defer gpa.free(m.lv);
     m.lframe = try gpa.alloc(u32, bir.locals.len);

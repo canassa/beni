@@ -6660,6 +6660,48 @@ test "ownership v3: no module does more than the most for any module" {
     }
 }
 
+// Research report 136: a module earned 16 384 units for each token of its
+// source, so a literal earned far more than its walk costs, and the
+// functions beside it spent it. Six modules, each with one literal of 3 000
+// tuples of numbers, negated numbers and strings on one line and 30
+// functions `f p = p` over nested pairs of 4 096 lists, each reached the
+// most for any module: 19.7 s at `--jobs=1` on the gates' compiler. A
+// literal now earns about what its walk costs (kernel §8), so each module
+// reaches its own budget at its first such function: 1.3 s.
+test "ownership v3: a literal earns what its walk costs, not what its tokens would" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" });
+    var main: std.ArrayList(u8) = .empty;
+    for (0..6) |k| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+        for (1..13) |d| try src.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ d, d - 1, d - 1 });
+        try src.print(a, "\n\npub xs{d} : List (Int × Int × String)\nxs{d} =\n    [ ( 0, -0, \"s\" )", .{ k, k });
+        for (1..3000) |i| try src.print(a, ", ( {d}, -{d}, \"s\" )", .{ i, i });
+        try src.appendSlice(a, " ]\n");
+        for (0..30) |f| try src.print(a, "\n\nf{d} : P12 → P12\nf{d} p =\n    p\n", .{ f, f });
+        const name = try std.fmt.allocPrint(a, "M{d}.beni", .{k});
+        try w.write(name, src.items);
+        try args.append(a, name);
+        try main.print(a, "import M{d}\n", .{k});
+    }
+    try main.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\nmain : Program\nmain = Node.print (String.fromInt (List.length M0.xs0))\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(args.items, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    // Each module reaches its own budget, not the most for any module.
+    const own = std.mem.count(u8, r.stderr, "limit f0: the walks of the module took more than");
+    if (r.exit_code != 1 or own != 6 or std.mem.indexOf(u8, r.stderr, "(the most for any module)") != null) {
+        std.debug.print("wanted each module's own limit at f0; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 3000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // The review of research report 135: a module past its budget published
 // the contracts of the declarations walked before the one that passed it,
 // so whether an importer's write was accepted depended on the order of the

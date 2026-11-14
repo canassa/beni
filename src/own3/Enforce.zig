@@ -172,7 +172,6 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         .markup_type = markup_type,
         .kept_lets = try keptLets(arena, session, d, m, bir),
         .library = session.options.library and session.graph.modulePackage(m) == .app,
-        .tokens = session.artifacts.spans(session.graph.moduleFile(m)).len(),
     });
     ctx.state.shared.published[mi_u] = r.published;
 
