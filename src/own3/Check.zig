@@ -56,11 +56,24 @@ pub const token_units: u64 = 1 << 14;
 /// The units of work that every module may do, whatever its size (kernel §8).
 pub const module_floor: u64 = 1 << 16;
 
+/// The most units of work that any module may do (kernel §8): about 15 times
+/// the most that a module of an ownership root does, and about a second of
+/// work at the slowest unit measured (research report 135). Without it a
+/// module of a few hundred lines that holds a large literal earns a budget
+/// of seconds that a few declarations can spend.
+pub const module_cap: u64 = 1 << 27;
+
 /// The budget of a module of `size` tokens (kernel §8). So the work of a
-/// module is linear in its size, and the work of a build in the sum of the
-/// sizes of its modules.
+/// module is linear in its size, at most `module_cap`, and the work of a
+/// build in the sum of the sizes of its modules.
 pub fn moduleBudget(size: usize) u64 {
-    return module_floor +| token_units *| @as(u64, size);
+    return @min(module_floor +| token_units *| @as(u64, size), module_cap);
+}
+
+/// The text of a module's limit line: the budget, and where it comes from.
+pub fn moduleLimitText(arena: Allocator, name: []const u8, budget: u64, size: usize) Allocator.Error![]const u8 {
+    if (budget == module_cap) return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work (the most for any module), so the checker judges no write of the module", .{ name, budget });
+    return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and {d} for each of its {d} tokens), so the checker judges no write of the module", .{ name, budget, module_floor, token_units, size });
 }
 
 pub const Names = Message.Names;
@@ -289,7 +302,7 @@ pub const Mod = struct {
     /// or the module's, whichever it passed.
     fn budgetLine(m: *Mod, di: u32, what: []const u8) Allocator.Error![]const u8 {
         if (m.steps > max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), what, max_walk_steps });
-        return std.fmt.allocPrint(m.arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and {d} for each of its {d} tokens), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), m.module_budget, module_floor, token_units, m.module_size });
+        return moduleLimitText(m.arena, m.names.declName(m.in.module, di), m.module_budget, m.module_size);
     }
 
     // ---- types ------------------------------------------------------------------
@@ -1943,7 +1956,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     if (!m.stopped() and m.overBudget()) {
         m.module_over = true;
         derived = &.{};
-        try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and {d} for each of its {d} tokens), so the checker judges no write of the module", .{ m.names.module_names[in.module], m.module_budget, module_floor, token_units, m.module_size }));
+        try m.limits.append(m.arena, try moduleLimitText(m.arena, m.names.module_names[in.module], m.module_budget, m.module_size));
     }
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };

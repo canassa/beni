@@ -6629,3 +6629,33 @@ test "ownership v3: chains of case reads and of writes end, and a unit tracks ti
     }
     if (bad) return error.TestUnexpectedVerdict;
 }
+
+// The review of research report 135: the module's budget is 16 384 units
+// for each token, so a module of a few hundred lines that holds a large
+// literal earned a budget of seconds that a few declarations then spent
+// (360 lines, 3.2 s of an LLVM compiler to the module's limit). No module
+// does more than `Check.module_cap` units now (kernel §8). Eight chains of
+// 400 writes, each accepted alone, do more than it together, and the
+// module's tokens would allow three times as much.
+test "ownership v3: no module does more than the most for any module" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n");
+    for (0..8) |d| {
+        try src.print(a, "\n\ng{d} : Int → Int\ng{d} n =\n    l0 = [ n ]\n", .{ d, d });
+        for (1..401) |k| try src.print(a, "    l{d} = List.push l{d} {d}\n", .{ k, k - 1, k });
+        try src.appendSlice(a, "    List.length l400\n");
+    }
+    try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (g0 1))\n");
+    try w.write("Main.beni", src.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "took more than 134217728 units of work") != null)) {
+        std.debug.print("wanted the limit of every module; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
