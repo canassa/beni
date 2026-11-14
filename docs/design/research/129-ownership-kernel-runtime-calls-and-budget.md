@@ -393,6 +393,12 @@ give-up that accepts, or a check that does not end fast.
   Ten declarations of 300 lines over a record of 2 040 lists are accepted in 7.8 s, against 1.2 s for the
   plain check. A budget per module would bound it; this work did not add one (§12).
 
+**The third pass**, on the commit of those fixes (`ca717d194c`): no finding. The reader traced a module
+past its budget, a module of `core/` or a platform (where a limit is no error), a worded declaration, a
+recursive group cut by the stop, and the values that `solveCodes` hands back past the budget; each ends
+in a limit line, no contract, or both. Past the limit, 800 called local functions now take 2.9 s against
+3.8 s for the plain check (9.8 s before).
+
 The final figures, ReleaseSafe LLVM compiler, on a quiet machine:
 
 | Program | Check | Plain check | Verdict |
