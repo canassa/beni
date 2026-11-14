@@ -6048,7 +6048,6 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
     const tea = "platforms/browser-tea";
     const via = "value <call Schema.conversion> is refused: call: a function that writes its";
     const limit = "the walk took more than 33554432 steps";
-    const module_limit = "the walks of the module took more than";
     const cases = [_]Case{
         .{ .dir = g, .name = "schema-via.live", .accepted = false, .why = via },
         .{ .dir = g, .name = "schema-via.dead", .accepted = false, .why = via },
@@ -6056,7 +6055,9 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
         .{ .dir = g, .name = "schema-via-tea.dead", .platform = tea, .accepted = true },
         .{ .dir = g, .name = "entry-shift-slow.dead", .platform = tea, .accepted = true },
         .{ .dir = g, .name = "entry-shift-control.dead", .platform = tea, .accepted = true },
-        .{ .dir = g, .name = "group-rounds-slow.dead", .accepted = false, .why = module_limit },
+        // Each round walks a heavy body, and the declaration's rounds
+        // spend its own budget (research report 138).
+        .{ .dir = g, .name = "group-rounds-slow.dead", .accepted = false, .why = limit },
         .{ .dir = g, .name = "group-rounds-control.dead", .accepted = true },
         .{ .dir = r, .name = "via-module.live", .accepted = false, .why = via },
         .{ .dir = r, .name = "via-partial.live", .accepted = false, .why = via },
@@ -6096,9 +6097,10 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
 // declaration built and walked layouts of 2 040 locations (about 10 s on an
 // LLVM ReleaseSafe compiler, and over a minute on the gates' one, for 240
 // lines of its own). A module now does at most `Check.moduleBudget` units
-// of work: a small floor, and a fixed number for each token of its source
-// (kernel §8). Past it the check stops with the loud limit, and judges no
-// write of the module.
+// of work, and each declaration at most what its own instructions earn
+// (kernel §8; research report 138): the record update of `g0` over 2 040
+// locations passes its own. Past either the check stops with the loud
+// limit, and judges no write of the module.
 test "ownership v3: one budget for each module, in proportion to its size" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6130,8 +6132,8 @@ test "ownership v3: one budget for each module, in proportion to its size" {
         std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
         return err;
     };
-    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null)) {
-        std.debug.print("wanted the module's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "limit g0: the walk took more than") != null)) {
+        std.debug.print("wanted g0's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
         return error.TestUnexpectedVerdict;
     }
 }
@@ -6666,8 +6668,10 @@ test "ownership v3: no module does more than the most for any module" {
 // tuples of numbers, negated numbers and strings on one line and 30
 // functions `f p = p` over nested pairs of 4 096 lists, each reached the
 // most for any module: 19.7 s at `--jobs=1` on the gates' compiler. A
-// literal now earns about what its walk costs (kernel §8), so each module
-// reaches its own budget at its first such function: 1.3 s.
+// literal now earns about what its walk costs, and each declaration spends
+// only what its own instructions earn (kernel §8): the functions cost what
+// their layouts earn, about linear in them since research report 138, and
+// the program is accepted, with no limit.
 test "ownership v3: a literal earns what its walk costs, not what its tokens would" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6694,10 +6698,8 @@ test "ownership v3: a literal earns what its walk costs, not what its tokens wou
         std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
         return err;
     };
-    // Each module reaches its own budget, not the most for any module.
-    const own = std.mem.count(u8, r.stderr, "limit f0: the walks of the module took more than");
-    if (r.exit_code != 1 or own != 6 or std.mem.indexOf(u8, r.stderr, "(the most for any module)") != null) {
-        std.debug.print("wanted each module's own limit at f0; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 3000)] });
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 3000)] });
         return error.TestUnexpectedVerdict;
     }
 }
@@ -6738,30 +6740,154 @@ test "ownership v3: a table of literal rows beside a name is accepted" {
     }
 }
 
+// Research report 138: the duplicate test of a value tested each pair of its
+// locations, so `f p = p` over nested pairs of 4 096 lists did 8.4 million
+// pairs for 4 instructions, and a list of 8 such values tested each pair of
+// its parts' cells. The test groups the cells by their root and entry now,
+// about linear in them (`Frame.runsShare`), with the same answers: 20 such
+// functions and 5 such lists are accepted, with no limit.
+test "ownership v3: the duplicate test of a value is linear in its cells" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+    for (1..13) |d| try src.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ d, d - 1, d - 1 });
+    for (0..20) |f| try src.print(a, "\n\npub f{d} : P12 → P12\nf{d} p =\n    p\n", .{ f, f });
+    for (0..5) |g| try src.print(a, "\n\npub g{d} : P11 → List P11\ng{d} p =\n    [ p, p, p, p, p, p, p, p ]\n", .{ g, g });
+    try w.write("A.beni", src.items);
+    try w.write("Main.beni", "import A\nimport Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.print \"ok\"\n");
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the module accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 138: a local function's contract from an earlier round of
+// its declaration's group started the rounds of the next as a finished
+// contract, so the cells of its own recursive call had new names in each
+// round, and `chunks` (from `tests/corpus/run/TailModConsBranches`) never
+// settled: 66 walks and the limit. That contract is a draft while the rounds
+// run (`Frame.solveCodes`), and the group settles.
+test "ownership v3: a group whose local function calls itself settles" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import List
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\chunks : List Int, Int → List (List Int)
+        \\chunks xs n =
+        \\    case xs of
+        \\        [] →
+        \\            []
+        \\
+        \\        _ →
+        \\            first k ys =
+        \\                if k ≤ 0 then
+        \\                    []
+        \\                else
+        \\                    case ys of
+        \\                        [] →
+        \\                            []
+        \\
+        \\                        [ y, …rest ] →
+        \\                            [ y, …first (k - 1) rest ]
+        \\            [ first n xs, …chunks (List.drop xs n) n ]
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (List.length (chunks [ 1, 2, 3, 4, 5 ] 2)))
+        \\
+    );
+    const d = w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the dump did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (std.mem.indexOf(u8, d.stdout, "did not settle") != null or std.mem.indexOf(u8, d.stdout, "summary chunks:") == null) {
+        std.debug.print("wanted chunks settled, with a contract:\n{s}\n", .{d.stdout[0..@min(d.stdout.len, 2000)]});
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research reports 136 and 138: a module's budget was pooled, so what one
+// declaration earned another could spend. Each declaration spends only what
+// its own instructions earn now (kernel §8), and a function that holds a
+// list of 45 references and answers nested pairs of 4 096 lists costs about
+// what its layouts earn: two modules of 30 such functions are accepted,
+// with no limit. On `a982e4641d` each module reached its budget.
+test "ownership v3: a declaration spends what its own instructions earn" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" });
+    var main: std.ArrayList(u8) = .empty;
+    for (0..2) |k| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+        for (1..13) |d| try src.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ d, d - 1, d - 1 });
+        for (0..30) |f| {
+            try src.print(a, "\n\npub f{d} : P12, Int → P12\nf{d} p k =\n    xs = [ k", .{ f, f });
+            for (1..45) |_| try src.appendSlice(a, ", k");
+            try src.appendSlice(a, " ]\n    p\n");
+        }
+        const name = try std.fmt.allocPrint(a, "M{d}.beni", .{k});
+        try w.write(name, src.items);
+        try args.append(a, name);
+        try main.print(a, "import M{d}\n", .{k});
+    }
+    try main.appendSlice(a, "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.print \"ok\"\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(args.items, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 3000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // The review of research report 135: a module past its budget published
 // the contracts of the declarations walked before the one that passed it,
 // so whether an importer's write was accepted depended on the order of the
 // module's declarations. The module publishes no contract now (kernel §8).
+// The heavy declaration is a literal list nested 200 deep, whose location
+// table passes its own budget (research report 138).
 test "ownership v3: a module past its budget publishes no contract, in any order" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
-    var types: std.ArrayList(u8) = .empty;
-    try types.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
-    for (1..13) |k| try types.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ k, k - 1, k - 1 });
+    const types = "import List\n";
     const len = "\n\npub len : List Int → Int\nlen l =\n    List.length l\n";
     var heavy: std.ArrayList(u8) = .empty;
-    for (0..3) |k| try heavy.print(a, "\n\nheavy{d} : P12 → P12\nheavy{d} p =\n    p\n", .{ k, k });
+    try heavy.appendSlice(a, "\n\nheavy : ");
+    for (0..200) |_| try heavy.appendSlice(a, "List (");
+    try heavy.appendSlice(a, "Int");
+    for (0..200) |_| try heavy.appendSlice(a, ")");
+    try heavy.appendSlice(a, "\nheavy =\n    ");
+    for (0..200) |_| try heavy.appendSlice(a, "[ ");
+    try heavy.appendSlice(a, "0");
+    for (0..200) |_| try heavy.appendSlice(a, " ]");
+    try heavy.appendSlice(a, "\n");
     try w.write("Main.beni", "import A\nimport List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    l = [ n ]\n    k = A.len l\n    List.length (List.push l k)\n\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n");
     var bad = false;
     for ([_]bool{ true, false }) |len_first| {
-        const src = if (len_first) try std.mem.concat(a, u8, &.{ types.items, len, heavy.items }) else try std.mem.concat(a, u8, &.{ types.items, heavy.items, len });
+        const src = if (len_first) try std.mem.concat(a, u8, &.{ types, len, heavy.items }) else try std.mem.concat(a, u8, &.{ types, heavy.items, len });
         try w.write("A.beni", src);
         const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
             std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
             return err;
         };
-        const limit = std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null;
+        const limit = std.mem.indexOf(u8, r.stderr, "limit heavy: the walk took more than") != null;
         const refused = std.mem.indexOf(u8, r.stderr, "List.push l is refused") != null;
         if (!(r.exit_code == 1 and limit and refused)) {
             std.debug.print("len {s}: wanted A's limit and the push refused; exit {d}:\n{s}\n", .{ if (len_first) "first" else "last", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });

@@ -39,8 +39,9 @@ const Src = Contract.Src;
 const W = Ast.OwnWord;
 const none = Loc.none;
 
-/// The units of work that one declaration may do over all of its walks
-/// (kernel §8): about 6 times the largest declaration of every ownership root.
+/// The most units of work that one declaration may do over all of its walks,
+/// whatever it earns (kernel §8, `Mod.declBudget`): about 2.7 times the
+/// largest declaration of an ownership root that is accepted (research report 138).
 pub const max_walk_steps: u64 = 1 << 25;
 
 /// The units of one call of a walk (`Frame.tick`): about what a call costs
@@ -52,10 +53,25 @@ pub const call_units: u64 = 32;
 /// evaluates and that is not part of a literal (kernel §8): a reference, a
 /// call, a binding, a pattern, a `case`, a function. Its walks and its
 /// location table together spend them (`Mod.overBudget`), over and above
-/// `module_floor`. A thousand calls of a walk: about 1.4 times the most that
-/// an instruction of an ownership root needs on average over its module
-/// (`tests/corpus/run/TailModConsBranches`, research report 136).
+/// `module_floor`, and the declaration it is in its own budget (`Mod.declBudget`).
+/// A thousand calls of a walk: at half of it, `DeepWrittenPath.deep256` of the
+/// ownership corpus would pass its budget (research report 138).
 pub const inst_units: u64 = 1 << 15;
+
+/// The units of work that every declaration may do, whatever its size
+/// (kernel §8), over and above what its own instructions earn: a small
+/// function that reads the large contracts of its callees costs far more
+/// than its own instructions (`Dict.descend` of `core/`: 22 instructions,
+/// 0.93 million units; research report 138).
+pub const decl_floor: u64 = 1 << 20;
+
+/// The units of work that a declaration earns for each entry of the layout
+/// of each of its instructions that a walk evaluates (kernel §8): a walk of
+/// a value visits each entry of its layout a few times, a call each
+/// (`Frame.tick`), and the duplicate test groups each of its cells
+/// (`Frame.runsShare`): `f p = p` over nested pairs of 4 096 lists took
+/// 52 units for each entry of its two instructions (research report 138).
+pub const layout_units: u64 = 1 << 7;
 
 /// The units of work that a module earns for each instruction of a literal
 /// (kernel §8): a number, a character, a string, `⊤`, a constructor named, a
@@ -300,6 +316,16 @@ pub const Mod = struct {
     place_records: u64 = 0,
     /// Per declaration: the steps that its walks took so far, in every round.
     decl_steps: []u64 = &.{},
+    /// Per declaration: the units of the location table in its walks, in
+    /// every round, and its budget (`declBudget`, 0 before its first walk).
+    decl_loc: []u64 = &.{},
+    decl_budget: []u64 = &.{},
+    /// The budget of the declaration in work, and the location table's
+    /// units when its walk began, less what its walks before spent of them.
+    decl_limit: u64 = max_walk_steps,
+    loc_mark: u64 = 0,
+    /// Per instruction: what it earns (`earnedUnits`), but for its layout.
+    inst_earn: []u64 = &.{},
     /// Per declaration: a walk of it gave up or passed its steps, so some
     /// of its instructions may not have been evaluated (`checkCovered`).
     incomplete: []bool = &.{},
@@ -320,14 +346,65 @@ pub const Mod = struct {
     }
 
     pub fn overBudget(m: *const Mod) bool {
-        return m.steps > max_walk_steps or m.module_units +| m.loc.units > m.module_budget;
+        return m.declSpent() > m.decl_limit or m.module_units +| m.loc.units > m.module_budget;
+    }
+
+    /// What the declaration in work spent of its budget, over all of its
+    /// walks: its steps, and the location table's units in its walks.
+    fn declSpent(m: *const Mod) u64 {
+        return m.steps +| (m.loc.units -| m.loc_mark);
+    }
+
+    /// A walk of declaration `di` begins: its budget, what it spent before.
+    fn beginDecl(m: *Mod, di: u32) Allocator.Error!void {
+        if (m.decl_budget[di] == 0) m.decl_budget[di] = try m.declBudget(di);
+        m.steps = m.decl_steps[di];
+        m.loc_mark = m.loc.units -| m.decl_loc[di];
+        m.decl_limit = m.decl_budget[di];
+        m.steps_over = m.overBudget();
+    }
+
+    /// A walk of declaration `di` ends: what it spent, for its next walk.
+    fn endDecl(m: *Mod, di: u32) void {
+        m.decl_steps[di] = m.steps;
+        m.decl_loc[di] = m.loc.units -| m.loc_mark;
+        m.decl_limit = max_walk_steps;
+    }
+
+    /// The budget of declaration `di` (kernel §8): `decl_floor`, what its
+    /// instructions earn (`earnedUnits`), and `layout_units` for each
+    /// entry of the layout of each of them that a walk evaluates; at most
+    /// `max_walk_steps`. It depends on the declaration's own instructions
+    /// alone. What its layouts earn is added to the module's budget, which
+    /// `earnedUnits` gave the floor and the rest of.
+    fn declBudget(m: *Mod, di: u32) Allocator.Error!u64 {
+        const d = m.bir.decls[di];
+        var e: u64 = decl_floor;
+        var lay: u64 = 0;
+        for (d.inst_start.int()..d.inst_end.int()) |i| {
+            e +|= m.inst_earn[i];
+            if (!m.evaluated(@intCast(i))) continue;
+            const l = try m.loc.layoutOf(try m.placeOfInst(@intCast(i)));
+            lay +|= layout_units *| m.loc.layouts.items[l].len;
+        }
+        m.module_budget = @min(m.module_budget +| lay, module_cap);
+        return @min(e +| lay, max_walk_steps);
+    }
+
+    /// Whether instruction `i` is one that a walk evaluates: it earns `inst_units`.
+    fn evaluated(m: *const Mod, i: u32) bool {
+        return m.inst_earn[i] == inst_units;
     }
 
     /// The limit line of declaration `di` past a budget: the declaration's
     /// or the module's, whichever it passed.
     fn budgetLine(m: *Mod, di: u32, what: []const u8) Allocator.Error![]const u8 {
-        if (m.steps > max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ m.names.declName(m.in.module, di), what, max_walk_steps });
-        return moduleLimitText(m.arena, m.names.declName(m.in.module, di), m.module_budget, m.module_size);
+        const name = m.names.declName(m.in.module, di);
+        if (m.decl_steps[di] +| m.decl_loc[di] > m.decl_budget[di]) {
+            if (m.decl_budget[di] == max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ name, what, max_walk_steps });
+            return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} units of work (what the declaration earns), so the checker judges no write of the module", .{ name, what, m.decl_budget[di] });
+        }
+        return moduleLimitText(m.arena, name, m.module_budget, m.module_size);
     }
 
     /// What the module's instructions earn of its budget (kernel §8): each
@@ -350,7 +427,8 @@ pub const Mod = struct {
         @memset(cells, 0);
         var lit = try std.DynamicBitSetUnmanaged.initEmpty(m.gpa, n);
         defer lit.deinit(m.gpa);
-        var earned: u64 = 0;
+        m.inst_earn = try m.gpa.alloc(u64, n);
+        @memset(m.inst_earn, 0);
         for (0..n) |i| {
             const d = m.datas[i];
             var kids: Kids = .{};
@@ -372,7 +450,7 @@ pub const Mod = struct {
                     if (!(m.tags[args[0].int()] == .int or m.tags[args[0].int()] == .float) or !m.isNegate(d.lhs)) break :blk false;
                     if (!lit.isSet(d.lhs)) {
                         lit.set(d.lhs);
-                        earned -|= inst_units - literal_units;
+                        m.inst_earn[d.lhs] = literal_units;
                     }
                     break :blk true;
                 },
@@ -381,7 +459,7 @@ pub const Mod = struct {
             if (literal) {
                 lit.set(i);
                 cells[i] = kids.cells +| @intFromBool(m.tags[i] == .list);
-                earned +|= literal_units +| pair_units *| (pairs(cells[i]) -| kids.pairs);
+                m.inst_earn[i] = literal_units +| pair_units *| (pairs(cells[i]) -| kids.pairs);
                 continue;
             }
             // A construction that is no literal still brings the cells of
@@ -390,15 +468,21 @@ pub const Mod = struct {
             // theirs together again.
             if (kids.cells != 0) {
                 cells[i] = kids.cells +| @intFromBool(m.tags[i] == .list);
-                earned +|= pair_units *| (pairs(cells[i]) -| kids.pairs);
+                m.inst_earn[i] = pair_units *| (pairs(cells[i]) -| kids.pairs);
             }
-            earned +|= switch (m.tags[i]) {
+            m.inst_earn[i] +|= switch (m.tags[i]) {
                 .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target => type_units,
                 // A `via` is a function that a walk evaluates (kernel §6.14).
                 .schema_via => inst_units,
                 .local, .top, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => inst_units,
             };
         }
+        var earned: u64 = 0;
+        for (m.inst_earn) |e| earned +|= e;
+        // Each value declaration may do `decl_floor` (`declBudget`).
+        for (m.bir.decls) |d| if (d.kind.isValue()) {
+            earned +|= decl_floor;
+        };
         return earned;
     }
 
@@ -1423,8 +1507,7 @@ pub const Mod = struct {
         }
         // One budget for the declaration, whatever the number of its walks
         // (kernel §8): the rounds of its group count against it together.
-        m.steps = m.decl_steps[di];
-        m.steps_over = m.overBudget();
+        try m.beginDecl(di);
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
@@ -1442,7 +1525,7 @@ pub const Mod = struct {
         // Past the budget no walk goes on (kernel §8): `finish` is not run,
         // and the declaration gives up below.
         const c = if (m.steps_over) undefined else try f.finish(result_place);
-        m.decl_steps[di] = m.steps;
+        m.endDecl(di);
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
             m.module_over = true;
@@ -1490,14 +1573,13 @@ pub const Mod = struct {
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
         var f = try Frame.init(m, null, di, false, none);
-        m.steps = m.decl_steps[di];
-        m.steps_over = m.overBudget();
+        try m.beginDecl(di);
         for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) {
             if (m.steps_over) break;
             try f.walkHeld(m.datas[i].lhs);
         };
         if (!m.steps_over) _ = try f.finish(m.var_place);
-        m.decl_steps[di] = m.steps;
+        m.endDecl(di);
         if (m.steps_over or f.failed) m.incomplete[di] = true;
         if (m.steps_over) m.module_over = true;
         if (m.steps_over) {
@@ -1528,11 +1610,10 @@ pub const Mod = struct {
             if (!try m.isFunction(.{ m.in.module, di })) continue;
             if (m.stopped()) return;
             var f = try Frame.init(m, null, di, false, none);
-            m.steps = m.decl_steps[di];
-            m.steps_over = m.overBudget();
+            try m.beginDecl(di);
             try f.walkExported(.{ m.in.module, di }, body.int());
             if (!m.steps_over) _ = try f.finish(m.var_place);
-            m.decl_steps[di] = m.steps;
+            m.endDecl(di);
             if (m.steps_over) {
                 m.module_over = true;
                 try m.limits.append(m.arena, try m.budgetLine(di, " of the export"));
@@ -1967,6 +2048,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     // The module's budget: what its instructions earn (kernel §8).
     m.module_size = bir.insts.len;
     m.module_budget = moduleBudget(try m.earnedUnits());
+    defer gpa.free(m.inst_earn);
     m.lv = try gpa.alloc(Frame.Val, bir.locals.len);
     defer gpa.free(m.lv);
     m.lframe = try gpa.alloc(u32, bir.locals.len);
@@ -2018,6 +2100,12 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.decl_steps = try gpa.alloc(u64, nd);
     defer gpa.free(m.decl_steps);
     @memset(m.decl_steps, 0);
+    m.decl_loc = try gpa.alloc(u64, nd);
+    defer gpa.free(m.decl_loc);
+    @memset(m.decl_loc, 0);
+    m.decl_budget = try gpa.alloc(u64, nd);
+    defer gpa.free(m.decl_budget);
+    @memset(m.decl_budget, 0);
     m.incomplete = try gpa.alloc(bool, nd);
     defer gpa.free(m.incomplete);
     @memset(m.incomplete, false);
