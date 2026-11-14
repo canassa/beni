@@ -1,0 +1,15 @@
+-- Safe twin of view-let-wrap.live: the pushed list is made inside the pushing `let`, so it is new
+-- each time that `let` runs. v3 accepts the push.
+import Comp
+import Html exposing (Html)
+import List
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+pub wrap : Int → Html msg
+wrap n =
+    ys = List.push (List.repeat 2 n) n
+    <Comp.counter s={show ys} />

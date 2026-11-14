@@ -1,0 +1,10 @@
+import Html exposing (Html)
+import List
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+pub counter : { s : String } → Html msg
+counter props = <i>{props.s}</i>

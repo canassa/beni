@@ -1,0 +1,17 @@
+-- Research report 134, found by its review: the root of `wrap` is a component call and nothing
+-- else, so the module has no row in the markup section of its dispatch table. The `dom` root still
+-- keeps `xs`, and the next render pushes onto it. v3 must refuse the push.
+import Comp
+import Html exposing (Html)
+import List
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+pub wrap : Int → Html msg
+wrap n =
+    xs = [ 1, 2 ]
+    ys = List.push xs n
+    <Comp.counter s={show ys} />

@@ -12,3 +12,5 @@ bench/ownership-sweeps/blind10i-faults/view-let-nested.live
 bench/ownership-sweeps/blind10i-faults/view-let-record.dead
 bench/ownership-sweeps/blind10i-faults/view-let-record.live
 bench/ownership-sweeps/blind10i-faults/view-let-scalar.live
+bench/ownership-sweeps/blind10i-faults/view-let-wrap.dead
+bench/ownership-sweeps/blind10i-faults/view-let-wrap.live

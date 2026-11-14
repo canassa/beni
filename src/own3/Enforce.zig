@@ -236,7 +236,10 @@ fn keptLets(arena: Allocator, session: *const Session, d: *const Driver, m: Grap
     } else return &.{};
     if (!lowering.groups) return &.{};
     const mi = m.int();
-    if (mi >= d.dispatch.len or d.dispatch[mi].markup.len == 0) return &.{};
+    // No shortcut by the dispatch table: a component's call has no row in
+    // it, and a root made of one is a root all the same. The tree finds
+    // the roots as the emitter does, from the `markup` instructions.
+    if (mi >= d.dispatch.len) return &.{};
     const vocabulary = mk.vocabulary orelse return &.{};
     if (vocabulary.int() >= d.interfaces.len) return &.{};
     const live = try arena.alloc(u32, bir.decls.len);

@@ -1428,14 +1428,19 @@ fn compatible(f: *const Frame, a0: u32, b0: u32) bool {
     var a = a0;
     var b = b0;
     const cs = f.ctxs.items;
-    while (cs[a].depth > cs[b].depth) a = cs[a].parent;
-    while (cs[b].depth > cs[a].depth) b = cs[b].parent;
-    while (a != b) {
-        if (cs[a].parent == cs[b].parent) return cs[a].case != cs[b].case;
+    // Each context climbed is work (kernel §8): a pair of a write and a read
+    // in two arms of cases nested deep costs their depth. Past the budget the
+    // two are compatible.
+    var climbed: usize = 0;
+    while (cs[a].depth > cs[b].depth) : (climbed += 1) a = cs[a].parent;
+    while (cs[b].depth > cs[a].depth) : (climbed += 1) b = cs[b].parent;
+    const ok = while (a != b) : (climbed += 2) {
+        if (cs[a].parent == cs[b].parent) break cs[a].case != cs[b].case;
         a = cs[a].parent;
         b = cs[b].parent;
-    }
-    return true;
+    } else true;
+    if (f.charge(climbed)) return true;
+    return ok;
 }
 
 /// All of `v` is read at `point`.

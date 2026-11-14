@@ -812,6 +812,12 @@ pub const Mod = struct {
         m.row_slot_gen[j] = m.gen;
         var next: usize = 0;
         while (next < rows.items.len) : (next += 1) {
+            // Past the budget the rows are not read on (kernel §8).
+            if (m.overBudget()) {
+                var x: RowInfo = .{};
+                x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true });
+                return x;
+            }
             const r = rows.items[next];
             edges.clearRetainingCapacity();
             try Edges.termsEdges(&edges, arena, dt, dt.argsAt(dt.derived[r].body), false);

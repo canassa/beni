@@ -6469,6 +6469,10 @@ test "ownership v3: a let that a markup lowering keeps, and a long chain of writ
         .{ .name = "view-let-helper.dead", .accepted = true },
         .{ .name = "view-let-comp.live", .accepted = false, .why = escaped },
         .{ .name = "view-let-comp.dead", .accepted = true },
+        // Found by the review of report 134: a root that is a component call
+        // alone has no row in the markup section of the dispatch table.
+        .{ .name = "view-let-wrap.live", .accepted = false, .why = escaped },
+        .{ .name = "view-let-wrap.dead", .accepted = true },
         .{ .name = "chain-of-writes.slow", .accepted = false, .why = module_limit },
         .{ .name = "chain-of-writes.control", .accepted = true },
     };
@@ -6480,9 +6484,10 @@ test "ownership v3: a let that a markup lowering keeps, and a long chain of writ
         var args: std.ArrayList([]const u8) = .empty;
         try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", try std.fmt.allocPrint(a, "--platform={s}", .{platform}), try std.fmt.allocPrint(a, "--root={s}", .{dir}) });
         try args.append(a, try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir}));
-        if (std.Io.Dir.cwd().access(testing.io, try std.fmt.allocPrint(a, "{s}/Comp.beni", .{dir}), .{})) |_| {
-            try args.append(a, try std.fmt.allocPrint(a, "{s}/Comp.beni", .{dir}));
-        } else |_| {}
+        for ([_][]const u8{ "Comp.beni", "Wrap.beni" }) |other| {
+            const path = try std.fmt.allocPrint(a, "{s}/{s}", .{ dir, other });
+            if (std.Io.Dir.cwd().access(testing.io, path, .{})) |_| try args.append(a, path) else |_| {}
+        }
         const res = w.runWith(args.items, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
             std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
             bad = true;
@@ -6495,4 +6500,50 @@ test "ownership v3: a let that a markup lowering keeps, and a long chain of writ
         }
     }
     if (bad) return error.TestUnexpectedVerdict;
+}
+
+// Research report 134's review: `compatible` climbs the contexts of two
+// arms to their common case, and that climb was not counted. Writes 200
+// cases deep, beside 10 000 reads in the other arm of the outermost case,
+// cost the depth for each pair of a write and a read and counted 1. The
+// climb counts now (kernel §8), so the walk stops at its budget.
+test "ownership v3: the contexts that a pair of a write and a read climb are counted" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const depth = 200;
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    case n of\n");
+    for (1..depth) |d| try main.print(a, "{[pad]s}{[d]d} →\n{[pad]s}    case n of\n", .{ .pad = try indent(a, 4 * (2 * d)), .d = d });
+    const inner = try indent(a, 4 * (2 * depth + 1));
+    try main.print(a, "{s}{d} →\n", .{ try indent(a, 4 * (2 * depth)), depth });
+    try main.print(a, "{s}l0 = [ n ]\n", .{inner});
+    for (1..61) |k| try main.print(a, "{s}l{d} = List.push l{d} {d}\n", .{ inner, k, k - 1, k });
+    try main.print(a, "{s}0\n", .{inner});
+    var d: usize = depth;
+    while (d >= 1) : (d -= 1) {
+        const arm = try indent(a, 4 * (2 * d - 1) + 4);
+        try main.print(a, "\n{s}_ →\n", .{arm});
+        if (d == 1) {
+            try main.print(a, "{s}    ys = [ n ]\n{s}    List.sum [ List.length ys", .{ arm, arm });
+            for (1..10_000) |_| try main.appendSlice(a, ", List.length ys");
+            try main.appendSlice(a, " ]\n");
+        } else try main.print(a, "{s}    0\n", .{arm});
+    }
+    try main.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "limit go: the walk") != null)) {
+        std.debug.print("wanted the walk's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 4000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+fn indent(a: std.mem.Allocator, n: usize) ![]const u8 {
+    const s = try a.alloc(u8, n);
+    @memset(s, ' ');
+    return s;
 }
