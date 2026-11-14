@@ -688,11 +688,12 @@ table's work is counted with it. So **a module of `n` tokens does at most 65 536
 a build at most the sum over its modules**: linear in the size of the program, at most 16 384 units for
 each token and 65 536 for each module, whatever the shape of its types or the number of its
 declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
-and the contracts of its imports only). A unit took 1.7 to 7 ns on every shape that research report
-130 measured (ReleaseSafe, LLVM), so a module's walks take at most about 0.1 ms for each token; the
-slowest program it found takes 5.2 s for 7 767 lines (40 modules over one record of 2 040 lists), and
-the largest ratio of the walks' time to the type check's is 130 (nested pairs of 2 048 lists, which the
-type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each
+and the contracts of its imports only). A unit took 1.4 to 6.3 ns on every shape that research report
+130 measured but one (ReleaseSafe, LLVM), so a module's walks take at most about 0.1 ms for each token;
+the one is a module of a few lines that names large types, about 25 ns, where the type check of the
+module takes longer than v3. The slowest program found takes 5.2 s for 7 767 lines (40 modules over one
+record of 2 040 lists), and the largest ratio of v3's time to the type check's is 131 (nested pairs of
+2 048 lists, which the type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each
 piece of it is linear in counted work: the indexes of a pair's meets and of a call map read the other
 way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds its own), a lookup
 in a table (`Loc.proj`, kept for each place and step), and the module's published contracts
@@ -700,7 +701,9 @@ in a table (`Loc.proj`, kept for each place and step), and the module's publishe
 four times the counted copy of those labels where the layout was built or read, and a copy of each
 contract that `finish` built). One piece is not linear and is not v3's own: `own2`'s prepass collects
 the dispatch edges of each declaration (`Edges.declEdges`) as the type check does, and costs what the
-type check costs there (report 130 §9).
+type check costs there (report 130 §9). And `own2`'s adapter makes, for each constructor argument of a
+type it describes, a table as long as the instruction index of the term (`Groups.Adapter.ofTerm`): a
+chain of 3 000 nominal types each holding 32 others takes 23 s and is not counted (report 130 §10).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
