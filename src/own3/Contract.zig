@@ -317,13 +317,34 @@ pub fn rewritesFn(c: *const Contract) bool {
 /// the methods it calls through the parts of the type can do.
 pub const DerivedFact = struct { type: u32, kind: u8, effect: Effect };
 
+/// The first fact of `p` for derived method `kind` of type `ty`, or null.
+pub fn derivedFact(p: *const Published, ty: u32, kind: u8) ?Effect {
+    var lo: usize = 0;
+    var hi: usize = p.derived.len;
+    while (lo < hi) {
+        const mid = (lo + hi) / 2;
+        const f = p.derived[mid];
+        if (f.type < ty or (f.type == ty and f.kind < kind)) lo = mid + 1 else hi = mid;
+    }
+    if (lo < p.derived.len and p.derived[lo].type == ty and p.derived[lo].kind == kind) return p.derived[lo].effect;
+    return null;
+}
+
 /// The module's contracts, by declaration, as its importers read them.
 pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const Contract, derived: []const DerivedFact) Allocator.Error!*Published {
     const p = try gpa.create(Published);
     p.* = .{ .arena = .init(gpa) };
     errdefer p.deinit(gpa);
     const a = p.arena.allocator();
-    p.derived = try a.dupe(DerivedFact, derived);
+    // Sorted by type and method, so that an importer finds a fact in
+    // logarithmic time (`derivedFact`); the sort is stable.
+    const facts = try a.dupe(DerivedFact, derived);
+    std.mem.sort(DerivedFact, facts, {}, struct {
+        fn lt(_: void, x: DerivedFact, y: DerivedFact) bool {
+            return x.type < y.type or (x.type == y.type and x.kind < y.kind);
+        }
+    }.lt);
+    p.derived = facts;
     p.layouts = try a.alloc(?[]const ExEntry, loc.layouts.items.len);
     @memset(p.layouts, null);
     p.contracts = try a.alloc(?*const Contract, contracts.len);

@@ -698,7 +698,9 @@ way (`MeetIndex`, `CoverIndex`, kept for each pair in a frame: each frame builds
 in a table (`Loc.proj`, kept for each place and step), and the module's published contracts
 (`Contract.publish`: the labels of each entry of each layout they name, once for each module, about
 four times the counted copy of those labels where the layout was built or read, and a copy of each
-contract that `finish` built).
+contract that `finish` built). One piece is not linear and is not v3's own: `own2`'s prepass collects
+the dispatch edges of each declaration (`Edges.declEdges`) as the type check does, and costs what the
+type check costs there (report 130 §9).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
@@ -715,7 +717,10 @@ publishes no contract and no derived fact, and its report has an `ownership_limi
 principled layout exists — the repeated halves of a type past a bound given one summary location for each
 object place below them, as the deep level of a cycle has (§4.1) — and is not built (research report 120
 §2). Evidence and the rows of derived methods are walked each term once (`Edges.termsEdges`), so a
-doubling evidence term costs its distinct nodes and has no limit. None of these is a hole; each is a
+doubling evidence term costs its distinct nodes and has no limit. The answer of each derived row of the
+module (what the methods it calls can do, at any depth) is kept until a contract that it read changes
+(`Mod.rowInfo`), so a row's body is read once for each such contract and each read counts; another
+module's facts are found by a binary search (`Contract.derivedFact`). None of these is a hole; each is a
 prototype's constant, and R-7.4 asks that each become a loud `ownership_limit` before the checker leaves
 the prototype stage.
 

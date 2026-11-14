@@ -112,6 +112,47 @@ pub const Options = struct {
 
 const State = enum(u8) { todo, working, done };
 
+/// What code named by dispatch terms can do (`Mod.termsInfo`): the join of
+/// the effects of its edges, and which texts of a refusal of evidence they
+/// make, one bit each (`textBit`).
+pub const RowInfo = struct {
+    effect: Contract.Effect = .{},
+    texts: u4 = 0,
+
+    pub fn addEffect(r: *RowInfo, x: Contract.Effect) void {
+        r.effect = r.effect.join(x);
+        r.texts |= textBit(x);
+    }
+
+    pub fn add(r: *RowInfo, x: RowInfo) void {
+        r.effect = r.effect.join(x.effect);
+        r.texts |= x.texts;
+    }
+
+    pub fn eql(a: RowInfo, b: RowInfo) bool {
+        return std.meta.eql(a.effect, b.effect) and a.texts == b.texts;
+    }
+
+    /// The bit of the text that `Mod.evidenceText` gives `x`, or 0.
+    fn textBit(x: Contract.Effect) u4 {
+        if (!x.any()) return 0;
+        if (x.writes) return 1;
+        if (x.keeps) return 2;
+        if (x.rewrites) return 4;
+        return 8;
+    }
+
+    /// The text of bit `b` (`textBit`).
+    pub fn text(b: u4) []const u8 {
+        return Mod.evidenceText(switch (b) {
+            1 => .{ .writes = true },
+            2 => .{ .keeps = true },
+            4 => .{ .rewrites = true },
+            else => .{ .no_contract = true },
+        });
+    }
+};
+
 const RefusalKey = struct { inst: u32, cause: u32, detail: u64 };
 
 pub const Mod = struct {
@@ -199,6 +240,15 @@ pub const Mod = struct {
     /// has more) and its budget (`moduleBudget`).
     module_size: usize = 0,
     module_budget: u64 = std.math.maxInt(u64),
+    /// Per derived row of this module: its answer (`rowInfo`), and the walk
+    /// it was found in (`gen`); and per row, scratch of `rowInfo`.
+    row_info: []RowInfo = &.{},
+    row_gen: []u32 = &.{},
+    row_slot: []u32 = &.{},
+    row_slot_gen: []u32 = &.{},
+    gen: u32 = 1,
+    /// Per declaration: an answer of `rowInfo` kept now read its contract.
+    row_read: std.DynamicBitSetUnmanaged = .{},
     /// The places and steps of the place graph counted so far (`chargePlaces`).
     place_records: u64 = 0,
     /// Per declaration: the steps that its walks took so far, in every round.
@@ -625,6 +675,7 @@ pub const Mod = struct {
             if (!m.worded_done[t[1]]) {
                 m.worded_done[t[1]] = true;
                 m.contracts[t[1]] = try m.wordedContract(t[1]);
+                m.contractChanged(t[1]);
             }
             return m.contracts[t[1]];
         }
@@ -656,7 +707,7 @@ pub const Mod = struct {
                 for ([_]u32{ u.module.int(), owner.int() }) |mi| {
                     if (mi >= m.shared.published.len) continue;
                     const p = m.shared.published[mi] orelse continue;
-                    for (p.derived) |fact| if (fact.type == @backingInt(u.type) and fact.kind == @backingInt(u.kind)) return fact.effect;
+                    if (Contract.derivedFact(p, @backingInt(u.type), @backingInt(u.kind))) |x| return x;
                 }
                 return .{ .writes = true, .keeps = true, .no_contract = true };
             },
@@ -692,32 +743,134 @@ pub const Mod = struct {
         return "a function with no contract is handed as evidence";
     }
 
-    /// Every edge of the terms `roots`, through the body of each derived
-    /// row of this module that they name, each term once (`Edges.termsEdges`):
-    /// the methods a derived `eq` or `compare` calls on the parts of its
-    /// type, at any depth, and the evidence it is handed.
-    pub fn termEdges(m: *Mod, roots: []const Dispatch.TermIndex, out: *std.ArrayList(Edges.Edge)) Allocator.Error!void {
-        const dt = m.in.dispatch orelse return;
-        try Edges.termsEdges(out, m.walk_arena.allocator(), dt, roots, true);
+    /// What the code that the terms `roots` name can do, through the body
+    /// of each derived row of this module that they name, at any depth: the
+    /// join of the effects of their edges (`edgeEffect`), and which texts of
+    /// a refusal of evidence those edges make (`evidenceText`, a bit each).
+    /// A row's answer is kept while the module's contracts stay the same
+    /// (`rowInfo`), so a row's body is read once for each set of contracts,
+    /// not once for each term that names it (kernel §8).
+    pub fn termsInfo(m: *Mod, roots: []const Dispatch.TermIndex) Allocator.Error!RowInfo {
+        const dt = m.in.dispatch orelse return .{};
+        const arena = m.walk_arena.allocator();
+        var edges: std.ArrayList(Edges.Edge) = .empty;
+        defer edges.deinit(arena);
+        try Edges.termsEdges(&edges, arena, dt, roots, false);
+        m.loc.units +|= edges.items.len * Loc.lookup_units;
+        var r: RowInfo = .{};
+        for (edges.items) |e| switch (e) {
+            .derived => |j| if (j < dt.derived.len) r.add(try m.rowInfo(j)),
+            else => r.addEffect(try m.rowEdgeEffect(e)),
+        };
+        return r;
+    }
+
+    /// `termsInfo` of the body of derived row `j`, kept until a contract of
+    /// a declaration of the module that it read changes (`contractChanged`):
+    /// `edgeEffect` reads nothing else that changes. The rows that `j` reaches and that are not kept are
+    /// solved together, a row at a time from a worklist: a row's answer only
+    /// grows, by at most eight bits, so each row is read again at most
+    /// eight times for each row that names it.
+    fn rowInfo(m: *Mod, j: u32) Allocator.Error!RowInfo {
+        if (m.row_gen[j] == m.gen) return m.row_info[j];
+        const dt = m.in.dispatch.?;
+        const arena = m.walk_arena.allocator();
+        var rows: std.ArrayList(u32) = .empty;
+        defer rows.deinit(arena);
+        // Per row of `rows`: its own edges' answer, and the rows it names.
+        var direct: std.ArrayList(RowInfo) = .empty;
+        defer direct.deinit(arena);
+        var deps: std.ArrayList([]const u32) = .empty;
+        defer deps.deinit(arena);
+        var edges: std.ArrayList(Edges.Edge) = .empty;
+        defer edges.deinit(arena);
+        var names: std.ArrayList(u32) = .empty;
+        defer names.deinit(arena);
+        try rows.append(arena, j);
+        m.row_slot[j] = 0;
+        m.row_slot_gen[j] = m.gen;
+        var next: usize = 0;
+        while (next < rows.items.len) : (next += 1) {
+            const r = rows.items[next];
+            edges.clearRetainingCapacity();
+            try Edges.termsEdges(&edges, arena, dt, dt.argsAt(dt.derived[r].body), false);
+            m.loc.units +|= call_units + edges.items.len * Loc.lookup_units;
+            var own: RowInfo = .{};
+            names.clearRetainingCapacity();
+            for (edges.items) |e| switch (e) {
+                .derived => |k| {
+                    if (k >= dt.derived.len) continue;
+                    if (m.row_gen[k] == m.gen) {
+                        own.add(m.row_info[k]);
+                        continue;
+                    }
+                    if (m.row_slot_gen[k] != m.gen) {
+                        m.row_slot_gen[k] = m.gen;
+                        m.row_slot[k] = @intCast(rows.items.len);
+                        try rows.append(arena, k);
+                    }
+                    try names.append(arena, m.row_slot[k]);
+                },
+                else => own.addEffect(try m.rowEdgeEffect(e)),
+            };
+            try direct.append(arena, own);
+            try deps.append(arena, try arena.dupe(u32, names.items));
+        }
+        // The rows that name each row, and the least answer of all of them.
+        const n = rows.items.len;
+        const named_by = try arena.alloc(std.ArrayList(u32), n);
+        @memset(named_by, .empty);
+        for (deps.items, 0..) |ds, i| for (ds) |d| try named_by[d].append(arena, @intCast(i));
+        const got = try arena.dupe(RowInfo, direct.items);
+        var work: std.ArrayList(u32) = .empty;
+        defer work.deinit(arena);
+        for (0..n) |i| try work.append(arena, @intCast(i));
+        while (work.pop()) |i| {
+            var x = direct.items[i];
+            for (deps.items[i]) |d| x.add(got[d]);
+            m.loc.units +|= 1 + deps.items[i].len;
+            if (RowInfo.eql(x, got[i])) continue;
+            got[i] = x;
+            for (named_by[i].items) |up| try work.append(arena, up);
+        }
+        for (rows.items, got) |r, x| {
+            m.row_info[r] = x;
+            m.row_gen[r] = m.gen;
+        }
+        return m.row_info[j];
+    }
+
+    /// The contract of declaration `di` changed: the answers of `rowInfo`
+    /// kept so far are dropped if one read the old one (`row_read`).
+    pub fn contractChanged(m: *Mod, di: u32) void {
+        if (!m.row_read.isSet(di)) return;
+        m.gen += 1;
+        m.row_read.unsetAll();
+    }
+
+    /// `edgeEffect` for `rowInfo` and `termsInfo`: a declaration of this
+    /// module that it reads is noted (`contractChanged`).
+    fn rowEdgeEffect(m: *Mod, e: Edges.Edge) Allocator.Error!Contract.Effect {
+        switch (e) {
+            .top => |d| if (d < m.row_read.bit_length) m.row_read.set(d),
+            else => {},
+        }
+        return m.edgeEffect(e);
     }
 
     /// For each derived method of a nominal type that this module emits:
     /// what the methods it calls, at any depth, can do (`edgeEffect`). A
-    /// row's evidence parameters are judged where it is used.
+    /// row's evidence parameters are judged where it is used. Each row is
+    /// read once (`rowInfo`), with every contract of the module known.
     fn derivedFacts(m: *Mod) Allocator.Error![]const Contract.DerivedFact {
         const dt = m.in.dispatch orelse return &.{};
         var out: std.ArrayList(Contract.DerivedFact) = .empty;
-        var edges: std.ArrayList(Edges.Edge) = .empty;
-        defer edges.deinit(m.walk_arena.allocator());
-        for (dt.derived) |row| {
+        for (dt.derived, 0..) |row, ri| {
             const t = switch (row.shape) {
                 .nominal => |id| id,
                 .record, .tuple, .unit => continue,
             };
-            edges.clearRetainingCapacity();
-            try m.termEdges(dt.argsAt(row.body), &edges);
-            var x: Contract.Effect = .{};
-            for (edges.items) |e| x = x.join(try m.edgeEffect(e));
+            const x = (try m.rowInfo(@intCast(ri))).effect;
             try out.append(m.arena, .{ .type = @backingInt(t), .kind = @backingInt(row.kind), .effect = x });
         }
         return out.items;
@@ -1202,6 +1355,7 @@ pub const Mod = struct {
         for (members) |di| {
             m.state[di] = .working;
             m.contracts[di] = if (recursive) try m.bottom(di) else null;
+            m.contractChanged(di);
             if (m.contracts[di]) |c| try m.drafts.put(m.gpa, @intFromPtr(c), {});
         }
         defer m.drafts.clearRetainingCapacity();
@@ -1224,6 +1378,7 @@ pub const Mod = struct {
                 const next: ?*const Contract.Contract = if (got) |g| (if (old) |o| try Contract.join(m.arena, o, g) else g) else null;
                 if ((old == null) != (next == null) or (old != null and !Contract.eql(old.?, next.?))) changed = true;
                 m.contracts[di] = next;
+                m.contractChanged(di);
                 if (recursive) if (next) |c| try m.drafts.put(m.gpa, @intFromPtr(c), {});
             }
             if (!recursive or !changed) break;
@@ -1235,6 +1390,7 @@ pub const Mod = struct {
                 for (members) |di| {
                     m.contracts[di] = null;
                     m.failed_decl[di] = true;
+                    m.contractChanged(di);
                 }
                 break;
             }
@@ -1247,6 +1403,7 @@ pub const Mod = struct {
                 for (members) |di| {
                     m.contracts[di] = null;
                     m.failed_decl[di] = true;
+                    m.contractChanged(di);
                 }
                 break;
             }
@@ -1646,6 +1803,19 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.contracts = try gpa.alloc(?*const Contract.Contract, nd);
     defer gpa.free(m.contracts);
     @memset(m.contracts, null);
+    const nrows = if (in.dispatch) |dt| dt.derived.len else 0;
+    m.row_info = try gpa.alloc(RowInfo, nrows);
+    defer gpa.free(m.row_info);
+    m.row_gen = try gpa.alloc(u32, nrows);
+    defer gpa.free(m.row_gen);
+    @memset(m.row_gen, 0);
+    m.row_slot = try gpa.alloc(u32, nrows);
+    defer gpa.free(m.row_slot);
+    m.row_slot_gen = try gpa.alloc(u32, nrows);
+    defer gpa.free(m.row_slot_gen);
+    @memset(m.row_slot_gen, 0);
+    m.row_read = try std.DynamicBitSetUnmanaged.initEmpty(gpa, nd);
+    defer m.row_read.deinit(gpa);
     m.failed_decl = try gpa.alloc(bool, nd);
     defer gpa.free(m.failed_decl);
     @memset(m.failed_decl, false);

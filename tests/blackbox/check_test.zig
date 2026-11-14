@@ -6158,6 +6158,35 @@ test "ownership v3: the pairs of a result's locations count against the budget" 
     }
 }
 
+// Research report 130's third review: the facts that a module publishes
+// of its derived methods walked, for each derived row, every row below it
+// again, so 1 000 types that each hold 32 of the types before them took
+// 7 s of v3 with no other code, and no unit counted it. A row's answer is
+// kept until a contract that it read changes (`Check.Mod.rowInfo`), and
+// an imported fact is found by a binary search.
+test "ownership v3: each derived row is read once" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport Node exposing (Program)\n\n\ntype T0\n    = T0 Int\n");
+    for (1..1001) |i| {
+        try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype T{d}\n    = T{d}", .{ i, i }));
+        for (1..33) |j| try main.appendSlice(a, try std.fmt.allocPrint(a, " T{d}", .{if (i > j) i - j else 0}));
+        try main.appendSlice(a, "\n");
+    }
+    try main.appendSlice(a, "\n\nmain : Program\nmain =\n    Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // Research report 129: a `--library` build exports its `pub` functions, and
 // host JavaScript calls them with arrays that it still holds and reads
 // after. An export is a function in the default location (kernel §6.14), so

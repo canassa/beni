@@ -3482,7 +3482,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
 /// (`static-dispatch-spike.md` §3.3), once for each part of its operands:
 /// what those can do is the answer, which the caller applies to the operands
 /// (`derivedEffect`). The functions are every edge of the site's terms,
-/// through the body of each derived row (`Mod.termEdges`), each term once;
+/// through the body of each derived row (`Mod.termsInfo`), each row once;
 /// another module's derived row is read by the fact that module published
 /// (`Mod.edgeEffect`).
 fn evidence(f: *Frame, inst: u32) Error!CMod.Effect {
@@ -3507,17 +3507,10 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
     };
     const ncallee = roots.items.len;
     try roots.appendSlice(f.gpa, dt.argsAt(site.evidence));
-    var edges: std.ArrayList(Edges.Edge) = .empty;
-    defer edges.deinit(f.gpa);
-    try m.termEdges(roots.items[0..ncallee], &edges);
-    var x: CMod.Effect = .{};
-    for (edges.items) |e| x = x.join(try m.edgeEffect(e));
-    edges.clearRetainingCapacity();
-    try m.termEdges(roots.items[ncallee..], &edges);
-    for (edges.items) |e| {
-        const y = try m.edgeEffect(e);
-        if (y.any()) try m.addRefusal(f, inst, .call, Mod.evidenceText(y));
-    }
+    const x = (try m.termsInfo(roots.items[0..ncallee])).effect;
+    // Each text of an edge of the evidence that can do something, once.
+    const texts = (try m.termsInfo(roots.items[ncallee..])).texts;
+    for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addRefusal(f, inst, .call, Check.RowInfo.text(b));
     return x;
 }
 
