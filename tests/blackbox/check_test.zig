@@ -6689,6 +6689,15 @@ test "ownership v3: a module past its budget publishes no contract, in any order
             std.debug.print("len {s}: wanted A's limit and the push refused; exit {d}:\n{s}\n", .{ if (len_first) "first" else "last", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
             bad = true;
         }
+        // The dump prints the contracts the module publishes: none of a walk.
+        const d = w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("the dump did not end in 10 s ({s})\n", .{@errorName(err)});
+            return err;
+        };
+        if (std.mem.indexOf(u8, d.stdout, "took more than") == null or std.mem.indexOf(u8, d.stdout, "summary len") != null) {
+            std.debug.print("len {s}: the dump prints a contract that the module does not publish:\n{s}\n", .{ if (len_first) "first" else "last", d.stdout[0..@min(d.stdout.len, 2000)] });
+            bad = true;
+        }
     }
     if (bad) return error.TestUnexpectedVerdict;
 }

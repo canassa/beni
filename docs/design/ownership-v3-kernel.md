@@ -777,10 +777,11 @@ paths:
   recursive group past it stops the group's rounds, and no member publishes a contract. In the entry, a
   budget passed takes every model location out of `own`, so every write the entry judges is refused. No
   other declaration of the module is walked after one passes its budget (`Mod.module_over`), the
-  module publishes no contract, not even of the declarations walked before that one (so what an
-  importer reads of it does not depend on the order of its declarations; the review of research
-  report 135), an importer reads each of its declarations as unknown code, and the module authorises
-  no write. Nor are
+  module publishes no contract of a walk, not even of the declarations walked before that one (so what
+  an importer reads of it, and what its dump prints, does not depend on the order of its declarations;
+  the reviews of research report 135), an importer reads each of its walked declarations as unknown
+  code (a worded declaration's contract is its words, which no walk made, and stays), and the module
+  authorises no write. Nor are
   the module's derived rows read for its published facts; an importer reads a row with no fact as code
   that writes and keeps. The reads of those rows count against the module's budget too, and a module
   that passes it only there has its limit line as well. The

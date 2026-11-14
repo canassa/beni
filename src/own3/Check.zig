@@ -1935,8 +1935,6 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     }
     if (options.library) try m.walkExports();
     checkCovered(&m);
-    var summaries: std.ArrayList([]const u8) = .empty;
-    if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     // A walk that gave up publishes nothing (kernel §3.3).
     if (std.debug.runtime_safety) for (m.contracts, m.failed_decl) |c, failed| std.debug.assert(!(failed and c != null));
     // A type past the layout limit (kernel §8, `Loc.max_layout_entries`): the
@@ -1958,11 +1956,17 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         derived = &.{};
         try m.limits.append(m.arena, try moduleLimitText(m.arena, m.names.module_names[in.module], m.module_budget, m.module_size));
     }
-    // A module past its budget publishes no contract, not even of the
-    // declarations walked before the one that passed it (kernel §8): what
-    // an importer reads of it must not depend on the order of its
-    // declarations (research report 135's review).
-    if (m.module_over) @memset(m.contracts, null);
+    // A module past its budget publishes no contract of a walk, not even of
+    // the declarations walked before the one that passed it (kernel §8):
+    // what an importer reads of it must not depend on the order of its
+    // declarations (research report 135's review). A worded declaration's
+    // contract is its words, which no walk made, and stays.
+    if (m.module_over) for (bir.decls, m.contracts) |d, *c| {
+        if (!d.kind.isValue() or bir.ownSlotsV2(d).len == 0) c.* = null;
+    };
+    // The contracts as text, for a dump: the ones the module publishes.
+    var summaries: std.ArrayList([]const u8) = .empty;
+    if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };
 }
