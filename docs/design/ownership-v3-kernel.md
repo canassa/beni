@@ -710,7 +710,8 @@ paths:
     markup site, a list built of anything but literals. The most that the module of an ownership root
     needs is 18 900 units for each of its instructions (`TailModConsBranches`, 0.85 of its budget);
   - **each instruction of a literal, 128 units** (`literal_units`, four calls), and **2 units for each
-    pair of two lists in it** (`pair_units`). A literal is a number, a character, a string, `⊤`, a
+    pair of two lists of literals that a construction brings together** (`pair_units`), whether or not
+    the construction is a literal itself (`[ first, [ 0, 1 ], [ 1, 2 ], … ]`). A literal is a number, a character, a string, `⊤`, a
     constructor, a negated number (`-1`, a call of `Basics.negate`, and the reference to it), and a
     tuple, a list, a record or a constructor applied whose elements are all literals. Its walk
     evaluates each of its instructions once: a list of numbers took 32 units for each and a tuple
@@ -724,7 +725,19 @@ paths:
   its walk could cost and the functions beside it spent the rest: six modules of 200 lines, each with a
   literal of 9 000 numbers on one line and 30 functions `f p = p` over nested pairs of 4 096 lists,
   took 5.7 s of v3 at `--jobs=1` (research report 135 §8); each module now reaches its own budget at
-  its first such function.* Every unit that a
+  its first such function.*
+
+  **The bound in time.** At the slowest unit of v3's own walks measured, 12 ns (research report 135),
+  an instruction that a walk evaluates earns at most about 0.4 ms of work, and an instruction of a
+  literal or a type about 1.5 µs. A line that `beni fmt` writes holds at most about 45 instructions
+  that a walk evaluates (a call with 20 arguments, twice, in 93 columns), so it earns at most about
+  18 ms; a line of three to five, the common case, 1 to 2 ms. A literal's line earns about 1.5 µs for
+  each element. The budget is pooled over the module, so what one declaration earns another can spend,
+  and a declaration whose walk costs far more than it earns (a function `f p = p` over nested pairs of
+  4 096 lists, 8.8 million units for 4 instructions) spends it: dense lines of cheap references beside
+  such functions are the slowest shape that the rule allows (research report 136 §4, §9).
+
+  Every unit that a
   declaration counts counts against its module too
   (`Mod.module_units`), and so does the work of the module's location table (`Loc.Table.units`): each
   step that the visit of a layout takes and each step of the path that a projection follows for each
@@ -810,9 +823,10 @@ paths:
   root) does 8.9 million units (in `tests/corpus/run/TailModConsBranches`), and the largest of a real
   root 5.0 million (in `bench/corpus`'s `NotesApp`; research report 135 §5): the budget is about 3.8 and
   6.7 times them. The module of an ownership root closest to its module budget is
-  `tests/corpus/run/TailModConsBranches` (8.9 million units, 0.92 of its budget), and of a real
-  root `bench/corpus`'s `NotesApp` (8.3 million, 0.33). Three corpus programs of
-  paths more than a hundred levels deep pass their module budget (report 130 §8). A declaration that
+  `tests/corpus/run/TailModConsBranches` (8.9 million units, 0.85 of its budget), and of a real
+  root `bench/corpus`'s `NotesApp` (8.3 million, 0.29; research report 136 §5). One corpus program
+  of paths more than a hundred levels deep passes its module budget, `DeepPathThroughList` (report
+  130 §8); `DeepWrittenPath` passed it before research report 136 and does 0.95 of it now. A declaration that
   reaches the budget took at most 0.45 s on the shapes research report 135 measured (LLVM ReleaseSafe).
 
 
@@ -849,8 +863,8 @@ function of 8 000 calls over a record of 2 040 lists (18 ns a unit, the adapter)
 a declaration reaches its budget in about 0.4 s, and a module in at most about 1.6 s of v3's own
 walks (2²⁷ units at 12 ns; the time of `own2`'s code in the two shapes above is not in units, and no
 budget bounds it); the slowest measured, 1 000 functions over nested pairs of 4 096 lists, takes 0.8 s. **The
-module's cap** (research report 135 §8): without it a module of 360 lines that held a literal list of
-15 000 numbers earned 500 million units from its tokens, and 60 functions `f p = p` over those pairs
+module's cap** (research report 135 §8): when a module earned 16 384 units for each token, a module of
+360 lines that held a literal list of 15 000 numbers earned 500 million units, and 60 functions `f p = p` over those pairs
 spent them in 3.2 s. The cap is about 15 times the most that a module of an ownership root does. The slowest program that report 130 found takes 5.2 s for 7 767 lines (40 modules
 over one record of 2 040 lists), and the largest ratio of v3's time to the type check's there was 131 (nested pairs of
 2 048 lists, which the type check reads as 11 aliases). The work outside the count is kept, so no round repeats it, and each

@@ -6702,6 +6702,30 @@ test "ownership v3: a literal earns what its walk costs, not what its tokens wou
     }
 }
 
+// The review of research report 136: a list whose rows are literal lists
+// but one, a name, was no literal, so it earned nothing for the pairs of
+// its rows' cells that the walk tests, and 1 400 rows passed the module's
+// budget. A construction earns the pairs of the literal cells in it now,
+// whether or not it is a literal itself (kernel §8).
+test "ownership v3: a table of literal rows beside a name is accepted" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\nfirst : List Int\nfirst =\n    [ 0, 0 ]\n\n\ntable : List (List Int)\ntable =\n    [ first\n");
+    for (0..1400) |i| try src.print(a, "    , [ {d}, {d} ]\n", .{ i, i + 1 });
+    try src.appendSlice(a, "    ]\n\n\nmain : Program\nmain =\n    Node.print (String.fromInt (List.length table))\n");
+    try w.write("Main.beni", src.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the table accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // The review of research report 135: a module past its budget published
 // the contracts of the declarations walked before the one that passed it,
 // so whether an importer's write was accepted depended on the order of the

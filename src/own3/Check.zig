@@ -353,8 +353,9 @@ pub const Mod = struct {
                 .int, .float, .char, .string, .chunk, .unit, .ctor, .ext_ctor => true,
                 .tuple, .list, .interp => kids.all(&lit, cells, i, m.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
                 .record => blk: {
-                    for (m.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |fd| if (!kids.add(&lit, cells, i, fd.value.int())) break :blk false;
-                    break :blk true;
+                    var all = true;
+                    for (m.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |fd| all = kids.add(&lit, cells, i, fd.value.int()) and all;
+                    break :blk all;
                 },
                 .call => blk: {
                     const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index);
@@ -378,6 +379,9 @@ pub const Mod = struct {
                 earned +|= literal_units +| pair_units *| (pairs(cells[i]) -| kids.pairs);
                 continue;
             }
+            // A construction that is no literal still brings the cells of
+            // the literals in it together, and the walk tests their pairs.
+            earned +|= pair_units *| (pairs(kids.cells +| @intFromBool(m.tags[i] == .list)) -| kids.pairs);
             earned +|= switch (m.tags[i]) {
                 .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target => type_units,
                 // A `via` is a function that a walk evaluates (kernel §6.14).
@@ -395,7 +399,9 @@ pub const Mod = struct {
         pairs: u64 = 0,
 
         /// Whether element `e` of instruction `i` is a literal lowered
-        /// before it; if so, its cells are the construction's too.
+        /// before it; if so, its cells are the construction's too. Every
+        /// element is read, so a construction that is no literal still knows
+        /// the cells of the literals in it.
         fn add(k: *Kids, lit: *const std.DynamicBitSetUnmanaged, cells: []const u32, i: usize, e: u32) bool {
             if (!(e < i and lit.isSet(e))) return false;
             k.cells +|= cells[e];
@@ -404,8 +410,9 @@ pub const Mod = struct {
         }
 
         fn all(k: *Kids, lit: *const std.DynamicBitSetUnmanaged, cells: []const u32, i: usize, items: []const Inst.Index) bool {
-            for (items) |it| if (!k.add(lit, cells, i, it.int())) return false;
-            return true;
+            var every = true;
+            for (items) |it| every = k.add(lit, cells, i, it.int()) and every;
+            return every;
         }
     };
 
