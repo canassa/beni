@@ -164,6 +164,9 @@ pub const Mod = struct {
     /// Lives as long as the module's result.
     arena: Allocator,
     walk_arena: std.heap.ArenaAllocator,
+    /// The set of atoms that `Frame.uniqueTail` keeps while it removes the
+    /// repeats of a run: one table for the module, cleared for each run.
+    uniq_seen: std.AutoHashMapUnmanaged(Frame.Atom, void) = .empty,
     in: *const Groups.Input,
     bir: *const Bir,
     tags: []const Inst.Tag,
@@ -1793,6 +1796,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .kept_lets = options.kept_lets,
     };
     defer m.walk_arena.deinit();
+    defer m.uniq_seen.deinit(gpa);
     defer m.places.deinit(gpa);
     defer m.account.deinit(gpa);
     m.account.walk = .growth;

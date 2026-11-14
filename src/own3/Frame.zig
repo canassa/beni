@@ -378,8 +378,6 @@ ctxs: std.ArrayList(Ctx) = .empty,
 cur_ctx: u32 = 0,
 returns: std.ArrayList(Val) = .empty,
 scratch: std.ArrayList(Atom) = .empty,
-/// `uniqueTail`'s own scratch: the indexes of a run, in the order of its atoms.
-order: std.ArrayList(u32) = .empty,
 /// While a spread literal or a `++` chain is walked: its root call.
 chain_root: u32 = none,
 /// The next `Use.id`.
@@ -394,6 +392,9 @@ leaf_buf: std.ArrayList(Atom) = .empty,
 leaf_ks: std.ArrayList(u32) = .empty,
 leaf_nest: u32 = 0,
 reach_seen: std.AutoHashMapUnmanaged(Val, void) = .empty,
+/// The part of each join that `project` made, by the join and the step:
+/// kept for the frame, since a value never changes once it is made.
+proj_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 reach_nest: u32 = 0,
 flow_active: std.ArrayList(struct { key: FlowKey, args: []const Val }) = .empty,
 /// The lowest depth of a use whose context the judgments in work read: the
@@ -663,7 +664,33 @@ fn freshId(f: *Frame, root: u32, e: u32) Error!u16 {
 const outside_atom: Atom = .{ .root = 0, .path = 0, .e = 0 };
 
 fn overlap(f: *const Frame, a: Atom, b: Atom) bool {
-    return a.root == b.root and a.root != 0 and a.e == b.e and f.m.loc.comparable(a.path, b.path);
+    return a.root == b.root and a.root != 0 and a.e == b.e and f.comparable(a.path, b.path);
+}
+
+/// Whether one of two paths is a prefix of the other (`Loc.Table.comparable`).
+/// The climb of the deeper one to the other's depth is work (kernel §8): a
+/// path into a recursive type is as deep as the chain of projections that
+/// made it, so one climb can cost hundreds of steps. It is one unit and one
+/// for each four steps (`Loc.scanUnits`), past the first. The answer is
+/// exact past the budget too; the declaration has given up by then.
+fn comparable(f: *const Frame, a: u32, b: u32) bool {
+    if (a == b) return true;
+    const ps = f.m.loc.paths.items;
+    const da = ps[a].depth;
+    const db = ps[b].depth;
+    const climb = if (da > db) da - db else db - da;
+    if (climb >= 4) _ = f.charge(climb / 4);
+    return f.m.loc.comparable(a, b);
+}
+
+/// Whether path `a` is `b` or above it (`Loc.Table.pathPrefix`), with its
+/// climb counted as `comparable` counts it.
+fn pathPrefix(f: *const Frame, a: u32, b: u32) bool {
+    const ps = f.m.loc.paths.items;
+    const da = ps[a].depth;
+    const db = ps[b].depth;
+    if (db > da and db - da >= 4) _ = f.charge((db - da) / 4);
+    return f.m.loc.pathPrefix(a, b);
 }
 
 fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
@@ -713,7 +740,7 @@ fn dupOverlap(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
 /// a list the frame made.
 fn viaApart(f: *const Frame, x: Atom, y: Atom) bool {
     if (x.via == none or x.via != y.via or !f.isLinear(x.via)) return false;
-    return x.via_e != y.via_e or !f.m.loc.comparable(x.via_path, y.via_path);
+    return x.via_e != y.via_e or !f.comparable(x.via_path, y.via_path);
 }
 
 /// The one duplicate test of a run that parts build (kernel §4.4): whether
@@ -772,6 +799,9 @@ fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error
 
 /// Append `f.atoms[start..][0..len]` to `out`, which can be `f.atoms` itself, as cells read through root `via`.
 fn copyAtoms(f: *Frame, start: u32, len: u32, via: u32, via_path: u32, via_e: u32, out: *std.ArrayList(Atom)) Error!void {
+    // Each atom copied is work (kernel §8): a run can hold every older name
+    // of a chain of writes.
+    _ = f.charge(len);
     try out.ensureUnusedCapacity(f.gpa, len);
     for (0..len) |i| {
         var a = f.atoms.items[start + i];
@@ -795,19 +825,6 @@ fn atomEql(a: Atom, b: Atom) bool {
     return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead;
 }
 
-fn atomLess(run: []const Atom, x: u32, y: u32) bool {
-    const a = run[x];
-    const b = run[y];
-    if (a.root != b.root) return a.root < b.root;
-    if (a.path != b.path) return a.path < b.path;
-    if (a.e != b.e) return a.e < b.e;
-    if (a.via != b.via) return a.via < b.via;
-    if (a.via_path != b.via_path) return a.via_path < b.via_path;
-    if (a.via_e != b.via_e) return a.via_e < b.via_e;
-    if (a.dead != b.dead) return a.dead < b.dead;
-    return x < y;
-}
-
 /// Remove from `list.items[from..]` each atom that an earlier atom of the run
 /// equals. The first of each stays, at its place in the order.
 ///
@@ -819,7 +836,7 @@ fn atomLess(run: []const Atom, x: u32, y: u32) bool {
 fn uniqueTail(f: *Frame, list: *std.ArrayList(Atom), from: usize) Error!void {
     const run = list.items[from..];
     if (run.len < 2) return;
-    // Sorting a run is work of its own (kernel §8).
+    // Removing the repeats of a run is work of its own (kernel §8).
     _ = f.charge(run.len);
     var n: usize = 1;
     if (run.len <= 16) {
@@ -834,25 +851,17 @@ fn uniqueTail(f: *Frame, list: *std.ArrayList(Atom), from: usize) Error!void {
         list.shrinkRetainingCapacity(from + n);
         return;
     }
-    // The indexes by atom, and by index among equal atoms: the first of each group is the one that stays.
-    f.order.clearRetainingCapacity();
-    try f.order.ensureTotalCapacity(f.gpa, run.len);
-    for (0..run.len) |i| f.order.appendAssumeCapacity(@intCast(i));
-    std.mem.sortUnstable(u32, f.order.items, @as([]const Atom, run), atomLess);
-    // `via` is free to mark an atom that goes: no atom is read through root 0, the `outside` root.
-    const gone: u32 = 0;
-    var first = f.order.items[0];
-    var any = false;
-    for (f.order.items[1..]) |i| {
-        if (atomEql(run[i], run[first])) {
-            run[i].via = gone;
-            any = true;
-        } else first = i;
-    }
-    if (!any) return;
+    // A larger run: a set of the atoms seen, so the cost is the run and not
+    // a sort of it. Each atom is a lookup in a hash table (kernel §8). The
+    // module keeps one table; one far larger than the run is let go, so that
+    // clearing it costs about the run.
+    _ = f.charge(run.len * Loc.lookup_units);
+    const seen = &f.m.uniq_seen;
+    if (seen.capacity() > 64 * run.len) seen.clearAndFree(f.m.gpa) else seen.clearRetainingCapacity();
+    try seen.ensureTotalCapacity(f.m.gpa, @intCast(run.len));
     n = 0;
     for (run) |a| {
-        if (a.via == gone) continue;
+        if (seen.getOrPutAssumeCapacity(a).found_existing) continue;
         run[n] = a;
         n += 1;
     }
@@ -948,6 +957,8 @@ fn leafKeep(f: *Frame, v: Val, ks: []const u32, all: bool, out: *std.ArrayList(A
         return;
     }
     try f.uniqueTail(out, start);
+    // The copy kept is work (kernel §8).
+    _ = f.charge(out.items.len - start);
     const hit: LeafHit = .{
         .start = @intCast(f.leaf_buf.items.len),
         .len = @intCast(out.items.len - start),
@@ -1279,24 +1290,29 @@ fn reachWalk(f: *Frame, v: Val, w: []const Atom) Error!bool {
 fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
     const r = f.roots.items[root];
     const p = f.m.loc.paths.items[path];
+    // Each target compared is work (kernel §8), and so is each climb of a
+    // path and each entry of the part scanned; past the budget it reaches.
+    if (f.charge(w.len)) return true;
     for (w) |x| {
         if (x.root != root) continue;
-        if (f.m.loc.pathPrefix(path, x.path)) return true;
-        if (f.m.loc.pathPrefix(x.path, path)) {
+        if (f.pathPrefix(path, x.path)) return true;
+        if (f.pathPrefix(x.path, path)) {
             // The target's location must be at or below this part.
+            if (f.charge(p.to_root.len)) return true;
             for (p.to_root) |re| if (re == x.e) return true;
         }
     }
     switch (r.kind) {
         .local => {
             const len = f.m.loc.layouts.items[r.layout].len;
+            if (f.charge(len)) return true;
             for (0..len) |i| {
                 const ent = f.rents.items[r.ent + i];
                 switch (ent.kind) {
                     .own, .taken => continue,
                     .alias, .derived, .version => {},
                 }
-                if (f.atomsReach(f.atoms.items[ent.start..][0..ent.len], w)) return true;
+                if (try f.runReaches(root, @intCast(i), ent, w)) return true;
             }
         },
         .answer => {
@@ -1313,12 +1329,17 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
     for (xs) |x| {
         // Each comparison made is work (kernel §8); past the budget it reaches.
+        // An old name is a step: it is compared with nothing.
+        if (f.isOld(x)) {
+            if (f.charge(1)) return true;
+            continue;
+        }
         if (f.charge(w.len + 1)) return true;
-        if (f.isOld(x)) continue;
         for (w) |y| if (f.overlap(x, y)) return true;
         const r = f.roots.items[x.root];
         if (r.kind == .answer and x.root != f.skip_answer) for (f.answers.items[r.ent].base.items) |b| {
             if (f.isOld(b)) continue;
+            if (f.charge(w.len)) return true;
             for (w) |y| if (f.overlap(b, y)) return true;
         };
     }
@@ -1376,6 +1397,8 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
         .closure => return f.unknownOf(n.place, &.{v}),
         .fnref => return v_outside,
         .ref => {
+            // The path is looked up, or made (kernel §8).
+            _ = f.charge(Loc.lookup_units);
             const np = (try f.m.loc.pathExtend(n.b, s)) orelse return f.unknownOf(n.place, &.{v});
             const child = f.m.loc.paths.items[np].place;
             if (try f.layoutLen(child) == 0) return v_none;
@@ -1391,19 +1414,21 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             return v_none;
         },
         .join => {
-            const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
-            // Each arm projected is work (kernel §8); past the budget the
-            // part is unknown over the value.
-            if (f.charge(n.b)) return f.unknownOf(n.place, &.{v});
-            var tmp: std.ArrayList(Val) = .empty;
-            defer tmp.deinit(f.gpa);
-            var ctxs: std.ArrayList(u32) = .empty;
-            defer ctxs.deinit(f.gpa);
-            for (0..n.b) |i| {
-                try tmp.append(f.gpa, try f.project(f.lists.items[n.a + 2 * i], s));
-                try ctxs.append(f.gpa, f.lists.items[n.a + 2 * i + 1]);
-            }
-            return f.joinVal(pr.child, tmp.items, ctxs.items);
+            // A join's arms can share values (an arm that is the value of
+            // an earlier `case`), so the values of a walk are a DAG. A part
+            // of one value at one step is projected once in the frame
+            // (`proj_memo`): a value never changes once it is made, so the
+            // part is the one a second projection would make, and a chain
+            // of `case`s costs its distinct values, not the paths through
+            // them (research report 135). The lookup is work (kernel §8).
+            if (f.charge(Loc.lookup_units)) return f.unknownOf(n.place, &.{v});
+            const key: [2]u32 = .{ v, s.word() };
+            if (f.proj_memo.get(key)) |hit| return hit;
+            // A part made is a call (kernel §8): a new join, and its arms.
+            if (f.tick()) return f.unknownOf(n.place, &.{v});
+            const part = try f.projectJoin(v, n, s);
+            try f.proj_memo.put(f.gpa, key, part);
+            return part;
         },
         .unknown => {
             const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
@@ -1412,6 +1437,23 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
         },
         .later => unreachable, // read through `capVal` only
     }
+}
+
+/// `project` of the join `v` (node `n`): the join of its arms' parts.
+fn projectJoin(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
+    const pr = (try f.m.loc.proj(n.place, s)) orelse return f.unknownOf(n.place, &.{v});
+    // Each arm projected is work (kernel §8); past the budget the part is
+    // unknown over the value.
+    if (f.charge(n.b)) return f.unknownOf(n.place, &.{v});
+    const tmp = try f.gpa.alloc(Val, n.b);
+    defer f.gpa.free(tmp);
+    const ctxs = try f.gpa.alloc(u32, n.b);
+    defer f.gpa.free(ctxs);
+    for (0..n.b) |i| {
+        tmp[i] = try f.project(f.lists.items[n.a + 2 * i], s);
+        ctxs[i] = f.lists.items[n.a + 2 * i + 1];
+    }
+    return f.joinVal(pr.child, tmp, ctxs);
 }
 
 // ---- contexts, reads, escapes ---------------------------------------------------------
@@ -1458,6 +1500,8 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     if (whole(n.tag)) {
         // A function value: read when the callee reads, calls or keeps it
         // (a contract has the read flag on a function parameter that the body uses).
+        // The scan of the flags is work (kernel §8).
+        _ = f.charge(Loc.scanUnits(flags.len / 4));
         var any = false;
         for (flags) |x| if (x != 0) {
             any = true;
@@ -1470,6 +1514,9 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     const start: u32 = @intCast(f.lists.items.len);
     var all = true;
     var any_flag = false;
+    // The scan of the flags and of the map is work (kernel §8): a read of a
+    // record of thousands of lists costs its layout at each call.
+    _ = f.charge(Loc.scanUnits(flags.len / 4) + cov.len);
     for (flags) |x| if (x != 0) {
         any_flag = true;
     };
@@ -1484,12 +1531,75 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
 
 fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
     if (u.all) return f.reach(u.val, ws);
+    const n = f.nodes.items[u.val];
     for (0..u.nmask) |i| {
+        const k = f.lists.items[u.mask + i];
+        // A part of a root: its atoms at `k` are read where they are, not
+        // copied (`refReaches`), so a read of a name that holds every older
+        // name of a chain of writes costs a step when they are all old.
+        if (n.tag == .ref) {
+            if (try f.refReaches(n.a, n.b, k, ws)) return true;
+            continue;
+        }
         f.scratch.clearRetainingCapacity();
-        _ = try f.leaves(u.val, f.lists.items[u.mask + i], &f.scratch);
+        _ = try f.leaves(u.val, k, &f.scratch);
         if (f.atomsReach(f.scratch.items, ws)) return true;
     }
     return false;
+}
+
+/// Whether the atoms that `leaves` finds for the part `(root, path)` at
+/// entry `k` of its place's layout can be a cell of `w`: the same atoms as
+/// `leavesOwnWalk` of a `ref` and `rootLeaves` make, tested where they are.
+/// The `via` that a copy sets is not read by `atomsReach`.
+fn refReaches(f: *Frame, root: u32, path: u32, k: u32, w: []const Atom) Error!bool {
+    // The step that `leaves` counts, and the entry it maps (kernel §8).
+    if (f.tick() or f.charge(1)) return true;
+    const re = f.m.loc.paths.items[path].to_root[k];
+    // A location the root does not have: a cell of no frame, which is no cell of `w`.
+    if (re == none) return false;
+    const r = f.roots.items[root];
+    switch (r.kind) {
+        .outside => return false,
+        .param, .capture, .answer => return f.atomsReach(&.{.{ .root = root, .path = path, .e = re }}, w),
+        .fresh => return f.atomsReach(&.{.{ .root = root, .path = r.path, .e = 0 }}, w),
+        .local => {
+            const ent = f.rents.items[r.ent + re];
+            const own_path = if (ent.twice) r.path else path;
+            if (ent.hasOwn() and f.atomsReach(&.{.{ .root = root, .path = own_path, .e = re }}, w)) return true;
+            return switch (ent.kind) {
+                .own, .taken => false,
+                .version, .derived, .alias => f.runReaches(root, re, ent, w),
+            };
+        },
+    }
+}
+
+/// `atomsReach` of the run of entry `re` of root `root`. A run every atom
+/// of which is an old name for the write in judgement reaches nothing, and
+/// a run never changes once its entry is made, so that is known from the
+/// run's lowest `dead` (`RunFact.old`), found once: a step, not a scan.
+fn runReaches(f: *Frame, root: u32, re: u32, ent: REntry, w: []const Atom) Error!bool {
+    const run = f.atoms.items[ent.start..][0..ent.len];
+    if (run.len == 0) return false;
+    const rf = try f.runFact(.{ .root = root, .path = 0, .e = re });
+    if (rf.old == 0) {
+        // A scan of the run, once for each entry (kernel §8).
+        _ = f.charge(run.len);
+        // `none` is the largest time: a name that is never old.
+        var low: u32 = none;
+        var never = false;
+        for (run) |a| {
+            if (a.dead == none) never = true;
+            low = @min(low, a.dead);
+        }
+        rf.old = if (never) 1 else low +| 2;
+    }
+    if (rf.old != 1 and (f.judge_at == none or f.judge_at <= rf.old - 2)) {
+        if (safety and run.len <= 64) for (run) |a| std.debug.assert(f.isOld(a));
+        return f.charge(1);
+    }
+    return f.atomsReach(run, w);
 }
 
 fn escape(f: *Frame, v: Val, point: u32) Error!void {
@@ -1570,8 +1680,10 @@ fn markAtoms(f: *Frame, atoms: []const Atom, flag: u8) Error!void {
 
 /// What the walks of runs know of one entry of `rents`: the flags that
 /// `markAtom` set on all of its run, the highest ground of its run plus one
-/// (`runGround`; 0 is not known yet), and the last visit that reached it.
-const RunFact = struct { marked: u8 = 0, ground: u8 = 0, seen: u32 = 0 };
+/// (`runGround`; 0 is not known yet), the last visit that reached it, and
+/// its lowest `dead` plus two (`runReaches`; 1: an atom of it is never old;
+/// 0: not known yet).
+const RunFact = struct { marked: u8 = 0, ground: u8 = 0, seen: u32 = 0, old: u32 = 0 };
 
 /// The facts of the entry of a root the frame made that atom `a` is at. A
 /// run never changes once its entry is made, so each fact holds for the rest
@@ -1635,7 +1747,10 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         const place = f.placeOfVal(o.v) orelse return false;
         if (whole(n.tag)) return f.reach(o.v, ws);
         const self = try f.m.selfLoc(place);
-        for (f.m.loc.layoutEntries(try f.m.loc.layoutOf(place)), 0..) |e, k| if (e.loc == self) {
+        const pes = f.m.loc.layoutEntries(try f.m.loc.layoutOf(place));
+        // The scan of the layout is work (kernel §8).
+        if (f.charge(Loc.scanUnits(pes.len))) return true;
+        for (pes, 0..) |e, k| if (e.loc == self) {
             f.scratch.clearRetainingCapacity();
             _ = try f.leaves(o.v, @intCast(k), &f.scratch);
             if (f.atomsReach(f.scratch.items, ws)) return true;
@@ -1648,6 +1763,8 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
     }
     const own_layout = try f.m.loc.layoutOf(n.place);
     const cov = try f.m.loc.cover(o.sig, own_layout);
+    // The scans of the flags, of the layout and of the map are work (kernel §8).
+    if (f.charge(Loc.scanUnits(o.flags.len / 4) + 2 * cov.len)) return true;
     var any_flag = false;
     for (o.flags) |x| if (x != 0) {
         any_flag = true;
@@ -2096,15 +2213,19 @@ fn useId(f: *Frame) u32 {
 }
 
 /// Whether the function lets one of its own parameters escape.
-fn keepsOwn(c: *const Contract, own: u32) bool {
+fn keepsOwn(f: *const Frame, c: *const Contract, own: u32) bool {
     const n = if (own <= c.arity) c.off[own] else c.flags.len;
+    // The scan of the flags is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(n / 4));
     for (c.flags[0..n]) |x| if (x & flag_e != 0) return true;
     return false;
 }
 
-fn writesOwn(c: *const Contract, own: u32) bool {
+fn writesOwn(f: *const Frame, c: *const Contract, own: u32) bool {
     // No such parameter list: every location is one of them (the pessimistic side).
     const n = if (own <= c.arity) c.off[own] else c.flags.len;
+    // The scan of the flags is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(n / 4));
     for (c.flags[0..n]) |x| if (x & flag_w != 0) return true;
     return false;
 }
@@ -2204,6 +2325,8 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             const c = (try m.declContract(t)) orelse return v_outside;
             if (c.arity != 0) return v_outside;
             const cov = try m.loc.cover(c.layouts[0], layout);
+            // The two scans of the map are work (kernel §8).
+            _ = f.charge(2 * Loc.scanUnits(cov.len));
             var any = false;
             for (cov) |cr| if (cr >= Loc.all or c.res[cr].len != 0) {
                 any = true;
@@ -3804,6 +3927,9 @@ fn coverHits(f: *Frame, sig: u32, own: u32, cov: []const u32, se: u32, out: *std
             x.items[fill[c]] = @intCast(k);
             fill[c] += 1;
         };
+        // Built once for each pair of layouts in a frame; it costs the map
+        // and the signature's layout (kernel §8).
+        _ = f.charge(2 * cov.len + ns);
         x.alls = alls.items;
         try f.cover_index.put(f.gpa, .{ sig, own }, x);
         break :blk x;
@@ -3868,6 +3994,9 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         try f.readBy(args[0], inst, c.layouts[0], c.flags);
         return args[0];
     }
+    // The flags of the contract are scanned three times below, for what it
+    // lets escape, writes and reads (kernel §8).
+    _ = f.charge(3 * Loc.scanUnits(c.flags.len / 4));
     const others = try f.gpa.alloc(Other, c.arity);
     for (others, 0..) |*o, j| o.* = .{ .v = args[j], .sig = c.layouts[j], .flags = c.flags[c.off[j]..c.off[j + 1]] };
     // What the callee lets escape, and the functions it is handed (each
@@ -4333,6 +4462,9 @@ fn meetIndex(f: *Frame, la: u32, lb: u32) Error!*const MeetIndex {
         const b = ba[ea];
         x.image[ea] = if (b < Loc.all and (!ea_e.kind.wide() or lbs[b].kind.wide())) b else none;
     }
+    // The index is built once for each pair of layouts in a frame, and
+    // costs its two layouts (kernel §8).
+    _ = f.charge(2 * (las.len + lbs.len));
     x.undecided = undecided.items;
     try f.meet_index.put(f.gpa, .{ la, lb }, x);
     return x;
@@ -4539,7 +4671,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // (kernel §6.8). It writes no parameter, and the holder hands each of
         // its function parameters a function in the default state, which
         // keeps what it is handed (`defaultParams`).
-        if (writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
+        if (f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
         try f.captureEscapes(code, inst);
         if (use.kind != .top) {
             // A callee lost it. It can keep what it hands, and it can run the
@@ -4551,7 +4683,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         try f.defaultParams(code, &top);
         return f.flowCaptures(code, &top);
     }
-    if (f.rewritesOf(&use) and keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
+    if (f.rewritesOf(&use) and f.keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
     if (use.fnc.called) {
         try f.captureEscapes(code, inst);
         // A holder that runs the function hands its function parameters
@@ -4986,6 +5118,8 @@ const DraftSink = struct {
                 want = m.loc.find(want.?, l);
                 if (want == null) break;
             }
+            // The scan of the answer's layout and of the map is work (kernel §8).
+            _ = f.charge(Loc.scanUnits(m.loc.layoutEntries(dr.layouts[dr.arity]).len) + Loc.scanUnits(acov.len));
             var exact = false;
             if (!deep) if (want) |wl| for (m.loc.layoutEntries(dr.layouts[dr.arity]), 0..) |de, ae| if (de.loc == wl and Loc.hits(acov[ae], src.e)) {
                 exact = true;
@@ -5079,6 +5213,8 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
         want = m.loc.find(want.?, l);
         if (want == null) break;
     }
+    // The scan of the answer's layout and of the map is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(m.loc.layoutEntries(lc.layouts[lc.arity]).len) + Loc.scanUnits(rcov.len));
     var exact = false;
     if (!deep) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(rcov[re], e)) {
         exact = true;
@@ -5226,7 +5362,7 @@ fn handedBack(f: *Frame, level: *const Use, code: Code, a: u32, e: u32) Error!vo
             continue;
         }
         if (try f.codeOf(cv)) |cc| {
-            if (!keepsOwn(cc.contract, cc.own_params)) continue;
+            if (!f.keepsOwn(cc.contract, cc.own_params)) continue;
         }
         try f.refuse(level, .supply, "the function hands a value to a function that can keep it, answers it, and the callee hands it back");
     }
@@ -5243,6 +5379,8 @@ fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!v
     const ar = f.roots.items[root_id];
     const dr = f.drafts.items[di];
     const cov = try f.m.loc.cover(alayout, dr.layouts[dr.arity]);
+    // The scan of the map is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(cov.len));
     for (cov, 0..) |cv, k| if (Loc.hits(cv, ae)) try f.atoms.append(f.gpa, .{ .root = root_id, .path = ar.path, .e = @intCast(k) });
 }
 
@@ -5319,6 +5457,8 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
         want = m.loc.find(want.?, l);
         if (want == null) break;
     }
+    // The scan of the answer's layout and of the map is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(m.loc.layoutEntries(lc.layouts[lc.arity]).len) + Loc.scanUnits(cov.len));
     var exact = false;
     if (!st.whole) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(cov[re], ae)) {
         exact = true;
@@ -5575,6 +5715,8 @@ fn selfAtoms(f: *Frame, v: Val) Error!void {
         return;
     }
     const self = try m.selfLoc(place);
+    // The scan of the layout is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(try f.layoutLen(place)));
     for (m.loc.layoutEntries(try m.loc.layoutOf(place)), 0..) |be, k| if (be.loc == self) {
         _ = try f.leaves(v, @intCast(k), &f.atoms);
     };
@@ -5587,6 +5729,8 @@ fn readSelf(f: *Frame, v: Val, point: u32) Error!void {
     if (whole(f.nodes.items[v].tag)) return f.readAll(v, point);
     const self = try m.selfLoc(place);
     const start: u32 = @intCast(f.lists.items.len);
+    // The scan of the layout is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(try f.layoutLen(place)));
     for (m.loc.layoutEntries(try m.loc.layoutOf(place)), 0..) |be, k| if (be.loc == self) try f.lists.append(f.gpa, @intCast(k));
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
@@ -5605,6 +5749,8 @@ fn newItem(f: *Frame, inst: u32, v: Val) Error!bool {
     const r = f.roots.items[n.a];
     if (r.kind != .local or r.inst != inst or n.b != r.path) return false;
     const self = try m.selfLoc(r.place);
+    // The scan of the layout is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(m.loc.layouts.items[r.layout].len));
     for (m.loc.layoutEntries(r.layout), 0..) |e, k| if (e.loc == self) {
         const ent = f.rents.items[r.ent + k];
         switch (ent.kind) {
@@ -5829,13 +5975,13 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
     const init_sym: ?InternPool.Symbol = if (m.in.interner) |i| i.find("init") else null;
     for (fields.items) |fd| {
         if (fd.shape.model_param != none and fd.shape.answer != .none) continue;
-        for (codes.items[fd.from..][0..fd.len]) |c| if (writesOwn(c.contract, c.own_params)) {
+        for (codes.items[fd.from..][0..fd.len]) |c| if (f.writesOwn(c.contract, c.own_params)) {
             const is_init = init_sym != null and init_sym.? == fd.shape.name;
             try m.addRefusal(f, inst, .unknown, if (is_init) "the runtime calls `init` with a value that the function does not own" else "the runtime calls this function with a value that the function does not own");
         };
     }
     if (model_ty == .none) {
-        for (fields.items) |fd| if (fd.shape.model_param != none) for (codes.items[fd.from..][0..fd.len]) |c| if (writesOwn(c.contract, c.own_params)) {
+        for (fields.items) |fd| if (fd.shape.model_param != none) for (codes.items[fd.from..][0..fd.len]) |c| if (f.writesOwn(c.contract, c.own_params)) {
             try m.addRefusal(f, inst, .unknown, "the record has no `update`");
         };
         return f.unknownResult(inst, held.items);

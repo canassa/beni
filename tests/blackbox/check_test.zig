@@ -6547,3 +6547,82 @@ fn indent(a: std.mem.Allocator, n: usize) ![]const u8 {
     @memset(s, ' ');
     return s;
 }
+
+// Research report 135: the work that a unit of the budget stands for. A
+// chain of `case`s over a recursive type, each of which can answer the
+// value of the `case` before it, makes values that share their parts, and
+// `project` copied the shared parts once for each path through them:
+// 2ⁿ for n levels, with the copies of the arms uncounted. A part of a
+// value at a step is projected once now. A chain of writes read each
+// older name of the list at each later read, and the sort of a run of
+// atoms and the copy of a run were not counted. Each shape below took 3
+// to 4 s of an LLVM compiler before its limit, or was refused at 100
+// writes; each now ends well inside 10 s on the gates' compiler, and the
+// accepted ones are accepted.
+test "ownership v3: chains of case reads and of writes end, and a unit tracks time" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const tree = "import List\nimport Node exposing (Program)\nimport String\n\n\ntype Tree\n    = Node (List Int) (Maybe Tree)\n    | Leaf\n\n\n";
+    const read_last = "    case t{d} of\n        Node l _ →\n            List.length (List.push l 1)\n\n        Leaf →\n            0\n";
+    const Shape = enum { keep, fib, record, writes };
+    const Case = struct { shape: Shape, n: usize, limit: bool };
+    const cases = [_]Case{
+        // Each level answers the projection or the level before.
+        .{ .shape = .keep, .n = 100, .limit = false },
+        .{ .shape = .keep, .n = 400, .limit = true },
+        // Each level answers the projection or the level two before.
+        .{ .shape = .fib, .n = 100, .limit = false },
+        .{ .shape = .fib, .n = 400, .limit = true },
+        // The tree in a record beside a list.
+        .{ .shape = .record, .n = 100, .limit = false },
+        .{ .shape = .record, .n = 400, .limit = true },
+        // A chain of writes of one list.
+        .{ .shape = .writes, .n = 400, .limit = false },
+        .{ .shape = .writes, .n = 5000, .limit = true },
+    };
+    var bad = false;
+    for (cases) |c| {
+        var src: std.ArrayList(u8) = .empty;
+        switch (c.shape) {
+            .keep => {
+                try src.appendSlice(a, tree);
+                try src.appendSlice(a, "go : Tree → Int\ngo t0 =\n");
+                for (1..c.n + 1) |k| try src.print(a, "    t{d} =\n        case t{d} of\n            Node _ (Just t) →\n                t\n\n            _ →\n                t{d}\n\n", .{ k, k - 1, k - 1 });
+                try src.print(a, read_last, .{c.n});
+                try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go Leaf))\n");
+            },
+            .fib => {
+                try src.appendSlice(a, tree);
+                try src.appendSlice(a, "go : Tree, Tree → Int\ngo t0 t1 =\n");
+                for (2..c.n + 1) |k| try src.print(a, "    t{d} =\n        case t{d} of\n            Node _ (Just t) →\n                t\n\n            _ →\n                t{d}\n\n", .{ k, k - 1, k - 2 });
+                try src.print(a, read_last, .{c.n});
+                try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go Leaf Leaf))\n");
+            },
+            .record => {
+                try src.appendSlice(a, tree);
+                try src.appendSlice(a, "type alias R =\n    { t : Tree, xs : List Int }\n\n\ngo : R → Int\ngo r0 =\n");
+                for (1..c.n + 1) |k| try src.print(a, "    r{d} =\n        case r{d}.t of\n            Node l (Just t) →\n                {{ t = t, xs = l }}\n\n            _ →\n                r{d}\n\n", .{ k, k - 1, k - 1 });
+                try src.print(a, "    List.length (List.push r{d}.xs 1)\n", .{c.n});
+                try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go { t = Leaf, xs = [] }))\n");
+            },
+            .writes => {
+                try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    l0 = [ n ]\n");
+                for (1..c.n + 1) |k| try src.print(a, "    l{d} = List.push l{d} {d}\n", .{ k, k - 1, k });
+                try src.print(a, "    List.length l{d}\n\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n", .{c.n});
+            },
+        }
+        try w.write("Main.beni", src.items);
+        const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s} {d}: the check did not end in 10 s ({s})\n", .{ @tagName(c.shape), c.n, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.limit) r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "limit go: the walk") != null else r.exit_code == 0;
+        if (!ok) {
+            std.debug.print("{s} {d}: wanted {s}; exit {d}:\n{s}\n", .{ @tagName(c.shape), c.n, if (c.limit) "the walk's limit" else "accepted", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
