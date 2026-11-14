@@ -473,7 +473,7 @@ fn tick(f: *Frame) bool {
 /// declaration's budget and the module's (kernel §8): a step's own cost grows with the atoms
 /// it compares, so the budget counts them. True once the declaration is past
 /// it; the caller then answers on the pessimistic side.
-fn charge(f: *const Frame, n: usize) bool {
+fn charge(f: *const Frame, n: u64) bool {
     const m = f.m;
     if (m.steps_over) return true;
     m.steps +|= n;
