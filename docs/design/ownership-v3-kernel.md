@@ -673,8 +673,10 @@ paths:
 - **One declaration does at most what its own instructions earn, and never more than
   `Check.max_walk_steps` units of work** (33 554 432), **over all of its walks**: one budget for each
   declaration (`Mod.declBudget`, `Mod.decl_steps`), which every loop that no memo bounds counts
-  against, with the location table's work in its walks (`Mod.declSpent`). It earns (research report
-  138):
+  against. The location table's work counts against the module alone: the table keeps what it built for
+  every declaration, so which declaration builds a layout or a projection first depends on their order
+  (the review of research report 138). The budget of each declaration is made before any walk. It earns
+  (research report 138):
   - **1 048 576 units** (`decl_floor`), whatever its size;
   - **what its instructions earn** (`Mod.earnedUnits`, below): 32 768 for each that a walk evaluates,
     128 for each of a literal or a type, and the pairs of the lists of its literals;
@@ -732,8 +734,8 @@ paths:
   a backstop. An instruction earns for what its walks can cost, not for its tokens (research report 136):
   - **each instruction that a walk evaluates, 32 768 units** (`inst_units`, a thousand calls): a
     reference, a call, a binding, a pattern, a `case` and its arms, a function, a record update, a
-    markup site, a list built of anything but literals. `DeepWrittenPath.deep256` needs it: at 16 384
-    it would pass its budget (research report 138 §4);
+    markup site, a list built of anything but literals. At 8 192, `NotesApp.viewSidebar` and
+    `Ui.Html.map` would pass their budgets (research report 138 §4);
   - **each instruction of a literal, 128 units** (`literal_units`, four calls), and **2 units for each
     pair of two lists of literals that a construction brings together** (`pair_units`), whether or not
     the construction is a literal itself (`[ first, [ 0, 1 ], [ 1, 2 ], … ]`). A literal is a number, a character, a string, `⊤`, a
@@ -872,11 +874,11 @@ paths:
   that passes it only there has its limit line as well. The
   `via`s of a schema and the exports of a `--library` build (§6.14) are walked under the budget of their
   declaration. Over the 2 314 ownership roots (research report 138 §4), the declarations closest to their
-  own budgets are corpus programs of paths more than a hundred levels deep: `DeepPathThroughList.below`
-  passes its budget (it passed its module's before, report 130 §8), `DeepPathThroughList.through` does
-  0.93 of its budget and `DeepWrittenPath.deep256` 0.91. Of a real root, `Ui.Html.map` (core's platform)
-  does 0.59 of its budget, `NotesApp.viewSidebar` 0.56 and `Dict.descend` 0.52. The largest declaration
-  of a real root does 2.1 million units (`Main.changeRouteTo` of the Conduit example, 0.35).
+  own budgets are `Ui.Html.map` (0.59), `bench/corpus`'s `NotesApp.viewSidebar` (0.56) and core's
+  `Dict.descend` (0.52); the largest does 2.1 million units (`Main.changeRouteTo` of the Conduit
+  example, 0.35). One corpus program of paths more than a hundred levels deep passes its module's budget,
+  as before, `DeepPathThroughList` (report 130 §8): its location table's work, about 450 units for each
+  layout entry, quadratic in the depth of its paths. `DeepWrittenPath` does 0.59 of its module's.
 
 
   *Research report 128 §5: the budget was the walk's, not the declaration's. A recursive group walked

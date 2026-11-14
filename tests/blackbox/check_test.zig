@@ -6098,8 +6098,9 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
 // LLVM ReleaseSafe compiler, and over a minute on the gates' one, for 240
 // lines of its own). A module now does at most `Check.moduleBudget` units
 // of work, and each declaration at most what its own instructions earn
-// (kernel §8; research report 138): the record update of `g0` over 2 040
-// locations passes its own. Past either the check stops with the loud
+// (kernel §8; research report 138). The location table's work counts
+// against the module alone, and the record updates over 2 040 locations
+// pass the module's budget. Past either the check stops with the loud
 // limit, and judges no write of the module.
 test "ownership v3: one budget for each module, in proportion to its size" {
     var w = try World.init(testing.allocator, testing.io);
@@ -6132,8 +6133,8 @@ test "ownership v3: one budget for each module, in proportion to its size" {
         std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
         return err;
     };
-    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "limit g0: the walk took more than") != null)) {
-        std.debug.print("wanted g0's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null)) {
+        std.debug.print("wanted the module's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
         return error.TestUnexpectedVerdict;
     }
 }
@@ -6861,7 +6862,7 @@ test "ownership v3: a declaration spends what its own instructions earn" {
 // so whether an importer's write was accepted depended on the order of the
 // module's declarations. The module publishes no contract now (kernel §8).
 // The heavy declaration is a literal list nested 200 deep, whose location
-// table passes its own budget (research report 138).
+// table passes the module's budget (research report 138).
 test "ownership v3: a module past its budget publishes no contract, in any order" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6887,7 +6888,7 @@ test "ownership v3: a module past its budget publishes no contract, in any order
             std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
             return err;
         };
-        const limit = std.mem.indexOf(u8, r.stderr, "limit heavy: the walk took more than") != null;
+        const limit = std.mem.indexOf(u8, r.stderr, "limit heavy: the walks of the module took more than") != null;
         const refused = std.mem.indexOf(u8, r.stderr, "List.push l is refused") != null;
         if (!(r.exit_code == 1 and limit and refused)) {
             std.debug.print("len {s}: wanted A's limit and the push refused; exit {d}:\n{s}\n", .{ if (len_first) "first" else "last", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });

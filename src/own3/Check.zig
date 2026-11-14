@@ -40,8 +40,8 @@ const W = Ast.OwnWord;
 const none = Loc.none;
 
 /// The most units of work that one declaration may do over all of its walks,
-/// whatever it earns (kernel §8, `Mod.declBudget`): about 2.7 times the
-/// largest declaration of an ownership root that is accepted (research report 138).
+/// whatever it earns (kernel §8, `Mod.declBudget`): about 16 times the
+/// largest declaration of an ownership root (research report 138).
 pub const max_walk_steps: u64 = 1 << 25;
 
 /// The units of one call of a walk (`Frame.tick`): about what a call costs
@@ -54,8 +54,8 @@ pub const call_units: u64 = 32;
 /// call, a binding, a pattern, a `case`, a function. Its walks and its
 /// location table together spend them (`Mod.overBudget`), over and above
 /// `module_floor`, and the declaration it is in its own budget (`Mod.declBudget`).
-/// A thousand calls of a walk: at half of it, `DeepWrittenPath.deep256` of the
-/// ownership corpus would pass its budget (research report 138).
+/// A thousand calls of a walk: at a quarter of it, `NotesApp.viewSidebar` of
+/// `bench/corpus` and `Ui.Html.map` would pass their budgets (research report 138).
 pub const inst_units: u64 = 1 << 15;
 
 /// The units of work that every declaration may do, whatever its size
@@ -114,7 +114,7 @@ pub fn moduleBudget(earned: u64) u64 {
 /// The text of a module's limit line: the budget, and where it comes from.
 pub fn moduleLimitText(arena: Allocator, name: []const u8, budget: u64, insts: usize) Allocator.Error![]const u8 {
     if (budget == module_cap) return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work (the most for any module), so the checker judges no write of the module", .{ name, budget });
-    return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and what its {d} instructions earn), so the checker judges no write of the module", .{ name, budget, module_floor, insts });
+    return std.fmt.allocPrint(arena, "limit {s}: the walks of the module took more than {d} units of work ({d}, and what its {d} instructions and their declarations earn), so the checker judges no write of the module", .{ name, budget, module_floor, insts });
 }
 
 pub const Names = Message.Names;
@@ -316,14 +316,10 @@ pub const Mod = struct {
     place_records: u64 = 0,
     /// Per declaration: the steps that its walks took so far, in every round.
     decl_steps: []u64 = &.{},
-    /// Per declaration: the units of the location table in its walks, in
-    /// every round, and its budget (`declBudget`, 0 before its first walk).
-    decl_loc: []u64 = &.{},
+    /// Per declaration: its budget (`declBudget`).
     decl_budget: []u64 = &.{},
-    /// The budget of the declaration in work, and the location table's
-    /// units when its walk began, less what its walks before spent of them.
+    /// The budget of the declaration in work.
     decl_limit: u64 = max_walk_steps,
-    loc_mark: u64 = 0,
     /// Per instruction: what it earns (`earnedUnits`), but for its layout.
     inst_earn: []u64 = &.{},
     /// Per declaration: a walk of it gave up or passed its steps, so some
@@ -346,20 +342,16 @@ pub const Mod = struct {
     }
 
     pub fn overBudget(m: *const Mod) bool {
-        return m.declSpent() > m.decl_limit or m.module_units +| m.loc.units > m.module_budget;
-    }
-
-    /// What the declaration in work spent of its budget, over all of its
-    /// walks: its steps, and the location table's units in its walks.
-    fn declSpent(m: *const Mod) u64 {
-        return m.steps +| (m.loc.units -| m.loc_mark);
+        return m.steps > m.decl_limit or m.module_units +| m.loc.units > m.module_budget;
     }
 
     /// A walk of declaration `di` begins: its budget, what it spent before.
-    fn beginDecl(m: *Mod, di: u32) Allocator.Error!void {
-        if (m.decl_budget[di] == 0) m.decl_budget[di] = try m.declBudget(di);
+    /// The location table's work counts against the module alone: the table
+    /// keeps what it built for every declaration, so which declaration
+    /// builds a layout or a projection first depends on their order (the
+    /// review of research report 138).
+    fn beginDecl(m: *Mod, di: u32) void {
         m.steps = m.decl_steps[di];
-        m.loc_mark = m.loc.units -| m.decl_loc[di];
         m.decl_limit = m.decl_budget[di];
         m.steps_over = m.overBudget();
     }
@@ -367,7 +359,6 @@ pub const Mod = struct {
     /// A walk of declaration `di` ends: what it spent, for its next walk.
     fn endDecl(m: *Mod, di: u32) void {
         m.decl_steps[di] = m.steps;
-        m.decl_loc[di] = m.loc.units -| m.loc_mark;
         m.decl_limit = max_walk_steps;
     }
 
@@ -376,7 +367,9 @@ pub const Mod = struct {
     /// entry of the layout of each of them that a walk evaluates; at most
     /// `max_walk_steps`. It depends on the declaration's own instructions
     /// alone. What its layouts earn is added to the module's budget, which
-    /// `earnedUnits` gave the floor and the rest of.
+    /// `earnedUnits` gave the floor and the rest of. Each declaration's is
+    /// made before any walk (`checkModule`), so the module's budget does
+    /// not depend on the order of the walks.
     fn declBudget(m: *Mod, di: u32) Allocator.Error!u64 {
         const d = m.bir.decls[di];
         var e: u64 = decl_floor;
@@ -400,7 +393,7 @@ pub const Mod = struct {
     /// or the module's, whichever it passed.
     fn budgetLine(m: *Mod, di: u32, what: []const u8) Allocator.Error![]const u8 {
         const name = m.names.declName(m.in.module, di);
-        if (m.decl_steps[di] +| m.decl_loc[di] > m.decl_budget[di]) {
+        if (m.module_units +| m.loc.units <= m.module_budget and m.decl_steps[di] > m.decl_budget[di]) {
             if (m.decl_budget[di] == max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ name, what, max_walk_steps });
             return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} units of work (what the declaration earns), so the checker judges no write of the module", .{ name, what, m.decl_budget[di] });
         }
@@ -1507,7 +1500,7 @@ pub const Mod = struct {
         }
         // One budget for the declaration, whatever the number of its walks
         // (kernel §8): the rounds of its group count against it together.
-        try m.beginDecl(di);
+        m.beginDecl(di);
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
@@ -1573,7 +1566,7 @@ pub const Mod = struct {
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
         var f = try Frame.init(m, null, di, false, none);
-        try m.beginDecl(di);
+        m.beginDecl(di);
         for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) {
             if (m.steps_over) break;
             try f.walkHeld(m.datas[i].lhs);
@@ -1610,7 +1603,7 @@ pub const Mod = struct {
             if (!try m.isFunction(.{ m.in.module, di })) continue;
             if (m.stopped()) return;
             var f = try Frame.init(m, null, di, false, none);
-            try m.beginDecl(di);
+            m.beginDecl(di);
             try f.walkExported(.{ m.in.module, di }, body.int());
             if (!m.steps_over) _ = try f.finish(m.var_place);
             m.endDecl(di);
@@ -2100,9 +2093,6 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.decl_steps = try gpa.alloc(u64, nd);
     defer gpa.free(m.decl_steps);
     @memset(m.decl_steps, 0);
-    m.decl_loc = try gpa.alloc(u64, nd);
-    defer gpa.free(m.decl_loc);
-    @memset(m.decl_loc, 0);
     m.decl_budget = try gpa.alloc(u64, nd);
     defer gpa.free(m.decl_budget);
     @memset(m.decl_budget, 0);
@@ -2125,6 +2115,15 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.spread_root = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
     for (bir.decls) |d| for (bir.spreads(d)) |s| if (s.root < bir.insts.len) m.spread_root.set(s.root);
 
+    // Each declaration that a walk can read, its budget, before any walk
+    // (kernel §8): the module's budget is the sum, whatever the order.
+    // Past the layout limit or the module's budget no declaration is walked,
+    // and none needs one.
+    for (bir.decls, 0..) |d, di| {
+        if (m.loc.over.items.len != 0 or m.loc.units > m.module_budget) break;
+        if (!((d.kind == .value and d.body != .none) or d.kind == .schema)) continue;
+        m.decl_budget[di] = try m.declBudget(@intCast(di));
+    }
     var members: std.ArrayList(u32) = .empty;
     defer members.deinit(gpa);
     for (0..m.prepass.starts.len - 1) |gi| {

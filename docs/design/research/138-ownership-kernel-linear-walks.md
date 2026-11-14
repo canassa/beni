@@ -17,8 +17,8 @@ earn. The kernel is `ownership-v3-kernel.md`; this report changes its §4.2, §4
   in all) and publishes a contract.
 - **Each declaration spends only what it earns.** The budget is no longer pooled over the module.
 - **No ownership root is newly refused.** Of the 2 314 roots, two dumps changed: `TailModConsBranches`
-  (its group settles) and `DeepPathThroughList` (refused before and after; its limit line names its own
-  declaration now).
+  (its group settles) and `DeepPathThroughList` (refused at its module's budget before and after; the
+  budget in its limit line is larger).
 - **Every shape of reports 135 and 136 is accepted**, at 0.06 to 0.13 s of v3 for a thousand lines
   (ReleaseFast, LLVM, `--jobs=1`). Before, they stopped at a budget after 1.2 to 3.4 s a thousand lines.
 - **The literal nested 400 deep** takes 0.33 s on the gates' compiler, not 4.2 s.
@@ -103,7 +103,9 @@ location table's work in them:
 
     min(2²⁰ + Σ its instructions' earnings + 128 · Σ layout entries of its evaluated instructions, 2²⁵)
 
-An instruction earns as report 136 §3 says: 32 768 if a walk evaluates it, 128 for a literal or a type,
+The location table's work counts against the module alone, not the declaration: the table keeps what it
+built for the whole module, so the first declaration to need a layout or a projection pays for it, and which
+one that is depends on their order (§8). Each declaration's budget is made before any walk. An instruction earns as report 136 §3 says: 32 768 if a walk evaluates it, 128 for a literal or a type,
 and 2 for each pair of lists that a construction brings together. A module's budget is 65 536, plus the
 earnings of its instructions, plus 2²⁰ for each value declaration, plus the layout terms of the
 declarations it walks, and never more than 2²⁷. So a module passes its own budget only by the work of its
@@ -112,19 +114,22 @@ types or by the cap.
 **How the constants were chosen.** A measuring build printed each declaration's cost and its parts of the
 budget, for all 2 314 roots (14 204 distinct declarations), with no budget:
 
-| Floor | Per instruction | Per layout entry | Declarations over |
-|---:|---:|---:|---|
-| 2²⁰ | 32 768 | 128 | 1: `DeepPathThroughList.below` (refused before too) |
-| 2²⁰ | 32 768 | 64 | 3: with `DeepWrittenPath.deep256` (accepted before) |
-| 2²⁰ | 16 384 | 128 | 3: the same |
-| 2²⁰ | 8 192 | 128 | 5: with `NotesApp.viewSidebar` and `Ui.Html.map` |
-| 2²⁰ | 4 096 | 128 | 7 |
-| 2²¹ | 4 096 | 128 | 3: the deep-path programs |
+| Floor | Per instruction | Per layout entry | Declarations over | Closest |
+|---:|---:|---:|---|---|
+| 2²⁰ | 32 768 | 128 | 0 | `Ui.Html.map` 0.59, `NotesApp.viewSidebar` 0.56, `Dict.descend` 0.52 |
+| 2²⁰ | 32 768 | 64 | 0 | the same |
+| 2²⁰ | 16 384 | 128 | 0 | `viewSidebar` and `Html.map` 0.84 |
+| 2²⁰ | 8 192 | 128 | 2: `viewSidebar`, `Html.map` | |
+| 2²⁰ | 4 096 | 128 | 4 | |
+| 2¹⁸ | 4 096 | 128 | 8 | |
+| 2¹⁸ | 32 768 | 128 | 0 | `Dict.descend` 0.93, `NotesApp.view` 0.91 |
 
-Only the first row refuses no root that was accepted. Closest to their budgets with it:
-`DeepPathThroughList.through` 0.93, `DeepWrittenPath.deep256` 0.91, `Ui.Html.map` 0.59,
-`NotesApp.viewSidebar` 0.56, `Dict.descend` 0.52. The deep-path programs are what sets the rule: their
-location tables cost about 450 units for each layout entry, quadratic in the depth of their paths.
+I kept report 136's 32 768 for each instruction, the first row: it is the one with room for the small
+functions that read large contracts (`Dict.descend`: 22 instructions, 0.93 million units). The layout term
+is what lets the functions over the largest types (`f p = p`, `group-rounds-control`'s `rot`) do their
+linear work; without it `rot`, 21 million units, earns 17 million. The module closest to its budget is
+`DeepPathThroughList`, which passes it as before (its location table costs about 450 units for each layout
+entry, quadratic in the depth of its paths); then `DeepWrittenPath` at 0.59.
 
 **The bound.** A declaration does at most 2²⁵ units, and a module at most 2²⁷: at the 2.2 ns a unit
 measured where a module reaches its cap, 0.3 s (ReleaseFast). Within that, a line pays for itself: an
@@ -200,9 +205,9 @@ Four tests pinned the pooled budget, and say what the new rule does with the sam
 
 ## 9. What is open
 
-- **The deep-path programs set the rule.** Their location tables cost about 450 units for each layout
-  entry, quadratic in the depth of their paths. If that cost were linear, the per-instruction rate could
-  be four to eight times lower, and the bound of a dense line with it.
+- **The deep-path programs pass their module's budget.** Their location tables cost about 450 units for
+  each layout entry, quadratic in the depth of their paths. `DeepPathThroughList` was refused for it
+  before and is now.
 - **A record update over many fields** walks each field for each entry it projects (`project` of a
   `built` value scans its parts): the record of 2 040 fields in *one budget for each module* passes its
   declaration's budget. It is counted.
