@@ -574,7 +574,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 
     - the compiler finds the `let`s that a root may evaluate itself (`Root.lets`) with the analysis the
       emitter uses (`MarkupTree.build`, built again in the check, `Enforce.keptLets`, with every
-      declaration of the module live: a superset of what the emitter builds, and a root that the emitter
+      declaration of the module live and in every module, whatever its dispatch table says (a root made
+      of a component call alone has no row there): a superset of what the emitter builds, and a root that the emitter
       does not group evaluates its `let`s in place, so the set is never smaller than what is kept);
     - the lowering says, of each, whether it keeps it (`keeps_let`). **The default is that it keeps every
       one**: a lowering that says nothing is read on the side that refuses. A lowering that does not
@@ -725,7 +726,11 @@ paths:
   `n` entries over all of their demands, not `n` each. *Before, each of these walks visited every
   entry again for each write, and counted nothing: 400 writes took 17.8 s after the budget was passed.*
   The tests of pairs count the elements they pass over too: each escape and each read that a demand
-  skips (another context, an earlier time), and each answer it compares.
+  skips (another context, an earlier time), each answer it compares, and each context that the test of
+  two contexts climbs to their common case (`compatible`): a write and a read in two arms of cases 2 000
+  deep cost 2 000 steps for each pair and counted 1 (the review of report 134). A chain of 5 000 writes
+  in one function now reaches the declaration's budget in 1.4 s (LLVM ReleaseSafe): its counted work is
+  still quadratic in its length, since each write's operand holds every older name (report 134 §5).
 
   Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
   atoms answers on the pessimistic side (the two can
