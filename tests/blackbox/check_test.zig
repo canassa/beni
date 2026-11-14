@@ -6130,6 +6130,34 @@ test "ownership v3: one budget for each module, in proportion to its size" {
         return error.TestUnexpectedVerdict;
     }
 }
+// Research report 130's review: the end of a walk tests each pair of
+// locations of the result for a cell that both hold, and counted the test
+// by the atoms it compared. A result of 4 096 locations that hold no atom
+// cost 8 million pairs and no unit, in each declaration: 1 000 functions
+// `gN n = gN n` of nested pairs of 4 096 lists took well over 10 s on the
+// gates' compiler before they reached the module's budget. Only
+// locations that hold an atom are paired now, and each pair is a unit
+// (kernel §8): the check reaches the loud limit at once.
+test "ownership v3: the pairs of a result's locations count against the budget" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport Node exposing (Program)\n\n\ntype alias T0 =\n    List Int\n");
+    for (1..13) |k| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype alias T{d} =\n    T{d} × T{d}\n", .{ k, k - 1, k - 1 }));
+    for (0..1000) |n| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ng{d} : Int → T12\ng{d} n =\n    g{d} n\n", .{ n, n, n }));
+    try main.appendSlice(a, "\n\nmain : Program\nmain = Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null)) {
+        std.debug.print("wanted the module's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // Research report 129: a `--library` build exports its `pub` functions, and
 // host JavaScript calls them with arrays that it still holds and reads
 // after. An export is a function in the default location (kernel §6.14), so

@@ -613,7 +613,9 @@ paths:
     part of a construction that a walk of values or a projection visits, each part a record update
     copies, each atom of a run that `uniqueTail` sorts, each atom copied out of the memo of the walks
     of values, and each entry of a call map read (`argEntries`); each part of a construction that a
-    walk of values goes into is 4 units (`lookup_units`: it looks up its projection).
+    walk of values goes into is 4 units (`lookup_units`: it looks up its projection); each location of
+    a frame's result, each pair of locations of a written operand and another that are compared
+    (`otherReaches`), and each pair of two parts of one location (`expandSrcs`).
 
   Every round of the declaration's recursive group (`solveGroup`, rule 9) and of a group of its local
   functions (`solveCodes`) counts too: the rounds walk again and keep counting; they do not start the
@@ -627,14 +629,18 @@ paths:
   and a call map that it builds, and each location that the search of a call map climbs; a scan or a
   copy of a run of words (the path of an entry, the places on a path through a cycle) is one unit and
   one for each four words (`scanUnits`). `Mod.overBudget` tests the two budgets together at each
-  count. A memo entry of the table is built whole, so the module passes its budget by at most one
-  entry: a call map of two layouts of 4 096 entries, about 2²⁴ units.
+  count. A memo entry of the table is built whole, and a loop that has begun ends its pass, so a
+  module passes its budget by at most one such piece of work: a call map of two layouts of 4 096
+  entries, or one pass over the entries of one layout, about 2²⁴ units.
 
-  Three loops cost their answer and not the product of two layouts (research report 130): the walk of
+  Four loops cost their answer and not the product of two layouts (research report 130): the walk of
   a construction reads the rank of each entry asked once, and each part reads its own entries
-  (`leavesOwnWalk`); a value read through another layout marks the entries asked (`leavesSet`); and a
-  set of more than 32 entries tests its members in one step (`Entries`). Each gives the same entries
-  in the same order as before.
+  (`leavesOwnWalk`); a value read through another layout marks the entries asked (`leavesSet`); a
+  set of more than 32 entries tests its members in one step (`Entries`); and the tests of pairs of
+  locations for a cell that both hold pair only locations that hold an atom (`finish`,
+  `operandLeaves`, `runsApart`): a pair with an empty location compared nothing and cost nothing,
+  and 4 096 empty locations were 8 million such pairs in each walk. Each gives the same answer as
+  before.
 
   Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
   atoms answers on the pessimistic side (the two can

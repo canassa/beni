@@ -1090,6 +1090,12 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             for (0..n.b) |ki| {
                 const k = f.kids.items[n.a + ki];
                 if (k.val == v_none) continue;
+                // Past the budget the walk stops: a cell of no frame, and
+                // no write of it stands.
+                if (m.steps_over) {
+                    try out.append(f.gpa, outside_atom);
+                    return true;
+                }
                 const before = out.items.len;
                 if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
                     // The kid's entries that these entries are made of: for
@@ -1641,6 +1647,9 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
                 .param, .capture => true,
                 .answer, .fresh, .outside => false,
             };
+            // Each pair compared is work of its own (kernel §8); past the
+            // budget another place reaches.
+            if (f.charge(f.scratch.items.len * ws.len)) return true;
             for (f.scratch.items) |x| for (ws) |w| {
                 if (!f.overlap(x, w)) continue;
                 if (apart and !f.twiceAt(x)) continue;
@@ -3156,6 +3165,8 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     defer all.deinit(f.gpa);
     var dups: std.ArrayList(bool) = .empty;
     defer dups.deinit(f.gpa);
+    // Each entry of the result is a step (kernel §8).
+    _ = f.charge(rn);
     for (0..rn) |e| {
         const start: u32 = @intCast(all.items.len);
         const dup = if (result == v_none) false else try f.leavesAs(result, result_place, @intCast(e), &all);
@@ -3165,6 +3176,8 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     }
     var srcs: std.ArrayList(Src) = .empty;
     defer srcs.deinit(f.gpa);
+    // Each atom of the result is a step (kernel §8).
+    _ = f.charge(all.items.len);
     for (0..rn) |e| {
         srcs.clearRetainingCapacity();
         const mine = all.items[runs.items[e][0]..runs.items[e][1]];
@@ -3211,10 +3224,22 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         };
     }
     // Whether a cell of a parameter can be at two locations of the result.
+    // Only two entries that each hold an atom can share one: each pair of
+    // them costs its comparisons (`dupOverlap`, kernel §8), and past the
+    // budget the answer is yes. The test stops at the first pair that shares
+    // a cell.
     var nonlinear = false;
-    for (0..rn) |e1| for (e1 + 1..rn) |e2| {
-        if (f.dupOverlap(all.items[runs.items[e1][0]..runs.items[e1][1]], all.items[runs.items[e2][0]..runs.items[e2][1]])) nonlinear = true;
-    };
+    var held: std.ArrayList(u32) = .empty;
+    defer held.deinit(f.gpa);
+    for (runs.items, 0..) |r, e| if (r[1] > r[0]) try held.append(f.gpa, @intCast(e));
+    pairs: for (held.items, 0..) |e1, i| {
+        for (held.items[i + 1 ..]) |e2| {
+            if (f.dupOverlap(all.items[runs.items[e1][0]..runs.items[e1][1]], all.items[runs.items[e2][0]..runs.items[e2][1]])) {
+                nonlinear = true;
+                break :pairs;
+            }
+        }
+    }
     for (dups.items) |d| if (d) {
         nonlinear = true;
     };
@@ -3553,9 +3578,18 @@ fn operandLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
         if (try f.leaves(v, @intCast(e), out)) dup = true;
         try runs.append(f.gpa, .{ at, out.items.len });
     }
-    for (runs.items, 0..) |r1, i| for (runs.items[i + 1 ..]) |r2| {
-        if (f.dupOverlap(out.items[r1[0]..r1[1]], out.items[r2[0]..r2[1]])) dup = true;
-    };
+    // Only two entries that each hold an atom can share a cell: each pair of
+    // them costs its comparisons (`dupOverlap`, kernel §8), and past the
+    // budget they share.
+    var held: std.ArrayList([2]usize) = .empty;
+    defer held.deinit(f.gpa);
+    for (runs.items) |r| if (r[1] > r[0]) try held.append(f.gpa, r);
+    pairs: for (held.items, 0..) |r1, i| {
+        for (held.items[i + 1 ..]) |r2| if (f.dupOverlap(out.items[r1[0]..r1[1]], out.items[r2[0]..r2[1]])) {
+            dup = true;
+            break :pairs;
+        };
+    }
     _ = start;
     return dup;
 }
@@ -3851,9 +3885,14 @@ fn valueApart(f: *Frame, v: Val, depth: u32) Error!bool {
 }
 
 fn runsApart(f: *const Frame, buf: []const Atom, runs: []const [2]u32) bool {
-    for (runs, 0..) |x, i| for (runs[i + 1 ..]) |y| {
-        if (f.dupOverlap(buf[x[0]..x[1]], buf[y[0]..y[1]])) return false;
-    };
+    // A run with no atom is apart from every run. The scan for each other
+    // run is work of its own (kernel §8); past the budget the runs are not
+    // apart.
+    for (runs, 0..) |x, i| {
+        if (x[1] == x[0]) continue;
+        if (f.charge(runs.len - i)) return false;
+        for (runs[i + 1 ..]) |y| if (y[1] > y[0] and f.dupOverlap(buf[x[0]..x[1]], buf[y[0]..y[1]])) return false;
+    }
     return true;
 }
 
@@ -4010,6 +4049,12 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
     // One cell in two parts of one location is one cell at two places,
     // unless the two parts are alternatives (`alternatives`).
     for (parts.items, 0..) |x, i| for (parts.items[0..i]) |y| {
+        // Each pair is work of its own (kernel §8); past the budget the two
+        // parts share a cell.
+        if (f.charge(1)) {
+            st.twice = true;
+            break;
+        }
         if (alternatives(c, x.src, y.src)) continue;
         if (f.dupOverlap(f.atoms.items[x.start..x.end], f.atoms.items[y.start..y.end])) st.twice = true;
     };
