@@ -3755,7 +3755,13 @@ the branch the build takes, in reachability and in lowering.
   a throw out of a fiber stops it — no fiber runs again, as `Task`'s "a defect ends the program"
   says — and calls the hook a platform gave `Task.onDefect : (() -> ()) -> ()` (impure, core). A
   hosted mount hands it the page's stop, which reaches `Browser.beni` as the mount's fourth
-  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7).
+  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7). *Amended
+  2026-11-15 (#1994; as built):* a plain `Browser.program`'s `update` can start a fiber too
+  (`Task.spawnDetached`), and its throw left the page running, since no hosted mount had given
+  the hook. `Rt.beni`'s `run` now gives `Task.onDefect` the page's stop for every page, and the
+  page's stop shuts the runtime down (§9.8.14) for every page, not only once a hosted mount has
+  set the after-render phase: a plain program's fibers are cancelled by a defect as a hosted
+  mount's are. Pages: `browser/dom/DefectInFiber`, `browser/dom/DefectCancelsFibers`.
 - **An error a primitive did not expect is a throw in the fiber that waited on it** (rule 9):
   `Http`'s sibling names each failure `fetch` documents — a `TypeError` from `new URL` is
   `BadUrl`, a rejection with a `TypeError` is `NetworkError`, a `SyntaxError` from `JSON.parse`

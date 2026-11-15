@@ -1,0 +1,33 @@
+-- A defect stops every fiber of a plain `Browser.program` (boundary.md
+-- §9.8.14), as it stops a hosted mount's: `update` starts a fiber that
+-- sleeps, then a handler throws, and the teardown cancels the fiber and
+-- clears its timer. Before #1994 the page's `stop` shut the runtime down
+-- only for a hosted mount, and the timer stayed. The release build adds
+-- no crash screen (`.release-expected`).
+import Browser
+import Html exposing (Html)
+import Task
+import Time
+
+
+type Msg
+    = Wait
+
+
+update : Msg, Int → Int
+update Wait n =
+    _ = Task.spawnDetached λ⊤ → Time.sleep (Time.millis 50)
+    n + 1
+
+
+view : Int → Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="wait" onClick={Wait}>wait</button>
+        <button id="boom" onClick={λ_ → Debug.todo "handler threw"}>boom</button>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = update, view = view }

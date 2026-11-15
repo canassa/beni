@@ -1,0 +1,4 @@
+click #wait
+timers
+throws click #boom
+timers
