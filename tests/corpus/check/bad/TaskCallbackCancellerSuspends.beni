@@ -1,0 +1,11 @@
+-- check/bad: a `Task.callback` canceller that may suspend
+-- (transparent-effects-proposal.md §17.1 item 3, §15.2 item 1). The
+-- runtime calls a wait's canceller synchronously, during cancellation, so
+-- `callback`'s signature in core marks the returned canceller `sync` as well
+-- as the registration. The registration is `sync_boundary`, and the chain
+-- names `Task.yieldNow`.
+import Task
+
+
+pub bad : ⊤ → Int
+bad ⊤ = Task.callback λ_ → λ⊤ → Task.yieldNow ⊤
