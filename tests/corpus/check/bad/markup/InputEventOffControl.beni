@@ -1,0 +1,10 @@
+-- `unknown_attribute` (checker-v2.md §25.3; boundary.md §9.3, amended
+-- 2026-11-15, #1993): `onInput` and `onChange` hand their handler the
+-- target's `value` as a `String`, and only `<input>`, `<select>` and
+-- `<textarea>` promise a string `value`. On a `<div>`, `value` is
+-- `undefined`, so both events are unknown there.
+import Html exposing (Html)
+
+
+pub view : Html String
+view = <div contenteditable="true" onInput={λs → s} onChange={λs → s}>x</div>

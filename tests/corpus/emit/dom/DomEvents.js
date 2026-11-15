@@ -1,5 +1,5 @@
 import { Rt$template, Rt$delegate, Rt$listen, Rt$identity } from "./_platform/Rt.mjs";
-import { Html$targetValue } from "./_platform/_html/Html.mjs";
+import { Html$controlValue } from "./_platform/_html/Html.mjs";
 const DomEvents$Focused = { $: "Focused", a: null };
 const DomEvents$Sent = { $: "Sent", a: null };
 const DomEvents$p16 = ($i$1, $v$2) => {
@@ -45,7 +45,7 @@ const DomEvents$k16 = { m: ($v$10, $cx$11) => {
   if ($cx$11 !== null) {
     $w$13.$$cx = $cx$11;
   }
-  $w$14.$$inputX = Html$targetValue;
+  $w$14.$$inputX = Html$controlValue;
   if ($cx$11 !== null) {
     $w$14.$$cx = $cx$11;
   }
