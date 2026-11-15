@@ -73,6 +73,13 @@ pub const decl_floor: u64 = 1 << 20;
 /// 52 units for each entry of its two instructions (research report 138).
 pub const layout_units: u64 = 1 << 7;
 
+/// The units of work of each store variable that the adapter reads, and of
+/// each field, element and argument that it closes (`Mod.chargePlaces`,
+/// kernel §8): a lookup in its table of variables, a push and a pop, and the
+/// hash of the node it makes. Measured on instances of a record of 3 000
+/// fields (research report 145).
+pub const var_units: u64 = Loc.lookup_units;
+
 /// The units of work that a module earns for each instruction of a literal
 /// (kernel §8): a number, a character, a string, `⊤`, a constructor named, a
 /// negated number, and a tuple, a list, a record or a constructor applied
@@ -331,6 +338,8 @@ pub const Mod = struct {
     row_read: std.DynamicBitSetUnmanaged = .{},
     /// The places and steps of the place graph counted so far (`chargePlaces`).
     place_records: u64 = 0,
+    /// The adapter's `var_work` counted so far (`chargePlaces`).
+    var_records: u64 = 0,
     /// Per declaration: the steps that its walks took so far, in every round.
     decl_steps: []u64 = &.{},
     /// Per declaration: its budget (`declBudget`).
@@ -395,11 +404,28 @@ pub const Mod = struct {
         for (d.inst_start.int()..d.inst_end.int()) |i| {
             e +|= m.inst_earn[i];
             if (!m.evaluated(@intCast(i))) continue;
-            const l = try m.loc.layoutOf(try m.placeOfInst(@intCast(i)));
+            // The location table's work past the cap of every module: the
+            // module passes its budget whatever the rest earns, so no more
+            // of it is done (research report 145: each reference to a wide
+            // value that the type check copied is read whole).
+            if (m.loc.units > module_cap) break;
+            const l = try m.loc.layoutOf(try m.budgetPlace(d, @intCast(i)));
             lay +|= layout_units *| m.loc.layouts.items[l].len;
         }
         m.module_budget = @min(m.module_budget +| lay, module_cap);
         return @min(e +| lay, max_walk_steps);
+    }
+
+    /// The place whose layout instruction `i` of declaration `d` earns for
+    /// (`declBudget`): the place of the value that its walk makes. A
+    /// reference to a local is the local's value (`Frame.evalInner`,
+    /// `.local`), whose place is the local's. The reference's own type is an
+    /// instance of the local's, a copy that the type check made for this
+    /// reference alone, and reading each instance of a wide record whole
+    /// cost the square of its width (research report 145).
+    fn budgetPlace(m: *Mod, d: Bir.Decl, i: u32) Allocator.Error!PlaceId {
+        if (m.tags[i] == .local and m.typeOfLocal(d, m.datas[i].lhs) != .none) return m.placeOfLocal(d, m.datas[i].lhs);
+        return m.placeOfInst(i);
     }
 
     /// Whether instruction `i` is one that a walk evaluates: it earns `inst_units`.
@@ -594,6 +620,12 @@ pub const Mod = struct {
         const now = @as(u64, m.places.count()) + m.places.step_tab.list.len;
         m.loc.units +|= (now -| m.place_records) *| call_units;
         m.place_records = now;
+        // Each store variable that the adapter read, and each field,
+        // element and argument it closed, is work too, whether or not it
+        // added a place: two instances of one wide record type add one
+        // place, and each is read whole (research report 145).
+        m.loc.units +|= (m.adapter.var_work -% m.var_records) *| var_units;
+        m.var_records = m.adapter.var_work;
     }
 
     pub fn typeOfInst(m: *const Mod, inst: u32) Var.Optional {
@@ -2314,6 +2346,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         }
         std.mem.sort(u32, by_name.items, @as(*const Mod, &m), Mod.nameLess);
         for (by_name.items) |di| {
+            // Past the cap the module passes its budget, whatever the
+            // declarations after this one earn (`declBudget`).
+            if (m.loc.units > module_cap) break;
             m.decl_budget[di] = try m.declBudget(di);
             if (m.loc.over.items.len != 0) {
                 m.over_decl = di;

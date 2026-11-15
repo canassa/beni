@@ -6106,9 +6106,11 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
 // lines of its own). A module now does at most `Check.moduleBudget` units
 // of work, and each declaration at most what its own instructions earn
 // (kernel §8; research report 138). The location table's work counts
-// against the module alone, and the record updates over 2 040 locations
-// pass the module's budget. Past either the check stops with the loud
-// limit, and judges no write of the module.
+// against the module alone. The record updates over 3 000 locations passed
+// the module's budget there until research report 145: a projection of one
+// field kept an entry for each location of the record, so the projections of
+// its fields cost the square of its width. A projection is the size of the
+// field's layout now, and the module is accepted, well within the time.
 test "ownership v3: one budget for each module, in proportion to its size" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6140,8 +6142,8 @@ test "ownership v3: one budget for each module, in proportion to its size" {
         std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
         return err;
     };
-    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null)) {
-        std.debug.print("wanted the module's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+    if (!(r.exit_code == 0 and std.mem.indexOf(u8, r.stderr, "limit") == null)) {
+        std.debug.print("wanted it accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
         return error.TestUnexpectedVerdict;
     }
 }
@@ -6644,16 +6646,18 @@ test "ownership v3: chains of case reads and of writes end, and a unit tracks ti
 // for each token, so a module of a few hundred lines that holds a large
 // literal earned a budget of seconds that a few declarations then spent
 // (360 lines, 3.2 s of an LLVM compiler to the module's limit). No module
-// does more than `Check.module_cap` units now (kernel §8). Eight chains of
-// 400 writes, each accepted alone, do more than it together, and the
-// module's tokens would allow three times as much.
+// does more than `Check.module_cap` units now (kernel §8). Eighteen chains
+// of 400 writes, each accepted alone, do more than it together, and the
+// module's tokens would allow more than that. (Eight did until research
+// report 145: a write that names a chain of old names is indexed, so each
+// chain costs half its units.)
 test "ownership v3: no module does more than the most for any module" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
     var src: std.ArrayList(u8) = .empty;
     try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n");
-    for (0..8) |d| {
+    for (0..18) |d| {
         try src.print(a, "\n\ng{d} : Int → Int\ng{d} n =\n    l0 = [ n ]\n", .{ d, d });
         for (1..401) |k| try src.print(a, "    l{d} = List.push l{d} {d}\n", .{ k, k - 1, k });
         try src.appendSlice(a, "    List.length l400\n");

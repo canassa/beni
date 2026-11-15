@@ -122,12 +122,23 @@ pub const Proj = struct {
     child: PlaceId,
     /// Per entry of the child's layout: the entry of the parent's layout.
     up: []const u32,
-    /// Per entry of the parent's layout: the child's entries there, a run of `down`.
+    /// The entries of the parent's layout that a child's entry is at,
+    /// ascending, and for each the child's entries there, a run of `down`
+    /// (`down_off`, one more than `down_keys`). Sparse: a projection of one
+    /// field of a record of `n` fields is the size of the field's layout,
+    /// not of the record's (research report 145).
+    down_keys: []const u32,
     down_off: []const u32,
     down: []const u32,
 
     pub fn downOf(p: *const Proj, e: u32) []const u32 {
-        return p.down[p.down_off[e]..p.down_off[e + 1]];
+        const k = std.sort.lowerBound(u32, p.down_keys, e, struct {
+            fn order(x: u32, y: u32) std.math.Order {
+                return std.math.order(x, y);
+            }
+        }.order);
+        if (k == p.down_keys.len or p.down_keys[k] != e) return &.{};
+        return p.down[p.down_off[k]..p.down_off[k + 1]];
     }
 };
 
@@ -625,27 +636,33 @@ pub const Table = struct {
             };
             up[j] = t.indexOf(pl, ploc);
         }
-        // The inverse: per entry of the parent, the child's entries there,
-        // in the order of the child's entries (a counting sort).
-        t.units +|= pn + cn;
-        const down_off = try t.arena.alloc(u32, pn + 1);
-        @memset(down_off, 0);
-        for (up) |u| if (u != none) {
-            down_off[u + 1] += 1;
-        };
-        for (1..pn + 1) |i| down_off[i] += down_off[i - 1];
-        const n = down_off[pn];
-        const down = try t.arena.alloc(u32, n);
-        const fill = try t.gpa.alloc(u32, pn);
-        defer t.gpa.free(fill);
-        @memcpy(fill, down_off[0..pn]);
-        for (up, 0..) |u, j| if (u != none) {
-            down[fill[u]] = @intCast(j);
-            fill[u] += 1;
-        };
+        // The inverse: per entry of the parent that a child's entry is at,
+        // the child's entries there, in the order of the child's entries (a
+        // sort of the pairs; `Proj.down_keys`).
+        _ = pn;
+        var pairs: std.ArrayList([2]u32) = .empty;
+        defer pairs.deinit(t.gpa);
+        for (up, 0..) |u, j| if (u != none) try pairs.append(t.gpa, .{ u, @intCast(j) });
+        std.mem.sort([2]u32, pairs.items, {}, struct {
+            fn lt(_: void, x: [2]u32, y: [2]u32) bool {
+                return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+            }
+        }.lt);
+        t.units +|= 1 + cn + pairs.items.len;
+        const down = try t.arena.alloc(u32, pairs.items.len);
+        var keys: std.ArrayList(u32) = .empty;
+        var offs: std.ArrayList(u32) = .empty;
+        for (pairs.items, 0..) |pj, i| {
+            if (i == 0 or pairs.items[i - 1][0] != pj[0]) {
+                try keys.append(t.arena, pj[0]);
+                try offs.append(t.arena, @intCast(i));
+            }
+            down[i] = pj[1];
+        }
+        try offs.append(t.arena, @intCast(pairs.items.len));
         const id: u32 = @intCast(t.projs.items.len);
         const pr = try t.arena.create(Proj);
-        pr.* = .{ .child = child, .up = up, .down_off = down_off, .down = down };
+        pr.* = .{ .child = child, .up = up, .down_keys = keys.items, .down_off = offs.items, .down = down };
         try t.projs.append(t.gpa, pr);
         try t.proj_index.put(t.gpa, key, id);
         return pr;

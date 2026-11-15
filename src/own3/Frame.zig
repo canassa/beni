@@ -405,6 +405,16 @@ proj_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 /// Per construction (a `built` value): for each entry of its place's
 /// layout, the parts that hold a location there (`builtIndex`).
 built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
+/// Per construction of more than `scan_parts` parts, each part by the
+/// construction and its step (`project`), and the constructions so indexed.
+built_parts: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
+built_parted: std.AutoHashMapUnmanaged(Val, void) = .empty,
+/// The atoms of the write in judgement, grouped by root and entry, when
+/// there are more than `w_index_min` of them (`indexWrite`).
+w_ix: WIndex = .{},
+/// Per root the frame made, the entries whose runs `rootReach` reads, once
+/// its entries are made (`runEntries`).
+run_ents: std.AutoHashMapUnmanaged(u32, RunEntries) = .empty,
 reach_nest: u32 = 0,
 flow_active: std.ArrayList(struct { key: FlowKey, args: []const Val }) = .empty,
 /// The lowest depth of a use whose context the judgments in work read: the
@@ -703,7 +713,11 @@ fn pathPrefix(f: *const Frame, a: u32, b: u32) bool {
     return f.m.loc.pathPrefix(a, b);
 }
 
-fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
+fn overlapAny(f: *Frame, xs: []const Atom, ys: []const Atom) bool {
+    if (f.wIndexed(ys)) {
+        for (xs) |x| if (f.overlapIndexed(x)) return true;
+        return false;
+    }
     for (xs) |x| {
         // Each comparison made is work (kernel §8); past the budget the two
         // can share a cell.
@@ -1755,8 +1769,11 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
     const p = f.m.loc.paths.items[path];
     // Each target compared is work (kernel §8), and so is each climb of a
     // path and each entry of the part scanned; past the budget it reaches.
-    if (f.charge(w.len)) return true;
-    for (w) |x| {
+    // The write in judgement, indexed: only its atoms of this root (`w_ix`).
+    const indexed = f.wIndexed(w);
+    const targets = if (indexed) f.w_ix.ofRoot(root) else w;
+    if (f.charge(if (indexed) Loc.lookup_units + targets.len else w.len)) return true;
+    for (targets) |x| {
         if (x.root != root) continue;
         if (f.pathPrefix(path, x.path)) return true;
         if (f.pathPrefix(x.path, path)) {
@@ -1768,6 +1785,7 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
     switch (r.kind) {
         .local => {
             const len = f.m.loc.layouts.items[r.layout].len;
+            if (try f.runEntries(root)) |re| return f.runsReach(root, p, re, w);
             if (f.charge(len)) return true;
             const res = f.m.loc.layoutEntries(r.layout);
             // The entries below this part, marked once (a step each, kernel §8):
@@ -1801,9 +1819,82 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
     return false;
 }
 
+/// The entries of a root the frame made whose runs `rootReach` reads: an
+/// `alias`, `derived` or `version` entry with a run (an empty run reaches
+/// nothing, `runReaches`), and whether its layout has a field slot.
+const RunEntries = struct { ents: []const u32, has_slots: bool };
+
+/// `RunEntries` of root `root`, made once, a step for each entry (kernel
+/// §8), when its entries are made: `deriveLinear` ran over them, last. A
+/// root's entries never change after that. Null before, and for a root of
+/// at most `w_index_min` entries, which `rootReach` scans as before. A
+/// scan for each part of a record of `n` fields read cost n² (research
+/// report 145).
+fn runEntries(f: *Frame, root: u32) Error!?RunEntries {
+    const r = f.roots.items[root];
+    if (r.linear == .undecided) return null;
+    const res = f.m.loc.layoutEntries(r.layout);
+    if (res.len <= w_index_min) return null;
+    const got = try f.run_ents.getOrPut(f.gpa, root);
+    if (!got.found_existing) {
+        _ = f.charge(res.len);
+        var ents: std.ArrayList(u32) = .empty;
+        var has_slots = false;
+        for (res, 0..) |e, i| {
+            if (e.kind == .field) has_slots = true;
+            const ent = f.rents.items[r.ent + i];
+            switch (ent.kind) {
+                .own, .taken => continue,
+                .alias, .derived, .version => {},
+            }
+            if (ent.len == 0) continue;
+            try ents.append(f.gpa, @intCast(i));
+        }
+        got.value_ptr.* = .{ .ents = ents.items, .has_slots = has_slots };
+    }
+    if (safety) {
+        // The entries never change once made.
+        var k: usize = 0;
+        for (res, 0..) |_, i| {
+            const ent = f.rents.items[r.ent + i];
+            const reads = ent.len != 0 and (ent.kind == .alias or ent.kind == .derived or ent.kind == .version);
+            if (!reads) continue;
+            std.debug.assert(k < got.value_ptr.ents.len and got.value_ptr.ents[k] == i);
+            k += 1;
+        }
+        std.debug.assert(k == got.value_ptr.ents.len);
+    }
+    return got.value_ptr.*;
+}
+
+/// `rootReach`'s test of the runs of root `root` (a root the frame made)
+/// below the part at path `p`, over its `RunEntries`: the entries the scan
+/// of every entry tests, in the same order.
+fn runsReach(f: *Frame, root: u32, p: Loc.Path, re: RunEntries, w: []const Atom) Error!bool {
+    const r = f.roots.items[root];
+    const len = f.m.loc.layouts.items[r.layout].len;
+    if (f.charge(1 + re.ents.len)) return true;
+    const res = f.m.loc.layoutEntries(r.layout);
+    // The entries below this part (a step each, kernel §8): a record's
+    // field slot that is not below it holds no cell of it (kernel §11).
+    var below: std.DynamicBitSetUnmanaged = .{};
+    defer below.deinit(f.gpa);
+    if (re.has_slots and p.to_root.len != len) {
+        if (f.charge(p.to_root.len)) return true;
+        below = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, len);
+        for (p.to_root) |x| if (x != none) below.set(x);
+    }
+    for (re.ents) |i| {
+        if (res[i].kind == .field and below.bit_length != 0 and !below.isSet(i)) continue;
+        if (try f.runReaches(root, i, f.rents.items[r.ent + i], w)) return true;
+    }
+    return false;
+}
+
 /// Whether a cell of `xs` can be a cell of `w`: the same cells, or the answer
 /// of a function parameter that was handed one.
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
+    if (f.wIndexed(w)) return f.atomsReachIndexed(xs);
     for (xs) |x| {
         // Each comparison made is work (kernel §8); past the budget it reaches.
         // An old name is a step: it is compared with nothing.
@@ -1821,6 +1912,103 @@ fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
         };
     }
     return false;
+}
+
+/// `atomsReach` of the write in judgement (`w_ix`): each atom of `xs` is
+/// compared only with the atoms of its root and entry, a lookup, since no
+/// other can overlap it. The same answer as the scan (research report 145).
+fn atomsReachIndexed(f: *Frame, xs: []const Atom) bool {
+    for (xs) |x| {
+        if (f.isOld(x)) {
+            if (f.charge(1)) return true;
+            continue;
+        }
+        if (f.overlapIndexed(x)) return true;
+        const r = f.roots.items[x.root];
+        if (r.kind == .answer and x.root != f.skip_answer) for (f.answers.items[r.ent].base.items) |b| {
+            if (f.isOld(b)) continue;
+            if (f.overlapIndexed(b)) return true;
+        };
+    }
+    return false;
+}
+
+/// Whether atom `x` overlaps an atom of the write in judgement (`w_ix`):
+/// a lookup, and each atom of its group compared (kernel §8). Past the
+/// budget it does.
+fn overlapIndexed(f: *Frame, x: Atom) bool {
+    const g = f.w_ix.group(x.root, x.e);
+    if (f.charge(Loc.lookup_units + g.len)) return true;
+    for (g) |y| if (f.overlap(x, y)) return true;
+    return false;
+}
+
+/// The atoms of a write grouped by root and entry, and by root (`indexWrite`):
+/// two atoms can overlap only at one root and entry (`overlap`).
+const WIndex = struct {
+    /// The write indexed: its slice, compared by address and length.
+    of: []const Atom = &.{},
+    on: bool = false,
+    sorted: std.ArrayList(Atom) = .empty,
+    by_re: std.AutoHashMapUnmanaged([2]u32, [2]u32) = .empty,
+    by_root: std.AutoHashMapUnmanaged(u32, [2]u32) = .empty,
+
+    fn group(ix: *const WIndex, root: u32, e: u32) []const Atom {
+        const r = ix.by_re.get(.{ root, e }) orelse return &.{};
+        return ix.sorted.items[r[0]..r[1]];
+    }
+
+    fn ofRoot(ix: *const WIndex, root: u32) []const Atom {
+        const r = ix.by_root.get(root) orelse return &.{};
+        return ix.sorted.items[r[0]..r[1]];
+    }
+};
+
+/// The fewest atoms of a write that `indexWrite` indexes: a smaller write
+/// is scanned, as before.
+const w_index_min = 32;
+
+/// Index the write `ws` in judgement (`w_ix`), when it has more than
+/// `w_index_min` atoms. Each atom grouped is a lookup (kernel §8). A write
+/// of every field of a record of `n` fields, compared atom by atom with
+/// each later read of a field, cost n² (research report 145).
+fn indexWrite(f: *Frame, ws: []const Atom) Error!void {
+    const ix = &f.w_ix;
+    ix.on = false;
+    if (ws.len <= w_index_min) return;
+    ix.sorted.clearRetainingCapacity();
+    ix.by_re.clearRetainingCapacity();
+    ix.by_root.clearRetainingCapacity();
+    _ = f.charge(ws.len * Loc.lookup_units);
+    try ix.sorted.appendSlice(f.gpa, ws);
+    std.mem.sort(Atom, ix.sorted.items, {}, struct {
+        fn lt(_: void, a: Atom, b: Atom) bool {
+            return a.root < b.root or (a.root == b.root and a.e < b.e);
+        }
+    }.lt);
+    const xs = ix.sorted.items;
+    var i: usize = 0;
+    while (i < xs.len) {
+        var j = i;
+        while (j < xs.len and xs[j].root == xs[i].root and xs[j].e == xs[i].e) j += 1;
+        try ix.by_re.put(f.gpa, .{ xs[i].root, xs[i].e }, .{ @intCast(i), @intCast(j) });
+        i = j;
+    }
+    i = 0;
+    while (i < xs.len) {
+        var j = i;
+        while (j < xs.len and xs[j].root == xs[i].root) j += 1;
+        try ix.by_root.put(f.gpa, xs[i].root, .{ @intCast(i), @intCast(j) });
+        i = j;
+    }
+    ix.of = ws;
+    ix.on = true;
+}
+
+/// Whether `w` is the write that `w_ix` indexes.
+fn wIndexed(f: *const Frame, w: []const Atom) bool {
+    const ix = &f.w_ix;
+    return ix.on and w.len == ix.of.len and w.ptr == ix.of.ptr;
 }
 
 /// An old name, for the write in judgement: the holder has the cells under
@@ -1882,6 +2070,7 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             return f.refVal(n.a, np);
         },
         .built => {
+            if (n.b > scan_parts) return f.builtPart(v, n, s);
             // A scan of the parts is work of its own (kernel §8).
             _ = f.charge(n.b);
             for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
@@ -1914,6 +2103,32 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
         },
         .later => unreachable, // read through `capVal` only
     }
+}
+
+/// The most parts of a construction that `project` scans; one of more parts
+/// is indexed by step (`builtPart`).
+const scan_parts = 16;
+
+/// `project` of the construction `v` (node `n`) of more than `scan_parts`
+/// parts: its first part at step `s`, looked up in an index made once in
+/// the frame (`built_parts`), and `v_none` when no part is at `s`, as a
+/// scan answers. A scan for each projection cost the square of a record's
+/// width: a field read of each field of a record of 3 000 (research report
+/// 145). The index costs a lookup for each part, once, and each projection a
+/// lookup (kernel §8).
+fn builtPart(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
+    const made = try f.built_parted.getOrPut(f.gpa, v);
+    if (!made.found_existing) {
+        _ = f.charge(n.b * Loc.lookup_units);
+        for (0..n.b) |ki| {
+            const k = f.kids.items[n.a + ki];
+            // The first part at a step is the one a scan finds.
+            const got = try f.built_parts.getOrPut(f.gpa, .{ v, k.step });
+            if (!got.found_existing) got.value_ptr.* = k.val;
+        }
+    }
+    _ = f.charge(Loc.lookup_units);
+    return f.built_parts.get(.{ v, s.word() }) orelse v_none;
 }
 
 /// `project` of the join `v` (node `n`): the join of its arms' parts.
@@ -2460,6 +2675,10 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         if (d.refused != null) break;
     }
     if (d.refused == null and in.dup) d.refused = .element;
+    // The tests below compare the write with other atoms, each with its own
+    // root and entry: a wide write is indexed (`indexWrite`).
+    if (d.refused == null) try f.indexWrite(f.atoms.items[w..][0..wn]);
+    defer f.w_ix.on = false;
     if (d.refused == null) {
         f.judge_ctx = f.cur_ctx;
         f.judge_at = d.at;
@@ -2587,6 +2806,8 @@ fn finishDemands(f: *Frame) Error!void {
             f.skip_answer = d.skip;
             f.judge_ctx = d.ctx;
             f.judge_at = d.at;
+            try f.indexWrite(ws);
+            defer f.w_ix.on = false;
             // Each read the test passes over is work too (kernel §8).
             if (f.charge(f.uses.items.len)) {
                 d.refused = .limit;
@@ -3526,16 +3747,22 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     // The update copies the record: each other field is the base's.
     const bplace = f.placeOfVal(base) orelse place;
     const st = m.places.steps(bplace);
-    const updated = tmp.items.len;
-    // Each part copied is a step of the budget (kernel §8).
-    _ = f.charge(st.steps.len);
+    // The fields named, sorted, so that each part is looked up once and
+    // not compared with every field named (research report 145).
+    const named = try f.gpa.alloc(u32, tmp.items.len);
+    defer f.gpa.free(named);
+    for (named, tmp.items) |*n, k| n.* = k.step;
+    std.mem.sortUnstable(u32, named, {}, std.sort.asc(u32));
+    // Each part copied is a step of the budget (kernel §8), and so is each
+    // field named.
+    _ = f.charge(st.steps.len + named.len);
     for (st.steps) |s| {
         if (s.kind == .level) continue;
-        var is_updated = false;
-        for (tmp.items[0..updated]) |k| if (k.step == s.word()) {
-            is_updated = true;
-        };
-        if (is_updated) continue;
+        if (std.sort.binarySearch(u32, named, s.word(), struct {
+            fn order(x: u32, y: u32) std.math.Order {
+                return std.math.order(x, y);
+            }
+        }.order) != null) continue;
         const part = try f.project(base, s);
         if (part == v_none) continue;
         try tmp.append(f.gpa, .{ .step = s.word(), .val = part });
