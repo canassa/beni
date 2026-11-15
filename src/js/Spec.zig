@@ -5235,8 +5235,8 @@ const Spec = struct {
     /// patched (`backend.md` §9, *Reading off*, G8): a `const` or `let`
     /// declared once and assigned nowhere, that lowering does not keep for
     /// an effect (`kept`), is dead when every read of it stands in the
-    /// initialiser of a dead binding. `Opt` drops it whole, so its
-    /// initialiser is written `undefined` here, and the names it read are
+    /// initialiser of a dead binding. `Opt` drops it whole, so it is
+    /// written as the statement `undefined` here, and the names it read are
     /// read by that much less: `m.uses` is left as the live reads. The
     /// counts are `prepareTop`'s, just made. True when one was written.
     fn liveness(s: *Spec, m: *Mod, top: Index, kept: std.DynamicBitSetUnmanaged) Allocator.Error!bool {
@@ -5314,11 +5314,15 @@ const Spec = struct {
                 }
                 try s.noteGone(m, value);
                 // The binding goes, as `Opt` would drop it: a statement of
-                // its literal, which its list's fold takes out
-                // (`literalStmt`).
-                m.setNode(value, .undefined_lit, 0, 0);
-                if (value.int() < m.lit_of.len) m.lit_of[value.int()] = none;
-                m.setNode(node, .expr_stmt, value.int(), 0);
+                // a literal, which its list's fold takes out
+                // (`literalStmt`). The literal is a node of its own, and
+                // the initialiser is left as it was: lowering shares a node
+                // among the places that read the same value — a `case`'s
+                // subject is its tests' and an `as` binding's — so writing
+                // `undefined` over it would write it over every other read
+                // too (#2512).
+                const lit = try m.addNode(s.gpa, .undefined_lit, ir.pos(value), 0, 0);
+                m.setNode(node, .expr_stmt, lit.int(), 0);
                 any = true;
             }
         }

@@ -4637,6 +4637,13 @@ pub const Lowerer = struct {
         /// (`mayGoInPlace`). Only a hint: `functionOrLoop` decides on the
         /// JavaScript, and a jump written ready is right either way.
         ready: bool = false,
+        /// Whether the loop is written in its caller (`inlineLoop`) rather
+        /// than as a function of its own: each carried slot then takes a
+        /// fresh name and not the positional `$in$<i>`. Two such loops in
+        /// one function are in one scope, or one inside the other's body,
+        /// where one positional name would be declared twice or would
+        /// shadow the outer loop's slot under its own jumps (#2514).
+        fresh_slots: bool = false,
         /// Where an exit's value goes: `return` for a function's loop, or
         /// — for a loop written where its value is bound or discarded (§9,
         /// *A function called once is written where it is called*) — the
@@ -4790,7 +4797,7 @@ pub const Lowerer = struct {
                 .none
             else
                 try l.fresh(l.well.param);
-            slot.param = if (slot.carried) try l.inSlotName(index) else slot.body;
+            slot.param = if (!slot.carried) slot.body else if (loop.fresh_slots) try l.fresh(l.well.param) else try l.inSlotName(index);
             try names.append(l.scratch, slot.param);
         }
 
@@ -12792,7 +12799,7 @@ pub const Lowerer = struct {
         }
         const jumps = try l.scratch.create(Loop.Jumps);
         jumps.* = .{};
-        var loop: Loop = .{ .label = .none, .self = .{ .top = index }, .evidence = 0, .slots = slots, .jumps = jumps, .exit = exit };
+        var loop: Loop = .{ .label = .none, .self = .{ .top = index }, .evidence = 0, .slots = slots, .jumps = jumps, .exit = exit, .fresh_slots = true };
         if (!l.markTails(l.bodyOf(index), &loop) or loop.builds) return null;
         // Where the value is bound or discarded, the call is no shorter
         // than the copies: the loop is taken in whatever its arguments are.
