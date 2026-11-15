@@ -5985,7 +5985,7 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
             // A cell the function made is its own only where the contract
             // names no other holder of it: it did not escape, it is at no
             // other location of the answer, and it was handed to no function.
-            .fresh => if (!freshOwn(lc, @intCast(re), ls)) {
+            .fresh => if (!freshOwn(m, lc, @intCast(re), ls)) {
                 try f.refuse(level, .supply, "the function answers a cell that it made and let go, and the callee hands it back");
             },
             .outside, .twice => try f.refuse(level, .supply, not_own),
@@ -6035,16 +6035,30 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
     }
 }
 
+/// Whether two locations of one layout can hold one cell (kernel §11): a
+/// field slot is no list, and the slots of two fields are two cells. One
+/// site of a callee's wide location (a builder's elements, `fresh`) is at
+/// each of the caller's slots below it, and names a cell of each.
+fn canShare(m: *Mod, a: Loc.Entry, b: Loc.Entry) bool {
+    if ((a.kind == .field) != (b.kind == .field)) return a.kind.wide() or b.kind.wide();
+    if (a.kind != .field) return true;
+    const la: Loc.Label = @bitCast(m.loc.loc_label.items[a.loc]);
+    const lb: Loc.Label = @bitCast(m.loc.loc_label.items[b.loc]);
+    return la.payload == lb.payload;
+}
+
 /// Whether the cell `ls` that a function made, which its contract `lc`
 /// answers at result entry `re`, has no other holder that the contract
 /// names (kernel §6.8). Every negative fact here is read off positive
 /// sources: a source of that site with the escape bit, the same site at
 /// another result entry, or the same site in what the function hands a
 /// function parameter (which can keep it).
-fn freshOwn(lc: *const Contract, re: u32, ls: Src) bool {
+fn freshOwn(m: *Mod, lc: *const Contract, re: u32, ls: Src) bool {
     if (ls.e != 0) return false;
+    const res = m.loc.layoutEntries(lc.layouts[lc.arity]);
     for (lc.res, 0..) |srcs, k| for (srcs) |x| if (x.kind == .fresh and x.a == ls.a) {
-        if (x.e != 0 or k != re) return false;
+        if (x.e != 0) return false;
+        if (k != re and canShare(m, res[k], res[re])) return false;
     };
     for (lc.fns) |lfo| {
         const g = lfo orelse continue;
@@ -6877,7 +6891,7 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 }
                 for (ris.items) |ri| {
                     for (c.res[ri]) |s| switch (s.kind) {
-                        .fresh => if (!freshOwn(c, ri, s)) {
+                        .fresh => if (!freshOwn(m, c, ri, s)) {
                             bad[k] = true;
                         },
                         .param => {
