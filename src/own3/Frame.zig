@@ -2392,9 +2392,16 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             return;
         }
     }
-    for (f.atoms.items[w..][0..wn]) |a| if (f.isSlotAtom(a)) {
-        d.record = true;
-    };
+    // A record's write: an update, or a write whose cells are field slots
+    // and no list (a write of a type variable's location can hold both, and
+    // is a list's where it holds a list).
+    var slots = false;
+    var lists = false;
+    for (f.atoms.items[w..][0..wn]) |a| {
+        const rk = f.roots.items[a.root].kind;
+        if (f.isSlotAtom(a)) slots = true else if (rk != .outside and rk != .fresh) lists = true;
+    }
+    d.record = in.op == .update or (slots and !lists);
     // The permission (kernel §5, test 1): a cell outside the frame, a
     // capture and the answer of a function parameter are never `own`.
     for (0..wn) |i| {
