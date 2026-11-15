@@ -1,0 +1,36 @@
+-- run: a tail-recursive helper called once, bound inside another
+-- tail-recursive helper that is itself called once and bound: under
+-- `--release` both are written as loops where they are bound, the inner
+-- loop inside the outer one's body. The outer loop's jumps after the
+-- inner loop must write the outer loop's own variables, never the inner
+-- one's (#2514).
+import List
+import Node exposing (Program)
+import String
+
+
+inner : Int, List Int → List Int
+inner k a =
+    if k ≤ 0 then
+        a
+    else
+        inner (k - 1) (List.update a 0 λx → x * 2)
+
+
+outer : Int, List Int → List Int
+outer k a =
+    if k ≤ 0 then
+        a
+    else
+        w = inner 2 (List.update a 0 λx → x + 1)
+        outer (k - 1) w
+
+
+go : Int → String
+go n =
+    v = outer 3 [ n ]
+    String.fromInt (List.sum v)
+
+
+main : Program
+main = Node.print (go 1)

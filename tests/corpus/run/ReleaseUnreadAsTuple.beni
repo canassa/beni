@@ -1,0 +1,16 @@
+-- run: an `as` on a tuple pattern that nothing reads binds the same value
+-- the slot reads take. Under `--release` the dead binding goes, and the
+-- slot reads must still read the tuple (#2512).
+import Node exposing (Program)
+import String
+
+
+digits : Int × Int → Int
+digits t =
+    case t of
+        (( a, b ) as whole) →
+            a * 10 + b
+
+
+main : Program
+main = Node.print (String.fromInt (digits ( 3, 4 ) + digits ( 1, 2 )))
