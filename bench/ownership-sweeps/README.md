@@ -22,7 +22,9 @@ node bench/ownership-sweeps/run.mjs --beni=zig-out/safe/bin/beni --checker=v3 --
   accepted list write edits its base's own array, so the output is what the program prints where lists are
   edited in place (research report 140). `--mode=both` builds three times, plain, sanitised and in place;
   its results go to `<outdir>.<checker>-both.txt`. Under `--sanitize-lists`, an identity compare
-  (`Js.same`) outside core whose answer an in-place write would change traps as well.
+  (`Js.same`) outside core whose answer an in-place write would change traps as well. A program that passes
+  all three is built twice more under `--release`, plain and in place, and the in-place run is compared with
+  the plain release run: the release optimiser is inside the oracle (research report 141).
 - `corpus.mjs <outdir>` writes the corpus's programs as a sweep: `run/`, the `browser/` pages,
   `browser/inline/`, `browser/prerender/` (compared by the pages the build writes) and, to list their
   faults, `browser/dom/`, `browser/managed/` and `browser/tea/`.
@@ -37,10 +39,11 @@ node bench/ownership-sweeps/run.mjs --beni=zig-out/safe/bin/beni --checker=v3 --
 |---|---|
 | `SAME` | the checker accepts, and the output is the plain build's |
 | `REFUSED` | the checker refuses (its first code and position follow) |
-| `LIMIT` | the checker stops at its size limit |
+| `LIMIT` | the checker stops at a limit (an `OWNERSHIP CHECK TOO LARGE` line) |
 | **`TRAP`** | the checker accepts, and the in-place build throws: a stale read. **A soundness hole** |
 | **`DIFF`** | the checker accepts, and the output differs. **A soundness hole** |
 | **`IPTRAP`**, **`IPDIFF`** | (`--mode=both`) the sanitised run is `SAME`, and the in-place run throws or prints another output. **A soundness hole** |
+| **`RIPTRAP`**, **`RIPDIFF`** | (`--mode=both`) every other leg is `SAME`, and the in-place release run throws or prints another output than the plain release run. **A soundness hole** |
 | `TIMEOUT` | the checked build's run passed its 20 s |
 | `CRASH` | the compiler fails |
 | `PLAINFAIL` | the generated program does not build: a fault of the generator, not of the checker |

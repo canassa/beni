@@ -8,7 +8,10 @@
 // identity compare an in-place write would change traps. `--mode=inplace` builds with `--lists-in-place`
 // instead: each accepted write edits its base's own array, so the output is the in-place truth.
 // `--mode=both` builds all three, and an in-place fault is IPTRAP or IPDIFF when the sanitised run passes
-// (the line then ends with `ip=<verdict>`). Each program gets one verdict: SAME (accepted, same output), REFUSED (with its
+// (the line then ends with `ip=<verdict>`). `--mode=both` also builds the program under `--release` two times, plain
+// and in place, so the release optimiser is inside the oracle (research report 141): a release in-place fault is
+// RIPTRAP or RIPDIFF when every other leg passes (else the line ends with `rip=<verdict>`: PLAINRUNFAIL, a plain
+// release run that fails, is a defect of the release build). Each program gets one verdict: SAME (accepted, same output), REFUSED (with its
 // first code and position), LIMIT, TRAP (the checked build throws: a stale read), DIFF (another output),
 // CRASH (the compiler fails), PLAINFAIL (the generated program does not build), BOTHFAIL. The results
 // go to <outdir>.<checker>.txt, one line for each program (<outdir>.<tag>.txt with `--tag`, to keep the
@@ -86,25 +89,41 @@ async function judge(prog) {
     const checked = await build(flags, 's', 120_000);
     if (checked.code !== 0) {
       if (checked.code !== 1 || checked.out.includes('panic:')) return `CRASH ${checked.code}`;
-      if (checked.out.includes('ownership_summary_size')) return 'LIMIT';
+      // A limit of either checker: v2's `ownership_summary_size` and every `ownership_limit` line.
+      if (checked.out.includes('ownership_summary_size') || checked.out.includes('OWNERSHIP CHECK TOO LARGE')) return 'LIMIT';
       const code = checked.out.match(/refused: ([a-z_-]+)/)?.[1] ?? '';
       const where = checked.out.match(/^-- [A-Z ]+ -+ (\S+:\d+:\d+)/m)?.[1] ?? '';
       return `REFUSED ${code} ${where}`.trim();
     }
-    const verdict = async (out) => {
+    const verdict = async (out, oracle = plainRun) => {
       const r = await exec(out);
       if (r.timedOut) return 'TIMEOUT';
-      if (r.code !== 0 && plainRun.code !== 0) return 'BOTHFAIL';
+      if (r.code !== 0 && oracle.code !== 0) return 'BOTHFAIL';
       if (r.code !== 0) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
-      return r.out === plainRun.out ? 'SAME' : 'DIFF';
+      return r.out === oracle.out ? 'SAME' : 'DIFF';
     };
     const first = await verdict('s');
     if (mode !== 'both') return first;
     const inPlace = await build([`--ownership=${opt.checker}`, '--ownership-everywhere', '--lists-in-place'], 'i', 120_000);
     if (inPlace.code !== 0) return `CRASH in-place ${inPlace.code}`;
     const second = await verdict('i');
-    if (first !== 'SAME' || second === 'SAME' || second === 'BOTHFAIL') return `${first} ip=${second.split(' ')[0]}`;
-    return `IP${second}`;
+    if (first === 'SAME' && second !== 'SAME' && second !== 'BOTHFAIL') return `IP${second}`;
+    if (first !== 'SAME' || second !== 'SAME') return `${first} ip=${second.split(' ')[0]}`;
+    // The release leg: the plain release build is its oracle, the in-place release build is judged against it.
+    // `--allow-debug`: a program whose instrument is `Debug.log` is built as the corpus's release pass builds it.
+    const rel = ['--release', '--allow-debug'];
+    const plainRel = await build(rel, 'pr', 60_000);
+    if (plainRel.code !== 0) return `SAME ip=SAME rip=${plainRel.code === 1 && !plainRel.out.includes('panic:') ? 'PLAINFAIL' : `CRASH-${plainRel.code}`}`;
+    const plainRelRun = await exec('pr');
+    if (plainRelRun.timedOut) return 'SAME ip=SAME rip=TIMEOUT-plain';
+    // A plain release run that fails is a defect of the release build, not of the checker: no oracle.
+    if (plainRelRun.code !== 0) return 'SAME ip=SAME rip=PLAINRUNFAIL';
+    const inPlaceRel = await build([...rel, `--ownership=${opt.checker}`, '--ownership-everywhere', '--lists-in-place'], 'ir', 120_000);
+    if (inPlaceRel.code !== 0) return `CRASH release-in-place ${inPlaceRel.code}`;
+    const third = await verdict('ir', plainRelRun);
+    if (third === 'SAME') return 'SAME';
+    if (third === 'TIMEOUT') return 'SAME ip=SAME rip=TIMEOUT';
+    return `RIP${third}`;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

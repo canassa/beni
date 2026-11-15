@@ -374,8 +374,9 @@ pub const Build = struct {
     /// in-place oracle (research report 140). Each list write the checker
     /// accepted edits its base's own array, so every holder of the list
     /// sees the write, as the target lowering's would (`backend.md` §4,
-    /// *Every platform edits in place*). Development builds only, only a
-    /// build that enforces ownership, and never with `--sanitize-lists`.
+    /// *Every platform edits in place*). With `--release` too, so the release
+    /// optimiser is inside the oracle (research report 141). Only a build
+    /// that enforces ownership, and never with `--sanitize-lists`.
     lists_in_place: bool = false,
     /// `--records-in-place` — **hidden**, for `--allow-debug`'s reason:
     /// the build enforces the ownership check, as an in-place platform's
@@ -1070,9 +1071,6 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
     }
     if (s.specific.sanitize_lists and s.specific.release) {
         return .{ .usage = .init("beni: --sanitize-lists is for development builds, not --release", .{}) };
-    }
-    if (s.specific.lists_in_place and s.specific.release) {
-        return .{ .usage = .init("beni: --lists-in-place is for development builds, not --release", .{}) };
     }
     if (s.specific.lists_in_place and s.specific.sanitize_lists) {
         return .{ .usage = .init("beni: --lists-in-place and --sanitize-lists are two oracles; give one", .{}) };
@@ -1908,7 +1906,11 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
         .{ .build = .{ .platform = "node", .lists_in_place = true, .paths = &.{"src"} } },
         &.{ "build", "--platform=node", "--lists-in-place", "src" },
     );
-    try expectUsage("beni: --lists-in-place is for development builds, not --release", &.{ "build", "--platform=node", "--lists-in-place", "--release", "src" });
+    // The release optimiser is inside the oracle (research report 141).
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .lists_in_place = true, .release = true, .source_maps = false, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--lists-in-place", "--release", "src" },
+    );
     try expectUsage("beni: --lists-in-place and --sanitize-lists are two oracles; give one", &.{ "build", "--platform=node", "--lists-in-place", "--sanitize-lists", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "lists-in-place") == null);
 }

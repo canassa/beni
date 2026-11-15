@@ -6939,7 +6939,7 @@ const Emitter = struct {
             // keep, so a build that is one file before it is one after.
             var one_scope = false;
             if (!e.options.library and lowered_clean) if (entry) |at| {
-                one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime) != null;
+                one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime, uses_sanitizer) != null;
                 try e.specialise(slots, todo.items, at, one_scope);
             };
             // A library is a whole program too, but for its surface: what
@@ -6956,7 +6956,7 @@ const Emitter = struct {
             // is written as one file, and its names are numbered in that
             // file's order. Anything else is the multi-file layout.
             if (!e.options.library and lowered_clean) if (entry) |at| {
-                hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime);
+                hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime, uses_sanitizer);
             };
             if (one_scope and hoist == null) @panic("a build that is one file before specialisation is one after it");
             if (hoist) |*h| {
@@ -7030,9 +7030,8 @@ const Emitter = struct {
         if (hoist) |*h| {
             if (!e.hasErrors()) try e.linkHoisted(slots, h);
         } else if (uses_runtime) try e.emitDerivedRuntime();
-        // `--sanitize-lists` is refused with `--release` (`Cli`), so its
-        // build is never one hoisted file.
-        if (uses_sanitizer) try e.produce(sanitize_runtime_path, if (e.options.lists_in_place) inplace_runtime_source else sanitize_runtime_source, sanitize_runtime_path);
+        // A hoisted build has the in-place runtime in its one file (`planHoist`).
+        if (uses_sanitizer and hoist == null) try e.produce(sanitize_runtime_path, if (e.options.lists_in_place) inplace_runtime_source else sanitize_runtime_source, sanitize_runtime_path);
     }
 
     /// One module's way from `Bir` to bytes. Written by the one worker that
@@ -8506,7 +8505,7 @@ const Emitter = struct {
     /// build is one scope-hoisted file. Null keeps the multi-file layout:
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
-    fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+    fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool, uses_sanitizer: bool) !?Hoist {
         // Worker bindings are inside the bootstrap try block; none may
         // be exported by the module-level footer after its finally.
         if (e.worker_runtime != null and
@@ -8561,6 +8560,17 @@ const Emitter = struct {
             derived_index = @intCast(files.items.len);
             try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact, .mapped = false });
         }
+        // `--lists-in-place --release` (hidden, test-only): the in-place
+        // runtime joins the one file as any hand-written file does, so the
+        // oracle's build is the layout a plain release build has, and the
+        // optimiser works across its modules in one scope (research report
+        // 141). `--sanitize-lists` is refused with `--release` (`Cli`).
+        var sanitize_index: ?u32 = null;
+        if (uses_sanitizer) {
+            std.debug.assert(e.options.lists_in_place);
+            sanitize_index = @intCast(files.items.len);
+            try files.append(scratch, .{ .out = sanitize_runtime_path, .origin = sanitize_runtime_path, .bytes = inplace_runtime_source, .mapped = false });
+        }
 
         var module_at: std.StringHashMapUnmanaged(u32) = .empty;
         for (todo) |i| try module_at.put(scratch, paths[i], i);
@@ -8598,6 +8608,8 @@ const Emitter = struct {
                     derived_index
                 else if (slot.markup != null and std.mem.eql(u8, source, slot.markup.?.runtime))
                     markup_index
+                else if (slot.sanitize_runtime.len != 0 and std.mem.eql(u8, source, slot.sanitize_runtime))
+                    sanitize_index
                 else
                     null;
                 if (target) |x| {
