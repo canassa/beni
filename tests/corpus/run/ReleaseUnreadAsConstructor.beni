@@ -1,0 +1,25 @@
+-- run: an `as` on a constructor pattern that nothing reads binds the same
+-- value the tag test and the field reads take. Under `--release` the dead
+-- binding goes, and the test and the reads must still read the value
+-- (#2512).
+import Node exposing (Program)
+import String
+
+
+type Shape
+    = Circle Int
+    | Rect Int Int
+
+
+area : Shape → Int
+area s =
+    case s of
+        (Rect w h) as whole →
+            w * h
+
+        Circle r →
+            3 * r * r
+
+
+main : Program
+main = Node.print (String.fromInt (area (Rect 4 5) + area (Circle 2)))

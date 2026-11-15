@@ -1,0 +1,42 @@
+-- run: three tail-recursive helpers, each called once and bound one after
+-- the other, are all written as loops in their caller under `--release`.
+-- No two loops may declare one name in one scope (#2514).
+import List
+import Node exposing (Program)
+import String
+
+
+h0 : Int, List Int → List Int
+h0 k a =
+    if k ≤ 0 then
+        a
+    else
+        h0 (k - 1) (List.update a 0 λx → x * 2)
+
+
+h1 : Int, List Int → List Int
+h1 k a =
+    if k ≤ 0 then
+        a
+    else
+        h1 (k - 1) (List.update a 0 λx → x * 3)
+
+
+h2 : Int, List Int → List Int
+h2 k a =
+    if k ≤ 0 then
+        a
+    else
+        h2 (k - 1) (List.update a 0 λx → x + 5)
+
+
+go : Int → String
+go n =
+    v1 = h0 2 [ n ]
+    v2 = h1 2 v1
+    v3 = h2 2 v2
+    String.fromInt (List.sum v3)
+
+
+main : Program
+main = Node.print (go 1)

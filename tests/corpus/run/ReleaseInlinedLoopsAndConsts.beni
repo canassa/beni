@@ -1,0 +1,38 @@
+-- run: two tail-recursive helpers, each called once, written as loops in
+-- their caller under `--release` between runs of plain bindings, which
+-- the printer joins into one declaration with the loop's variables. No
+-- name may be declared twice in one scope (#2514).
+import List
+import Node exposing (Program)
+import String
+
+
+h0 : Int, List Int → List Int
+h0 k a =
+    if k ≤ 0 then
+        a
+    else
+        h0 (k - 1) (List.update a 0 λx → x * 9)
+
+
+h1 : Int, List Int → List Int
+h1 k a =
+    if k ≤ 0 then
+        a
+    else
+        h1 (k - 1) (List.update a 0 λx → x * 8)
+
+
+go : Int, Int → String
+go n m =
+    p = n * m
+    q = p + 1
+    v2 = h0 2 [ p, q ]
+    r = List.length v2 + q
+    s = r * 2
+    v3 = h1 2 (List.push v2 s)
+    String.fromInt (List.sum v3 + r)
+
+
+main : Program
+main = Node.print (go 1 2)

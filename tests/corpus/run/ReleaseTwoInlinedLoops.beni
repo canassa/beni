@@ -1,0 +1,36 @@
+-- run: two tail-recursive helpers, each called once and bound one after
+-- the other, are both written as loops in their caller under `--release`
+-- (`backend.md` §9, *A function called once is written where it is
+-- called*). Each loop's variables are its own names: the release build
+-- declared one short name twice in one scope, and Node refused the file
+-- with `SyntaxError: Identifier 'b' has already been declared` (#2514).
+import List
+import Node exposing (Program)
+import String
+
+
+h0 : Int, List Int → List Int
+h0 k a =
+    if k ≤ 0 then
+        a
+    else
+        h0 (k - 1) (List.update a 0 λx → x * 9)
+
+
+h1 : Int, List Int → List Int
+h1 k a =
+    if k ≤ 0 then
+        a
+    else
+        h1 (k - 1) (List.update a 0 λx → x * 8)
+
+
+go : Int → String
+go n =
+    v2 = h0 2 [ n ]
+    v3 = h1 2 v2
+    String.fromInt (List.sum v3)
+
+
+main : Program
+main = Node.print (go 1)
