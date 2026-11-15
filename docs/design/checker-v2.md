@@ -5710,6 +5710,12 @@ section says only where it sits in this checker.
   flow into them; `refresh` raises the copies of a class whose rung rose after its summary was
   applied. `EffectPlan` never makes a fixed class sensitive. No format moves: an importer reads a
   fixed class as any other class (#2126).
+- *Amended 2026-11-15 (#1788).* **A value made by a call is fixed too.** A top-level value whose
+  body may make something is fixed whatever its evaluation class, because `Js.ref` is `pure` and
+  makes a cell. A body makes nothing when it is a value by §8.4's syntax (`Generalize.isValue`) or
+  a block with no statement whose bindings are functions or make nothing and whose result makes
+  nothing (`Module.makesNothing`). `Module` computes the set per declaration before the solve
+  (`Effects.Input.expansive`), and `fixedValues` reads it beside the evaluation class.
 - *Amended 2026-11-09 (#2115).* **A derived row's positions.** A derived answer's arguments are
   only its context entries. A position that P5 (`Eager`) resolved to a method — a field type's own
   `eq`, another derived row, `List.eq` at a ground type — is in the row's body, not in the

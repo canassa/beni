@@ -1354,6 +1354,24 @@ every group of the module has been checked (§14.4).
      The refusal is reported once, where the demand is: a use of a fixed class adds no `sync`
      source of its own, because the copy is the class itself and reaches the demanded node.
 
+   *Amended 2026-11-15 (#1788):* **a top-level value whose body may make something is fixed too,
+   whatever its evaluation class.** A body makes nothing when it is a value by checker-v2.md
+   §8.4's syntax, or a block with no statement whose every binding is a function or makes nothing
+   and whose result makes nothing (`h =` a block `f = maxOf` then `f`). "Only an effect can make a cell"
+   was false for core and the platforms: `Js.ref` is `pure` and makes one. With
+   `slot = Js.ref λ⊤ → 0`, `Js.write slot sleeping` in one declaration and `(Js.read slot) ⊤` in
+   another, the value had two bodies, `Main$slot` and `Main$slot$s`, the write went into one cell
+   and the read came from the other, and the reader did not wait for the callback
+   (`run/core/TopLevelJsRefSuspendingCallback`). §8.4's syntax is the one its top-level type rule
+   reads: a value is a literal, a reference, a `λ`, or a tuple, list or record of values, and any
+   other call and a constructor application are not. So a cell made by a helper
+   (`slot = cellOf λ⊤ → 0`) and one that a block makes and closures capture are fixed with it, and
+   a body that makes nothing made no cell. The precision lost is the same as above:
+   a `pure` call whose result has a polymorphic callback in its scheme no longer gives each use its
+   own copy. `Js.ref` stays `pure`: as `impure` it makes core's own `Schema.derivedInt32`, a
+   polymorphic value over a monomorphic memo cell, an `impure_polymorphic_value`, and the type
+   rule's hole of the same root is #2520.
+
    The set of fixed values is read off the evaluation classes that the solve gives, so
    `Effects.run` solves again with that set until the set stops growing. It can only grow, because
    sharing only raises a rung. A module with no such value is solved once, as before, and emits the
@@ -1913,6 +1931,9 @@ reaches no `$s` body, and elimination (`backend.md` §9) writes none.
   the suspendable form, because the shared class then reaches `suspends`. A value whose evaluation
   is `pure` keeps the two bodies this section gives it: to evaluate it twice makes nothing that a
   program can tell apart.
+  *Amended 2026-11-15 (#1788):* that holds only for a value whose body makes nothing (§14.3 rule
+  3, amended the same day: a value by checker-v2.md §8.4's syntax, or a block of such bindings). A
+  `pure` call can make a cell (`Js.ref`), so any other value is fixed too and has one body.
 
 ### 16.3 The lowering
 
