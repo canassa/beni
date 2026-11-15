@@ -3848,6 +3848,12 @@ shared-branch block between the jump and this one. The label is the function's o
 `List$foldl`, `go$2` â input-derived, no counter, and it cannot collide because labels are a
 separate namespace from bindings. `$in$<i>` is positional for the same reason (CLAUDE.md rule 5),
 and two nested loops both using `$in$0` are safe precisely because neither ever reads the other's.
+*Amended 2026-11-15 (#2514):* that holds for a loop that is a function of its own. A loop written
+in its caller (§9, *A function called once is written where it is called*) shares the caller's
+scope with any other loop written there, beside it or inside its body, where one positional name
+would be declared twice or would shadow the outer loop's slot under the outer loop's jumps. Such
+a loop's carried slots take fresh names instead (`run/ReleaseTwoInlinedLoops`,
+`run/ReleaseInlinedLoopInLoop`).
 The parameter list keeps its count and order, so `.length` is unchanged and Â§6's eta-expansion of
 evidence still sees the beni arity it expects.
 
