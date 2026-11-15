@@ -1,0 +1,34 @@
+-- `Html.targetValue` reads the target's `value` only when it is a string
+-- (boundary.md §4.3 (a), the owner, 2026-11-05, #1993). A `<div>` has no
+-- `value`, so a click on it gives `Nothing`; an `<input>`'s click gives its
+-- text. Before the fix the read was typed `String`: `undefined` reached
+-- `++`, and the page stopped with a message that named no cause.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Got (Maybe String)
+
+
+show : Maybe String → String
+show v =
+    case v of
+        Just s →
+            "Just [" ++ s ++ "]"
+
+        Nothing →
+            "Nothing"
+
+
+view : String → Html Msg
+view s =
+    <main>
+        <p id="out">{s}</p>
+        <div id="d" onClick={λev → Got (Html.targetValue ev)}>x</div>
+        <input id="i" value="typed" onClick={λev → Got (Html.targetValue ev)} />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "", update = λ(Got v) _ → show v, view = view }

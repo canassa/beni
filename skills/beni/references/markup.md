@@ -65,13 +65,15 @@ message. Which one is decided by the handler's type.
 
 - `onClick={Clicked}` sends `Clicked`.
 - `onInput={Typed}` calls `Typed` with the input's value, a `String`, and sends the result.
+  `onInput` and `onChange` are allowed only on `<input>`, `<select>` and `<textarea>`.
 - A text input shows the model's value. When `update` changes the typed text (for example, to upper
   case), the caret stays at the offset it had. If the new text is shorter, the offset is cut to its
   length. The page does not map the caret through the change.
 - A handler receives the raw `Html.Event` where the vocabulary says so (`onKeyDown`, `onSubmit`,
   `onClick` through a lambda). It can call `Html.preventDefault event` itself, as a statement,
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`
-  read it.
+  read it. `Html.targetValue` gives a `Maybe String`: `Nothing` when the target has no string
+  `value`, for example a `<div>`.
 - A handler must not wait. It returns a message and does nothing else.
 - On `browser-inline`, a handler in the program's own markup can be any function or message
   value. In another module's markup, it must be a constructor that takes the payload or nothing.
