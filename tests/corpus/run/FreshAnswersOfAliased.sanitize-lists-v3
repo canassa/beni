@@ -1,0 +1,1 @@
+A callback that answers a new list on each run, over an argument that holds one list at two places: the answers hold no cell of the argument, so each is pushed in place under --ownership=v3 (ownership-v3-kernel.md §4.4).

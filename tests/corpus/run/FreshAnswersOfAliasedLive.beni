@@ -1,0 +1,26 @@
+-- The live twin of `FreshAnswersOfAliased`: the callback answers the list it
+-- is handed, so both elements of the result are the one list `a`, and a push
+-- of each in place would push it twice. The elements are `twice`, and the
+-- push is refused (kernel §4.4).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pushAll : List (List Int), Int → List (List Int)
+pushAll ls n = List.map ls λl → List.push l n
+
+
+main : Program
+main =
+    a = [ 1 ]
+    made = pushAll (List.map [ a, a ] λx → x) 2
+    Node.print "${shows made} ${show a}"

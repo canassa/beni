@@ -189,8 +189,11 @@ three-valued (`Frame.Linear`): `undecided` until `deriveLinear` ran, the one wri
 atoms decide. For a call's result the callee's claim (`!Contract.nonlinear`, derived in the callee's
 `finish` from its own atoms) is taken **only as far as the callee could see**: only when the arguments are
 apart (`argsApart`: a contract is written for arguments of which no cell is at two places, and where that
-does not hold every summary entry fed by two sources or by an answer is `twice`, and the result is not
-linear), and never for an entry that holds the **answer of a function parameter**, which the callee's frame
+does not hold every summary entry fed by two sources, or by an answer that can hold a cell the holder handed
+on (`SrcState.handed`), is `twice`, and the result is not linear: an answer that holds none holds cells
+the function made in its run, which no two runs share, captured cells, which are `twice` already, and
+cells outside the frame, so a cell at two places of the arguments is at no two places of it; research
+report 143), and never for an entry that holds the **answer of a function parameter**, which the callee's frame
 saw as an opaque root: a pair of entries with one is tested by the caller's atoms (`apply`,
 `deriveLinear`'s `answers`). Within one summary entry, two sources are tested as atoms, with one named
 exception (`alternatives`): the answer of a function `g` and a parameter location the callee hands `g`

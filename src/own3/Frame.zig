@@ -4896,8 +4896,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         try f.uniqueTail(&f.atoms, start);
         const single = es[e].single;
         // One cell at two places of a summary location: it keeps its claim,
-        // and its parts are not apart (kernel §4.4).
-        const twice = !single and (st.twice or (!args_apart and (sources > 1 or answers)));
+        // and its parts are not apart (kernel §4.4). An answer whose cells
+        // are none that the holder handed on (each a cell the function made
+        // in its run, or outside the frame; a captured cell is `twice`
+        // already) holds no cell of the arguments, so a cell at two places
+        // of them is at no two places of it.
+        const twice = !single and (st.twice or (!args_apart and (sources > 1 or (answers and st.handed))));
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
         has_answer[e] = answers;
     }
@@ -5021,6 +5025,12 @@ const SrcState = struct {
     nseen: u32 = 0,
     /// Each part of the answer is asked for, not the one at `suffix`.
     whole: bool = false,
+    /// The answer can hold a cell that the holder handed on: a cell of the
+    /// call's arguments or of what it read through them (`resolve`), or one
+    /// of a lost or the frame's own answer. An answer that holds none holds
+    /// only cells the function made in its run, captured cells (`twice`) and
+    /// cells outside the frame (`apply`).
+    handed: bool = false,
     fn visit(st: *SrcState, use: *const Use, k: u32) enum { new, old, full } {
         for (st.seen[0..st.nseen]) |x| if (x[0] == use.id and x[1] == use.j and x[2] == k) return .old;
         if (st.nseen == st.seen.len) return .full;
@@ -5800,6 +5810,7 @@ const FlatSink = struct {
         try f.lostAnswer(use, s.st);
     }
     fn atoms(s: *FlatSink, f: *Frame, h: Handed) Error!void {
+        s.st.handed = true;
         if (h.dup) s.st.twice = true;
         if (h.captured) {
             // Each run is handed the same cell: two runs can answer it. The answer holds it.
@@ -6203,6 +6214,7 @@ fn handedBack(f: *Frame, level: *const Use, code: Code, a: u32, e: u32) Error!vo
 /// call in work: its atoms at the entries that the answer entry `ae` of
 /// layout `alayout` covers.
 fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!void {
+    st.handed = true;
     const di = try f.draftOf(root, null);
     f.drafts.items[di].used = true;
     const ai = try f.answerRoot(di, st.inst);
@@ -6220,7 +6232,7 @@ fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!v
 /// known function on the way captured. A location with no claim keeps what
 /// it can hold (report 111 §3.5).
 fn lostAnswer(f: *Frame, use: *const Use, st: *SrcState) Error!void {
-    _ = st;
+    st.handed = true;
     try f.atoms.append(f.gpa, outside_atom);
     var u: ?*const Use = use;
     while (u) |x| : (u = f.upOf(x)) for (x.args) |a| {
