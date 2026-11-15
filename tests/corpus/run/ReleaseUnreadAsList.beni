@@ -1,0 +1,19 @@
+-- run: an `as` on a list pattern that nothing reads binds the same value
+-- the `case` tests. Under `--release` the dead binding goes, and the
+-- subject its tests read must stay (#2512): the release build read
+-- `undefined.length` and threw.
+import Node exposing (Program)
+
+
+f : List Int → Int
+f l =
+    case l of
+        [ _, …_ ] as whole →
+            List.length l
+
+        [] →
+            0
+
+
+main : Program
+main = Node.print (String.fromInt (f [ 1, 2, 3 ]))

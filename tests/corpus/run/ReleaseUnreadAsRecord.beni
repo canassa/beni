@@ -1,0 +1,19 @@
+-- run: an `as` on a record pattern that nothing reads binds the same
+-- value the field reads take. Under `--release` the dead binding goes, and
+-- the field read must still read the record (#2512): the release build
+-- read `undefined.xs` and threw.
+import List
+import Node exposing (Program)
+import String
+
+
+go : Int → String
+go n =
+    r = { xs = [ n ], ys = [ 2 ] }
+    case r of
+        ({ xs } as whole) →
+            String.fromInt (List.sum (List.push xs 9))
+
+
+main : Program
+main = Node.print (go 3)

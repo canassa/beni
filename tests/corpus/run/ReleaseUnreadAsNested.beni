@@ -1,0 +1,31 @@
+-- run: unread `as` bindings at every level of a nested pattern — on a
+-- constructor's field, on a record inside it and on a list inside that —
+-- bind values the tests and reads below them take. Under `--release`
+-- each dead binding goes, and every read under it must still read its
+-- value (#2512).
+import Node exposing (Program)
+import String
+
+
+type Box
+    = Box { items : List Int, label : String }
+    | Empty
+
+
+describe : Box → String
+describe b =
+    case b of
+        Box (({ items, label } as inner)) →
+            case items of
+                [ x, …_ ] as all →
+                    label ++ String.fromInt x
+
+                [] →
+                    label
+
+        Empty →
+            "empty"
+
+
+main : Program
+main = Node.print (describe (Box { items = [ 7, 8 ], label = "n" }) ++ " " ++ describe Empty)
