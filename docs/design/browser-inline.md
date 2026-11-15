@@ -1675,7 +1675,7 @@ order. The edits are runtime functions of `Inline.beni`, each shipped only when 
 |---|---|---|
 | `at(L, k)` | makes `k`'s row agree with the dictionary: drops it if `k` is absent, runs its `set` if present, builds and appends it if new (a new key is the last entry); it never moves a row, so a write that may move a key is `sync`'s | after an `insert`, `remove` or `update` of `k`, and for the selector's two keys |
 | `swap(L, a, b)` | exchanges the rows and nodes of `a` and `b` | after `Dict.swap d a b` |
-| `sync(L, all)` | reconciles every row with the dictionary: rows reused by key, rows of keys that left removed, the rest put in order by the longest increasing subsequence of their old places; a fresh dictionary with no key in common empties the parent in one call; `all` runs every reused row's `set`, otherwise only rows whose value is another object | after a write the lowering cannot follow key by key (§9.4), and for a load that replaces the dictionary |
+| `sync(L, all)` | reconciles every row with the dictionary: rows reused by key, rows of keys that left removed, the rest put in order by the longest increasing subsequence of their old places; a fresh dictionary with no key in common empties the parent in one call; `all` runs every reused row's `set`, and without it no reused row's `set` runs, since the write set says no kept key's value changed; a row is never compared with a value it kept (§9.4, *Identity*) | after a write the lowering cannot follow key by key (§9.4), and, with `all`, for a load that replaces the dictionary |
 
 **The key → row lookup.** The dictionary's index maps a key to its entry pair (`backend.md` §4,
 amended 2026-10-25: the owner's decision of §9.10 question 3), so a position is not free, and the
@@ -1708,7 +1708,7 @@ brotli fixed against tea-inline's single forward pass, nothing per table.
 dictionary is a `For`'s (§9.3) and that the lowering writes itself — in the handler, in an arm
 piece, in a function of the root's own module that the key's arm calls, or in a callback lambda
 written there (a `List.foldl` over keys) — is followed at once by its row edit: `at(L, κ)` for the
-first three, `swap(L, a, b)` for `swap`, `sync(L)` for `insertAt`, κ being the call's own key
+first three, `swap(L, a, b)` for `swap`, `sync(L, false)` and then `at(L, κ)` for `insertAt`, κ being the call's own key
 argument, bound where the call evaluates it. Such a function takes the root's list as one more
 parameter, as an arm piece takes its slice, and the root plan names which lists each function is
 handed; one that is also called where no list is in hand is written a second time for the root,
@@ -1729,7 +1729,8 @@ tag, and called `at` for a tag that allowed a key to move.
 | `kept` | nothing for the storage |
 | `at κ k` | `at(L, κ)` (κ does not move: `write-sets.md`'s tag) |
 | `swap κ₁ κ₂` | `swap(L, κ₁, κ₂)` |
-| `grow`, `prune`, `permute`, `clear`, `replaced` | `sync(L, w)`, `w` when the residual writes below `p{…}` |
+| `grow`, `replaced` | `sync(L, true)`: a kept key may hold another value (an `insert` of a key already there, a union, a new dictionary) |
+| `prune`, `permute`, `clear` | `sync(L, w)`, `w` when the residual writes below `p{…}` |
 
 Then, **whatever the tag**, the residual's writes below the path: `at(L, κ)` for each `p{κ}`
 write, and `sync(L, true)` (every row's `set`, no node moved) for a `p{*}` write, unless the tag's
@@ -1754,7 +1755,7 @@ dictionary (`Dict.size model.rows`) is an ordinary binding in the dictionary pat
 **The list in the buckets.** The list is an entry of its root in the bucket of its dictionary path
 (§8.4, *Buckets*). The first render runs it, which appends a row per entry; a load of pushed state
 that replaces the dictionary (§8.4's routes: a dictionary field is assigned, as a list's is) runs
-it again, which is `sync`, so a page with such a route ships `sync`. A key whose edits this
+it again, which is `sync(L, true)`, so a page with such a route ships `sync`. A key whose edits this
 section writes leaves that one entry out of its pass, and runs the bucket's other entries as
 usual.
 
@@ -1764,18 +1765,28 @@ root of another module (§8.4) — and the template's elements are numbered with
 template constant is named and numbered as the root's other constants are, by the input-derived
 order of §8.4.
 
-**Identity.** `sync` skips a reused row's `set` when its value is the same object, and only then:
-the edit tags say whether the key wrote below `p{…}`, and when it did, `sync` runs every `set`
-(`all`). That is §3's rule — analysis says "possibly changed", a compare says "changed" — with the
-write set deciding, never identity alone, so an in-place `Dict.update` of a value never meets an
-identity compare.
+**Identity.** No row decides by identity. Whether a reused row's `set` runs is the write's to say:
+`at(L, κ)` runs κ's, and `sync(L, all)` runs every reused row's exactly when `all` — when the
+edits' tag or the residual says a kept key may hold another value (the table above) — and no
+reused row's otherwise. A row keeps no value to compare a new one with. Inside `set`, each hole's
+guard compares the hole's new scalar with what the DOM shows (`text`, `prop`), never a value of
+the model with one the row kept.
+
+*Amended 2026-11-15 (research report 140):* the first text skipped a reused row's `set` when its
+value was the same object, outside `all`. Lists, records and `Dict` values are edited in place on
+every platform (`backend.md` §4, *Every platform edits in place*), so a value edited in place is
+the same object after the write: identity says "unchanged" exactly when the write changed it,
+which is the stale-row class of #2504 on `browser`. The write set already names every write, so
+the compare could only add a wrong answer: a write it did not name is a defect of the write-set
+pass, not something a compare can mend.
 
 ### 9.5 Rows and the ownership checker
 
 Every `Dict` write is the language's, checked by `ownership-checker.md` §32 on every platform
 (#294, #320): S2 adds no write and no exemption. What the lowering adds is compiler-owned access,
-as §8.4's root closures are: the list's reader of its dictionary, each row's last value (read only
-by its `set` and by `sync`'s compare) and the edits' reads of the dictionary after a write. They
+as §8.4's root closures are: the list's reader of its dictionary, each row's value as its last `set`
+was handed it (read by that `set` and by the row's handlers, never compared with another value,
+§9.4, *Identity*) and the edits' reads of the dictionary after a write. They
 read the dictionary the write returned, which is the same object, and they are no holder of the
 old one: the checker's verdict on the source is the program's. A row's handler captures its key, a
 scalar that crosses (§31.6); one that captures the row's value whole has it as a borrowed payload,
@@ -1850,7 +1861,7 @@ widgets off (the S1 close of 2026-10-24). These rows price only what S2 adds to 
 tea-inline's microtask groups, whose list entry runs on every write of its field, the variant's
 list skips a dictionary that is the same object as at its last run: that stands for §9.4's rule
 that a key whose edits are written leaves the list's entry out of its pass, and is not the design's
-`sync`, which never decides by identity alone.
+`sync`, which never decides by identity (§9.4, amended 2026-11-15).
 
 *Corrected 2026-10-25, the review of #973:* the big-table target's `serverUpdate` first applied the
 changes before a bad one and then stopped; it now validates every change before the first write,
