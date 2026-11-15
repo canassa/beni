@@ -37,19 +37,22 @@ pub opaque type Queue a
 
 
 --| A queue that holds at most `capacity` values; an offer to a full queue
---| waits until there is room. Fewer than 1 is 1. Each call makes a new one.
+--| waits until there is room. A fraction is cut toward zero, and fewer
+--| than 1, or NaN, is 1. Each call makes a new one.
 pub bounded : Int → Queue a
 bounded capacity = make 0 capacity
 
 
 --| A queue that holds at most `capacity` values; an offer to a full queue
---| is refused and answers `False`. Fewer than 1 is 1.
+--| is refused and answers `False`. A fraction is cut toward zero, and
+--| fewer than 1, or NaN, is 1.
 pub dropping : Int → Queue a
 dropping capacity = make 1 capacity
 
 
 --| A queue that holds at most `capacity` values; an offer to a full queue
---| drops the oldest value to make room. Fewer than 1 is 1.
+--| drops the oldest value to make room. A fraction is cut toward zero, and
+--| fewer than 1, or NaN, is 1.
 pub sliding : Int → Queue a
 sliding capacity = make 2 capacity
 
@@ -143,14 +146,17 @@ takeAll (Queue q) = takeList q 1 all
 
 --| Up to `n` values, oldest first. This waits until `n` values are held,
 --| or the queue ends. On a queue that holds fewer than `n`, it waits until
---| the queue is full. `n` of 0 or fewer answers `[]` and does not wait.
+--| the queue is full. A fraction in `n` is cut toward zero: `takeN q 2.5`
+--| is `takeN q 2`. `n` below 1, or NaN, answers `[]` and does not wait.
 pub takeN : Queue a, Int → List a
 takeN (Queue q) n =
-    if n ≤ 0 then
+    k = whole n
+
+    if k == 0 then
         []
     else
-        need = if Js.to (Js.get q "mode") == 3 then n else min n (Js.to (Js.get q "cap"))
-        takeList q need n
+        need = if Js.to (Js.get q "mode") == 3 then k else min k (Js.to (Js.get q "cap"))
+        takeList q need k
 
 
 --| The oldest value, or `Nothing` when there is none, without waiting.
@@ -224,12 +230,20 @@ all : Int
 all = 9007199254740991
 
 
+-- A count as a queue reads it (`language.md` §6.8, *An index or a count
+-- that is not a whole number*): a fraction cut toward zero, and NaN or a
+-- count below 1 is 0. `start`, `need` and `cap` stay whole, so `count`,
+-- `full` and the indices into `items` are whole too (#1973).
+whole : Int → Int
+whole n = if n ≥ 1 then truncate (toFloat n) else 0
+
+
 make : Int, Int → Queue a
 make mode capacity =
     Queue
         (Js.from
             { mode = mode
-            , cap = max 1 capacity
+            , cap = max 1 (whole capacity)
             , items = Js.array []
             , start = 0
             , takers = Js.from { head = Js.null, tail = Js.null }

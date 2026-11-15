@@ -1,0 +1,5 @@
+-- `half` is `0.5` in an `Int`. An `Int` is a double (`language.md` §2.5),
+-- but `^` gives a `Float` (§6.5, amended 2026-11-05), so no beni arithmetic
+-- makes a fraction in an `Int`. A `foreign` value can hand one over from
+-- JavaScript, so this test platform does (Cesar's decision, 2026-11-05).
+pub foreign pure half : Int

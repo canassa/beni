@@ -1,0 +1,94 @@
+-- An `Int` is a double, so it can hold `0.5`, which this project's test
+-- platform hands over (`platform/Fraction.beni`), and NaN, which
+-- `2 ^^ 1024 - 2 ^^ 1024` is. The count of `Queue.takeN` and the capacity
+-- of `Queue.bounded`, `dropping` and `sliding` are counts: a fraction is cut
+-- toward zero, and NaN or a count below 1 is 0, as for `List.repeat`
+-- (`language.md` §6.8, *An index or a count that is not a whole number*).
+-- A capacity below 1 is 1. Before the fix (#1973), `takeN q 1.5` moved the
+-- queue's start to 1.5, so `size` was 1.5 and `poll` answered
+-- `Just undefined`; a capacity of 1.5 held two values, and a capacity of
+-- NaN was never full. Whole numbers keep their old answers: the last block.
+import Fraction exposing (half)
+import Io
+import List
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task
+
+
+nan : Int
+nan = 2 ^^ 1024 - 2 ^^ 1024
+
+
+offers : Queue Int, List Int → List Bool
+offers q xs = List.map xs λx → Queue.offer q x
+
+
+filled : ⊤ → Queue Int
+filled ⊤ =
+    q : Queue Int
+    q = Queue.unbounded ⊤
+    _ = Queue.offerAll q [ 1, 2, 3 ]
+    q
+
+
+main : Program
+main = Io.run λ⊤ →
+    qA = filled ⊤
+    _ = Debug.log "takeN 1.5" (Queue.takeN qA (1 + half))
+    _ = Debug.log "size" (Queue.size qA)
+    _ = Debug.log "poll" (Queue.poll qA)
+    _ = Debug.log "poll" (Queue.poll qA)
+    _ = Debug.log "poll" (Queue.poll qA)
+    qB = filled ⊤
+    _ = Debug.log "takeN 0.5" (Queue.takeN qB half)
+    _ = Debug.log "size" (Queue.size qB)
+    _ = Debug.log "takeN -0.5" (Queue.takeN qB (negate half))
+    _ = Debug.log "takeN 2.5" (Queue.takeN qB (2 + half))
+    _ = Debug.log "size" (Queue.size qB)
+    qC = filled ⊤
+    Queue.end qC
+    _ = Debug.log "takeN NaN, ended" (Queue.takeN qC nan)
+    _ = Debug.log "size" (Queue.size qC)
+
+    qD : Queue Int
+    qD = Queue.dropping (1 + half)
+    _ = Debug.log "dropping 1.5" (offers qD [ 1, 2, 3 ])
+    _ = Debug.log "size" (Queue.size qD)
+
+    qE : Queue Int
+    qE = Queue.dropping nan
+    _ = Debug.log "dropping NaN" (offers qE [ 1, 2 ])
+
+    qF : Queue Int
+    qF = Queue.dropping half
+    _ = Debug.log "dropping 0.5" (offers qF [ 1, 2 ])
+
+    qG : Queue Int
+    qG = Queue.sliding (2 + half)
+    _ = Debug.log "sliding 2.5" (offers qG [ 1, 2, 3 ])
+    _ = Debug.log "takeAll" (Queue.takeAll qG)
+
+    qH : Queue Int
+    qH = Queue.bounded (1 + half)
+    _ = Debug.log "bounded 1.5" (offers qH [ 1 ])
+    late = Task.spawn λ⊤ → Queue.offer qH 2
+    Task.yieldNow ⊤
+    _ = Debug.log "size" (Queue.size qH)
+    _ = Debug.log "take" (Queue.take qH)
+    _ = Debug.log "late offer" (Task.join late)
+    _ = Debug.log "take" (Queue.take qH)
+
+    qI : Queue Int
+    qI = Queue.bounded (2 + half)
+    _ = Queue.offerAll qI [ 1, 2 ]
+    _ = Debug.log "bounded 2.5, takeN 3.5" (Queue.takeN qI (3 + half))
+    qJ = filled ⊤
+    _ = Debug.log "takeN 2" (Queue.takeN qJ 2)
+    _ = Debug.log "takeN 0" (Queue.takeN qJ 0)
+    _ = Debug.log "size" (Queue.size qJ)
+
+    qK : Queue Int
+    qK = Queue.dropping 2
+    _ = Debug.log "dropping 2" (offers qK [ 1, 2, 3 ])
+    Node.print "done"

@@ -1401,6 +1401,13 @@ still comes from an overflow, as in `2 ^^ 1024 - 2 ^^ 1024`. The rules above sta
 The fixtures `run/CoreListFractionalIndex` and `run/CoreListFractionalCount` get their `0.5` from a
 test platform's `foreign half : Int` (Cesar's decision, 2026-11-05).
 
+*Amended 2026-11-15 (#1973).* `core/Queue` reads its counts by the same rule. The `n` of
+`Queue.takeN` is a count: `takeN q 2.5 == takeN q 2`, and NaN or a count below 1 answers `[]` and
+does not wait. The capacity of `Queue.bounded`, `dropping` and `sliding` is a count too, and then a
+capacity below 1 is 1: `dropping 1.5` holds one value, and `dropping` of NaN holds one value. Before,
+`takeN q 1.5` moved the queue's start to a fraction, so `poll` read `Just undefined`. The fixture is
+`run/QueueFractionalCount`.
+
 **A count too large for memory** (Jayson's decision, 2026-11-05, #990). A count that no list can
 hold — 2³² or more, or an infinity — stops the program, as any program that runs out of memory
 stops. It is a defect, not a value (`boundary.md` §4, *An unknown error is a defect*): no function
