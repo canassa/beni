@@ -133,6 +133,11 @@ pub const Contract = struct {
     /// false, each answer is a record, a tuple or a list that the body made
     /// where it answers it, so it is no element of an array that exists.
     old_result: bool = true,
+    /// The result has the word `copyof` and is a record (`Record.copy`,
+    /// kernel §11): a new object whose fields hold parameter 0's values. A
+    /// direct call is applied as that (`Frame.recordCopy`); `res` says it
+    /// for every other use, on the pessimistic side.
+    record_copy: bool = false,
 
     pub fn writes(c: *const Contract) bool {
         for (c.flags) |f| if (f & flag_w != 0) return true;
@@ -188,7 +193,7 @@ fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
 }
 
 pub fn eql(a: *const Contract, b: *const Contract) bool {
-    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result) return false;
+    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy) return false;
     if (!std.mem.eql(u32, a.layouts, b.layouts) or !std.mem.eql(u8, a.flags, b.flags)) return false;
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
@@ -225,7 +230,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
     const fns = try arena.alloc(?*const Fn, a.fns.len);
     for (fns, a.fns, b.fns) |*f, x, y| f.* = try joinFn(arena, x, y);
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy };
     return out;
 }
 
@@ -281,7 +286,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     const fns = try a.alloc(?*const Fn, c.fns.len);
     for (fns, c.fns) |*f, x| f.* = if (x) |g| try dupFn(a, g) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy };
     return out;
 }
 

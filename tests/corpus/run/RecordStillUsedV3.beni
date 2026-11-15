@@ -1,0 +1,58 @@
+-- Records are written in place (research report 142, kernel §11): an
+-- update the checker v3 accepts writes its base's own object. Each
+-- refusal here reads a field the update wrote, or the record whole, from
+-- a name older than the write; in place it would read the new value.
+-- The accepted updates read only fields the write left alone, or the new
+-- name. Before v3 judged records, it accepted all of them.
+import Node exposing (Program)
+import String
+
+
+type alias P =
+    x : Int
+    y : Int
+
+
+oldField : P → Int
+oldField p =
+    q = { p | x = 1 }
+    q.x + p.x
+
+
+oldWhole : P → P × P
+oldWhole p = ( { p | x = 1 }, p )
+
+
+inHelper : P → Int
+inHelper p =
+    q = setX p 5
+    q.x + p.x
+
+
+setX : P, Int → P
+setX p n = { p | x = n }
+
+
+unwritten : P → Int
+unwritten p =
+    q = { p | x = 1 }
+    q.x + p.y
+
+
+chain : P → Int
+chain p =
+    q = { p | x = 1 }
+    r = { q | y = 2 }
+    r.x + r.y
+
+
+main : Program
+main =
+    ( a, b ) = oldWhole { x = 3, y = 4 }
+    Node.printLines
+        [ String.fromInt (oldField { x = 3, y = 4 })
+        , String.fromInt (a.x + b.x)
+        , String.fromInt (inHelper { x = 3, y = 4 })
+        , String.fromInt (unwritten { x = 3, y = 4 })
+        , String.fromInt (chain { x = 3, y = 4 })
+        ]

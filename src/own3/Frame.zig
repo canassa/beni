@@ -162,7 +162,10 @@ const REntry = struct {
     }
 };
 /// `point`: the consumer's instruction, for the text. `at`: the time of the read (`timeOf`).
-const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true };
+/// `tail`: the frame's answer, read where it is answered. It reads no field
+/// slot of a parameter for the contract: the caller holds the answer and
+/// reads its slots where it reads them (kernel §11).
+const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true, tail: bool = false };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
 const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32 };
 
@@ -294,7 +297,7 @@ const Seen = struct {
 /// function was handed there (its answer can hold it).
 const Answer = struct { di: u32, inst: u32, root: u32, base: std.ArrayList(Atom) = .empty };
 
-const Op = enum(u8) { call, construction, append, supply };
+const Op = enum(u8) { call, construction, append, supply, update };
 
 /// Another operand of the operation that writes: what the operation reads of it.
 const Other = struct {
@@ -327,6 +330,8 @@ const Demand = struct {
     slot: u32 = 0,
     /// `supply`: the answer of the same call, which is not a read of the old value.
     skip: u32 = none,
+    /// A write of a record's field slot (kernel §11): its diagnostic is a record's.
+    record: bool = false,
     /// `supply`: the function is the runtime's `send`: the check has a line.
     send: bool = false,
 };
@@ -1424,6 +1429,13 @@ fn builtIndex(f: *Frame, v: Val, n: Node) Error!*const BuiltIndex {
     for (0..n.b) |ki| {
         const k = f.kids.items[n.a + ki];
         if (k.val == v_none) continue;
+        if (k.step == slot_kid) {
+            // The object: it holds the record's own slots (`recordOf`).
+            const es = m.loc.layoutEntries(try m.loc.layoutOf(n.place));
+            _ = f.charge(Loc.scanUnits(es.len));
+            for (es, 0..) |e, u| if (f.isOwnSlot(e.loc)) try pairs.append(m.gpa, .{ @intCast(u), @intCast(ki) });
+            continue;
+        }
         if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
             _ = f.charge(pr.up.len);
             for (pr.up) |u| if (u != none and last[u] != ki) {
@@ -1548,6 +1560,16 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                     return true;
                 }
                 const before: u32 = @intCast(out.items.len);
+                if (k.step == slot_kid) {
+                    // The object: the record's own slots among `ks`, at the
+                    // same entries of the same layout (`recordOf`).
+                    var js: Entries = .{};
+                    _ = f.charge(ks.len);
+                    for (ks) |e| if (f.isOwnSlot(pes[e].loc)) try js.add(f.gpa, e);
+                    if (js.slice().len != 0 and try f.leavesOwn(k.val, js.slice(), out)) dup = true;
+                    if (!single) try parts.append(f.gpa, .{ before, @intCast(out.items.len) });
+                    continue;
+                }
                 if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
                     // The kid's entries that these entries are made of: for
                     // each entry of `ks`, in its order, the kid's entries
@@ -1745,11 +1767,17 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
         .local => {
             const len = f.m.loc.layouts.items[r.layout].len;
             if (f.charge(len)) return true;
+            const res = f.m.loc.layoutEntries(r.layout);
             for (0..len) |i| {
                 const ent = f.rents.items[r.ent + i];
                 switch (ent.kind) {
                     .own, .taken => continue,
                     .alias, .derived, .version => {},
+                }
+                // A record's field slot that is not below this part holds no cell of it (kernel §11).
+                if (res[i].kind == .field) {
+                    if (f.charge(Loc.scanUnits(p.to_root.len))) return true;
+                    if (std.mem.indexOfScalar(u32, p.to_root, @intCast(i)) == null) continue;
                 }
                 if (try f.runReaches(root, @intCast(i), ent, w)) return true;
             }
@@ -1929,6 +1957,35 @@ fn readAll(f: *Frame, v: Val, point: u32) Error!void {
     if (v == v_none or v == v_outside) return;
     if (f.nodes.items[v].tag == .fnref) return;
     try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx });
+}
+
+/// All of `v` is read at `point` but its records' field slots (a list
+/// pattern reads the list, not the fields of its elements; a record pattern
+/// reads its fields' slots itself, kernel §11).
+fn readNoSlots(f: *Frame, v: Val, point: u32) Error!void {
+    if (v == v_none or v == v_outside) return;
+    const n = f.nodes.items[v];
+    if (n.tag == .fnref) return;
+    if (whole(n.tag)) return f.readAll(v, point);
+    const es = f.m.loc.layoutEntries(try f.m.loc.layoutOf(n.place));
+    // The scan of the layout is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(es.len));
+    const start: u32 = @intCast(f.lists.items.len);
+    var all = true;
+    for (es, 0..) |e, k| {
+        if (e.kind == .field) {
+            all = false;
+            continue;
+        }
+        try f.lists.append(f.gpa, @intCast(k));
+    }
+    if (all) {
+        f.lists.shrinkRetainingCapacity(start);
+        return f.readAll(v, point);
+    }
+    const nmask: u32 = @intCast(f.lists.items.len - start);
+    if (nmask == 0) return;
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
 }
 
 /// `v` is read at `point` by a callee whose contract flags are `flags` over the signature layout `sig`.
@@ -2172,6 +2229,9 @@ const DemandIn = struct {
     skip: u32 = none,
     send: bool = false,
     dup: bool = false,
+    /// The written location is a list's: a record's field slot among the
+    /// atoms (an `unknown` value's, which can be any cell) is no cell of it.
+    list_only: bool = false,
 };
 
 /// What the operation reads of operand `o` reaches the targets `ws`; `skip`
@@ -2265,12 +2325,30 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
     return false;
 }
 
+/// Whether atom `a` names a record's field slot (kernel §11).
+fn isSlotAtom(f: *const Frame, a: Atom) bool {
+    const r = f.roots.items[a.root];
+    if (r.kind == .outside or r.kind == .fresh) return false;
+    const es = f.m.loc.layoutEntries(r.layout);
+    return a.e < es.len and es[a.e].kind == .field;
+}
+
 /// Judge a write of the atoms `f.atoms[w..]`: what can be decided now is; the
 /// reads after it are judged when the frame ends (`finishDemands`).
 fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     // A write of a new name is a write of the cells' old names too: the
     // leaves of a `version` location have them.
     try f.uniqueTail(&f.atoms, w);
+    if (in.list_only) {
+        // A list write writes list cells: a field slot is another kind (kernel §11).
+        var k: usize = w;
+        for (f.atoms.items[w..]) |a| {
+            if (f.isSlotAtom(a)) continue;
+            f.atoms.items[k] = a;
+            k += 1;
+        }
+        f.atoms.shrinkRetainingCapacity(k);
+    }
     const wn: u32 = @intCast(f.atoms.items.len - w);
     var token_inst = in.point;
     if (in.op == .call and in.callee_inst != none) token_inst = in.callee_inst;
@@ -2314,6 +2392,9 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             return;
         }
     }
+    for (f.atoms.items[w..][0..wn]) |a| if (f.isSlotAtom(a)) {
+        d.record = true;
+    };
     // The permission (kernel §5, test 1): a cell outside the frame, a
     // capture and the answer of a function parameter are never `own`.
     for (0..wn) |i| {
@@ -2538,6 +2619,8 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
         },
         .pat_record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| {
             const name = m.bir.locals[f.d.locals_start + local].name;
+            // A field is read out of its record's slot where the pattern matches (kernel §11).
+            if (name != .none) try f.readSlots(v, &.{@intCast(m.fieldRank(name))}, pat);
             const part = if (name == .none) try f.unknownOf(try m.placeOfLocal(f.d, local), &.{v}) else try f.project(v, .{ .kind = .field, .payload = @intCast(m.fieldRank(name)) });
             f.bindLocal(local, part);
         },
@@ -2598,20 +2681,23 @@ fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     const v = try f.evalInner(inst, mode);
     if (mode == .value) try f.mention(v, inst);
     if (tail) {
+        const before = f.uses.items.len;
         try f.readAll(v, inst);
+        if (f.uses.items.len != before) f.uses.items[before].tail = true;
         if (!try f.makesObject(inst)) f.tail_old = true;
     }
     return v;
 }
 
 /// Whether `inst` makes the object that is its value: a record, a tuple or
-/// a list literal, a record update (a copy), or a call of a declaration
-/// whose each answer is one of these. A constructor application is not one:
+/// a list literal, or a call of a declaration whose each answer is one of
+/// these. A record update is not one: it answers its base's object, written
+/// in place (kernel §11). A constructor application is not one:
 /// a type of one constructor with one field is its field in a release build.
 fn makesObject(f: *Frame, inst: u32) Error!bool {
     const m = f.m;
     switch (m.tags[inst]) {
-        .record, .tuple, .list, .record_update => return true,
+        .record, .tuple, .list => return true,
         .call => {
             const callee = m.datas[inst].lhs;
             if (m.tags[callee] != .top and m.tags[callee] != .ext_value) return false;
@@ -2734,7 +2820,10 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .field_access => {
             const base = try f.eval(data.lhs, .callee, false);
             if (base == v_none) return v_none;
-            return f.project(base, .{ .kind = .field, .payload = @intCast(m.fieldRank(@fromBackingInt(data.rhs))) });
+            const rank: u32 = @intCast(m.fieldRank(@fromBackingInt(data.rhs)));
+            // A field is read out of its record's slot, at this time (kernel §11).
+            try f.readSlots(base, &.{rank}, inst);
+            return f.project(base, .{ .kind = .field, .payload = @intCast(rank) });
         },
         .tuple_index => {
             const base = try f.eval(data.lhs, .callee, false);
@@ -2799,7 +2888,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                 const s: Step = .{ .kind = .field, .payload = @intCast(m.fieldRank(fd.name)) };
                 try tmp.append(f.gpa, .{ .step = s.word(), .val = try f.ev(fd.value.int()) });
             }
-            return f.built(place, tmp.items);
+            return f.recordOf(place, tmp.items, inst, v_none);
         },
         .record_update => return f.recordUpdate(inst),
         .list => {
@@ -3315,6 +3404,35 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
     return f.rootVal(root);
 }
 
+/// A call of `Record.copy` (`Contract.record_copy`, kernel §11): it reads
+/// every slot of the record `v` and answers a new object, a record this
+/// frame makes, whose fields hold `v`'s values.
+fn recordCopy(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!Val {
+    const m = f.m;
+    try f.readSlots(v, &.{}, inst);
+    if (v == v_none) return f.recordOf(place, &.{}, inst, v_none);
+    const vplace = f.placeOfVal(v) orelse place;
+    const st = m.places.steps(vplace);
+    // Each part copied is a step of the budget (kernel §8).
+    _ = f.charge(st.steps.len);
+    var kids: std.ArrayList(Kid) = .empty;
+    defer kids.deinit(f.gpa);
+    for (st.steps) |s| {
+        if (s.kind == .level) continue;
+        const part = try f.project(v, s);
+        if (part == v_none) continue;
+        try kids.append(f.gpa, .{ .step = s.word(), .val = part });
+    }
+    return f.recordOf(place, kids.items, inst, v_none);
+}
+
+/// `{ r | f₁ = v₁, … }` (kernel §11): a write of `r`'s object, at the slots
+/// of the fields it names, after every value is evaluated. Its answer is the
+/// same object: each slot of it is `r`'s under a new name (`version`), each
+/// field it does not name holds `r`'s part there, and each field it names
+/// holds the new value. The values are the operation's other operands: a
+/// value that reaches a written slot (a record that holds `r` itself) would
+/// see the store.
 fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     const m = f.m;
     const data = m.datas[inst];
@@ -3323,31 +3441,30 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     const place = try m.placeOfInst(inst);
     var tmp: std.ArrayList(Kid) = .empty;
     defer tmp.deinit(f.gpa);
-    for (fields) |fd| {
-        const s: Step = .{ .kind = .field, .payload = @intCast(m.fieldRank(fd.name)) };
+    const ranks = try f.gpa.alloc(u32, fields.len);
+    defer f.gpa.free(ranks);
+    for (fields, ranks) |fd, *rank| {
+        rank.* = @intCast(m.fieldRank(fd.name));
+        const s: Step = .{ .kind = .field, .payload = @intCast(rank.*) };
         try tmp.append(f.gpa, .{ .step = s.word(), .val = try f.ev(fd.value.int()) });
     }
-    if (base == v_none) return f.built(place, tmp.items);
+    if (base == v_none) return f.recordOf(place, tmp.items, inst, v_none);
+    // The write: the slots of the fields named, with every value as an operand.
+    const w: u32 = @intCast(f.atoms.items.len);
+    try f.slotAtoms(base, ranks, &f.atoms);
+    const os = try f.gpa.alloc(Other, tmp.items.len);
+    for (os, tmp.items) |*o, k| o.* = .{ .v = k.val };
+    try f.demand(w, .{ .point = inst, .op = .update, .kind = .update, .base_inst = data.lhs, .others = os });
+    // The base whole is read here: a copy reads each field of it, and a
+    // name of the record older than a write of it reads a slot that changed
+    // (the sanitiser's copy traps there).
+    try f.readSlots(base, &.{}, inst);
     // The update copies the record: each other field is the base's.
     const bplace = f.placeOfVal(base) orelse place;
     const st = m.places.steps(bplace);
     const updated = tmp.items.len;
     // Each part copied is a step of the budget (kernel §8).
     _ = f.charge(st.steps.len);
-    const bn = f.nodes.items[base];
-    if (bn.tag == .built) {
-        // A construction's parts are its kids: each that is not updated is
-        // the part `project` would find, read once, not searched for.
-        for (f.kids.items[bn.a..][0..bn.b]) |k| {
-            if (k.val == v_none) continue;
-            var is_updated = false;
-            for (tmp.items[0..updated]) |u| if (u.step == k.step) {
-                is_updated = true;
-            };
-            if (!is_updated) try tmp.append(f.gpa, k);
-        }
-        return f.built(place, tmp.items);
-    }
     for (st.steps) |s| {
         if (s.kind == .level) continue;
         var is_updated = false;
@@ -3359,7 +3476,131 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
         if (part == v_none) continue;
         try tmp.append(f.gpa, .{ .step = s.word(), .val = part });
     }
-    return f.built(place, tmp.items);
+    return f.recordOf(place, tmp.items, inst, base);
+}
+
+/// Whether location `loc` is a field slot of the record at the root of its layout (`Loc.addSlots`).
+fn isOwnSlot(f: *const Frame, loc: u32) bool {
+    const t = &f.m.loc;
+    if (loc == 0 or t.loc_parent.items[loc] != 0) return false;
+    const l: Loc.Label = @bitCast(t.loc_label.items[loc]);
+    return l.kind == .fslot and !l.cyc;
+}
+
+/// The entry of `place`'s layout that is the slot of field `rank` of the record at `place`, or `none`.
+fn slotEntry(f: *Frame, place: PlaceId, rank: u32) Error!u32 {
+    const loc = f.m.loc.find(0, Loc.slotLabel(rank, false).word()) orelse return none;
+    return f.m.loc.indexOf(try f.m.loc.layoutOf(place), loc);
+}
+
+/// The entries of `place`'s layout that are the slots of the fields `ranks`
+/// of the record at `place`, or each of its slots when `ranks` is empty.
+/// False when one of `ranks` has no slot: the record's type does not name it.
+fn slotEntries(f: *Frame, place: PlaceId, ranks: []const u32, out: *std.ArrayList(u32)) Error!bool {
+    if (ranks.len == 0) {
+        const es = f.m.loc.layoutEntries(try f.m.loc.layoutOf(place));
+        // The scan of the layout is work (kernel §8).
+        _ = f.charge(Loc.scanUnits(es.len));
+        for (es, 0..) |e, k| if (f.isOwnSlot(e.loc)) try out.append(f.gpa, @intCast(k));
+        return true;
+    }
+    _ = f.charge(ranks.len * Loc.lookup_units);
+    for (ranks) |rank| {
+        const e = try f.slotEntry(place, rank);
+        if (e == none) return false;
+        try out.append(f.gpa, e);
+    }
+    return true;
+}
+
+/// The atoms of the slots `ranks` of the record `v`, appended to `out`. A
+/// value the walk cannot follow, or a slot its type does not name, is all of it.
+fn slotAtoms(f: *Frame, v: Val, ranks: []const u32, out: *std.ArrayList(Atom)) Error!void {
+    const place = f.placeOfVal(v) orelse {
+        if (v == v_outside) try out.append(f.gpa, outside_atom);
+        return;
+    };
+    if (whole(f.nodes.items[v].tag)) {
+        _ = try f.leaves(v, 0, out);
+        return;
+    }
+    var es: std.ArrayList(u32) = .empty;
+    defer es.deinit(f.gpa);
+    if (!try f.slotEntries(place, ranks, &es)) {
+        _ = try f.allLeaves(v, out);
+        return;
+    }
+    for (es.items) |e| _ = try f.leaves(v, e, out);
+}
+
+/// The slots `ranks` of the record `v` (each of them, when empty) are read
+/// at `point` (kernel §11): a field access, a record pattern, an update's
+/// copy. A value the walk cannot follow, or a slot its type does not name,
+/// is read whole.
+fn readSlots(f: *Frame, v: Val, ranks: []const u32, point: u32) Error!void {
+    if (v == v_none or v == v_outside) return;
+    const place = f.placeOfVal(v) orelse return;
+    if (whole(f.nodes.items[v].tag)) return f.readAll(v, point);
+    const start: u32 = @intCast(f.lists.items.len);
+    var es: std.ArrayList(u32) = .empty;
+    defer es.deinit(f.gpa);
+    if (!try f.slotEntries(place, ranks, &es)) return f.readAll(v, point);
+    try f.lists.appendSlice(f.gpa, es.items);
+    const nmask: u32 = @intCast(f.lists.items.len - start);
+    if (nmask == 0) return;
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+}
+
+/// The step word of a record construction's kid that holds its field slots
+/// (`recordOf`). No step of the place graph has it: it is never read as a step.
+const slot_kid: u32 = std.math.maxInt(u32);
+
+/// A record this frame makes (kernel §11): a construction of the field
+/// values `kids`, and one more kid, the object: a root whose field slots are
+/// the frame's own cells (`own`), or, for an update, the slots of `base`
+/// under a new name (`version`), since the object is the base's, written.
+/// The construction keeps each field value as it is (a `join` keeps its
+/// arms), so a record holds what a construction held before it had slots.
+fn recordOf(f: *Frame, place: PlaceId, kids: []const Kid, inst: u32, base: Val) Error!Val {
+    const m = f.m;
+    // Past the budget (kernel §8) the walk builds nothing more: the
+    // declaration gave up.
+    if (m.steps_over) {
+        f.failed = true;
+        var made: std.ArrayList(Val) = .empty;
+        defer made.deinit(f.gpa);
+        for (kids) |k| try made.append(f.gpa, k.val);
+        if (base != v_none) try made.append(f.gpa, base);
+        return f.unknownOf(place, made.items);
+    }
+    if (try f.layoutLen(place) == 0) return v_none;
+    const root = try f.newRoot(.local, place, inst);
+    const r = f.roots.items[root];
+    const es = m.loc.layoutEntries(r.layout);
+    _ = f.charge(Loc.scanUnits(es.len));
+    var any_slot = false;
+    for (0..es.len) |e| {
+        if (!f.isOwnSlot(es[e].loc)) {
+            // Not the object's: the construction's kids hold it.
+            f.rents.items[r.ent + e] = .{ .kind = .alias };
+            continue;
+        }
+        any_slot = true;
+        // The object: the frame's own cell, or the base's under a new name.
+        if (base == v_none) continue;
+        const start: u32 = @intCast(f.atoms.items.len);
+        const dup = try f.leavesAs(base, place, @intCast(e), &f.atoms);
+        for (f.atoms.items[start..]) |*a| a.dead = f.timeOf(inst);
+        try f.uniqueTail(&f.atoms, start);
+        f.rents.items[r.ent + e] = .{ .kind = .version, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
+    }
+    try f.deriveLinear(root, null, &.{});
+    if (!any_slot) return f.built(place, kids);
+    var all: std.ArrayList(Kid) = .empty;
+    defer all.deinit(f.gpa);
+    try all.appendSlice(f.gpa, kids);
+    try all.append(f.gpa, .{ .step = slot_kid, .val = try f.rootVal(root) });
+    return f.built(place, all.items);
 }
 
 fn binding(f: *Frame, b: u32) Error!void {
@@ -3385,7 +3626,7 @@ fn binding(f: *Frame, b: u32) Error!void {
         },
         .let_pattern => {
             const v = try f.ev(data.rhs);
-            if (f.readsList(data.lhs)) try f.readAll(v, b);
+            if (f.readsList(data.lhs)) try f.readNoSlots(v, b);
             try f.bindPattern(data.lhs, v);
         },
         .let_stmt => _ = try f.ev(data.rhs),
@@ -3643,7 +3884,7 @@ fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     const branches = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index);
     // A list pattern reads the list, before any branch runs.
     for (branches) |br| if (f.readsList(m.datas[br.int()].lhs)) {
-        try f.readAll(scrut, data.lhs);
+        try f.readNoSlots(scrut, data.lhs);
         break;
     };
     var outs: std.ArrayList(Val) = .empty;
@@ -3842,7 +4083,10 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         } else for (0..u.nmask) |i| {
             _ = try f.leaves(u.val, f.lists.items[u.mask + i], &tmp);
         }
-        for (tmp.items) |a| try f.markAtom(a, flag_r);
+        for (tmp.items) |a| {
+            if (u.tail and f.isSlotAtom(a)) continue;
+            try f.markAtom(a, flag_r);
+        }
     }
     const arity: u32 = @intCast(f.params.items.len);
     const layouts = try m.arena.alloc(u32, arity + 1);
@@ -3897,7 +4141,9 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         for (mine) |a| try f.atomSrcsIn(a, &srcs);
         if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
-        for (res[e]) |s| if (s.kind == .param) {
+        // An answered location is read, except a record's field slot: the
+        // caller holds the answer and reads the slot where it reads it (kernel §11).
+        for (res[e]) |s| if (s.kind == .param and m.loc.layoutEntries(layouts[s.a])[s.e].kind != .field) {
             flags[off[s.a] + s.e] |= flag_r;
         };
     }
@@ -4468,6 +4714,8 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         try f.readBy(args[0], inst, c.layouts[0], c.flags);
         return args[0];
     }
+    // `Record.copy` (kernel §11): a new object whose fields hold the argument's values.
+    if (c.record_copy and args.len == 1) return f.recordCopy(args[0], inst, place);
     // The flags of the contract are scanned three times below, for what it
     // lets escape, writes and reads (kernel §8).
     _ = f.charge(3 * Loc.scanUnits(c.flags.len / 4));
@@ -4509,6 +4757,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
                 .arg = j,
                 .se = @intCast(se),
                 .dup = dup and !m.loc.layoutEntries(sig)[se].single,
+                .list_only = m.loc.layoutEntries(sig)[se].kind == .list,
                 .kind = if (code.decl[0] != none and m.isWorded(code.decl)) .writer else .callsite,
             });
         };
@@ -6156,6 +6405,29 @@ fn supplyLost(f: *Frame, di: u32, slot: u32, point: u32, use: *const Use) Error!
     f.atoms.shrinkRetainingCapacity(w);
 }
 
+/// A message's entries split by its own type (kernel §11): its field slots
+/// (`slots`) and every other entry (`lists`), at `place`, when the send's
+/// parameter at entry `e` of `pplace` is one type variable. Null where the
+/// message has no slot or cannot be split: the send asks for all of it.
+const SendSplit = struct { place: PlaceId, lists: []const u32, slots: []const u32 };
+
+fn sendSlots(f: *Frame, v: Val, pplace: PlaceId, e: u32) Error!?SendSplit {
+    const m = f.m;
+    if (e != 0 or try f.layoutLen(pplace) != 1) return null;
+    const place = f.placeOfVal(v) orelse return null;
+    const es = m.loc.layoutEntries(try m.loc.layoutOf(place));
+    // The scan of the layout is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(es.len));
+    var lists: std.ArrayList(u32) = .empty;
+    var slots: std.ArrayList(u32) = .empty;
+    for (es, 0..) |x, k| try (if (x.kind == .field) &slots else &lists).append(m.arena, @intCast(k));
+    if (slots.items.len == 0) return null;
+    // A value the walk cannot follow cannot be split: it is handed on whole
+    // only when its type holds nothing but slots.
+    if (whole(f.nodes.items[v].tag) and lists.items.len != 0) return null;
+    return .{ .place = place, .lists = lists.items, .slots = slots.items };
+}
+
 /// A call of the frame's own function parameter at root `root`.
 fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, arg_insts: []const Inst.Index) Error!Val {
     const m = f.m;
@@ -6172,6 +6444,8 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
     const r0 = f.roots.items[root];
     const sender = r0.index < f.param_ty.items.len and m.isSender(f.param_ty.items[r0.index]);
     const before_demands = f.demands.items.len;
+    // The demands of slots handed on: a message that only they are in is a send of no cell asked for.
+    var slot_demands: usize = 0;
     for (vals, 0..) |v, k| {
         const layout = f.drafts.items[di].layouts[k];
         const n = m.loc.layouts.items[layout].len;
@@ -6184,16 +6458,37 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
         };
         for (0..n) |e| {
             const slot = f.drafts.items[di].off[k] + @as(u32, @intCast(e));
-            const w: u32 = @intCast(f.atoms.items.len);
-            const dup = try f.leavesAs(v, f.drafts.items[di].places[k], @intCast(e), &f.atoms);
             // A send asks for the cells that a write can edit: a list, or what a type variable stands for.
             const ek = m.loc.layoutEntries(layout)[e].kind;
             const asks = sender and (ek == .list or ek == .@"var");
-            try f.supplyAtomsSend(di, slot, w, inst, rest, std.math.maxInt(usize), none, dup and !m.loc.layoutEntries(layout)[e].single, if (asks) callee else none, if (asks and k < arg_insts.len) arg_insts[k].int() else none);
+            const base_inst = if (asks and k < arg_insts.len) arg_insts[k].int() else none;
+            // A record's field slots in a message are handed on, not asked
+            // for (kernel §11): `update` never writes a message, and a write
+            // of them after the send is a write of what the runtime holds
+            // (`Fn.rewrites`). The message's own type says which cells are
+            // slots.
+            if (asks and ek == .@"var") if (try f.sendSlots(v, f.drafts.items[di].places[k], @intCast(e))) |split| {
+                const w: u32 = @intCast(f.atoms.items.len);
+                if (split.lists.len != 0) {
+                    const dup = try f.leavesSet(v, split.place, split.lists, &f.atoms);
+                    try f.supplyAtomsSend(di, slot, w, inst, rest, std.math.maxInt(usize), none, dup, callee, base_inst);
+                }
+                const d0 = f.demands.items.len;
+                const w2: u32 = @intCast(f.atoms.items.len);
+                const dup2 = try f.leavesSet(v, split.place, split.slots, &f.atoms);
+                try f.supplyAtomsSend(di, slot, w2, inst, rest, std.math.maxInt(usize), none, dup2 and !m.loc.layoutEntries(layout)[e].single, none, none);
+                slot_demands += f.demands.items.len - d0;
+                continue;
+            };
+            const w: u32 = @intCast(f.atoms.items.len);
+            const dup = try f.leavesAs(v, f.drafts.items[di].places[k], @intCast(e), &f.atoms);
+            const d1 = f.demands.items.len;
+            try f.supplyAtomsSend(di, slot, w, inst, rest, std.math.maxInt(usize), none, dup and !m.loc.layoutEntries(layout)[e].single, if (asks) callee else none, base_inst);
+            if (ek == .field) slot_demands += f.demands.items.len - d1;
         }
     }
-    // A message of no cell is a send too: its line says so.
-    if (sender and f.demands.items.len == before_demands) {
+    // A message of no cell asked for is a send too: its line says so.
+    if (sender and f.demands.items.len - slot_demands == before_demands) {
         try f.demand(@intCast(f.atoms.items.len), .{ .point = inst, .op = .supply, .kind = .send, .callee_inst = callee, .base_inst = if (arg_insts.len != 0) arg_insts[0].int() else none, .send = true });
     }
     // The function reads what it is handed, and its own cells can be in its answer.
@@ -6646,6 +6941,12 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 answered[c.off[s.a] + s.e] = true;
             };
             for (0..c0.own_params) |pj| {
+                // The runtime hands the model at the model parameter only (the
+                // entry's declared type, `Mod.entryShape`): any other parameter of
+                // a consumer is a value the runtime made (a `Url`, an event), which
+                // holds no cell of the model. Its locations name another type, and
+                // the call map cannot compare them with the model's (kernel §11).
+                if (pj != fd.shape.model_param) continue;
                 const pes = m.loc.layoutEntries(c.layouts[pj]);
                 for (0..pes.len) |e| {
                     var kept = c.flags[c.off[pj] + e] & (flag_w | flag_e) != 0;

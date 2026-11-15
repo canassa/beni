@@ -17,8 +17,8 @@ section numbers here are referenced from the code (`kernel §N`): never renumber
 ## 0. Scope
 
 A beni `List` is a plain array. The checker accepts an in-place write only when no later read can observe
-the old value. It judges lists only; records, cells and fibers are later stages of the same rules (report
-116 §5.4). It runs behind `--ownership=v3`. v1 (`src/own/`) is the production checker and is not touched.
+the old value. It judges lists and, since 2026-11-15, records (§11); cells and fibers are later stages of the same
+rules (report 116 §5.4). It runs behind `--ownership=v3`. v1 (`src/own/`) is the production checker and is not touched.
 
 ## 1. The principle
 
@@ -1023,3 +1023,65 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 Report 117 §4 lists each real write the kernel refuses that the previous code accepted, with the fact that
 would win it back. The owner's standing rule is that a safe real program is never refused, so each is a
 finding, not a result.
+
+## 11. Records written in place
+
+*Added 2026-11-15 (research report 142). The owner, the same day: a record update that the checker
+accepts writes its base's own object, as JavaScript does; a write it cannot show safe is a compile
+error with a copy fix (`Record.copy`), as a list's is (`backend.md` §4). No copy is a fallback.*
+
+A record is judged by the principle of §1 and the write rule of §5, unchanged: its object is a set of
+cells, and an update is a write of some of them.
+
+1. **A record's field slots are cells** (`Loc.addSlots`, `Loc.Kind.field`). A record type has one
+   location for each field it names, the slot that holds that field's value: `.f=` at the record's
+   location, beside the locations of the field's value (`.f`, `.f[*]`, …). A slot is single unless it
+   is below an element step or in the deep level of a cycle, where the slots of one field of every
+   record of the cycle are one summary location (two cells under one name, the pessimistic side). A
+   field that a row holds is the row's: the row's location, a type variable, names every object below
+   it, slots included (`Loc.within`, `Loc.cover`). A slot is no step of the place graph; a layout's path
+   to it ends in the field's step with `Loc.slot_bit` set (`abstractPath`).
+2. **A record literal makes its slots** (`Frame.recordOf`): a construction of its field values, as a
+   tuple's is, and one more part, the object, a root the frame made whose slots are `own` (§4.3). The
+   construction keeps each value as it is, so a `join` keeps its arms (§6.7).
+3. **An update writes the slots of the fields it names** (`Frame.recordUpdate`). `{ r | f₁ = v₁, … }`
+   evaluates `r`, then each value, then writes: a demand (op `update`) of `r`'s atoms at the slots
+   `f₁ …`, with each value as another operand (a value that holds `r` would see the store). It reads
+   each slot of `r` at the same time (a copy reads every field, and a name older than an earlier write
+   of the object reads a slot that changed). Its answer is the same object: each slot is `r`'s under a
+   new name (`version`, §5.1), each field it does not name holds `r`'s part, each field it names the new
+   value. An update is not a new object (`makesObject`): a function that answers one answers an object
+   that was there before (`Contract.old_result`).
+4. **A field read is a read of its slot** (`readSlots`). `r.f`, and a record pattern's field, read the
+   slot `.f=` of `r` at their time: after an in-place write of `f` the slot holds the new value, so a
+   holder that reads `f` after the write is a later read (§5, test 4). A field the write did not name
+   reads another cell, and stands. A read of the record whole (a call that reads it, an answer, a
+   derived `==` or `compare`, `Js.same`) reads every slot.
+5. **A list write writes list cells** (`DemandIn.list_only`): where a callee writes a location of kind
+   `list`, a field slot among the atoms (an `unknown` value's, which can be any cell) is no cell of it.
+   A part of a root reaches only the slots below it (`rootReach`).
+6. **A message's slots are handed on, not asked for** (`callParam`, `sendSlots`). A send asks for the
+   cells a write in `update` could edit (§6.11); `update` never writes a message (§6.13). So the slots
+   of a message are supplied to `send` as to any function parameter: a write of them after the send is
+   refused there (`Fn.rewrites`).
+7. **`Record.copy`** has the words `borrowed { r | } → copyof { r | }` (`Contract.record_copy`). A
+   direct call reads every slot of its argument and answers a record the frame makes whose fields hold
+   the argument's values (`Frame.recordCopy`): new slots, the same values. Its contract says, for every
+   other use, that each location of the answer holds a new cell and each of the argument's. v2 reads the
+   declaration as the `foreign` with no word it was (`own2/Rows.fromWords`).
+8. **The entry** (§6.13): a slot of the model is a model location like any other. The runtime hands
+   the model only at the model parameter (`Mod.entryShape`): a consumer's other parameter (a `Url`, an
+   event) is a value the runtime made, and its locations are not compared with the model's.
+
+Every other rule applies to a slot as to a list's storage: a call's contract flags its slots (read,
+written, escaped), so a write in a helper of another module is a demand at its call (§6.2); a
+capture, an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
+is never written; a function that writes its parameter's slot is refused where the default holds it
+(§6.8: a callback of `List.map` that updates its element, `Ref.update`'s function); markup holds what
+its holes read until it is rendered (§6.12); suspension changes nothing, since a value is evaluated
+before any store and a slot is a cell like a list's.
+
+What the lowering does with an accepted update is `backend.md` §4's: `(r.f₁ = v₁, …, r)`, every
+value first. The oracle (research report 142) writes each update that v3 accepted in place under
+`--lists-in-place`, and under `--sanitize-lists` copies it and poisons, on every older name of the
+object, each field whose value an in-place store would change; `Js.same` traps two names of one object.

@@ -228,16 +228,18 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     }
     if (session.graph.modulePackage(m) != .app or !session.enforce_ownership) return;
     const dest = &d.per_module[mi_u];
-    for (lines) |l| {
+    for (lines, r.lines) |l, rl| {
         if (!l.refused) continue;
-        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. Change a copy (`List.copy`).", .{
+        // A write of a record's field slot is a record's refusal (kernel §11).
+        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. Change a copy (`{s}`).", .{
             l.op,
             l.base,
             Facts.causeText(l.cause),
             if (l.detail.len != 0) ": " else "",
             l.detail,
+            if (rl.record) "Record.copy" else "List.copy",
         });
-        try dest.append(gpa, .{ .ownership = true, .code = .list_still_used, .module = m, .region = @fromBackingInt(0), .token = l.token, .message = message });
+        try dest.append(gpa, .{ .ownership = true, .code = if (rl.record) .record_still_used else .list_still_used, .module = m, .region = @fromBackingInt(0), .token = l.token, .message = message });
     }
     for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .token = o.token orelse 0, .message = try gpa.dupe(u8, o.text) });
 }

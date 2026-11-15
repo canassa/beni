@@ -1,0 +1,4 @@
+# v3 refuses each update whose old value a later read sees: in place, the read would see the store.
+18:9 record_still_used update
+23:16 record_still_used update
+28:9 record_still_used call

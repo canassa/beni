@@ -136,6 +136,8 @@ pub const Line = struct {
     accepted: Facts.Verdict.Accepted = .fresh,
     cause: Facts.Cause = .unknown,
     detail: []const u8 = "",
+    /// The write is of a record's field slot (kernel §11).
+    record: bool = false,
 };
 
 /// A limit line (kernel §8) and the token it points at: the name of the
@@ -737,6 +739,11 @@ pub const Mod = struct {
     /// The location of a place's own cell.
     pub fn selfLoc(m: *Mod, place: PlaceId) Allocator.Error!u32 {
         return m.loc.selfLoc(place);
+    }
+
+    /// Whether `place` is a record's.
+    pub fn isRecordPlace(m: *const Mod, place: PlaceId) bool {
+        return m.places.kind(place) == .record;
     }
 
     /// The allocation site number of the site named `name` in a contract of
@@ -1377,7 +1384,20 @@ pub const Mod = struct {
             described = true;
             for (res, 0..) |*r, ri| try r.append(gpa, Src.fresh(@intCast(ri), false));
         }
-        if (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .prepended)) {
+        // `copyof` of a record (`Record.copy`, kernel §11): a new object
+        // whose fields hold parameter 0's values. The result's locations
+        // are one row here, which cannot say which of them are the new
+        // slots, so each holds a new cell and each of parameter 0's; a direct
+        // call is applied precisely (`Frame.recordCopy`).
+        if (has(rw, .copyof) and arity == 1 and m.isRecordPlace(sig.result)) {
+            described = true;
+            c.record_copy = true;
+            c.nonlinear = true;
+            for (res) |*r| {
+                try r.append(gpa, Src.fresh(0, false));
+                for (0..m.loc.layoutEntries(c.layouts[0]).len) |e| try r.append(gpa, .{ .kind = .param, .a = 0, .e = @intCast(e) });
+            }
+        } else if (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .prepended)) {
             described = true;
             for (res_es, 0..) |re, ri| if (re.loc == rself) try res[ri].append(gpa, Src.fresh(0, false));
             if (arity > 0 and !has(rw, .prepended)) try m.elemsToElems(res, sig, c, 0);
@@ -1902,6 +1922,7 @@ pub const Mod = struct {
                 .member => out.writer.print("⟨{s}⟩", .{m.names.type_name(m.names.ctx, l.head)}) catch return error.OutOfMemory,
                 .env => out.writer.writeAll("◇") catch return error.OutOfMemory,
                 .slot => out.writer.print("⟨{d}⟩", .{l.payload}) catch return error.OutOfMemory,
+                .fslot => out.writer.print(".{s}=", .{m.names.field(m.names.ctx, l.payload)}) catch return error.OutOfMemory,
             }
         }
         return out.written();
@@ -1916,6 +1937,7 @@ pub const Mod = struct {
         const op: []const u8 = switch (d.op) {
             .construction => "construction",
             .append => "++",
+            .update => "update",
             .call, .supply => if (d.kind == .send) "send" else if (d.kind == .callsite) try std.fmt.allocPrint(m.arena, "call {s}", .{try m.opName(f, d.callee_inst)}) else try m.opName(f, d.callee_inst),
         };
         const base = try std.fmt.allocPrint(m.arena, "{s}{s}", .{ try m.baseText(f, d.base_inst), try m.locText(d.loc) });
@@ -1930,6 +1952,7 @@ pub const Mod = struct {
             .accepted = ground,
             .cause = cause,
             .detail = if (d.detail.len != 0) d.detail else causeDetail(cause),
+            .record = d.record or d.kind == .update,
         });
     }
 

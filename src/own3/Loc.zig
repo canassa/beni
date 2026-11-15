@@ -54,7 +54,26 @@ pub fn hits(c: u32, se: u32) bool {
     return c == se or c == all;
 }
 
-pub const LabelKind = enum(u4) { field, index, ctor_arg, elem, contents, row, member, env, slot };
+pub const LabelKind = enum(u4) { field, index, ctor_arg, elem, contents, row, member, env, slot, fslot };
+
+/// A record's field slot (kernel §11): the location of the slot that holds
+/// field `rank` of the record at the parent location, the cell that a record
+/// update writes in place. It is no step of the place graph: in a layout's
+/// `reps` it is the last word, a field step with `slot_bit` in its payload.
+pub const slot_bit: u32 = 1 << 27;
+
+pub fn slotLabel(rank: u32, cyc: bool) Label {
+    return .{ .kind = .fslot, .payload = @intCast(rank & (slot_bit - 1)), .cyc = cyc, .head = 0 };
+}
+
+fn slotRepWord(rank: u32) u32 {
+    return (Step{ .kind = .field, .payload = @intCast((rank & (slot_bit - 1)) | slot_bit) }).word();
+}
+
+fn isSlotRep(w: u32) bool {
+    const s = Step.fromWord(w);
+    return s.kind == .field and s.payload & slot_bit != 0;
+}
 
 /// One label of a location. `head` is the head of the place the step leaves
 /// (a `TypeId`, a tuple's arity, 0 for a record); `cyc` says that the label is
@@ -82,9 +101,11 @@ pub const Kind = enum(u8) {
     @"opaque",
     /// A cell (`Ref`, `Deferred`): its contents are never `own`.
     cell,
+    /// A record's field slot (kernel §11): a record update writes it in place.
+    field,
 
     pub fn wide(k: Kind) bool {
-        return k != .list;
+        return k != .list and k != .field;
     }
 };
 
@@ -410,6 +431,25 @@ pub const Table = struct {
         try b.rep_steps.appendSlice(t.gpa, b.steps.items);
     }
 
+    /// The field slots of a record at `place`, at `loc` (kernel §11): one
+    /// location for each field the place names, the cell that an update of
+    /// that field writes. A field its row holds is the row's: the row's
+    /// location, a type variable, names every object below it. In the deep
+    /// level of a cycle (`cyc`) the slots of every record of the cycle that
+    /// name one field are one summary location, which is the pessimistic
+    /// side: two cells under one name.
+    fn addSlots(t: *Table, b: *Building, place: PlaceId, loc: u32, cyc: bool) Allocator.Error!void {
+        if (b.over or t.places.kind(place) != .record) return;
+        const st = t.places.steps(place);
+        t.units +|= st.steps.len * lookup_units;
+        for (st.steps) |s| {
+            if (s.kind != .field) continue;
+            try b.steps.append(t.gpa, slotRepWord(s.payload));
+            try t.addEntry(b, try t.extend(loc, slotLabel(s.payload, cyc)), .field);
+            _ = b.steps.pop();
+        }
+    }
+
     /// A place reached by a step that does not stay in a cycle: `loc` is its own location.
     fn visit(t: *Table, b: *Building, place: PlaceId, loc: u32) Allocator.Error!void {
         if (b.over or t.places.holds(place).isEmpty()) return;
@@ -426,6 +466,7 @@ pub const Table = struct {
             // variable, a function or a foreign value.
             if (k != .list) return;
         }
+        try t.addSlots(b, place, loc, false);
         const st = t.places.steps(place);
         // Each step extends a location: a lookup.
         t.units +|= st.steps.len * lookup_units;
@@ -444,6 +485,7 @@ pub const Table = struct {
             try t.addEntry(b, loc, k);
             if (k != .list) return;
         }
+        try t.addSlots(b, place, loc, false);
         const st = t.places.steps(place);
         t.units +|= st.steps.len * (lookup_units + scanUnits(b.on_path.items.len - base));
         for (st.steps, st.children) |s, c| {
@@ -483,6 +525,7 @@ pub const Table = struct {
             try t.addEntry(b, try t.extend(entry, t.memberLabel(m, k)), k);
             if (k != .list) return;
         }
+        try t.addSlots(b, m, entry, true);
         const st = t.places.steps(m);
         t.units +|= st.steps.len * lookup_units;
         for (st.steps, st.children) |s, c| {
@@ -508,6 +551,12 @@ pub const Table = struct {
         for (steps) |w| {
             // A step: a child in the place graph, a location extended, a scan of the path.
             t.units +|= lookup_units + scanUnits(on_path.items.len);
+            // A field slot ends a path (`addSlots`): the slot of the record at `cur`.
+            if (isSlotRep(w)) {
+                if (t.places.kind(cur) != .record) return null;
+                const rank = Step.fromWord(w).payload & (slot_bit - 1);
+                return try t.extend(if (deep) entry else loc, slotLabel(rank, deep));
+            }
             const s = Step.fromWord(w);
             const next = t.places.child(cur, s) orelse return null;
             if (in_cycle and t.places.sameComponent(cur, next)) {
@@ -675,7 +724,7 @@ pub const Table = struct {
         while (x != y) {
             const lx: Label = @bitCast(t.loc_label.items[x]);
             const ly: Label = @bitCast(t.loc_label.items[y]);
-            if (lx.word() != ly.word() and !(lx.kind == .row and (ly.kind == .field or ly.kind == .row))) return false;
+            if (lx.word() != ly.word() and !(lx.kind == .row and (ly.kind == .field or ly.kind == .row or ly.kind == .fslot))) return false;
             x = t.loc_parent.items[x];
             y = t.loc_parent.items[y];
         }
