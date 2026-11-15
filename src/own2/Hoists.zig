@@ -100,7 +100,9 @@ pub const Builder = struct {
             b.refused = true;
             return;
         }
-        if (isListWrite(kind)) try b.writes.append(scratch, .{ .inst = inst, .kind = kind, .callers = callers });
+        // A record update is the v3 oracle's (`Lower.Input.records_v3`): the
+        // lowering reads it only there.
+        if (isListWrite(kind) or kind == .update) try b.writes.append(scratch, .{ .inst = inst, .kind = kind, .callers = callers });
     }
 
     /// The table, in `gpa` (the rows were in `scratch`); `limited` when the

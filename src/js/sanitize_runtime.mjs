@@ -153,12 +153,48 @@ export const len = (xs) => {
   return xs.length;
 };
 
+// Records (research report 142). In place, an update writes its base's own
+// object: every name the program kept of it is one object. Here an update
+// makes a copy, so the objects of one in-place identity are one group, the
+// newest last. A name older than the newest reads the newest's fields in
+// place: each field whose value differs from the newest's is poisoned on it,
+// so a read of it traps where an in-place run would read another value.
+// `same` traps an identity compare of two members of one group.
+const groups = new WeakMap();
+
+export const record = (base, copy, site) => {
+  let group = groups.get(base);
+  if (group === undefined) {
+    group = [base];
+    groups.set(base, group);
+  }
+  for (const old of group) {
+    for (const key of Reflect.ownKeys(copy)) {
+      const d = Object.getOwnPropertyDescriptor(old, key);
+      if (d === undefined || d.get !== undefined) continue;
+      if (d.value === copy[key]) continue;
+      Object.defineProperty(old, key, {
+        get: () => {
+          throw new Error(`beni: a stale read of a record (read ${String(key)}), which ${site} changed in place`);
+        },
+        configurable: false,
+      });
+    }
+  }
+  group.push(copy);
+  groups.set(copy, group);
+  return copy;
+};
+
 // `Js.same a b` outside core under the sanitiser: `a === b`, or a trap when
 // an in-place run would answer otherwise, which is when the two are
 // distinct here and one list in place: one was kept before a write that
 // answered the other, or both were. A compare whose answer an in-place
 // write cannot change answers as `===` does.
 export const same = (a, b) => {
+  if (a !== b && typeof a === "object" && a !== null && groups.has(a) && groups.get(a) === groups.get(b)) {
+    throw new Error(`beni: an identity compare of a record that an update changed in place since it was kept`);
+  }
   if (a !== b && typeof a === "object" && a !== null && latest(a) === latest(b)) {
     const kept = successors.has(a) ? a : b;
     throw new Error(`beni: an identity compare of a list that ${successors.get(kept).site} changed in place since it was kept`);

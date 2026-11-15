@@ -392,6 +392,11 @@ pub const Input = struct {
     /// call of the runtime's `same`, the identity trap (research report
     /// 140). Core's identity compares are judged by hand there.
     identity_trap: bool = false,
+    /// Under `--ownership=v3` with either oracle (research report 142): each
+    /// record update the v3 channel (`list_writes`) accepted is written in
+    /// place (`--lists-in-place`), or copied with its old object poisoned
+    /// (`--sanitize-lists`, `recordUpdateSanitized`).
+    records_v3: bool = false,
     /// The specifier of `_core/_sanitize.mjs`, relative to this module's
     /// output file: what `sanitize_lists` imports.
     sanitize_runtime: []const u8 = "./_core/_sanitize.mjs",
@@ -3989,6 +3994,10 @@ pub const Lowerer = struct {
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "front"), .tag = JsIr.Name.no_tag }),
                 .local = try l.sanitizerLocal("front"),
             },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "record"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("record"),
+            },
         }));
         // The markup runtime: the lowering's exports and the markup
         // primitives this module uses, one binding each (`backend.md` §15.1).
@@ -6960,6 +6969,45 @@ pub const Lowerer = struct {
         return null;
     }
 
+    /// Whether the record update `inst` is one the v3 oracle writes
+    /// (`Input.records_v3`): a module whose list writes go through either
+    /// oracle, and an update its channel lists as accepted.
+    fn recordWrittenV3(l: *const Lowerer, inst: Inst.Index) bool {
+        if (!l.in.records_v3 or !l.sanitizesLists()) return false;
+        const channel = l.in.list_writes orelse return false;
+        const w = channel.find(inst.int()) orelse return false;
+        return w.kind == .update;
+    }
+
+    /// `{ r | f₁ = v₁, … }` under the sanitiser of the v3 oracle (research
+    /// report 142): the spread the plain build writes, its base bound to a
+    /// name, and the runtime's `record(base, copy, site)`, which poisons each
+    /// field of every older name of the object whose value an in-place store
+    /// would change, and links the base to the copy for the identity trap.
+    fn recordUpdateSanitized(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) Allocator.Error!Node.Index {
+        const d = l.bir.instData(inst);
+        const fields = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field);
+        const insts = try l.scratch.alloc(Inst.Index, fields.len + 1);
+        insts[0] = @fromBackingInt(@intCast(d.lhs));
+        for (fields, insts[1..]) |f, *slot| slot.* = f.value;
+        const values = try l.orderedExprs(out, insts, false);
+        var base = values[0];
+        if (l.b.tagOf(base) != .ident or l.isMutable(base)) {
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, base, p);
+            base = try l.ident(n, p);
+        }
+        var properties: std.ArrayList(Node.Index) = .empty;
+        try properties.append(l.scratch, try l.add(.spread_property, p, base.int(), Node.Data.unused));
+        for (fields, values[1..]) |f, value| {
+            try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(f.name), value, p));
+        }
+        const copy = try l.object(properties.items, p);
+        const site = try std.fmt.allocPrint(l.scratch, "an update in {s} (at byte {d})", .{ l.interner.slice(l.module_name), p });
+        l.needs.sanitize = true;
+        return l.call(try l.ident(try l.sanitizerLocal("record"), p), &.{ base, copy, try l.stringNode(site, p) }, p);
+    }
+
     /// `{ r | f₁ = v₁, … }` written in place (§31.10): the base, then each
     /// value in written order, every one evaluated before any store; then
     /// the reads hoisted after the operands; then the stores; the value is
@@ -7041,7 +7089,7 @@ pub const Lowerer = struct {
             // back changes nothing (§31.3, *Nested updates*). Not under the
             // sanitiser, whose inner update answers a new object. The inner
             // update's own stores are its value's, so they stay.
-            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
+            if (l.in.ownership.clean and l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
                 // A call that answers the field's object (`answersFieldObject`)
                 // still runs: its writes are the update. Bound to a temporary
                 // here, the binding becomes the call as a statement, since
@@ -7321,6 +7369,13 @@ pub const Lowerer = struct {
                 // without enforcement keep the spread until O4.
                 if (l.in.ownership.clean) {
                     l.in.ownership.assertAccepted(inst);
+                    return l.recordUpdateInPlace(out, inst, p);
+                }
+                // The v3 oracle (research report 142): an update v3 accepted is
+                // written in place under `--lists-in-place`, or copied and its
+                // old object poisoned under `--sanitize-lists`.
+                if (l.recordWrittenV3(inst)) {
+                    if (l.in.identity_trap) return l.recordUpdateSanitized(out, inst, p);
                     return l.recordUpdateInPlace(out, inst, p);
                 }
 

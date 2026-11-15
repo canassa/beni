@@ -122,3 +122,8 @@ export const writer = (site, f) => (base, ...rest) => list(site, f, base, ...res
 export const len = (xs) => xs.length;
 
 export const same = (a, b) => a === b;
+
+// A record update under the sanitiser (research report 142). In place the
+// lowering writes the stores itself and never calls this: it is here so that
+// the two runtimes have one set of exports.
+export const record = (base, copy) => copy;
