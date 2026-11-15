@@ -805,6 +805,11 @@ pub const Input = struct {
     scratch: Allocator,
     bir: *const Bir,
     decl_scheme: []const Var.Optional,
+    /// Per declaration, whether its body may make something
+    /// (`Module.makesNothing` answers no): a `pure` evaluation may still
+    /// make a cell, as `Js.ref` does, so its value's classes are fixed
+    /// (§14.3 rule 3, amended 2026-11-15).
+    expansive: []const bool,
     /// Per declaration, its binding group's root (`Groups.root`), so the
     /// members of one group, which share variables until it is generalised,
     /// are solved together.
@@ -838,8 +843,9 @@ pub fn run(e: *Effects, in: Input) Error!void {
 }
 
 /// The top-level values with no parameters whose evaluation class the last
-/// solve left above `pure` and whose scheme has a class, ascending, with
-/// every one of `was`.
+/// solve left above `pure`, or whose body may make something
+/// (`Input.expansive`: a `pure` call such as `Js.ref` may make a cell), and
+/// whose scheme has a class, ascending, with every one of `was`.
 fn fixedValues(e: *Effects, in: Input, was: []const u32) Error![]const u32 {
     var out: std.ArrayList(u32) = .empty;
     for (e.eval, 0..) |ev, d| {
@@ -847,7 +853,8 @@ fn fixedValues(e: *Effects, in: Input, was: []const u32) Error![]const u32 {
         const fixed_before = std.mem.indexOfScalar(u32, was, @intCast(d)) != null;
         if (!fixed_before) {
             const node = e.nodeOf(v) orelse continue;
-            if (e.solved.level.items[node] == .pure) continue;
+            const expansive = d < in.expansive.len and in.expansive[d];
+            if (!expansive and e.solved.level.items[node] == .pure) continue;
             if (e.solved.classesOf(@intCast(d)).len == 0) continue;
         }
         try out.append(in.scratch, @intCast(d));
