@@ -1,0 +1,5 @@
+element "root"
+click [data-role=bump]
+click [data-role=both]
+click [data-role=bump]
+click [data-role=both]

@@ -573,6 +573,28 @@ markup whose handler value is not one constructor that takes the payload or noth
 `PieceEventArgs/`, class 4), since a piece is lowered in its own module and hands the program site
 a constructor's fields (§8.4); and a handler written as a literal.
 
+**Records written in place: a hole refreshes because a field it reads was written.** *Added
+2026-11-15 (research report 142, the owner's decision of that day: a record update the checker
+accepts writes its base's own object, as JavaScript does).* After an update the model, every held
+slice and the update's answer are one object, so no reference can say what changed, and none is
+asked: a hole, a binding or a row refreshes because the key's write set names a field it reads
+(`Writes.conflicts`, the buckets of `keyBuckets`), never because a value is another object than the
+one it last saw. Field identity is no longer load-bearing. What the lowering and the runtime compare
+are scalars against what the DOM shows (`Inline.text`, `prop`, `writeProp`, an attribute guard),
+arm numbers and strings; `copyIn`'s `next === old` skips a copy that a route's function answered as
+the old object, which holds every field already, written in place or not; `Key.replaced` decides
+whether a held slice keeps its object (stores and cells), never whether anything refreshes.
+
+The write set follows a write wherever the program makes it: a helper of the module and of another
+module is summarised from its body and instantiated at the call (`Writes.applyClosure`, `direct`;
+`browser/inline/TickInPlace`, `browser/inline/HelperOtherModuleWrite`); a callback of `List.map`,
+`indexedMap`, `update` and the `Dict` rows writes `p[*].f` (`write-sets.md` §3.7); `Maybe.map` and
+`Result` are summarised from their bodies; a command's or task's message is a key like any other.
+Where the pass cannot follow a write — an unknown callee, a `foreign` with no body, the depth cap, a
+recursion cut, the work cap — the write is `Fresh` or `value ρ` at its path, and `conflicts` matches
+every read at or below it: every hole under that path refreshes (`Writes.freshCall`, `mkFresh`,
+`Emit.sparseConflicts`). A key the pass cut short is refused (§5). Nothing is skipped on a guess.
+
 ### 8.4 Pieces: another module's view and arms
 
 The program site (§7) is written in the module that calls the program's constructor; another

@@ -1,0 +1,53 @@
+-- Research report 142: records are written in place, so a hole refreshes
+-- because the write set names a field it reads, never because the model
+-- is another object. Each key writes a field of the model through a helper
+-- of another module, one of them inside a `Maybe.map` callback, and the
+-- holes of this module's `view` read those fields.
+import Browser
+import Html exposing (Html)
+import Shelf exposing (Item)
+import Tea
+
+
+type alias Model =
+    a : Item
+    b : Item
+    clicks : Int
+
+
+type Msg
+    = BumpA
+    | Both
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        BumpA →
+            { model | a = Shelf.bump model.a, clicks = model.clicks + 1 }
+
+        Both →
+            Shelf.both model
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <p data-role="a">{model.a.name} {model.a.n}</p>
+        <p data-role="b">{model.b.name} {model.b.n}</p>
+        <p data-role="clicks">{model.clicks}</p>
+        <button data-role="bump" onClick={BumpA}>bump</button>
+        <button data-role="both" onClick={Both}>both</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { a = { n = 0, name = "a" }, b = { n = 10, name = "b" }, clicks = 0 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
