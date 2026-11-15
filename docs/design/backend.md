@@ -8038,8 +8038,11 @@ an object or array of those â or a read through objects the program made th
 throw nothing, `Pts.safeChain`); an argument that may do something keeps the parameter, so no
 evaluation is lost or moved. A read that stands in the initialiser of a **dead binding** counts as no
 read (`deadReads`): a `const` or `let` that nothing reads or assigns, that lowering does not keep
-for an effect, and whose initialiser does nothing â `Opt` drops it whole â whose initialiser is then
-written `undefined`, so no read of the parameter is left. The pass takes this in every round, but
+for an effect, and whose initialiser does nothing â `Opt` drops it whole â is then written as the
+statement `undefined`, so no read of the parameter is left. *Amended 2026-11-15 (#2512):* the
+initialiser node itself is left as it was. Lowering shares a node among the reads of one value (a
+`case`'s subject is its tests' and an `as` binding's), so writing `undefined` over it wrote it over
+the live reads too (`run/ReleaseUnreadAsList`). The pass takes this in every round, but
 such a drop asks for no round of its own â what it exposes the next round finds, whichever asks â
 since the extra rounds it asked for cost a `--schema-library` release build a third more analyses.
 The model binding of `mount` (`let e = a.init`) is dead only once its self-assignment is gone and
