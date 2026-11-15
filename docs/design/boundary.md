@@ -2786,7 +2786,9 @@ byte is cached (§9.6).
 *Added 2026-11-13, the owner's decision.* **The checker counts a `view`'s markup as holding none of
 the lists in its holes once the runtime has it. In return, every platform's runtime reads a hole's
 value only while it renders the markup that holds it, and keeps no list from a hole to read after
-that render.** The compiler cannot see a runtime's code, so it trusts this rule. Every platform that
+that render.** *Amended 2026-11-15 (research report 142): records are written in place, so the rule
+holds of a record as of a list: a runtime keeps no record from a hole to read, or to compare by
+identity, after the render (§9.4.4, *Skip on a record's identity*).* The compiler cannot see a runtime's code, so it trusts this rule. Every platform that
 renders markup must keep it, and a test for each one shows that it does (below).
 
 **The render.** A runtime renders a markup value from the time it has the value (the answer of a

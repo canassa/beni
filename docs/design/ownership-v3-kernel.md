@@ -6,7 +6,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
 129); §8 revised 2026-11-14 (research report 130); §6.14 and §8 revised again the same day (research
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
-revised 2026-11-15 (research report 141). The owner
+revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1078,8 +1078,11 @@ written, escaped), so a write in a helper of another module is a demand at its c
 capture, an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
 is never written; a function that writes its parameter's slot is refused where the default holds it
 (§6.8: a callback of `List.map` that updates its element, `Ref.update`'s function); markup holds what
-its holes read until it is rendered (§6.12); suspension changes nothing, since a value is evaluated
-before any store and a slot is a cell like a list's.
+its holes read until it is rendered (§6.12), and the platform rule that §6.12 trusts holds of a record
+as of a list (`boundary.md` §9.4.8: a runtime keeps no record from a hole, to read or to compare by
+identity, after the render; the `dom` lowering's keyed `Show` and `For` break it, #2504);
+suspension changes nothing, since a value is evaluated before any store and a slot is a cell like a
+list's.
 
 What the lowering does with an accepted update is `backend.md` §4's: `(r.f₁ = v₁, …, r)`, every
 value first. The oracle (research report 142) writes each update that v3 accepted in place under
