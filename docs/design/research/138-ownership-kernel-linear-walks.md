@@ -198,7 +198,21 @@ updates over 2 040 fields spend it in the location table):
 
 ## 7. Gates
 
-(below)
+All on the self-hosted ReleaseSafe compiler of the last commit; the before is `a982e4641d` (report 135).
+
+- **The sweeps** (`run.mjs --checker=v3`, every generator and fault folder, 82 716 programs): 0 TRAP,
+  DIFF or CRASH, and no timeout. Every folder has the SAME and REFUSED counts of report 135's table, so
+  `blind8g-faults` is back to 4 SAME and 4 REFUSED (report 136 had refused `group-rounds-control.dead`).
+- **The sanitiser corpus**: 347 fixtures, 93 same, 254 refused, 0 traps, differences or crashes.
+- **Real writes** (`--checkers=v1,v3 --roots=real`): of 308 writes v1 judges, v3 accepts 287, refuses 20
+  and has no line for 1; the list of writes is the same line for line as the base's. None lost or won.
+- **Root dumps**, base against after: three differ. `TailModConsBranches` (its group settles),
+  `DeepWrittenPath` (it passed its module's budget at the base; accepted, as since report 136), and
+  `DeepPathThroughList` (refused at its module's budget before and after). Against report 136's commits:
+  the first and the last only.
+- **`zig build gates`**: green.
+- **Speed on v2's modules** (ReleaseFast LLVM, report 135's 632k lines/s): not measured; the coordinator
+  closed the work first. The two ReleaseFast compilers of §5 were built on one machine.
 
 ## 8. The review
 
@@ -233,6 +247,11 @@ One fresh reader had the code and the kernel, not this report.
   module's budget. It is counted.
 - **A literal list nested deep** builds layouts whose cost grows with the cube of the depth: 100 levels
   pass the module's budget. It is counted, and stops in 0.33 s at 400 levels on the gates' compiler.
+- **The speed on v2's modules was not measured** (§7). The new passes are one loop over each
+  declaration's instructions before the walks and the tables of the duplicate test, which runs only on
+  sets of more than 64 atoms.
+- **`DeepPathThroughList`** prints an accepted demand line beside its module's limit (as report 136's
+  commits did); the module judges no write, but the line is worth a look.
 - **Reading a large contract** costs about 270 units for each of its entries at each call. A program of
   many calls of a function over the largest layouts reaches the module's cap (§5).
 
