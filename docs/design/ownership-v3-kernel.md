@@ -1037,6 +1037,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | the `dom` root keeps a `let` from one render to the next exactly when its `keeps_let` says so | `platforms/browser/zig/dom.zig`, `hoistGroupedKind` | §6.14 |
 | the index of a pair's meets says what `locsMeet` says, for layouts of at most 64 entries | `Frame.meetsOf` | §4.1, §6.13 |
 | the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
+| the scan of an answer's map, the other map read once, says what `answersAt` says, for layouts of at most 64 entries | `Frame.AnswersAt.check` | §8 |
 | a run that a read skips as old holds only old names, for runs of at most 64 atoms | `Frame.runReaches` | §5.1, §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 
