@@ -72,6 +72,21 @@ pub const flag_e: u8 = 2;
 pub const flag_r: u8 = 4;
 /// The body hands the location to a function parameter that can write it.
 pub const flag_s: u8 = 8;
+/// The body answers the location: its cells are in the result. Another
+/// operand of a call that writes is every location the callee reads or
+/// answers (kernel §5, test 2): an answered cell that the callee writes
+/// through another parameter is the written cell under the answer's name.
+/// Alone it is no read at the call: the caller holds the answer and reads
+/// its cells where it reads them (`reads`). That holds of a record's field
+/// slot (kernel §11); every other location the body answers is read as well
+/// (`flag_r`), as v3 has judged lists from the start.
+pub const flag_a: u8 = 16;
+
+/// Whether the flags `x` of a location say the body reads it at the call:
+/// any flag but the answer's.
+pub fn reads(x: u8) bool {
+    return x & ~flag_a != 0;
+}
 
 /// What a body does with a function parameter: the use of that location
 /// (research report 112 §2.1).

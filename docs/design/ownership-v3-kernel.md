@@ -6,7 +6,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
 129); §8 revised 2026-11-14 (research report 130); §6.14 and §8 revised again the same day (research
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
-revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142). The owner
+revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and §11 revised again the same day (research report 144). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -203,7 +203,10 @@ A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
 
 1. **permission**: no atom of W has root `outside`, `capture` or `answer` (a function parameter's answer is
    never the frame's own), and W is not a `twice` summary location written by a callee;
-2. **no other operand**: no other operand that the operation reads reaches W (`otherReaches`). Another
+2. **no other operand**: no other operand that the operation reads or answers reaches W (`otherReaches`). A
+   callee that answers a parameter location holds its cells in the result: where it writes the same cell
+   through another parameter, the answer is the written cell, so the location is an operand of the call
+   whether the callee reads it or not (`Contract.flag_a`, §11). Another
    location of the written operand itself, when the operand is a part of one root N, is another place of N:
    its cells are apart from W when N holds each cell once — a parameter by the apart-arguments rule, a root
    the frame made by its own `linear`, never the answer of a function parameter;
@@ -270,7 +273,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 1. **Bind** (`binding`, `bindPattern`): a binding makes another holder of the same value and reads nothing.
    A list pattern reads its list (`readsList`); a pattern a row does not describe binds `unknown` over the
    scrutinee. *Invariant: the bound value's leaves are the scrutinee's part's leaves.*
-2. **Call** (`call`, `apply`): the callee's contract says, per parameter location, read, written, escaped,
+2. **Call** (`call`, `apply`): the callee's contract says, per parameter location, read, answered, written, escaped,
    handed to a function; each escaped location escapes and each function handed flows (`flow`, which can
    escape a function's answer) **before** each written location is a demand at the call with the other
    arguments as operands, so a write is judged against every escape of the call; the result's entries are the contract's sources expanded to
@@ -1055,7 +1058,7 @@ cells, and an update is a write of some of them.
 4. **A field read is a read of its slot** (`readSlots`). `r.f`, and a record pattern's field, read the
    slot `.f=` of `r` at their time: after an in-place write of `f` the slot holds the new value, so a
    holder that reads `f` after the write is a later read (§5, test 4). A field the write did not name
-   reads another cell, and stands. A read of the record whole (a call that reads it, an answer, a
+   reads another cell, and stands. A read of the record whole (a call that reads it, the frame's answer, a
    derived `==` or `compare`, `Js.same`) reads every slot.
 5. **A list write writes list cells** (`DemandIn.list_only`): where a callee writes a location of kind
    `list`, a field slot among the atoms (an `unknown` value's, which can be any cell) is no cell of it.
@@ -1072,6 +1075,20 @@ cells, and an update is a write of some of them.
 8. **The entry** (§6.13): a slot of the model is a model location like any other. The runtime hands
    the model only at the model parameter (`Mod.entryShape`): a consumer's other parameter (a `Url`, an
    event) is a value the runtime made, and its locations are not compared with the model's.
+9. **An answered slot is an operand, and no read at the call** (`Contract.flag_a`). Where a body
+   answers a parameter's slot (its frame's answer holds it, or a result location has it as a source),
+   the contract says that the slot is answered, not that it is read: the caller holds the answer and
+   reads the slot where it reads it, after the call (`readBy` reads no location that is only
+   answered). A call that writes counts an answered location as another operand all the same (§5, test
+   2): one rule for every kind of cell, since a list location the body answers is answered too (and, as
+   v3 has judged lists from the start, read). So `g u v = ( { u | a = u.a + 5 }, v )` called as `g q q`
+   is refused at the call, as `g u v = ( List.push u 1, v )` is.
+
+   *Research report 144: an answered slot had no flag at all, so the call passed test 2, and the
+   caller's callers read the answer as the new name of the written cell (§5.1). In place the answer was
+   the written object, where the copying program answers the old one; a loop whose state keeps a
+   snapshot of one of its own records (`loop (k + 1) { acc | snap = acc.cur }`, then a write of
+   `acc.cur`'s field) is the same call.*
 
 Every other rule applies to a slot as to a list's storage: a call's contract flags its slots (read,
 written, escaped), so a write in a helper of another module is a demand at its call (§6.2); a

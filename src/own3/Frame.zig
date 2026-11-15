@@ -83,6 +83,7 @@ const flag_w = CMod.flag_w;
 const flag_e = CMod.flag_e;
 const flag_r = CMod.flag_r;
 const flag_s = CMod.flag_s;
+const flag_a = CMod.flag_a;
 
 pub const Val = u32;
 pub const v_none: Val = 0;
@@ -162,9 +163,10 @@ const REntry = struct {
     }
 };
 /// `point`: the consumer's instruction, for the text. `at`: the time of the read (`timeOf`).
-/// `tail`: the frame's answer, read where it is answered. It reads no field
-/// slot of a parameter for the contract: the caller holds the answer and
-/// reads its slots where it reads them (kernel §11).
+/// `tail`: the frame's answer, read where it is answered. A field slot of a
+/// parameter it reaches is answered in the contract (`flag_a`), not read: the
+/// caller holds the answer and reads its slots where it reads them, and a
+/// call that writes counts it as another operand (kernel §5, §11).
 const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true, tail: bool = false };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
 const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32 };
@@ -2007,7 +2009,7 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
         // The scan of the flags is work (kernel §8).
         _ = f.charge(Loc.scanUnits(flags.len / 4));
         var any = false;
-        for (flags) |x| if (x != 0) {
+        for (flags) |x| if (CMod.reads(x)) {
             any = true;
         };
         if (any) try f.readAll(v, point);
@@ -2021,11 +2023,11 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     // The scan of the flags and of the map is work (kernel §8): a read of a
     // record of thousands of lists costs its layout at each call.
     _ = f.charge(Loc.scanUnits(flags.len / 4) + cov.len);
-    for (flags) |x| if (x != 0) {
+    for (flags) |x| if (CMod.reads(x)) {
         any_flag = true;
     };
     for (cov, 0..) |c, k| {
-        const read = if (c == none) true else if (c == Loc.all) any_flag else flags[c] != 0;
+        const read = if (c == none) true else if (c == Loc.all) any_flag else CMod.reads(flags[c]);
         if (read) try f.lists.append(f.gpa, @intCast(k)) else all = false;
     }
     const nmask: u32 = @intCast(f.lists.items.len - start);
@@ -4098,10 +4100,9 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         } else for (0..u.nmask) |i| {
             _ = try f.leaves(u.val, f.lists.items[u.mask + i], &tmp);
         }
-        for (tmp.items) |a| {
-            if (u.tail and f.isSlotAtom(a)) continue;
-            try f.markAtom(a, flag_r);
-        }
+        // The frame's answer, read where it is answered, answers a field
+        // slot of a parameter: no read of it at the call (`flag_a`).
+        for (tmp.items) |a| try f.markAtom(a, if (u.tail and f.isSlotAtom(a)) flag_a else flag_r);
     }
     const arity: u32 = @intCast(f.params.items.len);
     const layouts = try m.arena.alloc(u32, arity + 1);
@@ -4156,10 +4157,13 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         for (mine) |a| try f.atomSrcsIn(a, &srcs);
         if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
-        // An answered location is read, except a record's field slot: the
-        // caller holds the answer and reads the slot where it reads it (kernel §11).
-        for (res[e]) |s| if (s.kind == .param and m.loc.layoutEntries(layouts[s.a])[s.e].kind != .field) {
-            flags[off[s.a] + s.e] |= flag_r;
+        // An answered location is answered, and so another operand of a
+        // call that writes (kernel §5, test 2). It is read too, except a
+        // record's field slot: the caller holds the answer and reads the
+        // slot where it reads it (kernel §11).
+        for (res[e]) |s| if (s.kind == .param) {
+            flags[off[s.a] + s.e] |= flag_a;
+            if (m.loc.layoutEntries(layouts[s.a])[s.e].kind != .field) flags[off[s.a] + s.e] |= flag_r;
         };
     }
     // The function parameters. Each parameter of a function type has a
