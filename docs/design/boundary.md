@@ -1629,6 +1629,12 @@ no sibling, so `Html.js` goes the way the rest of the platforms' JavaScript goes
 *Done 2026-11-03*: the three extractors are beni declarations of `Html.beni`, `targetValue` and
 `targetChecked` `pub`, `pointer` not, each `Event → …` or `Dispatched → Pointer` over `Js.get`,
 and `Html.js` is deleted (`plans/runtime-in-beni.md` step 14).
+*Amended 2026-11-15 (#1993; §4.3 (a), the owner's decision of 2026-11-05).* `targetValue` is
+`Event → Maybe String`, `Nothing` when the target has no string `value`. It is no longer the
+extractor of an event. `onInput` and `onChange` name `controlValue`, which is not `pub`, and are
+allowed only `on "input" "select" "textarea"`, whose `value` is a string by the HTML specification,
+so their payload stays `String`. The specification is the reason the read is true (§4.3 (a)), so
+`controlValue` carries no test, and a release page is byte for byte what it was.
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
