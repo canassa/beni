@@ -2694,7 +2694,14 @@ pub onSchedulerCount : Scheduler, sync (Int → ⊤) → ⊤           -- `f` wi
   (*P699-3*) — and when the last has ended `s` is *stopped* for good. The program's scheduler and
   every other scheduler are not touched: their fibers run on and their queues drain as before. A
   throw that leaves the program's drain is what it was: the program stops, and every scheduler
-  with it (below).
+  with it (below). *Amended 2026-11-05 by the owner's decision (#1994), built 2026-11-15:* **a
+  scheduler a program makes contains nothing.** A defect under `scheduler hook` stops that
+  scheduler, as above, and then the program, as a throw out of the program's drain does: its
+  hook runs first, then the program enters *stopping* and the hook `onDefect` was given runs,
+  which on a page stops every program of it. Only `schedulerWith`, a platform's per-request or
+  per-object scheduler, contains a defect, because the platform defines its unit of failure
+  (`boundary.md` §9.12). The scheduler record says which (`contains`), and `failedS` reads it.
+  Page: `browser/tea/DefectUnderScheduler`.
 - **A scheduler that has stopped for good is a dead end** (*P699-1*). A fiber resumed through it
   afterwards — one that names it in its slot, or one lent to it — is cancelled, and its cleanup
   runs on the program's queue; a fiber started under it is cancelled before it runs, as `fork`
