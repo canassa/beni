@@ -341,14 +341,18 @@ if (checkers.includes("v3") && mode === "dump") {
       for (const l of lines) {
         if (l.text.startsWith("update ")) continue;
         tally.v1 += 1;
-        const at = o.filter((x) => x.pos === l.pos);
+        // Several lines at one position (the entry judges each model location
+        // there): the v3 line with the same text, when there is one.
+        const atPos = o.filter((x) => x.pos === l.pos);
+        const same = atPos.filter((x) => x.text === l.text);
+        const at = same.length !== 0 ? same : atPos;
         const st = at.length === 0 ? "none" : at.some((x) => x.verdict !== "accepted") ? "refused" : "accepted";
         tally[st] += 1;
         const ground = (l.rest.match(/^ (\S+)/) ?? [])[1];
         byGround[ground] ??= { accepted: 0, refused: 0, none: 0 };
         byGround[ground][st] += 1;
         if (st !== "accepted") rows.push(`- ${st}: ${r.name} ${mod} ${l.pos} \`${l.text}\` (v1: ${l.rest.trim()})` + at.filter((x) => x.verdict !== "accepted").slice(0, 1).map((x) => `; v3: ${x.rest.trim()}`).join(""));
-        for (const x of at) seen.add(`${mod} ${x.pos}`);
+        for (const x of atPos) seen.add(`${mod} ${x.pos}`);
       }
     }
     for (const [mod, lines] of b) for (const l of lines) {
