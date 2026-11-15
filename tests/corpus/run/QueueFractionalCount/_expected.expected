@@ -1,0 +1,29 @@
+takeN 1.5: [1]
+size: 2
+poll: Just 2
+poll: Just 3
+poll: Nothing
+takeN 0.5: []
+size: 3
+takeN -0.5: []
+takeN 2.5: [1,2]
+size: 1
+takeN NaN, ended: []
+size: 3
+dropping 1.5: [True,False,False]
+size: 1
+dropping NaN: [True,False]
+dropping 0.5: [True,False]
+sliding 2.5: [True,True,True]
+takeAll: [2,3]
+bounded 1.5: [True]
+size: 1
+take: Just 1
+late offer: True
+take: Just 2
+bounded 2.5, takeN 3.5: [1,2]
+takeN 2: [1,2]
+takeN 0: []
+size: 1
+dropping 2: [True,True,False]
+done
