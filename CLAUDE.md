@@ -632,9 +632,13 @@ Solid's speed is its **compiler**, not its signals, and that half is open to The
 Elm Architecture — `view` compiled to cloned templates with a reference check
 per dynamic hole beats Solid 2 on script on every benchmark operation, while a
 **virtual DOM is the slowest sensible design measured** and is a fallback at
-most, never the architecture. It works because values are immutable and a record
-update is a spread, so an untouched value is the *same object*: **field identity
-is load-bearing**, and no optimiser change may break it. Signals stay possible
+most, never the architecture. **Field identity is not load-bearing**: lists and
+records the ownership checker proves unshared are written in place (the owner,
+2026-11-15, "like regular js does"; `backend.md` §4), so a changed value can be
+the *same object*. A hole refreshes because the compile-time write set names a
+field it reads (`write-sets.md`), never because `===` says it changed; where the
+write set cannot say, every hole below the path refreshes. No renderer may skip
+work on an identity check of a value a program can write. Signals stay possible
 as a library and are not forbidden (rule 7); they buy no speed.
 
 **JSX is a language feature** — grammar, typing, formatter, codegen — specified
